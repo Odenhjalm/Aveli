@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "wisdom-backend"
+version = "0.1.0"
+description = "Local FastAPI backend for Aveli app (no Supabase dependencies)"
+authors = ["Aveli Team <dev@aveli.app>"]
+readme = "README.md"
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = { version = "^0.30.0", extras = ["standard"] }
+psycopg = { version = "^3.2.1", extras = ["pool"] }
+python-dotenv = "^1.0.1"
+passlib = { version = "^1.7.4", extras = ["bcrypt"] }
+python-jose = { version = "^3.3.0", extras = ["cryptography"] }
+pydantic-settings = "^2.4.0"
+stripe = "^5.0.0"
+# bcrypt 4.x triggers noisy passlib warnings; pin to <4
+bcrypt = ">=3.2,<4.0"
+python-multipart = "^0.0.9"
+httpx = "^0.27.0"
+prometheus-client = "^0.19.0"
+psycopg2-binary = "^2.9.11"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+ruff = "^0.6.4"
+flake8 = "^7.3.0"
+mypy = "^1.18.2"
+pip-audit = "^2.9.0"
+pytest-cov = "^7.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

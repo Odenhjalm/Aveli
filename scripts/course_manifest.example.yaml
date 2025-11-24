@@ -1,0 +1,26 @@
+title: Foundations of SoulWisdom
+slug: foundations-of-soulwisdom
+description: Intro to practices and core ideas
+is_free_intro: true
+is_published: false
+price_cents: 0
+# Optional: local cover image to upload and use as course cover.
+# The script will upload it to the first created lesson and set course.cover_url
+# to the generated download URL. If omitted, you can set a public cover_url.
+cover_path: media/cover.jpg
+# cover_url: null
+modules:
+  - title: Start
+    lessons:
+      - title: Välkommen
+        markdown: lessons/welcome.md
+        is_intro: true
+        media:
+          - path: media/welcome.jpg
+          - path: media/intro_audio.mp3
+  - title: Meditationer
+    lessons:
+      - title: Rensa energifältet
+        markdown: lessons/cleanse.md
+        media:
+          - path: media/cleanse_audio.mp3

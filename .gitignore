@@ -1,0 +1,83 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+
+# Android
+android/.gradle/
+android/app/build/
+
+# Env / nycklar
+.env
+.env.*
+backend/.env
+web/.env
+!.env.example
+!.env.docker.example
+android/key.properties
+*.pem
+*.key
+*.p8
+*.keystore
+*.jks
+**/private-key*
+
+#other
+.buildlog/
+.pub-cache/
+.flutter-plugins*
+.melos_tool/
+.idea/
+.metadata
+*.iml
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Python virtualenvs (do not commit site-packages)
+.venv/
+backend/.venv/
+.venv-filter/
+
+# Local backend media uploads (generated at runtime)
+backend/media/
+
+# Backend static/media assets served via API
+backend/assets/**
+!backend/assets/.gitkeep
+!backend/assets/**/.gitkeep
+
+# Next.js / Node
+node_modules/
+web/node_modules/
+web/.next/
+
+# Repo-specific ignores
+checklist_supabase.md
+runs_snapshot.sh
+BRA_KOMMANDON.md
+out/
+*.mp4
+*.wav
+*.jpg
+*.png
+
+# Legacy frontend asset exceptions
+assets/backend/***
+assets/backend/**
+assets/backend/*
+!assets/fonts/
+!assets/fonts/**
+!assets/images/
+!assets/images/**
+!assets/icons/
+!assets/icons/**
+!assets/audio/
+!assets/audio/**

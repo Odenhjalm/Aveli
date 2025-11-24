@@ -1,0 +1,108 @@
+name: Validate App Stack
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: ci
+      DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_BILLING_WEBHOOK_SECRET: ${{ secrets.STRIPE_BILLING_WEBHOOK_SECRET }}
+      STRIPE_PRICE_MONTHLY: ${{ secrets.STRIPE_PRICE_MONTHLY }}
+      STRIPE_PRICE_YEARLY: ${{ secrets.STRIPE_PRICE_YEARLY }}
+      FRONTEND_URL: http://127.0.0.1:3000
+      LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+      LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+      LIVEKIT_WS_URL: ${{ secrets.LIVEKIT_WS_URL }}
+      LIVEKIT_API_URL: ${{ secrets.LIVEKIT_API_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      MEDIA_SIGNING_SECRET: ${{ secrets.MEDIA_SIGNING_SECRET }}
+      MEDIA_SIGNING_TTL_SECONDS: 600
+      LESSON_MEDIA_MAX_BYTES: 2147483648
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client jq
+
+      - name: Apply Supabase migrations
+        run: |
+          set -euo pipefail
+          SUPABASE_DB_URL=${SUPABASE_DB_URL:?} \
+          SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD:?} \
+          scripts/apply_supabase_migrations.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        run: pip install poetry==1.8.3
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: poetry install --no-interaction
+
+      - name: Backend unit tests
+        working-directory: backend
+        run: poetry run pytest --maxfail=1 --disable-warnings
+
+      - name: Launch backend for smoke tests
+        working-directory: backend
+        env:
+          PORT: 8000
+        run: |
+          nohup poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT >/tmp/backend.log 2>&1 &
+          echo $! > /tmp/backend.pid
+          for i in {1..60}; do
+            if curl -sSf http://127.0.0.1:$PORT/readyz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend failed to become ready" >&2
+          tail -n 200 /tmp/backend.log
+          exit 1
+
+      - name: QA teacher smoke test
+        working-directory: backend
+        run: poetry run python ../scripts/qa_teacher_smoke.py --base-url http://127.0.0.1:8000
+
+      - name: Shutdown backend
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ -f /tmp/backend.pid ]; then
+            kill $(cat /tmp/backend.pid) || true
+          fi
+          if [ "$JOB_STATUS" != "success" ] && [ -f /tmp/backend.log ]; then
+            tail -n 200 /tmp/backend.log
+          fi
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Flutter tests
+        run: flutter test

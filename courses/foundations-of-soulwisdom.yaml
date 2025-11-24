@@ -1,0 +1,25 @@
+title: Foundations of SoulWisdom
+slug: foundations-of-soulwisdom
+description: Intro to practices and core ideas
+is_free_intro: true
+is_published: false
+price_cents: 0
+# Use sample assets to enable immediate dry-run/import
+cover_path: assets/foundations-of-soulwisdom/cover.jpg
+cover_url: 
+
+modules:
+  - title: Start
+    lessons:
+      - title: Välkommen
+        is_intro: true
+        markdown: assets/foundations-of-soulwisdom/lesson_welcome.md
+        media:
+          - path: assets/foundations-of-soulwisdom/welcome.jpg
+          - path: assets/foundations-of-soulwisdom/intro_audio.mp3
+  - title: Meditationer
+    lessons:
+      - title: Rensa energifältet
+        markdown: assets/foundations-of-soulwisdom/lesson_placeholder.md
+        media:
+          - path: assets/foundations-of-soulwisdom/welcome.jpg

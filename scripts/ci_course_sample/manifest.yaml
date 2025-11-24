@@ -1,0 +1,23 @@
+title: Sample Course CI
+slug: sample-course-ci
+description: Minimal sample used by CI to validate the importer
+is_free_intro: true
+is_published: false
+price_cents: 0
+cover_path: media/cover.jpg
+modules:
+  - title: _Assets
+    lessons:
+      - title: _Course Assets
+        markdown: lessons/placeholder.md
+        media:
+          - path: media/cover.jpg
+  - title: Start
+    lessons:
+      - title: Välkommen
+        markdown: lessons/welcome.md
+        is_intro: true
+        media:
+          - path: media/welcome.jpg
+          - path: media/intro_audio.mp3
+

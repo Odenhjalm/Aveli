@@ -1,0 +1,20 @@
+title: <Course Title>
+slug: <course-slug>
+description: <short description>
+is_free_intro: false
+is_published: false
+price_cents: 0
+# One of the following for covers (pick one when ready):
+# cover_path: media/cover.jpg   # local path to upload (set later when file exists)
+cover_url: 
+
+modules:
+  - title: Start
+    lessons:
+      - title: Välkommen
+        # Add when file exists:
+        # markdown: lessons/welcome.md
+        # is_intro: true
+        # media:
+        #   - path: media/welcome.jpg
+

@@ -1,0 +1,64 @@
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  margin: 0;
+  background: radial-gradient(circle at top, #f2f0ff 0%, #ffffff 55%);
+  color: #231942;
+}
+
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  margin-bottom: 16px;
+}
+
+.hero p {
+  max-width: 640px;
+  line-height: 1.6;
+  font-size: 1.2rem;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 16px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.cta-buttons a {
+  padding: 14px 32px;
+  border-radius: 999px;
+  background: #6c63ff;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  box-shadow: 0 10px 25px rgba(108, 99, 255, 0.3);
+}
+
+.cta-buttons a.secondary {
+  background: rgba(108, 99, 255, 0.12);
+  color: #231942;
+  box-shadow: none;
+  border: 1px solid rgba(35, 25, 66, 0.1);
+}
+
+.footer-links {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 48px;
+}
+
+.footer-links a {
+  color: #6c63ff;
+  text-decoration: none;
+}

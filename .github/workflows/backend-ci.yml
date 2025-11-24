@@ -1,0 +1,52 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
+          poetry install
+
+      - name: Ruff
+        run: poetry run ruff check .
+
+      - name: Flake8
+        run: poetry run flake8 app tests
+
+      - name: Mypy
+        run: poetry run mypy --config-file mypy.ini
+
+      - name: Pytest with coverage
+        run: poetry run pytest --cov=app --cov-report=xml --cov-report=term
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+      - name: pip-audit
+        run: poetry run pip-audit --progress-spinner off

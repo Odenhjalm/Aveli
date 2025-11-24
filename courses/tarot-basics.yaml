@@ -1,0 +1,28 @@
+title: Tarot Basics
+slug: tarot-basics
+description: Lär dig grunderna i tarotläsning
+is_free_intro: true
+is_published: false
+price_cents: 1200
+cover_path: assets/tarot-basics/cover.jpg
+cover_url: 
+
+modules:
+  - title: Intro
+    lessons:
+      - title: Välkommen
+        is_intro: true
+        markdown: assets/tarot-basics/lesson_intro.md
+        media:
+          - path: assets/tarot-basics/welcome.jpg
+          - path: assets/tarot-basics/intro_audio.mp3
+  - title: Stora Arkanan
+    lessons:
+      - title: Översikt
+        markdown: assets/tarot-basics/lesson_placeholder.md
+        media:
+          - path: assets/tarot-basics/welcome.jpg
+  - title: Lilla Arkanan
+    lessons:
+      - title: Översikt
+        markdown: assets/tarot-basics/lesson_placeholder.md

@@ -1,0 +1,45 @@
+.wrapper {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-block: 1.5rem;
+}
+
+.button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.65rem 1.35rem;
+  border-radius: 16px;
+  min-width: 160px;
+  color: #fff;
+  text-transform: none;
+  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
+  line-height: 1.2;
+}
+
+.button:hover {
+  transform: translateY(-2px);
+  filter: drop-shadow(0 12px 18px rgba(55, 34, 102, 0.25));
+}
+
+.heading {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.store {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.play {
+  background: linear-gradient(135deg, #0f9d58, #4285f4);
+}
+
+.appStore {
+  background: linear-gradient(135deg, #0b1220, #303952);
+}
