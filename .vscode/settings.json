@@ -1,0 +1,19 @@
+{
+    // Gör så att VS Code-terminalen prioriterar repo-lokal Flutter-SDK
+    "terminal.integrated.env.linux": {
+        "PATH": "${workspaceFolder}/.flutter-sdk/bin:${env:PATH}"
+    },
+    // Peka Dart/Flutter extension till repo-SDK (absolut sökväg)
+    "dart.flutterSdkPath": "/home/oden/Wisdom/.flutter-sdk",
+    // Kvalitet & ergonomi
+    "editor.formatOnSave": true,
+    "dart.runPubGetOnPubspecChanges": true,
+    "problems.showCurrentInStatus": true,
+    // Rekommenderade signaler för Flutter-arbete
+    "dart.openDevTools": "flutter",
+    "dart.debugExternalPackageLibraries": false,
+    "dart.debugSdkLibraries": false,
+    // (Valfritt) trimma trailing spaces och säkerställa LF
+    "files.trimTrailingWhitespace": true,
+    "files.eol": "\n"
+}

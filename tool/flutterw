@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.flutter-sdk" && pwd)"
+export PATH="$SDK/bin:$PATH"
+exec "$SDK/bin/flutter" "$@"

@@ -1,0 +1,77 @@
+name: codex-agent
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [labeled, opened, edited]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  plan-and-pr:
+    if: contains(github.event.comment.body || github.event.issue.body, '/agent ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: parse
+        run: |
+          BODY="${{ github.event.comment.body || github.event.issue.body }}"
+          echo "TASK=${BODY#*'/agent '}" >> $GITHUB_OUTPUT
+
+      - id: readprompt
+        run: |
+          echo "prompt<<'EOF'" >> $GITHUB_OUTPUT
+          cat AGENT_PROMPT.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate patch with OpenAI
+        id: gen
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python - << 'PY'
+import os, json, urllib.request, subprocess
+task = """${{ steps.parse.outputs.TASK }}"""
+prompt = """Du är en senior Flutter/Fullstack-ingenjör.
+Följ masterprompten:
+---
+${{ steps.readprompt.outputs.prompt }}
+---
+Uppgift: %s
+
+Returnera ENDAST en giltig unified diff som kan appliceras med `git apply --whitespace=fix`.
+""" % task
+data = {
+  "model":"gpt-4.1",
+  "messages":[{"role":"user","content":prompt}],
+  "temperature":0.2
+}
+req = urllib.request.Request(
+  "https://api.openai.com/v1/chat/completions",
+  data=json.dumps(data).encode(),
+  headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+           "Content-Type":"application/json"}
+)
+res = urllib.request.urlopen(req).read()
+msg = json.loads(res)["choices"][0]["message"]["content"]
+open("patch.diff","w").write(msg)
+PY
+
+      - name: Create PR from patch
+        run: |
+          set -e
+          git config user.name "codex-agent"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -b agent/${{ github.run_id }}
+          git apply --whitespace=fix patch.diff
+          git add -A
+          git commit -m "agent: ${{ steps.parse.outputs.TASK }}"
+          git push -u origin HEAD
+          gh pr create --title "agent: ${{ steps.parse.outputs.TASK }}" \
+            --body "Automatisk PR från codex-agent.\n\nUppgift:\n${{ steps.parse.outputs.TASK }}" \
+            --label automerge || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,59 @@
+/// Central definition of absolute route paths used by the app router.
+abstract class RoutePath {
+  RoutePath._();
+
+  static const landingRoot = '/';
+  static const landing = '/landing';
+  static const login = '/login';
+  static const signup = '/signup';
+  static const forgotPassword = '/forgot-password';
+  static const newPassword = '/new-password';
+  static const home = '/home';
+  static const sfuDemo = '/sfu-demo';
+  static const courseIntro = '/course-intro';
+  static const courseCatalog = '/courses/catalog';
+  static const courseQuiz = '/course-quiz';
+  static const courseIntroRedirect = '/course-intro-redirect';
+  static const messages = '/messages';
+  static const directMessage = '/messages/:uid';
+  static const profile = '/profile';
+  static const profileSubscription = '/profile/subscription';
+  static const profileSubscriptionPortal = '/profile/subscription/portal';
+  static const checkout = '/checkout/web';
+  static const profileView = '/profile/view/:id';
+  static const teacherProfile = '/teacher/profile/:id';
+  static const serviceDetail = '/service/:id';
+  static const tarot = '/tarot';
+  static const admin = '/admin';
+  static const adminSettings = '/admin/settings';
+  static const studio = '/studio';
+  static const teacherHome = '/teacher';
+  static const teacherEditor = '/teacher/editor';
+  static const teacherBundles = '/teacher/bundles';
+  static const studioProfile = '/studio/profile';
+  static const seminarStudio = '/studio/seminars';
+  static const seminarDetail = '/studio/seminars/:id';
+  static const seminarPreJoin = '/studio/seminars/:id/prejoin';
+  static const seminarBroadcast = '/studio/seminars/:id/broadcast';
+  static const seminarDiscover = '/seminars';
+  static const seminarJoin = '/seminars/:id/join';
+  static const subscribe = '/subscribe';
+  static const booking = '/booking';
+  static const orders = '/orders';
+  static const claim = '/claim';
+  static const privacy = '/privacy';
+  static const terms = '/terms';
+  static const checkoutSuccess = '/success';
+  static const checkoutCancel = '/cancel';
+  static const settings = '/settings';
+  static const community = '/community';
+  static const course = '/course/:slug';
+  static const lesson = '/lesson/:id';
+
+  static String courseWithSlug(String slug) => '/course/$slug';
+  static String lessonWithId(String id) => '/lesson/$id';
+  static String profileViewWithId(String id) => '/profile/view/$id';
+  static String teacherProfileWithId(String id) => '/teacher/profile/$id';
+  static String serviceDetailWithId(String id) => '/service/$id';
+  static String directMessageWithUid(String uid) => '/messages/$uid';
+}

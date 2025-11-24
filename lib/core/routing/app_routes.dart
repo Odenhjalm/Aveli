@@ -1,0 +1,53 @@
+/// Centralised route name constants to keep navigation consistent.
+abstract class AppRoute {
+  AppRoute._();
+
+  static const landingRoot = 'landing-root';
+  static const landing = 'landing';
+  static const login = 'login';
+  static const signup = 'signup';
+  static const forgotPassword = 'forgot-password';
+  static const newPassword = 'new-password';
+  static const courseIntro = 'course-intro';
+  static const courseIntroRedirect = 'course-intro-redirect';
+  static const courseCatalog = 'course-catalog';
+  static const courseQuiz = 'course-quiz';
+  static const course = 'course';
+  static const lesson = 'lesson';
+  static const serviceDetail = 'service-detail';
+  static const profileView = 'profile-view';
+  static const teacherProfile = 'teacher-profile';
+  static const home = 'home';
+  static const sfuDemo = 'sfu-demo';
+  static const messages = 'messages';
+  static const directMessage = 'dm';
+  static const profile = 'profile';
+  static const profileSubscription = 'profile-subscription';
+  static const profileSubscriptionPortal = 'profile-subscription-portal';
+  static const checkout = 'checkout';
+  static const tarot = 'tarot';
+  static const admin = 'admin';
+  static const studio = 'studio';
+  static const teacherHome = 'teacher-home';
+  static const teacherEditor = 'teacher-editor';
+  static const teacherBundles = 'teacher-bundles';
+  static const studioProfile = 'studio-profile';
+  static const seminarStudio = 'seminar-studio';
+  static const seminarDetail = 'seminar-detail';
+  static const seminarPreJoin = 'seminar-prejoin';
+  static const seminarBroadcast = 'seminar-broadcast';
+  static const seminarDiscover = 'seminar-discover';
+  static const seminarJoin = 'seminar-join';
+  static const subscribe = 'subscribe';
+  static const booking = 'booking';
+  static const claim = 'claim';
+  static const orders = 'orders';
+  static const privacy = 'privacy';
+  static const terms = 'terms';
+  static const checkoutSuccess = 'checkout-success';
+  static const checkoutCancel = 'checkout-cancel';
+  static const settings = 'settings';
+  static const community = 'community';
+  static const adminSettings = 'admin-settings';
+  static const notFound = 'not-found';
+}
