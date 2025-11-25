@@ -6,7 +6,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_DEFAULT_TIMEOUT=100 \
     POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_CACHE_DIR='/var/cache/pypoetry'
+    POETRY_CACHE_DIR='/var/cache/pypoetry' \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VERSION=1.8.3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
@@ -17,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY backend/pyproject.toml backend/poetry.lock ./
-RUN pip install poetry && poetry install --only main
+RUN pip install "poetry==${POETRY_VERSION}" && poetry install --only main --no-root
 
 COPY backend/ /app
 
