@@ -1,26 +1,39 @@
+# ---- Build Stage ----
 FROM python:3.12-slim AS builder
 
-ENV POETRY_HOME=/opt/poetry \
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=100 \
     POETRY_VIRTUALENVS_CREATE=false \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    POETRY_CACHE_DIR='/var/cache/pypoetry'
 
-RUN pip install --no-cache-dir poetry==1.8.3
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    build-essential \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml poetry.lock ./
-RUN poetry install --only main --no-interaction --no-ansi
 
+COPY backend/pyproject.toml backend/poetry.lock ./
+RUN pip install poetry && poetry install --only main
+
+COPY backend/ /app
+
+# ---- Runtime Stage ----
 FROM python:3.12-slim AS runtime
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    APP_ENV=production \
-    PORT=8080
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /usr/local /usr/local
-COPY . /app
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /app /app
 
 EXPOSE 8080
 

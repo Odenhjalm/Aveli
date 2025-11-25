@@ -1,10 +1,11 @@
-app = "aveli-backend"
+app = "aveli"
 primary_region = "arn"
 kill_signal = "SIGTERM"
 kill_timeout = "5s"
 
 [build]
   dockerfile = "backend/Dockerfile"
+  context = "."
 
 [env]
   APP_ENV = "production"
@@ -20,13 +21,9 @@ kill_timeout = "5s"
 [checks]
   [checks.healthz]
     type = "http"
+    port = 8080
     interval = "15s"
     timeout = "5s"
+    grace_period = "60s"
     method = "get"
     path = "/healthz"
-  [checks.readyz]
-    type = "http"
-    interval = "15s"
-    timeout = "5s"
-    method = "get"
-    path = "/readyz"
