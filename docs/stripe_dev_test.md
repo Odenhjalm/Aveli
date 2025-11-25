@@ -26,7 +26,7 @@ This guide describes how to keep the Stripe test environment stable while exerci
 ```bash
 cd backend
 poetry install  # first time only
-poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 Confirm `/healthz` and `/readyz` respond with HTTP 200 before moving on.
@@ -37,14 +37,14 @@ Run the Stripe CLI in another terminal to forward events into FastAPI:
 
 ```bash
 stripe login  # once per machine
-stripe listen --forward-to http://127.0.0.1:8000/webhooks/stripe
+stripe listen --forward-to http://127.0.0.1:8080/webhooks/stripe
 ```
 
 If you are testing `/api/billing/webhook`, start a second listener (or add `--forward-to` with that endpoint) using the billing webhook signing secret.
 
 ## 5. End-to-end test steps
 
-1. Launch the dev app (mobile or web) pointing at `http://127.0.0.1:8000`.
+1. Launch the dev app (mobile or web) pointing at `http://127.0.0.1:8080`.
 2. Log in with a test user that does **not** yet have `app.memberships` data.
 3. Tap **Starta medlemskap** to trigger `/api/checkout/create`.
 4. Make sure the app launches Stripe Checkout (hosted), complete the session with the test card `4242 4242 4242 4242`.

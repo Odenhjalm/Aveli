@@ -34,11 +34,11 @@ class StorageService:
     def __init__(
         self,
         *,
-        bucket: str = "lesson_media",
+        bucket: str = "course-media",
         supabase_url: str | None = None,
         service_role_key: str | None = None,
     ) -> None:
-        self._bucket = bucket.strip() or "lesson_media"
+        self._bucket = bucket.strip() or "course-media"
         self._supabase_url = supabase_url or (
             settings.supabase_url.unicode_string()
             if settings.supabase_url is not None
@@ -183,4 +183,4 @@ class StorageService:
         )
 
 
-storage_service = StorageService()
+storage_service = StorageService(bucket="course-media")

@@ -1,13 +1,13 @@
-https://mcp.supabase.com/mcp?project_ref=wrdwpkejuzhewisnwhso&features=docs%2Caccount%2Cdebugging%2Cdatabase%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage
+https://mcp.supabase.com/mcp?project_ref=evgwgepnscopsiznqkqc&features=docs%2Caccount%2Cdebugging%2Cdatabase%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage
 
 add this configuration to .vscode/mcp.json:
 {
-"mcpServers": {
-"supabase": {
-"type": "http",
-"url": "https://mcp.supabase.com/mcp?project_ref=wrdwpkejuzhewisnwhso&features=docs%2Caccount%2Cdebugging%2Cdatabase%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage"
-}
-}
+  "mcpServers": {
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=evgwgepnscopsiznqkqc&features=docs%2Caccount%2Cdebugging%2Cdatabase%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage"
+    }
+  }
 }
 
 ## Snabb CLI när MCP-bron saknas

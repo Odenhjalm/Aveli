@@ -50,11 +50,11 @@ Run the import
 
 - Backend running locally (see top-level README for backend dev).
 - Dry run to validate manifest & files (no uploads):
-  - `python scripts/import_course.py --manifest /path/to/manifest.yaml --base-url http://127.0.0.1:8000 --email x --password y --dry-run`
+  - `python scripts/import_course.py --manifest /path/to/manifest.yaml --base-url http://127.0.0.1:8080 --email x --password y --dry-run`
   - Add `--max-size-mb 100` to warn on files >100 MB.
 - Then import for real:
   - `python scripts/import_course.py \
-     --base-url http://127.0.0.1:8000 \
+     --base-url http://127.0.0.1:8080 \
      --email teacher@example.com \
      --password teacher123 \
      --manifest /full/path/to/course_manifest.yaml`

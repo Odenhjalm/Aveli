@@ -31,14 +31,15 @@ AVELI uses Supabase Storage plus the FastAPI media service to keep course files 
 
 ## Storage buckets in Supabase
 
-Migration `supabase/migrations/003_media_storage_buckets.sql` seeds the two buckets directly in Postgres:
+Migration `supabase/migrations/018_storage_buckets.sql` seeds the storage buckets directly in Postgres:
 
 ```sql
 insert into storage.buckets (id, name, public) values ('public-media', 'public-media', true);
 insert into storage.buckets (id, name, public) values ('course-media', 'course-media', false);
+insert into storage.buckets (id, name, public) values ('lesson-media', 'lesson-media', false);
 ```
 
-Re-run the migration or execute the SQL snippet on any environment where storage is empty. You can verify the current state via:
+Re-run the migration or execute the SQL snippet on any environment where storage is empty (the statements are idempotent). You can verify the current state via:
 
 ```bash
 psql "$DATABASE_URL" -c "select id, public from storage.buckets order by id;"

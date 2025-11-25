@@ -7,7 +7,7 @@ Backenden ligger i `backend/` och pratar direkt med Supabase Postgres. Vi kör *
 ```bash
 cd /home/oden/Wisdom/backend
 poetry install
-poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 Detaljerade steg finns nedan.
@@ -69,10 +69,10 @@ openssl rand -hex 32    # JWT_SECRET eller MEDIA_SIGNING_SECRET
 
 ```bash
 cd /home/oden/Wisdom/backend
-poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-- API:t svarar på `http://127.0.0.1:8000`.
+- API:t svarar på `http://127.0.0.1:8080`.
 - Swagger/Redoc finns på `/docs` och `/redoc`.
 - Uvicorn stoppas med `Ctrl+C`.
 
@@ -80,40 +80,40 @@ poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ```bash
 cd /home/oden/Wisdom/backend
-nohup poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > ../backend_uvicorn.log 2>&1 &
+nohup poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload > ../backend_uvicorn.log 2>&1 &
 tail -f ../backend_uvicorn.log
 ```
 
 Stoppa processen vid behov:
 
 ```bash
-lsof -i :8000
+lsof -i :8080
 kill <PID>
 ```
 
 ## 6. Hälsokontroller
 
 ```bash
-curl -f http://127.0.0.1:8000/healthz
-curl -f http://127.0.0.1:8000/readyz
+curl -f http://127.0.0.1:8080/healthz
+curl -f http://127.0.0.1:8080/readyz
 ```
 
 ## 7. Vanliga felsökningar
 
-- **Port 8000 används redan**  
+- **Port 8080 används redan**  
   ```bash
-  lsof -i :8000
+  lsof -i :8080
   kill <PID>
   ```
 - **Saknad miljövariabel** – kontrollera att nyckeln finns i `backend/.env` (kommentera aldrig ut raderna). Starta om uvicorn efter ändring.
 - **Poetry hittar inte Python 3.11** – kör `poetry env use $(which python3.11)` eller installera `python3.11` via `sudo apt install python3.11`.
 
-När servern körs kan Flutter/webb peka mot `http://127.0.0.1:8000` via sina `.env`-filer.
+När servern körs kan Flutter/webb peka mot `http://127.0.0.1:8080` via sina `.env`-filer.
 
 ## Testa betalvägg för kursen "Vit Magi"
 
 1. Använd `backend/.env.local` (innehåller test-nycklar och price-id).
-2. Kör `stripe listen --forward-to http://127.0.0.1:8000/webhooks/stripe`.
+2. Kör `stripe listen --forward-to http://127.0.0.1:8080/webhooks/stripe`.
 3. Trigga `/checkout/session` med `order_type="vit_magi"` från appen.
 4. Slutför testbetalning i Stripe Payment Element.
 5. Hämta `GET /api/me/entitlements` → ska lista `"vit_magi"` under `courses`.

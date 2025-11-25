@@ -19,6 +19,6 @@
    flutter run -t lib/mvp/mvp_app.dart
    ```
 5. Landing-sidan byggs statiskt i `web/landing` och serveras via `docker compose up landing`.
-6. QA-script: `python scripts/qa_teacher_smoke.py --base-url http://127.0.0.1:8000 --seminar-id <uuid>`.
+6. QA-script: `python scripts/qa_teacher_smoke.py --base-url http://127.0.0.1:8080 --seminar-id <uuid>`.
 
-> Tips: `docker compose up` startar Postgres, backend och landing i samma kommando (port 8000/4173).
+> Tips: `docker compose up` startar Postgres, backend och landing i samma kommando (port 8080/4173).

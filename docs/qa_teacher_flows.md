@@ -5,7 +5,7 @@ Det här dokumentet beskriver ett minimalt röktest för att säkerställa att l
 ## Förutsättningar
 - Lokalt backend-API körs (`uvicorn app.main:app --reload`).
 - Postgres instans med seedade användare (kör `scripts/setup_local_backend.sh` vid behov).
-- Flutter-appen konfigurerad att peka på `http://localhost:8000` via `.env` eller `--dart-define`.
+- Flutter-appen konfigurerad att peka på `http://localhost:8080` via `.env` eller `--dart-define`.
 - Testkonton:
   - Lärare: `teacher@example.com` / `teacher123`
   - Elev: `student@example.com` / `student123`

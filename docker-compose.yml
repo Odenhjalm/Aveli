@@ -7,19 +7,23 @@ services:
       dockerfile: Dockerfile
     environment:
       APP_ENV: ${APP_ENV:-development}
+      PORT: ${PORT:-8080}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
       SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?set SUPABASE_SERVICE_ROLE_KEY}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       LIVEKIT_WS_URL: ${LIVEKIT_WS_URL:-}
       LIVEKIT_API_URL: ${LIVEKIT_API_URL:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?set STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_BILLING_WEBHOOK_SECRET: ${STRIPE_BILLING_WEBHOOK_SECRET:-}
       STRIPE_CHECKOUT_UI_MODE: ${STRIPE_CHECKOUT_UI_MODE:-custom}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      CHECKOUT_SUCCESS_URL: ${CHECKOUT_SUCCESS_URL:-http://localhost:3000/checkout/success}
+      CHECKOUT_CANCEL_URL: ${CHECKOUT_CANCEL_URL:-http://localhost:3000/checkout/cancel}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?set MEDIA_SIGNING_SECRET}
       MEDIA_SIGNING_TTL_SECONDS: ${MEDIA_SIGNING_TTL_SECONDS:-600}
@@ -28,16 +32,17 @@ services:
       - ./backend/assets:/app/assets:ro
       - ./backend/media:/app/media
     ports:
-      - "8000:8000"
+      - "${PORT:-8080}:${PORT:-8080}"
 
-  frontend:
+  landing:
     build:
-      context: ./web
+      context: ./frontend/landing
       dockerfile: Dockerfile
     environment:
       NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      NEXT_PUBLIC_API_BASE_URL: ${FRONTEND_URL:-http://localhost:8000}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080}
+      PORT: 3000
     ports:
       - "3000:3000"
     depends_on:

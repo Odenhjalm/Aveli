@@ -7,9 +7,9 @@ Courses Manifests
 How to validate and import
 
 - Dry-run (no uploads, validates manifest structure and referenced files):
-  - `python scripts/import_course.py --base-url http://127.0.0.1:8000 --email teacher@example.com --password teacher123 --manifest courses/<file>.yaml --dry-run`
+  - `python scripts/import_course.py --base-url http://127.0.0.1:8080 --email teacher@example.com --password teacher123 --manifest courses/<file>.yaml --dry-run`
 - Import:
-  - `python scripts/import_course.py --base-url http://127.0.0.1:8000 --email teacher@example.com --password teacher123 --manifest courses/<file>.yaml`
+  - `python scripts/import_course.py --base-url http://127.0.0.1:8080 --email teacher@example.com --password teacher123 --manifest courses/<file>.yaml`
 - Optional: upload cover to a dedicated `_Assets` lesson and auto-set `cover_url`:
   - add `--create-assets-lesson`
 - Optional: skip uploading duplicates / clean old ones:
@@ -20,7 +20,7 @@ Bulk import
 - Validate all manifests:
   - `python scripts/bulk_import.py --dry-run`
 - Import all manifests (order controlled by `courses/order.txt` if present):
-  - `python scripts/bulk_import.py --base-url http://127.0.0.1:8000 --email teacher@example.com --password teacher123`
+  - `python scripts/bulk_import.py --base-url http://127.0.0.1:8080 --email teacher@example.com --password teacher123`
 - Import a subset:
   - `python scripts/bulk_import.py --only tarot-basics --base-url ... --email ... --password ...`
 - Optional flags:

@@ -20,7 +20,7 @@
 
 ## Fas D – Stripe-flöden
 - **Delmål**: `/payments/stripe/create-session` och `/payments/webhooks/stripe` fungerar lokalt. Flutter kan öppna checkout.
-- **Acceptanskriterier**: `stripe listen --forward-to http://localhost:8000/payments/webhooks/stripe` med testkort sätter order `paid`; DB-uppdateringar loggas.
+- **Acceptanskriterier**: `stripe listen --forward-to http://localhost:8080/payments/webhooks/stripe` med testkort sätter order `paid`; DB-uppdateringar loggas.
 - **Risker**: Webhook-signatur mismatch; race i double-processing; currency mismatch SEK/EUR.
 - **Fallback**: Queue:a webhookpayloads till fil och kör `scripts/replay_stripe_webhook.py`; fallback till PaymentIntent + manual capture.
 

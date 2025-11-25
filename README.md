@@ -1,75 +1,91 @@
-# Aveli – Supabase-first stack
+# Aveli Monorepo
 
-This repo contains the entire Aveli platform: Flutter client, FastAPI backend, Next.js landing, and the canonical Supabase schema. Postgres lives in Supabase only; all schema/RLS is defined under `supabase/migrations`.
+Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in one place. Supabase holds the canonical database schema; all migrations live under `supabase/migrations`.
 
 ```
 .
-├── lib/                     # Flutter app
-├── backend/                 # FastAPI + Stripe + LiveKit
-├── supabase/migrations/     # Single source of truth for DB + RLS
-├── web/                     # Next.js landing (used by docker-compose)
-├── scripts/                 # QA + ops helpers
-└── docs/                    # Setup + release docs
+├── backend/            # FastAPI app, Stripe/LiveKit, scripts, Dockerfile
+├── frontend/           # Flutter app (lib/android/ios/web) + landing (Next.js)
+│   └── landing/        # Marketing/landing site (Next.js)
+├── supabase/           # SQL migrations (single source of truth)
+├── docs/               # Architecture, security, deployment, env docs
+├── .env.example*       # Safe templates for backend + Flutter
+├── docker-compose.yml  # Backend + landing for local dev
+└── fly.toml            # Fly.io deployment config (backend)
 ```
 
-## Requirements
-- Python 3.11, Poetry
-- Flutter 3.24+, Node 18+
+## Prerequisites
+- Python 3.11+, Poetry
+- Flutter 3.24+ (run inside `frontend/`)
+- Node 18+ for the Next.js landing (`frontend/landing`)
 - `psql` client
-- Docker (optional, for compose)
-- Supabase project (URL, anon key, service role, DB URL)
-- Stripe + LiveKit keys for payments/rooms
+- Docker (optional for compose)
+- Supabase project (URL, anon key, service role, DB URL), Stripe keys, LiveKit keys
 
-## Secrets
-- Copy `.env.example` → `.env` (and `.env.docker.example` if you use compose).
-- Populate Supabase/Stripe/LiveKit/JWT/Media secrets. Do **not** commit real keys; they are ignored via `.gitignore`.
+## Environment
+- Copy `.env.example` → `.env` (root), `.env.example.backend` → `.env.backend`, `.env.example.flutter` → `frontend/.env` as needed.
+- Do **not** commit real keys (.env files are ignored).
+- Backend listens on port `8080` by default; update `API_BASE_URL`/`NEXT_PUBLIC_API_BASE_URL` accordingly.
 
-## Supabase schema
-Single source: `supabase/migrations/*.sql`.
-```
-SUPABASE_DB_URL=postgresql://... SUPABASE_DB_PASSWORD=... scripts/apply_supabase_migrations.sh
-```
-Use MCP (`.vscode/mcp.json`) for live SQL changes; then commit a migration.
-
-## Run backend (local)
-```
+## Backend (FastAPI)
+```bash
 cd backend
-poetry install --no-root
-poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+poetry install --no-interaction
+PORT=8080 poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
-- `/healthz` basic; `/readyz` checks DB.
-- Media/signing uses Supabase Storage when service role key is set.
+- Health: `/healthz`, Ready: `/readyz`.
+- Supabase Storage/Stripe/LiveKit features require the corresponding env vars.
 
-## Docker (backend + web)
+### Supabase migrations
+```bash
+SUPABASE_DB_URL=postgres://... \
+SUPABASE_DB_PASSWORD=... \
+backend/scripts/apply_supabase_migrations.sh
 ```
+Migrations source: `supabase/migrations/*.sql`.
+
+### Backend tests & lint
+```bash
+make backend.test     # pytest
+make backend.lint     # ruff
+make qa.teacher       # smoke against a running backend (port 8080)
+```
+
+## Flutter app
+```bash
+cd frontend
+flutter pub get
+flutter test
+flutter run   # uses API_BASE_URL/SUPABASE_* from frontend/.env
+```
+Android emulator uses `http://10.0.2.2:8080` automatically via the env resolver.
+
+## Landing (Next.js)
+```bash
+cd frontend/landing
+npm install
+npm run dev   # http://localhost:3000
+```
+Environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_BASE_URL` (default `http://backend:8080` in compose).
+
+## Docker (backend + landing)
+```bash
 docker compose --env-file .env.docker up --build
-```
-Exposes backend on `8000`, web on `3000`. Requires Supabase+Stripe env vars in `.env.docker`.
-
-## Tests & QA
-- Backend: `make backend.test` (pytest). `/readyz` failure path covered.
-- Lint: `make backend.lint`
-- Supabase migrations: `make supabase.migrate`
-- QA: `make qa.teacher` (auth → order → Stripe session → membership)
-- Flutter: `flutter test`
-
-## CI (GitHub Actions)
-- Applies Supabase migrations to the test DB.
-- Installs backend deps, runs pytest.
-- Starts backend, runs QA smoke.
-- Runs `flutter test`.
-
-## MCP (Supabase operations)
-Set `SUPABASE_PAT`, `SUPABASE_DB_URL`, `SUPABASE_SERVICE_ROLE_KEY` in your shell. Use `scripts/mcp_supabase.py` for manual calls (list tables, execute SQL) or let your editor connect via `.vscode/mcp.json`.
-
-## Key commands
-```
-make backend.dev
-make backend.test
-make backend.lint
-make supabase.migrate
-make qa.teacher
-docker compose --env-file .env.docker up --build
+# Backend: http://localhost:8080, Landing: http://localhost:3000
 ```
 
-Release checklist lives in `Inför lansering.md` and reflects the Supabase-first architecture. See `docs/local_backend_setup.md` for OS-specific steps.
+## Deployment (Fly.io)
+- `fly.toml` points to `backend/Dockerfile`, internal port `8080`, HTTP checks on `/healthz` + `/readyz`.
+- Set secrets via `flyctl secrets set` using the keys from `docs/ENV_VARS.md`.
+- Deploy with `flyctl deploy`.
+
+## Tooling
+- Scripts live in `backend/scripts` (and via root symlink `scripts/` for compatibility).
+- MCP Supabase helper: `backend/scripts/mcp_supabase.py` (uses `.vscode/mcp.json`).
+- Course import/QA utilities: see `docs/BACKEND_STRUCTURE.md` and `docs/DEPLOYMENT.md`.
+
+## Documentation
+- Security/rotation: `docs/SECURITY.md`
+- Deployment (Fly.io + compose): `docs/DEPLOYMENT.md`
+- Backend layout/services: `docs/BACKEND_STRUCTURE.md`
+- Env reference: `docs/ENV_VARS.md`

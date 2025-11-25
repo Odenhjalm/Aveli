@@ -6,48 +6,48 @@ Den här filen beskriver hur du kör FastAPI-instansen i `app.mvp.main` och hur 
 
 ```bash
 cd backend
-poetry run uvicorn app.mvp.main:app --reload --host 0.0.0.0 --port 8000
+poetry run uvicorn app.mvp.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 ## Auth
 
 ```bash
 # Registrera konto
-curl -X POST http://127.0.0.1:8000/auth/register \
+curl -X POST http://127.0.0.1:8080/auth/register \
   -H 'content-type: application/json' \
   -d '{"email":"demo@example.com","password":"secret123","display_name":"Demo"}'
 
 # Logga in
-curl -X POST http://127.0.0.1:8000/auth/login \
+curl -X POST http://127.0.0.1:8080/auth/login \
   -H 'content-type: application/json' \
   -d '{"email":"demo@example.com","password":"secret123"}'
 
 # Hämta profil (kräver Authorization header)
 export TOKEN="<ACCESS_TOKEN>"
-curl http://127.0.0.1:8000/auth/me -H "Authorization: Bearer ${TOKEN}"
+curl http://127.0.0.1:8080/auth/me -H "Authorization: Bearer ${TOKEN}"
 ```
 
 ## Services & Orders
 
 ```bash
 # Lista aktiva tjänster
-curl 'http://127.0.0.1:8000/services?status=active'
+curl 'http://127.0.0.1:8080/services?status=active'
 
 # Skapa order för en tjänst (ersätt service_id)
-curl -X POST http://127.0.0.1:8000/orders \
+curl -X POST http://127.0.0.1:8080/orders \
   -H 'Authorization: Bearer '${TOKEN} \
   -H 'content-type: application/json' \
   -d '{"service_id":"<SERVICE_UUID>","amount_cents":15000,"currency":"sek"}'
 
 # Hämta en order
-curl -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:8000/orders/<ORDER_UUID>
+curl -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:8080/orders/<ORDER_UUID>
 ```
 
 ## Payments / Stripe Checkout
 
 ```bash
 # Skapa checkout-session (Payment Element / ui_mode=custom klient bygger på URL:en)
-curl -X POST http://127.0.0.1:8000/payments/stripe/create-session \
+curl -X POST http://127.0.0.1:8080/payments/stripe/create-session \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"order_id":"<ORDER_UUID>","success_url":"http://localhost:3000/success","cancel_url":"http://localhost:3000/cancel"}'
@@ -56,30 +56,30 @@ curl -X POST http://127.0.0.1:8000/payments/stripe/create-session \
 Webhooken körs via Stripe CLI:
 
 ```bash
-stripe listen --forward-to http://127.0.0.1:8000/payments/webhooks/stripe
+stripe listen --forward-to http://127.0.0.1:8080/payments/webhooks/stripe
 ```
 
 ## Billing-subscriptioner
 
 ```bash
 # Skapa subskriptionssession (plan_interval = month | year)
-curl -X POST http://127.0.0.1:8000/billing/create-subscription \
+curl -X POST http://127.0.0.1:8080/billing/create-subscription \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"plan_interval":"month","success_url":"http://localhost:3000/success","cancel_url":"http://localhost:3000/cancel"}'
 
 # Kolla mitt medlemskap
-curl http://127.0.0.1:8000/api/me/membership -H "Authorization: Bearer ${TOKEN}"
+curl http://127.0.0.1:8080/api/me/membership -H "Authorization: Bearer ${TOKEN}"
 ```
 
 ## Feed & SFU
 
 ```bash
 # Publika aktiviteter
-curl http://127.0.0.1:8000/feed
+curl http://127.0.0.1:8080/feed
 
 # Hämta LiveKit-token för seminarium
-curl -X POST http://127.0.0.1:8000/sfu/token \
+curl -X POST http://127.0.0.1:8080/sfu/token \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"seminar_id":"<SEMINAR_UUID>"}'

@@ -28,7 +28,7 @@ Kör detta efter varje schemaändring. Samma script används i CI.
 ```
 cd backend
 poetry install --no-root
-poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 - `/healthz` → livstecken
 - `/readyz` → DB-anslutningstest
@@ -37,7 +37,7 @@ poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 docker compose --env-file .env.docker up --build
 ```
-- Backend: http://127.0.0.1:8000
+- Backend: http://127.0.0.1:8080
 - Web: http://127.0.0.1:3000
 
 ## 6) Flutter
@@ -45,7 +45,7 @@ docker compose --env-file .env.docker up --build
 flutter pub get
 flutter run -d chrome --web-renderer html   # eller emulator
 ```
-Ställ in `API_BASE_URL=http://127.0.0.1:8000` i `.env` för lokala körningar.
+Ställ in `API_BASE_URL=http://127.0.0.1:8080` i `.env` för lokala körningar.
 
 ## 7) QA / tester
 - `make backend.test`

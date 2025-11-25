@@ -6,16 +6,16 @@ Den nya `lib/mvp/`-modulen innehåller en fristående demo som pratar direkt med
 
 | Plattform | Bas-URL |
 | --- | --- |
-| Android emulator | `http://10.0.2.2:8000` |
-| iOS/desktop/web | `http://127.0.0.1:8000` |
-| Override | sätt `--dart-define=MVP_BASE_URL=http://192.168.1.10:8000` |
+| Android emulator | `http://10.0.2.2:8080` |
+| iOS/desktop/web | `http://127.0.0.1:8080` |
+| Override | sätt `--dart-define=MVP_BASE_URL=http://192.168.1.10:8080` |
 
 `MvpAppConfig.resolveBaseUrl()` hanterar ovanstående. För Android emulator används `10.0.2.2`, för övriga plattformar `127.0.0.1` och `dart-define` vinner alltid.
 
 ## Snabbstart
 
 ```bash
-flutter run -d chrome --dart-define=MVP_BASE_URL=http://127.0.0.1:8000 \
+flutter run -d chrome --dart-define=MVP_BASE_URL=http://127.0.0.1:8080 \
   -t lib/mvp/mvp_app.dart
 ```
 

@@ -1,63 +1,81 @@
+# Environment and secrets
+.env
+.env.*
+.envrc
+!.env.example
+!.env.example.backend
+!.env.example.flutter
+!.env.docker.example
+!backend/.env.example
+!frontend/.env.example
+backend/.env
+web/.env
+frontend/.env
+/local/**
+/secrets/**
+/supabase/.temp
+*.pem
+*.key
+*.p8
+*.cert
+*.keystore
+*.jks
+*.sqlite
+**/private-key*
+.vscode/settings.json
+
+# OS / editor noise
+.DS_Store
+.idea/
+.metadata
+*.iml
+
 # Flutter / Dart
 .dart_tool/
 .packages
+.buildlog/
+.pub-cache/
+.flutter-plugins*
+.flutter-plugins-dependencies
+.melos_tool/
 build/
-
-# iOS
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/Flutter.framework
-ios/Flutter/Flutter.podspec
+dist/
 
 # Android
 android/.gradle/
 android/app/build/
 
-# Env / nycklar
-.env
-.env.*
-backend/.env
-web/.env
-!.env.example
-!.env.docker.example
-android/key.properties
-*.pem
-*.key
-*.p8
-*.keystore
-*.jks
-**/private-key*
+# iOS / macOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+macos/Pods/
 
-#other
-.buildlog/
-.pub-cache/
-.flutter-plugins*
-.melos_tool/
-.idea/
-.metadata
-*.iml
+# Desktop Flutter generated artifacts
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
 
 # Python cache
 __pycache__/
 *.py[cod]
 
-# Python virtualenvs (do not commit site-packages)
+# Python virtualenvs
 .venv/
 backend/.venv/
 .venv-filter/
 
-# Local backend media uploads (generated at runtime)
+# Backend runtime and assets
 backend/media/
-
-# Backend static/media assets served via API
 backend/assets/**
 !backend/assets/.gitkeep
 !backend/assets/**/.gitkeep
 
-# Next.js / Node
+# Node / Next / Web
 node_modules/
-web/node_modules/
-web/.next/
+frontend/landing/node_modules/
+frontend/landing/.next/
+frontend/landing/.vercel/
 
 # Repo-specific ignores
 checklist_supabase.md

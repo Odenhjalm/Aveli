@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           SUPABASE_DB_URL=${SUPABASE_DB_URL:?} \
           SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD:?} \
-          scripts/apply_supabase_migrations.sh
+          backend/scripts/apply_supabase_migrations.sh
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -66,7 +66,7 @@ jobs:
       - name: Launch backend for smoke tests
         working-directory: backend
         env:
-          PORT: 8000
+          PORT: 8080
         run: |
           nohup poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT >/tmp/backend.log 2>&1 &
           echo $! > /tmp/backend.pid
@@ -82,7 +82,7 @@ jobs:
 
       - name: QA teacher smoke test
         working-directory: backend
-        run: poetry run python ../scripts/qa_teacher_smoke.py --base-url http://127.0.0.1:8000
+        run: poetry run python scripts/qa_teacher_smoke.py --base-url http://127.0.0.1:8080
 
       - name: Shutdown backend
         if: always()
@@ -102,7 +102,9 @@ jobs:
           channel: stable
 
       - name: Flutter pub get
+        working-directory: frontend
         run: flutter pub get
 
       - name: Flutter tests
+        working-directory: frontend
         run: flutter test

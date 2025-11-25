@@ -19,7 +19,7 @@ AVELI sells fixed-price memberships through Stripe Billing. The backend issues C
    - For every membership tier, create a Product and attach recurring Prices (monthly, yearly, etc.).
    - Record each **Price ID** (`price_…`) and **Product ID** (`prod_…`) so code can map plan codes to Stripe resources.
 4. **Webhook endpoint**
-   - **Development**: install Stripe CLI, run `stripe login`, then `stripe listen --forward-to localhost:8000/api/stripe/webhook`. Copy the printed signing secret (`whsec_…`).
+   - **Development**: install Stripe CLI, run `stripe login`, then `stripe listen --forward-to localhost:8080/api/stripe/webhook`. Copy the printed signing secret (`whsec_…`).
    - **Production**:
      - Navigate to **Developers → Webhooks → Add endpoint**.
      - URL: `https://YOUR_BACKEND_DOMAIN/api/stripe/webhook`.
