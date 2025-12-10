@@ -2,8 +2,10 @@
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import 'package:wisdom/core/auth/auth_controller.dart';
 import 'package:wisdom/core/env/app_config.dart';
 import 'package:wisdom/core/env/env_state.dart';
@@ -72,6 +74,26 @@ class _LandingPageState extends ConsumerState<LandingPage>
   List<Map<String, dynamic>> get _popularItems => _popularCourses.items;
   List<Map<String, dynamic>> get _teacherItems => _teachers.items;
   List<Map<String, dynamic>> get _serviceItems => _services.items;
+
+  bool get _isLandingDomain {
+    final host = Uri.base.host.toLowerCase();
+    return host == 'aveli.app' || host == 'www.aveli.app';
+  }
+
+  Future<void> _openAppPath(String path) async {
+    final normalized = path.startsWith('/') ? path : '/$path';
+    if (_isLandingDomain) {
+      final target = 'https://app.aveli.app$normalized';
+      final launched = await launchUrlString(
+        target,
+        mode: LaunchMode.platformDefault,
+      );
+      if (launched) return;
+    }
+    if (!mounted) return;
+    context.push(normalized);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,7 +122,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
             : 'Miljövariabler saknas: ${info.missingKeys.join(', ')}.';
         showSnack(
           context,
-          '$missing Lägg till nycklar i .env eller via --dart-define.',
+          '$missing Lägg till nycklar via --dart-define eller en lokal env-fil (ej web).',
         );
       });
     }
@@ -352,11 +374,9 @@ class _LandingPageState extends ConsumerState<LandingPage>
   bool _ensureAuthenticatedForCheckout(BuildContext context) {
     final authState = ref.read(authControllerProvider);
     if (authState.isAuthenticated) return true;
-    showSnack(context, 'Logga in för att fortsätta.');
-    final redirectTarget = _currentLandingLocation();
     context.goNamed(
-      AppRoute.login,
-      queryParameters: {'redirect': redirectTarget},
+      AppRoute.signup,
+      queryParameters: {'redirect': RoutePath.subscribe},
     );
     return false;
   }
@@ -445,7 +465,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       TextButton(
                         onPressed: hasEnvIssues
                             ? null
-                            : () => context.pushNamed(AppRoute.login),
+                            : () => _openAppPath(RoutePath.login),
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.white,
                         ),
@@ -454,7 +474,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       TextButton(
                         onPressed: hasEnvIssues
                             ? null
-                            : () => context.pushNamed(AppRoute.signup),
+                            : () => _openAppPath(RoutePath.signup),
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.white70,
                         ),
@@ -511,8 +531,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
                             padding: const EdgeInsets.all(16),
                             child: Text(
                               envInfo.missingKeys.isEmpty
-                                  ? 'API-konfiguration saknas. Lägg till API_BASE_URL i .env eller via --dart-define för att aktivera inloggning.'
-                                  : 'Saknade nycklar: ${envInfo.missingKeys.join(', ')}. Lägg till dem i .env eller via --dart-define för att aktivera inloggning.',
+                                  ? 'API-konfiguration saknas. Lägg till API_BASE_URL via --dart-define (web) eller en lokal env-fil för att aktivera inloggning.'
+                                  : 'Saknade nycklar: ${envInfo.missingKeys.join(', ')}. Lägg till dem via --dart-define (web) eller en lokal env-fil för att aktivera inloggning.',
                               style: t.bodyMedium?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,

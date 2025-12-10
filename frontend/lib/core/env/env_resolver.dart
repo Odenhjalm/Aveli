@@ -1,46 +1,100 @@
-import 'dart:io' show Platform;
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+const _apiBaseUrlDefine =
+    String.fromEnvironment('API_BASE_URL', defaultValue: '');
+const _frontendUrlDefine =
+    String.fromEnvironment('FRONTEND_URL', defaultValue: '');
+const _oauthRedirectWebDefine =
+    String.fromEnvironment('OAUTH_REDIRECT_WEB', defaultValue: '');
+const _supabaseUrlDefine =
+    String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+const _supabasePublishableApiKeyDefine =
+    String.fromEnvironment('SUPABASE_PUBLISHABLE_API_KEY', defaultValue: '');
+const _stripePublishableKeyDefine =
+    String.fromEnvironment('STRIPE_PUBLISHABLE_KEY', defaultValue: '');
+const _stripeMerchantDisplayNameDefine =
+    String.fromEnvironment('STRIPE_MERCHANT_DISPLAY_NAME', defaultValue: '');
+
 class EnvResolver {
-  // URL to use in production builds
-  static const String prodUrl = "https://your-production-backend.com";
+  static String _resolveWithDefine({
+    required String envKey,
+    required String defineValue,
+  }) {
+    final normalizedDefine = defineValue.trim();
+    if (normalizedDefine.isNotEmpty) return normalizedDefine;
+    if (kReleaseMode) return '';
+    return _readEnv(envKey);
+  }
 
-  static String _readEnv(String key, {String defaultValue = ''}) {
+  static String _readEnv(String key) {
     final value = dotenv.maybeGet(key);
-    if (value != null && value.isNotEmpty) {
-      return value;
+    if (value != null && value.trim().isNotEmpty) {
+      return value.trim();
     }
-    return String.fromEnvironment(key, defaultValue: defaultValue);
+    return '';
   }
 
-  static String get supabaseUrl => _readEnv('SUPABASE_URL');
+  static String get frontendUrl => _resolveWithDefine(
+        envKey: 'FRONTEND_URL',
+        defineValue: _frontendUrlDefine,
+      );
 
-  static String get supabaseAnonKey => _readEnv('SUPABASE_ANON_KEY');
+  static String get supabaseUrl => _resolveWithDefine(
+        envKey: 'SUPABASE_URL',
+        defineValue: _supabaseUrlDefine,
+      );
 
-  /// Resolve the correct API base URL depending on platform & build mode.
-  static String get apiBaseUrl {
-    // Optional dart-define for production overrides
-    const buildMode = String.fromEnvironment("BUILD_MODE", defaultValue: "");
+  static String get supabasePublicApiKey => _resolveWithDefine(
+        envKey: 'SUPABASE_PUBLISHABLE_API_KEY',
+        defineValue: _supabasePublishableApiKeyDefine,
+      );
 
-    if (buildMode == "prod") {
-      return prodUrl;
-    }
+  static String get apiBaseUrl => _resolveWithDefine(
+        envKey: 'API_BASE_URL',
+        defineValue: _apiBaseUrlDefine,
+      );
 
-    // Android emulator cannot reach 127.0.0.1 on host.
-    if (Platform.isAndroid) {
-      return "http://10.0.2.2:8080";
-    }
+  static String get oauthRedirectWeb => _resolveWithDefine(
+        envKey: 'OAUTH_REDIRECT_WEB',
+        defineValue: _oauthRedirectWebDefine,
+      );
 
-    // Desktop/Linux/macOS/iOS simulators can connect to local backend directly.
-    if (Platform.isLinux ||
-        Platform.isMacOS ||
-        Platform.isIOS ||
-        Platform.isWindows) {
-      return "http://127.0.0.1:8080";
-    }
+  static String get oauthRedirectMobile => _readEnv('OAUTH_REDIRECT_MOBILE');
 
-    // Fallback
-    return "http://127.0.0.1:8080";
+  static String get stripePublishableKey => _resolveWithDefine(
+        envKey: 'STRIPE_PUBLISHABLE_KEY',
+        defineValue: _stripePublishableKeyDefine,
+      );
+
+  static String get stripeMerchantDisplayName => _resolveWithDefine(
+        envKey: 'STRIPE_MERCHANT_DISPLAY_NAME',
+        defineValue: _stripeMerchantDisplayNameDefine,
+      );
+
+  static bool get subscriptionsEnabled {
+    final raw = _readEnv('SUBSCRIPTIONS_ENABLED');
+    return (raw.isEmpty ? 'false' : raw).toLowerCase() == 'true';
   }
+
+  static bool get imageLoggingEnabled {
+    final raw = _readEnv('IMAGE_LOGGING');
+    return (raw.isEmpty ? 'true' : raw).toLowerCase() != 'false';
+  }
+
+  static void debugLogResolved() {
+    if (!kDebugMode) return;
+    debugPrint(
+      'EnvResolver resolved: '
+      'apiBaseUrl=${_logValue(apiBaseUrl)} '
+      'frontendUrl=${_logValue(frontendUrl)} '
+      'oauthRedirectWeb=${_logValue(oauthRedirectWeb)} '
+      'oauthRedirectMobile=${_logValue(oauthRedirectMobile)} '
+      'supabaseUrl=${_logValue(supabaseUrl)} '
+      'stripeKey=${_logValue(stripePublishableKey)} '
+      'source=${kReleaseMode ? 'dart-define-only' : 'dart-define>dotenv'}',
+    );
+  }
+
+  static String _logValue(String value) => value.isEmpty ? '(empty)' : value;
 }

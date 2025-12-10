@@ -1,31 +1,37 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart'
     show FlutterQuillLocalizations;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:wisdom/l10n/app_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
 
 import 'package:media_kit/media_kit.dart';
+import 'package:wisdom/api/api_client.dart';
+import 'package:wisdom/core/auth/token_storage.dart';
 import 'package:wisdom/core/env/app_config.dart';
 import 'package:wisdom/core/env/env_resolver.dart';
 import 'package:wisdom/core/env/env_state.dart';
+import 'package:wisdom/core/web_url.dart' as web_url;
 import 'package:wisdom/shared/utils/image_error_logger.dart';
-
-import 'shared/theme/light_theme.dart';
-import 'shared/widgets/background_layer.dart';
-import 'core/routing/app_router.dart';
-import 'shared/theme/controls.dart';
 import 'package:wisdom/core/auth/auth_http_observer.dart';
 import 'package:wisdom/core/auth/auth_controller.dart' hide AuthState;
 import 'package:wisdom/features/paywall/application/entitlements_notifier.dart';
 import 'package:wisdom/core/routing/app_routes.dart';
 import 'package:wisdom/core/routing/route_paths.dart';
+import 'package:wisdom/core/deeplinks/deep_link_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
+
+import 'shared/theme/light_theme.dart';
+import 'shared/widgets/background_layer.dart';
+import 'core/routing/app_router.dart';
+import 'shared/theme/controls.dart';
+import 'shared/utils/l10n.dart';
 
 void main() {
   runZonedGuarded(
@@ -47,38 +53,61 @@ void main() {
         return false;
       };
 
-      MediaKit.ensureInitialized();
-      try {
-        await dotenv.load(fileName: '.env');
-      } catch (_) {
-        // Filen är valfri; saknas den så förlitar vi oss på --dart-define eller runtime vars.
+      if (kIsWeb) {
+        final base = Uri.base;
+        final hasAuthError = base.queryParameters.containsKey('error') ||
+            base.queryParameters.containsKey('error_description');
+        final fragmentHasAuth =
+            base.fragment.contains('access_token') ||
+            base.fragment.contains('refresh_token') ||
+            base.fragment.contains('code=') ||
+            base.fragment.contains('token_type');
+        if (hasAuthError || base.path.contains('login-callback')) {
+          final normalized = web_url.normalizeLoginCallbackUrl(base);
+          web_url.replaceBrowserUrl(normalized.toString());
+        } else if (fragmentHasAuth) {
+          debugPrint('OAuth fragment detected, preserving Uri.fragment for Supabase session parse.');
+        }
       }
-      final rawBaseUrl =
-          dotenv.maybeGet('API_BASE_URL') ??
-          const String.fromEnvironment('API_BASE_URL');
+
+      MediaKit.ensureInitialized();
+      if (!kIsWeb) {
+        await _loadEnvFile(requiredFile: false);
+      } else {
+        debugPrint('Skipping dotenv load on web; use --dart-define for config.');
+      }
+      debugPrint('ENV KEYS: ${dotenv.env.keys}');
+      debugPrint(
+        'DOTENV STRIPE_PUBLISHABLE_KEY=${dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY')}',
+      );
+      debugPrint(
+        'DOTENV SUPABASE_PUBLISHABLE_API_KEY=${dotenv.maybeGet('SUPABASE_PUBLISHABLE_API_KEY')}',
+      );
+      EnvResolver.debugLogResolved();
+
+      final rawBaseUrl = EnvResolver.apiBaseUrl;
       final baseUrl = _resolveApiBaseUrl(rawBaseUrl);
-      final publishableKey =
-          dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY') ??
-          const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY');
-      final merchantDisplayName =
-          dotenv.maybeGet('STRIPE_MERCHANT_DISPLAY_NAME') ??
-          const String.fromEnvironment('STRIPE_MERCHANT_DISPLAY_NAME');
-      final subscriptionsEnabledRaw =
-          dotenv.maybeGet('SUBSCRIPTIONS_ENABLED') ??
-          const String.fromEnvironment(
-            'SUBSCRIPTIONS_ENABLED',
-            defaultValue: 'false',
-          );
-      final subscriptionsEnabled =
-          subscriptionsEnabledRaw.toLowerCase() == 'true';
+      final publishableKey = EnvResolver.stripePublishableKey;
+      final merchantDisplayName = EnvResolver.stripeMerchantDisplayName;
+      final subscriptionsEnabled = EnvResolver.subscriptionsEnabled;
 
       final supabaseUrl = EnvResolver.supabaseUrl;
-      final supabaseAnonKey = EnvResolver.supabaseAnonKey;
+      final supabaseAnonKey = EnvResolver.supabasePublicApiKey;
+      final oauthRedirectWeb = EnvResolver.oauthRedirectWeb;
+      final oauthRedirectMobile = EnvResolver.oauthRedirectMobile;
+      final redirectTo = kIsWeb ? oauthRedirectWeb : oauthRedirectMobile;
 
-      final imageLoggingRaw =
-          dotenv.maybeGet('IMAGE_LOGGING') ??
-          const String.fromEnvironment('IMAGE_LOGGING', defaultValue: 'true');
-      final imageLoggingEnabled = imageLoggingRaw.toLowerCase() != 'false';
+      final imageLoggingEnabled = EnvResolver.imageLoggingEnabled;
+
+      if (kDebugMode) {
+        debugPrint(
+          'Env resolved apiBase=$baseUrl '
+          'supabase=$supabaseUrl '
+          'publicKey=${supabaseAnonKey.isEmpty ? "(empty)" : "(provided)"} '
+          'redirectWeb=$oauthRedirectWeb '
+          'redirectMobile=$oauthRedirectMobile',
+        );
+      }
 
       final missingKeys = <String>[];
       if (rawBaseUrl.isEmpty) {
@@ -87,27 +116,46 @@ void main() {
       if (publishableKey.isEmpty) {
         missingKeys.add('STRIPE_PUBLISHABLE_KEY');
       }
-      if (merchantDisplayName.isEmpty) {
-        missingKeys.add('STRIPE_MERCHANT_DISPLAY_NAME');
-      }
       if (supabaseUrl.isEmpty) {
         missingKeys.add('SUPABASE_URL');
       }
       if (supabaseAnonKey.isEmpty) {
-        missingKeys.add('SUPABASE_ANON_KEY');
+        missingKeys.add('SUPABASE_PUBLISHABLE_API_KEY');
+      }
+      if (oauthRedirectWeb.isEmpty) {
+        missingKeys.add('OAUTH_REDIRECT_WEB');
+      }
+      if (oauthRedirectMobile.isEmpty) {
+        missingKeys.add('OAUTH_REDIRECT_MOBILE');
+      }
+
+      if (missingKeys.isNotEmpty) {
+        throw StateError(
+          'Missing required environment keys: ${missingKeys.join(', ')}. '
+          +
+              (kIsWeb
+                  ? 'Provide them via --dart-define for Flutter Web.'
+                  : 'Provide them via --dart-define or a local environment file.'),
+        );
+      }
+
+      if (redirectTo.isEmpty) {
+        throw StateError(
+          'OAuth redirect saknas. Sätt OAUTH_REDIRECT_WEB/OAUTH_REDIRECT_MOBILE.',
+        );
       }
 
       if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
         await supa.Supabase.initialize(
-          url: EnvResolver.supabaseUrl,
-          anonKey: EnvResolver.supabaseAnonKey,
+          url: supabaseUrl,
+          anonKey: supabaseAnonKey,
           authOptions: const supa.FlutterAuthClientOptions(
             authFlowType: supa.AuthFlowType.pkce,
           ),
         );
       } else {
         debugPrint(
-          'Supabase config saknas. Checkout/token-flöden kan kräva SUPABASE_URL och SUPABASE_ANON_KEY.',
+          'Supabase config saknas. Checkout/token-flöden kan kräva SUPABASE_URL och SUPABASE_PUBLISHABLE_API_KEY.',
         );
       }
 
@@ -139,6 +187,14 @@ void main() {
       final envInfo = missingKeys.isEmpty
           ? envInfoOk
           : EnvInfo(status: EnvStatus.missing, missingKeys: missingKeys);
+
+      final healthOk = await ApiClient(
+        baseUrl: baseUrl,
+        tokenStorage: const TokenStorage(),
+      ).checkHealth();
+      if (!healthOk && kDebugMode) {
+        debugPrint('Health check failed for $baseUrl');
+      }
 
       // Warn in release builds if API_BASE_URL is not HTTPS.
       if (kReleaseMode && baseUrl.startsWith('http://')) {
@@ -200,6 +256,27 @@ String _resolveApiBaseUrl(String url) {
   return url;
 }
 
+Future<void> _loadEnvFile({required bool requiredFile}) async {
+  if (kIsWeb) {
+    debugPrint('Skipping dotenv load on web (dart-define only).');
+    return;
+  }
+  const fileName = String.fromEnvironment('DOTENV_FILE', defaultValue: '');
+  if (fileName.isEmpty) {
+    debugPrint('No DOTENV_FILE provided; relying on runtime environment and dart-define.');
+    return;
+  }
+  try {
+    await dotenv.load(fileName: fileName);
+  } catch (error) {
+    final message = 'Could not load $fileName ($error)';
+    if (requiredFile) {
+      throw StateError(message);
+    }
+    debugPrint('Warning: $message');
+  }
+}
+
 class WisdomApp extends ConsumerWidget {
   const WisdomApp({super.key});
 
@@ -211,6 +288,10 @@ class WisdomApp extends ConsumerWidget {
     // Sync image logging toggle from AppConfig.
     final cfg = ref.watch(appConfigProvider);
     ImageErrorLogger.enabled = cfg.imageLoggingEnabled;
+    final deepLinks = ref.watch(deepLinkServiceProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      deepLinks.init();
+    });
     ref.listen<AsyncValue<AuthHttpEvent>>(authHttpEventsProvider, (
       previous,
       next,
@@ -276,16 +357,31 @@ class WisdomApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      title: 'Aveli',
+      onGenerateTitle: (context) => context.l10n.appTitle,
       theme: buildLightTheme(),
       themeMode: ThemeMode.light,
       localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
+        ...AppLocalizations.localizationsDelegates,
         FlutterQuillLocalizations.delegate,
       ],
-      supportedLocales: const [Locale('en'), Locale('sv')],
+      supportedLocales: AppLocalizations.supportedLocales,
+      localeListResolutionCallback: (locales, supported) {
+        if (locales != null) {
+          for (final locale in locales) {
+            if (supported.contains(locale)) return locale;
+            final languageMatch = supported.firstWhere(
+              (supportedLocale) =>
+                  supportedLocale.languageCode == locale.languageCode,
+              orElse: () => const Locale('en'),
+            );
+            if (languageMatch.languageCode == locale.languageCode) {
+              return languageMatch;
+            }
+          }
+        }
+        return const Locale('en');
+      },
+      scrollBehavior: const AveliScrollBehavior(),
       scaffoldMessengerKey: _messengerKey,
       routerConfig: router,
       builder: (context, child) {
@@ -300,4 +396,27 @@ class WisdomApp extends ConsumerWidget {
       },
     );
   }
+}
+
+class AveliScrollBehavior extends MaterialScrollBehavior {
+  const AveliScrollBehavior();
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    final platform = getPlatform(context);
+    if (platform == TargetPlatform.iOS || platform == TargetPlatform.android) {
+      return const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      );
+    }
+    return const ClampingScrollPhysics();
+  }
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
 }
