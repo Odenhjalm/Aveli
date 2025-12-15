@@ -49,6 +49,15 @@ async def _claims_for_user(user_id: str, profile: dict | None = None) -> dict:
     }
 
 
+@router.post("/oauth")
+async def oauth_legacy_disabled():
+    # Legacy backend OAuth endpoint is disabled in favor of Supabase client-side OAuth.
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy OAuth endpoint disabled. Use Supabase OAuth.",
+    )
+
+
 @router.post(
     "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
 )
