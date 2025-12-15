@@ -12,12 +12,9 @@ import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
 
 import 'package:media_kit/media_kit.dart';
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/auth/token_storage.dart';
 import 'package:wisdom/core/env/app_config.dart';
 import 'package:wisdom/core/env/env_resolver.dart';
 import 'package:wisdom/core/env/env_state.dart';
-import 'package:wisdom/core/web_url.dart' as web_url;
 import 'package:wisdom/shared/utils/image_error_logger.dart';
 import 'package:wisdom/core/auth/auth_http_observer.dart';
 import 'package:wisdom/core/auth/auth_controller.dart' hide AuthState;
@@ -55,17 +52,12 @@ void main() {
 
       if (kIsWeb) {
         final base = Uri.base;
-        final hasAuthError = base.queryParameters.containsKey('error') ||
-            base.queryParameters.containsKey('error_description');
         final fragmentHasAuth =
             base.fragment.contains('access_token') ||
             base.fragment.contains('refresh_token') ||
             base.fragment.contains('code=') ||
             base.fragment.contains('token_type');
-        if (hasAuthError || base.path.contains('login-callback')) {
-          final normalized = web_url.normalizeLoginCallbackUrl(base);
-          web_url.replaceBrowserUrl(normalized.toString());
-        } else if (fragmentHasAuth) {
+        if (fragmentHasAuth) {
           debugPrint('OAuth fragment detected, preserving Uri.fragment for Supabase session parse.');
         }
       }
@@ -187,14 +179,6 @@ void main() {
       final envInfo = missingKeys.isEmpty
           ? envInfoOk
           : EnvInfo(status: EnvStatus.missing, missingKeys: missingKeys);
-
-      final healthOk = await ApiClient(
-        baseUrl: baseUrl,
-        tokenStorage: const TokenStorage(),
-      ).checkHealth();
-      if (!healthOk && kDebugMode) {
-        debugPrint('Health check failed for $baseUrl');
-      }
 
       // Warn in release builds if API_BASE_URL is not HTTPS.
       if (kReleaseMode && baseUrl.startsWith('http://')) {
