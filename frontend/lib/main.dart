@@ -51,18 +51,22 @@ void main() {
         await MediaKit.ensureInitialized();
       }
       await _ensureDotEnvInitialized();
+      final env = dotenv.isInitialized
+          ? Map<String, String>.from(dotenv.env)
+          : const <String, String>{};
+
+      EnvResolver.seedFrom(env);
+
       final rawBaseUrl =
-          dotenv.maybeGet('API_BASE_URL') ??
-          const String.fromEnvironment('API_BASE_URL');
+          env['API_BASE_URL'] ?? const String.fromEnvironment('API_BASE_URL');
       final baseUrl = _resolveApiBaseUrl(rawBaseUrl);
-      final publishableKey =
-          dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY') ??
+      final publishableKey = env['STRIPE_PUBLISHABLE_KEY'] ??
           const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY');
       final merchantDisplayName =
-          dotenv.maybeGet('STRIPE_MERCHANT_DISPLAY_NAME') ??
+          env['STRIPE_MERCHANT_DISPLAY_NAME'] ??
           const String.fromEnvironment('STRIPE_MERCHANT_DISPLAY_NAME');
       final subscriptionsEnabledRaw =
-          dotenv.maybeGet('SUBSCRIPTIONS_ENABLED') ??
+          env['SUBSCRIPTIONS_ENABLED'] ??
           const String.fromEnvironment(
             'SUBSCRIPTIONS_ENABLED',
             defaultValue: 'false',
@@ -73,8 +77,7 @@ void main() {
       final supabaseUrl = EnvResolver.supabaseUrl;
       final supabaseAnonKey = EnvResolver.supabaseAnonKey;
 
-      final imageLoggingRaw =
-          dotenv.maybeGet('IMAGE_LOGGING') ??
+      final imageLoggingRaw = env['IMAGE_LOGGING'] ??
           const String.fromEnvironment('IMAGE_LOGGING', defaultValue: 'true');
       final imageLoggingEnabled = imageLoggingRaw.toLowerCase() != 'false';
 

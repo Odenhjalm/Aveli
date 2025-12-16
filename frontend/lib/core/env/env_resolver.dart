@@ -1,12 +1,17 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class EnvResolver {
+  static Map<String, String> _env = const {};
+
+  static void seedFrom(Map<String, String> env) {
+    _env = Map.unmodifiable(env);
+  }
+
   // URL to use in production builds
   static const String prodUrl = "https://your-production-backend.com";
 
   static String _readEnv(String key, {String defaultValue = ''}) {
-    final value = dotenv.isInitialized ? dotenv.maybeGet(key) : null;
+    final value = _env[key];
     if (value != null && value.isNotEmpty) {
       return value;
     }
