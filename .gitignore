@@ -29,6 +29,7 @@ frontend/.env
 .idea/
 .metadata
 *.iml
+*.log
 
 # Flutter / Dart
 .dart_tool/
@@ -77,6 +78,17 @@ frontend/landing/node_modules/
 frontend/landing/.next/
 frontend/landing/.vercel/
 
+# Deployment / hosting state
+/.netlify/
+frontend/.netlify/
+
+# Runtime / ops noise
+/backend_uvicorn.log
+/ops_reports/
+/backend/ops_reports/
+/codex_output/
+/logs/
+
 # Repo-specific ignores
 checklist_supabase.md
 runs_snapshot.sh
@@ -86,6 +98,8 @@ out/
 *.wav
 *.jpg
 *.png
+!frontend/assets/images/
+!frontend/assets/images/**
 
 # Legacy frontend asset exceptions
 assets/backend/***
