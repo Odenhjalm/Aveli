@@ -1,0 +1,33 @@
+--- /home/oden/Aveli/backend/env/.env
++++ /home/oden/Aveli/backend/env/.env
+@@ -18,7 +18,7 @@
+ MEDIA_SIGNING_DURATION=3600
+ # 🗄️ Supabase Postgres (primary database)
+ SUPABASE_DB_URL=postgresql://postgres:e2Vb2bGroJykVUVj@db.evgwgepnscopsiznqkqc.supabase.co:5432/postgres
+-FRONTEND_URL=https://aveli.app
++FRONTEND_URL=http://localhost:4003
+ # 🔧 Miljöinställningar
+ DEBUG=true
+ ENV=development
+--- /home/oden/Aveli/frontend/.env
++++ /home/oden/Aveli/frontend/.env
+@@ -22,7 +22,7 @@
+ MEDIA_SIGNING_DURATION=3600
+ # 🗄️ Supabase Postgres (primary database)
+ SUPABASE_DB_URL=postgresql://postgres:e2Vb2bGroJykVUVj@db.evgwgepnscopsiznqkqc.supabase.co:5432/postgres
+-FRONTEND_URL=https://aveli.app
++FRONTEND_URL=http://localhost:4003
+ # 🔧 Miljöinställningar
+ DEBUG=true
+ ENV=development
+--- /home/oden/Aveli/frontend/env/.env
++++ /home/oden/Aveli/frontend/env/.env
+@@ -18,7 +18,7 @@
+ MEDIA_SIGNING_DURATION=3600
+ # 🗄️ Supabase Postgres (primary database)
+ SUPABASE_DB_URL=postgresql://postgres:e2Vb2bGroJykVUVj@db.evgwgepnscopsiznqkqc.supabase.co:5432/postgres
+-FRONTEND_URL=https://aveli.app
++FRONTEND_URL=http://localhost:4003
+ # 🔧 Miljöinställningar
+ DEBUG=true
+ ENV=development

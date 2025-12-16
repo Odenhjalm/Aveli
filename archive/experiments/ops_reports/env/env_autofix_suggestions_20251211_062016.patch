@@ -1,0 +1,21 @@
+--- /home/oden/Aveli/backend/.env
++++ /home/oden/Aveli/backend/.env
+@@ -17,7 +17,7 @@
+ OAUTH_REDIRECT_MOBILE=aveliapp://auth-callback
+ MEDIA_SIGNING_SECRET=fc356df31eafee21f8adb360862d4332c605bc399397a1cea6ccfd2afe54cb37
+ MEDIA_SIGNING_DURATION=3600
+-FRONTEND_URL=https://aveli.app
++FRONTEND_URL=http://localhost:4003
+ DEBUG=true
+ LIVEKIT_WEBHOOK_SECRET=qkaG4Jq9asCMOjBoZB05fCdIWE2jv2Gu7HJxoYsGAsR
+ LIVEKIT_WS_URL=wss://soulsaveli-zyt783ej.livekit.cloud
+--- /home/oden/Aveli/backend/.env.local
++++ /home/oden/Aveli/backend/.env.local
+@@ -1,6 +1,6 @@
+ 
+ # OAuth redirect sync (dev/local)
+-OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback
++OAUTH_REDIRECT_WEB=http://localhost:4003/auth/callback
+ # Production OAuth redirect
+ OAUTH_REDIRECT_WEB_PROD=https://aveli.app/login-callback
+ SUPABASE_URL=https://aiftpfyrqjhstcnblyhb.supabase.co

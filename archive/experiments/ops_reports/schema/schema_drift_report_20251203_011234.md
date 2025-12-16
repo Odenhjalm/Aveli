@@ -1,0 +1,78 @@
+# Schema Drift Report
+
+## Schema drift (auth/app)
+- Issues: auth.users: expected columns not parsed from migrations; app.profiles: extra columns in DB -> avatar_media_id, stripe_customer_id; app.profiles: type mismatches -> role_v2 expected app.user_role got USER-DEFINED; created_at expected timestamptz got timestamp with time zone; role expected app.profile_role got USER-DEFINED; updated_at expected timestamptz got timestamp with time zone
+- Actions: Proposed migration: /home/oden/Aveli/supabase/migrations/autofix_auth_20251203_011234.sql
+
+```json
+{
+  "expected_columns": {
+    "auth.users": {},
+    "app.profiles": {
+      "user_id": "uuid",
+      "email": "text",
+      "display_name": "text",
+      "role": "app.profile_role",
+      "role_v2": "app.user_role",
+      "bio": "text",
+      "photo_url": "text",
+      "is_admin": "boolean",
+      "created_at": "timestamptz",
+      "updated_at": "timestamptz"
+    }
+  },
+  "db_columns": {
+    "auth.users": {
+      "instance_id": "uuid",
+      "id": "uuid",
+      "aud": "character varying",
+      "role": "character varying",
+      "email": "character varying",
+      "encrypted_password": "character varying",
+      "email_confirmed_at": "timestamp with time zone",
+      "invited_at": "timestamp with time zone",
+      "confirmation_token": "character varying",
+      "confirmation_sent_at": "timestamp with time zone",
+      "recovery_token": "character varying",
+      "recovery_sent_at": "timestamp with time zone",
+      "email_change_token_new": "character varying",
+      "email_change": "character varying",
+      "email_change_sent_at": "timestamp with time zone",
+      "last_sign_in_at": "timestamp with time zone",
+      "raw_app_meta_data": "jsonb",
+      "raw_user_meta_data": "jsonb",
+      "is_super_admin": "boolean",
+      "created_at": "timestamp with time zone",
+      "updated_at": "timestamp with time zone",
+      "phone": "text",
+      "phone_confirmed_at": "timestamp with time zone",
+      "phone_change": "text",
+      "phone_change_token": "character varying",
+      "phone_change_sent_at": "timestamp with time zone",
+      "confirmed_at": "timestamp with time zone",
+      "email_change_token_current": "character varying",
+      "email_change_confirm_status": "smallint",
+      "banned_until": "timestamp with time zone",
+      "reauthentication_token": "character varying",
+      "reauthentication_sent_at": "timestamp with time zone",
+      "is_sso_user": "boolean",
+      "deleted_at": "timestamp with time zone",
+      "is_anonymous": "boolean"
+    },
+    "app.profiles": {
+      "user_id": "uuid",
+      "email": "text",
+      "display_name": "text",
+      "role": "USER-DEFINED",
+      "role_v2": "USER-DEFINED",
+      "bio": "text",
+      "photo_url": "text",
+      "is_admin": "boolean",
+      "created_at": "timestamp with time zone",
+      "updated_at": "timestamp with time zone",
+      "avatar_media_id": "uuid",
+      "stripe_customer_id": "text"
+    }
+  }
+}
+```

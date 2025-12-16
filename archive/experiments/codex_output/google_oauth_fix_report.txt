@@ -1,0 +1,6 @@
+=== OAuth repair summary at 2025-12-03T02:51:30.437185+00:00 ===
+auth.instances rows (1): [(UUID('55365731-0860-4de4-8d5b-374b05c56c6f'), UUID('2f1d5a48-9062-4af5-a25a-51346bb1a9d9'), '{}', datetime.datetime(2025, 12, 3, 2, 19, 46, 60891, tzinfo=datetime.timezone.utc), datetime.datetime(2025, 12, 3, 2, 19, 46, 60891, tzinfo=datetime.timezone.utc))]
+auth.users instance_id distribution: [(UUID('55365731-0860-4de4-8d5b-374b05c56c6f'), 140)]
+auth.users null instance_id: 0
+auth.identities columns: [('provider_id',), ('user_id',), ('identity_data',), ('provider',), ('last_sign_in_at',), ('created_at',), ('updated_at',), ('email',), ('id',)]
+auth.identities row count: 1

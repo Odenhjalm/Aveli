@@ -1,0 +1,41 @@
+# OAuth/Auth System Audit – Aveli
+
+## Configuration Discovered
+- **Frontend env (frontend/.env & frontend/env/.env)**: `SUPABASE_URL=https://evgwgepnscopsiznqkqc.supabase.co`; public API key present (redacted); `API_BASE_URL=http://127.0.0.1:8000`; `OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback`; `OAUTH_REDIRECT_MOBILE=aveliapp://auth-callback`; Stripe keys present; stray `APP_ENV` line unused.
+- **Env resolution**: Supabase init uses PKCE (`FlutterAuthClientOptions`); EnvResolver falls back to dart-define values first, else dotenv. Redirect builder (`AuthRepository._resolveRedirectTo`) defaults to `http://localhost:4003/login-callback` / `aveliapp://auth-callback` regardless of release mode unless env/dart-define overrides. Runtime env loader tries `.env` then `env/.env`, but these files are not listed under `assets:` in `pubspec.yaml` (risk of 404 in web/mobile builds).
+- **Routing / callback handling**: `/login-callback` route exists and is public (redirectAuthed=true) in `frontend/lib/core/routing/app_router.dart`; fragment `#/login-callback` handled. Mobile `DeepLinkService` consumes OAuth URIs via `getSessionFromUrl(storeSession: true)` then routes to `/login-callback` with the original URI in `extra`. `AuthController` also calls `getSessionFromUrl` inside `_recoverSupabaseSessionFromUrl` and will exchange any current Supabase session via `/auth/oauth` (`_finalizeSupabaseSession`), including auth-state listener triggers.
+- **Backend env (backend/env/.env)**: `SUPABASE_URL=https://evgwgepnscopsiznqkqc.supabase.co`; public & secret API keys present; `SUPABASE_JWKS_URL=https://evgwgepnscopsiznqkqc.supabase.co/auth/v1/jwks`; `SUPABASE_DB_URL` points to the same Supabase project; `API_BASE_URL=http://127.0.0.1:8000`; `FRONTEND_BASE_URL=http://localhost:4003`; `FRONTEND_URL=https://aveli.app`; OAuth redirect vars duplicated (dev/prod). `APP_ENV=development`.
+- **Backend behavior**: `/auth/oauth` (backend/app/routes/api_auth.py) verifies Supabase JWT via JWKS and returns 401 “User not found for provider token” if `auth.users` lacks the subject. CORS allows `http://localhost:4003`, `http://127.0.0.1:4003`, `https://aveli.app`, `https://www.aveli.app`.
+- **Supabase project (management API)**: `site_url=http://localhost:4003`; `uri_allow_list` = `http://localhost:4003/login-callback`, `http://localhost:4003/#/login-callback`, `http://localhost:4003`, `https://aveli.app/login-callback`, `https://aveli.app`, `https://aveli.app/stripe/success`, `https://aveli.app/stripe/cancel`, `https://evgwgepnscopsiznqkqc.supabase.co/auth/v1/callback`; `external_google_enabled=true`; `external_google_client_id=561287324146-1chni5a7s223spolju73kcaaiijbqliv.apps.googleusercontent.com`; `external_google_client_secret` not returned (null in response).
+- **Fly.io**: `fly.toml` runs backend on port 8080 with `APP_ENV=production`; docker/dev scripts default to port 8080.
+
+## Mismatches & Risks
+- Supabase **Site URL is locked to http://localhost:4003** while production runs on https://aveli.app (and CORS allows https://www.aveli.app). Password reset / default redirects and any OAuth flow without explicit `redirectTo` will bounce to localhost. (Supabase auth config)
+- **API base port drift**: Flutter envs point at `http://127.0.0.1:8000` while backend scripts/compose/Fly run on `8080`, so OAuth exchanges (`/auth/oauth`) and health checks will miss the live backend unless overridden per run. (frontend/.env, frontend/env/.env vs backend defaults)
+- **Env delivery gap**: `.env` / `env/.env` are not bundled as Flutter assets; web/mobile release builds will 404 these files, leaving Supabase URL/public API key/redirects empty and falling back to hardcoded localhost defaults. This can send production users to the wrong Supabase project or redirect host. (pubspec.yaml, frontend/lib/main.dart)
+- **Redirect fallback inconsistency**: `AuthRepository._resolveRedirectTo` keeps `http://localhost:4003/login-callback` as the compile-time default even in release unless an env/define overrides, while `main.dart` expects `https://aveli.app/login-callback` in release. If envs are missing in CI/release, Supabase will redirect to localhost despite the production build. (frontend/lib/api/auth_repository.dart, frontend/lib/main.dart)
+- **Double-consumption/race on mobile OAuth**: `DeepLinkService` calls `getSessionFromUrl` and routes to `/login-callback`, while the auth-state listener and `OAuthCallbackScreen.completeOAuthRedirect` both run `_finalizeSupabaseSession` (with `rethrowOnError=true`, bypassing the in-flight guard). Two `/auth/oauth` exchanges can fire for one Google redirect, causing flaky failures. (frontend/lib/core/deeplinks/deep_link_service.dart; frontend/lib/core/auth/auth_controller.dart)
+- **www-domain gap**: Supabase allow list lacks `https://www.aveli.app` even though backend CORS allows it; any Google Console entry or frontend deployment using `www` will be rejected by Supabase. (Supabase auth config)
+
+## Root Causes for “User not found” (backend /auth/oauth)
+- `/auth/oauth` returns “User not found for provider token” only when the Supabase access token’s `sub` does not exist in `auth.users` of the backend’s database. The current setup makes this most likely when the frontend issues tokens from a different Supabase project/redirect host because env files are missing in the built app and fall back to the localhost defaults (Site URL + redirect defaults point to localhost; env assets are not bundled). Tokens from the wrong project decode but don’t match the backend DB → 401 “User not found”.
+- Secondary contributor on mobile: the double-exchange path can race two `/auth/oauth` calls; if the first fails (e.g., hitting the wrong backend port) while the second proceeds with a stale token, it can surface as intermittent “user not found”.
+
+## Files / Systems to Update
+- Supabase dashboard → Authentication → Settings: set `Site URL` to `https://aveli.app` (add `https://www.aveli.app` if used); keep allow list in sync.
+- `frontend/.env`, `frontend/env/.env`: align `API_BASE_URL` with the running backend port (8080) and ensure production redirect values are present.
+- `frontend/pubspec.yaml`: include the chosen env file (e.g., `env/.env`) in `assets:` or switch to enforced dart-defines so web builds don’t 404 env.
+- `frontend/lib/api/auth_repository.dart` + `frontend/lib/main.dart`: unify release defaults for `OAUTH_REDIRECT_WEB` (prefer https in release) to avoid localhost fallback.
+- `frontend/lib/core/deeplinks/deep_link_service.dart` + `frontend/lib/core/auth/auth_controller.dart`: add a single gate so OAuth callbacks are exchanged once per redirect.
+
+## Minimal Patch Plan
+1) **Supabase settings**: Update `site_url` to `https://aveli.app`, add `https://www.aveli.app/login-callback` to the allow list if `www` is used, and confirm Google provider still points to the same client ID.  
+2) **Frontend config delivery**: Either ship `env/.env` via `assets:` or require dart-defines in build scripts; normalize `API_BASE_URL` to 8080 in the shared envs and ensure prod defines set `OAUTH_REDIRECT_WEB=https://aveli.app/login-callback`.  
+3) **Redirect + handler hardening**: Align release defaults in `AuthRepository._resolveRedirectTo` with `main.dart` (https in release), and short-circuit duplicate `_finalizeSupabaseSession` calls when a Supabase session already triggered an exchange (especially after DeepLinkService on mobile).
+
+## Verification Plan
+1) Re-run Supabase management API (`https://api.supabase.com/v1/projects/<ref>/config/auth`) to confirm `site_url` and allow list after edits.  
+2) Build Flutter web with the fixed env delivery (or dart-defines) and run on `http://localhost:4003`; perform Google login and confirm a single `/auth/oauth` hit and profile creation.  
+3) Repeat with a production-config build (https redirect) against the live backend; verify redirects land on `https://aveli.app/login-callback` and Supabase logs show accepted redirect URL.  
+4) Mobile: trigger a Google login deep link; confirm only one `/auth/oauth` request is issued and the session persists after app restart.  
+5) Sanity-check backend CORS/health on the chosen port (8080) and that `SUPABASE_JWKS_URL` matches the project used by the frontend tokens.

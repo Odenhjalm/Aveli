@@ -1,0 +1,16 @@
+FOUND issues:
+- auth.users had 139 users with NULL aud/role; OAuth confirmation defaults missing for live env fallback
+- Env files lacked synchronized OAuth redirect entries and production/live stubs; CORS headers/methods were restricted
+
+FIXED issues:
+- Set aud/role to 'authenticated' for 139 auth.users rows; verified no orphaned OAuth users/zombies
+- Supabase Google provider already allowed http://localhost:4003/login-callback and https://aveli.app/login-callback (no patch needed)
+- Added OAUTH_REDIRECT_WEB_PROD plus dev/live env files (backend/.env, backend/.env.local, frontend/.env.dev, frontend/.env.live) and updated existing envs
+- EnvResolver now defaults to https redirect when APP_ENV=live; dev/test stays on localhost
+- CORS now allows credentials with all headers/methods to support Supabase session return
+
+Remaining manual tasks:
+- Ensure production deployments inject full env/secret set with APP_ENV=live and OAUTH_REDIRECT_WEB=https://aveli.app/login-callback
+- Run a full Google OAuth login in the app/web to confirm session exchange with the backend
+
+Google login ready for test: YES

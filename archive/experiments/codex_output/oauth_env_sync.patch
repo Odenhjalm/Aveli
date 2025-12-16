@@ -1,0 +1,77 @@
+*** Begin Patch
+*** Update File: backend/app/main.py
+@@
+-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+-    allow_headers=[
+-        "Authorization",
+-        "Content-Type",
+-        "X-Client-Session",
+-    ],
++    allow_methods=["*"],
++    allow_headers=["*"],
+ )
+*** End Patch
+*** Begin Patch
+*** Update File: frontend/lib/core/env/env_resolver.dart
+@@
+-  static String get oauthRedirectWeb => _readEnv(
+-    'OAUTH_REDIRECT_WEB',
+-    defaultValue: 'http://localhost:4003/login-callback',
+-  );
++  static String get oauthRedirectWeb {
++    final defaultRedirect = appEnv == 'live'
++        ? 'https://aveli.app/login-callback'
++        : 'http://localhost:4003/login-callback';
++    return _readEnv(
++      'OAUTH_REDIRECT_WEB',
++      defaultValue: defaultRedirect,
++    );
++  }
+*** End Patch
+*** Begin Patch
+*** Update File: backend/env/.env
+@@
+ OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback
++OAUTH_REDIRECT_WEB_PROD=https://aveli.app/login-callback
+ OAUTH_REDIRECT_MOBILE=aveliapp://auth-callback
+*** End Patch
+*** Begin Patch
+*** Update File: frontend/.env
+@@
+ OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback
++OAUTH_REDIRECT_WEB_PROD=https://aveli.app/login-callback
+ OAUTH_REDIRECT_MOBILE=aveliapp://auth-callback# Misc
+*** End Patch
+*** Begin Patch
+*** Update File: frontend/env/.env
+@@
+ OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback
++OAUTH_REDIRECT_WEB_PROD=https://aveli.app/login-callback
+ OAUTH_REDIRECT_MOBILE=aveliapp://auth-callback
+*** End Patch
+*** Begin Patch
+*** Add File: backend/.env
++# OAuth redirect sync (dev/local)
++OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback
++# Production OAuth redirect
++OAUTH_REDIRECT_WEB_PROD=https://aveli.app/login-callback
+*** End Patch
+*** Begin Patch
+*** Add File: backend/.env.local
++# OAuth redirect sync (dev/local)
++OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback
++# Production OAuth redirect
++OAUTH_REDIRECT_WEB_PROD=https://aveli.app/login-callback
+*** End Patch
+*** Begin Patch
+*** Add File: frontend/.env.dev
++APP_ENV=development
++OAUTH_REDIRECT_WEB=http://localhost:4003/login-callback
++OAUTH_REDIRECT_WEB_PROD=https://aveli.app/login-callback
+*** End Patch
+*** Begin Patch
+*** Add File: frontend/.env.live
++APP_ENV=live
++OAUTH_REDIRECT_WEB=https://aveli.app/login-callback
++OAUTH_REDIRECT_WEB_DEV=http://localhost:4003/login-callback
+*** End Patch
