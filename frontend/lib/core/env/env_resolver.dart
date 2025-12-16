@@ -1,13 +1,17 @@
-import 'dart:io' show Platform;
-
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart';
 
 class EnvResolver {
+  static Map<String, String> _env = const {};
+
+  static void seedFrom(Map<String, String> env) {
+    _env = Map.unmodifiable(env);
+  }
+
   // URL to use in production builds
   static const String prodUrl = "https://your-production-backend.com";
 
   static String _readEnv(String key, {String defaultValue = ''}) {
-    final value = dotenv.maybeGet(key);
+    final value = _env[key];
     if (value != null && value.isNotEmpty) {
       return value;
     }
@@ -27,20 +31,22 @@ class EnvResolver {
       return prodUrl;
     }
 
-    // Android emulator cannot reach 127.0.0.1 on host.
-    if (Platform.isAndroid) {
-      return "http://10.0.2.2:8080";
-    }
-
-    // Desktop/Linux/macOS/iOS simulators can connect to local backend directly.
-    if (Platform.isLinux ||
-        Platform.isMacOS ||
-        Platform.isIOS ||
-        Platform.isWindows) {
+    if (kIsWeb) {
       return "http://127.0.0.1:8080";
     }
 
-    // Fallback
-    return "http://127.0.0.1:8080";
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        // Android emulator cannot reach 127.0.0.1 on host.
+        return "http://10.0.2.2:8080";
+      case TargetPlatform.linux:
+      case TargetPlatform.macOS:
+      case TargetPlatform.iOS:
+      case TargetPlatform.windows:
+        // Desktop/Linux/macOS/iOS simulators can connect to local backend directly.
+        return "http://127.0.0.1:8080";
+      default:
+        return "http://127.0.0.1:8080";
+    }
   }
 }

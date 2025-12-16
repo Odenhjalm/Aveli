@@ -8,6 +8,43 @@
     <meta name="description" content="Aveli Flutter client" />
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <script>
+      (async () => {
+        if (!('serviceWorker' in navigator)) {
+          return;
+        }
+
+        // Clean up legacy Flutter-generated caches and service workers that may hold stale code.
+        try {
+          if (window.caches) {
+            const keys = await caches.keys();
+            await Promise.all(
+              keys
+                .filter((key) => key.startsWith('flutter-app-') || key.startsWith('workbox-precache-'))
+                .map((key) => caches.delete(key)),
+            );
+          }
+
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(
+            registrations
+              .filter((registration) =>
+                registration.active?.scriptURL?.includes('flutter_service_worker') ||
+                registration.waiting?.scriptURL?.includes('flutter_service_worker'),
+              )
+              .map((registration) => registration.unregister()),
+          );
+        } catch (error) {
+          console.warn('Service worker cleanup failed', error);
+        }
+
+        try {
+          await navigator.serviceWorker.register('/service_worker.js');
+        } catch (error) {
+          console.warn('Service worker registration failed', error);
+        }
+      })();
+    </script>
     <title>Aveli</title>
   </head>
   <body>
