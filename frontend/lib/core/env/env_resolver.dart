@@ -6,7 +6,7 @@ class EnvResolver {
   static const String prodUrl = "https://your-production-backend.com";
 
   static String _readEnv(String key, {String defaultValue = ''}) {
-    final value = dotenv.maybeGet(key);
+    final value = dotenv.isInitialized ? dotenv.maybeGet(key) : null;
     if (value != null && value.isNotEmpty) {
       return value;
     }

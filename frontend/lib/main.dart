@@ -50,11 +50,7 @@ void main() {
       } else {
         await MediaKit.ensureInitialized();
       }
-      try {
-        await dotenv.load(fileName: '.env');
-      } catch (_) {
-        // Filen är valfri; saknas den så förlitar vi oss på --dart-define eller runtime vars.
-      }
+      await _ensureDotEnvInitialized();
       final rawBaseUrl =
           dotenv.maybeGet('API_BASE_URL') ??
           const String.fromEnvironment('API_BASE_URL');
@@ -206,6 +202,22 @@ void _logBootstrapError(String source, Object error, StackTrace? stackTrace) {
   if (stackTrace != null) {
     debugPrintStack(stackTrace: stackTrace);
   }
+}
+
+Future<void> _ensureDotEnvInitialized() async {
+  if (dotenv.isInitialized) {
+    return;
+  }
+  try {
+    await dotenv.load(fileName: '.env');
+    return;
+  } catch (error, stackTrace) {
+    debugPrint('dotenv load failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+  // Initialize with an empty map so maybeGet can be used safely on web builds
+  // where the .env asset may not be present.
+  dotenv.testLoad(fileInput: const {});
 }
 
 class WisdomApp extends ConsumerWidget {
