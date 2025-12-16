@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:io' show Platform;
 
 import 'package:media_kit/media_kit.dart';
 import 'package:wisdom/core/env/app_config.dart';
@@ -28,26 +27,29 @@ import 'package:wisdom/core/routing/route_paths.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    _logBootstrapError(
+      'FlutterError',
+      details.exception,
+      details.stack,
+    );
+  };
+
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    _logBootstrapError('PlatformDispatcher', error, stackTrace);
+    return true;
+  };
+
   runZonedGuarded(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
-
-      FlutterError.onError = (details) {
-        FlutterError.dumpErrorToConsole(details);
-        if (!kReleaseMode) {
-          debugPrint('FlutterError: ${details.exceptionAsString()}');
-          debugPrint(details.stack?.toString() ?? 'No stack trace');
-        }
-      };
-      PlatformDispatcher.instance.onError = (error, stackTrace) {
-        if (!kReleaseMode) {
-          debugPrint('Uncaught platform error: $error');
-          debugPrint(stackTrace.toString());
-        }
-        return false;
-      };
-
-      MediaKit.ensureInitialized();
+      if (kIsWeb) {
+        debugPrint('Skipping MediaKit.ensureInitialized() on web.');
+      } else {
+        await MediaKit.ensureInitialized();
+      }
       try {
         await dotenv.load(fileName: '.env');
       } catch (_) {
@@ -167,10 +169,7 @@ void main() {
       );
     },
     (error, stackTrace) {
-      if (!kReleaseMode) {
-        debugPrint('Zoned error: $error');
-        debugPrint(stackTrace.toString());
-      }
+      _logBootstrapError('Uncaught zone error', error, stackTrace);
     },
   );
 }
@@ -191,13 +190,22 @@ String _resolveApiBaseUrl(String url) {
     return url;
   }
   const loopbackHosts = {'localhost', '127.0.0.1', '0.0.0.0'};
-  if (Platform.isAndroid && loopbackHosts.contains(parsed.host)) {
+  if (defaultTargetPlatform == TargetPlatform.android &&
+      loopbackHosts.contains(parsed.host)) {
     return parsed.replace(host: '10.0.2.2').toString();
   }
-  if (Platform.isIOS && parsed.host == '0.0.0.0') {
+  if (defaultTargetPlatform == TargetPlatform.iOS &&
+      parsed.host == '0.0.0.0') {
     return parsed.replace(host: '127.0.0.1').toString();
   }
   return url;
+}
+
+void _logBootstrapError(String source, Object error, StackTrace? stackTrace) {
+  debugPrint('$source: $error');
+  if (stackTrace != null) {
+    debugPrintStack(stackTrace: stackTrace);
+  }
 }
 
 class WisdomApp extends ConsumerWidget {
