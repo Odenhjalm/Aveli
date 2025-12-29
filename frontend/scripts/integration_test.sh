@@ -18,8 +18,18 @@ if [[ "$DEVICE" == "chrome" || "$DEVICE" == "web-server" ]]; then
 fi
 
 echo "Running Flutter integration tests on device: ${DEVICE}"
-if [[ -z "${DISPLAY:-}" ]] && command -v xvfb-run >/dev/null 2>&1; then
-  xvfb-run -a flutter test integration_test -d "$DEVICE"
-else
-  flutter test integration_test -d "$DEVICE"
+mapfile -t tests < <(find integration_test -maxdepth 1 -name '*_test.dart' -print | sort)
+if [[ "${#tests[@]}" -eq 0 ]]; then
+  echo "No integration_test/*_test.dart files found." >&2
+  exit 1
 fi
+
+for test_file in "${tests[@]}"; do
+  echo ""
+  echo "== ${test_file} =="
+  if [[ -z "${DISPLAY:-}" ]] && command -v xvfb-run >/dev/null 2>&1; then
+    xvfb-run -a flutter test "$test_file" -d "$DEVICE"
+  else
+    flutter test "$test_file" -d "$DEVICE"
+  fi
+done
