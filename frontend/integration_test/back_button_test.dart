@@ -8,6 +8,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:wisdom/api/auth_repository.dart';
 import 'package:wisdom/core/auth/auth_controller.dart';
 import 'package:wisdom/core/auth/auth_http_observer.dart';
+import 'package:wisdom/core/deeplinks/deep_link_service.dart';
 import 'package:wisdom/core/env/app_config.dart';
 import 'package:wisdom/core/env/env_state.dart';
 import 'package:wisdom/core/routing/app_routes.dart';
@@ -159,6 +160,16 @@ class _FakeAuthRepository implements AuthRepository {
   Future<String?> currentToken() async => token;
 }
 
+class _NoopDeepLinkService extends DeepLinkService {
+  _NoopDeepLinkService(Ref ref) : super(ref);
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  void dispose() {}
+}
+
 List<Override> _commonOverrides(AuthState authState) {
   return [
     envInfoProvider.overrideWith((ref) => envInfoOk),
@@ -173,6 +184,7 @@ List<Override> _commonOverrides(AuthState authState) {
         subscriptionsEnabled: false,
       ),
     ),
+    deepLinkServiceProvider.overrideWith((ref) => _NoopDeepLinkService(ref)),
     homeFeedProvider.overrideWith((ref) => Future.value(const <Activity>[])),
     homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
     landing.popularCoursesProvider.overrideWith(
