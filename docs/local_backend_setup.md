@@ -11,10 +11,10 @@ Supabase is the only database. No local Postgres containers. Follow these steps 
 
 ## 2) Miljöfiler
 ```
-cp .env.example .env
+cp .env.example.backend backend/.env
 cp .env.docker.example .env.docker   # for compose
 ```
-Fyll `.env` med Supabase URL/keys, Stripe, LiveKit, JWT/Media secrets. Nycklar ska **inte** committas.
+Fyll `backend/.env` med Supabase URL/keys, Stripe, LiveKit, JWT/Media secrets. Nycklar ska **inte** committas.
 
 ## 3) Applicera Supabase-migreringar
 ```
@@ -45,7 +45,7 @@ docker compose --env-file .env.docker up --build
 flutter pub get
 flutter run -d chrome --web-renderer html   # eller emulator
 ```
-Ställ in `API_BASE_URL=http://127.0.0.1:8080` i `.env` för lokala körningar.
+Ställ in `API_BASE_URL=http://127.0.0.1:8080` i `frontend/.env` för lokala körningar.
 
 ## 7) QA / tester
 - `make backend.test`
@@ -59,4 +59,4 @@ Ställ in `API_BASE_URL=http://127.0.0.1:8080` i `.env` för lokala körningar.
 Troubleshooting:
 - 503 på `/readyz`: kontrollera `DATABASE_URL` och att Supabase IP allowlist släpper igenom dig.
 - Stripe 401/403: dubbelkolla `STRIPE_SECRET_KEY` och webhook-secrets.
-- Upload 413: höj `LESSON_MEDIA_MAX_BYTES` i `.env`.
+- Upload 413: höj `LESSON_MEDIA_MAX_BYTES` i `backend/.env`.

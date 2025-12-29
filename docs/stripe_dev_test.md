@@ -12,7 +12,7 @@ This guide describes how to keep the Stripe test environment stable while exerci
 
 ## 2. Fill in test secrets
 
-- Edit repo root `.env` **and** `backend/.env.local`.
+- Edit `backend/.env` (master env file).
 - Replace the `sk_test_XXX`, `pk_test_XXX`, `price_XXX`, and `whsec_TEST_*` placeholders with the **test-mode** keys from the Stripe Dashboard.
 - Always keep `STRIPE_CHECKOUT_UI_MODE=hosted`, `FRONTEND_BASE_URL=https://aveli.app`, and the deep links:
   - `CHECKOUT_SUCCESS_URL=aveliapp://checkout/success?checkout_success=true`
