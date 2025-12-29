@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool

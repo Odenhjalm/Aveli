@@ -35,7 +35,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, Optional, Tuple
 import sys
 
 

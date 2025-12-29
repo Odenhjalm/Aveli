@@ -45,7 +45,6 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
-import os
 from pathlib import Path
 from typing import Any, Dict, List
 
