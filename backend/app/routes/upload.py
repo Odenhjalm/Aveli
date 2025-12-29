@@ -148,7 +148,10 @@ async def _write_upload(
         destination_path.write_bytes(payload)
     except Exception:  # pragma: no cover - defensive logging
         logger.exception("Failed to write uploaded file")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to persist file") from None
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist file",
+        ) from None
 
     checksum = hashlib.sha256(payload).hexdigest() if payload else None
     return UploadWriteResult(
@@ -223,9 +226,21 @@ async def upload_profile_media(
     )
     url = _public_url(request, relative_path)
     if url is None:
-        logger.error("Profile upload attempted to write outside public buckets: user_id=%s path=%s", user_id, relative_path)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Profile storage misconfigured")
-    logger.info("Profile upload successful: user_id=%s path=%s size_bytes=%s", user_id, relative_path, write_result.size)
+        logger.error(
+            "Profile upload attempted to write outside public buckets: user_id=%s path=%s",
+            user_id,
+            relative_path,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Profile storage misconfigured",
+        )
+    logger.info(
+        "Profile upload successful: user_id=%s path=%s size_bytes=%s",
+        user_id,
+        relative_path,
+        write_result.size,
+    )
     return {
         "url": url,
         "path": relative_path.as_posix(),

@@ -10,7 +10,10 @@ from app.utils.lesson_content import serialize_audio_embeds
     [
         ("# Title\n\nBody text.", "# Title\n\nBody text."),
         ("", ""),
-        ("Already has <audio controls src=\"https://cdn/audio.mp3\"></audio>", "Already has <audio controls src=\"https://cdn/audio.mp3\"></audio>"),
+        (
+            "Already has <audio controls src=\"https://cdn/audio.mp3\"></audio>",
+            "Already has <audio controls src=\"https://cdn/audio.mp3\"></audio>",
+        ),
     ],
 )
 def test_serialize_audio_embeds_no_op(raw, expected):

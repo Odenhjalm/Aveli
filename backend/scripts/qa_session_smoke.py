@@ -207,7 +207,9 @@ def _mark_seminar_free(database_url: Optional[str], seminar_id: str) -> None:
                 cur.execute(
                     """
                     update app.seminars
-                    set livekit_metadata = coalesce(livekit_metadata, '{}'::jsonb) || jsonb_build_object('is_free', true)
+                    set livekit_metadata =
+                      coalesce(livekit_metadata, '{}'::jsonb)
+                      || jsonb_build_object('is_free', true)
                     where id = %s
                     """,
                     (seminar_id,),

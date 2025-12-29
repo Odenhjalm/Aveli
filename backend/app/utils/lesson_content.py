@@ -141,4 +141,3 @@ def _resolve_media_url(value: Any) -> str | None:
                 if trimmed:
                     return trimmed
     return None
-

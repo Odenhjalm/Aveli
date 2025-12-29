@@ -154,6 +154,7 @@ async def test_complete_rejects_bucket_mismatch(async_client, monkeypatch):
     try:
         course_id, lesson_id = await create_lesson(async_client, headers)
         # Short-circuit storage presign
+
         async def fake_create_upload_url(self, path, *, content_type, upsert, cache_seconds):
             return storage_module.PresignedUpload(
                 url=f"https://storage.local/{path}",

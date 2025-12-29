@@ -44,9 +44,12 @@ async def test_checkout_session_sets_custom_ui_mode(async_client, monkeypatch):
         body = json.loads(payload)
         return {"type": body.get("event_type", "checkout.session.completed"), "data": {"object": body}}
 
+    def fake_price_retrieve(price_id):
+        return {"id": price_id, "unit_amount": 13000, "currency": "sek"}
+
     monkeypatch.setattr("stripe.checkout.Session.create", fake_checkout_create)
     monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
-    monkeypatch.setattr("stripe.Price.retrieve", lambda price_id: {"id": price_id, "unit_amount": 13000, "currency": "sek"})
+    monkeypatch.setattr("stripe.Price.retrieve", fake_price_retrieve)
     monkeypatch.setattr("stripe.Customer.create", lambda **_: {"id": "cus_123"})
 
     session_resp = await async_client.post(

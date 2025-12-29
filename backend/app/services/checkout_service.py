@@ -33,7 +33,6 @@ def _require_stripe():
     stripe.api_key = settings.stripe_secret_key
 
 
-
 async def create_course_checkout(
     user: Mapping[str, Any],
     slug: str,

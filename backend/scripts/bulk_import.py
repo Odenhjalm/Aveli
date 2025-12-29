@@ -154,14 +154,49 @@ def run_import(
 def main() -> None:
     ap = argparse.ArgumentParser(description="Bulk import courses from manifests")
     ap.add_argument("--dir", default="courses", help="Directory with manifests")
-    ap.add_argument("--order-file", default=None, help="Optional order file (default: <dir>/order.txt)")
-    ap.add_argument("--only", action="append", default=[], help="Only import manifests matching this (slug or filename). Can be repeated.")
-    ap.add_argument("--exclude", action="append", default=[], help="Skip manifests matching this (slug or filename). Can be repeated.")
-    ap.add_argument("--dry-run", action="store_true", help="Validate manifests and files only; no uploads.")
-    ap.add_argument("--max-size-mb", type=int, default=None, help="Warn on files larger than this many MB (dry-run only).")
-    ap.add_argument("--create-assets-lesson", action="store_true", help="Upload cover into _Assets/_Course Assets lesson and set cover_url.")
-    ap.add_argument("--cleanup-duplicates", action="store_true", help="Delete duplicate lesson media entries after import.")
-    ap.add_argument("--continue-on-error", action="store_true", help="Continue processing other manifests on failure.")
+    ap.add_argument(
+        "--order-file",
+        default=None,
+        help="Optional order file (default: <dir>/order.txt)",
+    )
+    ap.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        help="Only import manifests matching this (slug or filename). Can be repeated.",
+    )
+    ap.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="Skip manifests matching this (slug or filename). Can be repeated.",
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate manifests and files only; no uploads.",
+    )
+    ap.add_argument(
+        "--max-size-mb",
+        type=int,
+        default=None,
+        help="Warn on files larger than this many MB (dry-run only).",
+    )
+    ap.add_argument(
+        "--create-assets-lesson",
+        action="store_true",
+        help="Upload cover into _Assets/_Course Assets lesson and set cover_url.",
+    )
+    ap.add_argument(
+        "--cleanup-duplicates",
+        action="store_true",
+        help="Delete duplicate lesson media entries after import.",
+    )
+    ap.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Continue processing other manifests on failure.",
+    )
     ap.add_argument("--base-url", default=os.getenv("API_BASE_URL", "http://127.0.0.1:8080"))
     ap.add_argument("--email", default=os.getenv("IMPORT_EMAIL", "teacher@example.com"))
     ap.add_argument("--password", default=os.getenv("IMPORT_PASSWORD", "teacher123"))

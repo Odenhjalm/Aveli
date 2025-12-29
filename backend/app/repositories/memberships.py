@@ -170,13 +170,30 @@ async def upsert_membership_record(
                         created_at,
                         updated_at
                     )
-                    VALUES (%s, %s, %s, COALESCE(%s, 'active'), %s, %s, COALESCE(%s, now()), %s, now(), now())
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        COALESCE(%s, 'active'),
+                        %s,
+                        %s,
+                        COALESCE(%s, now()),
+                        %s,
+                        now(),
+                        now()
+                    )
                     ON CONFLICT (user_id) DO UPDATE
                     SET plan_interval = EXCLUDED.plan_interval,
                         price_id = EXCLUDED.price_id,
                         status = COALESCE(EXCLUDED.status, app.memberships.status),
-                        stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, app.memberships.stripe_customer_id),
-                        stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, app.memberships.stripe_subscription_id),
+                        stripe_customer_id = COALESCE(
+                            EXCLUDED.stripe_customer_id,
+                            app.memberships.stripe_customer_id
+                        ),
+                        stripe_subscription_id = COALESCE(
+                            EXCLUDED.stripe_subscription_id,
+                            app.memberships.stripe_subscription_id
+                        ),
                         start_date = COALESCE(EXCLUDED.start_date, app.memberships.start_date),
                         end_date = COALESCE(EXCLUDED.end_date, app.memberships.end_date),
                         updated_at = now()
