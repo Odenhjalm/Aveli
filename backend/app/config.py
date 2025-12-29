@@ -1,9 +1,15 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
 from pydantic import AliasChoices, AnyUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(ENV_FILE, override=False)
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=(ENV_FILE,), extra="ignore")
 
     supabase_url: AnyUrl
     supabase_anon_key: str | None = None
