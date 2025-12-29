@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:wisdom/api/api_client.dart';
 import 'package:wisdom/api/auth_repository.dart';
 import 'package:wisdom/core/auth/auth_controller.dart';
 import 'package:wisdom/core/auth/auth_http_observer.dart';
+import 'package:wisdom/core/auth/token_storage.dart';
 import 'package:wisdom/core/deeplinks/deep_link_service.dart';
 import 'package:wisdom/core/env/app_config.dart';
 import 'package:wisdom/core/env/env_state.dart';
@@ -22,6 +24,10 @@ import 'package:wisdom/features/home/application/home_providers.dart';
 import 'package:wisdom/features/home/presentation/home_dashboard_page.dart';
 import 'package:wisdom/features/landing/application/landing_providers.dart'
     as landing;
+import 'package:wisdom/features/payments/data/billing_api.dart';
+import 'package:wisdom/features/paywall/application/entitlements_notifier.dart';
+import 'package:wisdom/features/paywall/data/entitlements_api.dart';
+import 'package:wisdom/features/paywall/domain/entitlements.dart';
 import 'package:wisdom/main.dart';
 
 const _transparentPng = <int>[
@@ -170,6 +176,53 @@ class _NoopDeepLinkService extends DeepLinkService {
   void dispose() {}
 }
 
+class _FakeEntitlementsApi extends EntitlementsApi {
+  _FakeEntitlementsApi() : super(baseUrl: 'http://localhost');
+
+  @override
+  Future<Entitlements> fetchEntitlements() async {
+    return const Entitlements(
+      membership: MembershipStatus(isActive: true, status: 'active'),
+      courses: <String>[],
+    );
+  }
+}
+
+class _FakeBillingApi extends BillingApi {
+  _FakeBillingApi()
+    : super(
+        ApiClient(
+          baseUrl: 'http://localhost',
+          tokenStorage: const TokenStorage(),
+        ),
+      );
+
+  @override
+  Future<void> startSubscription({required String plan}) async {}
+
+  @override
+  Future<void> changePlan(String plan) async {}
+
+  @override
+  Future<void> cancelSubscription() async {}
+}
+
+class _FakeEntitlementsNotifier extends EntitlementsNotifier {
+  _FakeEntitlementsNotifier()
+    : super(_FakeEntitlementsApi(), _FakeBillingApi()) {
+    state = const EntitlementsState(
+      loading: false,
+      data: Entitlements(
+        membership: MembershipStatus(isActive: true, status: 'active'),
+        courses: <String>[],
+      ),
+    );
+  }
+
+  @override
+  Future<void> refresh() async {}
+}
+
 List<Override> _commonOverrides(AuthState authState) {
   return [
     envInfoProvider.overrideWith((ref) => envInfoOk),
@@ -185,6 +238,9 @@ List<Override> _commonOverrides(AuthState authState) {
       ),
     ),
     deepLinkServiceProvider.overrideWith((ref) => _NoopDeepLinkService(ref)),
+    entitlementsNotifierProvider.overrideWith(
+      (ref) => _FakeEntitlementsNotifier(),
+    ),
     homeFeedProvider.overrideWith((ref) => Future.value(const <Activity>[])),
     homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
     landing.popularCoursesProvider.overrideWith(
