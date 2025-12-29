@@ -241,6 +241,6 @@ void main() {
     expect(joinButton, findsOneWidget);
     final buttonWidget = tester.widget<GradientButton>(joinButton);
     expect(buttonWidget.onPressed, isNull);
-    expect(find.textContaining('inte live ännu'), findsOneWidget);
+    expect(find.textContaining('Knappen blir aktiv'), findsOneWidget);
   });
 }
