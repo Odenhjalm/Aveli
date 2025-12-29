@@ -4,6 +4,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'package:wisdom/core/env/app_config.dart';
 import 'package:wisdom/data/models/seminar.dart';
 import 'package:wisdom/features/seminars/application/seminar_providers.dart';
 import 'package:wisdom/features/seminars/presentation/seminar_discover_page.dart';
@@ -72,6 +73,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: 'pk_test',
+              stripeMerchantDisplayName: 'Aveli',
+              subscriptionsEnabled: false,
+            ),
+          ),
           publicSeminarsProvider.overrideWith(
             (ref) async => [liveSeminar, scheduledSeminar],
           ),
@@ -119,6 +128,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: 'pk_test',
+              stripeMerchantDisplayName: 'Aveli',
+              subscriptionsEnabled: false,
+            ),
+          ),
           publicSeminarDetailProvider(
             seminar.id,
           ).overrideWith((ref) async => detail),

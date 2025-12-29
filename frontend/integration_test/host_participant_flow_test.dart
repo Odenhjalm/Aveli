@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:wisdom/core/env/app_config.dart';
 import 'package:wisdom/data/models/seminar.dart';
 import 'package:wisdom/data/repositories/seminar_repository.dart';
 import 'package:wisdom/features/home/application/livekit_controller.dart';
@@ -70,6 +71,14 @@ void main() {
     _TrackingLiveSessionController.reset();
 
     final overrides = [
+      appConfigProvider.overrideWithValue(
+        const AppConfig(
+          apiBaseUrl: 'http://localhost',
+          stripePublishableKey: 'pk_test',
+          stripeMerchantDisplayName: 'Aveli',
+          subscriptionsEnabled: false,
+        ),
+      ),
       seminarRepositoryProvider.overrideWithValue(fakeRepository),
       hostSeminarsProvider.overrideWith(
         (ref) async => fakeRepository.hostSeminars,
