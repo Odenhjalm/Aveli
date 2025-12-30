@@ -25,7 +25,7 @@
 
 ## Test execution (local)
 - Backend: `REQUIRE_DB_TESTS=1 make backend.test` passed (73 tests).
-- Smoke: `CI=true python backend/scripts/qa_teacher_smoke.py` against local `uvicorn`; healthz/readyz ok, `POST /api/billing/create-subscription` returned 503 due to missing Stripe config.
+- Smoke: `CI=true python backend/scripts/qa_teacher_smoke.py` against local `uvicorn`; healthz/readyz ok, Stripe subscription checkout succeeded once `STRIPE_CHECKOUT_UI_MODE=hosted` and test price IDs were set (no active services, so order flow skipped).
 - Flutter: `make flutter.get` + `make flutter.test` passed.
 - Landing: `npm test` passed; `npm run build` failed with missing `@sentry/nextjs`, dependency added, build passed.
 
