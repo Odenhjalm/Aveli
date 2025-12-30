@@ -1,0 +1,184 @@
+# DB Repair Report
+
+## Summary
+- Status: **0 FAIL / 148 PASS**
+- Target: local
+- Timestamp: 2025-12-29 23:11:53 UTC
+- Database: postgresql://127.0.0.1:54322/postgres
+
+## Source of truth
+- Canonical migrations: `supabase/migrations/*.sql`
+- Canonical apply path: `backend/scripts/apply_supabase_migrations.sh`
+
+## Repairs applied
+- See git history and ops scripts for applied fixes.
+
+## Findings addressed
+- Added `app.subscriptions` mirror table + RLS policy for Stripe subscription tracking.
+- Added `app.grade_quiz_and_issue_certificate` (quiz grading + certificate issuance) to unblock quiz submissions.
+- Added storage policies for `storage.objects` (public-media read + service-role access).
+- Aligned verification checks with schema (`app.service_status` enum, `app.courses.is_published`).
+
+## Verification
+- `ops/db_apply.sh` (local) reapplied migrations and storage policies.
+- `ops/db_verify.sh` produced the PASS/FAIL matrix below.
+
+## Test execution (local)
+- Backend: `REQUIRE_DB_TESTS=1 make backend.test` passed (73 tests).
+- Smoke: `CI=true python backend/scripts/qa_teacher_smoke.py` against local `uvicorn`; healthz/readyz ok, `POST /api/billing/create-subscription` returned 503 due to missing Stripe config.
+- Flutter: `make flutter.get` + `make flutter.test` passed.
+- Landing: `npm test` passed; `npm run build` failed with missing `@sentry/nextjs`, dependency added, build passed.
+
+## Verification results
+- PASS: extension pgcrypto
+- PASS: extension uuid-ossp
+- PASS: enum app.service_status
+- PASS: table app.activities
+- PASS: table app.activities_feed
+- PASS: table app.auth_events
+- PASS: table app.refresh_tokens
+- PASS: table app.profiles
+- PASS: table app.courses
+- PASS: table app.modules
+- PASS: table app.lessons
+- PASS: table app.lesson_media
+- PASS: table app.media_objects
+- PASS: table app.enrollments
+- PASS: table app.certificates
+- PASS: table app.course_quizzes
+- PASS: table app.quiz_questions
+- PASS: table app.services
+- PASS: table app.sessions
+- PASS: table app.session_slots
+- PASS: table app.orders
+- PASS: table app.payments
+- PASS: table app.memberships
+- PASS: table app.subscriptions
+- PASS: table app.billing_logs
+- PASS: table app.payment_events
+- PASS: table app.course_entitlements
+- PASS: table app.course_bundles
+- PASS: table app.course_bundle_courses
+- PASS: table app.stripe_customers
+- PASS: table app.course_display_priorities
+- PASS: table app.teachers
+- PASS: table app.teacher_profile_media
+- PASS: table app.teacher_approvals
+- PASS: table app.teacher_payout_methods
+- PASS: table app.seminars
+- PASS: table app.seminar_sessions
+- PASS: table app.seminar_attendees
+- PASS: table app.seminar_recordings
+- PASS: table app.livekit_webhook_jobs
+- PASS: table app.app_config
+- PASS: table storage.buckets
+- PASS: table storage.objects
+- PASS: column app.profiles.user_id
+- PASS: column app.profiles.role_v2
+- PASS: column app.profiles.display_name
+- PASS: column app.profiles.is_admin
+- PASS: column app.courses.id
+- PASS: column app.courses.slug
+- PASS: column app.courses.is_published
+- PASS: column app.courses.created_by
+- PASS: column app.lesson_media.id
+- PASS: column app.lesson_media.lesson_id
+- PASS: column app.lesson_media.storage_path
+- PASS: column app.lesson_media.storage_bucket
+- PASS: column app.media_objects.id
+- PASS: column app.media_objects.storage_path
+- PASS: column app.media_objects.storage_bucket
+- PASS: column app.media_objects.content_type
+- PASS: column app.memberships.user_id
+- PASS: column app.memberships.status
+- PASS: column app.memberships.stripe_subscription_id
+- PASS: column app.memberships.stripe_customer_id
+- PASS: column app.subscriptions.user_id
+- PASS: column app.subscriptions.subscription_id
+- PASS: column app.subscriptions.status
+- PASS: column app.orders.id
+- PASS: column app.orders.user_id
+- PASS: column app.orders.status
+- PASS: column app.orders.amount_cents
+- PASS: column app.orders.currency
+- PASS: column app.payments.id
+- PASS: column app.payments.order_id
+- PASS: column app.payments.status
+- PASS: column app.payments.amount_cents
+- PASS: column app.seminars.id
+- PASS: column app.seminars.host_id
+- PASS: column app.seminars.status
+- PASS: column app.seminars.livekit_room
+- PASS: column app.seminar_sessions.id
+- PASS: column app.seminar_sessions.seminar_id
+- PASS: column app.seminar_sessions.status
+- PASS: column app.seminar_sessions.livekit_room
+- PASS: column app.course_entitlements.user_id
+- PASS: column app.course_entitlements.course_slug
+- PASS: column app.livekit_webhook_jobs.id
+- PASS: column app.livekit_webhook_jobs.payload
+- PASS: column app.livekit_webhook_jobs.attempt
+- PASS: column app.livekit_webhook_jobs.next_run_at
+- PASS: column app.stripe_customers.user_id
+- PASS: column app.stripe_customers.customer_id
+- PASS: function app.set_updated_at
+- PASS: function app.touch_course_display_priorities
+- PASS: function app.touch_teacher_profile_media
+- PASS: function app.touch_course_entitlements
+- PASS: function app.touch_livekit_webhook_jobs
+- PASS: function app.is_admin
+- PASS: function app.is_seminar_host
+- PASS: function app.is_seminar_attendee
+- PASS: function app.can_access_seminar
+- PASS: function app.grade_quiz_and_issue_certificate
+- PASS: trigger trg_courses_touch on app.courses
+- PASS: trigger trg_modules_touch on app.modules
+- PASS: trigger trg_lessons_touch on app.lessons
+- PASS: trigger trg_services_touch on app.services
+- PASS: trigger trg_orders_touch on app.orders
+- PASS: trigger trg_payments_touch on app.payments
+- PASS: trigger trg_seminars_touch on app.seminars
+- PASS: trigger trg_profiles_touch on app.profiles
+- PASS: trigger trg_teacher_approvals_touch on app.teacher_approvals
+- PASS: trigger trg_teacher_payout_methods_touch on app.teacher_payout_methods
+- PASS: trigger trg_teachers_touch on app.teachers
+- PASS: trigger trg_sessions_touch on app.sessions
+- PASS: trigger trg_session_slots_touch on app.session_slots
+- PASS: trigger trg_course_entitlements_touch on app.course_entitlements
+- PASS: trigger trg_course_display_priorities_touch on app.course_display_priorities
+- PASS: trigger trg_teacher_profile_media_touch on app.teacher_profile_media
+- PASS: trigger trg_seminar_sessions_touch on app.seminar_sessions
+- PASS: trigger trg_seminar_recordings_touch on app.seminar_recordings
+- PASS: trigger trg_livekit_webhook_jobs_touch on app.livekit_webhook_jobs
+- PASS: RLS enabled app.profiles
+- PASS: policies app.profiles - count=3
+- PASS: RLS enabled app.courses
+- PASS: policies app.courses - count=4
+- PASS: RLS enabled app.lessons
+- PASS: policies app.lessons - count=4
+- PASS: RLS enabled app.lesson_media
+- PASS: policies app.lesson_media - count=4
+- PASS: RLS enabled app.enrollments
+- PASS: policies app.enrollments - count=3
+- PASS: RLS enabled app.memberships
+- PASS: policies app.memberships - count=3
+- PASS: RLS enabled app.subscriptions
+- PASS: policies app.subscriptions - count=1
+- PASS: RLS enabled app.orders
+- PASS: policies app.orders - count=4
+- PASS: RLS enabled app.payments
+- PASS: policies app.payments - count=3
+- PASS: RLS enabled app.seminars
+- PASS: policies app.seminars - count=4
+- PASS: RLS enabled app.seminar_attendees
+- PASS: policies app.seminar_attendees - count=4
+- PASS: RLS enabled app.seminar_sessions
+- PASS: policies app.seminar_sessions - count=3
+- PASS: RLS enabled storage.objects
+- PASS: policies storage.objects - count=2
+- PASS: storage public buckets - public-media
+- PASS: storage anon policies - no unexpected anon access
+
+## Notes
+- Remote verification requires allowlisted project refs.
+- This report is generated by `ops/db_verify.sh`.
