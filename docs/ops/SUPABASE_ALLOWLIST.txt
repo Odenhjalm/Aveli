@@ -1,0 +1,4 @@
+# Allowed non-prod Supabase project refs.
+# One project ref per line, no quotes.
+# Example:
+# abcd1234efgh5678
