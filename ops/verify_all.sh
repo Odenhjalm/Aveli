@@ -27,10 +27,52 @@ landing_build_status="SKIP"
 backend_deps_ready=false
 
 ensure_backend_deps() {
-  if ! $backend_deps_ready; then
-    (cd "${ROOT_DIR}/backend" && poetry install --no-interaction --no-root)
-    backend_deps_ready=true
+  if $backend_deps_ready; then
+    return 0
   fi
+  if (cd "${ROOT_DIR}/backend" && poetry install --no-interaction --no-root); then
+    backend_deps_ready=true
+    return 0
+  fi
+  backend_deps_ready=false
+  return 1
+}
+
+detect_flutter_device() {
+  if [[ -n "${FLUTTER_DEVICE:-}" ]]; then
+    echo "${FLUTTER_DEVICE}"
+    return 0
+  fi
+  if ! command -v flutter >/dev/null 2>&1; then
+    return 1
+  fi
+  local devices_json
+  devices_json=$(flutter devices --machine 2>/dev/null || true)
+  if [[ -z "$devices_json" ]]; then
+    return 1
+  fi
+  DEVICES_JSON="$devices_json" python3 - <<'PY'
+import json
+import os
+import sys
+
+raw = os.environ.get("DEVICES_JSON", "")
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+
+ids = [d.get("id") for d in data if d.get("id")]
+for pref in ("chrome", "linux"):
+    for dev_id in ids:
+        if dev_id == pref:
+            print(dev_id)
+            sys.exit(0)
+if ids:
+    print(ids[0])
+    sys.exit(0)
+sys.exit(1)
+PY
 }
 
 log "Env validation"
@@ -73,10 +115,15 @@ fi
 
 log "Backend tests"
 if command -v poetry >/dev/null 2>&1; then
-  ensure_backend_deps
-  if (cd "${ROOT_DIR}/backend" && REQUIRE_DB_TESTS=1 poetry run pytest); then
-    backend_tests_status="PASS"
+  if ensure_backend_deps; then
+    if (cd "${ROOT_DIR}/backend" && REQUIRE_DB_TESTS=1 poetry run pytest); then
+      backend_tests_status="PASS"
+    else
+      backend_tests_status="FAIL"
+      overall_status=1
+    fi
   else
+    echo "poetry install failed; skipping backend tests" >&2
     backend_tests_status="FAIL"
     overall_status=1
   fi
@@ -98,9 +145,13 @@ fi
 
 if $start_backend; then
   if command -v poetry >/dev/null 2>&1; then
-    ensure_backend_deps
-    (cd "${ROOT_DIR}/backend" && poetry run uvicorn app.main:app --host 127.0.0.1 --port "${backend_port}") &
-    backend_pid=$!
+    if ensure_backend_deps; then
+      (cd "${ROOT_DIR}/backend" && poetry run uvicorn app.main:app --host 127.0.0.1 --port "${backend_port}") &
+      backend_pid=$!
+    else
+      echo "poetry install failed; cannot start backend" >&2
+      backend_pid=""
+    fi
   else
     echo "poetry not found; cannot start backend" >&2
     backend_pid=""
@@ -134,7 +185,11 @@ PY
 fi
 
 if command -v poetry >/dev/null 2>&1; then
-  if (cd "${ROOT_DIR}/backend" && CI=true QA_API_BASE_URL="$backend_url" poetry run python scripts/qa_teacher_smoke.py); then
+  if ! ensure_backend_deps; then
+    echo "poetry install failed; skipping backend smoke" >&2
+    backend_smoke_status="FAIL"
+    overall_status=1
+  elif (cd "${ROOT_DIR}/backend" && CI=true QA_API_BASE_URL="$backend_url" poetry run python scripts/qa_teacher_smoke.py); then
     backend_smoke_status="PASS"
   else
     backend_smoke_status="FAIL"
@@ -154,8 +209,12 @@ fi
 log "Flutter tests"
 if command -v flutter >/dev/null 2>&1; then
   if (cd "${ROOT_DIR}/frontend" && flutter test); then
-    flutter_device="${FLUTTER_DEVICE:-chrome}"
-    if (cd "${ROOT_DIR}/frontend" && flutter test integration_test -d "${flutter_device}"); then
+    flutter_device="$(detect_flutter_device || true)"
+    if [[ -z "$flutter_device" ]]; then
+      echo "No Flutter device found for integration tests" >&2
+      flutter_tests_status="FAIL"
+      overall_status=1
+    elif (cd "${ROOT_DIR}/frontend" && flutter test integration_test -d "${flutter_device}"); then
       flutter_tests_status="PASS"
     else
       flutter_tests_status="FAIL"
@@ -173,18 +232,22 @@ fi
 
 log "Landing tests/build"
 if command -v npm >/dev/null 2>&1; then
-  if [[ ! -d "${ROOT_DIR}/frontend/landing/node_modules" ]]; then
-    (cd "${ROOT_DIR}/frontend/landing" && npm ci)
-  fi
-  if (cd "${ROOT_DIR}/frontend/landing" && npm test); then
-    landing_tests_status="PASS"
+  if (cd "${ROOT_DIR}/frontend/landing" && npm ci); then
+    if (cd "${ROOT_DIR}/frontend/landing" && npm test); then
+      landing_tests_status="PASS"
+    else
+      landing_tests_status="FAIL"
+      overall_status=1
+    fi
+    if (cd "${ROOT_DIR}/frontend/landing" && npm run build); then
+      landing_build_status="PASS"
+    else
+      landing_build_status="FAIL"
+      overall_status=1
+    fi
   else
+    echo "npm ci failed; skipping landing tests/build" >&2
     landing_tests_status="FAIL"
-    overall_status=1
-  fi
-  if (cd "${ROOT_DIR}/frontend/landing" && npm run build); then
-    landing_build_status="PASS"
-  else
     landing_build_status="FAIL"
     overall_status=1
   fi

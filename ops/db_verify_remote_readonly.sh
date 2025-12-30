@@ -3,9 +3,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
-ALLOWLIST_PATH="${ROOT_DIR}/docs/ops/SUPABASE_ALLOWLIST.txt"
+ALLOWLIST_PATH="${ALLOWLIST_PATH:-${ROOT_DIR}/docs/ops/SUPABASE_ALLOWLIST.txt}"
 
+# SUPABASE_PROJECT_REF is required; if missing, derive it from SUPABASE_URL.
 PROJECT_REF="${SUPABASE_PROJECT_REF:-}"
+if [[ -z "$PROJECT_REF" && -n "${SUPABASE_URL:-}" ]]; then
+  PROJECT_REF="$(python3 - <<'PY' "$SUPABASE_URL"
+import sys
+from urllib.parse import urlparse
+
+url = sys.argv[1]
+host = urlparse(url).hostname or ""
+ref = host.split(".")[0] if host else ""
+print(ref)
+PY
+  )"
+fi
 DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-}}"
 
 append_report() {
@@ -19,7 +32,7 @@ if [[ -z "$PROJECT_REF" ]]; then
 
 ## Remote DB Verify (read-only)
 Status: SKIPPED
-Reason: SUPABASE_PROJECT_REF not set
+Reason: SUPABASE_PROJECT_REF not set and SUPABASE_URL not provided
 TXT
   exit 2
 fi

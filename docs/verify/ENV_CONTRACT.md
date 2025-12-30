@@ -40,6 +40,6 @@ Set via `.env`, `.env.local`, or hosting provider build env.
 ## Ops/verification env vars
 Used by scripts in `ops/`.
 - Guardrails: `ENVIRONMENT`, `CONFIRM_NON_PROD`
-- Supabase project allowlist: `SUPABASE_PROJECT_REF` must exist in `docs/ops/SUPABASE_ALLOWLIST.txt` for remote checks.
+- Supabase project allowlist: `SUPABASE_PROJECT_REF` (or derive from `SUPABASE_URL`) must exist in `docs/ops/SUPABASE_ALLOWLIST.txt` for remote checks.
 - CI behavior: `CI` (env validation fails in CI, warns locally)
 - Tests: `REQUIRE_DB_TESTS`
