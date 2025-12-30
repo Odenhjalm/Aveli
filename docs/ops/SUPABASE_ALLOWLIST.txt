@@ -1,0 +1,4 @@
+# One Supabase project ref per line.
+# This file gates any remote actions (including read-only verification scripts).
+# Example:
+# abcdefghijklmnop

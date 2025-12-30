@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+CI_MODE=false
+if [[ -n "${CI:-}" ]]; then
+  ci_value="${CI,,}"
+  if [[ "$ci_value" != "false" && "$ci_value" != "0" ]]; then
+    CI_MODE=true
+  fi
+fi
+
+STATUS=0
+
+warn() {
+  local message="$1"
+  if "$CI_MODE"; then
+    echo "ERROR: $message" >&2
+    STATUS=1
+  else
+    echo "WARN: $message" >&2
+  fi
+}
+
+note() {
+  echo "$1"
+}
+
+has_value() {
+  [[ -n "${!1:-}" ]]
+}
+
+report_var() {
+  local name="$1"
+  local required="$2"
+  if has_value "$name"; then
+    note "  - $name: set"
+  else
+    note "  - $name: missing"
+    if [[ "$required" == "required" ]]; then
+      warn "$name is required"
+    fi
+  fi
+}
+
+lower() {
+  echo "${1,,}"
+}
+
+get_url_host() {
+  local url="$1"
+  python3 - <<'PY' "$url"
+import sys
+from urllib.parse import urlparse
+
+raw = sys.argv[1]
+try:
+    parsed = urlparse(raw)
+    host = parsed.hostname or ""
+except Exception:
+    host = ""
+print(host)
+PY
+}
+
+is_local_host() {
+  local host="$1"
+  case "$host" in
+    localhost|127.0.0.1|0.0.0.0|::1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+contains_placeholder() {
+  local value="$1"
+  local lowered
+  lowered="$(lower "$value")"
+  if [[ "$lowered" == *"replace"* || "$lowered" == *"your-project"* || "$lowered" == *"changeme"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+ENV_NAME="${ENVIRONMENT:-${APP_ENV:-${ENV:-}}}"
+ENV_LOWER="$(lower "$ENV_NAME")"
+ENV_MODE="unknown"
+if [[ -z "$ENV_LOWER" ]]; then
+  warn "ENVIRONMENT/APP_ENV/ENV not set; assuming non-prod for key validation"
+  ENV_MODE="nonprod"
+elif [[ "$ENV_LOWER" == "prod" || "$ENV_LOWER" == "production" || "$ENV_LOWER" == "live" ]]; then
+  ENV_MODE="prod"
+else
+  ENV_MODE="nonprod"
+fi
+
+note "==> Backend (required)"
+report_var SUPABASE_URL required
+report_var SUPABASE_SERVICE_ROLE_KEY required
+report_var SUPABASE_DB_URL required
+report_var STRIPE_SECRET_KEY required
+report_var STRIPE_PRICE_MONTHLY required
+report_var STRIPE_PRICE_YEARLY required
+
+note "==> Backend (recommended)"
+report_var SUPABASE_ANON_KEY optional
+report_var SUPABASE_JWT_SECRET optional
+report_var JWT_SECRET optional
+report_var MEDIA_SIGNING_SECRET optional
+report_var STRIPE_PUBLISHABLE_KEY optional
+report_var STRIPE_WEBHOOK_SECRET optional
+report_var STRIPE_BILLING_WEBHOOK_SECRET optional
+
+note "==> Flutter (required for app clients)"
+report_var API_BASE_URL required
+report_var SUPABASE_URL required
+if has_value SUPABASE_PUBLISHABLE_API_KEY || has_value SUPABASE_ANON_KEY; then
+  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_ANON_KEY: set"
+else
+  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_ANON_KEY: missing"
+  warn "SUPABASE_PUBLISHABLE_API_KEY (or SUPABASE_ANON_KEY) is required for Flutter"
+fi
+report_var STRIPE_PUBLISHABLE_KEY required
+report_var OAUTH_REDIRECT_WEB required
+report_var OAUTH_REDIRECT_MOBILE required
+
+note "==> Landing (Next.js)"
+report_var NEXT_PUBLIC_SUPABASE_URL required
+report_var NEXT_PUBLIC_SUPABASE_ANON_KEY required
+report_var NEXT_PUBLIC_API_BASE_URL required
+report_var NEXT_PUBLIC_SENTRY_DSN optional
+report_var SENTRY_DSN optional
+
+note "==> Migrations/ops"
+report_var SUPABASE_PROJECT_REF optional
+report_var SUPABASE_PAT optional
+
+if has_value DATABASE_URL && ! has_value SUPABASE_DB_URL; then
+  warn "DATABASE_URL is set but SUPABASE_DB_URL is missing; backend requires SUPABASE_DB_URL"
+fi
+
+# Stripe key mode checks
+if has_value STRIPE_SECRET_KEY; then
+  key="${STRIPE_SECRET_KEY}"
+  if [[ "$ENV_MODE" == "nonprod" && "$key" == sk_live_* ]]; then
+    warn "STRIPE_SECRET_KEY looks live in non-prod"
+  elif [[ "$ENV_MODE" == "prod" && "$key" == sk_test_* ]]; then
+    warn "STRIPE_SECRET_KEY looks test in prod"
+  elif [[ "$key" != sk_test_* && "$key" != sk_live_* ]]; then
+    warn "STRIPE_SECRET_KEY does not match sk_test_/sk_live_ pattern"
+  fi
+  if contains_placeholder "$key"; then
+    warn "STRIPE_SECRET_KEY looks like a placeholder"
+  fi
+fi
+
+if has_value STRIPE_PUBLISHABLE_KEY; then
+  key="${STRIPE_PUBLISHABLE_KEY}"
+  if [[ "$ENV_MODE" == "nonprod" && "$key" == pk_live_* ]]; then
+    warn "STRIPE_PUBLISHABLE_KEY looks live in non-prod"
+  elif [[ "$ENV_MODE" == "prod" && "$key" == pk_test_* ]]; then
+    warn "STRIPE_PUBLISHABLE_KEY looks test in prod"
+  elif [[ "$key" != pk_test_* && "$key" != pk_live_* ]]; then
+    warn "STRIPE_PUBLISHABLE_KEY does not match pk_test_/pk_live_ pattern"
+  fi
+  if contains_placeholder "$key"; then
+    warn "STRIPE_PUBLISHABLE_KEY looks like a placeholder"
+  fi
+fi
+
+if has_value STRIPE_WEBHOOK_SECRET; then
+  key="${STRIPE_WEBHOOK_SECRET}"
+  if [[ "$key" != whsec_* ]]; then
+    warn "STRIPE_WEBHOOK_SECRET does not match whsec_ pattern"
+  fi
+  if contains_placeholder "$key"; then
+    warn "STRIPE_WEBHOOK_SECRET looks like a placeholder"
+  fi
+fi
+
+if has_value STRIPE_BILLING_WEBHOOK_SECRET; then
+  key="${STRIPE_BILLING_WEBHOOK_SECRET}"
+  if [[ "$key" != whsec_* ]]; then
+    warn "STRIPE_BILLING_WEBHOOK_SECRET does not match whsec_ pattern"
+  fi
+  if contains_placeholder "$key"; then
+    warn "STRIPE_BILLING_WEBHOOK_SECRET looks like a placeholder"
+  fi
+fi
+
+if ! has_value STRIPE_WEBHOOK_SECRET && ! has_value STRIPE_BILLING_WEBHOOK_SECRET; then
+  warn "Missing Stripe webhook signing secret (STRIPE_WEBHOOK_SECRET or STRIPE_BILLING_WEBHOOK_SECRET)"
+fi
+
+# Supabase URL sanity checks
+if has_value SUPABASE_URL; then
+  supabase_host="$(get_url_host "${SUPABASE_URL}")"
+  if is_local_host "$supabase_host" && [[ "$ENV_MODE" == "prod" ]]; then
+    warn "SUPABASE_URL points to localhost in prod"
+  fi
+  if contains_placeholder "${SUPABASE_URL}"; then
+    warn "SUPABASE_URL looks like a placeholder"
+  fi
+fi
+
+if has_value SUPABASE_DB_URL; then
+  db_host="$(get_url_host "${SUPABASE_DB_URL}")"
+  if is_local_host "$db_host" && [[ "$ENV_MODE" == "prod" ]]; then
+    warn "SUPABASE_DB_URL points to localhost in prod"
+  fi
+  if contains_placeholder "${SUPABASE_DB_URL}"; then
+    warn "SUPABASE_DB_URL looks like a placeholder"
+  fi
+fi
+
+if has_value JWT_SECRET; then
+  if [[ "${JWT_SECRET}" == "change-me" ]]; then
+    warn "JWT_SECRET is set to the default value"
+  fi
+fi
+
+exit "$STATUS"

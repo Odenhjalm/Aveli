@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
+ALLOWLIST_PATH="${ROOT_DIR}/docs/ops/SUPABASE_ALLOWLIST.txt"
+
+PROJECT_REF="${SUPABASE_PROJECT_REF:-}"
+DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-}}"
+
+append_report() {
+  if [[ -f "$REPORT_PATH" ]]; then
+    cat >>"$REPORT_PATH"
+  fi
+}
+
+if [[ -z "$PROJECT_REF" ]]; then
+  append_report <<'TXT'
+
+## Remote DB Verify (read-only)
+Status: SKIPPED
+Reason: SUPABASE_PROJECT_REF not set
+TXT
+  exit 2
+fi
+
+if [[ ! -f "$ALLOWLIST_PATH" ]]; then
+  append_report <<TXT
+
+## Remote DB Verify (read-only)
+Status: SKIPPED
+Reason: Allowlist missing at docs/ops/SUPABASE_ALLOWLIST.txt
+TXT
+  exit 2
+fi
+
+if ! grep -qx "$PROJECT_REF" "$ALLOWLIST_PATH"; then
+  append_report <<TXT
+
+## Remote DB Verify (read-only)
+Status: SKIPPED
+Reason: SUPABASE_PROJECT_REF not allowlisted
+TXT
+  exit 2
+fi
+
+if [[ -z "$DB_URL" ]]; then
+  append_report <<'TXT'
+
+## Remote DB Verify (read-only)
+Status: SKIPPED
+Reason: SUPABASE_DB_URL/DATABASE_URL not set
+TXT
+  exit 2
+fi
+
+if ! command -v psql >/dev/null 2>&1; then
+  append_report <<'TXT'
+
+## Remote DB Verify (read-only)
+Status: FAILED
+Reason: psql not available
+TXT
+  exit 1
+fi
+
+run_sql() {
+  psql "$DB_URL" -tA -F $'\t' -v ON_ERROR_STOP=1 -c "$1"
+}
+
+app_tables_raw=$(run_sql "select table_name from information_schema.tables where table_schema = 'app' and table_type = 'BASE TABLE' order by table_name;")
+app_tables_count=$(echo "$app_tables_raw" | sed '/^$/d' | wc -l | tr -d ' ')
+
+rls_disabled_raw=$(run_sql "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app' and c.relkind = 'r' and c.relrowsecurity = false order by c.relname;")
+rls_disabled=$(echo "$rls_disabled_raw" | sed '/^$/d')
+
+no_policy_raw=$(run_sql "select t.table_name from information_schema.tables t left join pg_policies p on p.schemaname = 'app' and p.tablename = t.table_name where t.table_schema = 'app' and t.table_type = 'BASE TABLE' group by t.table_name having count(p.policyname) = 0 order by t.table_name;")
+no_policy=$(echo "$no_policy_raw" | sed '/^$/d')
+
+storage_exists=$(run_sql "select to_regclass('storage.buckets') is not null;")
+if [[ "$storage_exists" == "t" ]]; then
+  storage_buckets=$(run_sql "select id || ' (public=' || public || ')' from storage.buckets order by id;")
+  storage_policies=$(run_sql "select policyname || ' [' || cmd || ']' from pg_policies where schemaname = 'storage' and tablename = 'objects' order by policyname, cmd;")
+  storage_rls=$(run_sql "select relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'storage' and c.relname = 'objects';")
+  public_media_public=$(run_sql "select public from storage.buckets where id = 'public-media';")
+  course_media_public=$(run_sql "select public from storage.buckets where id = 'course-media';")
+  lesson_media_public=$(run_sql "select public from storage.buckets where id = 'lesson-media';")
+else
+  storage_buckets=""
+  storage_policies=""
+  storage_rls=""
+  public_media_public=""
+  course_media_public=""
+  lesson_media_public=""
+fi
+
+migrations_exists=$(run_sql "select to_regclass('supabase_migrations.schema_migrations') is not null;")
+if [[ "$migrations_exists" == "t" ]]; then
+  db_migrations=$(run_sql "select name from supabase_migrations.schema_migrations order by name;")
+else
+  db_migrations=""
+fi
+
+repo_migrations=$(find "$ROOT_DIR/supabase/migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort)
+
+missing_in_db=""
+extra_in_db=""
+if [[ -n "$db_migrations" ]]; then
+  missing_in_db=$(comm -23 <(echo "$repo_migrations") <(echo "$db_migrations") || true)
+  extra_in_db=$(comm -13 <(echo "$repo_migrations") <(echo "$db_migrations") || true)
+fi
+
+storage_issue=""
+if [[ -n "$storage_exists" && "$storage_exists" == "t" ]]; then
+  if [[ "$public_media_public" != "t" ]]; then
+    storage_issue="public-media should be public"
+  elif [[ "$course_media_public" != "f" || "$lesson_media_public" != "f" ]]; then
+    storage_issue="course-media and lesson-media should be private"
+  elif [[ -z "$storage_policies" ]]; then
+    storage_issue="storage.objects policies missing"
+  elif [[ "$storage_rls" != "t" ]]; then
+    storage_issue="storage.objects RLS disabled"
+  fi
+fi
+
+append_report <<TXT
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- App tables: ${app_tables_count}
+- RLS disabled tables: ${rls_disabled:-none}
+- Tables without policies: ${no_policy:-none}
+- Storage buckets: ${storage_buckets:-none}
+- Storage objects RLS: ${storage_rls:-unknown}
+- Storage policies: ${storage_policies:-none}
+- Storage bucket sanity: ${storage_issue:-ok}
+- Migration tracking: $(if [[ -n "$db_migrations" ]]; then echo "schema_migrations present"; else echo "no schema_migrations table"; fi)
+- Migrations missing in DB: ${missing_in_db:-unknown}
+- Migrations extra in DB: ${extra_in_db:-unknown}
+TXT
+
+if [[ -n "$rls_disabled" || -n "$no_policy" || -n "$storage_issue" ]]; then
+  exit 1
+fi

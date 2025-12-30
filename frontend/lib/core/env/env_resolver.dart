@@ -11,6 +11,8 @@ const _supabaseUrlDefine =
     String.fromEnvironment('SUPABASE_URL', defaultValue: '');
 const _supabasePublishableApiKeyDefine =
     String.fromEnvironment('SUPABASE_PUBLISHABLE_API_KEY', defaultValue: '');
+const _supabaseAnonKeyDefine =
+    String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
 const _stripePublishableKeyDefine =
     String.fromEnvironment('STRIPE_PUBLISHABLE_KEY', defaultValue: '');
 const _stripeMerchantDisplayNameDefine =
@@ -45,10 +47,17 @@ class EnvResolver {
         defineValue: _supabaseUrlDefine,
       );
 
-  static String get supabasePublicApiKey => _resolveWithDefine(
-        envKey: 'SUPABASE_PUBLISHABLE_API_KEY',
-        defineValue: _supabasePublishableApiKeyDefine,
-      );
+  static String get supabasePublicApiKey {
+    final publishable = _resolveWithDefine(
+      envKey: 'SUPABASE_PUBLISHABLE_API_KEY',
+      defineValue: _supabasePublishableApiKeyDefine,
+    );
+    if (publishable.isNotEmpty) return publishable;
+    return _resolveWithDefine(
+      envKey: 'SUPABASE_ANON_KEY',
+      defineValue: _supabaseAnonKeyDefine,
+    );
+  }
 
   static String get apiBaseUrl => _resolveWithDefine(
         envKey: 'API_BASE_URL',
