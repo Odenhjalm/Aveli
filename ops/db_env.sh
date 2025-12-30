@@ -199,9 +199,27 @@ if [[ -z "${DB_TARGET}" ]]; then
   fi
 fi
 
+# Fill in missing local Supabase keys if we're pointed at localhost but only have DB_URL.
+if [[ "${DB_TARGET}" == "local" ]]; then
+  if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_SERVICE_ROLE_KEY:-}" || -z "${SUPABASE_ANON_KEY:-}" ]]; then
+    if resolved=$(resolve_supabase_status); then
+      eval "${resolved}"
+      if [[ -n "${SUPABASE_DB_URL:-}" && "${SUPABASE_DB_URL}" != "${DB_URL:-}" ]]; then
+        DB_URL="${SUPABASE_DB_URL}"
+        eval "$(parse_db_url "${DB_URL}")"
+      fi
+    fi
+  fi
+fi
+
 export REPO_ROOT
 export MIGRATIONS_DIR
 export DB_TARGET
 export DB_HOST
 export DB_PORT
 export DB_NAME
+export SUPABASE_URL
+export SUPABASE_ANON_KEY
+export SUPABASE_SERVICE_ROLE_KEY
+export SUPABASE_JWT_SECRET
+export SUPABASE_PUBLISHABLE_API_KEY
