@@ -1090,8 +1090,8 @@ async def submit_quiz_answers(
 ) -> dict[str, Any]:
     async with get_conn() as cur:
         await cur.execute(
-            "SELECT * FROM app.grade_quiz_and_issue_certificate(%s, %s::jsonb)",
-            (quiz_id, Jsonb(dict(answers))),
+            "SELECT * FROM app.grade_quiz_and_issue_certificate(%s, %s, %s::jsonb)",
+            (quiz_id, user_id, Jsonb(dict(answers))),
         )
         row = await cur.fetchone()
     return dict(row) if row else {}
