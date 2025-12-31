@@ -25,13 +25,15 @@ Status: NOT READY (backend/.env missing + test/build blockers)
 - Added `ENV_REQUIRED_KEYS.txt` + `backend/scripts/env_contract_check.py` and wired into `ops/verify_all.sh`.
 - Added `backend/scripts/stripe_verify_test_mode.py` and `backend/scripts/supabase_verify_env.py`.
 - Updated backend env templates/docs to use `backend/.env` only and include QA/import keys.
-- `ops/verify_all.sh` installs deps (Poetry/NPM) and auto-selects Flutter devices; remote DB verify loads `backend/.env` and uses the allowlist.
+- `ops/verify_all.sh` installs deps (Poetry/NPM) and auto-selects Flutter devices; remote DB verify reads master env for `SUPABASE_DB_URL`.
+- Remote DB verify entrypoint now lives at `backend/scripts/db_verify_remote_readonly.py` and is invoked by `ops/verify_all.sh`.
 
 ## Remaining Blockers
 - `backend/.env` missing in the clean worktree (blocks env checks, Stripe/Supabase verify, backend tests/smoke).
 - Remote DB verify still needs `SUPABASE_DB_URL`/`DATABASE_URL` to run read-only checks.
 - Flutter integration tests fail on `FLUTTER_DEVICE=linux` (app fails to start / no debug connection).
 - Landing build blocked by missing `@sentry/nextjs`.
+- Remote DB verify currently reports RLS/policy/storage/migration drift (see latest run).
 
 ## Verification Runs
 - Local verify_all (FLUTTER_DEVICE=linux): FAILED (env missing; backend tests/smoke failed; Flutter integration failed; landing build failed)
@@ -40,7 +42,7 @@ Status: NOT READY (backend/.env missing + test/build blockers)
 ## Next 5 Actions
 1. Create `backend/.env` from `backend/.env.example` (test keys only) and re-run `ops/env_validate.sh`.
 2. Re-run `backend/scripts/env_contract_check.py`, `stripe_verify_test_mode.py`, and `supabase_verify_env.py`.
-3. Export `SUPABASE_DB_URL` (read-only) and rerun `ops/db_verify_remote_readonly.sh`.
+3. Export `SUPABASE_DB_URL` (read-only) and rerun `backend/scripts/db_verify_remote_readonly.py`.
 4. Fix Flutter integration test environment for linux (device availability + required runtime env).
 5. Add `@sentry/nextjs` to `frontend/landing/package.json` or gate Sentry init for builds.
 
@@ -969,6 +971,38 @@ sessions_and_orders
 storage_buckets
 sync_livekit_webhook_jobs
 teacher_catalog
+
+## Verification Run (ops/verify_all.sh)
+- APP_ENV: development (dev)
+- Skipped checks: Local DB reset,Flutter tests
+- Env guard (backend/.env not tracked): PASS
+- Env validation: PASS
+- Env contract check: PASS
+- Stripe test verification: PASS
+- Supabase env verification: PASS
+- Remote DB verify: FAIL
+- Local DB reset: SKIP
+- Backend tests: PASS
+- Backend smoke: PASS
+- Flutter tests: SKIP
+- Landing tests: PASS
+- Landing build: PASS
+
+## Verification Run (ops/verify_all.sh)
+- APP_ENV: development (dev)
+- Skipped checks: Local DB reset,Flutter tests
+- Env guard (backend/.env not tracked): PASS
+- Env validation: PASS
+- Env contract check: PASS
+- Stripe test verification: FAIL
+- Supabase env verification: PASS
+- Remote DB verify: FAIL
+- Local DB reset: SKIP
+- Backend tests: FAIL
+- Backend smoke: FAIL
+- Flutter tests: SKIP
+- Landing tests: PASS
+- Landing build: FAIL
 
 ## Verification Run (ops/verify_all.sh)
 - APP_ENV: development (dev)
