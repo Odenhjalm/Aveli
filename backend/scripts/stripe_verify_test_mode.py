@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Stripe test-mode configuration using backend/.env."""
+"""Verify Stripe configuration using backend/.env (dev/prod aware)."""
 from __future__ import annotations
 
 import re
@@ -18,7 +18,9 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 ENV_FILE = ROOT_DIR / "backend" / ".env"
 
 SK_TEST_RE = re.compile(r"^sk_test_")
+SK_LIVE_RE = re.compile(r"^sk_live_")
 PK_TEST_RE = re.compile(r"^pk_test_")
+PK_LIVE_RE = re.compile(r"^pk_live_")
 WHSEC_RE = re.compile(r"^whsec_")
 
 
@@ -48,39 +50,133 @@ def load_env() -> dict[str, str]:
     return env
 
 
+def resolve_env_mode(env: dict[str, str]) -> tuple[str, str]:
+    raw = env.get("APP_ENV") or env.get("ENVIRONMENT") or env.get("ENV") or ""
+    normalized = raw.strip().lower()
+    if normalized in {"prod", "production", "live"}:
+        return "prod", raw or "production"
+    if normalized:
+        return "dev", raw
+    return "dev", "development"
+
+
+def require_value(
+    errors: list[str],
+    name: str,
+    value: str,
+    pattern: re.Pattern[str] | None = None,
+) -> str:
+    if not value:
+        errors.append(f"{name} is missing in backend/.env")
+        return ""
+    if pattern and not pattern.match(value):
+        errors.append(f"{name} does not match expected pattern")
+    return value
+
+
+def ensure_match(errors: list[str], name: str, actual: str, expected: str, mode_label: str) -> None:
+    if actual and expected and actual != expected:
+        errors.append(f"{name} does not match {mode_label} value")
+
+
 def main() -> None:
     env = load_env()
     errors: list[str] = []
 
-    def require(key: str, pattern: re.Pattern[str] | None = None) -> str:
-        value = env.get(key, "").strip()
-        if not value:
-            errors.append(f"{key} is missing in backend/.env")
-            return ""
-        if pattern and not pattern.match(value):
-            errors.append(f"{key} does not match expected test pattern")
-        return value
+    mode, mode_label = resolve_env_mode(env)
 
-    secret_key = require("STRIPE_SECRET_KEY", SK_TEST_RE)
-    publishable_key = require("STRIPE_PUBLISHABLE_KEY", PK_TEST_RE)
-    webhook_secret = require("STRIPE_WEBHOOK_SECRET", WHSEC_RE)
-    billing_webhook_secret = require("STRIPE_BILLING_WEBHOOK_SECRET", WHSEC_RE)
+    active_secret = env.get("STRIPE_SECRET_KEY", "").strip()
+    active_publishable = env.get("STRIPE_PUBLISHABLE_KEY", "").strip()
+    active_webhook = env.get("STRIPE_WEBHOOK_SECRET", "").strip()
+    active_billing = env.get("STRIPE_BILLING_WEBHOOK_SECRET", "").strip()
+
+    test_secret = env.get("STRIPE_TEST_SECRET_KEY", "").strip()
+    test_publishable = env.get("STRIPE_TEST_PUBLISHABLE_KEY", "").strip()
+    test_webhook = env.get("STRIPE_TEST_WEBHOOK_SECRET", "").strip()
+    test_billing_webhook = (
+        env.get("STRIPE_TEST_WEBHOOK_BILLING_SECRET", "").strip()
+        or env.get("STRIPE_TEST_BILLING_WEBHOOK_SECRET", "").strip()
+    )
+
+    live_secret = env.get("STRIPE_LIVE_SECRET_KEY", "").strip()
+    live_publishable = env.get("STRIPE_LIVE_PUBLISHABLE_KEY", "").strip()
+    live_webhook = env.get("STRIPE_LIVE_WEBHOOK_SECRET", "").strip()
+    live_billing_webhook = env.get("STRIPE_LIVE_BILLING_WEBHOOK_SECRET", "").strip()
+
+    if mode == "prod":
+        expected_secret = require_value(errors, "STRIPE_LIVE_SECRET_KEY", live_secret, SK_LIVE_RE)
+        expected_publishable = require_value(
+            errors, "STRIPE_LIVE_PUBLISHABLE_KEY", live_publishable, PK_LIVE_RE
+        )
+        expected_webhook = require_value(
+            errors, "STRIPE_LIVE_WEBHOOK_SECRET", live_webhook, WHSEC_RE
+        )
+        expected_billing = require_value(
+            errors, "STRIPE_LIVE_BILLING_WEBHOOK_SECRET", live_billing_webhook, WHSEC_RE
+        )
+        active_secret = require_value(errors, "STRIPE_SECRET_KEY", active_secret, SK_LIVE_RE)
+        active_publishable = require_value(
+            errors, "STRIPE_PUBLISHABLE_KEY", active_publishable, PK_LIVE_RE
+        )
+        active_webhook = require_value(errors, "STRIPE_WEBHOOK_SECRET", active_webhook, WHSEC_RE)
+        active_billing = require_value(
+            errors, "STRIPE_BILLING_WEBHOOK_SECRET", active_billing, WHSEC_RE
+        )
+    else:
+        expected_secret = require_value(errors, "STRIPE_TEST_SECRET_KEY", test_secret, SK_TEST_RE)
+        expected_publishable = require_value(
+            errors, "STRIPE_TEST_PUBLISHABLE_KEY", test_publishable, PK_TEST_RE
+        )
+        expected_webhook = require_value(
+            errors, "STRIPE_TEST_WEBHOOK_SECRET", test_webhook, WHSEC_RE
+        )
+        expected_billing = require_value(
+            errors, "STRIPE_TEST_WEBHOOK_BILLING_SECRET", test_billing_webhook, WHSEC_RE
+        )
+        active_secret = require_value(errors, "STRIPE_SECRET_KEY", active_secret, SK_TEST_RE)
+        active_publishable = require_value(
+            errors, "STRIPE_PUBLISHABLE_KEY", active_publishable, PK_TEST_RE
+        )
+        active_webhook = require_value(errors, "STRIPE_WEBHOOK_SECRET", active_webhook, WHSEC_RE)
+        active_billing = require_value(
+            errors, "STRIPE_BILLING_WEBHOOK_SECRET", active_billing, WHSEC_RE
+        )
+
+    ensure_match(errors, "STRIPE_SECRET_KEY", active_secret, expected_secret, mode_label)
+    ensure_match(
+        errors, "STRIPE_PUBLISHABLE_KEY", active_publishable, expected_publishable, mode_label
+    )
+    ensure_match(errors, "STRIPE_WEBHOOK_SECRET", active_webhook, expected_webhook, mode_label)
+    ensure_match(
+        errors, "STRIPE_BILLING_WEBHOOK_SECRET", active_billing, expected_billing, mode_label
+    )
 
     livemode = None
-    if secret_key:
+    if active_secret:
         try:
-            stripe.api_key = secret_key
+            stripe.api_key = active_secret
             acct = stripe.Account.retrieve()
             livemode = acct.get("livemode")
-            if livemode:
-                errors.append("Stripe account is in live mode; expected test mode")
+            expected_livemode = mode == "prod"
+            if livemode is not None and livemode != expected_livemode:
+                errors.append(
+                    "Stripe account mode mismatch: "
+                    f"expected {'live' if expected_livemode else 'test'}"
+                )
         except stripe.error.StripeError:  # type: ignore[attr-defined]
             errors.append("Stripe authentication failed for STRIPE_SECRET_KEY")
 
-    found_payment = False
-    found_billing = False
+    expected_paths_raw = env.get("STRIPE_EXPECTED_WEBHOOK_PATHS", "").strip()
+    if expected_paths_raw:
+        expected_paths = [p.strip() for p in expected_paths_raw.split(",") if p.strip()]
+    elif mode == "prod":
+        expected_paths = ["/webhooks/stripe", "/api/billing/webhook"]
+    else:
+        expected_paths = ["/api/billing/webhook"]
+
+    found_paths: dict[str, bool] = {path: False for path in expected_paths}
     listed_endpoints = False
-    if secret_key:
+    if active_secret:
         try:
             endpoints = stripe.WebhookEndpoint.list(limit=100)
             listed_endpoints = True
@@ -89,28 +185,32 @@ def main() -> None:
                 if not url:
                     continue
                 path = urlparse(url).path.rstrip("/")
-                if path.endswith("/webhooks/stripe"):
-                    found_payment = True
-                if path.endswith("/api/billing/webhook"):
-                    found_billing = True
+                for expected in expected_paths:
+                    if path.endswith(expected):
+                        found_paths[expected] = True
         except stripe.error.StripeError:  # type: ignore[attr-defined]
             errors.append("Failed to list Stripe webhook endpoints")
 
     if listed_endpoints:
-        if not found_payment:
-            errors.append("Stripe webhook endpoint for /webhooks/stripe not found (test mode)")
-        if not found_billing:
-            errors.append("Stripe webhook endpoint for /api/billing/webhook not found (test mode)")
+        for expected, found in found_paths.items():
+            if not found:
+                errors.append(f"Stripe webhook endpoint for {expected} not found")
 
-    print("==> Stripe test mode verification")
-    print(f"- STRIPE_SECRET_KEY: {'set' if secret_key else 'missing'}")
-    print(f"- STRIPE_PUBLISHABLE_KEY: {'set' if publishable_key else 'missing'}")
-    print(f"- STRIPE_WEBHOOK_SECRET: {'set' if webhook_secret else 'missing'}")
-    print(f"- STRIPE_BILLING_WEBHOOK_SECRET: {'set' if billing_webhook_secret else 'missing'}")
+    print(f"==> Stripe verification ({mode_label})")
+    print(f"- STRIPE_SECRET_KEY: {'set' if active_secret else 'missing'}")
+    print(f"- STRIPE_PUBLISHABLE_KEY: {'set' if active_publishable else 'missing'}")
+    print(f"- STRIPE_WEBHOOK_SECRET: {'set' if active_webhook else 'missing'}")
+    print(f"- STRIPE_BILLING_WEBHOOK_SECRET: {'set' if active_billing else 'missing'}")
     if livemode is not None:
         print(f"- Stripe account livemode: {livemode}")
-    print(f"- Webhook endpoints: /webhooks/stripe={'found' if found_payment else 'missing'}; "
-          f"/api/billing/webhook={'found' if found_billing else 'missing'}")
+    if expected_paths:
+        summary = "; ".join(
+            f"{path}={'found' if found_paths.get(path) else 'missing'}"
+            for path in expected_paths
+        )
+        print(f"- Webhook endpoints: {summary}")
+    else:
+        print("- Webhook endpoints: none expected")
 
     if errors:
         print("Stripe verification: FAIL")

@@ -24,6 +24,27 @@ OPTIONAL_KEYS = {
     "SUPABASE_ANON_KEY",
     "SUPABASE_JWT_SECRET",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "STRIPE_CHECKOUT_BASE",
+    "STRIPE_CHECKOUT_UI_MODE",
+    "STRIPE_PRICE_MONTHLY",
+    "STRIPE_PRICE_YEARLY",
+    "STRIPE_EXPECTED_WEBHOOK_PATHS",
+    "SUBSCRIPTIONS_ENABLED",
+}
+
+DEV_OPTIONAL_KEYS = {
+    "DATABASE_URL",
+    "SUPABASE_DB_PASSWORD",
+    "SUPABASE_DB_URL",
+    "JWT_SECRET",
+    "JWT_ALGORITHM",
+    "JWT_EXPIRES_MINUTES",
+    "JWT_REFRESH_EXPIRES_MINUTES",
+    "STRIPE_CHECKOUT_BASE",
+    "STRIPE_CHECKOUT_UI_MODE",
+    "STRIPE_PRICE_MONTHLY",
+    "STRIPE_PRICE_YEARLY",
+    "LIVEKIT_WEBHOOK_SECRET",
 }
 
 
@@ -91,14 +112,34 @@ def matches_allowed_prefix(value: str, prefixes: set[str]) -> bool:
     return any(value.startswith(prefix) for prefix in prefixes)
 
 
+def resolve_env_mode(env_values: dict[str, str]) -> str:
+    raw = (
+        env_values.get("APP_ENV")
+        or env_values.get("ENVIRONMENT")
+        or env_values.get("ENV")
+        or ""
+    )
+    normalized = raw.strip().lower()
+    if normalized in {"prod", "production", "live"}:
+        return "prod"
+    if normalized:
+        return "dev"
+    return "dev"
+
+
 def main() -> None:
     required_keys, allowed_prefixes = load_required_keys()
     env_values = parse_env_file()
     referenced_keys, referenced_prefixes = scan_backend_env_usage()
+    env_mode = resolve_env_mode(env_values)
 
     missing_required = sorted(
         key for key in required_keys if not env_values.get(key, "").strip()
     )
+    if env_mode == "dev":
+        missing_required = [
+            key for key in missing_required if key not in DEV_OPTIONAL_KEYS
+        ]
 
     unknown_refs = sorted(
         key

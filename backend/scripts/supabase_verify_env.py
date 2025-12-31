@@ -140,24 +140,37 @@ def main() -> None:
             )
 
     storage_status = "skipped"
-    key_for_storage = secret_key or publishable_key
-    storage_key_label = (
-        "SUPABASE_SECRET_API_KEY"
-        if secret_key
-        else "SUPABASE_PUBLISHABLE_API_KEY"
-        if publishable_key
-        else "missing"
-    )
+    key_for_storage = ""
+    storage_key_label = "missing"
+    if secret_key:
+        key_for_storage = secret_key
+        storage_key_label = "SUPABASE_SECRET_API_KEY"
+    elif service_key:
+        key_for_storage = service_key
+        storage_key_label = "SUPABASE_SERVICE_ROLE_KEY"
+    elif publishable_key:
+        key_for_storage = publishable_key
+        storage_key_label = "SUPABASE_PUBLISHABLE_API_KEY"
+    elif anon_key:
+        key_for_storage = anon_key
+        storage_key_label = "SUPABASE_ANON_KEY"
 
     if supabase_url and key_for_storage:
         storage_url = supabase_url.rstrip("/") + "/storage/v1/bucket"
+        headers = {"apikey": key_for_storage}
+        auth_token = ""
+        if service_key and is_jwt(service_key):
+            auth_token = service_key
+        elif anon_key and is_jwt(anon_key):
+            auth_token = anon_key
+        elif is_jwt(key_for_storage):
+            auth_token = key_for_storage
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
         try:
             resp = httpx.get(
                 storage_url,
-                headers={
-                    "apikey": key_for_storage,
-                    "Authorization": f"Bearer {key_for_storage}",
-                },
+                headers=headers,
                 timeout=10,
             )
             if resp.status_code == 200:

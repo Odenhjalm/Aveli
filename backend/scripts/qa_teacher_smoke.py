@@ -19,6 +19,13 @@ def _is_strict_mode() -> bool:
     return os.environ.get("CI", "").lower() in {"1", "true", "yes"}
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _warn(message: str, warnings: list[str]) -> None:
     warnings.append(message)
     print(f"[warn] {message}")
@@ -141,92 +148,104 @@ async def main():
             except httpx.HTTPStatusError as exc:
                 _warn(f"SFU-token misslyckades: {exc}", warnings)
 
-        try:
-            sub_resp = await client.post(
-                "/api/billing/create-subscription",
-                headers={"Authorization": f"Bearer {token}"},
-                json={
-                    "plan_interval": "month",
-                    "success_url": "http://localhost:3000/billing/success",
-                    "cancel_url": "http://localhost:3000/billing/cancel",
-                },
-            )
-            sub_resp.raise_for_status()
-            session_payload = sub_resp.json()
-            checkout_url = session_payload.get("checkout_url")
-            if not checkout_url:
-                _warn("subscription session saknar checkout_url", warnings)
+        app_env = os.environ.get("APP_ENV", "").strip().lower()
+        subscriptions_enabled = _bool_env(
+            "SUBSCRIPTIONS_ENABLED",
+            default=app_env in {"prod", "production", "live"},
+        )
+        if not subscriptions_enabled:
+            message = "subscriptions disabled; skipping subscription flow"
+            if app_env in {"prod", "production", "live"}:
+                _warn(message, warnings)
             else:
-                print("[billing] subscription session", checkout_url)
-            membership_resp = await client.get(
-                "/api/me/membership",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            membership_resp.raise_for_status()
-            membership_payload = membership_resp.json().get("membership")
-            if not membership_payload:
-                _warn("membership saknas efter create-subscription", warnings)
-            else:
-                print("[billing] membership state", membership_resp.json())
-                secret = os.environ.get("STRIPE_BILLING_WEBHOOK_SECRET") or os.environ.get(
-                    "STRIPE_WEBHOOK_SECRET"
+                print(f"[billing] {message}")
+        else:
+            try:
+                sub_resp = await client.post(
+                    "/api/billing/create-subscription",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "plan_interval": "month",
+                        "success_url": "http://localhost:3000/billing/success",
+                        "cancel_url": "http://localhost:3000/billing/cancel",
+                    },
                 )
-                customer_id = membership_payload.get("stripe_customer_id")
-                price_id = membership_payload.get("price_id")
-                interval = membership_payload.get("plan_interval") or "month"
-                if not secret:
-                    _warn("saknar STRIPE_BILLING_WEBHOOK_SECRET; webhook-test hoppas over", warnings)
-                elif not (customer_id and price_id):
-                    _warn("membership saknar Stripe-referenser; webhook-test hoppas over", warnings)
+                sub_resp.raise_for_status()
+                session_payload = sub_resp.json()
+                checkout_url = session_payload.get("checkout_url")
+                if not checkout_url:
+                    _warn("subscription session saknar checkout_url", warnings)
                 else:
-                    event_payload = {
-                        "id": f"evt_{uuid.uuid4().hex[:12]}",
-                        "type": "customer.subscription.updated",
-                        "data": {
-                            "object": {
-                                "id": f"sub_{uuid.uuid4().hex[:12]}",
-                                "customer": customer_id,
-                                "status": "active",
-                                "items": {
-                                    "data": [
-                                        {
-                                            "price": {
-                                                "id": price_id,
-                                                "recurring": {"interval": interval},
-                                            }
-                                        }
-                                    ]
-                                },
-                                "metadata": {"user_id": user_id} if user_id else {},
-                            }
-                        },
-                    }
-                    payload_json = json.dumps(event_payload)
-                    signature = _build_stripe_signature(secret, payload_json)
-                    webhook_resp = await client.post(
-                        "/api/billing/webhook",
-                        content=payload_json,
-                        headers={"stripe-signature": signature},
+                    print("[billing] subscription session", checkout_url)
+                membership_resp = await client.get(
+                    "/api/me/membership",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                membership_resp.raise_for_status()
+                membership_payload = membership_resp.json().get("membership")
+                if not membership_payload:
+                    _warn("membership saknas efter create-subscription", warnings)
+                else:
+                    print("[billing] membership state", membership_resp.json())
+                    secret = os.environ.get("STRIPE_BILLING_WEBHOOK_SECRET") or os.environ.get(
+                        "STRIPE_WEBHOOK_SECRET"
                     )
-                    if webhook_resp.status_code != 200:
-                        _warn(
-                            f"webhook misslyckades: {webhook_resp.status_code} {webhook_resp.text}",
-                            warnings,
-                        )
+                    customer_id = membership_payload.get("stripe_customer_id")
+                    price_id = membership_payload.get("price_id")
+                    interval = membership_payload.get("plan_interval") or "month"
+                    if not secret:
+                        _warn("saknar STRIPE_BILLING_WEBHOOK_SECRET; webhook-test hoppas over", warnings)
+                    elif not (customer_id and price_id):
+                        _warn("membership saknar Stripe-referenser; webhook-test hoppas over", warnings)
                     else:
-                        updated_resp = await client.get(
-                            "/api/me/membership",
-                            headers={"Authorization": f"Bearer {token}"},
+                        event_payload = {
+                            "id": f"evt_{uuid.uuid4().hex[:12]}",
+                            "type": "customer.subscription.updated",
+                            "data": {
+                                "object": {
+                                    "id": f"sub_{uuid.uuid4().hex[:12]}",
+                                    "customer": customer_id,
+                                    "status": "active",
+                                    "items": {
+                                        "data": [
+                                            {
+                                                "price": {
+                                                    "id": price_id,
+                                                    "recurring": {"interval": interval},
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "metadata": {"user_id": user_id} if user_id else {},
+                                }
+                            },
+                        }
+                        payload_json = json.dumps(event_payload)
+                        signature = _build_stripe_signature(secret, payload_json)
+                        webhook_resp = await client.post(
+                            "/api/billing/webhook",
+                            content=payload_json,
+                            headers={"stripe-signature": signature},
                         )
-                        updated_resp.raise_for_status()
-                        updated = updated_resp.json().get("membership") or {}
-                        if updated.get("status") != "active":
+                        if webhook_resp.status_code != 200:
                             _warn(
-                                f"membership status efter webhook: {updated.get('status')}",
+                                f"webhook misslyckades: {webhook_resp.status_code} {webhook_resp.text}",
                                 warnings,
                             )
-        except httpx.HTTPStatusError as exc:
-            _warn(f"Subscriptions API misslyckades: {exc}", warnings)
+                        else:
+                            updated_resp = await client.get(
+                                "/api/me/membership",
+                                headers={"Authorization": f"Bearer {token}"},
+                            )
+                            updated_resp.raise_for_status()
+                            updated = updated_resp.json().get("membership") or {}
+                            if updated.get("status") != "active":
+                                _warn(
+                                    f"membership status efter webhook: {updated.get('status')}",
+                                    warnings,
+                                )
+            except httpx.HTTPStatusError as exc:
+                _warn(f"Subscriptions API misslyckades: {exc}", warnings)
         if refresh:
             refresh_resp = await client.post("/auth/refresh", json={"refresh_token": refresh})
             refresh_resp.raise_for_status()

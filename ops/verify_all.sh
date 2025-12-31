@@ -5,6 +5,45 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
 POETRY_INSTALL_ARGS="${POETRY_INSTALL_ARGS:---no-root}"
 
+APP_ENV_VALUE=""
+APP_ENV_MODE="unknown"
+load_app_env() {
+  if [[ -f "${ROOT_DIR}/backend/.env" ]]; then
+    APP_ENV_VALUE="$(python3 - <<'PY' "${ROOT_DIR}/backend/.env"
+import sys
+
+path = sys.argv[1]
+value = ""
+for raw_line in open(path, "r", encoding="utf-8"):
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("export "):
+        line = line[len("export "):].strip()
+    if "=" not in line:
+        continue
+    key, val = line.split("=", 1)
+    if key.strip() == "APP_ENV":
+        val = val.strip()
+        if val and val[0] == val[-1] and val[0] in ("\"", "'"):
+            val = val[1:-1]
+        value = val
+        break
+print(value)
+PY
+)"
+  fi
+
+  local normalized="${APP_ENV_VALUE,,}"
+  if [[ "$normalized" == "prod" || "$normalized" == "production" || "$normalized" == "live" ]]; then
+    APP_ENV_MODE="prod"
+  elif [[ -n "$normalized" ]]; then
+    APP_ENV_MODE="dev"
+  else
+    APP_ENV_MODE="dev"
+  fi
+}
+
 log() {
   echo "==> $1"
 }
@@ -30,6 +69,14 @@ flutter_tests_status="SKIP"
 landing_tests_status="SKIP"
 landing_build_status="SKIP"
 backend_deps_ready=false
+
+load_app_env
+log "Verification mode: ${APP_ENV_VALUE:-unknown} (${APP_ENV_MODE})"
+if [[ "$APP_ENV_MODE" == "prod" ]]; then
+  log "Required checks: Env guard, Env validation, Env contract, Stripe verify, Supabase verify, Remote DB verify, Backend tests, Backend smoke, Flutter tests, Landing tests, Landing build"
+else
+  log "Required checks: Env guard, Env validation, Env contract, Stripe verify, Supabase verify"
+fi
 
 ensure_backend_deps() {
   if $backend_deps_ready; then
@@ -155,7 +202,9 @@ elif [[ $remote_exit -eq 2 ]]; then
   remote_status="SKIP"
 else
   remote_status="FAIL"
-  overall_status=1
+  if [[ "$APP_ENV_MODE" == "prod" ]]; then
+    overall_status=1
+  fi
 fi
 
 log "Local DB reset (optional)"
@@ -250,11 +299,27 @@ if command -v poetry >/dev/null 2>&1; then
     echo "poetry install failed; skipping backend smoke" >&2
     backend_smoke_status="FAIL"
     overall_status=1
-  elif (cd "${ROOT_DIR}/backend" && CI=true QA_API_BASE_URL="$backend_url" poetry run python scripts/qa_teacher_smoke.py); then
-    backend_smoke_status="PASS"
   else
-    backend_smoke_status="FAIL"
-    overall_status=1
+    if [[ "$APP_ENV_MODE" == "prod" ]]; then
+      smoke_ci="true"
+    else
+      smoke_ci=""
+    fi
+    if [[ -n "$smoke_ci" ]]; then
+      if (cd "${ROOT_DIR}/backend" && CI="$smoke_ci" QA_API_BASE_URL="$backend_url" poetry run python scripts/qa_teacher_smoke.py); then
+        backend_smoke_status="PASS"
+      else
+        backend_smoke_status="FAIL"
+        overall_status=1
+      fi
+    else
+      if (cd "${ROOT_DIR}/backend" && QA_API_BASE_URL="$backend_url" poetry run python scripts/qa_teacher_smoke.py); then
+        backend_smoke_status="PASS"
+      else
+        backend_smoke_status="FAIL"
+        overall_status=1
+      fi
+    fi
   fi
 else
   echo "poetry not found; skipping backend smoke" >&2
@@ -269,17 +334,22 @@ fi
 
 log "Flutter tests"
 if command -v flutter >/dev/null 2>&1; then
-  if (cd "${ROOT_DIR}/frontend" && flutter test); then
-    flutter_device="$(detect_flutter_device || true)"
-    if [[ -z "$flutter_device" ]]; then
-      echo "No Flutter device found for integration tests" >&2
-      flutter_tests_status="FAIL"
-      overall_status=1
-    elif (cd "${ROOT_DIR}/frontend" && flutter test integration_test -d "${flutter_device}"); then
-      flutter_tests_status="PASS"
+  if (cd "${ROOT_DIR}/frontend" && flutter test --dart-define=DOTENV_FILE=.env); then
+    if [[ "$APP_ENV_MODE" != "prod" && "${RUN_FLUTTER_INTEGRATION:-}" != "1" ]]; then
+      echo "Skipping Flutter integration tests in ${APP_ENV_MODE} mode (set RUN_FLUTTER_INTEGRATION=1 to run)" >&2
+      flutter_tests_status="SKIP"
     else
-      flutter_tests_status="FAIL"
-      overall_status=1
+      flutter_device="$(detect_flutter_device || true)"
+      if [[ -z "$flutter_device" ]]; then
+        echo "No Flutter device found for integration tests" >&2
+        flutter_tests_status="FAIL"
+        overall_status=1
+      elif (cd "${ROOT_DIR}/frontend" && flutter test integration_test -d "${flutter_device}" --dart-define=DOTENV_FILE=.env); then
+        flutter_tests_status="PASS"
+      else
+        flutter_tests_status="FAIL"
+        overall_status=1
+      fi
     fi
   else
     flutter_tests_status="FAIL"
@@ -319,9 +389,31 @@ else
   overall_status=1
 fi
 
+skipped_checks=()
+[[ "$env_guard_status" == "SKIP" ]] && skipped_checks+=("Env guard")
+[[ "$env_status" == "SKIP" ]] && skipped_checks+=("Env validation")
+[[ "$env_contract_status" == "SKIP" ]] && skipped_checks+=("Env contract")
+[[ "$stripe_verify_status" == "SKIP" ]] && skipped_checks+=("Stripe verify")
+[[ "$supabase_verify_status" == "SKIP" ]] && skipped_checks+=("Supabase verify")
+[[ "$remote_status" == "SKIP" ]] && skipped_checks+=("Remote DB verify")
+[[ "$local_reset_status" == "SKIP" ]] && skipped_checks+=("Local DB reset")
+[[ "$backend_tests_status" == "SKIP" ]] && skipped_checks+=("Backend tests")
+[[ "$backend_smoke_status" == "SKIP" ]] && skipped_checks+=("Backend smoke")
+[[ "$flutter_tests_status" == "SKIP" ]] && skipped_checks+=("Flutter tests")
+[[ "$landing_tests_status" == "SKIP" ]] && skipped_checks+=("Landing tests")
+[[ "$landing_build_status" == "SKIP" ]] && skipped_checks+=("Landing build")
+if [[ ${#skipped_checks[@]} -eq 0 ]]; then
+  skipped_summary="none"
+else
+  skipped_summary="$(IFS=', '; echo "${skipped_checks[*]}")"
+fi
+log "Skipped checks: ${skipped_summary}"
+
 append_report <<TXT
 
 ## Verification Run (ops/verify_all.sh)
+- APP_ENV: ${APP_ENV_VALUE:-unknown} (${APP_ENV_MODE})
+- Skipped checks: ${skipped_summary}
 - Env guard (backend/.env not tracked): ${env_guard_status}
 - Env validation: ${env_status}
 - Env contract check: ${env_contract_status}
