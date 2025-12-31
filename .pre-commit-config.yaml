@@ -20,6 +20,11 @@ repos:
 
   - repo: local
     hooks:
+      - id: prevent-backend-env-commit
+        name: prevent committing backend env files
+        entry: bash -c 'if git diff --cached --name-only | grep -Eq "^backend/\\.env(\\..*)?$"; then echo "ERROR: Do not commit backend/.env* files"; exit 1; fi'
+        language: system
+        pass_filenames: false
       - id: dart-format
         name: dart format
         entry: dart

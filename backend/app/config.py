@@ -1,9 +1,14 @@
+from pathlib import Path
+
 from pydantic import AliasChoices, AnyUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+if not ENV_FILE.is_file():
+    raise RuntimeError("backend/.env missing – create it from backend/.env.example")
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=(str(ENV_FILE),), extra="ignore")
 
     supabase_url: AnyUrl
     supabase_anon_key: str | None = None

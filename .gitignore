@@ -9,6 +9,7 @@
 !backend/.env.example
 !frontend/.env.example
 backend/.env
+backend/.env.local
 web/.env
 frontend/.env
 /local/**
