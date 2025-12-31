@@ -202,9 +202,7 @@ elif [[ $remote_exit -eq 2 ]]; then
   remote_status="SKIP"
 else
   remote_status="FAIL"
-  if [[ "$APP_ENV_MODE" == "prod" ]]; then
-    overall_status=1
-  fi
+  overall_status=1
 fi
 
 log "Local DB reset (optional)"

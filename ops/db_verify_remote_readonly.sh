@@ -4,14 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
 ALLOWLIST_PATH="${ALLOWLIST_PATH:-${ROOT_DIR}/docs/ops/SUPABASE_ALLOWLIST.txt}"
-BACKEND_ENV_FILE="${ROOT_DIR}/backend/.env"
+MASTER_ENV_FILE="/home/oden/Aveli/backend/.env"
 
-load_backend_env() {
-  if [[ ! -f "$BACKEND_ENV_FILE" ]]; then
-    return 0
+load_master_env() {
+  if [[ ! -f "$MASTER_ENV_FILE" ]]; then
+    echo "ERROR: master.env missing at ${MASTER_ENV_FILE}" >&2
+    exit 1
   fi
   eval "$(
-    python3 - <<'PY' "$BACKEND_ENV_FILE"
+    python3 - <<'PY' "$MASTER_ENV_FILE"
 import shlex
 import sys
 
@@ -36,7 +37,7 @@ PY
   )"
 }
 
-load_backend_env
+load_master_env
 
 # SUPABASE_PROJECT_REF is required; if missing, derive it from SUPABASE_URL.
 PROJECT_REF="${SUPABASE_PROJECT_REF:-}"
@@ -52,7 +53,7 @@ print(ref)
 PY
   )"
 fi
-DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-}}"
+DB_URL="${SUPABASE_DB_URL:-}"
 
 append_report() {
   if [[ -f "$REPORT_PATH" ]]; then
@@ -94,10 +95,10 @@ if [[ -z "$DB_URL" ]]; then
   append_report <<'TXT'
 
 ## Remote DB Verify (read-only)
-Status: SKIPPED
-Reason: SUPABASE_DB_URL/DATABASE_URL not set
+Status: FAILED
+Reason: SUPABASE_DB_URL not set in master.env
 TXT
-  exit 2
+  exit 1
 fi
 
 if ! command -v psql >/dev/null 2>&1; then
@@ -110,8 +111,9 @@ TXT
   exit 1
 fi
 
+READONLY_PGOPTIONS="-c default_transaction_read_only=on"
 run_sql() {
-  psql "$DB_URL" -tA -F $'\t' -v ON_ERROR_STOP=1 -c "$1"
+  PGOPTIONS="$READONLY_PGOPTIONS" psql "$DB_URL" -tA -F $'\t' -v ON_ERROR_STOP=1 -c "$1"
 }
 
 app_tables_raw=$(run_sql "select table_name from information_schema.tables where table_schema = 'app' and table_type = 'BASE TABLE' order by table_name;")
