@@ -4,6 +4,39 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
 ALLOWLIST_PATH="${ALLOWLIST_PATH:-${ROOT_DIR}/docs/ops/SUPABASE_ALLOWLIST.txt}"
+BACKEND_ENV_FILE="${ROOT_DIR}/backend/.env"
+
+load_backend_env() {
+  if [[ ! -f "$BACKEND_ENV_FILE" ]]; then
+    return 0
+  fi
+  eval "$(
+    python3 - <<'PY' "$BACKEND_ENV_FILE"
+import shlex
+import sys
+
+path = sys.argv[1]
+for raw_line in open(path, "r", encoding="utf-8"):
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("export "):
+        line = line[len("export "):].strip()
+    if "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if value and value[0] == value[-1] and value[0] in ("\"", "'"):
+        value = value[1:-1]
+    if not key:
+        continue
+    print(f"export {key}={shlex.quote(value)}")
+PY
+  )"
+}
+
+load_backend_env
 
 # SUPABASE_PROJECT_REF is required; if missing, derive it from SUPABASE_URL.
 PROJECT_REF="${SUPABASE_PROJECT_REF:-}"

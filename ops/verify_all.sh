@@ -16,7 +16,11 @@ append_report() {
 
 overall_status=0
 
+env_guard_status="SKIP"
 env_status="SKIP"
+env_contract_status="SKIP"
+stripe_verify_status="SKIP"
+supabase_verify_status="SKIP"
 remote_status="SKIP"
 local_reset_status="SKIP"
 backend_tests_status="SKIP"
@@ -75,11 +79,67 @@ sys.exit(1)
 PY
 }
 
+log "Env guard (backend/.env not tracked)"
+if "${ROOT_DIR}/ops/ci_guard_env.sh"; then
+  env_guard_status="PASS"
+else
+  env_guard_status="FAIL"
+  overall_status=1
+fi
+
 log "Env validation"
 if "${ROOT_DIR}/ops/env_validate.sh"; then
   env_status="PASS"
 else
   env_status="FAIL"
+  overall_status=1
+fi
+
+log "Env contract check"
+if python3 "${ROOT_DIR}/backend/scripts/env_contract_check.py"; then
+  env_contract_status="PASS"
+else
+  env_contract_status="FAIL"
+  overall_status=1
+fi
+
+log "Stripe test-mode verification"
+if command -v poetry >/dev/null 2>&1; then
+  if ensure_backend_deps; then
+    if (cd "${ROOT_DIR}/backend" && poetry run python scripts/stripe_verify_test_mode.py); then
+      stripe_verify_status="PASS"
+    else
+      stripe_verify_status="FAIL"
+      overall_status=1
+    fi
+  else
+    echo "poetry install failed; skipping Stripe verification" >&2
+    stripe_verify_status="FAIL"
+    overall_status=1
+  fi
+else
+  echo "poetry not found; skipping Stripe verification" >&2
+  stripe_verify_status="FAIL"
+  overall_status=1
+fi
+
+log "Supabase env verification"
+if command -v poetry >/dev/null 2>&1; then
+  if ensure_backend_deps; then
+    if (cd "${ROOT_DIR}/backend" && poetry run python scripts/supabase_verify_env.py); then
+      supabase_verify_status="PASS"
+    else
+      supabase_verify_status="FAIL"
+      overall_status=1
+    fi
+  else
+    echo "poetry install failed; skipping Supabase verification" >&2
+    supabase_verify_status="FAIL"
+    overall_status=1
+  fi
+else
+  echo "poetry not found; skipping Supabase verification" >&2
+  supabase_verify_status="FAIL"
   overall_status=1
 fi
 
@@ -261,7 +321,11 @@ fi
 append_report <<TXT
 
 ## Verification Run (ops/verify_all.sh)
+- Env guard (backend/.env not tracked): ${env_guard_status}
 - Env validation: ${env_status}
+- Env contract check: ${env_contract_status}
+- Stripe test verification: ${stripe_verify_status}
+- Supabase env verification: ${supabase_verify_status}
 - Remote DB verify: ${remote_status}
 - Local DB reset: ${local_reset_status}
 - Backend tests: ${backend_tests_status}
