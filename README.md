@@ -23,7 +23,7 @@ Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in 
 - Supabase project (URL, anon key, service role, DB URL), Stripe keys, LiveKit keys
 
 ## Environment
-- Copy `.env.example` → `.env` (root), `.env.example.backend` → `.env.backend`, `.env.example.flutter` → `frontend/.env` as needed.
+- Copy `.env.example` → `.env` (root, if needed), `backend/.env.example` → `backend/.env`, `.env.example.flutter` → `frontend/.env` as needed.
 - Do **not** commit real keys (.env files are ignored).
 - Backend listens on port `8080` by default; update `API_BASE_URL`/`NEXT_PUBLIC_API_BASE_URL` accordingly.
 

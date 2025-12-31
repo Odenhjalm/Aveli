@@ -19,8 +19,8 @@
    - Refresh any cached configuration in CI, Fly.io, and local `.env` files with the rotated values.
 
 ## Handling secrets
-- Only use the provided templates: `.env.example`, `.env.example.backend`, `.env.example.flutter`, `.env.docker.example`.
-- Keep real secrets in untracked files (`.env`, `.env.backend`, `frontend/.env`) or secret managers (Fly.io secrets, GitHub Actions secrets).
+- Only use the provided templates: `.env.example`, `backend/.env.example`, `.env.example.flutter`, `.env.docker.example`.
+- Keep real secrets in untracked files (`backend/.env`, `frontend/.env`, `.env`) or secret managers (Fly.io secrets, GitHub Actions secrets).
 - `.gitignore` blocks `.env*`, `/local`, `/secrets`, keys, certs, sqlite files, and editor noise.
 
 ## Git history rewrite

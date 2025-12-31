@@ -3,7 +3,8 @@
 FastAPI API backed by Supabase Postgres/Storage. Stripe powers payments/subscriptions/Connect; LiveKit handles SFU/webinars. All schema/RLS lives in `supabase/migrations`.
 
 ## Environment
-Load from `.env.backend` or `.env` (see `docs/ENV_VARS.md`):
+Backend reads from `backend/.env` only (see `docs/verify/ENV_CONTRACT.md` and `docs/ENV_VARS.md`).
+Create it from `backend/.env.example` and never commit real values.
 - Supabase: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_DB_URL`, `SUPABASE_JWT_SECRET`
 - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_BILLING_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `STRIPE_PRICE_SERVICE_*`
 - LiveKit: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_WS_URL`, `LIVEKIT_API_URL`, `LIVEKIT_WEBHOOK_SECRET`

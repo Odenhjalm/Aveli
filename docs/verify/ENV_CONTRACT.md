@@ -1,7 +1,8 @@
 # Environment Contract
 
 ## Sources of truth
-- Backend env loader: `backend/app/config.py` (Pydantic BaseSettings) reads `.env` and `../.env` for local runs.
+- Backend env loader: `backend/app/config.py` reads **only** `backend/.env` and raises if missing (no `.env.local` or alternate env files).
+- Env contract: `ENV_REQUIRED_KEYS.txt` + `backend/scripts/env_contract_check.py`.
 - DB connection: `backend/app/db.py` uses `settings.database_url` (defaults to `SUPABASE_DB_URL`).
 - Tests: `backend/tests/conftest.py` imports `app.config`, so test env uses the same loader.
 - Flutter: `frontend/lib/core/env/env_resolver.dart` prefers `--dart-define` and falls back to dotenv in non-release builds.
@@ -10,7 +11,7 @@
 - Migrations: canonical SQL lives in `supabase/migrations` and is applied by `backend/scripts/apply_supabase_migrations.sh`.
 
 ## Backend (FastAPI) env vars
-Set via local `.env`, Fly secrets, or CI secrets.
+Set via `backend/.env` only (copy from `backend/.env.example`). Keys must be in `ENV_REQUIRED_KEYS.txt`.
 - Core: `APP_ENV`, `PORT`, `FRONTEND_BASE_URL`, `CORS_ALLOW_ORIGINS`, `CORS_ALLOW_ORIGIN_REGEX`
 - Supabase: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, `DATABASE_URL`, `SUPABASE_DB_PASSWORD`, `SUPABASE_JWT_SECRET`, `SUPABASE_PROJECT_REF`, `SUPABASE_PAT`
 - Auth/media: `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRES_MINUTES`, `JWT_REFRESH_EXPIRES_MINUTES`, `MEDIA_SIGNING_SECRET`, `MEDIA_SIGNING_TTL_SECONDS`, `MEDIA_ROOT`, `MEDIA_PUBLIC_CACHE_SECONDS`, `MEDIA_ALLOW_LEGACY_MEDIA`, `LESSON_MEDIA_MAX_BYTES`
@@ -38,8 +39,10 @@ Set via `.env`, `.env.local`, or hosting provider build env.
 - `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`
 
 ## Ops/verification env vars
-Used by scripts in `ops/`.
+Used by scripts in `ops/` and `backend/scripts/`.
 - Guardrails: `ENVIRONMENT`, `CONFIRM_NON_PROD`
 - Supabase project allowlist: `SUPABASE_PROJECT_REF` (or derive from `SUPABASE_URL`) must exist in `docs/ops/SUPABASE_ALLOWLIST.txt` for remote checks.
+- Stripe verification: `backend/scripts/stripe_verify_test_mode.py` reads Stripe keys from `backend/.env` and checks test-mode webhooks.
+- Supabase verification: `backend/scripts/supabase_verify_env.py` reads Supabase keys from `backend/.env` and validates connectivity.
 - CI behavior: `CI` (env validation fails in CI, warns locally)
 - Tests: `REQUIRE_DB_TESTS`

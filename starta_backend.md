@@ -112,7 +112,7 @@ När servern körs kan Flutter/webb peka mot `http://127.0.0.1:8080` via sina `.
 
 ## Testa betalvägg för kursen "Vit Magi"
 
-1. Använd `backend/.env.local` (innehåller test-nycklar och price-id).
+1. Använd `backend/.env` (innehåller test-nycklar och price-id).
 2. Kör `stripe listen --forward-to http://127.0.0.1:8080/webhooks/stripe`.
 3. Trigga `/checkout/session` med `order_type="vit_magi"` från appen.
 4. Slutför testbetalning i Stripe Payment Element.
