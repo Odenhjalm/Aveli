@@ -43,7 +43,7 @@ def load_env() -> dict[str, str]:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip()
-        if value and value[0] == value[-1] and value[0] in ("\"", "'"):
+        if value and value[0] == value[-1] and value[0] in ('"', "'"):
             value = value[1:-1]
         env[key] = value
     return env
@@ -54,81 +54,153 @@ def is_jwt(value: str) -> bool:
     return len(parts) == 3 and all(part.strip() for part in parts)
 
 
-def derive_project_ref(url: str) -> str:
+def is_publishable_key(value: str) -> bool:
+    return value.startswith("sb_publishable_")
+
+
+def is_secret_key(value: str) -> bool:
+    return value.startswith("sb_secret_")
+
+
+def derive_project_ref(url: str) -> tuple[str, str]:
     try:
-        host = urlparse(url).hostname or ""
+        hostname = urlparse(url).hostname or ""
     except Exception:
-        return ""
-    return host.split(".")[0] if host else ""
+        return "", ""
+    if not hostname:
+        return "", ""
+    project_ref = hostname.split(".")[0] if "." in hostname else ""
+    return project_ref, hostname
+
+
+def format_snippet(text: str, limit: int = 200) -> str:
+    snippet = " ".join(text.strip().split())
+    if not snippet:
+        return "<empty>"
+    if len(snippet) > limit:
+        return f"{snippet[:limit]}..."
+    return snippet
 
 
 def main() -> None:
     env = load_env()
     errors: list[str] = []
 
-    def require(key: str) -> str:
-        value = env.get(key, "").strip()
-        if not value:
-            errors.append(f"{key} is missing in backend/.env")
-        return value
-
-    supabase_url = require("SUPABASE_URL")
-    anon_key = require("SUPABASE_ANON_KEY")
-    service_key = require("SUPABASE_SERVICE_ROLE_KEY")
-    db_url = require("SUPABASE_DB_URL")
-
-    project_ref = ""
-    if supabase_url:
-        project_ref = derive_project_ref(supabase_url)
-        if not project_ref:
-            errors.append("SUPABASE_URL is not a valid Supabase URL")
-
+    supabase_url = env.get("SUPABASE_URL", "").strip()
+    publishable_key = env.get("SUPABASE_PUBLISHABLE_API_KEY", "").strip()
+    secret_key = env.get("SUPABASE_SECRET_API_KEY", "").strip()
+    anon_key = env.get("SUPABASE_ANON_KEY", "").strip()
+    service_key = env.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    db_url = env.get("SUPABASE_DB_URL", "").strip()
     configured_ref = env.get("SUPABASE_PROJECT_REF", "").strip()
-    if project_ref and configured_ref and project_ref != configured_ref:
-        errors.append("SUPABASE_PROJECT_REF does not match SUPABASE_URL")
+
+    if not supabase_url:
+        errors.append("SUPABASE_URL is missing in backend/.env")
+
+    if not publishable_key and not secret_key:
+        errors.append(
+            "SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_SECRET_API_KEY is required"
+        )
+
+    if publishable_key and not is_publishable_key(publishable_key):
+        errors.append("SUPABASE_PUBLISHABLE_API_KEY does not look like sb_publishable_")
+    if secret_key and not is_secret_key(secret_key):
+        errors.append("SUPABASE_SECRET_API_KEY does not look like sb_secret_")
 
     if anon_key and not is_jwt(anon_key):
         errors.append("SUPABASE_ANON_KEY does not look like a JWT")
     if service_key and not is_jwt(service_key):
         errors.append("SUPABASE_SERVICE_ROLE_KEY does not look like a JWT")
 
-    storage_ok = False
-    if supabase_url and service_key:
+    project_ref = ""
+    derived_ref = ""
+    hostname = ""
+    if supabase_url:
+        derived_ref, hostname = derive_project_ref(supabase_url)
+        if not hostname:
+            errors.append("SUPABASE_URL is not a valid Supabase URL")
+        elif "." not in hostname:
+            errors.append("SUPABASE_URL hostname does not include a project ref")
+        elif not derived_ref:
+            errors.append("SUPABASE_URL does not include a project ref")
+        elif not hostname.startswith(f"{derived_ref}."):
+            errors.append("Derived project ref does not match SUPABASE_URL hostname")
+
+    if configured_ref:
+        project_ref = configured_ref
+        if derived_ref and configured_ref != derived_ref:
+            errors.append("SUPABASE_PROJECT_REF does not match SUPABASE_URL hostname")
+        elif not derived_ref:
+            errors.append("SUPABASE_PROJECT_REF set but SUPABASE_URL is invalid")
+    else:
+        project_ref = derived_ref
+        if supabase_url and not derived_ref:
+            errors.append(
+                "SUPABASE_PROJECT_REF missing and could not derive from SUPABASE_URL"
+            )
+
+    storage_status = "skipped"
+    key_for_storage = secret_key or publishable_key
+    storage_key_label = (
+        "SUPABASE_SECRET_API_KEY"
+        if secret_key
+        else "SUPABASE_PUBLISHABLE_API_KEY"
+        if publishable_key
+        else "missing"
+    )
+
+    if supabase_url and key_for_storage:
         storage_url = supabase_url.rstrip("/") + "/storage/v1/bucket"
         try:
             resp = httpx.get(
                 storage_url,
                 headers={
-                    "apikey": service_key,
-                    "Authorization": f"Bearer {service_key}",
+                    "apikey": key_for_storage,
+                    "Authorization": f"Bearer {key_for_storage}",
                 },
                 timeout=10,
             )
-            storage_ok = resp.status_code == 200
-            if not storage_ok:
-                errors.append(f"Supabase storage request failed (status {resp.status_code})")
-        except Exception:
-            errors.append("Supabase storage request failed")
+            if resp.status_code == 200:
+                storage_status = "ok"
+            else:
+                storage_status = f"failed ({resp.status_code})"
+                snippet = format_snippet(resp.text)
+                errors.append(
+                    "Supabase storage request failed "
+                    f"(status {resp.status_code}): {snippet}"
+                )
+        except Exception as exc:
+            storage_status = "failed"
+            errors.append(f"Supabase storage request failed: {exc}")
 
-    db_ok = False
+    db_status = "skipped"
     if db_url:
         try:
-            with psycopg.connect(db_url, connect_timeout=5) as conn:
+            with psycopg.connect(
+                db_url,
+                connect_timeout=5,
+                options="-c default_transaction_read_only=on",
+            ) as conn:
                 with conn.cursor() as cur:
                     cur.execute("select 1;")
                     cur.fetchone()
-            db_ok = True
-        except Exception:
-            errors.append("SUPABASE_DB_URL connection failed")
+            db_status = "ok"
+        except Exception as exc:
+            db_status = "failed"
+            errors.append(f"SUPABASE_DB_URL connection failed: {exc}")
 
     print("==> Supabase env verification")
     print(f"- SUPABASE_URL: {'set' if supabase_url else 'missing'}")
-    if project_ref:
-        print(f"- Project ref: {project_ref}")
+    print(f"- Project ref: {project_ref or 'missing'}")
+    print(
+        f"- SUPABASE_PUBLISHABLE_API_KEY: {'set' if publishable_key else 'missing'}"
+    )
+    print(f"- SUPABASE_SECRET_API_KEY: {'set' if secret_key else 'missing'}")
     print(f"- SUPABASE_ANON_KEY: {'set' if anon_key else 'missing'}")
     print(f"- SUPABASE_SERVICE_ROLE_KEY: {'set' if service_key else 'missing'}")
-    print(f"- Storage list: {'ok' if storage_ok else 'failed'}")
-    print(f"- DB connection: {'ok' if db_ok else 'failed'}")
+    print(f"- Storage auth key: {storage_key_label}")
+    print(f"- Storage list: {storage_status}")
+    print(f"- DB connection: {db_status}")
 
     if errors:
         print("Supabase verification: FAIL")

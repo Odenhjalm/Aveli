@@ -20,6 +20,12 @@ PREFIX_RE = re.compile(
     r"_slug_to_env_key\([\s\S]*?prefix\s*=\s*[\"\']([A-Z0-9_]+)[\"\']"
 )
 
+OPTIONAL_KEYS = {
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_JWT_SECRET",
+    "SUPABASE_SERVICE_ROLE_KEY",
+}
+
 
 def _die(message: str) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
@@ -97,7 +103,9 @@ def main() -> None:
     unknown_refs = sorted(
         key
         for key in referenced_keys
-        if key not in required_keys and not matches_allowed_prefix(key, allowed_prefixes)
+        if key not in required_keys
+        and key not in OPTIONAL_KEYS
+        and not matches_allowed_prefix(key, allowed_prefixes)
     )
 
     unknown_prefixes = sorted(

@@ -83,3 +83,161 @@ Reason: SUPABASE_PROJECT_REF not set and SUPABASE_URL not provided
 - Flutter tests: FAIL
 - Landing tests: PASS
 - Landing build: FAIL
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- App tables: 57
+- RLS disabled tables: live_event_registrations
+live_events
+- Tables without policies: live_event_registrations
+live_events
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=false)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: public-media should be public
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: 001_app_schema.sql
+002_teacher_catalog.sql
+003_sessions_and_orders.sql
+004_memberships_billing.sql
+005_course_entitlements.sql
+005_livekit_webhook_jobs.sql
+006_course_pricing.sql
+006_seminar_sessions.sql
+007_rls_policies.sql
+008_add_next_run_at_to_livekit_webhook_jobs.sql
+008_rls_app_policies.sql
+010_fix_livekit_job_id.sql
+011_seminar_host_helper.sql
+012_seminar_access_wrapper.sql
+013_seminar_attendee_wrapper.sql
+014_seminar_host_guard.sql
+015_profile_stripe_customer.sql
+016_course_bundles.sql
+017_order_type_bundle.sql
+018_storage_buckets.sql
+202511180129_sync_livekit_webhook_jobs.sql
+- Migrations extra in DB: 027_classroom
+028_media_library
+029_welcome_cards
+add_next_run_at_to_livekit_webhook_jobs
+app_schema
+auth_profile_provider_columns
+aveli_pro_platform
+course_bundles
+course_entitlements
+course_entitlements_and_storage_policies
+course_pricing
+fix_livekit_job_id
+fix_purchases_and_claim_tokens
+lesson_pricing
+live_events
+livekit_webhook_jobs
+memberships_billing
+order_type_bundle
+profile_stripe_customer
+rls_app_policies
+rls_policies
+seminar_access_wrapper
+seminar_attendee_wrapper
+seminar_host_guard
+seminar_host_helper
+seminar_sessions
+sessions_and_orders
+storage_buckets
+sync_livekit_webhook_jobs
+teacher_catalog
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- App tables: 57
+- RLS disabled tables: live_event_registrations
+live_events
+- Tables without policies: live_event_registrations
+live_events
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=false)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: public-media should be public
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: 001_app_schema.sql
+002_teacher_catalog.sql
+003_sessions_and_orders.sql
+004_memberships_billing.sql
+005_course_entitlements.sql
+005_livekit_webhook_jobs.sql
+006_course_pricing.sql
+006_seminar_sessions.sql
+007_rls_policies.sql
+008_add_next_run_at_to_livekit_webhook_jobs.sql
+008_rls_app_policies.sql
+010_fix_livekit_job_id.sql
+011_seminar_host_helper.sql
+012_seminar_access_wrapper.sql
+013_seminar_attendee_wrapper.sql
+014_seminar_host_guard.sql
+015_profile_stripe_customer.sql
+016_course_bundles.sql
+017_order_type_bundle.sql
+018_storage_buckets.sql
+202511180129_sync_livekit_webhook_jobs.sql
+- Migrations extra in DB: 027_classroom
+028_media_library
+029_welcome_cards
+add_next_run_at_to_livekit_webhook_jobs
+app_schema
+auth_profile_provider_columns
+aveli_pro_platform
+course_bundles
+course_entitlements
+course_entitlements_and_storage_policies
+course_pricing
+fix_livekit_job_id
+fix_purchases_and_claim_tokens
+lesson_pricing
+live_events
+livekit_webhook_jobs
+memberships_billing
+order_type_bundle
+profile_stripe_customer
+rls_app_policies
+rls_policies
+seminar_access_wrapper
+seminar_attendee_wrapper
+seminar_host_guard
+seminar_host_helper
+seminar_sessions
+sessions_and_orders
+storage_buckets
+sync_livekit_webhook_jobs
+teacher_catalog
+
+## Verification Run (ops/verify_all.sh)
+- Env guard (backend/.env not tracked): PASS
+- Env validation: PASS
+- Env contract check: FAIL
+- Stripe test verification: FAIL
+- Supabase env verification: FAIL
+- Remote DB verify: FAIL
+- Local DB reset: SKIP
+- Backend tests: FAIL
+- Backend smoke: FAIL
+- Flutter tests: FAIL
+- Landing tests: PASS
+- Landing build: FAIL

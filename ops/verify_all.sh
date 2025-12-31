@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
+POETRY_INSTALL_ARGS="${POETRY_INSTALL_ARGS:---no-root}"
 
 log() {
   echo "==> $1"
@@ -34,7 +35,7 @@ ensure_backend_deps() {
   if $backend_deps_ready; then
     return 0
   fi
-  if (cd "${ROOT_DIR}/backend" && poetry install --no-interaction --no-root); then
+  if (cd "${ROOT_DIR}/backend" && poetry install --no-interaction ${POETRY_INSTALL_ARGS}); then
     backend_deps_ready=true
     return 0
   fi
