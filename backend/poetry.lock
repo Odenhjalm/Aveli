@@ -1236,6 +1236,23 @@ files = [
 ]
 
 [[package]]
+name = "psycopg-pool"
+version = "3.3.0"
+description = "Connection Pool for Psycopg"
+optional = false
+python-versions = ">=3.10"
+files = [
+    {file = "psycopg_pool-3.3.0-py3-none-any.whl", hash = "sha256:2e44329155c410b5e8666372db44276a8b1ebd8c90f1c3026ebba40d4bc81063"},
+    {file = "psycopg_pool-3.3.0.tar.gz", hash = "sha256:fa115eb2860bd88fce1717d75611f41490dec6135efb619611142b24da3f6db5"},
+]
+
+[package.dependencies]
+typing-extensions = ">=4.6"
+
+[package.extras]
+test = ["anyio (>=4.0)", "mypy (>=1.14)", "pproxy (>=2.7)", "pytest (>=6.2.5)", "pytest-cov (>=3.0)", "pytest-randomly (>=3.5)"]
+
+[[package]]
 name = "py-serializable"
 version = "2.1.0"
 description = "Library for serializing and deserializing Python Objects to and from JSON and XML."
@@ -2169,4 +2186,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "d000b08967e166c28c5c3979e7b3201f21b9cf2db2aedb026da71dc2783c194b"
+content-hash = "7be7f9846fc69c90704b02a2b632ed755774275ff24b1812bbccbc916175b638"
