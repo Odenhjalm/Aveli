@@ -11,6 +11,11 @@ import uuid
 import httpx
 
 
+def _subscriptions_enabled() -> bool:
+    value = os.environ.get("SUBSCRIPTIONS_ENABLED", "true").strip().lower()
+    return value not in {"false", "0", "no"}
+
+
 async def _register_and_login(client: httpx.AsyncClient, email: str, password: str):
     print(f"[auth] registering {email}")
     register = await client.post(
@@ -114,27 +119,30 @@ async def main():
             except httpx.HTTPStatusError as exc:
                 print(f"[warn] SFU-token misslyckades: {exc}")
 
-        try:
-            sub_resp = await client.post(
-                "/api/billing/create-subscription",
-                headers={"Authorization": f"Bearer {token}"},
-                json={
-                    "plan_interval": "month",
-                    "success_url": "http://localhost:3000/billing/success",
-                    "cancel_url": "http://localhost:3000/billing/cancel",
-                },
-            )
-            sub_resp.raise_for_status()
-            session_payload = sub_resp.json()
-            print("[billing] subscription session", session_payload.get("checkout_url"))
-            membership_resp = await client.get(
-                "/api/me/membership",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            membership_resp.raise_for_status()
-            print("[billing] membership state", membership_resp.json())
-        except httpx.HTTPStatusError as exc:
-            print(f"[warn] Subscriptions API misslyckades: {exc}")
+        if _subscriptions_enabled():
+            try:
+                sub_resp = await client.post(
+                    "/api/billing/create-subscription",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "plan_interval": "month",
+                        "success_url": "http://localhost:3000/billing/success",
+                        "cancel_url": "http://localhost:3000/billing/cancel",
+                    },
+                )
+                sub_resp.raise_for_status()
+                session_payload = sub_resp.json()
+                print("[billing] subscription session", session_payload.get("checkout_url"))
+                membership_resp = await client.get(
+                    "/api/me/membership",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                membership_resp.raise_for_status()
+                print("[billing] membership state", membership_resp.json())
+            except httpx.HTTPStatusError as exc:
+                print(f"[warn] Subscriptions API misslyckades: {exc}")
+        else:
+            print("[billing] subscriptions disabled; skipping subscription flow")
         if refresh:
             refresh_resp = await client.post("/auth/refresh", json={"refresh_token": refresh})
             refresh_resp.raise_for_status()
