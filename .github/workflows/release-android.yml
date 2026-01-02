@@ -23,9 +23,11 @@ jobs:
           java-version: '17'
 
       - name: Install dependencies
+        working-directory: frontend
         run: flutter pub get
 
       - name: Build app bundle
+        working-directory: frontend
         run: flutter build appbundle --release
 
       - name: Upload artifact
