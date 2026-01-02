@@ -52,13 +52,8 @@ def main() -> int:
         "STRIPE_PUBLISHABLE_KEY",
         "STRIPE_WEBHOOK_SECRET",
         "STRIPE_BILLING_WEBHOOK_SECRET",
-        "STRIPE_TEST_SECRET_KEY",
-        "STRIPE_TEST_PUBLISHABLE_KEY",
-        "STRIPE_TEST_WEBHOOK_BILLING_SECRET",
-        "STRIPE_LIVE_SECRET_KEY",
-        "STRIPE_LIVE_PUBLISHABLE_KEY",
-        "STRIPE_LIVE_WEBHOOK_SECRET",
-        "STRIPE_LIVE_BILLING_WEBHOOK_SECRET",
+        "AVELI_PRICE_MONTHLY",
+        "AVELI_PRICE_YEARLY",
     ]
     missing = [key for key in required if not _val(key)]
 
@@ -73,53 +68,35 @@ def main() -> int:
     active_webhook = _val("STRIPE_WEBHOOK_SECRET")
     active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
 
-    test_secret = _val("STRIPE_TEST_SECRET_KEY")
-    test_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY")
-    test_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET")
-    test_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET")
-
-    live_secret = _val("STRIPE_LIVE_SECRET_KEY")
-    live_pub = _val("STRIPE_LIVE_PUBLISHABLE_KEY")
-    live_webhook = _val("STRIPE_LIVE_WEBHOOK_SECRET")
-    live_billing = _val("STRIPE_LIVE_BILLING_WEBHOOK_SECRET")
+    price_monthly = _val("AVELI_PRICE_MONTHLY")
+    price_yearly = _val("AVELI_PRICE_YEARLY")
 
     errors: list[str] = []
     warnings: list[str] = []
 
     if mode == "development":
-        if not _is_test_secret(active_secret):
-            errors.append("STRIPE_SECRET_KEY must be sk_test_ in development")
-        if not _is_test_publishable(active_pub):
-            errors.append("STRIPE_PUBLISHABLE_KEY must be pk_test_ in development")
-        if active_secret == live_secret:
-            errors.append("STRIPE_SECRET_KEY matches live key in development")
-        if active_pub == live_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY matches live key in development")
-        if active_secret != test_secret:
-            errors.append("STRIPE_SECRET_KEY must equal STRIPE_TEST_SECRET_KEY in development")
-        if active_pub != test_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY must equal STRIPE_TEST_PUBLISHABLE_KEY in development")
-        if test_billing and active_billing != test_billing:
-            errors.append("STRIPE_BILLING_WEBHOOK_SECRET must match STRIPE_TEST_WEBHOOK_BILLING_SECRET in development")
-        if test_webhook and active_webhook != test_webhook:
-            errors.append("STRIPE_WEBHOOK_SECRET must match STRIPE_TEST_WEBHOOK_SECRET in development")
+        if _is_live_secret(active_secret):
+            warnings.append("STRIPE_SECRET_KEY is sk_live_ in development")
+        if _is_live_publishable(active_pub):
+            warnings.append("STRIPE_PUBLISHABLE_KEY is pk_live_ in development")
+        if not (_is_test_secret(active_secret) or _is_live_secret(active_secret)):
+            errors.append("STRIPE_SECRET_KEY must be sk_test_ or sk_live_")
+        if not (_is_test_publishable(active_pub) or _is_live_publishable(active_pub)):
+            errors.append("STRIPE_PUBLISHABLE_KEY must be pk_test_ or pk_live_")
     else:
         if not _is_live_secret(active_secret):
             errors.append("STRIPE_SECRET_KEY must be sk_live_ in production")
         if not _is_live_publishable(active_pub):
             errors.append("STRIPE_PUBLISHABLE_KEY must be pk_live_ in production")
-        if active_secret == test_secret:
-            errors.append("STRIPE_SECRET_KEY matches test key in production")
-        if active_pub == test_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY matches test key in production")
-        if active_secret != live_secret:
-            errors.append("STRIPE_SECRET_KEY must equal STRIPE_LIVE_SECRET_KEY in production")
-        if active_pub != live_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY must equal STRIPE_LIVE_PUBLISHABLE_KEY in production")
-        if live_billing and active_billing != live_billing:
-            errors.append("STRIPE_BILLING_WEBHOOK_SECRET must match STRIPE_LIVE_BILLING_WEBHOOK_SECRET in production")
-        if live_webhook and active_webhook != live_webhook:
-            errors.append("STRIPE_WEBHOOK_SECRET must match STRIPE_LIVE_WEBHOOK_SECRET in production")
+
+    if active_webhook and not active_webhook.startswith("whsec_"):
+        warnings.append("STRIPE_WEBHOOK_SECRET should start with whsec_")
+    if active_billing and not active_billing.startswith("whsec_"):
+        warnings.append("STRIPE_BILLING_WEBHOOK_SECRET should start with whsec_")
+    if price_monthly and not price_monthly.startswith("price_"):
+        warnings.append("AVELI_PRICE_MONTHLY should start with price_")
+    if price_yearly and not price_yearly.startswith("price_"):
+        warnings.append("AVELI_PRICE_YEARLY should start with price_")
 
     stripe_routes = ROOT / "backend" / "app" / "routes"
     webhook_file = stripe_routes / "stripe_webhooks.py"
