@@ -3,7 +3,7 @@
 
 Environment-aware:
 - Development: warns for optional DB/JWT keys.
-- Production: requires DB/JWT + live Stripe keys.
+- Production: requires DB/JWT + active Stripe keys.
 """
 from __future__ import annotations
 
@@ -80,10 +80,6 @@ def main() -> int:
         "JWT_ALGORITHM",
         "JWT_EXPIRES_MINUTES",
         "JWT_REFRESH_EXPIRES_MINUTES",
-        "STRIPE_LIVE_SECRET_KEY",
-        "STRIPE_LIVE_PUBLISHABLE_KEY",
-        "STRIPE_LIVE_WEBHOOK_SECRET",
-        "STRIPE_LIVE_BILLING_WEBHOOK_SECRET",
     }
 
     missing_required = [key for key in required_keys if not _env_value(env_map, key)]
