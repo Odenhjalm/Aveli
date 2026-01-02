@@ -1,10 +1,10 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-import 'package:uni_links/uni_links.dart';
 import 'package:wisdom/core/auth/auth_controller.dart';
 import 'package:wisdom/core/routing/app_router.dart';
 import 'package:wisdom/core/routing/route_paths.dart';
@@ -20,7 +20,8 @@ class DeepLinkService {
   DeepLinkService(this._ref);
 
   final Ref _ref;
-  StreamSubscription<Uri?>? _sub;
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _sub;
   bool _initialized = false;
 
   Future<void> init() async {
@@ -31,11 +32,9 @@ class DeepLinkService {
       return;
     }
     await _processInitialUri();
-    _sub = uriLinkStream.listen(
+    _sub = _appLinks.uriLinkStream.listen(
       (uri) {
-        if (uri != null) {
-          unawaited(handleUri(uri));
-        }
+        unawaited(handleUri(uri));
       },
       onError: (err) {
         debugPrint('Deep link stream error: $err');
@@ -45,7 +44,7 @@ class DeepLinkService {
 
   Future<void> _processInitialUri() async {
     try {
-      final initial = await getInitialUri();
+      final initial = await _appLinks.getInitialLink();
       if (initial != null) {
         await handleUri(initial);
       }
