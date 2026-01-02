@@ -39,6 +39,7 @@ Status: READY (prod gates pass)
 - Aligned env validation/contract to active Stripe keys + `AVELI_PRICE_*` (no `STRIPE_LIVE_*`).
 - Updated Stripe verifier to enforce active key prefixes and `AVELI_PRICE_*` mapping.
 - Updated SFU webhook test to expect 401 on unsigned requests.
+- QA teacher smoke now skips subscription creation when no active services are available (prod fails on 5xx).
 
 ## Remaining Blockers
 - None for production verification.
@@ -1643,6 +1644,48 @@ storage_signed_private_read [SELECT]
 - Stripe test/live verification: PASS
 - Supabase env verification: PASS
 - Remote DB verify (read-only, non-blocking): PASS
+- Local DB reset: SKIP
+- Backend tests: PASS
+- Backend smoke: PASS
+- Flutter tests: PASS
+- Flutter integration tests: SKIP (FLUTTER_DEVICE not set)
+- Landing deps: PASS
+- Landing tests: PASS
+- Landing build: PASS
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 57
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Verification Run (ops/verify_all.sh)
+- Mode: production
+- Remote DB master env: /home/oden/Aveli/backend/.env
+- Env guard (backend/.env not tracked): PASS
+- Env validation: PASS
+- Poetry install: PASS
+- Env contract check: PASS
+- Stripe test/live verification: PASS
+- Supabase env verification: PASS
+- Remote DB verify (read-only, blocking): PASS
 - Local DB reset: SKIP
 - Backend tests: PASS
 - Backend smoke: PASS

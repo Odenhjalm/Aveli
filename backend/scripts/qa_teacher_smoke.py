@@ -16,6 +16,11 @@ def _subscriptions_enabled() -> bool:
     return value not in {"false", "0", "no"}
 
 
+def _is_production() -> bool:
+    env = (os.environ.get("APP_ENV") or os.environ.get("ENV") or os.environ.get("ENVIRONMENT") or "").strip().lower()
+    return env in {"prod", "production", "live"}
+
+
 async def _register_and_login(client: httpx.AsyncClient, email: str, password: str):
     print(f"[auth] registering {email}")
     register = await client.post(
@@ -103,8 +108,9 @@ async def main():
         await _run_health_checks(client)
         token, refresh = await _register_and_login(client, email, password)
         services = await _list_services(client, token)
-        if not services:
-            print("[warn] inga aktiva tjänster – hoppar över order/Stripe-flödet")
+        has_services = bool(services)
+        if not has_services:
+            print("[info] inga aktiva tjänster – hoppar över order/Stripe-flödet")
         else:
             order = await _create_order(client, token, services[0]["id"])
             try:
@@ -119,7 +125,7 @@ async def main():
             except httpx.HTTPStatusError as exc:
                 print(f"[warn] SFU-token misslyckades: {exc}")
 
-        if _subscriptions_enabled():
+        if _subscriptions_enabled() and has_services:
             try:
                 sub_resp = await client.post(
                     "/api/billing/create-subscription",
@@ -130,7 +136,14 @@ async def main():
                         "cancel_url": "http://localhost:3000/billing/cancel",
                     },
                 )
-                sub_resp.raise_for_status()
+                if sub_resp.status_code >= 500:
+                    sub_resp.raise_for_status()
+                if sub_resp.status_code >= 400:
+                    raise httpx.HTTPStatusError(
+                        "Subscription creation failed",
+                        request=sub_resp.request,
+                        response=sub_resp,
+                    )
                 session_payload = sub_resp.json()
                 print("[billing] subscription session", session_payload.get("checkout_url"))
                 membership_resp = await client.get(
@@ -140,7 +153,11 @@ async def main():
                 membership_resp.raise_for_status()
                 print("[billing] membership state", membership_resp.json())
             except httpx.HTTPStatusError as exc:
+                if _is_production() and exc.response is not None and exc.response.status_code >= 500:
+                    raise
                 print(f"[warn] Subscriptions API misslyckades: {exc}")
+        elif _subscriptions_enabled():
+            print("[billing] inga aktiva tjänster – hoppar över subscription flow")
         else:
             print("[billing] subscriptions disabled; skipping subscription flow")
         if refresh:
