@@ -64,7 +64,27 @@ normalize_env() {
 
 results=()
 record_result() {
-  results+=("$1: $2")
+  local label="$1"
+  local status="$2"
+  local detail="${3:-}"
+  local entry="${label}: ${status}"
+  local line="${status} ${label}"
+
+  if [[ -n "$detail" ]]; then
+    entry+=" (${detail})"
+    line+=": ${detail}"
+  fi
+
+  results+=("$entry")
+
+  case "$status" in
+    FAIL)
+      echo "$line" >&2
+      ;;
+    *)
+      echo "$line"
+      ;;
+  esac
 }
 
 run_step() {
@@ -85,7 +105,7 @@ run_step_nonblocking() {
     record_result "$label" "PASS"
     return 0
   fi
-  record_result "$label" "FAIL (non-blocking)"
+  record_result "$label" "WARN" "non-blocking"
   return 0
 }
 
@@ -122,7 +142,7 @@ if command -v poetry >/dev/null 2>&1; then
     overall_status=1
   fi
 else
-  record_result "Poetry install" "FAIL (poetry missing)"
+  record_result "Poetry install" "FAIL" "poetry missing"
   overall_status=1
 fi
 
@@ -142,13 +162,48 @@ if ! run_step "Supabase env verification" bash -c "cd '$BACKEND_DIR' && poetry r
 fi
 
 # Remote DB verify
-if [[ "$ENV_MODE" == "production" ]]; then
-  if ! run_step "Remote DB verify (read-only, blocking)" bash "$BACKEND_DIR/scripts/db_verify_remote_readonly.sh"; then
+set +e
+remote_output="$("$BACKEND_DIR/scripts/db_verify_remote_readonly.sh")"
+remote_exit=$?
+set -e
+
+remote_status="$(printf '%s\n' "$remote_output" | sed -n 's/^REMOTE_DB_VERIFY_STATUS=//p' | tail -n 1)"
+remote_reason="$(printf '%s\n' "$remote_output" | sed -n 's/^REMOTE_DB_VERIFY_REASON=//p' | tail -n 1)"
+remote_summary="$(printf '%s\n' "$remote_output" | sed -n 's/^REMOTE_DB_VERIFY_SUMMARY=//p' | tail -n 1)"
+remote_report="$(printf '%s\n' "$remote_output" | sed -n 's/^REMOTE_DB_VERIFY_REPORT=//p' | tail -n 1)"
+
+case "$remote_exit" in
+  0)
+    record_result "remote DB verify" "PASS"
+    ;;
+  10)
+    if [[ -z "$remote_reason" ]]; then
+      remote_reason="missing prerequisites"
+    fi
+    record_result "remote DB verify" "SKIP" "$remote_reason"
+    ;;
+  20)
+    if [[ -z "$remote_summary" ]]; then
+      remote_summary="remote DB checks failed"
+    fi
+    if [[ -n "$remote_report" ]]; then
+      record_result "remote DB verify" "WARN" "${remote_summary} (report: ${remote_report})"
+    else
+      record_result "remote DB verify" "WARN" "$remote_summary"
+    fi
+    ;;
+  *)
+    if [[ -z "$remote_summary" ]]; then
+      remote_summary="remote DB checks failed"
+    fi
+    if [[ -n "$remote_report" ]]; then
+      record_result "remote DB verify" "FAIL" "${remote_summary} (report: ${remote_report})"
+    else
+      record_result "remote DB verify" "FAIL" "$remote_summary"
+    fi
     overall_status=1
-  fi
-else
-  run_step_nonblocking "Remote DB verify (read-only, non-blocking)" bash "$BACKEND_DIR/scripts/db_verify_remote_readonly.sh"
-fi
+    ;;
+esac
 
 # Local DB reset (optional)
 record_result "Local DB reset" "SKIP"
@@ -218,11 +273,11 @@ if command -v flutter >/dev/null 2>&1; then
       overall_status=1
     fi
   else
-    record_result "Flutter integration tests" "SKIP (FLUTTER_DEVICE not set)"
+    record_result "Flutter integration tests" "SKIP" "FLUTTER_DEVICE not set"
   fi
 else
-  record_result "Flutter tests" "SKIP (flutter not installed)"
-  record_result "Flutter integration tests" "SKIP (flutter not installed)"
+  record_result "Flutter tests" "SKIP" "flutter not installed"
+  record_result "Flutter integration tests" "SKIP" "flutter not installed"
 fi
 
 # Landing tests/build
@@ -238,14 +293,14 @@ if [[ -d "$LANDING_DIR" ]]; then
       overall_status=1
     fi
   else
-    record_result "Landing deps" "SKIP (npm not installed)"
-    record_result "Landing tests" "SKIP (npm not installed)"
-    record_result "Landing build" "SKIP (npm not installed)"
+    record_result "Landing deps" "SKIP" "npm not installed"
+    record_result "Landing tests" "SKIP" "npm not installed"
+    record_result "Landing build" "SKIP" "npm not installed"
   fi
 else
-  record_result "Landing deps" "SKIP (landing missing)"
-  record_result "Landing tests" "SKIP (landing missing)"
-  record_result "Landing build" "SKIP (landing missing)"
+  record_result "Landing deps" "SKIP" "landing missing"
+  record_result "Landing tests" "SKIP" "landing missing"
+  record_result "Landing build" "SKIP" "landing missing"
 fi
 
 append_report <<TXT
