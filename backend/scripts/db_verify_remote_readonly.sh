@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
 MASTER_ENV_FILE="/home/oden/Aveli/backend/.env"
-LOG_PATH="/tmp/remote-db-verify-$(date +%Y%m%d-%H%M%S).json"
+LOG_PATH="/tmp/aveli_remote_db_verify_$(date +%Y%m%d-%H%M%S).json"
 
 LOG_STATUS=""
 LOG_REASON=""
@@ -172,12 +172,49 @@ fi
 
 migrations_exists=$(run_sql "select to_regclass('supabase_migrations.schema_migrations') is not null;")
 if [[ "$migrations_exists" == "t" ]]; then
-  db_migrations=$(run_sql "select name from supabase_migrations.schema_migrations order by name;")
+  db_migrations=$(run_sql "select name from supabase_migrations.schema_migrations where name is not null order by name;")
 else
   db_migrations=""
 fi
 
-repo_migrations=$(find "$ROOT_DIR/supabase/migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort)
+repo_migrations=$(
+  python3 - <<'PY' "$ROOT_DIR/supabase/migrations"
+import re
+import sys
+from pathlib import Path
+
+migrations_dir = Path(sys.argv[1])
+names: set[str] = set()
+sync_names: set[str] = set()
+
+if migrations_dir.exists():
+    for path in migrations_dir.glob("*.sql"):
+        base = path.name
+        if base.lower().endswith(".sql"):
+            base = base[:-4]
+        normalized = re.sub(r"^\d+_", "", base)
+        names.add(normalized)
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("--"):
+                continue
+            lower = stripped.lower()
+            if lower.startswith("-- sync-migration:") or lower.startswith("-- sync-migrations:"):
+                payload = stripped.split(":", 1)[1]
+                for item in re.split(r"[\s,]+", payload):
+                    item = item.strip().strip("\"' ")
+                    if item:
+                        sync_names.add(item)
+
+names |= sync_names
+for name in sorted(names):
+    print(name)
+PY
+)
 
 missing_in_db=""
 extra_in_db=""
