@@ -249,7 +249,8 @@ async def test_sfu_token_rejects_ended_session(async_client, monkeypatch):
         await cleanup_user(teacher_id)
 
 
-async def test_sfu_webhook_missing_event_returns_400(async_client):
+async def test_sfu_webhook_missing_event_returns_400(async_client, monkeypatch):
+    monkeypatch.setattr(settings, "livekit_webhook_secret", None, raising=False)
     resp = await async_client.post(
         "/sfu/webhooks/livekit",
         json={"room": {"name": "missing-event"}},
