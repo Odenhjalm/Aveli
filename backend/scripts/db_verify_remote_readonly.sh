@@ -6,8 +6,44 @@ REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
 MASTER_ENV_FILE="/home/oden/Aveli/backend/.env"
 LOG_PATH="/tmp/aveli_remote_db_verify_$(date +%Y%m%d-%H%M%S).json"
 
+EXIT_PASS=0
+EXIT_SKIP=10
+EXIT_WARN=20
+EXIT_FAIL=2
+
+SHOULD_LOG=false
 LOG_STATUS=""
 LOG_REASON=""
+
+normalize_env() {
+  local raw="$1"
+  raw="${raw,,}"
+  case "$raw" in
+    prod|production|live) echo "production" ;;
+    *) echo "development" ;;
+  esac
+}
+
+APP_ENV_VALUE="${APP_ENV:-${ENV:-${ENVIRONMENT:-development}}}"
+ENV_MODE="$(normalize_env "$APP_ENV_VALUE")"
+
+emit_result() {
+  local status="$1"
+  local reason="${2:-}"
+  local summary="${3:-}"
+  local report="${4:-}"
+
+  echo "REMOTE_DB_VERIFY_STATUS=${status}"
+  if [[ -n "$reason" ]]; then
+    echo "REMOTE_DB_VERIFY_REASON=${reason}"
+  fi
+  if [[ -n "$summary" ]]; then
+    echo "REMOTE_DB_VERIFY_SUMMARY=${summary}"
+  fi
+  if [[ -n "$report" ]]; then
+    echo "REMOTE_DB_VERIFY_REPORT=${report}"
+  fi
+}
 
 write_log() {
   local status="$1"
@@ -41,12 +77,14 @@ data = {
 
 with open(log_path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2)
-print(f"Remote DB verify log: {log_path}")
 PY
 }
 
 on_exit() {
   local exit_code=$?
+  if [[ "$SHOULD_LOG" != "true" ]]; then
+    return
+  fi
   if [[ -z "$LOG_STATUS" ]]; then
     if [[ $exit_code -eq 0 ]]; then
       LOG_STATUS="COMPLETED"
@@ -66,20 +104,13 @@ append_report() {
   fi
 }
 
+skip_verify() {
+  local reason="$1"
+  emit_result "SKIP" "$reason"
+  exit "$EXIT_SKIP"
+}
+
 load_master_env() {
-  if [[ ! -f "$MASTER_ENV_FILE" ]]; then
-    echo "ERROR: master env missing at ${MASTER_ENV_FILE}" >&2
-    LOG_STATUS="FAILED"
-    LOG_REASON="master env missing"
-    append_report <<TXT
-
-## Remote DB Verify (read-only)
-Status: FAILED
-Reason: master env missing at ${MASTER_ENV_FILE}
-TXT
-    exit 1
-  fi
-
   eval "$(
     python3 - <<'PY' "$MASTER_ENV_FILE"
 import shlex
@@ -106,61 +137,142 @@ PY
   )"
 }
 
+summarize_list() {
+  local input="$1"
+  local total
+  local names
+  total=$(printf '%s\n' "$input" | sed '/^$/d' | wc -l | tr -d ' ')
+  names=$(printf '%s\n' "$input" | sed '/^$/d' | head -n 3 | paste -sd "," -)
+  if [[ "$total" -gt 3 ]]; then
+    echo "${names} (+$((total - 3)) more)"
+  else
+    echo "$names"
+  fi
+}
+
+if [[ ! -f "$MASTER_ENV_FILE" ]]; then
+  skip_verify "master env missing at ${MASTER_ENV_FILE}"
+fi
+
 load_master_env
 
 DB_URL="${SUPABASE_DB_URL:-}"
 if [[ -z "$DB_URL" ]]; then
-  echo "ERROR: SUPABASE_DB_URL missing in master env (${MASTER_ENV_FILE})" >&2
-  LOG_STATUS="FAILED"
-  LOG_REASON="SUPABASE_DB_URL missing"
-  append_report <<TXT
+  skip_verify "missing SUPABASE_DB_URL (in master env: ${MASTER_ENV_FILE})"
+fi
 
-## Remote DB Verify (read-only)
-Status: FAILED
-Reason: SUPABASE_DB_URL missing in master env (${MASTER_ENV_FILE})
-TXT
-  exit 1
+allowlist_candidates=()
+if [[ -n "${SUPABASE_ALLOWLIST_FILE:-}" ]]; then
+  allowlist_candidates+=("$SUPABASE_ALLOWLIST_FILE")
+fi
+if [[ -n "${SUPABASE_ALLOWLIST_PATH:-}" ]]; then
+  allowlist_candidates+=("$SUPABASE_ALLOWLIST_PATH")
+fi
+if [[ -n "${SUPABASE_DB_ALLOWLIST_FILE:-}" ]]; then
+  allowlist_candidates+=("$SUPABASE_DB_ALLOWLIST_FILE")
+fi
+if [[ -n "${SUPABASE_DB_ALLOWLIST_PATH:-}" ]]; then
+  allowlist_candidates+=("$SUPABASE_DB_ALLOWLIST_PATH")
+fi
+if [[ "${#allowlist_candidates[@]}" -eq 0 ]]; then
+  for candidate in "$ROOT_DIR/SUPABASE_ALLOWLIST.txt" "$ROOT_DIR/SUPABASE_DB_ALLOWLIST.txt"; do
+    if [[ -f "$candidate" ]]; then
+      allowlist_candidates+=("$candidate")
+    fi
+  done
+fi
+if [[ "${#allowlist_candidates[@]}" -gt 0 ]]; then
+  for candidate in "${allowlist_candidates[@]}"; do
+    if [[ ! -f "$candidate" ]]; then
+      skip_verify "missing allowlist file: ${candidate}"
+    fi
+  done
 fi
 
 if ! command -v psql >/dev/null 2>&1; then
-  echo "ERROR: psql not available" >&2
-  LOG_STATUS="FAILED"
-  LOG_REASON="psql not available"
-  append_report <<TXT
-
-## Remote DB Verify (read-only)
-Status: FAILED
-Reason: psql not available
-TXT
-  exit 1
+  skip_verify "psql not available"
 fi
+
+SHOULD_LOG=true
+export MASTER_ENV_FILE
 
 READONLY_PGOPTIONS="-c default_transaction_read_only=on"
 run_sql() {
-  LOG_REASON="psql failed running query"
   local output
-  output=$(PGOPTIONS="$READONLY_PGOPTIONS" psql "$DB_URL" -tA -F $'\t' -v ON_ERROR_STOP=1 -c "$1")
-  LOG_REASON=""
-  printf "%s" "$output"
+  if ! output=$(PGOPTIONS="$READONLY_PGOPTIONS" psql "$DB_URL" -tA -F $'\t' -v ON_ERROR_STOP=1 -c "$1"); then
+    LOG_REASON="psql failed running query"
+    return 1
+  fi
+  printf '%s' "$output"
 }
 
-app_tables_raw=$(run_sql "select table_name from information_schema.tables where table_schema = 'app' and table_type = 'BASE TABLE' order by table_name;")
+require_sql() {
+  local __var="$1"
+  local __query="$2"
+  local __output
+  if ! __output=$(run_sql "$__query"); then
+    return 1
+  fi
+  printf -v "$__var" '%s' "$__output"
+  return 0
+}
+
+fail_with_summary() {
+  local summary="$1"
+  local result_status="$2"
+  local exit_code="$3"
+
+  LOG_STATUS="FAILED"
+  LOG_REASON="$summary"
+
+  append_report <<TXT
+
+## Remote DB Verify (read-only)
+Status: ${result_status}
+Reason: ${summary}
+TXT
+
+  emit_result "$result_status" "" "$summary" "$LOG_PATH"
+  exit "$exit_code"
+}
+
+if ! require_sql app_tables_raw "select table_name from information_schema.tables where table_schema = 'app' and table_type = 'BASE TABLE' order by table_name;"; then
+  fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+fi
 app_tables_count=$(echo "$app_tables_raw" | sed '/^$/d' | wc -l | tr -d ' ')
 
-rls_disabled_raw=$(run_sql "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app' and c.relkind = 'r' and c.relrowsecurity = false order by c.relname;")
+if ! require_sql rls_disabled_raw "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app' and c.relkind = 'r' and c.relrowsecurity = false order by c.relname;"; then
+  fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+fi
 rls_disabled=$(echo "$rls_disabled_raw" | sed '/^$/d')
 
-no_policy_raw=$(run_sql "select t.table_name from information_schema.tables t left join pg_policies p on p.schemaname = 'app' and p.tablename = t.table_name where t.table_schema = 'app' and t.table_type = 'BASE TABLE' group by t.table_name having count(p.policyname) = 0 order by t.table_name;")
+if ! require_sql no_policy_raw "select t.table_name from information_schema.tables t left join pg_policies p on p.schemaname = 'app' and p.tablename = t.table_name where t.table_schema = 'app' and t.table_type = 'BASE TABLE' group by t.table_name having count(p.policyname) = 0 order by t.table_name;"; then
+  fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+fi
 no_policy=$(echo "$no_policy_raw" | sed '/^$/d')
 
-storage_exists=$(run_sql "select to_regclass('storage.buckets') is not null;")
+if ! require_sql storage_exists "select to_regclass('storage.buckets') is not null;"; then
+  fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+fi
 if [[ "$storage_exists" == "t" ]]; then
-  storage_buckets=$(run_sql "select id || ' (public=' || public || ')' from storage.buckets order by id;")
-  storage_policies=$(run_sql "select policyname || ' [' || cmd || ']' from pg_policies where schemaname = 'storage' and tablename = 'objects' order by policyname, cmd;")
-  storage_rls=$(run_sql "select relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'storage' and c.relname = 'objects';")
-  public_media_public=$(run_sql "select public from storage.buckets where id = 'public-media';")
-  course_media_public=$(run_sql "select public from storage.buckets where id = 'course-media';")
-  lesson_media_public=$(run_sql "select public from storage.buckets where id = 'lesson-media';")
+  if ! require_sql storage_buckets "select id || ' (public=' || public || ')' from storage.buckets order by id;"; then
+    fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+  fi
+  if ! require_sql storage_policies "select policyname || ' [' || cmd || ']' from pg_policies where schemaname = 'storage' and tablename = 'objects' order by policyname, cmd;"; then
+    fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+  fi
+  if ! require_sql storage_rls "select relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'storage' and c.relname = 'objects';"; then
+    fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+  fi
+  if ! require_sql public_media_public "select public from storage.buckets where id = 'public-media';"; then
+    fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+  fi
+  if ! require_sql course_media_public "select public from storage.buckets where id = 'course-media';"; then
+    fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+  fi
+  if ! require_sql lesson_media_public "select public from storage.buckets where id = 'lesson-media';"; then
+    fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+  fi
 else
   storage_buckets=""
   storage_policies=""
@@ -170,15 +282,18 @@ else
   lesson_media_public=""
 fi
 
-migrations_exists=$(run_sql "select to_regclass('supabase_migrations.schema_migrations') is not null;")
+if ! require_sql migrations_exists "select to_regclass('supabase_migrations.schema_migrations') is not null;"; then
+  fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+fi
 if [[ "$migrations_exists" == "t" ]]; then
-  db_migrations=$(run_sql "select name from supabase_migrations.schema_migrations where name is not null order by name;")
+  if ! require_sql db_migrations "select name from supabase_migrations.schema_migrations where name is not null order by name;"; then
+    fail_with_summary "psql failed running query" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+  fi
 else
   db_migrations=""
 fi
 
-repo_migrations=$(
-  python3 - <<'PY' "$ROOT_DIR/supabase/migrations"
+if ! repo_migrations=$(python3 - <<'PY' "$ROOT_DIR/supabase/migrations"
 import re
 import sys
 from pathlib import Path
@@ -214,7 +329,9 @@ names |= sync_names
 for name in sorted(names):
     print(name)
 PY
-)
+); then
+  fail_with_summary "failed to read repo migrations" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "FAIL"; else echo "WARN"; fi)" "$(if [[ "$ENV_MODE" == "production" ]]; then echo "$EXIT_FAIL"; else echo "$EXIT_WARN"; fi)"
+fi
 
 missing_in_db=""
 extra_in_db=""
@@ -238,12 +355,28 @@ else
   storage_issue="storage.buckets missing"
 fi
 
-status="COMPLETED"
-if [[ -n "$rls_disabled" || -n "$no_policy" || -n "$storage_issue" || -n "$missing_in_db" || -n "$extra_in_db" ]]; then
-  status="FAILED"
+issues=()
+if [[ -n "$rls_disabled" ]]; then
+  issues+=("RLS disabled: $(summarize_list "$rls_disabled")")
+fi
+if [[ -n "$no_policy" ]]; then
+  issues+=("No policies: $(summarize_list "$no_policy")")
+fi
+if [[ -n "$storage_issue" ]]; then
+  issues+=("Storage: $storage_issue")
+fi
+if [[ -n "$missing_in_db" ]]; then
+  issues+=("Missing migrations: $(summarize_list "$missing_in_db")")
+fi
+if [[ -n "$extra_in_db" ]]; then
+  issues+=("Extra migrations: $(summarize_list "$extra_in_db")")
 fi
 
-export MASTER_ENV_FILE
+summary=""
+if [[ "${#issues[@]}" -gt 0 ]]; then
+  summary=$(printf '%s\n' "${issues[@]}" | head -n 3 | paste -sd ";" -)
+fi
+
 export APP_TABLES_COUNT="$app_tables_count"
 export RLS_DISABLED="$rls_disabled"
 export NO_POLICY="$no_policy"
@@ -255,10 +388,27 @@ export SCHEMA_MIGRATIONS_PRESENT="$migrations_exists"
 export MISSING_IN_DB="$missing_in_db"
 export EXTRA_IN_DB="$extra_in_db"
 
+result_status="PASS"
+exit_code="$EXIT_PASS"
+if [[ -n "$summary" ]]; then
+  if [[ "$ENV_MODE" == "production" ]]; then
+    result_status="FAIL"
+    exit_code="$EXIT_FAIL"
+  else
+    result_status="WARN"
+    exit_code="$EXIT_WARN"
+  fi
+  LOG_STATUS="FAILED"
+  LOG_REASON="remote DB checks failed"
+else
+  LOG_STATUS="COMPLETED"
+  LOG_REASON=""
+fi
+
 append_report <<TXT
 
 ## Remote DB Verify (read-only)
-Status: ${status}
+Status: ${result_status}
 - Master env: ${MASTER_ENV_FILE}
 - SUPABASE_DB_URL: set
 - App tables: ${app_tables_count}
@@ -273,13 +423,5 @@ Status: ${status}
 - Migrations extra in DB: ${extra_in_db:-none}
 TXT
 
-if [[ "$status" == "FAILED" ]]; then
-  LOG_STATUS="FAILED"
-  LOG_REASON="remote DB checks failed"
-  echo "Remote DB verify: FAIL" >&2
-  exit 1
-fi
-
-LOG_STATUS="COMPLETED"
-LOG_REASON=""
-echo "Remote DB verify: PASS"
+emit_result "$result_status" "" "$summary" "$LOG_PATH"
+exit "$exit_code"
