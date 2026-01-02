@@ -249,13 +249,14 @@ async def test_sfu_token_rejects_ended_session(async_client, monkeypatch):
         await cleanup_user(teacher_id)
 
 
-async def test_sfu_webhook_missing_event_returns_400(async_client):
+async def test_sfu_webhook_missing_event_returns_400(async_client, monkeypatch):
+    monkeypatch.setattr(settings, "livekit_webhook_secret", "topsecret", raising=False)
     resp = await async_client.post(
         "/sfu/webhooks/livekit",
         json={"room": {"name": "missing-event"}},
     )
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "Missing event type"
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Invalid signature"
 
 
 async def test_sfu_webhook_invalid_signature(async_client, monkeypatch):
