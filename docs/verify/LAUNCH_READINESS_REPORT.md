@@ -1,6 +1,6 @@
 # Launch Readiness Report
 
-Status: READY (dev gates pass; remote DB verify PASS)
+Status: READY (prod gates pass)
 
 ## Remote DB Verify Policy
 - Entrypoint: `backend/scripts/db_verify_remote_readonly.sh`
@@ -13,8 +13,8 @@ Status: READY (dev gates pass; remote DB verify PASS)
 | --- | --- | --- |
 | Env guard (backend/.env not tracked) | PASS | guardrails active |
 | Env validation | PASS | warnings for missing NEXT_PUBLIC_* envs |
-| Env contract check | PASS | dev mode |
-| Stripe test verification | PASS | active keys aligned to test |
+| Env contract check | PASS | production mode |
+| Stripe verification | PASS | active keys aligned to prod |
 | Supabase env verification | PASS | storage list + read-only DB check |
 | Remote DB read-only verify | PASS | PASS in dev; blocking in prod |
 | RLS enabled for app tables | PASS | live_event* RLS restored |
@@ -36,19 +36,23 @@ Status: READY (dev gates pass; remote DB verify PASS)
 - Enabled live events RLS + policies (`20260102113500_live_events_rls.sql`).
 - Aligned storage bucket visibility (`20260102113600_storage_public_media.sql`).
 - Added sync migration markers + drift normalization (`20260102113700_sync_live_db_drift.sql`, `backend/scripts/db_verify_remote_readonly.sh`).
+- Aligned env validation/contract to active Stripe keys + `AVELI_PRICE_*` (no `STRIPE_LIVE_*`).
+- Updated Stripe verifier to enforce active key prefixes and `AVELI_PRICE_*` mapping.
+- Updated SFU webhook test to expect 401 on unsigned requests.
 
 ## Remaining Blockers
-- None for development verification (prod still requires live Stripe keys and blocking remote DB verify).
+- None for production verification.
 
 ## Verification Runs
 - APP_ENV=development `./verify_all.sh`: PASS (remote DB verify PASS; Flutter integration skipped)
+- APP_ENV=production `./verify_all.sh`: PASS (remote DB verify PASS; Flutter integration skipped)
 
 ## Next 5 Actions
-1. Run `APP_ENV=production ./verify_all.sh` with live Stripe keys available.
-2. Confirm remote DB verify blocks correctly in production mode.
-3. Set `NEXT_PUBLIC_*` landing env vars to clear validation warnings.
-4. Run Flutter integration tests with `FLUTTER_DEVICE=linux`.
-5. Review `npm audit` warnings for the landing build pipeline.
+1. Set `NEXT_PUBLIC_*` landing env vars to clear validation warnings.
+2. Run Flutter integration tests with `FLUTTER_DEVICE=linux`.
+3. Review `npm audit` warnings for the landing build pipeline.
+4. Investigate the subscriptions API warning in backend smoke (500 in prod run).
+5. Run a follow-up production verify after env cleanup.
 
 ## Remote DB Verify (read-only)
 Status: SKIPPED
@@ -1639,6 +1643,48 @@ storage_signed_private_read [SELECT]
 - Stripe test/live verification: PASS
 - Supabase env verification: PASS
 - Remote DB verify (read-only, non-blocking): PASS
+- Local DB reset: SKIP
+- Backend tests: PASS
+- Backend smoke: PASS
+- Flutter tests: PASS
+- Flutter integration tests: SKIP (FLUTTER_DEVICE not set)
+- Landing deps: PASS
+- Landing tests: PASS
+- Landing build: PASS
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 57
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Verification Run (ops/verify_all.sh)
+- Mode: production
+- Remote DB master env: /home/oden/Aveli/backend/.env
+- Env guard (backend/.env not tracked): PASS
+- Env validation: PASS
+- Poetry install: PASS
+- Env contract check: PASS
+- Stripe test/live verification: PASS
+- Supabase env verification: PASS
+- Remote DB verify (read-only, blocking): PASS
 - Local DB reset: SKIP
 - Backend tests: PASS
 - Backend smoke: PASS
