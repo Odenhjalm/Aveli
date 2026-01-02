@@ -6,8 +6,20 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
     supabase_url: AnyUrl
-    supabase_anon_key: str | None = None
-    supabase_service_role_key: str
+    supabase_anon_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "SUPABASE_ANON_KEY",
+            "SUPABASE_PUBLISHABLE_API_KEY",
+            "SUPABASE_PUBLIC_API_KEY",
+        ),
+    )
+    supabase_service_role_key: str = Field(
+        validation_alias=AliasChoices(
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "SUPABASE_SECRET_API_KEY",
+        ),
+    )
     supabase_db_url: AnyUrl
     database_url: AnyUrl | None = None
     jwt_secret: str = "change-me"
