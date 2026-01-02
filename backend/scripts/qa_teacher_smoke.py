@@ -12,8 +12,12 @@ import httpx
 
 
 def _subscriptions_enabled() -> bool:
-    value = os.environ.get("SUBSCRIPTIONS_ENABLED", "true").strip().lower()
-    return value not in {"false", "0", "no"}
+    app_env = os.environ.get("APP_ENV", "").strip().lower()
+    default = app_env in {"prod", "production", "live"}
+    raw = os.environ.get("SUBSCRIPTIONS_ENABLED")
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 async def _register_and_login(client: httpx.AsyncClient, email: str, password: str):
