@@ -46,6 +46,7 @@
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_PUBLIC_API_BASE_URL` – backend URL (use service name `backend` in compose).
 - `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` – optional monitoring.
+Tip: start from `.env.example` and see `docs/DEPLOYMENT.md` for deployment placement.
 
 ## CI / Fly
 - GitHub Actions reuses backend env above plus: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_WS_URL`, `LIVEKIT_API_URL`, `MEDIA_SIGNING_SECRET`, `MEDIA_SIGNING_TTL_SECONDS`, `LESSON_MEDIA_MAX_BYTES`.

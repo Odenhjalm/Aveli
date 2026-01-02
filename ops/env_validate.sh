@@ -68,12 +68,17 @@ has_value() {
 report_var() {
   local name="$1"
   local required="$2"
+  local hint="${3:-}"
   if has_value "$name"; then
     note "  - $name: set"
   else
     note "  - $name: missing"
     if [[ "$required" == "required" ]]; then
-      warn "$name is required"
+      if [[ -n "$hint" ]]; then
+        warn "$name is required; see $hint"
+      else
+        warn "$name is required"
+      fi
     fi
   fi
 }
@@ -192,9 +197,10 @@ report_var OAUTH_REDIRECT_WEB required
 report_var OAUTH_REDIRECT_MOBILE required
 
 note "==> Landing (Next.js)"
-report_var NEXT_PUBLIC_SUPABASE_URL required
-report_var NEXT_PUBLIC_SUPABASE_ANON_KEY required
-report_var NEXT_PUBLIC_API_BASE_URL required
+landing_hint=".env.example and docs/ENV_VARS.md"
+report_var NEXT_PUBLIC_SUPABASE_URL required "$landing_hint"
+report_var NEXT_PUBLIC_SUPABASE_ANON_KEY required "$landing_hint"
+report_var NEXT_PUBLIC_API_BASE_URL required "$landing_hint"
 report_var NEXT_PUBLIC_SENTRY_DSN optional
 report_var SENTRY_DSN optional
 
