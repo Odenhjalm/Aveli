@@ -14,7 +14,7 @@ import psycopg
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
-ENV_PATH = ROOT / "backend" / ".env"
+ENV_PATH = Path(os.environ.get("BACKEND_ENV_FILE", "/home/oden/Aveli/backend/.env"))
 
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH, override=False)
@@ -48,7 +48,7 @@ def _db_target(db_url: str) -> str:
 
 def main() -> int:
     if not ENV_PATH.exists():
-        print("FAIL: backend/.env missing; cannot verify Supabase config.", file=sys.stderr)
+        print(f"FAIL: backend env missing at {ENV_PATH}; cannot verify Supabase config.", file=sys.stderr)
         return 1
 
     supabase_url = _val("SUPABASE_URL")

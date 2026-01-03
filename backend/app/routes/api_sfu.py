@@ -99,6 +99,10 @@ async def create_livekit_token(
 @router.post("/webhooks/livekit")
 async def livekit_webhook(request: Request):
     secret = settings.livekit_webhook_secret
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook secret not configured"
+        )
     if secret:
         signature = request.headers.get("X-Livekit-Signature")
         if signature != secret:

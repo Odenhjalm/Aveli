@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md"
 BACKEND_DIR="${ROOT_DIR}/backend"
 LANDING_DIR="${ROOT_DIR}/frontend/landing"
-MASTER_ENV_FILE="/home/oden/Aveli/backend/.env"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-/home/oden/Aveli/backend/.env}"
 
 append_report() {
   if [[ -f "$REPORT_PATH" ]]; then
@@ -14,8 +14,9 @@ append_report() {
 }
 
 load_backend_env() {
-  local env_file="$BACKEND_DIR/.env"
+  local env_file="$1"
   if [[ ! -f "$env_file" ]]; then
+    echo "ERROR: backend env file missing at ${env_file}" >&2
     return 1
   fi
   eval "$(
@@ -83,15 +84,14 @@ run_step_nonblocking() {
 
 overall_status=0
 
-if [[ -f "$BACKEND_DIR/.env" ]]; then
-  load_backend_env || true
-fi
+export BACKEND_ENV_FILE
+load_backend_env "$BACKEND_ENV_FILE" || true
 
 APP_ENV_VALUE="${APP_ENV:-${ENV:-${ENVIRONMENT:-development}}}"
 ENV_MODE="$(normalize_env "$APP_ENV_VALUE")"
 
 printf "==> verify_all (APP_ENV=%s)\n" "$APP_ENV_VALUE"
-printf "==> Remote DB verify master env: %s\n" "$MASTER_ENV_FILE"
+printf "==> Backend env file: %s\n" "$BACKEND_ENV_FILE"
 
 # Guardrails
 if ! run_step "Env guard (backend/.env not tracked)" bash "$ROOT_DIR/ops/ci_guard_env.sh"; then
@@ -104,7 +104,7 @@ if ! run_step "Env validation" bash "$ROOT_DIR/ops/env_validate.sh"; then
 fi
 
 # Load backend env for subsequent steps
-if ! load_backend_env; then
+if ! load_backend_env "$BACKEND_ENV_FILE"; then
   overall_status=1
 fi
 
@@ -236,7 +236,7 @@ append_report <<TXT
 
 ## Verification Run (ops/verify_all.sh)
 - Mode: ${APP_ENV_VALUE}
-- Remote DB master env: ${MASTER_ENV_FILE}
+- Backend env file: ${BACKEND_ENV_FILE}
 $(printf -- '- %s\n' "${results[@]}")
 TXT
 
