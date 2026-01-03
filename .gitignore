@@ -113,3 +113,8 @@ assets/backend/*
 !assets/icons/**
 !assets/audio/
 !assets/audio/**
+
+# --- IGNORE ---
+.vscode/mcp.json
+mcp.json
+backend/test.env
