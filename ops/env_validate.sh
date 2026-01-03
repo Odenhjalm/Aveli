@@ -197,8 +197,8 @@ fi
 # Stripe key mode checks
 if has_value STRIPE_SECRET_KEY; then
   if [[ "$ENV_MODE" == "prod" ]]; then
-    if [[ "${STRIPE_SECRET_KEY}" != sk_live_* ]]; then
-      warn "STRIPE_SECRET_KEY must be sk_live_ in production"
+    if [[ "${STRIPE_SECRET_KEY}" != sk_live_* && "${STRIPE_SECRET_KEY}" != sk_test_* ]]; then
+      warn "STRIPE_SECRET_KEY must be sk_live_ or sk_test_ in production"
     fi
   else
     if [[ "${STRIPE_SECRET_KEY}" != sk_test_* ]]; then
@@ -209,8 +209,8 @@ fi
 
 if has_value STRIPE_PUBLISHABLE_KEY; then
   if [[ "$ENV_MODE" == "prod" ]]; then
-    if [[ "${STRIPE_PUBLISHABLE_KEY}" != pk_live_* ]]; then
-      warn "STRIPE_PUBLISHABLE_KEY must be pk_live_ in production"
+    if [[ "${STRIPE_PUBLISHABLE_KEY}" != pk_live_* && "${STRIPE_PUBLISHABLE_KEY}" != pk_test_* ]]; then
+      warn "STRIPE_PUBLISHABLE_KEY must be pk_live_ or pk_test_ in production"
     fi
   else
     if [[ "${STRIPE_PUBLISHABLE_KEY}" != pk_test_* ]]; then

@@ -46,6 +46,7 @@ def main() -> int:
 
     app_env = (_val("APP_ENV") or _val("ENV") or _val("ENVIRONMENT")).lower()
     mode = "production" if app_env in {"prod", "production", "live"} else "development"
+    require_live = os.environ.get("REQUIRE_LIVE_STRIPE_KEYS", "0") in {"1", "true", "TRUE"}
 
     required = [
         "STRIPE_SECRET_KEY",
@@ -75,10 +76,22 @@ def main() -> int:
         if not _is_test_publishable(active_pub):
             errors.append("STRIPE_PUBLISHABLE_KEY must be pk_test_ in development")
     else:
-        if not _is_live_secret(active_secret):
-            errors.append("STRIPE_SECRET_KEY must be sk_live_ in production")
-        if not _is_live_publishable(active_pub):
-            errors.append("STRIPE_PUBLISHABLE_KEY must be pk_live_ in production")
+        if _is_test_secret(active_secret) and _is_live_publishable(active_pub):
+            warnings.append("Stripe secret is test but publishable is live")
+        if _is_live_secret(active_secret) and _is_test_publishable(active_pub):
+            warnings.append("Stripe secret is live but publishable is test")
+        if _is_live_secret(active_secret) != _is_live_publishable(active_pub):
+            errors.append("Stripe keys must both be test or both be live")
+        if require_live:
+            if not _is_live_secret(active_secret):
+                errors.append("STRIPE_SECRET_KEY must be sk_live_ in production (REQUIRE_LIVE_STRIPE_KEYS=1)")
+            if not _is_live_publishable(active_pub):
+                errors.append("STRIPE_PUBLISHABLE_KEY must be pk_live_ in production (REQUIRE_LIVE_STRIPE_KEYS=1)")
+        else:
+            if _is_test_secret(active_secret):
+                warnings.append("Production verify using test Stripe secret; set REQUIRE_LIVE_STRIPE_KEYS=1 to enforce live keys")
+            if _is_test_publishable(active_pub):
+                warnings.append("Production verify using test Stripe publishable key; set REQUIRE_LIVE_STRIPE_KEYS=1 to enforce live keys")
 
     stripe_routes = ROOT / "backend" / "app" / "routes"
     webhook_file = stripe_routes / "stripe_webhooks.py"
