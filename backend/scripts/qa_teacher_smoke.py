@@ -7,11 +7,27 @@ import asyncio
 import os
 import sys
 import uuid
+from pathlib import Path
 
 import httpx
+from psycopg import AsyncConnection
+from psycopg.rows import dict_row
 
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+for candidate in (BACKEND_ROOT / "app", BACKEND_ROOT):
+    path_str = str(candidate)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+
+if os.environ.get("QA_SMOKE_DEBUG") == "1":
+    print("[debug] file", __file__, flush=True)
+    print("[debug] backend_root", BACKEND_ROOT, flush=True)
+    print("[debug] sys.path", sys.path[:5], flush=True)
+
+from app.config import settings
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
+DEV_ENV_NAMES = {"dev", "development", "local"}
 
 
 def resolve_base_url(cli_value: str | None = None) -> str:
@@ -23,6 +39,11 @@ def resolve_base_url(cli_value: str | None = None) -> str:
 def _subscriptions_enabled() -> bool:
     value = os.environ.get("SUBSCRIPTIONS_ENABLED", "true").strip().lower()
     return value not in {"false", "0", "no"}
+
+
+def _env_mode() -> str:
+    raw = (os.environ.get("APP_ENV") or os.environ.get("ENV") or os.environ.get("ENVIRONMENT") or "").lower()
+    return "development" if raw in DEV_ENV_NAMES or not raw else "production"
 
 
 async def _register_and_login(client: httpx.AsyncClient, email: str, password: str):
@@ -55,6 +76,84 @@ async def _list_services(client: httpx.AsyncClient, token: str):
     return payload.get("items") or []
 
 
+async def _fetch_profile(client: httpx.AsyncClient, token: str) -> dict:
+    resp = await client.get("/profiles/me", headers={"Authorization": f"Bearer {token}"})
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def _seed_dev_service(user_id: str) -> str:
+    conn = await AsyncConnection.connect(
+        settings.database_url.unicode_string(),
+        row_factory=dict_row,
+    )
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id, status FROM app.services WHERE provider_id = %s AND title = %s LIMIT 1",
+                (user_id, "QA Test Service"),
+            )
+            row = await cur.fetchone()
+            if row:
+                if row["status"] != "active":
+                    await cur.execute(
+                        "UPDATE app.services SET status = 'active', updated_at = NOW() WHERE id = %s",
+                        (row["id"],),
+                    )
+                await conn.commit()
+                return str(row["id"])
+            await cur.execute(
+                """
+                INSERT INTO app.services (
+                    provider_id, title, description, status,
+                    price_cents, currency, duration_min, requires_certification,
+                    created_at, updated_at
+                )
+                VALUES (%s, %s, %s, 'active', %s, %s, %s, false, NOW(), NOW())
+                RETURNING id
+                """,
+                (
+                    user_id,
+                    "QA Test Service",
+                    "Auto-generated QA smoke service",
+                    1000,
+                    "sek",
+                    30,
+                ),
+            )
+            created = await cur.fetchone()
+            await conn.commit()
+            return str(created["id"])
+    finally:
+        await conn.close()
+
+
+async def _ensure_active_service(client: httpx.AsyncClient, token: str, mode: str) -> dict:
+    services = await _list_services(client, token)
+    if services:
+        return services[0]
+
+    if mode == "production":
+        print("ERROR: No active services found. Create/activate at least one service (status=active) and rerun.")
+        sys.exit(1)
+
+    profile = await _fetch_profile(client, token)
+    user_id = str(profile.get("user_id"))
+    if not user_id:
+        print("ERROR: Missing user_id in profile response; cannot seed service.")
+        sys.exit(1)
+
+    service_id = await _seed_dev_service(user_id)
+    services = await _list_services(client, token)
+    if not services:
+        print("ERROR: Failed to seed QA service; no services returned after seeding.")
+        sys.exit(1)
+    for svc in services:
+        if str(svc.get("id")) == service_id:
+            return svc
+    return services[0]
+
+
 async def _create_order(client: httpx.AsyncClient, token: str, service_id: str):
     resp = await client.post(
         "/orders",
@@ -65,18 +164,15 @@ async def _create_order(client: httpx.AsyncClient, token: str, service_id: str):
     return resp.json()["order"]
 
 
-async def _checkout(client: httpx.AsyncClient, token: str, order_id: str):
+async def _checkout(client: httpx.AsyncClient, token: str):
     resp = await client.post(
-        "/payments/stripe/create-session",
+        "/api/billing/create-checkout-session",
         headers={"Authorization": f"Bearer {token}"},
-        json={
-            "order_id": order_id,
-            "success_url": "https://example.org/success",
-            "cancel_url": "https://example.org/cancel",
-        },
+        json={"plan": "month"},
     )
     resp.raise_for_status()
-    return resp.json()["url"]
+    payload = resp.json()
+    return payload.get("url") or payload.get("checkout_url")
 
 
 async def _fetch_sfu_token(client: httpx.AsyncClient, token: str, seminar_id: str):
@@ -110,6 +206,7 @@ async def main():
 
     base_url = resolve_base_url(args.base_url)
     print(f"[config] base URL: {base_url}")
+    mode = _env_mode()
 
     email = f"qa_{uuid.uuid4().hex[:8]}@aveli.local"
     password = "Secret123!"
@@ -117,16 +214,9 @@ async def main():
     async with httpx.AsyncClient(base_url=base_url, timeout=20) as client:
         await _run_health_checks(client, base_url)
         token, refresh = await _register_and_login(client, email, password)
-        services = await _list_services(client, token)
-        if not services:
-            print("[warn] inga aktiva tjänster – hoppar över order/Stripe-flödet")
-        else:
-            order = await _create_order(client, token, services[0]["id"])
-            try:
-                checkout_url = await _checkout(client, token, order["id"])
-                print(f"[payments] Payment Element: {checkout_url}")
-            except httpx.HTTPStatusError as exc:
-                print(f"[warn] kunde inte skapa checkout-session: {exc}")
+        service = await _ensure_active_service(client, token, mode)
+        order = await _create_order(client, token, service["id"])
+        print(f"[orders] created order {order['id']} for service {service['id']}")
         if args.seminar_id:
             try:
                 token_payload = await _fetch_sfu_token(client, token, args.seminar_id)
@@ -155,7 +245,10 @@ async def main():
                 membership_resp.raise_for_status()
                 print("[billing] membership state", membership_resp.json())
             except httpx.HTTPStatusError as exc:
-                print(f"[warn] Subscriptions API misslyckades: {exc}")
+                body = exc.response.text if exc.response else ""
+                status = exc.response.status_code if exc.response else "unknown"
+                print(f"[error] Subscriptions API misslyckades (status={status}): {body[:200]}")
+                sys.exit(1)
         else:
             print("[billing] subscriptions disabled; skipping subscription flow")
         if refresh:

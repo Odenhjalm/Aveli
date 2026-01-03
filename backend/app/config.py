@@ -55,6 +55,25 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("STRIPE_PRICE_YEARLY", "AVELI_PRICE_YEARLY"),
     )
+    stripe_test_price_monthly: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "STRIPE_TEST_PRICE_MONTHLY",
+            "STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY",
+        ),
+    )
+    stripe_test_price_yearly: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "STRIPE_TEST_PRICE_YEARLY",
+            "STRIPE_TEST_MEMBERSHIP_PRICE_YEARLY",
+            "STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY",
+        ),
+    )
+    stripe_test_membership_product_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("STRIPE_TEST_MEMBERSHIP_PRODUCT_ID"),
+    )
     stripe_connect_client_id: str | None = None
     stripe_connect_refresh_url: str | None = None
     stripe_connect_return_url: str | None = None

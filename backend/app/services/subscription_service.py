@@ -13,6 +13,7 @@ from ..repositories import stripe_customers as stripe_customers_repo
 from ..schemas.billing import SubscriptionCheckoutResponse, SubscriptionInterval
 
 logger = logging.getLogger(__name__)
+_TEST_PRICE_CACHE: dict[str, str] = {}
 
 
 class SubscriptionError(Exception):
@@ -37,21 +38,24 @@ async def create_subscription_checkout(
     if not secret:
         raise SubscriptionConfigError("Stripe secret key is missing")
 
-    price_id = _price_for_interval(interval)
+    stripe.api_key = secret
+    price_id = await _resolve_price_for_interval(interval)
     if not price_id:
         raise SubscriptionConfigError("Stripe price for interval is missing")
 
-    stripe.api_key = secret
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
 
     success_url = settings.checkout_success_url or _build_frontend_url("checkout/success")
     cancel_url = settings.checkout_cancel_url or _build_frontend_url("checkout/cancel")
+    ui_mode = settings.stripe_checkout_ui_mode or "custom"
+    if secret.startswith("sk_test") and ui_mode == "custom":
+        ui_mode = "hosted"
 
     def _create_session() -> dict[str, Any]:
         return stripe.checkout.Session.create(
             mode="subscription",
-            ui_mode=settings.stripe_checkout_ui_mode or "custom",
+            ui_mode=ui_mode,
             customer=customer_id,
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=success_url,
@@ -94,11 +98,11 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
     if not secret:
         raise SubscriptionConfigError("Stripe secret key is missing")
 
-    price_id = _price_for_interval(interval)
+    stripe.api_key = secret
+    price_id = await _resolve_price_for_interval(interval)
     if not price_id:
         raise SubscriptionConfigError("Stripe price for interval is missing")
 
-    stripe.api_key = secret
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
 
@@ -339,12 +343,60 @@ async def _handle_invoice_payment_succeeded(payload: Mapping[str, Any]) -> None:
     )
 
 
-def _price_for_interval(interval: SubscriptionInterval) -> str | None:
+async def _resolve_price_for_interval(interval: SubscriptionInterval) -> str | None:
+    use_test_prices = (settings.stripe_secret_key or "").startswith("sk_test")
     if interval is SubscriptionInterval.month:
+        if use_test_prices:
+            if settings.stripe_test_price_monthly and settings.stripe_test_price_monthly != settings.stripe_price_monthly:
+                return settings.stripe_test_price_monthly
+            return await _ensure_test_price(interval)
         return settings.stripe_price_monthly
     if interval is SubscriptionInterval.year:
+        if use_test_prices:
+            if settings.stripe_test_price_yearly and settings.stripe_test_price_yearly != settings.stripe_price_yearly:
+                return settings.stripe_test_price_yearly
+            return await _ensure_test_price(interval)
         return settings.stripe_price_yearly
     return None
+
+
+async def _ensure_test_price(interval: SubscriptionInterval) -> str:
+    cache_key = interval.value
+    if cache_key in _TEST_PRICE_CACHE:
+        return _TEST_PRICE_CACHE[cache_key]
+
+    product_id = settings.stripe_test_membership_product_id
+    amount_cents = 1000 if interval is SubscriptionInterval.month else 12000
+    create_price_kwargs = dict(
+        unit_amount=amount_cents,
+        currency="sek",
+        recurring={"interval": interval.value},
+        nickname=f"qa-smoke-{interval.value}",
+    )
+    price = None
+    if product_id:
+        try:
+            price = await run_in_threadpool(
+                lambda: stripe.Price.create(product=product_id, **create_price_kwargs)
+            )
+        except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+            if getattr(exc, "code", "") != "resource_missing":
+                raise
+            product_id = None
+    if not product_id:
+        product = await run_in_threadpool(lambda: stripe.Product.create(name="QA Membership"))
+        product_id = product.get("id")
+        if not isinstance(product_id, str):
+            raise SubscriptionConfigError("Failed to create test Stripe product")
+        price = await run_in_threadpool(
+            lambda: stripe.Price.create(product=product_id, **create_price_kwargs)
+        )
+
+    price_id = price.get("id")
+    if not isinstance(price_id, str):
+        raise SubscriptionConfigError("Failed to create test Stripe price")
+    _TEST_PRICE_CACHE[cache_key] = price_id
+    return price_id
 
 
 def _build_frontend_url(path: str) -> str:
