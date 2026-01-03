@@ -82,23 +82,12 @@ def main() -> int:
         "JWT_REFRESH_EXPIRES_MINUTES",
     }
 
-    live_keys = {
-        "STRIPE_LIVE_SECRET_KEY",
-        "STRIPE_LIVE_PUBLISHABLE_KEY",
-        "STRIPE_LIVE_WEBHOOK_SECRET",
-        "STRIPE_LIVE_BILLING_WEBHOOK_SECRET",
-    }
-
-    filtered_required = [key for key in required_keys if key not in live_keys]
-
-    missing_required = [key for key in filtered_required if not _env_value(env_map, key)]
+    missing_required = [key for key in required_keys if not _env_value(env_map, key)]
     missing_prod = []
     missing_optional = []
 
     if mode == "production":
         missing_prod = [key for key in sorted(prod_only) if not _env_value(env_map, key)]
-    else:
-        missing_optional = [key for key in sorted(live_keys) if not _env_value(env_map, key)]
 
     if missing_required:
         print("FAIL: Missing required keys:")
