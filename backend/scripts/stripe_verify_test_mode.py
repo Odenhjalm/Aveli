@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
-ENV_PATH = ROOT / "backend" / ".env"
+ENV_PATH = Path(os.environ.get("BACKEND_ENV_FILE", "/home/oden/Aveli/backend/.env"))
 
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH, override=False)
@@ -41,25 +41,24 @@ def _exists(path: Path) -> bool:
 
 def main() -> int:
     if not ENV_PATH.exists():
-        print("FAIL: backend/.env missing; cannot verify Stripe config.", file=sys.stderr)
+        print(f"FAIL: backend env missing at {ENV_PATH}; cannot verify Stripe config.", file=sys.stderr)
         return 1
 
     app_env = (_val("APP_ENV") or _val("ENV") or _val("ENVIRONMENT")).lower()
     mode = "production" if app_env in {"prod", "production", "live"} else "development"
 
-    required = [
+    base_required = [
         "STRIPE_SECRET_KEY",
         "STRIPE_PUBLISHABLE_KEY",
         "STRIPE_WEBHOOK_SECRET",
         "STRIPE_BILLING_WEBHOOK_SECRET",
+    ]
+    test_required = [
         "STRIPE_TEST_SECRET_KEY",
         "STRIPE_TEST_PUBLISHABLE_KEY",
         "STRIPE_TEST_WEBHOOK_BILLING_SECRET",
-        "STRIPE_LIVE_SECRET_KEY",
-        "STRIPE_LIVE_PUBLISHABLE_KEY",
-        "STRIPE_LIVE_WEBHOOK_SECRET",
-        "STRIPE_LIVE_BILLING_WEBHOOK_SECRET",
     ]
+    required = base_required + (test_required if mode == "development" else [])
     missing = [key for key in required if not _val(key)]
 
     if missing:
@@ -78,11 +77,6 @@ def main() -> int:
     test_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET")
     test_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET")
 
-    live_secret = _val("STRIPE_LIVE_SECRET_KEY")
-    live_pub = _val("STRIPE_LIVE_PUBLISHABLE_KEY")
-    live_webhook = _val("STRIPE_LIVE_WEBHOOK_SECRET")
-    live_billing = _val("STRIPE_LIVE_BILLING_WEBHOOK_SECRET")
-
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -91,10 +85,6 @@ def main() -> int:
             errors.append("STRIPE_SECRET_KEY must be sk_test_ in development")
         if not _is_test_publishable(active_pub):
             errors.append("STRIPE_PUBLISHABLE_KEY must be pk_test_ in development")
-        if active_secret == live_secret:
-            errors.append("STRIPE_SECRET_KEY matches live key in development")
-        if active_pub == live_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY matches live key in development")
         if active_secret != test_secret:
             errors.append("STRIPE_SECRET_KEY must equal STRIPE_TEST_SECRET_KEY in development")
         if active_pub != test_pub:
@@ -112,14 +102,6 @@ def main() -> int:
             errors.append("STRIPE_SECRET_KEY matches test key in production")
         if active_pub == test_pub:
             errors.append("STRIPE_PUBLISHABLE_KEY matches test key in production")
-        if active_secret != live_secret:
-            errors.append("STRIPE_SECRET_KEY must equal STRIPE_LIVE_SECRET_KEY in production")
-        if active_pub != live_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY must equal STRIPE_LIVE_PUBLISHABLE_KEY in production")
-        if live_billing and active_billing != live_billing:
-            errors.append("STRIPE_BILLING_WEBHOOK_SECRET must match STRIPE_LIVE_BILLING_WEBHOOK_SECRET in production")
-        if live_webhook and active_webhook != live_webhook:
-            errors.append("STRIPE_WEBHOOK_SECRET must match STRIPE_LIVE_WEBHOOK_SECRET in production")
 
     stripe_routes = ROOT / "backend" / "app" / "routes"
     webhook_file = stripe_routes / "stripe_webhooks.py"

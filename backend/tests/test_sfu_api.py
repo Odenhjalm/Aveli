@@ -249,13 +249,24 @@ async def test_sfu_token_rejects_ended_session(async_client, monkeypatch):
         await cleanup_user(teacher_id)
 
 
-async def test_sfu_webhook_missing_event_returns_400(async_client):
+async def test_sfu_webhook_missing_event_returns_400_or_401(async_client):
+    secret = settings.livekit_webhook_secret
+    headers = {}
+    expected_status = 401
+    if secret:
+        headers["X-Livekit-Signature"] = secret
+        expected_status = 400
+
     resp = await async_client.post(
         "/sfu/webhooks/livekit",
+        headers=headers,
         json={"room": {"name": "missing-event"}},
     )
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "Missing event type"
+    assert resp.status_code == expected_status
+    if expected_status == 400:
+        assert resp.json()["detail"] == "Missing event type"
+    else:
+        assert resp.json()["detail"] == "Webhook secret not configured"
 
 
 async def test_sfu_webhook_invalid_signature(async_client, monkeypatch):

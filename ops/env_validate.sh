@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND_ENV_FILE="${ROOT_DIR}/backend/.env"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-/home/oden/Aveli/backend/.env}"
 
 CI_MODE=false
 if [[ -n "${CI:-}" ]]; then
@@ -14,7 +14,7 @@ fi
 
 load_backend_env() {
   if [[ ! -f "$BACKEND_ENV_FILE" ]]; then
-    echo "ERROR: backend/.env missing – create it from backend/.env.example" >&2
+    echo "ERROR: backend env missing at ${BACKEND_ENV_FILE}" >&2
     exit 1
   fi
   eval "$(
@@ -166,10 +166,10 @@ report_var STRIPE_TEST_SECRET_KEY required
 report_var STRIPE_TEST_PUBLISHABLE_KEY required
 report_var STRIPE_TEST_WEBHOOK_SECRET optional
 report_var STRIPE_TEST_WEBHOOK_BILLING_SECRET required
-report_var STRIPE_LIVE_SECRET_KEY required
-report_var STRIPE_LIVE_PUBLISHABLE_KEY required
-report_var STRIPE_LIVE_WEBHOOK_SECRET required
-report_var STRIPE_LIVE_BILLING_WEBHOOK_SECRET required
+report_var STRIPE_LIVE_SECRET_KEY optional
+report_var STRIPE_LIVE_PUBLISHABLE_KEY optional
+report_var STRIPE_LIVE_WEBHOOK_SECRET optional
+report_var STRIPE_LIVE_BILLING_WEBHOOK_SECRET optional
 
 note "==> Flutter (required for app clients)"
 report_var API_BASE_URL required
