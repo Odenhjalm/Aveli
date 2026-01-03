@@ -46,19 +46,14 @@ def main() -> int:
 
     app_env = (_val("APP_ENV") or _val("ENV") or _val("ENVIRONMENT")).lower()
     mode = "production" if app_env in {"prod", "production", "live"} else "development"
+    require_live = os.environ.get("REQUIRE_LIVE_STRIPE_KEYS", "0") in {"1", "true", "TRUE"}
 
-    base_required = [
+    required = [
         "STRIPE_SECRET_KEY",
         "STRIPE_PUBLISHABLE_KEY",
         "STRIPE_WEBHOOK_SECRET",
         "STRIPE_BILLING_WEBHOOK_SECRET",
     ]
-    test_required = [
-        "STRIPE_TEST_SECRET_KEY",
-        "STRIPE_TEST_PUBLISHABLE_KEY",
-        "STRIPE_TEST_WEBHOOK_BILLING_SECRET",
-    ]
-    required = base_required + (test_required if mode == "development" else [])
     missing = [key for key in required if not _val(key)]
 
     if missing:
@@ -72,11 +67,6 @@ def main() -> int:
     active_webhook = _val("STRIPE_WEBHOOK_SECRET")
     active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
 
-    test_secret = _val("STRIPE_TEST_SECRET_KEY")
-    test_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY")
-    test_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET")
-    test_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET")
-
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -85,23 +75,23 @@ def main() -> int:
             errors.append("STRIPE_SECRET_KEY must be sk_test_ in development")
         if not _is_test_publishable(active_pub):
             errors.append("STRIPE_PUBLISHABLE_KEY must be pk_test_ in development")
-        if active_secret != test_secret:
-            errors.append("STRIPE_SECRET_KEY must equal STRIPE_TEST_SECRET_KEY in development")
-        if active_pub != test_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY must equal STRIPE_TEST_PUBLISHABLE_KEY in development")
-        if test_billing and active_billing != test_billing:
-            errors.append("STRIPE_BILLING_WEBHOOK_SECRET must match STRIPE_TEST_WEBHOOK_BILLING_SECRET in development")
-        if test_webhook and active_webhook != test_webhook:
-            errors.append("STRIPE_WEBHOOK_SECRET must match STRIPE_TEST_WEBHOOK_SECRET in development")
     else:
-        if not _is_live_secret(active_secret):
-            errors.append("STRIPE_SECRET_KEY must be sk_live_ in production")
-        if not _is_live_publishable(active_pub):
-            errors.append("STRIPE_PUBLISHABLE_KEY must be pk_live_ in production")
-        if active_secret == test_secret:
-            errors.append("STRIPE_SECRET_KEY matches test key in production")
-        if active_pub == test_pub:
-            errors.append("STRIPE_PUBLISHABLE_KEY matches test key in production")
+        if _is_test_secret(active_secret) and _is_live_publishable(active_pub):
+            warnings.append("Stripe secret is test but publishable is live")
+        if _is_live_secret(active_secret) and _is_test_publishable(active_pub):
+            warnings.append("Stripe secret is live but publishable is test")
+        if _is_live_secret(active_secret) != _is_live_publishable(active_pub):
+            errors.append("Stripe keys must both be test or both be live")
+        if require_live:
+            if not _is_live_secret(active_secret):
+                errors.append("STRIPE_SECRET_KEY must be sk_live_ in production (REQUIRE_LIVE_STRIPE_KEYS=1)")
+            if not _is_live_publishable(active_pub):
+                errors.append("STRIPE_PUBLISHABLE_KEY must be pk_live_ in production (REQUIRE_LIVE_STRIPE_KEYS=1)")
+        else:
+            if _is_test_secret(active_secret):
+                warnings.append("Production verify using test Stripe secret; set REQUIRE_LIVE_STRIPE_KEYS=1 to enforce live keys")
+            if _is_test_publishable(active_pub):
+                warnings.append("Production verify using test Stripe publishable key; set REQUIRE_LIVE_STRIPE_KEYS=1 to enforce live keys")
 
     stripe_routes = ROOT / "backend" / "app" / "routes"
     webhook_file = stripe_routes / "stripe_webhooks.py"

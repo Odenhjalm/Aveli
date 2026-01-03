@@ -143,7 +143,6 @@ report_var SUPABASE_URL required
 report_var SUPABASE_PUBLISHABLE_API_KEY required
 report_var SUPABASE_SECRET_API_KEY required
 report_var SUPABASE_DB_URL "${DB_REQUIRED}"
-report_var DATABASE_URL "${DB_REQUIRED}"
 report_var JWT_SECRET "${JWT_REQUIRED}"
 report_var JWT_ALGORITHM "${JWT_REQUIRED}"
 report_var JWT_EXPIRES_MINUTES "${JWT_REQUIRED}"
@@ -152,8 +151,8 @@ report_var STRIPE_SECRET_KEY required
 report_var STRIPE_PUBLISHABLE_KEY required
 report_var STRIPE_WEBHOOK_SECRET required
 report_var STRIPE_BILLING_WEBHOOK_SECRET required
-report_var STRIPE_PRICE_MONTHLY "${STRIPE_PRICE_REQUIRED}"
-report_var STRIPE_PRICE_YEARLY "${STRIPE_PRICE_REQUIRED}"
+report_var AVELI_PRICE_MONTHLY "${STRIPE_PRICE_REQUIRED}"
+report_var AVELI_PRICE_YEARLY "${STRIPE_PRICE_REQUIRED}"
 
 note "==> Backend (optional/legacy)"
 report_var SUPABASE_SERVICE_ROLE_KEY optional
@@ -166,10 +165,6 @@ report_var STRIPE_TEST_SECRET_KEY required
 report_var STRIPE_TEST_PUBLISHABLE_KEY required
 report_var STRIPE_TEST_WEBHOOK_SECRET optional
 report_var STRIPE_TEST_WEBHOOK_BILLING_SECRET required
-report_var STRIPE_LIVE_SECRET_KEY optional
-report_var STRIPE_LIVE_PUBLISHABLE_KEY optional
-report_var STRIPE_LIVE_WEBHOOK_SECRET optional
-report_var STRIPE_LIVE_BILLING_WEBHOOK_SECRET optional
 
 note "==> Flutter (required for app clients)"
 report_var API_BASE_URL required
@@ -200,17 +195,28 @@ if has_value DATABASE_URL && ! has_value SUPABASE_DB_URL; then
 fi
 
 # Stripe key mode checks
-if has_value STRIPE_TEST_SECRET_KEY && [[ "${STRIPE_TEST_SECRET_KEY}" != sk_test_* ]]; then
-  warn "STRIPE_TEST_SECRET_KEY does not match sk_test_ pattern"
+if has_value STRIPE_SECRET_KEY; then
+  if [[ "$ENV_MODE" == "prod" ]]; then
+    if [[ "${STRIPE_SECRET_KEY}" != sk_live_* && "${STRIPE_SECRET_KEY}" != sk_test_* ]]; then
+      warn "STRIPE_SECRET_KEY must be sk_live_ or sk_test_ in production"
+    fi
+  else
+    if [[ "${STRIPE_SECRET_KEY}" != sk_test_* ]]; then
+      warn "STRIPE_SECRET_KEY must be sk_test_ in development"
+    fi
+  fi
 fi
-if has_value STRIPE_TEST_PUBLISHABLE_KEY && [[ "${STRIPE_TEST_PUBLISHABLE_KEY}" != pk_test_* ]]; then
-  warn "STRIPE_TEST_PUBLISHABLE_KEY does not match pk_test_ pattern"
-fi
-if has_value STRIPE_LIVE_SECRET_KEY && [[ "${STRIPE_LIVE_SECRET_KEY}" != sk_live_* ]]; then
-  warn "STRIPE_LIVE_SECRET_KEY does not match sk_live_ pattern"
-fi
-if has_value STRIPE_LIVE_PUBLISHABLE_KEY && [[ "${STRIPE_LIVE_PUBLISHABLE_KEY}" != pk_live_* ]]; then
-  warn "STRIPE_LIVE_PUBLISHABLE_KEY does not match pk_live_ pattern"
+
+if has_value STRIPE_PUBLISHABLE_KEY; then
+  if [[ "$ENV_MODE" == "prod" ]]; then
+    if [[ "${STRIPE_PUBLISHABLE_KEY}" != pk_live_* && "${STRIPE_PUBLISHABLE_KEY}" != pk_test_* ]]; then
+      warn "STRIPE_PUBLISHABLE_KEY must be pk_live_ or pk_test_ in production"
+    fi
+  else
+    if [[ "${STRIPE_PUBLISHABLE_KEY}" != pk_test_* ]]; then
+      warn "STRIPE_PUBLISHABLE_KEY must be pk_test_ in development"
+    fi
+  fi
 fi
 
 if has_value STRIPE_WEBHOOK_SECRET && [[ "${STRIPE_WEBHOOK_SECRET}" != whsec_* ]]; then
@@ -219,66 +225,14 @@ fi
 if has_value STRIPE_BILLING_WEBHOOK_SECRET && [[ "${STRIPE_BILLING_WEBHOOK_SECRET}" != whsec_* ]]; then
   warn "STRIPE_BILLING_WEBHOOK_SECRET does not match whsec_ pattern"
 fi
-if has_value STRIPE_TEST_WEBHOOK_SECRET && [[ "${STRIPE_TEST_WEBHOOK_SECRET}" != whsec_* ]]; then
-  warn "STRIPE_TEST_WEBHOOK_SECRET does not match whsec_ pattern"
-fi
-if has_value STRIPE_TEST_WEBHOOK_BILLING_SECRET && [[ "${STRIPE_TEST_WEBHOOK_BILLING_SECRET}" != whsec_* ]]; then
-  warn "STRIPE_TEST_WEBHOOK_BILLING_SECRET does not match whsec_ pattern"
-fi
-if has_value STRIPE_LIVE_WEBHOOK_SECRET && [[ "${STRIPE_LIVE_WEBHOOK_SECRET}" != whsec_* ]]; then
-  warn "STRIPE_LIVE_WEBHOOK_SECRET does not match whsec_ pattern"
-fi
-if has_value STRIPE_LIVE_BILLING_WEBHOOK_SECRET && [[ "${STRIPE_LIVE_BILLING_WEBHOOK_SECRET}" != whsec_* ]]; then
-  warn "STRIPE_LIVE_BILLING_WEBHOOK_SECRET does not match whsec_ pattern"
-fi
 
-for key_name in \
-  STRIPE_SECRET_KEY \
-  STRIPE_PUBLISHABLE_KEY \
-  STRIPE_WEBHOOK_SECRET \
-  STRIPE_BILLING_WEBHOOK_SECRET \
-  STRIPE_TEST_SECRET_KEY \
-  STRIPE_TEST_PUBLISHABLE_KEY \
-  STRIPE_TEST_WEBHOOK_SECRET \
-  STRIPE_TEST_WEBHOOK_BILLING_SECRET \
-  STRIPE_LIVE_SECRET_KEY \
-  STRIPE_LIVE_PUBLISHABLE_KEY \
-  STRIPE_LIVE_WEBHOOK_SECRET \
-  STRIPE_LIVE_BILLING_WEBHOOK_SECRET; do
+for key_name in STRIPE_SECRET_KEY STRIPE_PUBLISHABLE_KEY STRIPE_WEBHOOK_SECRET STRIPE_BILLING_WEBHOOK_SECRET; do
   if has_value "$key_name"; then
     if contains_placeholder "${!key_name}"; then
       warn "$key_name looks like a placeholder"
     fi
   fi
 done
-
-if [[ "$ENV_MODE" == "prod" ]]; then
-  if has_value STRIPE_SECRET_KEY && has_value STRIPE_LIVE_SECRET_KEY && [[ "${STRIPE_SECRET_KEY}" != "${STRIPE_LIVE_SECRET_KEY}" ]]; then
-    warn "STRIPE_SECRET_KEY does not match STRIPE_LIVE_SECRET_KEY in prod"
-  fi
-  if has_value STRIPE_PUBLISHABLE_KEY && has_value STRIPE_LIVE_PUBLISHABLE_KEY && [[ "${STRIPE_PUBLISHABLE_KEY}" != "${STRIPE_LIVE_PUBLISHABLE_KEY}" ]]; then
-    warn "STRIPE_PUBLISHABLE_KEY does not match STRIPE_LIVE_PUBLISHABLE_KEY in prod"
-  fi
-  if has_value STRIPE_WEBHOOK_SECRET && has_value STRIPE_LIVE_WEBHOOK_SECRET && [[ "${STRIPE_WEBHOOK_SECRET}" != "${STRIPE_LIVE_WEBHOOK_SECRET}" ]]; then
-    warn "STRIPE_WEBHOOK_SECRET does not match STRIPE_LIVE_WEBHOOK_SECRET in prod"
-  fi
-  if has_value STRIPE_BILLING_WEBHOOK_SECRET && has_value STRIPE_LIVE_BILLING_WEBHOOK_SECRET && [[ "${STRIPE_BILLING_WEBHOOK_SECRET}" != "${STRIPE_LIVE_BILLING_WEBHOOK_SECRET}" ]]; then
-    warn "STRIPE_BILLING_WEBHOOK_SECRET does not match STRIPE_LIVE_BILLING_WEBHOOK_SECRET in prod"
-  fi
-else
-  if has_value STRIPE_SECRET_KEY && has_value STRIPE_TEST_SECRET_KEY && [[ "${STRIPE_SECRET_KEY}" != "${STRIPE_TEST_SECRET_KEY}" ]]; then
-    warn "STRIPE_SECRET_KEY does not match STRIPE_TEST_SECRET_KEY in dev"
-  fi
-  if has_value STRIPE_PUBLISHABLE_KEY && has_value STRIPE_TEST_PUBLISHABLE_KEY && [[ "${STRIPE_PUBLISHABLE_KEY}" != "${STRIPE_TEST_PUBLISHABLE_KEY}" ]]; then
-    warn "STRIPE_PUBLISHABLE_KEY does not match STRIPE_TEST_PUBLISHABLE_KEY in dev"
-  fi
-  if has_value STRIPE_WEBHOOK_SECRET && has_value STRIPE_TEST_WEBHOOK_SECRET && [[ "${STRIPE_WEBHOOK_SECRET}" != "${STRIPE_TEST_WEBHOOK_SECRET}" ]]; then
-    warn "STRIPE_WEBHOOK_SECRET does not match STRIPE_TEST_WEBHOOK_SECRET in dev"
-  fi
-  if has_value STRIPE_BILLING_WEBHOOK_SECRET && has_value STRIPE_TEST_WEBHOOK_BILLING_SECRET && [[ "${STRIPE_BILLING_WEBHOOK_SECRET}" != "${STRIPE_TEST_WEBHOOK_BILLING_SECRET}" ]]; then
-    warn "STRIPE_BILLING_WEBHOOK_SECRET does not match STRIPE_TEST_WEBHOOK_BILLING_SECRET in dev"
-  fi
-fi
 
 if ! has_value STRIPE_WEBHOOK_SECRET || ! has_value STRIPE_BILLING_WEBHOOK_SECRET; then
   warn "Missing active Stripe webhook signing secret (STRIPE_WEBHOOK_SECRET and STRIPE_BILLING_WEBHOOK_SECRET required)"
