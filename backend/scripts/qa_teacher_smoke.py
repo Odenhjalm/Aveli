@@ -11,6 +11,15 @@ import uuid
 import httpx
 
 
+DEFAULT_BASE_URL = "http://127.0.0.1:8080"
+
+
+def resolve_base_url(cli_value: str | None = None) -> str:
+    if cli_value:
+        return cli_value
+    return os.environ.get("QA_BASE_URL") or os.environ.get("API_BASE_URL") or DEFAULT_BASE_URL
+
+
 def _subscriptions_enabled() -> bool:
     value = os.environ.get("SUBSCRIPTIONS_ENABLED", "true").strip().lower()
     return value not in {"false", "0", "no"}
@@ -80,27 +89,33 @@ async def _fetch_sfu_token(client: httpx.AsyncClient, token: str, seminar_id: st
     return resp.json()
 
 
-async def _run_health_checks(client: httpx.AsyncClient) -> None:
+async def _run_health_checks(client: httpx.AsyncClient, base_url: str) -> None:
     try:
         health = await client.get("/healthz")
         ready = await client.get("/readyz")
+        health.raise_for_status()
+        ready.raise_for_status()
         print("[healthz]", health.json())
         print("[readyz]", ready.json())
-    except httpx.HTTPStatusError as exc:
-        print(f"[warn] health checks failed: {exc}")
+    except (httpx.RequestError, httpx.HTTPStatusError):
+        print(f"Backend not reachable at {base_url}. Start it with: ./scripts/start_backend.sh")
+        sys.exit(1)
 
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default=os.environ.get("QA_API_BASE_URL", "http://127.0.0.1:8080"))
+    parser.add_argument("--base-url", help="Override base URL for the backend")
     parser.add_argument("--seminar-id", help="Optional seminar UUID to test SFU token flow")
     args = parser.parse_args()
+
+    base_url = resolve_base_url(args.base_url)
+    print(f"[config] base URL: {base_url}")
 
     email = f"qa_{uuid.uuid4().hex[:8]}@aveli.local"
     password = "Secret123!"
 
-    async with httpx.AsyncClient(base_url=args.base_url, timeout=20) as client:
-        await _run_health_checks(client)
+    async with httpx.AsyncClient(base_url=base_url, timeout=20) as client:
+        await _run_health_checks(client, base_url)
         token, refresh = await _register_and_login(client, email, password)
         services = await _list_services(client, token)
         if not services:
