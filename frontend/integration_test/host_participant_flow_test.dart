@@ -10,9 +10,26 @@ import 'package:wisdom/features/seminars/application/seminar_providers.dart';
 import 'package:wisdom/features/seminars/presentation/seminar_detail_page.dart';
 import 'package:wisdom/features/seminars/presentation/seminar_join_page.dart';
 import 'package:wisdom/shared/widgets/gradient_button.dart';
+import 'package:wisdom/core/env/app_config.dart';
+import 'package:wisdom/shared/utils/backend_assets.dart';
+
+class _TestAssetResolver extends BackendAssetResolver {
+  _TestAssetResolver() : super('');
+
+  @override
+  ImageProvider<Object> imageProvider(String assetPath, {double scale = 1.0}) {
+    return const AssetImage('assets/images/bakgrund.png');
+  }
+}
+
+Future<void> _pumpFor(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 120));
+}
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
 
   testWidgets('Host studio and participant join show live session state', (
     tester,
@@ -70,6 +87,17 @@ void main() {
     _TrackingLiveSessionController.reset();
 
     final overrides = [
+      appConfigProvider.overrideWithValue(
+        const AppConfig(
+          apiBaseUrl: 'http://localhost',
+          stripePublishableKey: 'pk_test',
+          stripeMerchantDisplayName: 'Aveli',
+          subscriptionsEnabled: false,
+        ),
+      ),
+      backendAssetResolverProvider.overrideWithValue(
+        _TestAssetResolver(),
+      ),
       seminarRepositoryProvider.overrideWithValue(fakeRepository),
       hostSeminarsProvider.overrideWith(
         (ref) async => fakeRepository.hostSeminars,
@@ -91,7 +119,7 @@ void main() {
         child: MaterialApp(home: SeminarDetailPage(seminarId: seminar.id)),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpFor(tester);
 
     expect(find.text('Session live'), findsOneWidget);
     expect(find.text('Avsluta'), findsOneWidget);
@@ -102,7 +130,7 @@ void main() {
         child: MaterialApp(home: SeminarJoinPage(seminarId: seminar.id)),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpFor(tester);
 
     expect(find.text('Status: LIVE'), findsOneWidget);
     final joinFinder = find.widgetWithText(GradientButton, 'Anslut');
@@ -116,10 +144,10 @@ void main() {
         child: MaterialApp(home: SeminarDetailPage(seminarId: seminar.id)),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpFor(tester);
 
     await tester.tap(find.text('Avsluta'));
-    await tester.pumpAndSettle();
+    await _pumpFor(tester);
 
     expect(fakeRepository.endSessionCalls, 1);
     expect(_TrackingLiveSessionController.disconnectCount, 1);

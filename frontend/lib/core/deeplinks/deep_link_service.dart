@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-import 'package:uni_links/uni_links.dart';
 import 'package:wisdom/core/auth/auth_controller.dart';
 import 'package:wisdom/core/routing/app_router.dart';
 import 'package:wisdom/core/routing/route_paths.dart';
@@ -20,38 +19,17 @@ class DeepLinkService {
   DeepLinkService(this._ref);
 
   final Ref _ref;
-  StreamSubscription<Uri?>? _sub;
   bool _initialized = false;
+  static Uri? _pendingInitialUri;
 
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
-    // Web cannot listen for deep link streams; redirects come via full page load.
-    if (kIsWeb) {
-      return;
-    }
-    await _processInitialUri();
-    _sub = uriLinkStream.listen(
-      (uri) {
-        if (uri != null) {
-          unawaited(handleUri(uri));
-        }
-      },
-      onError: (err) {
-        debugPrint('Deep link stream error: $err');
-      },
-    );
-  }
-
-  Future<void> _processInitialUri() async {
-    try {
-      final initial = await getInitialUri();
-      if (initial != null) {
-        await handleUri(initial);
-      }
-    } catch (error, stackTrace) {
-      debugPrint('Failed to process initial URI: $error');
-      debugPrint(stackTrace.toString());
+    if (kIsWeb) return;
+    final initial = _pendingInitialUri;
+    _pendingInitialUri = null;
+    if (initial != null) {
+      await handleUri(initial);
     }
   }
 
@@ -196,7 +174,12 @@ class DeepLinkService {
   }
 
   void dispose() {
-    _sub?.cancel();
     _initialized = false;
+  }
+
+  /// Allows tests or embedding contexts to inject a deferred initial URI
+  /// without relying on platform deep link plugins.
+  static void injectInitialUri(Uri uri) {
+    _pendingInitialUri = uri;
   }
 }

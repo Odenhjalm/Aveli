@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -184,8 +185,14 @@ List<Override> _commonOverrides(AuthState authState) {
   ];
 }
 
+Future<void> _pumpNavigation(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 120));
+}
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
   final transparentData = ByteData.view(
     Uint8List.fromList(_transparentPng).buffer,
   );
@@ -229,7 +236,7 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await _pumpNavigation(tester);
     expect(find.byType(HomeDashboardPage), findsOneWidget);
 
     // Navigate to Community via router (avoids layout-specific buttons).
@@ -237,12 +244,12 @@ void main() {
     final container = ProviderScope.containerOf(appContext);
     final router = container.read(appRouterProvider);
     router.pushNamed(AppRoute.community);
-    await tester.pumpAndSettle();
+    await _pumpNavigation(tester);
     expect(find.byType(CommunityPage), findsOneWidget);
 
     // Simulate a back action by popping the current route.
     router.pop();
-    await tester.pumpAndSettle();
+    await _pumpNavigation(tester);
 
     expect(find.byType(HomeDashboardPage), findsOneWidget);
     expect(find.byType(CommunityPage), findsNothing);

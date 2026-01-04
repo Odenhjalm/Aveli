@@ -5,6 +5,9 @@ import pytest
 
 from app.config import settings
 from app import db
+from app.auth import hash_password
+from app.repositories import auth as auth_repo
+from app import repositories
 
 
 @pytest.mark.anyio("asyncio")
@@ -115,6 +118,67 @@ async def test_backend_api_smoke(async_client, monkeypatch):
     assert feed_resp.status_code == 200
     assert isinstance(feed_resp.json()["items"], list)
 
+    student_email = "student@wisdom.dev"
+    student_password = "password123"
+    hashed_student_password = hash_password(student_password)
+    existing_student = await auth_repo.get_user_by_email(student_email)
+    student_user_id = str(existing_student["id"]) if existing_student else None
+    if not existing_student:
+        try:
+            created = await auth_repo.create_user(
+                email=student_email,
+                hashed_password=hashed_student_password,
+                display_name="Student",
+            )
+            student_user_id = str(created["user"]["id"])
+        except auth_repo.UniqueViolationError:
+            async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                    await cur.execute(
+                        "UPDATE auth.users SET encrypted_password = %s WHERE email = %s",
+                        (hashed_student_password, student_email),
+                    )
+                    await cur.execute(
+                        """
+                        INSERT INTO app.profiles (user_id, email, display_name, role, role_v2, is_admin, created_at, updated_at)
+                        SELECT id, email, %s, 'student', 'user', false, NOW(), NOW()
+                        FROM auth.users WHERE email = %s
+                        ON CONFLICT (user_id) DO NOTHING
+                        """,
+                        ("Student", student_email),
+                    )
+                    await conn.commit()
+            refreshed = await auth_repo.get_user_by_email(student_email)
+            student_user_id = str(refreshed["id"]) if refreshed else None
+    else:
+        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    "UPDATE auth.users SET encrypted_password = %s WHERE email = %s",
+                    (hashed_student_password, student_email),
+                )
+                await conn.commit()
+    if not student_user_id:
+        pytest.skip("student user missing; cannot validate SFU token")
+
+    seminar = await repositories.create_seminar(
+        host_id=student_user_id,
+        title="QA Smoke Seminar",
+        description="auto-seeded for smoke test",
+        scheduled_at=None,
+        duration_minutes=30,
+    )
+    seminar_id = str(seminar["id"])
+    session = await repositories.create_seminar_session(
+        seminar_id=seminar_id,
+        status="live",
+        scheduled_at=None,
+        livekit_room=f"seminar-{seminar_id}",
+        livekit_sid=None,
+        metadata={"qa_smoke": True},
+    )
+    seminar_id = str(session["seminar_id"])
+
     student_login = await async_client.post(
         "/auth/login",
         json={"email": "student@wisdom.dev", "password": "password123"},
@@ -124,7 +188,7 @@ async def test_backend_api_smoke(async_client, monkeypatch):
     seminar_resp = await async_client.post(
         "/sfu/token",
         headers={"Authorization": f"Bearer {student_token}"},
-        json={"seminar_id": "99999999-9999-4999-8999-999999999999"},
+        json={"seminar_id": seminar_id},
     )
     assert seminar_resp.status_code == 200
     assert seminar_resp.json()["ws_url"] == settings.livekit_ws_url
