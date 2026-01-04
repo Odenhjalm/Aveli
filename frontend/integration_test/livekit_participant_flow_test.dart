@@ -24,7 +24,7 @@ class _TestAssetResolver extends BackendAssetResolver {
 
 Future<void> _pumpFor(WidgetTester tester) async {
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 100));
+  await tester.pump(const Duration(milliseconds: 120));
 }
 
 class _FakeLiveSessionController extends LiveSessionController {
@@ -54,7 +54,8 @@ class _FakeLiveSessionController extends LiveSessionController {
 }
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
 
   testWidgets('Seminar list shows live and scheduled badges', (tester) async {
     final liveSeminar = Seminar(
