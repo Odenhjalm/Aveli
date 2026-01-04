@@ -4,12 +4,28 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'package:wisdom/core/env/app_config.dart';
+import 'package:wisdom/shared/utils/backend_assets.dart';
 import 'package:wisdom/data/models/seminar.dart';
 import 'package:wisdom/features/seminars/application/seminar_providers.dart';
 import 'package:wisdom/features/seminars/presentation/seminar_discover_page.dart';
 import 'package:wisdom/features/seminars/presentation/seminar_join_page.dart';
 import 'package:wisdom/features/home/application/livekit_controller.dart';
 import 'package:wisdom/shared/widgets/gradient_button.dart';
+
+class _TestAssetResolver extends BackendAssetResolver {
+  _TestAssetResolver() : super('');
+
+  @override
+  ImageProvider<Object> imageProvider(String assetPath, {double scale = 1.0}) {
+    return const AssetImage('assets/images/bakgrund.png');
+  }
+}
+
+Future<void> _pumpFor(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
+}
 
 class _FakeLiveSessionController extends LiveSessionController {
   @override
@@ -72,6 +88,17 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: 'pk_test',
+              stripeMerchantDisplayName: 'Aveli',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          backendAssetResolverProvider.overrideWithValue(
+            _TestAssetResolver(),
+          ),
           publicSeminarsProvider.overrideWith(
             (ref) async => [liveSeminar, scheduledSeminar],
           ),
@@ -80,7 +107,7 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await _pumpFor(tester);
 
     expect(find.textContaining('LIVE'), findsOneWidget);
     expect(find.textContaining('Planerat'), findsWidgets);
@@ -119,6 +146,17 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: 'pk_test',
+              stripeMerchantDisplayName: 'Aveli',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          backendAssetResolverProvider.overrideWithValue(
+            _TestAssetResolver(),
+          ),
           publicSeminarDetailProvider(
             seminar.id,
           ).overrideWith((ref) async => detail),
@@ -130,12 +168,12 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await _pumpFor(tester);
 
     final joinButton = find.widgetWithText(GradientButton, 'Anslut');
     expect(joinButton, findsOneWidget);
     final buttonWidget = tester.widget<GradientButton>(joinButton);
     expect(buttonWidget.onPressed, isNull);
-    expect(find.textContaining('inte live ännu'), findsOneWidget);
+    expect(find.textContaining('Knappen blir aktiv'), findsOneWidget);
   });
 }
