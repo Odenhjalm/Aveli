@@ -23,4 +23,16 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.1.0" apply false
 }
 
+// Force consistent AGP/Kotlin plugin versions for Flutter plugins that pin older buildscript deps.
+gradle.beforeProject {
+    buildscript {
+        configurations.configureEach {
+            resolutionStrategy.force(
+                "com.android.tools.build:gradle:8.9.1",
+                "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
+            )
+        }
+    }
+}
+
 include(":app")
