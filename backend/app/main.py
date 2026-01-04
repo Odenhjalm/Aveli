@@ -19,6 +19,7 @@ from .logging_utils import setup_logging
 from .services import livekit_events
 from .routes import (
     admin,
+    api_ai,
     api_auth,
     api_feed,
     api_me,
@@ -85,6 +86,7 @@ app.add_middleware(
 app.mount("/assets", StaticFiles(directory=ASSETS_ROOT), name="assets")
 
 app.include_router(api_auth.router)
+app.include_router(api_ai.router)
 app.include_router(api_services.router)
 app.include_router(api_orders.router)
 app.include_router(api_feed.router)
