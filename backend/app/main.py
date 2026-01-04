@@ -20,6 +20,7 @@ from .services import livekit_events
 from .routes import (
     admin,
     api_ai,
+    api_context7,
     api_auth,
     api_feed,
     api_me,
@@ -87,6 +88,7 @@ app.mount("/assets", StaticFiles(directory=ASSETS_ROOT), name="assets")
 
 app.include_router(api_auth.router)
 app.include_router(api_ai.router)
+app.include_router(api_context7.router)
 app.include_router(api_services.router)
 app.include_router(api_orders.router)
 app.include_router(api_feed.router)
