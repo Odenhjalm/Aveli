@@ -57,6 +57,12 @@ warn() {
   fi
 }
 
+critical() {
+  local message="$1"
+  echo "ERROR: $message" >&2
+  STATUS=1
+}
+
 note() {
   echo "$1"
 }
@@ -73,7 +79,7 @@ report_var() {
   else
     note "  - $name: missing"
     if [[ "$required" == "required" ]]; then
-      warn "$name is required"
+      critical "$name is required"
     fi
   fi
 }
@@ -134,7 +140,45 @@ STRIPE_PRICE_REQUIRED="required"
 if [[ "$ENV_MODE" == "nonprod" ]]; then
   DB_REQUIRED="optional"
   JWT_REQUIRED="optional"
-  STRIPE_PRICE_REQUIRED="optional"
+fi
+
+stripe_secret_names=()
+stripe_secret_values=()
+for key in STRIPE_SECRET_KEY STRIPE_TEST_SECRET_KEY STRIPE_LIVE_SECRET_KEY; do
+  if has_value "$key"; then
+    stripe_secret_names+=("$key")
+    stripe_secret_values+=("${!key}")
+  fi
+done
+unique_secret_count="$(printf "%s\n" "${stripe_secret_values[@]:-}" | sort -u | wc -l | tr -d ' ')"
+if [[ "$unique_secret_count" -gt 1 ]]; then
+  critical "Conflicting Stripe secrets set (${stripe_secret_names[*]})"
+fi
+
+STRIPE_ACTIVE_SECRET=""
+STRIPE_ACTIVE_SOURCE=""
+if has_value STRIPE_SECRET_KEY; then
+  STRIPE_ACTIVE_SECRET="${STRIPE_SECRET_KEY}"
+  STRIPE_ACTIVE_SOURCE="STRIPE_SECRET_KEY"
+elif has_value STRIPE_TEST_SECRET_KEY; then
+  STRIPE_ACTIVE_SECRET="${STRIPE_TEST_SECRET_KEY}"
+  STRIPE_ACTIVE_SOURCE="STRIPE_TEST_SECRET_KEY"
+elif has_value STRIPE_LIVE_SECRET_KEY; then
+  STRIPE_ACTIVE_SECRET="${STRIPE_LIVE_SECRET_KEY}"
+  STRIPE_ACTIVE_SOURCE="STRIPE_LIVE_SECRET_KEY"
+fi
+
+STRIPE_MODE_RESOLVED="unknown"
+if [[ -z "$STRIPE_ACTIVE_SECRET" ]]; then
+  critical "Stripe secret key missing (set STRIPE_SECRET_KEY or STRIPE_TEST_SECRET_KEY or STRIPE_LIVE_SECRET_KEY)"
+else
+  if [[ "$STRIPE_ACTIVE_SECRET" == sk_test_* ]]; then
+    STRIPE_MODE_RESOLVED="test"
+  elif [[ "$STRIPE_ACTIVE_SECRET" == sk_live_* ]]; then
+    STRIPE_MODE_RESOLVED="live"
+  else
+    critical "${STRIPE_ACTIVE_SOURCE:-STRIPE_SECRET_KEY} must start with sk_test_ or sk_live_"
+  fi
 fi
 
 note "==> Backend (required)"
@@ -161,10 +205,15 @@ report_var SUPABASE_JWT_SECRET optional
 report_var MEDIA_SIGNING_SECRET optional
 
 note "==> Stripe (required for mode switching)"
+note "  - Active mode: ${STRIPE_MODE_RESOLVED}"
+note "  - Secret source: ${STRIPE_ACTIVE_SOURCE:-missing}"
 report_var STRIPE_TEST_SECRET_KEY required
 report_var STRIPE_TEST_PUBLISHABLE_KEY required
-report_var STRIPE_TEST_WEBHOOK_SECRET optional
+report_var STRIPE_TEST_WEBHOOK_SECRET required
 report_var STRIPE_TEST_WEBHOOK_BILLING_SECRET required
+report_var STRIPE_TEST_MEMBERSHIP_PRODUCT_ID required
+report_var STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY required
+report_var STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY required
 
 note "==> Flutter (required for app clients)"
 report_var API_BASE_URL required
@@ -195,28 +244,16 @@ if has_value DATABASE_URL && ! has_value SUPABASE_DB_URL; then
 fi
 
 # Stripe key mode checks
-if has_value STRIPE_SECRET_KEY; then
-  if [[ "$ENV_MODE" == "prod" ]]; then
-    if [[ "${STRIPE_SECRET_KEY}" != sk_live_* && "${STRIPE_SECRET_KEY}" != sk_test_* ]]; then
-      warn "STRIPE_SECRET_KEY must be sk_live_ or sk_test_ in production"
-    fi
-  else
-    if [[ "${STRIPE_SECRET_KEY}" != sk_test_* ]]; then
-      warn "STRIPE_SECRET_KEY must be sk_test_ in development"
-    fi
+if has_value STRIPE_PUBLISHABLE_KEY; then
+  if [[ "$STRIPE_MODE_RESOLVED" == "test" && "${STRIPE_PUBLISHABLE_KEY}" != pk_test_* ]]; then
+    critical "STRIPE_PUBLISHABLE_KEY must be pk_test_ when using sk_test_*"
+  elif [[ "$STRIPE_MODE_RESOLVED" == "live" && "${STRIPE_PUBLISHABLE_KEY}" != pk_live_* ]]; then
+    critical "STRIPE_PUBLISHABLE_KEY must be pk_live_ when using sk_live_*"
   fi
 fi
 
-if has_value STRIPE_PUBLISHABLE_KEY; then
-  if [[ "$ENV_MODE" == "prod" ]]; then
-    if [[ "${STRIPE_PUBLISHABLE_KEY}" != pk_live_* && "${STRIPE_PUBLISHABLE_KEY}" != pk_test_* ]]; then
-      warn "STRIPE_PUBLISHABLE_KEY must be pk_live_ or pk_test_ in production"
-    fi
-  else
-    if [[ "${STRIPE_PUBLISHABLE_KEY}" != pk_test_* ]]; then
-      warn "STRIPE_PUBLISHABLE_KEY must be pk_test_ in development"
-    fi
-  fi
+if has_value STRIPE_TEST_PUBLISHABLE_KEY && [[ "${STRIPE_TEST_PUBLISHABLE_KEY}" != pk_test_* ]]; then
+  critical "STRIPE_TEST_PUBLISHABLE_KEY must be pk_test_"
 fi
 
 if has_value STRIPE_WEBHOOK_SECRET && [[ "${STRIPE_WEBHOOK_SECRET}" != whsec_* ]]; then
@@ -224,6 +261,12 @@ if has_value STRIPE_WEBHOOK_SECRET && [[ "${STRIPE_WEBHOOK_SECRET}" != whsec_* ]
 fi
 if has_value STRIPE_BILLING_WEBHOOK_SECRET && [[ "${STRIPE_BILLING_WEBHOOK_SECRET}" != whsec_* ]]; then
   warn "STRIPE_BILLING_WEBHOOK_SECRET does not match whsec_ pattern"
+fi
+if has_value STRIPE_TEST_WEBHOOK_SECRET && [[ "${STRIPE_TEST_WEBHOOK_SECRET}" != whsec_* ]]; then
+  warn "STRIPE_TEST_WEBHOOK_SECRET does not match whsec_ pattern"
+fi
+if has_value STRIPE_TEST_WEBHOOK_BILLING_SECRET && [[ "${STRIPE_TEST_WEBHOOK_BILLING_SECRET}" != whsec_* ]]; then
+  warn "STRIPE_TEST_WEBHOOK_BILLING_SECRET does not match whsec_ pattern"
 fi
 
 for key_name in STRIPE_SECRET_KEY STRIPE_PUBLISHABLE_KEY STRIPE_WEBHOOK_SECRET STRIPE_BILLING_WEBHOOK_SECRET; do
@@ -234,8 +277,14 @@ for key_name in STRIPE_SECRET_KEY STRIPE_PUBLISHABLE_KEY STRIPE_WEBHOOK_SECRET S
   fi
 done
 
-if ! has_value STRIPE_WEBHOOK_SECRET || ! has_value STRIPE_BILLING_WEBHOOK_SECRET; then
-  warn "Missing active Stripe webhook signing secret (STRIPE_WEBHOOK_SECRET and STRIPE_BILLING_WEBHOOK_SECRET required)"
+if [[ "$STRIPE_MODE_RESOLVED" == "test" ]]; then
+  if ! has_value STRIPE_TEST_WEBHOOK_SECRET || ! has_value STRIPE_TEST_WEBHOOK_BILLING_SECRET; then
+    critical "Missing Stripe test webhook secrets (STRIPE_TEST_WEBHOOK_SECRET and STRIPE_TEST_WEBHOOK_BILLING_SECRET required in test mode)"
+  fi
+else
+  if ! has_value STRIPE_WEBHOOK_SECRET || ! has_value STRIPE_BILLING_WEBHOOK_SECRET; then
+    critical "Missing active Stripe webhook signing secret (STRIPE_WEBHOOK_SECRET and STRIPE_BILLING_WEBHOOK_SECRET required)"
+  fi
 fi
 
 # Supabase URL sanity checks

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Stripe keys are aligned with APP_ENV (test vs live)."""
+"""Verify Stripe keys are aligned with the active Stripe secret (test vs live)."""
 from __future__ import annotations
 
 import os
@@ -19,14 +19,6 @@ def _val(key: str) -> str:
     return (os.environ.get(key) or "").strip()
 
 
-def _is_live_secret(value: str) -> bool:
-    return value.startswith("sk_live_")
-
-
-def _is_test_secret(value: str) -> bool:
-    return value.startswith("sk_test_")
-
-
 def _is_live_publishable(value: str) -> bool:
     return value.startswith("pk_live_")
 
@@ -44,54 +36,66 @@ def main() -> int:
         print(f"FAIL: backend env missing at {ENV_PATH}; cannot verify Stripe config.", file=sys.stderr)
         return 1
 
-    app_env = (_val("APP_ENV") or _val("ENV") or _val("ENVIRONMENT")).lower()
-    mode = "production" if app_env in {"prod", "production", "live"} else "development"
-    require_live = os.environ.get("REQUIRE_LIVE_STRIPE_KEYS", "0") in {"1", "true", "TRUE"}
-
-    required = [
-        "STRIPE_SECRET_KEY",
-        "STRIPE_PUBLISHABLE_KEY",
-        "STRIPE_WEBHOOK_SECRET",
-        "STRIPE_BILLING_WEBHOOK_SECRET",
-    ]
-    missing = [key for key in required if not _val(key)]
-
-    if missing:
-        print("FAIL: Missing required Stripe keys:")
-        for key in missing:
-            print(f"- {key}")
+    try:
+        from app import stripe_mode
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"FAIL: could not import Stripe mode resolver: {exc}", file=sys.stderr)
         return 1
 
-    active_secret = _val("STRIPE_SECRET_KEY")
-    active_pub = _val("STRIPE_PUBLISHABLE_KEY")
-    active_webhook = _val("STRIPE_WEBHOOK_SECRET")
-    active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
 
+    mode = context.mode.value
     errors: list[str] = []
     warnings: list[str] = []
 
-    if mode == "development":
-        if not _is_test_secret(active_secret):
-            errors.append("STRIPE_SECRET_KEY must be sk_test_ in development")
-        if not _is_test_publishable(active_pub):
-            errors.append("STRIPE_PUBLISHABLE_KEY must be pk_test_ in development")
+    if mode == "test":
+        required = [
+            "STRIPE_TEST_PUBLISHABLE_KEY",
+            "STRIPE_TEST_WEBHOOK_SECRET",
+            "STRIPE_TEST_WEBHOOK_BILLING_SECRET",
+            "STRIPE_TEST_MEMBERSHIP_PRODUCT_ID",
+            "STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY",
+            "STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY",
+        ]
+        active_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY") or _val("STRIPE_PUBLISHABLE_KEY")
+        active_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET")
+        active_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET")
     else:
-        if _is_test_secret(active_secret) and _is_live_publishable(active_pub):
-            warnings.append("Stripe secret is test but publishable is live")
-        if _is_live_secret(active_secret) and _is_test_publishable(active_pub):
-            warnings.append("Stripe secret is live but publishable is test")
-        if _is_live_secret(active_secret) != _is_live_publishable(active_pub):
-            errors.append("Stripe keys must both be test or both be live")
-        if require_live:
-            if not _is_live_secret(active_secret):
-                errors.append("STRIPE_SECRET_KEY must be sk_live_ in production (REQUIRE_LIVE_STRIPE_KEYS=1)")
-            if not _is_live_publishable(active_pub):
-                errors.append("STRIPE_PUBLISHABLE_KEY must be pk_live_ in production (REQUIRE_LIVE_STRIPE_KEYS=1)")
-        else:
-            if _is_test_secret(active_secret):
-                warnings.append("Production verify using test Stripe secret; set REQUIRE_LIVE_STRIPE_KEYS=1 to enforce live keys")
-            if _is_test_publishable(active_pub):
-                warnings.append("Production verify using test Stripe publishable key; set REQUIRE_LIVE_STRIPE_KEYS=1 to enforce live keys")
+        required = [
+            "STRIPE_PUBLISHABLE_KEY",
+            "STRIPE_WEBHOOK_SECRET",
+            "STRIPE_BILLING_WEBHOOK_SECRET",
+            "AVELI_PRICE_MONTHLY",
+            "AVELI_PRICE_YEARLY",
+        ]
+        active_pub = _val("STRIPE_PUBLISHABLE_KEY")
+        active_webhook = _val("STRIPE_WEBHOOK_SECRET")
+        active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
+
+    missing = [key for key in required if not _val(key)]
+    if missing:
+        errors.append(f"Missing required Stripe keys: {', '.join(missing)}")
+
+    if not active_pub:
+        errors.append("Stripe publishable key is missing for the active mode")
+    elif mode == "test" and not _is_test_publishable(active_pub):
+        errors.append("Stripe publishable key must be pk_test_ when using sk_test_*")
+    elif mode == "live" and not _is_live_publishable(active_pub):
+        errors.append("Stripe publishable key must be pk_live_ when using sk_live_*")
+
+    if not active_webhook or not active_billing:
+        errors.append("Stripe webhook secrets are missing for the active mode")
+    else:
+        for label, secret_value in (
+            ("payment", active_webhook),
+            ("billing", active_billing),
+        ):
+            if not secret_value.startswith("whsec_"):
+                warnings.append(f"{label} webhook secret does not start with whsec_")
 
     stripe_routes = ROOT / "backend" / "app" / "routes"
     webhook_file = stripe_routes / "stripe_webhooks.py"

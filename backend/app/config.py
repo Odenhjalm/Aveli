@@ -38,13 +38,35 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("CHECKOUT_CANCEL_URL", "STRIPE_CHECKOUT_CANCEL_URL"),
     )
-    stripe_secret_key: str | None = None
-    stripe_webhook_secret: str | None = None
+    stripe_secret_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "STRIPE_SECRET_KEY",
+            "STRIPE_TEST_SECRET_KEY",
+            "STRIPE_LIVE_SECRET_KEY",
+        ),
+    )
+    stripe_test_secret_key: str | None = Field(
+        default=None, validation_alias="STRIPE_TEST_SECRET_KEY"
+    )
+    stripe_live_secret_key: str | None = Field(
+        default=None, validation_alias="STRIPE_LIVE_SECRET_KEY"
+    )
+    stripe_webhook_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "STRIPE_WEBHOOK_SECRET",
+            "STRIPE_TEST_WEBHOOK_SECRET",
+            "STRIPE_LIVE_WEBHOOK_SECRET",
+        ),
+    )
     stripe_billing_webhook_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices(
             "STRIPE_BILLING_WEBHOOK_SECRET",
             "STRIPE_BILLING_WEBHOOK_SECTRET",
+            "STRIPE_TEST_WEBHOOK_BILLING_SECRET",
+            "STRIPE_LIVE_BILLING_WEBHOOK_SECRET",
         ),
     )
     stripe_price_monthly: str | None = Field(
@@ -54,6 +76,31 @@ class Settings(BaseSettings):
     stripe_price_yearly: str | None = Field(
         default=None,
         validation_alias=AliasChoices("STRIPE_PRICE_YEARLY", "AVELI_PRICE_YEARLY"),
+    )
+    stripe_membership_product_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "STRIPE_MEMBERSHIP_PRODUCT_ID",
+            "AVELI_MEMBERSHIP_PRODUCT_ID",
+        ),
+    )
+    stripe_test_publishable_key: str | None = Field(
+        default=None, validation_alias="STRIPE_TEST_PUBLISHABLE_KEY"
+    )
+    stripe_test_webhook_secret: str | None = Field(
+        default=None, validation_alias="STRIPE_TEST_WEBHOOK_SECRET"
+    )
+    stripe_test_webhook_billing_secret: str | None = Field(
+        default=None, validation_alias="STRIPE_TEST_WEBHOOK_BILLING_SECRET"
+    )
+    stripe_test_membership_product_id: str | None = Field(
+        default=None, validation_alias="STRIPE_TEST_MEMBERSHIP_PRODUCT_ID"
+    )
+    stripe_test_membership_price_monthly: str | None = Field(
+        default=None, validation_alias="STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY"
+    )
+    stripe_test_membership_price_id_yearly: str | None = Field(
+        default=None, validation_alias="STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY"
     )
     stripe_connect_client_id: str | None = None
     stripe_connect_refresh_url: str | None = None

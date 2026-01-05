@@ -10,9 +10,15 @@ from .utils import register_user
 
 @pytest.mark.anyio("asyncio")
 async def test_webhook_upserts_membership(async_client, monkeypatch):
-    settings.stripe_webhook_secret = "whsec_test"
-    settings.stripe_price_monthly = "price_month_test"
-    settings.stripe_price_yearly = "price_year_test"
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_value")
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", "sk_test_value")
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    settings.stripe_secret_key = "sk_test_value"
+    settings.stripe_test_secret_key = "sk_test_value"
+    settings.stripe_test_webhook_billing_secret = "whsec_test"
+    settings.stripe_test_webhook_secret = "whsec_test"
+    settings.stripe_test_membership_price_monthly = "price_month_test"
+    settings.stripe_test_membership_price_id_yearly = "price_year_test"
 
     headers, user_id, _ = await register_user(async_client)
 
@@ -29,7 +35,7 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
                     "data": [
                         {
                             "price": {
-                                "id": settings.stripe_price_monthly,
+                                "id": settings.stripe_test_membership_price_monthly,
                                 "recurring": {"interval": "month"},
                             }
                         }
@@ -53,7 +59,7 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
                     "data": [
                         {
                             "price": {
-                                "id": settings.stripe_price_monthly,
+                                "id": settings.stripe_test_membership_price_monthly,
                                 "recurring": {"interval": "month"},
                             },
                             "period": {"start": 3, "end": 4},

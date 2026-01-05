@@ -14,6 +14,7 @@ from .. import repositories, schemas
 from ..config import settings
 from ..repositories import memberships as memberships_repo
 from . import stripe_customers as stripe_customers_service
+from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
 
@@ -36,29 +37,27 @@ class CheckoutConfigError(CheckoutError):
 @dataclass
 class PriceInfo:
     price_id: str
+    env_var: str
     amount_cents: int
     currency: str
     course_id: str | None = None
     service_id: str | None = None
+    product_id: str | None = None
+    stripe_mode: stripe_mode.StripeMode | None = None
 
 
-def _require_stripe() -> None:
-    if not settings.stripe_secret_key:
-        raise CheckoutConfigError("Stripe secret key is missing")
-    stripe.api_key = settings.stripe_secret_key
+def _require_stripe() -> stripe_mode.StripeContext:
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise CheckoutConfigError(str(exc)) from exc
+    stripe.api_key = context.secret_key
+    return context
 
 
 def _slug_to_env_key(slug: str, *, prefix: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9]", "_", slug)
     return f"{prefix}_{normalized}".upper()
-
-
-def _price_for_subscription(interval: schemas.SubscriptionInterval) -> str | None:
-    if interval is schemas.SubscriptionInterval.month:
-        return settings.stripe_price_monthly
-    if interval is schemas.SubscriptionInterval.year:
-        return settings.stripe_price_yearly
-    return None
 
 
 def _price_for_service(slug: str) -> str | None:
@@ -73,19 +72,24 @@ async def _get_or_create_customer(user: Mapping[str, Any]) -> str:
 
 
 async def _resolve_price(
-    payload: schemas.CheckoutCreateRequest,
+    payload: schemas.CheckoutCreateRequest, context: stripe_mode.StripeContext
 ) -> PriceInfo:
     if payload.type is schemas.CheckoutType.subscription:
         if not payload.interval:
             raise CheckoutError("Subscription interval is required")
-        price_id = _price_for_subscription(payload.interval)
-        if not price_id:
-            raise CheckoutConfigError("Stripe price for subscription interval is missing")
-        price = await _retrieve_price(price_id)
+        try:
+            price_config = stripe_mode.resolve_membership_price(payload.interval, context)
+            price = await stripe_mode.ensure_price_accessible(price_config, context)
+        except stripe_mode.StripeConfigurationError as exc:
+            raise CheckoutConfigError(str(exc)) from exc
+        amount_cents, currency = _extract_amount_and_currency(price)
         return PriceInfo(
-            price_id=price_id,
-            amount_cents=price["amount_cents"],
-            currency=price["currency"],
+            price_id=price_config.price_id,
+            env_var=price_config.env_var,
+            amount_cents=amount_cents,
+            currency=currency,
+            product_id=price_config.product_id,
+            stripe_mode=context.mode,
         )
 
     if not payload.slug:
@@ -97,35 +101,60 @@ async def _resolve_price(
     price_id = _price_for_service(payload.slug)
     if not price_id:
         raise CheckoutConfigError(f"Stripe price for service {payload.slug} is missing")
-    price_info = await _retrieve_price(price_id)
+    env_var = _slug_to_env_key(payload.slug, prefix="STRIPE_PRICE_SERVICE")
+    price_info = await _retrieve_price(price_id, env_var, context)
     return PriceInfo(
         price_id=price_id,
+        env_var=env_var,
         amount_cents=price_info["amount_cents"],
         currency=price_info["currency"],
+        stripe_mode=context.mode,
     )
 
 
-async def _retrieve_price(price_id: str) -> dict[str, Any]:
+async def _retrieve_price(
+    price_id: str, env_var: str, context: stripe_mode.StripeContext, expected_product: str | None = None
+) -> dict[str, Any]:
     try:
-        price = await run_in_threadpool(lambda: stripe.Price.retrieve(price_id))
-    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-        raise CheckoutError(f"Failed to retrieve Stripe price {price_id}") from exc
+        price = await stripe_mode.ensure_price_accessible(
+            stripe_mode.MembershipPriceConfig(
+                price_id=price_id,
+                env_var=env_var,
+                product_id=expected_product,
+            ),
+            context,
+        )
+    except stripe_mode.StripeConfigurationError as exc:
+        raise CheckoutConfigError(str(exc)) from exc
 
+    amount_cents, currency = _extract_amount_and_currency(price)
+    return {"amount_cents": amount_cents, "currency": currency}
+
+
+def _extract_amount_and_currency(price: Mapping[str, Any]) -> tuple[int, str]:
     amount_cents = int(price.get("unit_amount") or 0)
     currency = (price.get("currency") or "sek").lower()
     if amount_cents <= 0:
         raise CheckoutError("Stripe price is missing amount", status_code=400)
-    return {"amount_cents": amount_cents, "currency": currency}
+    return amount_cents, currency
+
+
+def _format_invalid_request(exc: stripe.error.InvalidRequestError) -> str:  # type: ignore[attr-defined]
+    message = exc.user_message or str(exc)
+    param = getattr(exc, "param", None)
+    if param:
+        return f"Stripe checkout failed: {message} (param: {param})"
+    return f"Stripe checkout failed: {message}"
 
 
 async def create_checkout_session(
     user: Mapping[str, Any],
     payload: schemas.CheckoutCreateRequest,
 ) -> schemas.CheckoutCreateResponse:
-    _require_stripe()
+    context = _require_stripe()
 
     user_id = str(user["id"])
-    price_info = await _resolve_price(payload)
+    price_info = await _resolve_price(payload, context)
     customer_id = await _get_or_create_customer(user)
 
     metadata: dict[str, Any] = {
@@ -189,7 +218,10 @@ async def create_checkout_session(
             "metadata": metadata,
         }
     ui_mode = settings.stripe_checkout_ui_mode or "custom"
-    checkout_kwargs["ui_mode"] = ui_mode
+    if payload.type is not schemas.CheckoutType.subscription:
+        checkout_kwargs["ui_mode"] = ui_mode
+    else:
+        ui_mode = "default"
     checkout_type = payload.type.value if payload.type else "unknown"
     logger.info(
         "Creating Stripe checkout session price_id=%s type=%s mode=%s ui_mode=%s",
@@ -203,6 +235,8 @@ async def create_checkout_session(
         session = await run_in_threadpool(
             lambda: stripe.checkout.Session.create(**checkout_kwargs)
         )
+    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+        raise CheckoutError(_format_invalid_request(exc), status_code=502) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise CheckoutError("Failed to create Stripe checkout session", status_code=502) from exc
 
