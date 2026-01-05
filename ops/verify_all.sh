@@ -39,7 +39,7 @@ for raw_line in open(path, "r", encoding="utf-8"):
     value = value.strip()
     if value and value[0] == value[-1] and value[0] in ("\"", "'"):
         value = value[1:-1]
-    if not key or key in os.environ:
+    if not key:
         continue
     print(f"export {key}={shlex.quote(value)}")
 PY
@@ -84,8 +84,42 @@ run_step_nonblocking() {
 
 overall_status=0
 
+file_price_from_env=""
+if [[ -f "$BACKEND_ENV_FILE" ]]; then
+  file_price_from_env="$(python3 - <<'PY' "$BACKEND_ENV_FILE"
+import sys
+path = sys.argv[1]
+target = "STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY"
+for raw_line in open(path, "r", encoding="utf-8"):
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("export "):
+        line = line[len("export "):].strip()
+    if "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if key != target:
+        continue
+    if value and value[0] == value[-1] and value[0] in ('"', "'"):
+        value = value[1:-1]
+    print(value)
+    break
+PY
+)"
+fi
+
 export BACKEND_ENV_FILE
+if [[ -n "$file_price_from_env" ]]; then
+  export STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY="__env_precedence_sentinel__"
+fi
 load_backend_env "$BACKEND_ENV_FILE" || true
+if [[ -n "$file_price_from_env" && "${STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY:-}" != "$file_price_from_env" ]]; then
+  echo "ERROR: Env precedence check failed: STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY not overridden by ${BACKEND_ENV_FILE}" >&2
+  overall_status=1
+fi
 
 APP_ENV_VALUE="${APP_ENV:-${ENV:-${ENVIRONMENT:-development}}}"
 ENV_MODE="$(normalize_env "$APP_ENV_VALUE")"
