@@ -95,6 +95,40 @@ async def test_execute_built_ok_for_teacher(async_client):
         assert data["built_from"]["course_id"] == course_id
         assert data["context_version"]
         assert data["schema_version"]
+        policy = data.get("policy")
+        assert policy
+        assert policy["mode"] == "stub"
+        assert policy["max_steps"] > 0
+        assert policy["max_seconds"] > 0
+        assert policy["write_allowed"] is False
+    finally:
+        if course_id:
+            await cleanup_course(course_id)
+        await cleanup_user(user_id)
+
+
+async def test_execute_built_rejects_non_stub_mode(monkeypatch, async_client):
+    token, user_id = await create_teacher(async_client)
+    course_id = None
+    try:
+        course_id = await create_course(async_client, token)
+
+        original_policy = context7_builder._default_execution_policy
+
+        def _unsafe_policy(role: str):
+            policy = dict(original_policy(role))
+            policy["mode"] = "live"
+            return policy
+
+        monkeypatch.setattr(context7_builder, "_default_execution_policy", _unsafe_policy)
+
+        resp = await async_client.post(
+            "/api/ai/execute-built",
+            headers=auth_header(token),
+            json={"input": "Hello AI", "course_id": course_id},
+        )
+        assert resp.status_code == 400
+        assert "mode" in resp.json().get("detail", "")
     finally:
         if course_id:
             await cleanup_course(course_id)

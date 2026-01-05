@@ -162,6 +162,10 @@ async def test_context_build_valid_teacher_course(async_client):
         )
         assert computed_hash == data["context_hash"]
         assert ctx.scope and ctx.scope.course_id == course_id
+        assert ctx.execution_policy.mode == "stub"
+        assert ctx.execution_policy.write_allowed is False
+        assert ctx.execution_policy.max_steps > 0
+        assert ctx.execution_policy.max_seconds > 0
     finally:
         if course_id:
             await cleanup_course(course_id)
