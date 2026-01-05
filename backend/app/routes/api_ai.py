@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from ..auth import CurrentUser
 from ..permissions import TeacherUser
 from ..services import context7_builder, context7_gate
+from ..services.tool_dispatcher import dispatch_stub, enforce_tool_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,26 @@ class AIExecuteBuiltResponse(BaseModel):
     schema_version: str
     built_from: BuiltFrom
     policy: ExecutionPolicySummary
+
+
+class AIToolCallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input: str
+    course_id: UUID | None = None
+    classroom_id: UUID | None = None
+    seminar_id: UUID | None = None
+    tool: str
+    action: str
+    args: dict[str, Any] | None = None
+
+
+class AIToolCallResponse(BaseModel):
+    ok: bool
+    context_hash: str
+    tool: str
+    action: str
+    result: dict[str, Any]
 
 
 def _request_id(request: Request) -> str:
@@ -208,4 +229,75 @@ async def execute_ai_with_built_context(request: Request, current: CurrentUser):
             max_steps=policy.max_steps,
             max_seconds=policy.max_seconds,
         ),
+    )
+
+
+@router.post("/tool-call", response_model=AIToolCallResponse)
+async def tool_call(request: Request, current: CurrentUser):
+    request_id = _request_id(request)
+    try:
+        raw_payload = await request.json()
+    except Exception as exc:  # pragma: no cover - surfaced in tests
+        logger.warning(
+            "Context7 tool-call invalid JSON",
+            extra={"request_id": request_id, "user_id": str(current.get("id"))},
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload") from exc
+
+    try:
+        payload = AIToolCallRequest.model_validate(raw_payload)
+    except ValidationError as exc:
+        logger.warning(
+            "Context7 tool-call payload rejected",
+            extra={
+                "request_id": request_id,
+                "user_id": str(current.get("id")),
+                "errors": exc.errors(),
+            },
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.errors()) from exc
+
+    if not any([payload.course_id, payload.classroom_id, payload.seminar_id]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one of course_id, classroom_id, seminar_id is required",
+        )
+
+    built_context, _ = await context7_builder.build_context(
+        course_id=str(payload.course_id) if payload.course_id else None,
+        classroom_id=str(payload.classroom_id) if payload.classroom_id else None,
+        seminar_id=str(payload.seminar_id) if payload.seminar_id else None,
+        user=current,
+    )
+
+    context_payload = built_context.model_dump(mode="json", exclude_none=True)
+    gate_result = context7_gate.validate_context_payload(
+        context_payload,
+        user=current,
+        request_id=request_id,
+        required_scope="ai:execute",
+        allowed_roles={"admin", "teacher", "student"},
+    )
+
+    context_obj = gate_result["context"]
+    context_hash = gate_result["context_hash"]
+
+    policy = getattr(context_obj, "execution_policy", None)
+    if not policy:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy missing")
+
+    enforce_tool_allowed(
+        tool=payload.tool,
+        action=payload.action,
+        tools_allowed=policy.tools_allowed,
+    )
+
+    result = dispatch_stub(tool=payload.tool, action=payload.action, args=payload.args)
+
+    return AIToolCallResponse(
+        ok=True,
+        context_hash=context_hash,
+        tool=payload.tool,
+        action=payload.action,
+        result=dict(result),
     )
