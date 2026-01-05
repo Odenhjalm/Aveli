@@ -11,7 +11,21 @@ def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def build_context(user_id: str, *, role: str = "teacher", scopes: list[str] | None = None):
+def build_context(
+    user_id: str,
+    *,
+    role: str = "teacher",
+    scopes: list[str] | None = None,
+    execution_policy: dict | None = None,
+):
+    policy = execution_policy or {
+        "mode": "stub",
+        "tools_allowed": ["supabase_readonly"],
+        "write_allowed": role == "admin",
+        "max_steps": 10,
+        "max_seconds": 60,
+        "redact_logs": True,
+    }
     return {
         "context_version": "2025-02-18",
         "schema_version": "2025-02-01",
@@ -20,6 +34,7 @@ def build_context(user_id: str, *, role: str = "teacher", scopes: list[str] | No
             "role": role,
             "scopes": scopes or ["ai:execute"],
         },
+        "execution_policy": policy,
     }
 
 
