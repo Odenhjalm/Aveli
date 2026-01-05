@@ -7,7 +7,13 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
-from context7.runtime import Context7Object, ContextPermissionError, ContextValidationError, validate_context
+from context7.runtime import (
+    ALLOWED_EXECUTION_TOOLS,
+    Context7Object,
+    ContextPermissionError,
+    ContextValidationError,
+    validate_context,
+)
 
 from .. import models, repositories
 
@@ -40,6 +46,17 @@ def _actor_scopes(role: str) -> list[str]:
     if role in {"admin", "teacher"}:
         return ["ai:execute"]
     return ["context:read"]
+
+
+def _default_execution_policy(role: str) -> dict[str, Any]:
+    return {
+        "mode": "stub",
+        "tools_allowed": sorted(ALLOWED_EXECUTION_TOOLS),
+        "write_allowed": role == "admin",
+        "max_steps": 10,
+        "max_seconds": 60,
+        "redact_logs": True,
+    }
 
 
 async def _ensure_course_access(course_id: str, *, user_id: str, role: str, is_teacher: bool) -> None:
@@ -121,6 +138,7 @@ async def build_context(
         "scope": scope,
         "permissions": {"scopes": actor_scopes},
         "constraints": {"readonly": role not in {"admin", "teacher"}},
+        "execution_policy": _default_execution_policy(role),
     }
 
     required_scope = "ai:execute" if role in {"admin", "teacher"} else None

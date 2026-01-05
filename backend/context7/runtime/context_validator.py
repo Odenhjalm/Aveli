@@ -6,8 +6,10 @@ from typing import Any, Mapping, MutableSet
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-_ALLOWED_ROLES = {"teacher", "admin"}
-_REQUIRED_SCOPE = "ai:execute"
+ALLOWED_ROLES = {"teacher", "admin", "student"}
+ALLOWED_EXECUTION_TOOLS = {"supabase_readonly"}
+ALLOWED_EXECUTION_MODES = {"stub"}
+REQUIRED_SCOPE = "ai:execute"
 
 
 class ContextValidationError(Exception):
@@ -77,6 +79,52 @@ class Constraints(BaseModel):
     readonly: bool = True
 
 
+class ExecutionPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str
+    tools_allowed: list[str] = []
+    write_allowed: bool = False
+    max_steps: int
+    max_seconds: int
+    redact_logs: bool = True
+
+    @field_validator("mode")
+    @classmethod
+    def normalize_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("execution_policy.mode cannot be empty")
+        if normalized not in ALLOWED_EXECUTION_MODES:
+            raise ValueError(f"execution_policy.mode '{normalized}' is not allowed")
+        return normalized
+
+    @field_validator("tools_allowed")
+    @classmethod
+    def validate_tools(cls, value: list[str]) -> list[str]:
+        cleaned = sorted({str(item).strip() for item in value if str(item).strip()})
+        for tool in cleaned:
+            if tool not in ALLOWED_EXECUTION_TOOLS:
+                raise ValueError(
+                    f"execution_policy.tools_allowed contains unsupported tool '{tool}'"
+                )
+        return cleaned
+
+    @field_validator("max_steps")
+    @classmethod
+    def validate_max_steps(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("execution_policy.max_steps must be positive")
+        return value
+
+    @field_validator("max_seconds")
+    @classmethod
+    def validate_max_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("execution_policy.max_seconds must be positive")
+        return value
+
+
 class Context7Object(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +136,7 @@ class Context7Object(BaseModel):
     scope: ContextScope | None = None
     permissions: Permissions | None = None
     constraints: Constraints | None = None
+    execution_policy: ExecutionPolicy
 
     def compute_hash(self) -> str:
         payload = self.model_dump(mode="json", exclude_none=True)
@@ -117,10 +166,10 @@ def validate_context(
     *,
     user_id: str,
     user_role: str,
-    required_scope: str | None = _REQUIRED_SCOPE,
+    required_scope: str | None = REQUIRED_SCOPE,
     allowed_roles: MutableSet[str] | None = None,
 ) -> tuple[Context7Object, str]:
-    allowed = {_normalize_role(role) for role in (allowed_roles or _ALLOWED_ROLES)}
+    allowed = {_normalize_role(role) for role in (allowed_roles or ALLOWED_ROLES)}
     try:
         ctx = Context7Object.model_validate(payload)
     except ValidationError as exc:  # pragma: no cover - rewrapped below
@@ -140,6 +189,9 @@ def validate_context(
     if actor_role != user_role_normalized:
         raise ContextPermissionError("Context actor.role does not match authenticated user")
 
+    if ctx.execution_policy.write_allowed and actor_role != "admin":
+        raise ContextPermissionError("execution_policy.write_allowed requires admin role")
+
     if required_scope:
         if required_scope not in ctx.actor.scopes:
             raise ContextPermissionError(f"Required scope '{required_scope}' is missing")
@@ -152,5 +204,8 @@ __all__ = [
     "Context7Object",
     "ContextPermissionError",
     "ContextValidationError",
+    "ExecutionPolicy",
     "validate_context",
+    "ALLOWED_EXECUTION_TOOLS",
+    "ALLOWED_EXECUTION_MODES",
 ]

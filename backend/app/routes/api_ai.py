@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
+EXECUTION_MAX_STEPS_LIMIT = 100
+EXECUTION_MAX_SECONDS_LIMIT = 300
+
 
 class AIExecuteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -46,12 +49,21 @@ class BuiltFrom(BaseModel):
     seminar_id: UUID | None = None
 
 
+class ExecutionPolicySummary(BaseModel):
+    mode: str
+    tools_allowed: list[str]
+    write_allowed: bool
+    max_steps: int
+    max_seconds: int
+
+
 class AIExecuteBuiltResponse(BaseModel):
     ok: bool
     context_hash: str
     context_version: str
     schema_version: str
     built_from: BuiltFrom
+    policy: ExecutionPolicySummary
 
 
 def _request_id(request: Request) -> str:
@@ -150,6 +162,22 @@ async def execute_ai_with_built_context(request: Request, current: CurrentUser):
     context_hash = gate_result["context_hash"]
     scope_payload = context_payload.get("scope") if isinstance(context_payload.get("scope"), dict) else {}
 
+    policy = getattr(context_obj, "execution_policy", None)
+    if not policy:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy missing")
+    if policy.mode != "stub":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy.mode must be 'stub'")
+    if policy.max_steps <= 0 or policy.max_steps > EXECUTION_MAX_STEPS_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_steps exceeds allowed limits",
+        )
+    if policy.max_seconds <= 0 or policy.max_seconds > EXECUTION_MAX_SECONDS_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_seconds exceeds allowed limits",
+        )
+
     logger.info(
         "Context7 execute-built validated",
         extra={
@@ -172,5 +200,12 @@ async def execute_ai_with_built_context(request: Request, current: CurrentUser):
             course_id=payload.course_id,
             classroom_id=payload.classroom_id,
             seminar_id=payload.seminar_id,
+        ),
+        policy=ExecutionPolicySummary(
+            mode=policy.mode,
+            tools_allowed=policy.tools_allowed,
+            write_allowed=policy.write_allowed,
+            max_steps=policy.max_steps,
+            max_seconds=policy.max_seconds,
         ),
     )
