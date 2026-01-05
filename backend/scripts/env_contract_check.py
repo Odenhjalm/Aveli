@@ -85,9 +85,49 @@ def main() -> int:
     missing_required = [key for key in required_keys if not _env_value(env_map, key)]
     missing_prod = []
     missing_optional = []
+    stripe_errors: list[str] = []
 
     if mode == "production":
         missing_prod = [key for key in sorted(prod_only) if not _env_value(env_map, key)]
+
+    stripe_candidates = [
+        (name, _env_value(env_map, name))
+        for name in ("STRIPE_SECRET_KEY", "STRIPE_TEST_SECRET_KEY", "STRIPE_LIVE_SECRET_KEY")
+        if _env_value(env_map, name)
+    ]
+    distinct_secrets = {value for _, value in stripe_candidates}
+    stripe_mode = "unknown"
+    if len(distinct_secrets) > 1:
+        stripe_errors.append(
+            f"Conflicting Stripe secrets set: {', '.join(name for name, _ in stripe_candidates)}"
+        )
+    if stripe_candidates:
+        active_name, active_value = next(
+            ((name, value) for name, value in stripe_candidates if name == "STRIPE_SECRET_KEY"),
+            stripe_candidates[0],
+        )
+        if active_value.startswith("sk_test_"):
+            stripe_mode = "test"
+        elif active_value.startswith("sk_live_"):
+            stripe_mode = "live"
+        else:
+            stripe_errors.append(f"{active_name} must start with sk_test_ or sk_live_")
+    else:
+        stripe_errors.append(
+            "Stripe secret key missing (set STRIPE_SECRET_KEY or STRIPE_TEST_SECRET_KEY or STRIPE_LIVE_SECRET_KEY)"
+        )
+
+    if stripe_mode == "test":
+        for key in (
+            "STRIPE_TEST_PUBLISHABLE_KEY",
+            "STRIPE_TEST_WEBHOOK_SECRET",
+            "STRIPE_TEST_WEBHOOK_BILLING_SECRET",
+            "STRIPE_TEST_MEMBERSHIP_PRODUCT_ID",
+            "STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY",
+            "STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY",
+        ):
+            if not _env_value(env_map, key):
+                stripe_errors.append(f"{key} is required when Stripe secret is sk_test_*")
 
     if missing_required:
         print("FAIL: Missing required keys:")
@@ -99,12 +139,17 @@ def main() -> int:
         for key in missing_prod:
             print(f"- {key}")
 
+    if stripe_errors:
+        print("FAIL: Stripe configuration errors:")
+        for error in stripe_errors:
+            print(f"- {error}")
+
     if missing_optional:
         print("WARN: Optional keys missing for development:")
         for key in missing_optional:
             print(f"- {key}")
 
-    if missing_required or missing_prod:
+    if missing_required or missing_prod or stripe_errors:
         return 1
 
     print(f"PASS: env contract satisfied ({mode}).")

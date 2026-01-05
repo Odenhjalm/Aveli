@@ -11,6 +11,7 @@ from ..config import settings
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
 from ..schemas.billing import SubscriptionCheckoutResponse, SubscriptionInterval
+from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +34,14 @@ class SubscriptionConfigError(SubscriptionError):
 async def create_subscription_checkout(
     user: Mapping[str, Any], interval: SubscriptionInterval
 ) -> SubscriptionCheckoutResponse:
-    secret = settings.stripe_secret_key
-    if not secret:
-        raise SubscriptionConfigError("Stripe secret key is missing")
+    try:
+        stripe_context = stripe_mode.resolve_stripe_context()
+        price_config = stripe_mode.resolve_membership_price(interval, stripe_context)
+        await stripe_mode.ensure_price_accessible(price_config, stripe_context)
+    except stripe_mode.StripeConfigurationError as exc:
+        raise SubscriptionConfigError(str(exc)) from exc
 
-    price_id = _price_for_interval(interval)
-    if not price_id:
-        raise SubscriptionConfigError("Stripe price for interval is missing")
-
-    stripe.api_key = secret
+    stripe.api_key = stripe_context.secret_key
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
 
@@ -51,9 +51,8 @@ async def create_subscription_checkout(
     def _create_session() -> dict[str, Any]:
         return stripe.checkout.Session.create(
             mode="subscription",
-            ui_mode=settings.stripe_checkout_ui_mode or "custom",
             customer=customer_id,
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=[{"price": price_config.price_id, "quantity": 1}],
             success_url=success_url,
             cancel_url=cancel_url,
             locale="sv",
@@ -63,7 +62,16 @@ async def create_subscription_checkout(
             },
         )
 
-    session = await run_in_threadpool(_create_session)
+    try:
+        session = await run_in_threadpool(_create_session)
+    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+        if getattr(exc, "code", "") == "resource_missing":
+            raise SubscriptionConfigError(
+                _price_missing_message(price_config, stripe_context)
+            ) from exc
+        raise SubscriptionError(_format_invalid_request(exc), status_code=502) from exc
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise SubscriptionError("Stripe-fel vid prenumerationssession", status_code=502) from exc
     checkout_url = session.get("url")
     if not isinstance(checkout_url, str):
         raise SubscriptionError("Stripe session missing checkout url", status_code=502)
@@ -71,7 +79,7 @@ async def create_subscription_checkout(
     await memberships_repo.upsert_membership_record(
         user_id,
         plan_interval=interval.value,
-        price_id=price_id,
+        price_id=price_config.price_id,
         status="incomplete",
         stripe_customer_id=customer_id,
     )
@@ -81,7 +89,7 @@ async def create_subscription_checkout(
         step="create_subscription_session",
         info={
             "interval": interval.value,
-            "price_id": price_id,
+            "price_id": price_config.price_id,
             "session_id": session.get("id"),
         },
     )
@@ -90,15 +98,14 @@ async def create_subscription_checkout(
 
 
 async def create_checkout_session(user: Mapping[str, Any], interval: SubscriptionInterval) -> str:
-    secret = settings.stripe_secret_key
-    if not secret:
-        raise SubscriptionConfigError("Stripe secret key is missing")
+    try:
+        stripe_context = stripe_mode.resolve_stripe_context()
+        price_config = stripe_mode.resolve_membership_price(interval, stripe_context)
+        await stripe_mode.ensure_price_accessible(price_config, stripe_context)
+    except stripe_mode.StripeConfigurationError as exc:
+        raise SubscriptionConfigError(str(exc)) from exc
 
-    price_id = _price_for_interval(interval)
-    if not price_id:
-        raise SubscriptionConfigError("Stripe price for interval is missing")
-
-    stripe.api_key = secret
+    stripe.api_key = stripe_context.secret_key
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
 
@@ -106,7 +113,7 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
         return stripe.checkout.Session.create(
             mode="subscription",
             customer=customer_id,
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=[{"price": price_config.price_id, "quantity": 1}],
             subscription_data={"trial_period_days": 14},
             success_url=settings.checkout_success_url
             or "aveliapp://checkout_success",
@@ -115,7 +122,16 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
             locale="sv",
         )
 
-    session = await run_in_threadpool(_create_session)
+    try:
+        session = await run_in_threadpool(_create_session)
+    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+        if getattr(exc, "code", "") == "resource_missing":
+            raise SubscriptionConfigError(
+                _price_missing_message(price_config, stripe_context)
+            ) from exc
+        raise SubscriptionError(_format_invalid_request(exc), status_code=502) from exc
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise SubscriptionError("Stripe-fel vid prenumerationssession", status_code=502) from exc
     checkout_url = session.get("url")
     if not isinstance(checkout_url, str):
         raise SubscriptionError("Stripe session missing checkout url", status_code=502)
@@ -125,7 +141,7 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
         step="create_checkout_session",
         info={
             "interval": interval.value,
-            "price_id": price_id,
+            "price_id": price_config.price_id,
             "session_id": session.get("id"),
         },
     )
@@ -140,9 +156,10 @@ async def cancel_subscription(
 ) -> dict[str, Any]:
     # Flutter-klienten slog tidigare mot ett legacy-endpoint som inte fanns vilket gjorde att
     # avbryt-knappen aldrig fungerade. Nu hanterar vi uppsägningen via Stripe på backend.
-    secret = settings.stripe_secret_key
-    if not secret:
-        raise SubscriptionConfigError("Stripe secret key is missing")
+    try:
+        stripe_context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise SubscriptionConfigError(str(exc)) from exc
 
     user_id = str(user["id"])
     membership = await memberships_repo.get_membership(user_id)
@@ -156,7 +173,7 @@ async def cancel_subscription(
     if subscription_id and subscription_id != target_subscription_id:
         raise SubscriptionError("Angivet subscription-id matchar inte ditt konto", status_code=400)
 
-    stripe.api_key = secret
+    stripe.api_key = stripe_context.secret_key
 
     def _cancel() -> dict[str, Any]:
         return stripe.Subscription.modify(  # type: ignore[attr-defined]
@@ -203,11 +220,11 @@ async def cancel_subscription(
 
 
 async def handle_webhook(payload: bytes, signature: str | None) -> None:
-    # Allow overriding the secret in tests by setting stripe_webhook_secret; fall back to the
-    # billing-specific secret when the generic one is not provided.
-    secret = settings.stripe_webhook_secret or settings.stripe_billing_webhook_secret
-    if not secret:
-        raise SubscriptionConfigError("Stripe webhook secret missing")
+    try:
+        stripe_context = stripe_mode.resolve_stripe_context()
+        secret, _ = stripe_mode.resolve_webhook_secret("billing", stripe_context)
+    except stripe_mode.StripeConfigurationError as exc:
+        raise SubscriptionConfigError(str(exc)) from exc
     if not signature:
         raise SubscriptionError("Missing Stripe signature")
 
@@ -339,12 +356,21 @@ async def _handle_invoice_payment_succeeded(payload: Mapping[str, Any]) -> None:
     )
 
 
-def _price_for_interval(interval: SubscriptionInterval) -> str | None:
-    if interval is SubscriptionInterval.month:
-        return settings.stripe_price_monthly
-    if interval is SubscriptionInterval.year:
-        return settings.stripe_price_yearly
-    return None
+def _price_missing_message(
+    price_config: stripe_mode.MembershipPriceConfig, context: stripe_mode.StripeContext
+) -> str:
+    return (
+        f"{price_config.env_var} ({price_config.price_id}) is not available in Stripe "
+        f"{context.mode.value} mode for {context.secret_source}"
+    )
+
+
+def _format_invalid_request(exc: stripe.error.InvalidRequestError) -> str:  # type: ignore[attr-defined]
+    message = exc.user_message or str(exc)
+    param = getattr(exc, "param", None)
+    if param:
+        return f"Stripe checkout failed: {message} (param: {param})"
+    return f"Stripe checkout failed: {message}"
 
 
 def _build_frontend_url(path: str) -> str:

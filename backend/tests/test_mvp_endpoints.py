@@ -19,9 +19,15 @@ async def test_mvp_health_endpoint():
 
 @pytest.mark.anyio("asyncio")
 async def test_checkout_session_sets_custom_ui_mode(async_client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_dummy")
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", "sk_test_dummy")
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
     settings.stripe_secret_key = "sk_test_dummy"
+    settings.stripe_test_secret_key = "sk_test_dummy"
     settings.stripe_webhook_secret = "whsec_dummy"
-    settings.stripe_price_monthly = "price_monthly_test"
+    settings.stripe_test_membership_product_id = "prod_test"
+    settings.stripe_test_membership_price_monthly = "price_monthly_test"
+    settings.stripe_test_membership_price_id_yearly = "price_year_test"
 
     email = f"mvp_{uuid.uuid4().hex[:6]}@aveli.local"
     password = "Secret123!"
@@ -46,7 +52,16 @@ async def test_checkout_session_sets_custom_ui_mode(async_client, monkeypatch):
 
     monkeypatch.setattr("stripe.checkout.Session.create", fake_checkout_create)
     monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
-    monkeypatch.setattr("stripe.Price.retrieve", lambda price_id: {"id": price_id, "unit_amount": 13000, "currency": "sek"})
+    monkeypatch.setattr(
+        "stripe.Price.retrieve",
+        lambda price_id: {
+            "id": price_id,
+            "unit_amount": 13000,
+            "currency": "sek",
+            "product": settings.stripe_test_membership_product_id,
+            "livemode": False,
+        },
+    )
     monkeypatch.setattr("stripe.Customer.create", lambda **_: {"id": "cus_123"})
 
     session_resp = await async_client.post(
@@ -55,4 +70,4 @@ async def test_checkout_session_sets_custom_ui_mode(async_client, monkeypatch):
         json={"type": "subscription", "interval": "month"},
     )
     assert session_resp.status_code == 201, session_resp.text
-    assert captured_kwargs.get("ui_mode") == (settings.stripe_checkout_ui_mode or "custom")
+    assert captured_kwargs.get("ui_mode") is None

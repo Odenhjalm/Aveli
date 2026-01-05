@@ -10,6 +10,8 @@ import uuid
 
 import httpx
 
+from app import stripe_mode
+from app.schemas.billing import SubscriptionInterval
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 
@@ -65,20 +67,6 @@ async def _create_order(client: httpx.AsyncClient, token: str, service_id: str):
     return resp.json()["order"]
 
 
-async def _checkout(client: httpx.AsyncClient, token: str, order_id: str):
-    resp = await client.post(
-        "/payments/stripe/create-session",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "order_id": order_id,
-            "success_url": "https://example.org/success",
-            "cancel_url": "https://example.org/cancel",
-        },
-    )
-    resp.raise_for_status()
-    return resp.json()["url"]
-
-
 async def _fetch_sfu_token(client: httpx.AsyncClient, token: str, seminar_id: str):
     resp = await client.post(
         "/sfu/token",
@@ -102,6 +90,17 @@ async def _run_health_checks(client: httpx.AsyncClient, base_url: str) -> None:
         sys.exit(1)
 
 
+async def _resolve_membership_price() -> tuple[stripe_mode.StripeContext, stripe_mode.MembershipPriceConfig]:
+    try:
+        context = stripe_mode.resolve_stripe_context()
+        price_config = stripe_mode.resolve_membership_price(SubscriptionInterval.month, context)
+        await stripe_mode.ensure_price_accessible(price_config, context)
+        return context, price_config
+    except stripe_mode.StripeConfigurationError as exc:
+        print(f"[stripe] {exc}")
+        sys.exit(1)
+
+
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", help="Override base URL for the backend")
@@ -122,11 +121,7 @@ async def main():
             print("[warn] inga aktiva tjänster – hoppar över order/Stripe-flödet")
         else:
             order = await _create_order(client, token, services[0]["id"])
-            try:
-                checkout_url = await _checkout(client, token, order["id"])
-                print(f"[payments] Payment Element: {checkout_url}")
-            except httpx.HTTPStatusError as exc:
-                print(f"[warn] kunde inte skapa checkout-session: {exc}")
+            print(f"[payments] skapade order för service {services[0]['id']} (ingen payment-element-körning)")
         if args.seminar_id:
             try:
                 token_payload = await _fetch_sfu_token(client, token, args.seminar_id)
@@ -134,30 +129,55 @@ async def main():
             except httpx.HTTPStatusError as exc:
                 print(f"[warn] SFU-token misslyckades: {exc}")
 
-        if _subscriptions_enabled():
-            try:
-                sub_resp = await client.post(
-                    "/api/billing/create-subscription",
-                    headers={"Authorization": f"Bearer {token}"},
-                    json={
-                        "plan_interval": "month",
-                        "success_url": "http://localhost:3000/billing/success",
-                        "cancel_url": "http://localhost:3000/billing/cancel",
-                    },
+        stripe_context, price_config = await _resolve_membership_price()
+        print(
+            "[stripe] mode=%s price=%s product=%s env=%s source=%s"
+            % (
+                stripe_context.mode.value,
+                price_config.price_id,
+                price_config.product_id,
+                price_config.env_var,
+                stripe_context.secret_source,
+            )
+        )
+
+        if not _subscriptions_enabled():
+            print("[billing] subscriptions disabled; QA requires Stripe subscription flow")
+            sys.exit(1)
+
+        try:
+            sub_resp = await client.post(
+                "/api/billing/create-subscription",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "plan_interval": "month",
+                    "success_url": "http://localhost:3000/billing/success",
+                    "cancel_url": "http://localhost:3000/billing/cancel",
+                },
+            )
+            sub_resp.raise_for_status()
+            session_payload = sub_resp.json()
+            print("[billing] subscription session", session_payload.get("checkout_url"))
+            membership_resp = await client.get(
+                "/api/me/membership",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            membership_resp.raise_for_status()
+            print("[billing] membership state", membership_resp.json())
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text if exc.response is not None else str(exc)
+            print(
+                "[stripe] subscription checkout failed mode=%s price=%s product=%s env=%s status=%s body=%s"
+                % (
+                    stripe_context.mode.value,
+                    price_config.price_id,
+                    price_config.product_id,
+                    price_config.env_var,
+                    exc.response.status_code if exc.response else "unknown",
+                    body,
                 )
-                sub_resp.raise_for_status()
-                session_payload = sub_resp.json()
-                print("[billing] subscription session", session_payload.get("checkout_url"))
-                membership_resp = await client.get(
-                    "/api/me/membership",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                membership_resp.raise_for_status()
-                print("[billing] membership state", membership_resp.json())
-            except httpx.HTTPStatusError as exc:
-                print(f"[warn] Subscriptions API misslyckades: {exc}")
-        else:
-            print("[billing] subscriptions disabled; skipping subscription flow")
+            )
+            sys.exit(1)
         if refresh:
             refresh_resp = await client.post("/auth/refresh", json={"refresh_token": refresh})
             refresh_resp.raise_for_status()

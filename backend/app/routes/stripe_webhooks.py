@@ -12,6 +12,7 @@ from ..repositories import course_entitlements
 from ..repositories import courses as courses_repo
 from ..config import settings
 from ..services import checkout_service, subscription_service, course_bundles_service
+from .. import stripe_mode
 
 router = APIRouter(prefix="/webhooks", tags=["stripe-webhooks"])
 logger = logging.getLogger(__name__)
@@ -20,11 +21,14 @@ logger = logging.getLogger(__name__)
 @router.post("/stripe", status_code=status.HTTP_200_OK)
 async def stripe_payment_element_webhook(request: Request):
     # /webhooks/stripe handles Payment Element & one-off purchases via STRIPE_WEBHOOK_SECRET.
-    if not settings.stripe_webhook_secret:
+    try:
+        context = stripe_mode.resolve_stripe_context()
+        secret, _ = stripe_mode.resolve_webhook_secret("default", context)
+    except stripe_mode.StripeConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Stripe webhook secret missing",
-        )
+            detail=str(exc),
+        ) from exc
 
     payload = await request.body()
     signature = request.headers.get("stripe-signature")
@@ -38,7 +42,7 @@ async def stripe_payment_element_webhook(request: Request):
         event = stripe.Webhook.construct_event(
             payload=payload.decode("utf-8"),
             sig_header=signature,
-            secret=settings.stripe_webhook_secret,
+            secret=secret,
         )
     except ValueError as exc:
         logger.warning("Invalid Stripe payload: %s", exc)
