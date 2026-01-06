@@ -144,7 +144,7 @@ fi
 
 # Backend deps
 if command -v poetry >/dev/null 2>&1; then
-  if ! run_step "Poetry install" bash -c "cd '$BACKEND_DIR' && poetry install --no-root"; then
+  if ! run_step "Poetry install" bash -c "cd '$BACKEND_DIR' && poetry install"; then
     overall_status=1
   fi
 else
