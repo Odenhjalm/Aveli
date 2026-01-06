@@ -6,6 +6,7 @@ from typing import Any, Mapping, Sequence
 
 import psycopg
 from fastapi import HTTPException, status
+from psycopg import errors
 
 _READONLY_OPTIONS = "-c default_transaction_read_only=on -c statement_timeout=3000"
 _ALLOWED_ACTIONS: dict[str, set[str]] = {
@@ -16,6 +17,9 @@ _ALLOWED_ACTIONS: dict[str, set[str]] = {
         "get_course_by_slug",
         "list_seminars",
         "get_seminar_by_id",
+        "list_course_students",
+        "get_user_summary",
+        "get_course_progress",
     },
 }
 _FORBIDDEN_KEYWORDS = {
@@ -281,20 +285,150 @@ def _get_seminar_by_id(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
     return _fetch_single(sql, (seminar_id,))
 
 
-def dispatch_tool_action(*, tool: str, action: str, args: Mapping[str, Any] | None) -> Mapping[str, Any]:
+def _list_course_students(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not args or not args.get("course_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="course_id is required")
+    course_id = str(args.get("course_id"))
+    limit = _validated_limit(args, default=50, maximum=100)
+    sql = """
+        SELECT e.user_id,
+               COALESCE(p.display_name, p.email) AS display_name,
+               p.email
+          FROM app.enrollments e
+     LEFT JOIN app.profiles p ON p.user_id = e.user_id
+         WHERE e.course_id = %s
+         ORDER BY e.user_id DESC
+         LIMIT %s
+    """
+    try:
+        return _fetch_rows(sql, (course_id, limit), limit_cap=limit)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_502_BAD_GATEWAY:
+            raise
+        fallback_sql = """
+            SELECT e.user_id,
+                   COALESCE(p.display_name, p.email) AS display_name,
+                   p.email
+              FROM app.enrollments e
+         LEFT JOIN app.profiles p ON p.user_id = e.user_id
+             WHERE e.course_id = %s
+             LIMIT %s
+        """
+        return _fetch_rows(fallback_sql, (course_id, limit), limit_cap=limit)
+
+
+def _get_user_summary(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not args or not args.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id is required")
+    user_id = str(args.get("user_id"))
+
+    sql = """
+        SELECT p.user_id,
+               p.email,
+               p.display_name,
+               COALESCE(p.role_v2, p.role) AS role,
+               p.is_admin,
+               m.status AS membership_status,
+               m.plan_interval AS membership_plan_interval,
+               m.end_date AS membership_end_date,
+               m.updated_at AS membership_updated_at
+          FROM app.profiles p
+     LEFT JOIN app.memberships m ON m.user_id = p.user_id
+         WHERE p.user_id = %s
+         ORDER BY m.updated_at DESC NULLS LAST
+         LIMIT 1
+    """
+    try:
+        return _fetch_rows(sql, (user_id,), limit_cap=1)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_502_BAD_GATEWAY:
+            raise
+        fallback_sql = """
+            SELECT p.user_id,
+                   p.email,
+                   p.display_name
+              FROM app.profiles p
+             WHERE p.user_id = %s
+             LIMIT 1
+        """
+        fallback = _fetch_rows(fallback_sql, (user_id,), limit_cap=1)
+        if fallback.get("row_count", 0) == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        return fallback
+
+
+def _get_course_progress(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not args or not args.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id is required")
+    if not args.get("course_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="course_id is required")
+    user_id = str(args.get("user_id"))
+    course_id = str(args.get("course_id"))
+
+    sql = """
+        SELECT e.user_id,
+               e.course_id,
+               e.source,
+               e.created_at,
+               e.updated_at
+          FROM app.enrollments e
+         WHERE e.user_id = %s
+           AND e.course_id = %s
+         LIMIT 1
+    """
+    return _fetch_single(sql, (user_id, course_id))
+
+
+def _require_insight_access(*, actor_role: str | None, scope: Mapping[str, Any] | None, course_id: str | None) -> None:
+    if actor_role is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for insight actions")
+    if actor_role == "admin":
+        return
+    if actor_role != "teacher":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for insight actions")
+
+    scope_course_id = None
+    if isinstance(scope, Mapping):
+        scope_course_id = scope.get("course_id") or scope.get("course")
+    if not scope_course_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course scope required for teacher")
+    if course_id and str(course_id) != str(scope_course_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course scope mismatch")
+
+
+def dispatch_tool_action(
+    *,
+    tool: str,
+    action: str,
+    args: Mapping[str, Any] | None,
+    actor_role: str | None = None,
+    scope: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
     if tool == "supabase_readonly":
         if action == "query":
             return _run_supabase_readonly_query(args)
-        if action == "list_intro_courses":
-            return _list_intro_courses(args)
-        if action == "get_course_by_id":
-            return _get_course_by_id(args)
-        if action == "get_course_by_slug":
-            return _get_course_by_slug(args)
-        if action == "list_seminars":
-            return _list_seminars(args)
-        if action == "get_seminar_by_id":
-            return _get_seminar_by_id(args)
+        restricted_actions = {"list_course_students", "get_user_summary", "get_course_progress"}
+        if action in {"list_intro_courses", "get_course_by_id", "get_course_by_slug", "list_seminars", "get_seminar_by_id", "list_course_students", "get_user_summary", "get_course_progress"}:
+            if action in restricted_actions:
+                course_arg = args.get("course_id") if args else None
+                _require_insight_access(actor_role=actor_role, scope=scope, course_id=course_arg)
+
+            if action == "list_intro_courses":
+                return _list_intro_courses(args)
+            if action == "get_course_by_id":
+                return _get_course_by_id(args)
+            if action == "get_course_by_slug":
+                return _get_course_by_slug(args)
+            if action == "list_seminars":
+                return _list_seminars(args)
+            if action == "get_seminar_by_id":
+                return _get_seminar_by_id(args)
+            if action == "list_course_students":
+                return _list_course_students(args)
+            if action == "get_user_summary":
+                return _get_user_summary(args)
+            if action == "get_course_progress":
+                return _get_course_progress(args)
 
     # Fallback stub for future handlers
     return {

@@ -111,13 +111,42 @@ class AIPlanExecuteResponse(BaseModel):
     steps: list[PlanStep]
     final: dict[str, Any]
 
+
+class AIPlanExecuteV1Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input: str
+    course_id: UUID | None = None
+    user_id: UUID | None = None
+    limit: int | None = None
+
+
+class PlanStepV1(BaseModel):
+    tool: str
+    action: str
+    args: dict[str, Any] | None = None
+    result_summary: dict[str, Any]
+
+
+class AIPlanExecuteV1Response(BaseModel):
+    ok: bool
+    context_hash: str
+    intent: str | None = None
+    steps: list[PlanStepV1]
+    final: dict[str, Any]
+    supported_intents: list[str] | None = None
+    message: str | None = None
+
+
+
+
+
 def _request_id(request: Request) -> str:
     return (
         getattr(request.state, "request_id", None)
         or request.headers.get("X-Request-ID")
         or uuid.uuid4().hex
     )
-
 
 @router.post("/execute", response_model=AIExecuteResponse)
 async def execute_ai(  # type: ignore[valid-type]
@@ -316,7 +345,7 @@ async def tool_call(request: Request, current: CurrentUser):
         tools_allowed=policy.tools_allowed,
     )
 
-    result = dispatch_tool_action(tool=payload.tool, action=payload.action, args=payload.args)
+    result = dispatch_tool_action(tool=payload.tool, action=payload.action, args=payload.args, actor_role=getattr(context_obj.actor, "role", None), scope=context_payload.get("scope") if isinstance(context_payload.get("scope"), dict) else {})
 
     return AIToolCallResponse(
         ok=True,
@@ -431,7 +460,7 @@ async def plan_and_execute(request: Request, current: CurrentUser):
         tools_allowed=policy.tools_allowed,
     )
 
-    result = dispatch_tool_action(tool=tool, action=action, args=payload.args)
+    result = dispatch_tool_action(tool=tool, action=action, args=payload.args, actor_role=getattr(context_obj.actor, "role", None), scope=context_payload.get("scope") if isinstance(context_payload.get("scope"), dict) else {})
 
     steps.append(
         PlanStep(
@@ -453,6 +482,175 @@ async def plan_and_execute(request: Request, current: CurrentUser):
     return AIPlanExecuteResponse(
         ok=True,
         context_hash=context_hash,
+        steps=steps,
+        final=dict(result),
+    )
+
+SUPPORTED_INTENTS_V1 = [
+    "list_course_students",
+    "get_user_summary",
+    "get_course_progress",
+    "list_intro_courses",
+]
+
+
+@router.post("/plan-and-execute-v1", response_model=AIPlanExecuteV1Response)
+async def plan_and_execute_v1(request: Request, current: CurrentUser):
+    request_id = _request_id(request)
+    try:
+        raw_payload = await request.json()
+    except Exception as exc:  # pragma: no cover - surfaced in tests
+        logger.warning(
+            "Context7 plan-and-execute-v1 invalid JSON",
+            extra={"request_id": request_id, "user_id": str(current.get("id"))},
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload") from exc
+
+    try:
+        payload = AIPlanExecuteV1Request.model_validate(raw_payload)
+    except ValidationError as exc:
+        logger.warning(
+            "Context7 plan-and-execute-v1 payload rejected",
+            extra={
+                "request_id": request_id,
+                "user_id": str(current.get("id")),
+                "errors": exc.errors(),
+            },
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.errors()) from exc
+
+    if not payload.course_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="course_id is required",
+        )
+
+    built_context, _ = await context7_builder.build_context(
+        course_id=str(payload.course_id),
+        classroom_id=None,
+        seminar_id=None,
+        user=current,
+    )
+
+    context_payload = built_context.model_dump(mode="json", exclude_none=True)
+    gate_result = context7_gate.validate_context_payload(
+        context_payload,
+        user=current,
+        request_id=request_id,
+        required_scope="ai:execute",
+        allowed_roles={"admin", "teacher", "student"},
+    )
+
+    context_obj = gate_result["context"]
+    context_hash = gate_result["context_hash"]
+    actor_role = getattr(context_obj.actor, "role", None)
+    scope_payload = context_payload.get("scope") if isinstance(context_payload.get("scope"), dict) else {}
+
+    policy = getattr(context_obj, "execution_policy", None)
+    if not policy:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy missing")
+    if policy.mode != "stub":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy.mode must be 'stub'")
+    if policy.max_steps <= 0 or policy.max_steps > EXECUTION_MAX_STEPS_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_steps exceeds allowed limits",
+        )
+    if policy.max_seconds <= 0 or policy.max_seconds > EXECUTION_MAX_SECONDS_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_seconds exceeds allowed limits",
+        )
+    if "supabase_readonly" not in policy.tools_allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tool supabase_readonly not allowed")
+
+    start_time = time.monotonic()
+
+    def enforce_time_limit() -> None:
+        if time.monotonic() - start_time > policy.max_seconds:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="execution_policy.max_seconds exceeded",
+            )
+
+    def intent_response_ok_false(message: str):
+        return AIPlanExecuteV1Response(
+            ok=False,
+            context_hash=context_hash,
+            intent=None,
+            steps=[],
+            final={},
+            supported_intents=SUPPORTED_INTENTS_V1,
+            message=message,
+        )
+
+    lower_input = payload.input.lower().strip()
+    intent = None
+    action_args: dict[str, Any] = {}
+    tool = "supabase_readonly"
+    action = None
+
+    if "list students" in lower_input or lower_input == "students":
+        intent = "list_course_students"
+        if not payload.course_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="course_id is required")
+        action_args = {"course_id": str(payload.course_id), "limit": payload.limit}
+        action = "list_course_students"
+    elif "user summary" in lower_input or "summary user" in lower_input:
+        intent = "get_user_summary"
+        if not payload.user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id is required")
+        action_args = {"user_id": str(payload.user_id)}
+        action = "get_user_summary"
+    elif "course progress" in lower_input or lower_input == "progress":
+        intent = "get_course_progress"
+        if not payload.user_id or not payload.course_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id and course_id are required")
+        action_args = {"user_id": str(payload.user_id), "course_id": str(payload.course_id)}
+        action = "get_course_progress"
+    elif "intro courses" in lower_input or "list intro courses" in lower_input:
+        intent = "list_intro_courses"
+        action_args = {"limit": payload.limit}
+        action = "list_intro_courses"
+
+    if intent is None or action is None:
+        enforce_time_limit()
+        return intent_response_ok_false("Supported: list students, user summary, course progress, intro courses")
+
+    if policy.max_steps < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy.max_steps exceeded")
+
+    enforce_time_limit()
+
+    result = dispatch_tool_action(
+        tool=tool,
+        action=action,
+        args=action_args,
+        actor_role=actor_role,
+        scope=scope_payload,
+    )
+
+    steps = [
+        PlanStepV1(
+            tool=tool,
+            action=action,
+            args=action_args,
+            result_summary={
+                "row_count": result.get("row_count", 0),
+                "truncated": result.get("truncated", False),
+            },
+        )
+    ]
+
+    enforce_time_limit()
+
+    if len(steps) > policy.max_steps:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy.max_steps exceeded")
+
+    return AIPlanExecuteV1Response(
+        ok=True,
+        context_hash=context_hash,
+        intent=intent,
         steps=steps,
         final=dict(result),
     )
