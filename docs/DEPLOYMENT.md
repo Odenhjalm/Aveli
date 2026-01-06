@@ -20,8 +20,9 @@ docker compose --env-file .env.docker up --build
      LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... LIVEKIT_WS_URL=... LIVEKIT_API_URL=... \
      JWT_SECRET=... MEDIA_SIGNING_SECRET=... MEDIA_SIGNING_TTL_SECONDS=600 \
      FRONTEND_BASE_URL=https://your-frontend.app \
-     CHECKOUT_SUCCESS_URL=https://your-frontend.app/checkout/success \
-     CHECKOUT_CANCEL_URL=https://your-frontend.app/checkout/cancel
+     STRIPE_RETURN_URL=https://app.aveli.app/checkout/return?session_id={CHECKOUT_SESSION_ID} \
+     CHECKOUT_SUCCESS_URL=${STRIPE_RETURN_URL} \
+     CHECKOUT_CANCEL_URL=https://app.aveli.app/checkout/cancel
    ```
 3. Deploy:
    ```bash
