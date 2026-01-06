@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import Any
 from uuid import UUID
@@ -86,6 +87,29 @@ class AIToolCallResponse(BaseModel):
     action: str
     result: dict[str, Any]
 
+
+class AIPlanExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input: str
+    course_id: UUID | None = None
+    classroom_id: UUID | None = None
+    seminar_id: UUID | None = None
+    args: dict[str, Any] | None = None
+
+
+class PlanStep(BaseModel):
+    tool: str
+    action: str
+    args: dict[str, Any] | None = None
+    result_summary: str
+
+
+class AIPlanExecuteResponse(BaseModel):
+    ok: bool
+    context_hash: str
+    steps: list[PlanStep]
+    final: dict[str, Any]
 
 def _request_id(request: Request) -> str:
     return (
@@ -300,4 +324,135 @@ async def tool_call(request: Request, current: CurrentUser):
         tool=payload.tool,
         action=payload.action,
         result=dict(result),
+    )
+
+
+@router.post("/plan-and-execute", response_model=AIPlanExecuteResponse)
+async def plan_and_execute(request: Request, current: CurrentUser):
+    request_id = _request_id(request)
+    try:
+        raw_payload = await request.json()
+    except Exception as exc:  # pragma: no cover - surfaced in tests
+        logger.warning(
+            "Context7 plan-and-execute invalid JSON",
+            extra={"request_id": request_id, "user_id": str(current.get("id"))},
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload") from exc
+
+    try:
+        payload = AIPlanExecuteRequest.model_validate(raw_payload)
+    except ValidationError as exc:
+        logger.warning(
+            "Context7 plan-and-execute payload rejected",
+            extra={
+                "request_id": request_id,
+                "user_id": str(current.get("id")),
+                "errors": exc.errors(),
+            },
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.errors()) from exc
+
+    if not any([payload.course_id, payload.classroom_id, payload.seminar_id]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one of course_id, classroom_id, seminar_id is required",
+        )
+
+    built_context, _ = await context7_builder.build_context(
+        course_id=str(payload.course_id) if payload.course_id else None,
+        classroom_id=str(payload.classroom_id) if payload.classroom_id else None,
+        seminar_id=str(payload.seminar_id) if payload.seminar_id else None,
+        user=current,
+    )
+
+    context_payload = built_context.model_dump(mode="json", exclude_none=True)
+    gate_result = context7_gate.validate_context_payload(
+        context_payload,
+        user=current,
+        request_id=request_id,
+        required_scope="ai:execute",
+        allowed_roles={"admin", "teacher", "student"},
+    )
+
+    context_obj = gate_result["context"]
+    context_hash = gate_result["context_hash"]
+
+    policy = getattr(context_obj, "execution_policy", None)
+    if not policy:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy missing")
+    if policy.mode != "stub":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="execution_policy.mode must be 'stub'")
+    if policy.max_steps <= 0 or policy.max_steps > EXECUTION_MAX_STEPS_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_steps exceeds allowed limits",
+        )
+    if policy.max_seconds <= 0 or policy.max_seconds > EXECUTION_MAX_SECONDS_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_seconds exceeds allowed limits",
+        )
+
+    start_time = time.monotonic()
+
+    def enforce_time_limit() -> None:
+        if time.monotonic() - start_time > policy.max_seconds:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="execution_policy.max_seconds exceeded",
+            )
+
+    steps: list[PlanStep] = []
+    lower_input = payload.input.lower()
+
+    if "select" not in lower_input:
+        enforce_time_limit()
+        return AIPlanExecuteResponse(
+            ok=True,
+            context_hash=context_hash,
+            steps=steps,
+            final={"message": "Only SELECT queries via supabase_readonly.query are supported"},
+        )
+
+    if policy.max_steps < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_steps exceeded",
+        )
+
+    enforce_time_limit()
+
+    tool = "supabase_readonly"
+    action = "query"
+
+    enforce_tool_allowed(
+        tool=tool,
+        action=action,
+        tools_allowed=policy.tools_allowed,
+    )
+
+    result = dispatch_tool_action(tool=tool, action=action, args=payload.args)
+
+    steps.append(
+        PlanStep(
+            tool=tool,
+            action=action,
+            args=payload.args or {},
+            result_summary=f"row_count={result.get('row_count', 0)}, truncated={result.get('truncated', False)}",
+        )
+    )
+
+    enforce_time_limit()
+
+    if len(steps) > policy.max_steps:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="execution_policy.max_steps exceeded",
+        )
+
+    return AIPlanExecuteResponse(
+        ok=True,
+        context_hash=context_hash,
+        steps=steps,
+        final=dict(result),
     )
