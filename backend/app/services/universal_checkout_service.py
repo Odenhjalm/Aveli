@@ -18,6 +18,11 @@ from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
 
+RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
+CANCEL_PATH = "checkout/cancel"
+RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
+CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
+
 
 class CheckoutError(Exception):
     status_code = status.HTTP_400_BAD_REQUEST
@@ -194,13 +199,13 @@ async def create_checkout_session(
     frontend_base = (settings.frontend_base_url or "").rstrip("/")
     success_url = (
         settings.checkout_success_url
-        or (f"{frontend_base}/checkout/success" if frontend_base else None)
-        or "aveliapp://checkout_success"
+        or (f"{frontend_base}/{RETURN_PATH}" if frontend_base else None)
+        or RETURN_DEEP_LINK
     )
     cancel_url = (
         settings.checkout_cancel_url
-        or (f"{frontend_base}/checkout/cancel" if frontend_base else None)
-        or "aveliapp://checkout_cancel"
+        or (f"{frontend_base}/{CANCEL_PATH}" if frontend_base else None)
+        or CANCEL_DEEP_LINK
     )
     checkout_mode = "subscription" if payload.type is schemas.CheckoutType.subscription else "payment"
     checkout_kwargs: dict[str, Any] = {

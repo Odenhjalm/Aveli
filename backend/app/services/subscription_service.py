@@ -15,6 +15,11 @@ from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
 
+RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
+CANCEL_PATH = "checkout/cancel"
+RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
+CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
+
 
 class SubscriptionError(Exception):
     status_code = 400
@@ -45,8 +50,8 @@ async def create_subscription_checkout(
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
 
-    success_url = settings.checkout_success_url or _build_frontend_url("checkout/success")
-    cancel_url = settings.checkout_cancel_url or _build_frontend_url("checkout/cancel")
+    success_url = settings.checkout_success_url or _build_frontend_url(RETURN_PATH) or RETURN_DEEP_LINK
+    cancel_url = settings.checkout_cancel_url or _build_frontend_url(CANCEL_PATH) or CANCEL_DEEP_LINK
 
     def _create_session() -> dict[str, Any]:
         return stripe.checkout.Session.create(
@@ -116,9 +121,11 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
             line_items=[{"price": price_config.price_id, "quantity": 1}],
             subscription_data={"trial_period_days": 14},
             success_url=settings.checkout_success_url
-            or "aveliapp://checkout_success",
+            or _build_frontend_url(RETURN_PATH)
+            or RETURN_DEEP_LINK,
             cancel_url=settings.checkout_cancel_url
-            or "aveliapp://checkout_cancel",
+            or _build_frontend_url(CANCEL_PATH)
+            or CANCEL_DEEP_LINK,
             locale="sv",
         )
 
