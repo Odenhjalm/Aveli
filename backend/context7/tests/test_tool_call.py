@@ -31,6 +31,33 @@ async def promote_user(user_id: str):
             await conn.commit()
 
 
+async def promote_admin(user_id: str):
+    async with db.pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.profiles
+                   SET is_admin = true
+                 WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            await conn.commit()
+
+
+async def enroll_user(course_id: str, user_id: str):
+    async with db.pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.enrollments (user_id, course_id, source)
+                VALUES (%s, %s, 'purchase') ON CONFLICT DO NOTHING
+                """,
+                (user_id, course_id),
+            )
+            await conn.commit()
+
+
 async def test_tool_call_allowed(async_client):
     token, user_id = await create_teacher(async_client)
     course_id = None
@@ -190,6 +217,8 @@ def test_supabase_readonly_sets_read_only_options(monkeypatch):
         tool="supabase_readonly",
         action="query",
         args={"sql": "select 1"},
+        actor_role="admin",
+        scope={},
     )
 
     assert captured["options"] == tool_dispatcher._READONLY_OPTIONS
@@ -353,6 +382,120 @@ async def test_tool_call_invalid_args_wrapper(async_client):
                 "tool": "supabase_readonly",
                 "action": "get_course_by_id",
                 "args": {},
+            },
+        )
+        assert resp.status_code == 400
+    finally:
+        if course_id:
+            await cleanup_course(course_id)
+        await cleanup_user(user_id)
+
+
+async def test_tool_call_list_course_students_allowed(async_client):
+    teacher_token, teacher_id = await create_teacher(async_client)
+    student_token, student_id = await register_user(async_client)
+    course_id = None
+    try:
+        course_id = await create_course(async_client, teacher_token)
+        await enroll_user(course_id, student_id)
+
+        resp = await async_client.post(
+            "/api/ai/tool-call",
+            headers=auth_header(teacher_token),
+            json={
+                "input": "students",
+                "course_id": course_id,
+                "tool": "supabase_readonly",
+                "action": "list_course_students",
+                "args": {"course_id": course_id, "limit": 5},
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        result = resp.json()["result"]
+        assert result["row_count"] >= 1
+        assert any(str(row["user_id"]) == str(student_id) for row in result["rows"])
+    finally:
+        if course_id:
+            await cleanup_course(course_id)
+        await cleanup_user(student_id)
+        await cleanup_user(teacher_id)
+
+
+async def test_tool_call_list_course_students_denied_out_of_scope(async_client):
+    teacher_token, teacher_id = await create_teacher(async_client)
+    course_a = None
+    course_b = None
+    try:
+        course_a = await create_course(async_client, teacher_token)
+        course_b = await create_course(async_client, teacher_token)
+
+        resp = await async_client.post(
+            "/api/ai/tool-call",
+            headers=auth_header(teacher_token),
+            json={
+                "input": "students",
+                "course_id": course_a,
+                "tool": "supabase_readonly",
+                "action": "list_course_students",
+                "args": {"course_id": course_b},
+            },
+        )
+        assert resp.status_code == 403
+    finally:
+        if course_a:
+            await cleanup_course(course_a)
+        if course_b:
+            await cleanup_course(course_b)
+        await cleanup_user(teacher_id)
+
+
+async def test_tool_call_get_user_summary_admin(async_client):
+    admin_token, admin_id = await register_user(async_client)
+    await promote_admin(admin_id)
+    teacher_token, teacher_id = await create_teacher(async_client)
+    course_id = None
+    try:
+        course_id = await create_course(async_client, teacher_token)
+        target_token, target_id = await register_user(async_client)
+        await promote_user(target_id)
+
+        resp = await async_client.post(
+            "/api/ai/tool-call",
+            headers=auth_header(admin_token),
+            json={
+                "input": "user summary",
+                "course_id": course_id,
+                "tool": "supabase_readonly",
+                "action": "get_user_summary",
+                "args": {"user_id": target_id},
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        result = resp.json()["result"]
+        assert result["row_count"] == 1
+        assert str(result["rows"][0]["user_id"]) == str(target_id)
+    finally:
+        if course_id:
+            await cleanup_course(course_id)
+        await cleanup_user(teacher_id)
+        await cleanup_user(admin_id)
+        await cleanup_user(target_id)
+
+
+async def test_tool_call_get_course_progress_invalid_args(async_client):
+    token, user_id = await create_teacher(async_client)
+    course_id = None
+    try:
+        course_id = await create_course(async_client, token)
+        resp = await async_client.post(
+            "/api/ai/tool-call",
+            headers=auth_header(token),
+            json={
+                "input": "progress",
+                "course_id": course_id,
+                "tool": "supabase_readonly",
+                "action": "get_course_progress",
+                "args": {"course_id": course_id},
             },
         )
         assert resp.status_code == 400
