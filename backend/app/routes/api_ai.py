@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from ..auth import CurrentUser
 from ..permissions import TeacherUser
 from ..services import context7_builder, context7_gate
-from ..services.tool_dispatcher import dispatch_stub, enforce_tool_allowed
+from ..services.tool_dispatcher import dispatch_tool_action, enforce_tool_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +292,7 @@ async def tool_call(request: Request, current: CurrentUser):
         tools_allowed=policy.tools_allowed,
     )
 
-    result = dispatch_stub(tool=payload.tool, action=payload.action, args=payload.args)
+    result = dispatch_tool_action(tool=payload.tool, action=payload.action, args=payload.args)
 
     return AIToolCallResponse(
         ok=True,
