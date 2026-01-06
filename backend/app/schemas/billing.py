@@ -51,3 +51,15 @@ class CheckoutSessionRequest(BaseModel):
 
 class CheckoutSessionResponse(BaseModel):
     url: str
+
+
+class SessionStatusResponse(BaseModel):
+    ok: bool = True
+    session_id: str
+    mode: str | None = None
+    payment_status: str | None = None
+    subscription_status: str | None = None
+    membership_status: str | None = None
+    updated_at: datetime | None = None
+    poll_after_ms: int = 2000
+

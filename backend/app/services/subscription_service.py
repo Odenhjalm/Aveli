@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from ..config import settings
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
-from ..schemas.billing import SubscriptionCheckoutResponse, SubscriptionInterval
+from ..schemas.billing import SessionStatusResponse, SubscriptionCheckoutResponse, SubscriptionInterval
 from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
@@ -154,6 +154,72 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
     )
 
     return checkout_url
+
+
+async def fetch_session_status(session_id: str) -> SessionStatusResponse:
+    if not isinstance(session_id, str) or not session_id.startswith("cs_") or len(session_id) < 8:
+        raise SubscriptionError("Invalid session_id", status_code=400)
+    if len(session_id) > 255:
+        raise SubscriptionError("Invalid session_id", status_code=400)
+
+    try:
+        stripe_context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise SubscriptionConfigError(str(exc)) from exc
+
+    stripe.api_key = stripe_context.secret_key
+
+    try:
+        session = await run_in_threadpool(
+            lambda: stripe.checkout.Session.retrieve(
+                session_id, expand=["subscription", "customer"]
+            )
+        )
+    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+        if getattr(exc, "code", "") == "resource_missing":
+            raise SubscriptionError("Checkout session not found", status_code=404) from exc
+        raise SubscriptionError("Stripe error retrieving checkout session", status_code=502) from exc
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise SubscriptionError("Stripe error retrieving checkout session", status_code=502) from exc
+
+    mode = session.get("mode")
+    payment_status = session.get("payment_status")
+
+    subscription = session.get("subscription")
+    subscription_status = None
+    if isinstance(subscription, dict):
+        subscription_status = subscription.get("status")
+
+    customer = session.get("customer")
+    customer_id = None
+    if isinstance(customer, dict):
+        customer_id = customer.get("id")
+    elif isinstance(customer, str):
+        customer_id = customer
+
+    membership_status = None
+    updated_at = None
+    if customer_id:
+        membership = await memberships_repo.get_membership_by_stripe_reference(
+            customer_id=customer_id
+        )
+        if membership:
+            membership_status = membership.get("status")
+            updated_at = membership.get("updated_at")
+
+    if membership_status is None:
+        membership_status = "unknown"
+
+    return SessionStatusResponse(
+        ok=True,
+        session_id=session_id,
+        mode=mode,
+        payment_status=payment_status,
+        subscription_status=subscription_status,
+        membership_status=membership_status,
+        updated_at=updated_at,
+        poll_after_ms=2000,
+    )
 
 
 async def cancel_subscription(

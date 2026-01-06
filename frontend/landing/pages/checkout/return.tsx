@@ -14,6 +14,17 @@ type MembershipResponse = {
   membership: MembershipRecord | null;
 };
 
+type SessionStatusResponse = {
+  ok: boolean;
+  session_id: string;
+  mode?: string | null;
+  payment_status?: string | null;
+  subscription_status?: string | null;
+  membership_status?: string | null;
+  updated_at?: string | null;
+  poll_after_ms?: number;
+};
+
 type Phase = 'pending' | 'success' | 'error' | 'unauthorized';
 
 const POLL_INTERVAL_MS = 2000;
@@ -68,6 +79,24 @@ export default function CheckoutReturn() {
     const startedAt = Date.now();
     const apiBase = resolveApiBase();
     const membershipUrl = apiBase ? `${apiBase}/api/me/membership` : '/api/me/membership';
+    const sessionStatusUrl = apiBase
+      ? `${apiBase}/api/billing/session-status?session_id=${encodeURIComponent(id)}`
+      : `/api/billing/session-status?session_id=${encodeURIComponent(id)}`;
+
+    const fetchMembershipStatus = async () => {
+      const response = await fetch(membershipUrl, { credentials: 'include' });
+      if (response.status === 401 || response.status === 403) {
+        setPhase('unauthorized');
+        setMessage('Logga in för att slutföra betalningen.');
+        setDetail('Öppna Aveli-appen eller webbklienten, logga in och försök igen.');
+        return null;
+      }
+      if (!response.ok) {
+        throw new Error(`Membership fetch failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as MembershipResponse;
+      return payload?.membership?.status ?? null;
+    };
 
     const poll = async () => {
       if (cancelled) return;
@@ -75,24 +104,59 @@ export default function CheckoutReturn() {
       setRemainingMs(Math.max(0, POLL_TIMEOUT_MS - elapsed));
 
       try {
-        const response = await fetch(membershipUrl, { credentials: 'include' });
-        if (cancelled) return;
+        let status: string | null = null;
 
-        if (response.status === 401 || response.status === 403) {
-          setPhase('unauthorized');
-          setMessage('Logga in för att slutföra betalningen.');
-          setDetail('Öppna Aveli-appen eller webbklienten, logga in och försök igen.');
-          return;
+        if (id) {
+          const response = await fetch(sessionStatusUrl);
+          if (cancelled) return;
+
+          if (response.status === 401 || response.status === 403) {
+            setPhase('unauthorized');
+            setMessage('Logga in för att slutföra betalningen.');
+            setDetail('Öppna Aveli-appen eller webbklienten, logga in och försök igen.');
+            return;
+          }
+
+          if (response.status === 404) {
+            setPhase('error');
+            setMessage('Hittade inte checkout-sessionen.');
+            setDetail('Kontrollera länken eller kontakta supporten med ditt kvitto.');
+            return;
+          }
+
+          if (!response.ok) {
+            throw new Error(`Session-status failed: ${response.status}`);
+          }
+
+          const payload = (await response.json()) as SessionStatusResponse;
+          const sessionMembershipStatus =
+            payload.membership_status === 'unknown' ? null : payload.membership_status;
+          status = sessionMembershipStatus || payload.subscription_status || null;
+          lastStatusRef.current = status;
+          setMembershipStatus(status);
+
+          if (isActive(status)) {
+            setPhase('success');
+            setMessage('Betalningen är bekräftad.');
+            setDetail('Ditt medlemskap är aktivt. Du kan stänga denna flik och fortsätta i appen.');
+            return;
+          }
+
+          if (!status && payload.payment_status === 'paid') {
+            try {
+              status = await fetchMembershipStatus();
+              if (status) {
+                setMembershipStatus(status);
+              }
+            } catch {
+              // ignore transient membership errors
+            }
+          }
+        } else {
+          status = await fetchMembershipStatus();
+          lastStatusRef.current = status;
+          setMembershipStatus(status);
         }
-
-        if (!response.ok) {
-          throw new Error(`Membership fetch failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as MembershipResponse;
-        const status = payload?.membership?.status ?? null;
-        lastStatusRef.current = status;
-        setMembershipStatus(status);
 
         if (isActive(status)) {
           setPhase('success');
@@ -108,6 +172,13 @@ export default function CheckoutReturn() {
           return;
         }
 
+        if (elapsed < POLL_TIMEOUT_MS) {
+          setPhase('pending');
+          setMessage('Vi väntar på att Stripe ska bekräfta betalningen…');
+          timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+          return;
+        }
+
         setPhase('error');
         setMessage('Betalningen kunde inte bekräftas ännu.');
         setDetail(
@@ -119,7 +190,7 @@ export default function CheckoutReturn() {
         if (cancelled) return;
         if (elapsed < POLL_TIMEOUT_MS) {
           setPhase('pending');
-          setMessage('Återförsöker att hämta medlemskap…');
+          setMessage('Återförsöker att hämta status…');
           timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
           return;
         }
