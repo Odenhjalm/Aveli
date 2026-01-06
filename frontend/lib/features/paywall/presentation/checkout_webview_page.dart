@@ -62,9 +62,12 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
   // Vi matchar båda så att modalen alltid stängs även när Safari/Chrome hoppar bort från WebView.
   bool _isSuccessUrl(String url) {
     final normalized = url.toLowerCase();
-    return normalized.contains('/success') ||
-        normalized.startsWith('http://localhost') && normalized.contains('/success') ||
+    return normalized.contains('checkout/return') ||
+        (normalized.contains('session_id=') && normalized.contains('checkout/return')) ||
+        normalized.contains('/success') ||
+        (normalized.startsWith('http://localhost') && normalized.contains('/success')) ||
         normalized.startsWith('aveliapp://success') ||
+        normalized.startsWith('aveliapp://checkout/return') ||
         normalized.startsWith('aveliapp://checkout/success') ||
         normalized.startsWith('aveliapp://checkout_success') ||
         normalized.contains('checkout_success=true') ||

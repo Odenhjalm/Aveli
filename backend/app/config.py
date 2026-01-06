@@ -32,7 +32,11 @@ class Settings(BaseSettings):
     stripe_checkout_ui_mode: str | None = "custom"
     checkout_success_url: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("CHECKOUT_SUCCESS_URL", "STRIPE_CHECKOUT_SUCCESS_URL"),
+        validation_alias=AliasChoices(
+            "CHECKOUT_SUCCESS_URL",
+            "STRIPE_CHECKOUT_SUCCESS_URL",
+            "STRIPE_RETURN_URL",
+        ),
     )
     checkout_cancel_url: str | None = Field(
         default=None,

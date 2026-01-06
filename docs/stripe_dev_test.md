@@ -14,9 +14,11 @@ This guide describes how to keep the Stripe test environment stable while exerci
 
 - Edit repo root `.env` **and** `backend/.env.local`.
 - Replace the `sk_test_XXX`, `pk_test_XXX`, `price_XXX`, and `whsec_TEST_*` placeholders with the **test-mode** keys from the Stripe Dashboard.
-- Always keep `STRIPE_CHECKOUT_UI_MODE=hosted`, `FRONTEND_BASE_URL=https://aveli.app`, and the deep links:
-  - `CHECKOUT_SUCCESS_URL=aveliapp://checkout/success?checkout_success=true`
-  - `CHECKOUT_CANCEL_URL=aveliapp://checkout/cancel`
+- Always keep `STRIPE_CHECKOUT_UI_MODE=hosted`, `FRONTEND_BASE_URL=https://app.aveli.app`, and the return URLs:
+  - `STRIPE_RETURN_URL=https://app.aveli.app/checkout/return?session_id={CHECKOUT_SESSION_ID}`
+  - `CHECKOUT_SUCCESS_URL=${STRIPE_RETURN_URL}`
+  - `CHECKOUT_CANCEL_URL=https://app.aveli.app/checkout/cancel`
+- Mobile deep link (WebView close + membership poll): `aveliapp://checkout/return?session_id={CHECKOUT_SESSION_ID}`
 - `STRIPE_WEBHOOK_SECRET` → `/webhooks/stripe` (Payment Element + one-off purchases).
 - `STRIPE_BILLING_WEBHOOK_SECRET` → `/api/billing/webhook` (subscription + billing portal events).
 - Set `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, and any service/course `STRIPE_PRICE_*` entries to real test price IDs and note TODOs inline if something is pending.
@@ -64,7 +66,8 @@ Keep the document updated whenever new price IDs or webhook endpoints are introd
 ## Språk & texter (svenska)
 
 - Stripe Checkout startas med `locale=sv` och appens betalnings-UI använder svenska etiketter som **“Köp paketet”**, **“Bli medlem”**, **“Betalning”** och felmeddelanden som **“Betalningen misslyckades. Försök igen eller kontakta support.”**
-- Standard-redirects är `aveliapp://checkout_success` / `aveliapp://checkout_cancel` (eller `https://<FRONTEND_BASE_URL>/checkout/...` om frontend-basen är satt).
+- Standard-redirects är `aveliapp://checkout/return?session_id={CHECKOUT_SESSION_ID}` / `https://app.aveli.app/checkout/return?session_id={CHECKOUT_SESSION_ID}` för success och `https://app.aveli.app/checkout/cancel` för avbrutna betalningar.
+- Flutter-klient: visa en “Betalning pågår” skärm på deep link och polla `/api/me/membership` tills status är `active`/`trialing` eller 30s timeout.
 - Kontrollera att WebView stänger på både `aveliapp://checkout_*` och HTTPS-varianter och att entitlements uppdateras direkt efter lyckad betalning.
 
 ## Lärarpaket & betalningslänkar — hur man testar

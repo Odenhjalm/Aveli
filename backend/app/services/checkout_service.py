@@ -13,15 +13,18 @@ from ..repositories import courses as courses_repo
 from . import courses_service
 from . import stripe_customers as stripe_customers_service
 
+RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
+CANCEL_PATH = "checkout/cancel"
+RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
+CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
+
 
 def _default_checkout_urls() -> tuple[str, str]:
     base = (settings.frontend_base_url or "").rstrip("/")
-    success_default = "aveliapp://checkout_success"
-    cancel_default = "aveliapp://checkout_cancel"
-    success_http = f"{base}/checkout/success" if base else None
-    cancel_http = f"{base}/checkout/cancel" if base else None
-    success_url = settings.checkout_success_url or success_http or success_default
-    cancel_url = settings.checkout_cancel_url or cancel_http or cancel_default
+    success_http = f"{base}/{RETURN_PATH}" if base else None
+    cancel_http = f"{base}/{CANCEL_PATH}" if base else None
+    success_url = settings.checkout_success_url or success_http or RETURN_DEEP_LINK
+    cancel_url = settings.checkout_cancel_url or cancel_http or CANCEL_DEEP_LINK
     return success_url, cancel_url
 
 

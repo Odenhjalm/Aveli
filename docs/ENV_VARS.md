@@ -11,6 +11,7 @@
 - `SUPABASE_JWT_SECRET` – Supabase JWT secret (tests/edge cases).
 - `SUPABASE_PAT` – PAT for MCP helper (optional).
 - `FRONTEND_BASE_URL` – base URL for checkout redirects.
+- `STRIPE_RETURN_URL` – hosted checkout return URL (include `{CHECKOUT_SESSION_ID}`); mirror to `CHECKOUT_SUCCESS_URL`.
 - `CHECKOUT_SUCCESS_URL` / `CHECKOUT_CANCEL_URL` – explicit override for Stripe success/cancel URLs.
 - `STRIPE_SECRET_KEY` – secret API key.
 - `STRIPE_PUBLISHABLE_KEY` – publishable key (exposed to Flutter).
