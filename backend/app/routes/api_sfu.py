@@ -3,7 +3,11 @@ from fastapi import APIRouter, HTTPException, Request, status
 from .. import repositories, schemas
 from ..auth import CurrentUser
 from ..config import settings
-from ..services import livekit_events
+from ..services.livekit_webhook_handler import (
+    LiveKitWebhookError,
+    capture_livekit_rejection,
+    handle_livekit_webhook,
+)
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 
 router = APIRouter(prefix="/sfu", tags=["sfu"])
@@ -98,29 +102,15 @@ async def create_livekit_token(
 
 @router.post("/webhooks/livekit")
 async def livekit_webhook(request: Request):
-    secret = settings.livekit_webhook_secret
-    if not secret:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook secret not configured"
-        )
-    if secret:
-        signature = request.headers.get("X-Livekit-Signature")
-        if signature != secret:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature"
-            )
-    payload = await request.json()
-    event = payload.get("event")
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing event type"
-        )
-
+    signature = request.headers.get("X-Livekit-Signature")
     try:
-        await livekit_events.enqueue_webhook(payload)
-    except RuntimeError as exc:
+        payload = await request.json()
+    except Exception as exc:
+        capture_livekit_rejection("invalid_json")
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON"
         ) from exc
-
-    return {"queued": True}
+    try:
+        return await handle_livekit_webhook(payload, signature)
+    except LiveKitWebhookError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

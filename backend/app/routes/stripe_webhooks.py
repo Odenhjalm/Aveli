@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+import sentry_sdk
 import stripe
 from fastapi import APIRouter, HTTPException, Request, status
 from starlette.concurrency import run_in_threadpool
@@ -17,6 +18,50 @@ router = APIRouter(prefix="/webhooks", tags=["stripe-webhooks"])
 logger = logging.getLogger(__name__)
 
 
+def _sentry_enabled() -> bool:
+    return sentry_sdk.Hub.current.client is not None
+
+
+def _capture_message(
+    *,
+    status: str,
+    event_type: str | None,
+    event_id: str | None,
+    message: str,
+    level: str = "warning",
+) -> None:
+    if not _sentry_enabled():
+        return
+    with sentry_sdk.push_scope() as scope:
+        scope.set_tag("webhook.provider", "stripe")
+        scope.set_tag("webhook.status", status)
+        if event_type:
+            scope.set_tag("webhook.event_type", event_type)
+        if event_id:
+            scope.set_tag("webhook.event_id", event_id)
+        if status == "failed":
+            scope.set_tag("alert_kind", "webhook_failure")
+        sentry_sdk.capture_message(message, level=level)
+
+
+def _capture_exception(
+    event_type: str | None,
+    event_id: str | None,
+    exc: Exception,
+) -> None:
+    if not _sentry_enabled():
+        return
+    with sentry_sdk.push_scope() as scope:
+        scope.set_tag("webhook.provider", "stripe")
+        scope.set_tag("webhook.status", "failed")
+        scope.set_tag("alert_kind", "webhook_failure")
+        if event_type:
+            scope.set_tag("webhook.event_type", event_type)
+        if event_id:
+            scope.set_tag("webhook.event_id", event_id)
+        sentry_sdk.capture_exception(exc)
+
+
 @router.post("/stripe", status_code=status.HTTP_200_OK)
 async def stripe_payment_element_webhook(request: Request):
     # /webhooks/stripe handles Payment Element & one-off purchases via STRIPE_WEBHOOK_SECRET.
@@ -24,6 +69,7 @@ async def stripe_payment_element_webhook(request: Request):
         context = stripe_mode.resolve_stripe_context()
         secret, _ = stripe_mode.resolve_webhook_secret("default", context)
     except stripe_mode.StripeConfigurationError as exc:
+        _capture_exception(None, None, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -32,6 +78,13 @@ async def stripe_payment_element_webhook(request: Request):
     payload = await request.body()
     signature = request.headers.get("stripe-signature")
     if not signature:
+        _capture_message(
+            status="rejected",
+            event_type=None,
+            event_id=None,
+            message="Stripe webhook rejected: missing signature",
+            level="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing Stripe signature",
@@ -45,51 +98,89 @@ async def stripe_payment_element_webhook(request: Request):
         )
     except ValueError as exc:
         logger.warning("Invalid Stripe payload: %s", exc)
+        _capture_message(
+            status="rejected",
+            event_type=None,
+            event_id=None,
+            message="Stripe webhook rejected: invalid payload",
+            level="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload"
         ) from exc
     except stripe.error.SignatureVerificationError as exc:  # type: ignore[attr-defined]
         logger.warning("Invalid Stripe signature: %s", exc)
+        _capture_message(
+            status="rejected",
+            event_type=None,
+            event_id=None,
+            message="Stripe webhook rejected: invalid signature",
+            level="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature"
         ) from exc
 
     event_type = event.get("type")
+    event_id = event.get("id")
     data_object = event.get("data", {}).get("object", {})
+    had_error = False
 
-    if event_type == "payment_intent.succeeded":
-        await checkout_service.handle_payment_intent_succeeded(data_object)
-        metadata = data_object.get("metadata") or {}
-        if isinstance(metadata, dict):
-            user_id = metadata.get("user_id")
-            course_slug = metadata.get("course_slug")
-            if user_id and course_slug:
-                await course_entitlements.grant_course_entitlement(
-                    user_id=str(user_id),
-                    course_slug=str(course_slug),
-                    stripe_customer_id=str(data_object.get("customer"))
-                    if data_object.get("customer")
-                    else None,
-                    payment_intent_id=str(data_object.get("id"))
-                    if data_object.get("id")
-                    else None,
-                )
-    elif event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
-        await _handle_checkout_session(data_object, event_type)
-    elif event_type.startswith("customer.subscription") or event_type.startswith("invoice.payment_"):
-        try:
-            await subscription_service.process_event(event)
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.warning("Failed to process subscription event %s: %s", event_type, exc)
-    elif event_type == "payment_intent.payment_failed":
-        logger.info(
-            "Payment failed for intent %s",
-            data_object.get("id"),
+    try:
+        if event_type == "payment_intent.succeeded":
+            await checkout_service.handle_payment_intent_succeeded(data_object)
+            metadata = data_object.get("metadata") or {}
+            if isinstance(metadata, dict):
+                user_id = metadata.get("user_id")
+                course_slug = metadata.get("course_slug")
+                if user_id and course_slug:
+                    await course_entitlements.grant_course_entitlement(
+                        user_id=str(user_id),
+                        course_slug=str(course_slug),
+                        stripe_customer_id=str(data_object.get("customer"))
+                        if data_object.get("customer")
+                        else None,
+                        payment_intent_id=str(data_object.get("id"))
+                        if data_object.get("id")
+                        else None,
+                    )
+        elif event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
+            await _handle_checkout_session(data_object, event_type)
+        elif event_type and (
+            event_type.startswith("customer.subscription") or event_type.startswith("invoice.payment_")
+        ):
+            try:
+                await subscription_service.process_event(event)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                had_error = True
+                _capture_exception(event_type, str(event_id) if event_id else None, exc)
+                logger.warning("Failed to process subscription event %s: %s", event_type, exc)
+        elif event_type == "payment_intent.payment_failed":
+            logger.info(
+                "Payment failed for intent %s",
+                data_object.get("id"),
+            )
+        elif event_type and event_type.startswith("account."):
+            await _handle_connect_event(event_type, event, data_object, context)
+        else:
+            logger.info("Unhandled Stripe event %s", event_type)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        had_error = True
+        _capture_exception(str(event_type) if event_type else None, str(event_id) if event_id else None, exc)
+        logger.exception("Stripe webhook processing failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook processing failed",
+        ) from exc
+
+    if not had_error:
+        _capture_message(
+            status="success",
+            event_type=str(event_type) if event_type else None,
+            event_id=str(event_id) if event_id else None,
+            message="Stripe webhook processed",
+            level="info",
         )
-    elif event_type and event_type.startswith("account."):
-        await _handle_connect_event(event_type, event, data_object, context)
-    else:
-        logger.info("Unhandled Stripe event %s", event_type)
 
     return {"status": "ok"}
 

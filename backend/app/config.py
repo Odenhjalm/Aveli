@@ -126,6 +126,16 @@ class Settings(BaseSettings):
     media_signing_ttl_seconds: int = 600
     media_allow_legacy_media: bool = True
     media_public_cache_seconds: int = 3600
+    sentry_dsn: str | None = Field(
+        default=None, validation_alias=AliasChoices("SENTRY_DSN", "BACKEND_SENTRY_DSN")
+    )
+    sentry_traces_sample_rate: float = Field(
+        default=0.0,
+        validation_alias=AliasChoices(
+            "SENTRY_TRACES_SAMPLE_RATE",
+            "BACKEND_SENTRY_TRACES_SAMPLE_RATE",
+        ),
+    )
 
     @model_validator(mode="after")
     def _populate_database_url(self):
