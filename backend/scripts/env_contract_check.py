@@ -119,9 +119,10 @@ def main() -> int:
     ]
     distinct_secrets = {value for _, value in stripe_candidates}
     stripe_mode = "unknown"
-    if len(distinct_secrets) > 1 and not overlay_set:
-        stripe_errors.append(
-            f"Conflicting Stripe secrets set: {', '.join(name for name, _ in stripe_candidates)}"
+    if len(distinct_secrets) > 1:
+        stripe_warnings.append(
+            "Multiple Stripe secrets detected; selecting active key by mode/priority "
+            "(overlay prefers test keys, otherwise prefers STRIPE_SECRET_KEY)"
         )
     if stripe_candidates:
         preferred_order = (

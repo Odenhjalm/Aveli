@@ -173,11 +173,7 @@ for key in STRIPE_SECRET_KEY STRIPE_TEST_SECRET_KEY STRIPE_LIVE_SECRET_KEY; do
 done
 unique_secret_count="$(printf "%s\n" "${stripe_secret_values[@]:-}" | sort -u | wc -l | tr -d ' ')"
 if [[ "$unique_secret_count" -gt 1 ]]; then
-  if [[ "$OVERLAY_SET" == "true" ]]; then
-    note "INFO: Multiple Stripe secrets detected; overlay enabled, preferring test keys when present"
-  else
-    critical "Conflicting Stripe secrets set (${stripe_secret_names[*]})"
-  fi
+  note "INFO: Multiple Stripe secrets detected; selecting active key by mode/priority (overlay prefers test keys)"
 fi
 
 STRIPE_ACTIVE_SECRET=""

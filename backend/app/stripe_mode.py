@@ -43,11 +43,6 @@ def _resolve_secret_key() -> tuple[str, str]:
         ((os.environ.get("STRIPE_LIVE_SECRET_KEY") or "").strip(), "STRIPE_LIVE_SECRET_KEY"),
     ]
     populated = [(value, name) for value, name in env_candidates if value]
-    distinct_values = {value for value, _ in populated}
-    if len(distinct_values) > 1 and not overlay_set:
-        raise StripeConfigurationError(
-            f"Conflicting Stripe secrets set: {', '.join(name for _, name in populated)}"
-        )
 
     if populated:
         preferred_order = (
