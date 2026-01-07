@@ -11,19 +11,40 @@ REPORT_PATH="${REPORT_PATH:-$ROOT_DIR/docs/verify/LAUNCH_READINESS_REPORT.md}"
 # Default: install backend project (so "import app" works without PYTHONPATH hacks).
 POETRY_INSTALL_ARGS="${POETRY_INSTALL_ARGS:-}"
 
+resolve_stripe_selector() {
+  if [[ -n "${STRIPE_KEYSET:-}" || -n "${APP_ENV_MODE:-}" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${BACKEND_ENV_OVERLAY_FILE:-}" ]]; then
+    local app_env_raw="${APP_ENV:-${ENVIRONMENT:-${ENV:-}}}"
+    local app_env_lower="${app_env_raw,,}"
+    if [[ "$app_env_lower" != "prod" && "$app_env_lower" != "production" && "$app_env_lower" != "live" ]]; then
+      export APP_ENV_MODE="test"
+    fi
+  fi
+}
+
+
 # ---- Env loading (single source of truth for loading) ----
 # This prints:
 #   ==> Backend env file: <path>
 #   ==> Backend env overlay: <path|none>
 # and exports vars deterministically (baseline then overlay).
+resolve_stripe_selector
 # shellcheck source=/dev/null
 source "$OPS_DIR/env_load.sh"
 
 APP_ENV_VALUE="${APP_ENV:-${ENVIRONMENT:-${ENV:-development}}}"
 APP_ENV_LOWER="${APP_ENV_VALUE,,}"
-APP_ENV_MODE="test"
+APP_ENV_STAGE="dev"
 if [[ "$APP_ENV_LOWER" == "prod" || "$APP_ENV_LOWER" == "production" || "$APP_ENV_LOWER" == "live" ]]; then
-  APP_ENV_MODE="live"
+  APP_ENV_STAGE="live"
+fi
+
+stripe_selector="${STRIPE_KEYSET:-${APP_ENV_MODE:-}}"
+if [[ -z "$stripe_selector" ]]; then
+  stripe_selector="unknown"
 fi
 
 log() { echo "==> $1"; }
@@ -132,7 +153,7 @@ PY
 }
 
 # ---- Start ----
-log "verify_all (APP_ENV=${APP_ENV_VALUE} / mode=${APP_ENV_MODE})"
+log "verify_all (APP_ENV=${APP_ENV_VALUE} / stripe=${stripe_selector})"
 log "Required checks: env guard, env validate, env contract, stripe verify, supabase verify, remote DB verify, backend tests, backend smoke, flutter unit, landing test+build"
 if [[ "${RUN_FLUTTER_INTEGRATION:-0}" == "1" ]]; then
   log "Integration: Flutter integration tests enabled"
@@ -153,6 +174,11 @@ fi
 log "Env validation"
 run_or_fail "env validation" bash "$OPS_DIR/env_validate.sh"
 env_status="PASS"
+
+# Reload env after validation to reapply active Stripe selection.
+export AVELI_ENV_LOADED=0
+# shellcheck source=/dev/null
+source "$OPS_DIR/env_load.sh"
 
 # 3) Poetry install (backend deps)
 log "Poetry install"
@@ -206,7 +232,7 @@ if [[ $remote_exit -eq 0 ]]; then
 elif [[ $remote_exit -eq 2 ]]; then
   remote_status="SKIP"
 else
-  if [[ "$APP_ENV_MODE" == "live" ]]; then
+  if [[ "$APP_ENV_STAGE" == "live" ]]; then
     remote_status="FAIL"
     echo "verify_all: FAIL (remote db verify)" >&2
     exit 1
@@ -347,7 +373,8 @@ fi
 append_report <<TXT
 
 ## Verification Run (ops/verify_all.sh)
-- APP_ENV: ${APP_ENV_VALUE} (${APP_ENV_MODE})
+- APP_ENV: ${APP_ENV_VALUE} (${APP_ENV_STAGE})
+- Stripe mode: ${stripe_selector}
 - Backend env file: ${BACKEND_ENV_FILE}
 - Backend env overlay: ${BACKEND_ENV_OVERLAY_FILE:-none}
 - Env guard: ${env_guard_status}

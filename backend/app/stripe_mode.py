@@ -35,17 +35,84 @@ class MembershipPriceConfig:
     product_id: str | None
 
 
-def _env_mode_from_env() -> StripeMode:
+def _normalize_mode(raw: str) -> StripeMode | None:
+    value = raw.strip().lower()
+    if not value:
+        return None
+    if value in ("test", "testing", "dev", "development"):
+        return StripeMode.test
+    if value in ("prod", "production", "live"):
+        return StripeMode.live
+    return None
+
+
+def _explicit_mode_from_env() -> StripeMode | None:
+    raw = (os.environ.get("STRIPE_KEYSET") or os.environ.get("APP_ENV_MODE") or "").strip()
+    if not raw:
+        return None
+    mode = _normalize_mode(raw)
+    if not mode:
+        raise StripeConfigurationError("STRIPE_KEYSET/APP_ENV_MODE must be 'test' or 'live'.")
+    return mode
+
+
+def _is_prod_env() -> bool:
     raw = (
-        os.environ.get("APP_ENV_MODE")
-        or os.environ.get("APP_ENV")
+        os.environ.get("APP_ENV")
         or os.environ.get("ENVIRONMENT")
         or os.environ.get("ENV")
         or ""
-    ).lower()
-    if raw in ("prod", "production", "live"):
+    )
+    return raw.strip().lower() in ("prod", "production", "live")
+
+def _infer_mode_from_keys() -> StripeMode | None:
+    env_candidates = [
+        ((os.environ.get("STRIPE_SECRET_KEY") or "").strip(), "STRIPE_SECRET_KEY"),
+        ((os.environ.get("STRIPE_TEST_SECRET_KEY") or "").strip(), "STRIPE_TEST_SECRET_KEY"),
+        ((os.environ.get("STRIPE_LIVE_SECRET_KEY") or "").strip(), "STRIPE_LIVE_SECRET_KEY"),
+    ]
+    if any(value for value, _ in env_candidates):
+        candidates = env_candidates
+    else:
+        candidates = [
+            ((settings.stripe_secret_key or "").strip(), "settings.stripe_secret_key"),
+            ((settings.stripe_test_secret_key or "").strip(), "settings.stripe_test_secret_key"),
+            ((settings.stripe_live_secret_key or "").strip(), "settings.stripe_live_secret_key"),
+        ]
+    has_test = False
+    has_live = False
+    for value, _ in candidates:
+        if not value:
+            continue
+        if value.startswith("sk_test_"):
+            has_test = True
+        elif value.startswith("sk_live_"):
+            has_live = True
+        if has_test and has_live:
+            return None
+    if has_test:
+        return StripeMode.test
+    if has_live:
         return StripeMode.live
-    return StripeMode.test
+    return None
+
+
+def _resolve_requested_mode() -> StripeMode:
+    explicit_mode = _explicit_mode_from_env()
+    if explicit_mode:
+        if _is_prod_env() and explicit_mode is StripeMode.test:
+            raise StripeConfigurationError(
+                "APP_ENV indicates production but Stripe mode is test; set STRIPE_KEYSET/APP_ENV_MODE=live."
+            )
+        return explicit_mode
+    if _is_prod_env():
+        return StripeMode.live
+    if os.environ.get("BACKEND_ENV_OVERLAY_FILE"):
+        return StripeMode.test
+    inferred = _infer_mode_from_keys()
+    if inferred:
+        return inferred
+    return StripeMode.live
 
 
 def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
@@ -80,7 +147,9 @@ def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
         sources = ", ".join(name for _, name in live_candidates)
         raise StripeConfigurationError(f"Conflicting Stripe live secrets set across: {sources}")
 
-    def pick(preferred_order: tuple[str, ...], candidates: list[tuple[str, str]]) -> tuple[str, str] | None:
+    def pick(
+        preferred_order: tuple[str, ...], candidates: list[tuple[str, str]]
+    ) -> tuple[str, str] | None:
         for name in preferred_order:
             match = next((pair for pair in candidates if pair[1] == name), None)
             if match:
@@ -98,7 +167,7 @@ def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
         if match:
             return match
         if live_candidates:
-            raise StripeConfigurationError("APP_ENV indicates test/dev but only live Stripe secrets are set.")
+            raise StripeConfigurationError("Stripe mode is test but only live Stripe secrets are set.")
     else:
         preferred_live = (
             "STRIPE_SECRET_KEY",
@@ -110,13 +179,13 @@ def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
         if match:
             return match
         if test_candidates:
-            raise StripeConfigurationError("APP_ENV indicates live but only test Stripe secrets are set.")
+            raise StripeConfigurationError("Stripe mode is live but only test Stripe secrets are set.")
 
     raise StripeConfigurationError("Stripe secret key is missing (set STRIPE_SECRET_KEY)")
 
 
 def resolve_stripe_context() -> StripeContext:
-    env_mode = _env_mode_from_env()
+    env_mode = _resolve_requested_mode()
     secret_key, secret_source = _resolve_secret_key(env_mode)
     if secret_key.startswith("sk_test_"):
         mode = StripeMode.test
@@ -127,11 +196,11 @@ def resolve_stripe_context() -> StripeContext:
 
     if mode is StripeMode.test and env_mode is StripeMode.live:
         raise StripeConfigurationError(
-            f"{secret_source} is a test key (sk_test_*) but APP_ENV={env_mode.value}"
+            f"{secret_source} is a test key (sk_test_*) but Stripe mode is live"
         )
     if mode is StripeMode.live and env_mode is StripeMode.test:
         raise StripeConfigurationError(
-            f"{secret_source} is a live key (sk_live_*) but APP_ENV={env_mode.value}"
+            f"{secret_source} is a live key (sk_live_*) but Stripe mode is test"
         )
 
     return StripeContext(secret_key=secret_key, secret_source=secret_source, mode=mode)
