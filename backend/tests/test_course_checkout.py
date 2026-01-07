@@ -14,6 +14,16 @@ from .utils import register_user
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+def _set_stripe_test_env(monkeypatch, *, secret: str = "sk_test_value") -> None:
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_TEST_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", secret)
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", secret)
+    settings.stripe_secret_key = secret
+    settings.stripe_test_secret_key = secret
+
+
 async def _create_course(slug: str, price_amount_cents: int) -> str:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -83,7 +93,7 @@ async def _clear_entitlement(user_id: str, slug: str):
 
 
 async def test_course_checkout_unknown_slug(async_client, monkeypatch):
-    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_value")
+    _set_stripe_test_env(monkeypatch)
     headers, user_id, _ = await register_user(async_client)
     try:
         resp = await async_client.post(
@@ -97,7 +107,7 @@ async def test_course_checkout_unknown_slug(async_client, monkeypatch):
 
 
 async def test_course_checkout_missing_price(async_client, monkeypatch):
-    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_value")
+    _set_stripe_test_env(monkeypatch)
     slug = f"course-{uuid.uuid4().hex[:6]}"
     course_id = await _create_course(slug, price_amount_cents=0)
     headers, user_id, _ = await register_user(async_client)
@@ -128,7 +138,7 @@ async def test_course_pricing_resolves_slug_variants(async_client):
 
 
 async def test_course_checkout_success(async_client, monkeypatch):
-    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_value")
+    _set_stripe_test_env(monkeypatch)
     base_slug = f"premium{uuid.uuid4().hex[:6]}"
     course_id = await _create_course(base_slug, price_amount_cents=1500)
     headers, user_id, _ = await register_user(async_client)
@@ -176,6 +186,7 @@ async def test_course_checkout_success(async_client, monkeypatch):
 
 
 async def test_webhook_checkout_session_grants_entitlement(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
     monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_test")
     slug = f"web-{uuid.uuid4().hex[:6]}"
     headers, user_id, _ = await register_user(async_client)
@@ -214,6 +225,7 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
 
 
 async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
     monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_test")
     slug = f"intent-{uuid.uuid4().hex[:6]}"
     headers, user_id, _ = await register_user(async_client)

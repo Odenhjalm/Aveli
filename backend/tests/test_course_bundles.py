@@ -12,6 +12,16 @@ from app.repositories import course_entitlements
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+def _set_stripe_test_env(monkeypatch, *, secret: str = "sk_test_value") -> None:
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_TEST_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", secret)
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", secret)
+    settings.stripe_secret_key = secret
+    settings.stripe_test_secret_key = secret
+
+
 async def _create_course(slug: str, price_amount_cents: int, *, created_by: str | None) -> str:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -129,7 +139,7 @@ async def _register_user(client, email: str, password: str, display_name: str):
 async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     if not await _bundles_table_ready():
         pytest.skip("course_bundles table missing; run migrations")
-    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_value")
+    _set_stripe_test_env(monkeypatch)
     teacher_token, _, teacher_id = await _register_user(
         async_client, f"teacher_{uuid.uuid4().hex[:6]}@example.com", "Passw0rd!", "Teacher"
     )
