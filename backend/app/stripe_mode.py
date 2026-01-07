@@ -36,6 +36,7 @@ class MembershipPriceConfig:
 
 
 def _resolve_secret_key() -> tuple[str, str]:
+    overlay_set = bool(os.environ.get("BACKEND_ENV_OVERLAY_FILE"))
     env_candidates = [
         ((os.environ.get("STRIPE_SECRET_KEY") or "").strip(), "STRIPE_SECRET_KEY"),
         ((os.environ.get("STRIPE_TEST_SECRET_KEY") or "").strip(), "STRIPE_TEST_SECRET_KEY"),
@@ -43,14 +44,22 @@ def _resolve_secret_key() -> tuple[str, str]:
     ]
     populated = [(value, name) for value, name in env_candidates if value]
     distinct_values = {value for value, _ in populated}
-    if len(distinct_values) > 1:
+    if len(distinct_values) > 1 and not overlay_set:
         raise StripeConfigurationError(
             f"Conflicting Stripe secrets set: {', '.join(name for _, name in populated)}"
         )
 
     if populated:
-        preferred = next((pair for pair in populated if pair[1] == "STRIPE_SECRET_KEY"), None)
-        return preferred or populated[0]
+        preferred_order = (
+            ["STRIPE_TEST_SECRET_KEY", "STRIPE_SECRET_KEY", "STRIPE_LIVE_SECRET_KEY"]
+            if overlay_set
+            else ["STRIPE_SECRET_KEY", "STRIPE_TEST_SECRET_KEY", "STRIPE_LIVE_SECRET_KEY"]
+        )
+        for preferred_name in preferred_order:
+            preferred = next((pair for pair in populated if pair[1] == preferred_name), None)
+            if preferred:
+                return preferred
+        return populated[0]
 
     if settings.stripe_secret_key:
         return settings.stripe_secret_key, "STRIPE_SECRET_KEY"
