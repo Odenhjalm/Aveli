@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md"
 BACKEND_DIR="${ROOT_DIR}/backend"
 LANDING_DIR="${ROOT_DIR}/frontend/landing"
-BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-/home/oden/Aveli/backend/.env}"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-"${BACKEND_DIR}/.env"}"
+BACKEND_ENV_OVERLAY_FILE="${BACKEND_ENV_OVERLAY_FILE:-""}"
 
 append_report() {
   if [[ -f "$REPORT_PATH" ]]; then
@@ -13,8 +14,11 @@ append_report() {
   fi
 }
 
-load_backend_env() {
+load_env_file() {
   local env_file="$1"
+  if [[ -z "$env_file" ]]; then
+    return 0
+  fi
   if [[ ! -f "$env_file" ]]; then
     echo "ERROR: backend env file missing at ${env_file}" >&2
     return 1
@@ -44,6 +48,19 @@ for raw_line in open(path, "r", encoding="utf-8"):
     print(f"export {key}={shlex.quote(value)}")
 PY
   )"
+}
+
+load_backend_env() {
+  local status=0
+  if ! load_env_file "$BACKEND_ENV_FILE"; then
+    status=1
+  fi
+  if [[ -n "$BACKEND_ENV_OVERLAY_FILE" ]]; then
+    if ! load_env_file "$BACKEND_ENV_OVERLAY_FILE"; then
+      status=1
+    fi
+  fi
+  return $status
 }
 
 normalize_env() {
@@ -84,40 +101,8 @@ run_step_nonblocking() {
 
 overall_status=0
 
-file_price_from_env=""
-if [[ -f "$BACKEND_ENV_FILE" ]]; then
-  file_price_from_env="$(python3 - <<'PY' "$BACKEND_ENV_FILE"
-import sys
-path = sys.argv[1]
-target = "STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY"
-for raw_line in open(path, "r", encoding="utf-8"):
-    line = raw_line.strip()
-    if not line or line.startswith("#"):
-        continue
-    if line.startswith("export "):
-        line = line[len("export "):].strip()
-    if "=" not in line:
-        continue
-    key, value = line.split("=", 1)
-    key = key.strip()
-    value = value.strip()
-    if key != target:
-        continue
-    if value and value[0] == value[-1] and value[0] in ('"', "'"):
-        value = value[1:-1]
-    print(value)
-    break
-PY
-)"
-fi
-
-export BACKEND_ENV_FILE
-if [[ -n "$file_price_from_env" ]]; then
-  export STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY="__env_precedence_sentinel__"
-fi
-load_backend_env "$BACKEND_ENV_FILE" || true
-if [[ -n "$file_price_from_env" && "${STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY:-}" != "$file_price_from_env" ]]; then
-  echo "ERROR: Env precedence check failed: STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY not overridden by ${BACKEND_ENV_FILE}" >&2
+export BACKEND_ENV_FILE BACKEND_ENV_OVERLAY_FILE
+if ! load_backend_env; then
   overall_status=1
 fi
 
@@ -126,6 +111,11 @@ ENV_MODE="$(normalize_env "$APP_ENV_VALUE")"
 
 printf "==> verify_all (APP_ENV=%s)\n" "$APP_ENV_VALUE"
 printf "==> Backend env file: %s\n" "$BACKEND_ENV_FILE"
+if [[ -n "$BACKEND_ENV_OVERLAY_FILE" ]]; then
+  printf "==> Backend env overlay: %s\n" "$BACKEND_ENV_OVERLAY_FILE"
+else
+  printf "==> Backend env overlay: none\n"
+fi
 
 # Guardrails
 if ! run_step "Env guard (backend/.env not tracked)" bash "$ROOT_DIR/ops/ci_guard_env.sh"; then
@@ -138,7 +128,7 @@ if ! run_step "Env validation" bash "$ROOT_DIR/ops/env_validate.sh"; then
 fi
 
 # Load backend env for subsequent steps
-if ! load_backend_env "$BACKEND_ENV_FILE"; then
+if ! load_backend_env; then
   overall_status=1
 fi
 
@@ -271,6 +261,7 @@ append_report <<TXT
 ## Verification Run (ops/verify_all.sh)
 - Mode: ${APP_ENV_VALUE}
 - Backend env file: ${BACKEND_ENV_FILE}
+- Backend env overlay: ${BACKEND_ENV_OVERLAY_FILE:-none}
 $(printf -- '- %s\n' "${results[@]}")
 TXT
 
