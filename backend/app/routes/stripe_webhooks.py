@@ -10,7 +10,6 @@ from starlette.concurrency import run_in_threadpool
 from .. import repositories
 from ..repositories import course_entitlements
 from ..repositories import courses as courses_repo
-from ..config import settings
 from ..services import checkout_service, subscription_service, course_bundles_service
 from .. import stripe_mode
 
@@ -88,7 +87,7 @@ async def stripe_payment_element_webhook(request: Request):
             data_object.get("id"),
         )
     elif event_type and event_type.startswith("account."):
-        await _handle_connect_event(event_type, event, data_object)
+        await _handle_connect_event(event_type, event, data_object, context)
     else:
         logger.info("Unhandled Stripe event %s", event_type)
 
@@ -183,6 +182,7 @@ async def _handle_connect_event(
     event_type: str,
     event_payload: dict[str, object],
     data_object: dict[str, object],
+    context: stripe_mode.StripeContext,
 ) -> None:
     account_id = (
         data_object.get("id")
@@ -198,11 +198,7 @@ async def _handle_connect_event(
         logger.info("No teacher row for account %s", account_id)
         return
 
-    if not settings.stripe_secret_key:
-        logger.warning("Stripe secret key missing; cannot sync account")
-        return
-
-    stripe.api_key = settings.stripe_secret_key
+    stripe.api_key = context.secret_key
     try:
         account = await run_in_threadpool(lambda: stripe.Account.retrieve(account_id))
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]

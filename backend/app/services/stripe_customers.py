@@ -5,7 +5,7 @@ from typing import Mapping, Any
 import stripe
 from starlette.concurrency import run_in_threadpool
 
-from ..config import settings
+from .. import stripe_mode
 from ..repositories import stripe_customers as stripe_customers_repo
 
 
@@ -18,10 +18,11 @@ async def ensure_customer_id(user: Mapping[str, Any]) -> str:
     if existing:
         return existing
 
-    api_key = settings.stripe_secret_key
-    if not api_key:
-        raise RuntimeError("Stripe is not configured")
-    stripe.api_key = api_key
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise RuntimeError(str(exc)) from exc
+    stripe.api_key = context.secret_key
 
     def _create_customer() -> dict[str, Any]:
         return stripe.Customer.create(

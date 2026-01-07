@@ -10,11 +10,27 @@ from app.repositories import auth as auth_repo
 from app import repositories
 
 
+def _set_stripe_test_env(
+    monkeypatch,
+    *,
+    secret: str = "sk_test_dummy",
+    webhook: str = "whsec_dummy",
+) -> None:
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_TEST_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", secret)
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", secret)
+    settings.stripe_secret_key = secret
+    settings.stripe_test_secret_key = secret
+    settings.stripe_webhook_secret = webhook
+    settings.stripe_test_webhook_secret = webhook
+
+
 @pytest.mark.anyio("asyncio")
 async def test_backend_api_smoke(async_client, monkeypatch):
     # Configure external integrations for deterministic behaviour
-    settings.stripe_secret_key = "sk_test_dummy"
-    settings.stripe_webhook_secret = "whsec_dummy"
+    _set_stripe_test_env(monkeypatch)
     settings.livekit_api_key = "lk_test_key"
     settings.livekit_api_secret = "lk_test_secret"
     settings.livekit_ws_url = "wss://livekit.example.com"
@@ -196,8 +212,7 @@ async def test_backend_api_smoke(async_client, monkeypatch):
 
 @pytest.mark.anyio("asyncio")
 async def test_course_purchase_enrolls_student(async_client, monkeypatch):
-    settings.stripe_secret_key = "sk_test_dummy"
-    settings.stripe_webhook_secret = "whsec_dummy"
+    _set_stripe_test_env(monkeypatch)
 
     async def _register_user(email: str, display_name: str, password: str):
         register_resp = await async_client.post(

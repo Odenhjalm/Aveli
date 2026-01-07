@@ -6,6 +6,7 @@ from starlette.concurrency import run_in_threadpool
 from typing import Any, Mapping
 
 from .. import repositories
+from .. import stripe_mode
 from ..config import settings
 from ..repositories import course_bundles as bundle_repo
 from ..repositories import courses as courses_repo
@@ -317,9 +318,11 @@ async def _ensure_stripe_assets(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _require_stripe() -> None:
-    if not settings.stripe_secret_key:
-        raise CourseBundleConfigError("Stripe-konfiguration saknas")
-    stripe.api_key = settings.stripe_secret_key
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise CourseBundleConfigError(str(exc)) from exc
+    stripe.api_key = context.secret_key
 
 
 def _default_checkout_urls() -> tuple[str, str]:

@@ -9,23 +9,26 @@ from fastapi import HTTPException, status
 from starlette.concurrency import run_in_threadpool
 
 from .. import repositories
+from .. import stripe_mode
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 
 def _ensure_connect_configuration() -> None:
-    if not settings.stripe_secret_key:
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Stripe secret key saknas",
-        )
+            detail=str(exc),
+        ) from exc
     if not settings.stripe_connect_client_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Stripe Connect Client ID saknas",
         )
-    stripe.api_key = settings.stripe_secret_key
+    stripe.api_key = context.secret_key
 
 
 def _coalesce_url(explicit: str | None, fallback: str | None) -> str:

@@ -7,6 +7,7 @@ import stripe
 from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
+from .. import stripe_mode
 from ..db import get_conn
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
@@ -31,10 +32,17 @@ class BillingPortalConfigError(BillingPortalError):
         super().__init__(detail, status_code=503)
 
 
+def _require_stripe_context() -> stripe_mode.StripeContext:
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise BillingPortalConfigError(str(exc)) from exc
+    stripe.api_key = context.secret_key
+    return context
+
+
 async def create_billing_portal_session(user: Mapping[str, Any]) -> str:
-    secret = settings.stripe_secret_key
-    if not secret:
-        raise BillingPortalConfigError("Stripe secret key is missing")
+    _require_stripe_context()
 
     user_id = str(user["id"])
     membership = await memberships_repo.get_membership(user_id)
@@ -43,7 +51,6 @@ async def create_billing_portal_session(user: Mapping[str, Any]) -> str:
 
     customer_id = await ensure_customer_id(user, membership=membership)
 
-    stripe.api_key = secret
     return_url = _build_return_url()
 
     def _create_session() -> dict[str, Any]:
@@ -81,9 +88,7 @@ async def ensure_customer_id(
     *,
     membership: Mapping[str, Any] | None = None,
 ) -> str:
-    secret = settings.stripe_secret_key
-    if not secret:
-        raise BillingPortalConfigError("Stripe secret key is missing")
+    _require_stripe_context()
 
     user_id = str(user["id"])
     membership_row = membership or await memberships_repo.get_membership(user_id)

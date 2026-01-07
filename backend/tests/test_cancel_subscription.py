@@ -8,8 +8,18 @@ from .utils import register_user
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+def _set_stripe_test_env(monkeypatch, *, secret: str = "sk_test_value") -> None:
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_TEST_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", secret)
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", secret)
+    settings.stripe_secret_key = secret
+    settings.stripe_test_secret_key = secret
+
+
 async def test_cancel_subscription_requires_membership(async_client, monkeypatch):
-    settings.stripe_secret_key = "sk_test_value"
+    _set_stripe_test_env(monkeypatch)
     headers, user_id, _ = await register_user(async_client)
 
     resp = await async_client.post(
@@ -23,7 +33,7 @@ async def test_cancel_subscription_requires_membership(async_client, monkeypatch
 
 
 async def test_cancel_subscription_marks_membership(async_client, monkeypatch):
-    settings.stripe_secret_key = "sk_test_value"
+    _set_stripe_test_env(monkeypatch)
     headers, user_id, _ = await register_user(async_client)
 
     await repositories.upsert_membership_record(

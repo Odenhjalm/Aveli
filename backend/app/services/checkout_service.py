@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import models, repositories, schemas
 from ..config import settings
+from .. import stripe_mode
 from ..repositories import courses as courses_repo
 from . import courses_service
 from . import stripe_customers as stripe_customers_service
@@ -28,13 +29,15 @@ def _default_checkout_urls() -> tuple[str, str]:
     return success_url, cancel_url
 
 
-def _require_stripe():
-    if not settings.stripe_secret_key:
+def _require_stripe() -> None:
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Stripe is not configured",
-        )
-    stripe.api_key = settings.stripe_secret_key
+            detail=str(exc),
+        ) from exc
+    stripe.api_key = context.secret_key
 
 
 
