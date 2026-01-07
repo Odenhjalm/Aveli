@@ -9,10 +9,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
-ENV_PATH = Path(os.environ.get("BACKEND_ENV_FILE", "/home/oden/Aveli/backend/.env"))
-
-if ENV_PATH.exists():
-    load_dotenv(ENV_PATH, override=False)
+DEFAULT_ENV_PATH = ROOT / "backend" / ".env"
+ENV_PATH = Path(os.getenv("BACKEND_ENV_FILE") or DEFAULT_ENV_PATH)
+OVERLAY_ENV_VALUE = os.getenv("BACKEND_ENV_OVERLAY_FILE", "")
+ENV_OVERLAY_PATH = Path(OVERLAY_ENV_VALUE) if OVERLAY_ENV_VALUE else None
 
 
 def _val(key: str) -> str:
@@ -32,8 +32,20 @@ def _exists(path: Path) -> bool:
 
 
 def main() -> int:
-    if not ENV_PATH.exists():
-        print(f"FAIL: backend env missing at {ENV_PATH}; cannot verify Stripe config.", file=sys.stderr)
+    env_errors: list[str] = []
+    if ENV_PATH.exists():
+        load_dotenv(ENV_PATH, override=False)
+    else:
+        env_errors.append(f"backend env missing at {ENV_PATH}")
+
+    if ENV_OVERLAY_PATH:
+        if ENV_OVERLAY_PATH.exists():
+            load_dotenv(ENV_OVERLAY_PATH, override=True)
+        else:
+            env_errors.append(f"overlay env missing at {ENV_OVERLAY_PATH}")
+
+    if env_errors:
+        print("FAIL: " + "; ".join(env_errors) + "; cannot verify Stripe config.", file=sys.stderr)
         return 1
 
     try:
@@ -53,32 +65,13 @@ def main() -> int:
     warnings: list[str] = []
 
     if mode == "test":
-        required = [
-            "STRIPE_TEST_PUBLISHABLE_KEY",
-            "STRIPE_TEST_WEBHOOK_SECRET",
-            "STRIPE_TEST_WEBHOOK_BILLING_SECRET",
-            "STRIPE_TEST_MEMBERSHIP_PRODUCT_ID",
-            "STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY",
-            "STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY",
-        ]
         active_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY") or _val("STRIPE_PUBLISHABLE_KEY")
-        active_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET")
-        active_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET")
+        active_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET") or _val("STRIPE_WEBHOOK_SECRET")
+        active_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET") or _val("STRIPE_BILLING_WEBHOOK_SECRET")
     else:
-        required = [
-            "STRIPE_PUBLISHABLE_KEY",
-            "STRIPE_WEBHOOK_SECRET",
-            "STRIPE_BILLING_WEBHOOK_SECRET",
-            "AVELI_PRICE_MONTHLY",
-            "AVELI_PRICE_YEARLY",
-        ]
         active_pub = _val("STRIPE_PUBLISHABLE_KEY")
         active_webhook = _val("STRIPE_WEBHOOK_SECRET")
         active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
-
-    missing = [key for key in required if not _val(key)]
-    if missing:
-        errors.append(f"Missing required Stripe keys: {', '.join(missing)}")
 
     if not active_pub:
         errors.append("Stripe publishable key is missing for the active mode")
@@ -88,7 +81,7 @@ def main() -> int:
         errors.append("Stripe publishable key must be pk_live_ when using sk_live_*")
 
     if not active_webhook or not active_billing:
-        errors.append("Stripe webhook secrets are missing for the active mode")
+        errors.append("Stripe webhook secrets are missing for the active mode (provide STRIPE_WEBHOOK_SECRET/STRIPE_BILLING_WEBHOOK_SECRET or test equivalents)")
     else:
         for label, secret_value in (
             ("payment", active_webhook),
@@ -96,6 +89,29 @@ def main() -> int:
         ):
             if not secret_value.startswith("whsec_"):
                 warnings.append(f"{label} webhook secret does not start with whsec_")
+
+    if mode == "test":
+        missing_test = [
+            key
+            for key in (
+                "STRIPE_TEST_MEMBERSHIP_PRODUCT_ID",
+                "STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY",
+                "STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY",
+            )
+            if not _val(key)
+        ]
+        if missing_test:
+            warnings.append(
+                "Test membership product/price ids are missing (STRIPE_TEST_MEMBERSHIP_PRODUCT_ID, STRIPE_TEST_MEMBERSHIP_PRICE_MONTHLY, STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY); required for full test checkout flows"
+            )
+    else:
+        missing_live = [
+            key
+            for key in ("AVELI_PRICE_MONTHLY", "AVELI_PRICE_YEARLY")
+            if not _val(key)
+        ]
+        if missing_live:
+            errors.append("Live membership price ids are missing: " + ", ".join(missing_live))
 
     stripe_routes = ROOT / "backend" / "app" / "routes"
     webhook_file = stripe_routes / "stripe_webhooks.py"
