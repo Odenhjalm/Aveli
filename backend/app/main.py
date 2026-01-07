@@ -1,9 +1,13 @@
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 
 try:  # pragma: no cover - optional dependency for metrics
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -16,6 +20,7 @@ except ImportError:  # pragma: no cover - graceful fallback in dev/test without 
 from .config import settings
 from .db import pool
 from .logging_utils import setup_logging
+from .middleware.request_context import RequestContextMiddleware
 from .services import livekit_events
 from .routes import (
     admin,
@@ -34,6 +39,7 @@ from .routes import (
     connect,
     courses,
     landing,
+    livekit_webhooks,
     course_bundles,
     media,
     profiles,
@@ -53,6 +59,21 @@ UPLOADS_ROOT = ASSETS_ROOT / "uploads"
 setup_logging()
 
 
+def setup_sentry() -> None:
+    if not settings.sentry_dsn:
+        return
+    environment = os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or os.environ.get("ENV")
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        integrations=[FastApiIntegration(), StarletteIntegration()],
+    )
+
+
+setup_sentry()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Path(settings.media_root).mkdir(parents=True, exist_ok=True)
@@ -70,6 +91,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
 
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
@@ -113,6 +135,7 @@ app.include_router(studio.router)
 app.include_router(studio_sessions.router)
 app.include_router(stripe_webhook.router)
 app.include_router(stripe_webhooks.router)
+app.include_router(livekit_webhooks.router)
 app.include_router(upload.router)
 app.include_router(upload.files_router)
 

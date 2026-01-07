@@ -40,14 +40,17 @@ async def get_webhook_job_counts() -> dict[str, int]:
 
 
 async def create_webhook_job(payload: dict[str, Any]) -> dict[str, Any]:
+    event_type = payload.get("event")
+    if not event_type:
+        raise ValueError("LiveKit webhook payload missing event")
     async with get_conn() as cur:
         await cur.execute(
             """
-            insert into app.livekit_webhook_jobs (payload)
-            values (%s)
+            insert into app.livekit_webhook_jobs (event, payload)
+            values (%s, %s)
             returning id, payload, attempt, next_run_at
             """,
-            (Jsonb(payload),),
+            (event_type, Jsonb(payload)),
         )
         row = await cur.fetchone()
     return dict(row)

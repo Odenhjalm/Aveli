@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+import sentry_sdk
+
 from .. import metrics, repositories
 from ..services import livekit as livekit_service
 
@@ -31,6 +33,27 @@ _poller_task: Optional[asyncio.Task[None]] = None
 _pending_jobs: int = 0
 _failed_jobs: int = 0
 _last_failure: Optional[dict[str, Any]] = None
+
+
+def _sentry_enabled() -> bool:
+    return sentry_sdk.Hub.current.client is not None
+
+
+def _capture_failure(event: "LiveKitWebhookEvent", exc: Exception) -> None:
+    if not _sentry_enabled():
+        return
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    event_type = payload.get("event")
+    event_id = payload.get("id")
+    with sentry_sdk.push_scope() as scope:
+        scope.set_tag("webhook.provider", "livekit")
+        scope.set_tag("webhook.status", "failed")
+        scope.set_tag("alert_kind", "webhook_failure")
+        if event_type:
+            scope.set_tag("webhook.event_type", str(event_type))
+        if event_id:
+            scope.set_tag("webhook.event_id", str(event_id))
+        sentry_sdk.capture_exception(exc)
 
 
 def get_metrics() -> dict[str, Any]:
@@ -176,6 +199,7 @@ async def _handle_retry(event: LiveKitWebhookEvent, exc: Exception) -> None:
             attempt=next_attempt,
             last_error=error_message,
         )
+        _capture_failure(event, exc)
         _pending_jobs = max(0, _pending_jobs - 1)
         metrics.livekit_webhook_pending_jobs.set(_pending_jobs)
         _failed_jobs += 1
@@ -233,7 +257,7 @@ async def process_livekit_event(payload: dict[str, Any]) -> None:
 
     now = datetime.now(timezone.utc)
 
-    if event == "room_started":
+    if event in {"room_started", "room_created"}:
         await _handle_room_started(payload, now)
     elif event == "room_finished":
         await _handle_room_finished(payload, now)
