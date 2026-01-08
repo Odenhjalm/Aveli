@@ -32,6 +32,8 @@ aveli_load_env() {
   fi
 
   user_app_env="${APP_ENV:-}"
+  user_environment="${ENVIRONMENT:-}"
+  user_env="${ENV:-}"
 
   set -a
   echo "==> Backend env file: ${BACKEND_ENV_FILE}"
@@ -39,7 +41,7 @@ aveli_load_env() {
   source "$BACKEND_ENV_FILE"
   set +a
 
-  app_env_raw="${APP_ENV:-${ENVIRONMENT:-${ENV:-}}}"
+  app_env_raw="${user_app_env:-${user_environment:-${user_env:-${APP_ENV:-${ENVIRONMENT:-${ENV:-}}}}}}"
   app_env_lower="${app_env_raw,,}"
   is_prod=false
   if [[ "$app_env_lower" == "prod" || "$app_env_lower" == "production" || "$app_env_lower" == "live" ]]; then
@@ -168,6 +170,12 @@ aveli_load_env() {
   # Preserve caller-provided APP_ENV if the baseline file sets its own default.
   if [[ -n "${user_app_env:-}" ]]; then
     export APP_ENV="$user_app_env"
+  fi
+  if [[ -n "${user_environment:-}" ]]; then
+    export ENVIRONMENT="$user_environment"
+  fi
+  if [[ -n "${user_env:-}" ]]; then
+    export ENV="$user_env"
   fi
 
   echo "==> Backend env overlay: ${overlay_note}"
