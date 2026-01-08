@@ -13,6 +13,10 @@ if [[ -n "${CI:-}" ]]; then
   fi
 fi
 
+USER_APP_ENV="${APP_ENV:-}"
+USER_ENVIRONMENT="${ENVIRONMENT:-}"
+USER_ENV="${ENV:-}"
+
 load_env_file() {
   local env_file="$1"
   if [[ -z "$env_file" ]]; then
@@ -53,6 +57,16 @@ if ! load_env_file "$BACKEND_ENV_FILE"; then
 fi
 if ! load_env_file "$BACKEND_ENV_OVERLAY_FILE"; then
   exit 1
+fi
+
+if [[ -n "$USER_APP_ENV" ]]; then
+  export APP_ENV="$USER_APP_ENV"
+fi
+if [[ -n "$USER_ENVIRONMENT" ]]; then
+  export ENVIRONMENT="$USER_ENVIRONMENT"
+fi
+if [[ -n "$USER_ENV" ]]; then
+  export ENV="$USER_ENV"
 fi
 
 echo "[env] loaded BACKEND_ENV_FILE=$BACKEND_ENV_FILE"
@@ -158,7 +172,7 @@ normalize_stripe_mode() {
   esac
 }
 
-ENV_NAME="${ENVIRONMENT:-${APP_ENV:-${ENV:-}}}"
+ENV_NAME="${APP_ENV:-${ENVIRONMENT:-${ENV:-}}}"
 ENV_LOWER="$(lower "$ENV_NAME")"
 ENV_MODE="unknown"
 if [[ -z "$ENV_LOWER" ]]; then
@@ -178,114 +192,46 @@ if [[ "$ENV_MODE" == "nonprod" ]]; then
   JWT_REQUIRED="optional"
 fi
 
-stripe_secret_values=()
-test_candidates=()
-live_candidates=()
-for key in STRIPE_SECRET_KEY STRIPE_TEST_SECRET_KEY STRIPE_LIVE_SECRET_KEY; do
-  if has_value "$key"; then
-    value="${!key}"
-    stripe_secret_values+=("$value")
-    if [[ "$value" == sk_test_* ]]; then
-      test_candidates+=("$value:$key")
-    elif [[ "$value" == sk_live_* ]]; then
-      live_candidates+=("$value:$key")
-    else
-      critical "$key must start with sk_test_ or sk_live_"
-    fi
-  fi
-done
-
-if [[ "${#test_candidates[@]}" -gt 1 ]]; then
-  unique_count="$(printf "%s\n" "${test_candidates[@]}" | cut -d':' -f1 | sort -u | wc -l | tr -d ' ')"
-  if [[ "$unique_count" -gt 1 ]]; then
-    sources="$(printf "%s\n" "${test_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
-    critical "Conflicting Stripe test secrets set across: ${sources}"
-  fi
+stripe_mode="live"
+if [[ "$OVERLAY_SET" == "true" ]]; then
+  stripe_mode="test"
 fi
 
-if [[ "${#live_candidates[@]}" -gt 1 ]]; then
-  unique_count="$(printf "%s\n" "${live_candidates[@]}" | cut -d':' -f1 | sort -u | wc -l | tr -d ' ')"
-  if [[ "$unique_count" -gt 1 ]]; then
-    sources="$(printf "%s\n" "${live_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
-    critical "Conflicting Stripe live secrets set across: ${sources}"
-  fi
-fi
-
-stripe_mode=""
-explicit_mode="false"
-explicit_raw="${STRIPE_KEYSET:-${APP_ENV_MODE:-}}"
-if [[ -n "$explicit_raw" ]]; then
-  stripe_mode="$(normalize_stripe_mode "$explicit_raw")"
-  if [[ -z "$stripe_mode" ]]; then
-    critical "STRIPE_KEYSET/APP_ENV_MODE must be 'test' or 'live'"
-  else
-    explicit_mode="true"
-    if [[ "$ENV_MODE" == "prod" && "$stripe_mode" == "test" ]]; then
-      critical "APP_ENV indicates production but Stripe mode is test; set STRIPE_KEYSET/APP_ENV_MODE=live"
-    fi
-  fi
-fi
-
-if [[ -z "$stripe_mode" ]]; then
-  if [[ "$ENV_MODE" == "prod" ]]; then
-    stripe_mode="live"
-  elif [[ "$OVERLAY_SET" == "true" ]]; then
-    stripe_mode="test"
-  else
-    stripe_mode="live"
-  fi
-fi
-
-if [[ "$explicit_mode" != "true" && "$ENV_MODE" != "prod" && "$OVERLAY_SET" != "true" ]]; then
-  if [[ "${#test_candidates[@]}" -gt 0 && "${#live_candidates[@]}" -eq 0 ]]; then
-    stripe_mode="test"
-  elif [[ "${#live_candidates[@]}" -gt 0 && "${#test_candidates[@]}" -eq 0 ]]; then
-    stripe_mode="live"
-  fi
+if [[ "$ENV_MODE" == "prod" && "$stripe_mode" == "test" ]]; then
+  critical "APP_ENV indicates production but Stripe mode is test; remove BACKEND_ENV_OVERLAY_FILE"
 fi
 
 stripe_active_secret=""
 stripe_active_source=""
+
 if [[ "$stripe_mode" == "test" ]]; then
-  for pref in STRIPE_TEST_SECRET_KEY STRIPE_SECRET_KEY; do
-    match="$(printf "%s\n" "${test_candidates[@]}" | awk -F: -v p="$pref" '$2==p {print $0; exit}')"
-    if [[ -n "$match" ]]; then
-      stripe_active_secret="${match%%:*}"
-      stripe_active_source="${match##*:}"
-      break
-    fi
-  done
-  if [[ -z "$stripe_active_secret" ]]; then
-    if [[ "${#live_candidates[@]}" -gt 0 ]]; then
+  if has_value STRIPE_TEST_SECRET_KEY; then
+    stripe_active_secret="${STRIPE_TEST_SECRET_KEY}"
+    stripe_active_source="STRIPE_TEST_SECRET_KEY"
+  elif has_value STRIPE_SECRET_KEY; then
+    stripe_active_secret="${STRIPE_SECRET_KEY}"
+    stripe_active_source="STRIPE_SECRET_KEY"
+  else
+    if has_value STRIPE_LIVE_SECRET_KEY; then
       critical "Stripe mode is test but only live Stripe secrets are set"
     else
       critical "Stripe secret key missing for test mode (set STRIPE_TEST_SECRET_KEY)"
     fi
   fi
 else
-  for pref in STRIPE_SECRET_KEY STRIPE_LIVE_SECRET_KEY; do
-    match="$(printf "%s\n" "${live_candidates[@]}" | awk -F: -v p="$pref" '$2==p {print $0; exit}')"
-    if [[ -n "$match" ]]; then
-      stripe_active_secret="${match%%:*}"
-      stripe_active_source="${match##*:}"
-      break
-    fi
-  done
-  if [[ -z "$stripe_active_secret" ]]; then
-    if [[ "${#test_candidates[@]}" -gt 0 ]]; then
+  if has_value STRIPE_SECRET_KEY; then
+    stripe_active_secret="${STRIPE_SECRET_KEY}"
+    stripe_active_source="STRIPE_SECRET_KEY"
+  elif has_value STRIPE_LIVE_SECRET_KEY; then
+    stripe_active_secret="${STRIPE_LIVE_SECRET_KEY}"
+    stripe_active_source="STRIPE_LIVE_SECRET_KEY"
+  else
+    if has_value STRIPE_TEST_SECRET_KEY; then
       critical "Stripe mode is live but only test Stripe secrets are set"
     else
       critical "Stripe secret key missing for live mode (set STRIPE_SECRET_KEY)"
     fi
   fi
-fi
-
-if [[ "$stripe_mode" == "test" && "${#live_candidates[@]}" -gt 0 ]]; then
-  sources="$(printf "%s\n" "${live_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
-  warn_soft "Live Stripe secret present (${sources}) while Stripe mode is test; test keys will be used"
-elif [[ "$stripe_mode" == "live" && "${#test_candidates[@]}" -gt 0 ]]; then
-  sources="$(printf "%s\n" "${test_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
-  warn "Test Stripe secret present (${sources}) while Stripe mode is live; live keys will be used"
 fi
 
 if [[ -n "$stripe_active_secret" ]]; then
@@ -298,21 +244,26 @@ fi
 
 ACTIVE_PUBLISHABLE=""
 ACTIVE_PUBLISHABLE_SOURCE=""
-if [[ "$stripe_mode" == "test" && -n "${STRIPE_TEST_PUBLISHABLE_KEY:-}" ]]; then
-  ACTIVE_PUBLISHABLE="${STRIPE_TEST_PUBLISHABLE_KEY}"
-  ACTIVE_PUBLISHABLE_SOURCE="STRIPE_TEST_PUBLISHABLE_KEY"
-elif has_value STRIPE_PUBLISHABLE_KEY; then
-  ACTIVE_PUBLISHABLE="${STRIPE_PUBLISHABLE_KEY}"
-  ACTIVE_PUBLISHABLE_SOURCE="STRIPE_PUBLISHABLE_KEY"
+if [[ "$stripe_mode" == "test" ]]; then
+  if has_value STRIPE_TEST_PUBLISHABLE_KEY; then
+    ACTIVE_PUBLISHABLE="${STRIPE_TEST_PUBLISHABLE_KEY}"
+    ACTIVE_PUBLISHABLE_SOURCE="STRIPE_TEST_PUBLISHABLE_KEY"
+  elif has_value STRIPE_PUBLISHABLE_KEY; then
+    ACTIVE_PUBLISHABLE="${STRIPE_PUBLISHABLE_KEY}"
+    ACTIVE_PUBLISHABLE_SOURCE="STRIPE_PUBLISHABLE_KEY"
+  fi
+else
+  if has_value STRIPE_PUBLISHABLE_KEY; then
+    ACTIVE_PUBLISHABLE="${STRIPE_PUBLISHABLE_KEY}"
+    ACTIVE_PUBLISHABLE_SOURCE="STRIPE_PUBLISHABLE_KEY"
+  fi
 fi
 
 if [[ -z "$ACTIVE_PUBLISHABLE" ]]; then
   if [[ "$stripe_mode" == "test" ]]; then
-    critical "Stripe publishable key missing for test mode (set STRIPE_PUBLISHABLE_KEY or STRIPE_TEST_PUBLISHABLE_KEY)"
-  elif [[ "$stripe_mode" == "live" ]]; then
-    critical "Stripe publishable key missing for live mode (set STRIPE_PUBLISHABLE_KEY)"
+    critical "Stripe publishable key missing for test mode (set STRIPE_TEST_PUBLISHABLE_KEY)"
   else
-    critical "Stripe publishable key missing"
+    critical "Stripe publishable key missing for live mode (set STRIPE_PUBLISHABLE_KEY)"
   fi
 elif [[ "$stripe_mode" == "test" && "$ACTIVE_PUBLISHABLE" != pk_test_* ]]; then
   critical "Stripe publishable key must be pk_test_ when using sk_test_*"
@@ -320,33 +271,47 @@ elif [[ "$stripe_mode" == "live" && "$ACTIVE_PUBLISHABLE" != pk_live_* ]]; then
   critical "Stripe publishable key must be pk_live_ when using sk_live_*"
 fi
 
-ACTIVE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"; ACTIVE_WEBHOOK_SOURCE=""
-if [[ "$stripe_mode" == "test" && -n "${STRIPE_TEST_WEBHOOK_SECRET:-}" ]]; then
-  ACTIVE_WEBHOOK_SECRET="${STRIPE_TEST_WEBHOOK_SECRET}"
-  ACTIVE_WEBHOOK_SOURCE="STRIPE_TEST_WEBHOOK_SECRET"
-elif [[ -n "$ACTIVE_WEBHOOK_SECRET" ]]; then
-  ACTIVE_WEBHOOK_SOURCE="STRIPE_WEBHOOK_SECRET"
-fi
+ACTIVE_WEBHOOK_SECRET=""
+ACTIVE_WEBHOOK_SOURCE=""
+ACTIVE_BILLING_WEBHOOK_SECRET=""
+ACTIVE_BILLING_WEBHOOK_SOURCE=""
 
-ACTIVE_BILLING_WEBHOOK_SECRET="${STRIPE_BILLING_WEBHOOK_SECRET:-}"; ACTIVE_BILLING_WEBHOOK_SOURCE=""
-if [[ "$stripe_mode" == "test" && -n "${STRIPE_TEST_WEBHOOK_BILLING_SECRET:-}" ]]; then
-  ACTIVE_BILLING_WEBHOOK_SECRET="${STRIPE_TEST_WEBHOOK_BILLING_SECRET}"
-  ACTIVE_BILLING_WEBHOOK_SOURCE="STRIPE_TEST_WEBHOOK_BILLING_SECRET"
-elif [[ -n "$ACTIVE_BILLING_WEBHOOK_SECRET" ]]; then
-  ACTIVE_BILLING_WEBHOOK_SOURCE="STRIPE_BILLING_WEBHOOK_SECRET"
+if [[ "$stripe_mode" == "test" ]]; then
+  if has_value STRIPE_TEST_WEBHOOK_SECRET; then
+    ACTIVE_WEBHOOK_SECRET="${STRIPE_TEST_WEBHOOK_SECRET}"
+    ACTIVE_WEBHOOK_SOURCE="STRIPE_TEST_WEBHOOK_SECRET"
+  elif has_value STRIPE_WEBHOOK_SECRET; then
+    ACTIVE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET}"
+    ACTIVE_WEBHOOK_SOURCE="STRIPE_WEBHOOK_SECRET"
+  fi
+  if has_value STRIPE_TEST_WEBHOOK_BILLING_SECRET; then
+    ACTIVE_BILLING_WEBHOOK_SECRET="${STRIPE_TEST_WEBHOOK_BILLING_SECRET}"
+    ACTIVE_BILLING_WEBHOOK_SOURCE="STRIPE_TEST_WEBHOOK_BILLING_SECRET"
+  elif has_value STRIPE_BILLING_WEBHOOK_SECRET; then
+    ACTIVE_BILLING_WEBHOOK_SECRET="${STRIPE_BILLING_WEBHOOK_SECRET}"
+    ACTIVE_BILLING_WEBHOOK_SOURCE="STRIPE_BILLING_WEBHOOK_SECRET"
+  fi
+else
+  if has_value STRIPE_WEBHOOK_SECRET; then
+    ACTIVE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET}"
+    ACTIVE_WEBHOOK_SOURCE="STRIPE_WEBHOOK_SECRET"
+  fi
+  if has_value STRIPE_BILLING_WEBHOOK_SECRET; then
+    ACTIVE_BILLING_WEBHOOK_SECRET="${STRIPE_BILLING_WEBHOOK_SECRET}"
+    ACTIVE_BILLING_WEBHOOK_SOURCE="STRIPE_BILLING_WEBHOOK_SECRET"
+  fi
 fi
 
 if [[ -z "$ACTIVE_WEBHOOK_SECRET" || -z "$ACTIVE_BILLING_WEBHOOK_SECRET" ]]; then
   critical "Missing Stripe webhook signing secret for ${stripe_mode:-unknown} mode (set STRIPE_WEBHOOK_SECRET/STRIPE_BILLING_WEBHOOK_SECRET or test equivalents)"
 else
   if [[ "$ACTIVE_WEBHOOK_SECRET" != whsec_* ]]; then
-    warn "Stripe webhook secret does not match whsec_ pattern"
+    critical "Stripe webhook secret does not match whsec_ pattern"
   fi
   if [[ "$ACTIVE_BILLING_WEBHOOK_SECRET" != whsec_* ]]; then
-    warn "Stripe billing webhook secret does not match whsec_ pattern"
+    critical "Stripe billing webhook secret does not match whsec_ pattern"
   fi
 fi
-
 note "==> Backend (required)"
 report_var APP_ENV required
 report_var SUPABASE_URL required

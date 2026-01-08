@@ -66,36 +66,32 @@ def _is_prod_env() -> bool:
     return raw.strip().lower() in ("prod", "production", "live")
 
 def _infer_mode_from_keys() -> StripeMode | None:
-    env_candidates = [
+    canonical_candidates = [
         ((os.environ.get("STRIPE_SECRET_KEY") or "").strip(), "STRIPE_SECRET_KEY"),
-        ((os.environ.get("STRIPE_TEST_SECRET_KEY") or "").strip(), "STRIPE_TEST_SECRET_KEY"),
-        ((os.environ.get("STRIPE_LIVE_SECRET_KEY") or "").strip(), "STRIPE_LIVE_SECRET_KEY"),
+        ((settings.stripe_secret_key or "").strip(), "settings.stripe_secret_key"),
     ]
-    if any(value for value, _ in env_candidates):
-        candidates = env_candidates
-    else:
-        candidates = [
-            ((settings.stripe_secret_key or "").strip(), "settings.stripe_secret_key"),
-            ((settings.stripe_test_secret_key or "").strip(), "settings.stripe_test_secret_key"),
-            ((settings.stripe_live_secret_key or "").strip(), "settings.stripe_live_secret_key"),
-        ]
-    has_test = False
-    has_live = False
-    for value, _ in candidates:
+    for value, _ in canonical_candidates:
         if not value:
             continue
         if value.startswith("sk_test_"):
-            has_test = True
-        elif value.startswith("sk_live_"):
-            has_live = True
-        if has_test and has_live:
-            return None
-    if has_test:
+            return StripeMode.test
+        if value.startswith("sk_live_"):
+            return StripeMode.live
+        return None
+
+    legacy_candidates = [
+        ((os.environ.get("STRIPE_TEST_SECRET_KEY") or "").strip(), "STRIPE_TEST_SECRET_KEY"),
+        ((settings.stripe_test_secret_key or "").strip(), "settings.stripe_test_secret_key"),
+        ((os.environ.get("STRIPE_LIVE_SECRET_KEY") or "").strip(), "STRIPE_LIVE_SECRET_KEY"),
+        ((settings.stripe_live_secret_key or "").strip(), "settings.stripe_live_secret_key"),
+    ]
+    has_test = any(value.startswith("sk_test_") for value, _ in legacy_candidates if value)
+    has_live = any(value.startswith("sk_live_") for value, _ in legacy_candidates if value)
+    if has_test and not has_live:
         return StripeMode.test
-    if has_live:
+    if has_live and not has_test:
         return StripeMode.live
     return None
-
 
 def _resolve_requested_mode() -> StripeMode:
     explicit_mode = _explicit_mode_from_env()
@@ -116,73 +112,62 @@ def _resolve_requested_mode() -> StripeMode:
 
 
 def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
-    env_candidates = [
+    canonical_candidates = [
         ((os.environ.get("STRIPE_SECRET_KEY") or "").strip(), "STRIPE_SECRET_KEY"),
-        ((os.environ.get("STRIPE_TEST_SECRET_KEY") or "").strip(), "STRIPE_TEST_SECRET_KEY"),
-        ((os.environ.get("STRIPE_LIVE_SECRET_KEY") or "").strip(), "STRIPE_LIVE_SECRET_KEY"),
         ((settings.stripe_secret_key or "").strip(), "settings.stripe_secret_key"),
-        ((settings.stripe_test_secret_key or "").strip(), "settings.stripe_test_secret_key"),
-        ((settings.stripe_live_secret_key or "").strip(), "settings.stripe_live_secret_key"),
     ]
+    canonical_values = {value for value, _ in canonical_candidates if value}
+    if len(canonical_values) > 1:
+        sources = ", ".join(name for value, name in canonical_candidates if value)
+        raise StripeConfigurationError(f"Conflicting Stripe secrets set across: {sources}")
 
-    test_candidates: list[tuple[str, str]] = []
-    live_candidates: list[tuple[str, str]] = []
-
-    for value, name in env_candidates:
-        if not value:
-            continue
-        if value.startswith("sk_test_"):
-            test_candidates.append((value, name))
-        elif value.startswith("sk_live_"):
-            live_candidates.append((value, name))
-        else:
+    canonical_match = next((pair for pair in canonical_candidates if pair[0]), None)
+    if canonical_match:
+        value, name = canonical_match
+        if not (value.startswith("sk_test_") or value.startswith("sk_live_")):
             raise StripeConfigurationError(f"{name} must start with sk_test_ or sk_live_")
-
-    test_values = {value for value, _ in test_candidates}
-    live_values = {value for value, _ in live_candidates}
-    if len(test_values) > 1:
-        sources = ", ".join(name for _, name in test_candidates)
-        raise StripeConfigurationError(f"Conflicting Stripe test secrets set across: {sources}")
-    if len(live_values) > 1:
-        sources = ", ".join(name for _, name in live_candidates)
-        raise StripeConfigurationError(f"Conflicting Stripe live secrets set across: {sources}")
-
-    def pick(
-        preferred_order: tuple[str, ...], candidates: list[tuple[str, str]]
-    ) -> tuple[str, str] | None:
-        for name in preferred_order:
-            match = next((pair for pair in candidates if pair[1] == name), None)
-            if match:
-                return match
-        return candidates[0] if candidates else None
+        if env_mode is StripeMode.test and not value.startswith("sk_test_"):
+            raise StripeConfigurationError("Stripe mode is test but only live Stripe secrets are set.")
+        if env_mode is StripeMode.live and not value.startswith("sk_live_"):
+            raise StripeConfigurationError("Stripe mode is live but only test Stripe secrets are set.")
+        return value, name
 
     if env_mode is StripeMode.test:
-        preferred_test = (
-            "STRIPE_TEST_SECRET_KEY",
-            "settings.stripe_test_secret_key",
-            "STRIPE_SECRET_KEY",
-            "settings.stripe_secret_key",
-        )
-        match = pick(preferred_test, test_candidates)
-        if match:
-            return match
-        if live_candidates:
+        legacy_candidates = [
+            ((os.environ.get("STRIPE_TEST_SECRET_KEY") or "").strip(), "STRIPE_TEST_SECRET_KEY"),
+            ((settings.stripe_test_secret_key or "").strip(), "settings.stripe_test_secret_key"),
+        ]
+        for value, name in legacy_candidates:
+            if not value:
+                continue
+            if not value.startswith("sk_test_"):
+                raise StripeConfigurationError(f"{name} must start with sk_test_ or sk_live_")
+            return value, name
+        live_legacy = [
+            (os.environ.get("STRIPE_LIVE_SECRET_KEY") or "").strip(),
+            (settings.stripe_live_secret_key or "").strip(),
+        ]
+        if any(live_legacy):
             raise StripeConfigurationError("Stripe mode is test but only live Stripe secrets are set.")
-    else:
-        preferred_live = (
-            "STRIPE_SECRET_KEY",
-            "settings.stripe_secret_key",
-            "STRIPE_LIVE_SECRET_KEY",
-            "settings.stripe_live_secret_key",
-        )
-        match = pick(preferred_live, live_candidates)
-        if match:
-            return match
-        if test_candidates:
-            raise StripeConfigurationError("Stripe mode is live but only test Stripe secrets are set.")
+        raise StripeConfigurationError("Stripe secret key missing for test mode (set STRIPE_TEST_SECRET_KEY)")
 
-    raise StripeConfigurationError("Stripe secret key is missing (set STRIPE_SECRET_KEY)")
-
+    legacy_candidates = [
+        ((os.environ.get("STRIPE_LIVE_SECRET_KEY") or "").strip(), "STRIPE_LIVE_SECRET_KEY"),
+        ((settings.stripe_live_secret_key or "").strip(), "settings.stripe_live_secret_key"),
+    ]
+    for value, name in legacy_candidates:
+        if not value:
+            continue
+        if not value.startswith("sk_live_"):
+            raise StripeConfigurationError(f"{name} must start with sk_test_ or sk_live_")
+        return value, name
+    test_legacy = [
+        (os.environ.get("STRIPE_TEST_SECRET_KEY") or "").strip(),
+        (settings.stripe_test_secret_key or "").strip(),
+    ]
+    if any(test_legacy):
+        raise StripeConfigurationError("Stripe mode is live but only test Stripe secrets are set.")
+    raise StripeConfigurationError("Stripe secret key missing for live mode (set STRIPE_SECRET_KEY)")
 
 def resolve_stripe_context() -> StripeContext:
     env_mode = _resolve_requested_mode()
@@ -249,15 +234,26 @@ def resolve_membership_price(
 def resolve_webhook_secret(kind: str, context: StripeContext) -> tuple[str, str]:
     if kind == "billing":
         if context.mode is StripeMode.test:
-            secret = settings.stripe_test_webhook_billing_secret
-            env_var = "STRIPE_TEST_WEBHOOK_BILLING_SECRET"
+            if settings.stripe_test_webhook_billing_secret:
+                secret = settings.stripe_test_webhook_billing_secret
+                env_var = "STRIPE_TEST_WEBHOOK_BILLING_SECRET"
+            elif settings.stripe_billing_webhook_secret:
+                secret = settings.stripe_billing_webhook_secret
+                env_var = "STRIPE_BILLING_WEBHOOK_SECRET"
+            else:
+                secret = settings.stripe_webhook_secret
+                env_var = "STRIPE_WEBHOOK_SECRET"
         else:
             secret = settings.stripe_billing_webhook_secret or settings.stripe_webhook_secret
             env_var = "STRIPE_BILLING_WEBHOOK_SECRET" if settings.stripe_billing_webhook_secret else "STRIPE_WEBHOOK_SECRET"
     else:
         if context.mode is StripeMode.test:
-            secret = settings.stripe_test_webhook_secret
-            env_var = "STRIPE_TEST_WEBHOOK_SECRET"
+            if settings.stripe_test_webhook_secret:
+                secret = settings.stripe_test_webhook_secret
+                env_var = "STRIPE_TEST_WEBHOOK_SECRET"
+            else:
+                secret = settings.stripe_webhook_secret
+                env_var = "STRIPE_WEBHOOK_SECRET"
         else:
             secret = settings.stripe_webhook_secret
             env_var = "STRIPE_WEBHOOK_SECRET"
@@ -265,7 +261,6 @@ def resolve_webhook_secret(kind: str, context: StripeContext) -> tuple[str, str]
     if not secret:
         raise StripeConfigurationError(f"{env_var} missing for Stripe {context.mode.value} mode")
     return secret, env_var
-
 
 async def ensure_price_accessible(
     price_config: MembershipPriceConfig, context: StripeContext
