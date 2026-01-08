@@ -19,12 +19,11 @@ def _set_stripe_test_env(
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_TEST_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
-    monkeypatch.setenv("STRIPE_SECRET_KEY", secret)
-    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", secret)
     settings.stripe_secret_key = secret
-    settings.stripe_test_secret_key = secret
+    settings.stripe_test_secret_key = None
+    settings.stripe_live_secret_key = None
     settings.stripe_webhook_secret = webhook
-    settings.stripe_test_webhook_secret = webhook
+    settings.stripe_test_webhook_secret = None
 
 
 @pytest.mark.anyio("asyncio")

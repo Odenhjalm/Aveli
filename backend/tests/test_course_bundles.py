@@ -16,10 +16,9 @@ def _set_stripe_test_env(monkeypatch, *, secret: str = "sk_test_value") -> None:
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_TEST_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
-    monkeypatch.setenv("STRIPE_SECRET_KEY", secret)
-    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", secret)
     settings.stripe_secret_key = secret
-    settings.stripe_test_secret_key = secret
+    settings.stripe_test_secret_key = None
+    settings.stripe_live_secret_key = None
 
 
 async def _create_course(slug: str, price_amount_cents: int, *, created_by: str | None) -> str:
