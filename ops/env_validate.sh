@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-"${ROOT_DIR}/backend/.env"}"
 BACKEND_ENV_OVERLAY_FILE="${BACKEND_ENV_OVERLAY_FILE:-""}"
+USER_APP_ENV="${APP_ENV:-}"
+USER_ENVIRONMENT="${ENVIRONMENT:-}"
+USER_ENV="${ENV:-}"
 
 CI_MODE=false
 if [[ -n "${CI:-}" ]]; then
@@ -53,6 +56,16 @@ if ! load_env_file "$BACKEND_ENV_FILE"; then
 fi
 if ! load_env_file "$BACKEND_ENV_OVERLAY_FILE"; then
   exit 1
+fi
+
+if [[ -n "$USER_APP_ENV" ]]; then
+  export APP_ENV="$USER_APP_ENV"
+fi
+if [[ -n "$USER_ENVIRONMENT" ]]; then
+  export ENVIRONMENT="$USER_ENVIRONMENT"
+fi
+if [[ -n "$USER_ENV" ]]; then
+  export ENV="$USER_ENV"
 fi
 
 echo "[env] loaded BACKEND_ENV_FILE=$BACKEND_ENV_FILE"
