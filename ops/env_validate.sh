@@ -178,38 +178,21 @@ if [[ "$ENV_MODE" == "nonprod" ]]; then
   JWT_REQUIRED="optional"
 fi
 
-stripe_secret_values=()
 test_candidates=()
 live_candidates=()
+invalid_candidates=()
 for key in STRIPE_SECRET_KEY STRIPE_TEST_SECRET_KEY STRIPE_LIVE_SECRET_KEY; do
   if has_value "$key"; then
     value="${!key}"
-    stripe_secret_values+=("$value")
     if [[ "$value" == sk_test_* ]]; then
       test_candidates+=("$value:$key")
     elif [[ "$value" == sk_live_* ]]; then
       live_candidates+=("$value:$key")
     else
-      critical "$key must start with sk_test_ or sk_live_"
+      invalid_candidates+=("$value:$key")
     fi
   fi
 done
-
-if [[ "${#test_candidates[@]}" -gt 1 ]]; then
-  unique_count="$(printf "%s\n" "${test_candidates[@]}" | cut -d':' -f1 | sort -u | wc -l | tr -d ' ')"
-  if [[ "$unique_count" -gt 1 ]]; then
-    sources="$(printf "%s\n" "${test_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
-    critical "Conflicting Stripe test secrets set across: ${sources}"
-  fi
-fi
-
-if [[ "${#live_candidates[@]}" -gt 1 ]]; then
-  unique_count="$(printf "%s\n" "${live_candidates[@]}" | cut -d':' -f1 | sort -u | wc -l | tr -d ' ')"
-  if [[ "$unique_count" -gt 1 ]]; then
-    sources="$(printf "%s\n" "${live_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
-    critical "Conflicting Stripe live secrets set across: ${sources}"
-  fi
-fi
 
 stripe_mode=""
 explicit_mode="false"
@@ -244,6 +227,30 @@ if [[ "$explicit_mode" != "true" && "$ENV_MODE" != "prod" && "$OVERLAY_SET" != "
   fi
 fi
 
+if [[ "${#test_candidates[@]}" -gt 1 ]]; then
+  unique_count="$(printf "%s\n" "${test_candidates[@]}" | cut -d':' -f1 | sort -u | wc -l | tr -d ' ')"
+  if [[ "$unique_count" -gt 1 ]]; then
+    sources="$(printf "%s\n" "${test_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
+    if [[ "$OVERLAY_SET" == "true" ]]; then
+      warn_soft "Conflicting Stripe test secrets set across: ${sources}"
+    else
+      critical "Conflicting Stripe test secrets set across: ${sources}"
+    fi
+  fi
+fi
+
+if [[ "${#live_candidates[@]}" -gt 1 ]]; then
+  unique_count="$(printf "%s\n" "${live_candidates[@]}" | cut -d':' -f1 | sort -u | wc -l | tr -d ' ')"
+  if [[ "$unique_count" -gt 1 ]]; then
+    sources="$(printf "%s\n" "${live_candidates[@]}" | cut -d':' -f2 | paste -sd ',')"
+    if [[ "$OVERLAY_SET" == "true" ]]; then
+      warn_soft "Conflicting Stripe live secrets set across: ${sources}"
+    else
+      critical "Conflicting Stripe live secrets set across: ${sources}"
+    fi
+  fi
+fi
+
 stripe_active_secret=""
 stripe_active_source=""
 if [[ "$stripe_mode" == "test" ]]; then
@@ -258,6 +265,9 @@ if [[ "$stripe_mode" == "test" ]]; then
   if [[ -z "$stripe_active_secret" ]]; then
     if [[ "${#live_candidates[@]}" -gt 0 ]]; then
       critical "Stripe mode is test but only live Stripe secrets are set"
+    elif [[ "${#invalid_candidates[@]}" -gt 0 ]]; then
+      bad="${invalid_candidates[0]}"
+      critical "${bad##*:} must start with sk_test_ or sk_live_"
     else
       critical "Stripe secret key missing for test mode (set STRIPE_TEST_SECRET_KEY)"
     fi
@@ -274,6 +284,9 @@ else
   if [[ -z "$stripe_active_secret" ]]; then
     if [[ "${#test_candidates[@]}" -gt 0 ]]; then
       critical "Stripe mode is live but only test Stripe secrets are set"
+    elif [[ "${#invalid_candidates[@]}" -gt 0 ]]; then
+      bad="${invalid_candidates[0]}"
+      critical "${bad##*:} must start with sk_test_ or sk_live_"
     else
       critical "Stripe secret key missing for live mode (set STRIPE_SECRET_KEY)"
     fi
@@ -298,26 +311,58 @@ fi
 
 ACTIVE_PUBLISHABLE=""
 ACTIVE_PUBLISHABLE_SOURCE=""
-if [[ "$stripe_mode" == "test" && -n "${STRIPE_TEST_PUBLISHABLE_KEY:-}" ]]; then
-  ACTIVE_PUBLISHABLE="${STRIPE_TEST_PUBLISHABLE_KEY}"
-  ACTIVE_PUBLISHABLE_SOURCE="STRIPE_TEST_PUBLISHABLE_KEY"
-elif has_value STRIPE_PUBLISHABLE_KEY; then
-  ACTIVE_PUBLISHABLE="${STRIPE_PUBLISHABLE_KEY}"
-  ACTIVE_PUBLISHABLE_SOURCE="STRIPE_PUBLISHABLE_KEY"
+publishable_invalid="false"
+if [[ "$stripe_mode" == "test" ]]; then
+  if [[ -n "${STRIPE_TEST_PUBLISHABLE_KEY:-}" ]]; then
+    if [[ "${STRIPE_TEST_PUBLISHABLE_KEY}" == pk_test_* ]]; then
+      ACTIVE_PUBLISHABLE="${STRIPE_TEST_PUBLISHABLE_KEY}"
+      ACTIVE_PUBLISHABLE_SOURCE="STRIPE_TEST_PUBLISHABLE_KEY"
+    else
+      publishable_invalid="true"
+    fi
+  fi
+  if [[ -z "$ACTIVE_PUBLISHABLE" && -n "${STRIPE_PUBLISHABLE_KEY:-}" ]]; then
+    if [[ "${STRIPE_PUBLISHABLE_KEY}" == pk_test_* ]]; then
+      ACTIVE_PUBLISHABLE="${STRIPE_PUBLISHABLE_KEY}"
+      ACTIVE_PUBLISHABLE_SOURCE="STRIPE_PUBLISHABLE_KEY"
+    else
+      publishable_invalid="true"
+    fi
+  fi
+else
+  if [[ -n "${STRIPE_PUBLISHABLE_KEY:-}" ]]; then
+    if [[ "${STRIPE_PUBLISHABLE_KEY}" == pk_live_* ]]; then
+      ACTIVE_PUBLISHABLE="${STRIPE_PUBLISHABLE_KEY}"
+      ACTIVE_PUBLISHABLE_SOURCE="STRIPE_PUBLISHABLE_KEY"
+    else
+      publishable_invalid="true"
+    fi
+  elif [[ -n "${STRIPE_LIVE_PUBLISHABLE_KEY:-}" ]]; then
+    if [[ "${STRIPE_LIVE_PUBLISHABLE_KEY}" == pk_live_* ]]; then
+      ACTIVE_PUBLISHABLE="${STRIPE_LIVE_PUBLISHABLE_KEY}"
+      ACTIVE_PUBLISHABLE_SOURCE="STRIPE_LIVE_PUBLISHABLE_KEY"
+    else
+      publishable_invalid="true"
+    fi
+  fi
 fi
 
 if [[ -z "$ACTIVE_PUBLISHABLE" ]]; then
   if [[ "$stripe_mode" == "test" ]]; then
-    critical "Stripe publishable key missing for test mode (set STRIPE_PUBLISHABLE_KEY or STRIPE_TEST_PUBLISHABLE_KEY)"
+    if [[ "$publishable_invalid" == "true" ]]; then
+      critical "Stripe publishable key must be pk_test_ when using sk_test_*"
+    else
+      critical "Stripe publishable key missing for test mode (set STRIPE_PUBLISHABLE_KEY or STRIPE_TEST_PUBLISHABLE_KEY)"
+    fi
   elif [[ "$stripe_mode" == "live" ]]; then
-    critical "Stripe publishable key missing for live mode (set STRIPE_PUBLISHABLE_KEY)"
+    if [[ "$publishable_invalid" == "true" ]]; then
+      critical "Stripe publishable key must be pk_live_ when using sk_live_*"
+    else
+      critical "Stripe publishable key missing for live mode (set STRIPE_PUBLISHABLE_KEY)"
+    fi
   else
     critical "Stripe publishable key missing"
   fi
-elif [[ "$stripe_mode" == "test" && "$ACTIVE_PUBLISHABLE" != pk_test_* ]]; then
-  critical "Stripe publishable key must be pk_test_ when using sk_test_*"
-elif [[ "$stripe_mode" == "live" && "$ACTIVE_PUBLISHABLE" != pk_live_* ]]; then
-  critical "Stripe publishable key must be pk_live_ when using sk_live_*"
 fi
 
 ACTIVE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"; ACTIVE_WEBHOOK_SOURCE=""

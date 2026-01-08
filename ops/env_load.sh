@@ -110,20 +110,39 @@ aveli_load_env() {
       fi
     fi
 
-    # Ensure live Stripe secrets are not active in test/dev runs.
+    # Normalize Stripe keys for test mode: keep only canonical vars set to test values.
+    test_secret="${STRIPE_TEST_SECRET_KEY:-}"
+    if [[ -z "$test_secret" && "${STRIPE_SECRET_KEY:-}" == sk_test_* ]]; then
+      test_secret="${STRIPE_SECRET_KEY}"
+    elif [[ -z "$test_secret" && "${STRIPE_LIVE_SECRET_KEY:-}" == sk_test_* ]]; then
+      test_secret="${STRIPE_LIVE_SECRET_KEY}"
+    fi
+
+    test_publishable="${STRIPE_TEST_PUBLISHABLE_KEY:-}"
+    if [[ -z "$test_publishable" && "${STRIPE_PUBLISHABLE_KEY:-}" == pk_test_* ]]; then
+      test_publishable="${STRIPE_PUBLISHABLE_KEY}"
+    elif [[ -z "$test_publishable" && "${STRIPE_LIVE_PUBLISHABLE_KEY:-}" == pk_test_* ]]; then
+      test_publishable="${STRIPE_LIVE_PUBLISHABLE_KEY}"
+    fi
+
+    test_webhook="${STRIPE_TEST_WEBHOOK_SECRET:-${STRIPE_WEBHOOK_SECRET:-}}"
+    test_billing="${STRIPE_TEST_WEBHOOK_BILLING_SECRET:-${STRIPE_BILLING_WEBHOOK_SECRET:-}}"
+
     unset STRIPE_SECRET_KEY STRIPE_PUBLISHABLE_KEY STRIPE_WEBHOOK_SECRET STRIPE_BILLING_WEBHOOK_SECRET
     unset STRIPE_LIVE_SECRET_KEY STRIPE_LIVE_PUBLISHABLE_KEY STRIPE_LIVE_WEBHOOK_SECRET STRIPE_LIVE_BILLING_WEBHOOK_SECRET
-    if [[ -n "${STRIPE_TEST_SECRET_KEY:-}" ]]; then
-      export STRIPE_SECRET_KEY="$STRIPE_TEST_SECRET_KEY"
+    unset STRIPE_TEST_SECRET_KEY STRIPE_TEST_PUBLISHABLE_KEY STRIPE_TEST_WEBHOOK_SECRET STRIPE_TEST_WEBHOOK_BILLING_SECRET
+
+    if [[ -n "$test_secret" ]]; then
+      export STRIPE_SECRET_KEY="$test_secret"
     fi
-    if [[ -n "${STRIPE_TEST_PUBLISHABLE_KEY:-}" ]]; then
-      export STRIPE_PUBLISHABLE_KEY="$STRIPE_TEST_PUBLISHABLE_KEY"
+    if [[ -n "$test_publishable" ]]; then
+      export STRIPE_PUBLISHABLE_KEY="$test_publishable"
     fi
-    if [[ -n "${STRIPE_TEST_WEBHOOK_SECRET:-}" ]]; then
-      export STRIPE_WEBHOOK_SECRET="$STRIPE_TEST_WEBHOOK_SECRET"
+    if [[ -n "$test_webhook" ]]; then
+      export STRIPE_WEBHOOK_SECRET="$test_webhook"
     fi
-    if [[ -n "${STRIPE_TEST_WEBHOOK_BILLING_SECRET:-}" ]]; then
-      export STRIPE_BILLING_WEBHOOK_SECRET="$STRIPE_TEST_WEBHOOK_BILLING_SECRET"
+    if [[ -n "$test_billing" ]]; then
+      export STRIPE_BILLING_WEBHOOK_SECRET="$test_billing"
     fi
   else
     if [[ -n "$BACKEND_ENV_OVERLAY_FILE" ]]; then
