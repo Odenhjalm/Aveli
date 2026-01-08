@@ -152,6 +152,7 @@ def main() -> int:
 
     test_candidates: list[tuple[str, str]] = []
     live_candidates: list[tuple[str, str]] = []
+    invalid_candidates: list[tuple[str, str]] = []
     for name in ("STRIPE_SECRET_KEY", "STRIPE_TEST_SECRET_KEY", "STRIPE_LIVE_SECRET_KEY"):
         value = _env_value(env_map, name)
         if not value:
@@ -161,7 +162,7 @@ def main() -> int:
         elif value.startswith("sk_live_"):
             live_candidates.append((value, name))
         else:
-            stripe_errors.append(f"{name} must start with sk_test_ or sk_live_")
+            invalid_candidates.append((value, name))
 
     if not explicit_mode and mode != "production" and not overlay_set:
         if test_candidates and not live_candidates:
@@ -173,10 +174,16 @@ def main() -> int:
     live_values = {value for value, _ in live_candidates}
     if len(test_values) > 1:
         sources = ", ".join(name for _, name in test_candidates)
-        stripe_errors.append(f"Conflicting Stripe test secrets set across: {sources}")
+        if overlay_set:
+            stripe_warnings.append(f"Conflicting Stripe test secrets set across: {sources}")
+        else:
+            stripe_errors.append(f"Conflicting Stripe test secrets set across: {sources}")
     if len(live_values) > 1:
         sources = ", ".join(name for _, name in live_candidates)
-        stripe_errors.append(f"Conflicting Stripe live secrets set across: {sources}")
+        if overlay_set:
+            stripe_warnings.append(f"Conflicting Stripe live secrets set across: {sources}")
+        else:
+            stripe_errors.append(f"Conflicting Stripe live secrets set across: {sources}")
 
     def pick(preferred: tuple[str, ...], candidates: list[tuple[str, str]]) -> tuple[str, str] | None:
         for name in preferred:
@@ -193,6 +200,9 @@ def main() -> int:
             active_value, active_name = match
         elif live_candidates:
             stripe_errors.append("Stripe mode is test but only live Stripe secrets are set.")
+        elif invalid_candidates:
+            _, bad_name = invalid_candidates[0]
+            stripe_errors.append(f"{bad_name} must start with sk_test_ or sk_live_")
         else:
             stripe_errors.append("Stripe secret key missing for test mode (set STRIPE_TEST_SECRET_KEY).")
     else:
@@ -201,6 +211,9 @@ def main() -> int:
             active_value, active_name = match
         elif test_candidates:
             stripe_errors.append("Stripe mode is live but only test Stripe secrets are set.")
+        elif invalid_candidates:
+            _, bad_name = invalid_candidates[0]
+            stripe_errors.append(f"{bad_name} must start with sk_test_ or sk_live_")
         else:
             stripe_errors.append("Stripe secret key missing for live mode (set STRIPE_SECRET_KEY).")
 
@@ -222,19 +235,44 @@ def main() -> int:
             stripe_errors.append("Stripe mode is live but active secret is not sk_live_*")
 
     active_publishable = ""
+    publishable_invalid = False
     if stripe_mode == "test":
-        active_publishable = _env_value(env_map, "STRIPE_TEST_PUBLISHABLE_KEY") or _env_value(
-            env_map, "STRIPE_PUBLISHABLE_KEY"
-        )
+        test_publishable = _env_value(env_map, "STRIPE_TEST_PUBLISHABLE_KEY")
+        if test_publishable:
+            if test_publishable.startswith("pk_test_"):
+                active_publishable = test_publishable
+            else:
+                publishable_invalid = True
+        if not active_publishable:
+            base_publishable = _env_value(env_map, "STRIPE_PUBLISHABLE_KEY")
+            if base_publishable:
+                if base_publishable.startswith("pk_test_"):
+                    active_publishable = base_publishable
+                else:
+                    publishable_invalid = True
     else:
-        active_publishable = _env_value(env_map, "STRIPE_PUBLISHABLE_KEY")
+        base_publishable = _env_value(env_map, "STRIPE_PUBLISHABLE_KEY")
+        if base_publishable:
+            if base_publishable.startswith("pk_live_"):
+                active_publishable = base_publishable
+            else:
+                publishable_invalid = True
+        if not active_publishable:
+            live_publishable = _env_value(env_map, "STRIPE_LIVE_PUBLISHABLE_KEY")
+            if live_publishable:
+                if live_publishable.startswith("pk_live_"):
+                    active_publishable = live_publishable
+                else:
+                    publishable_invalid = True
 
     if not active_publishable:
-        stripe_errors.append("Stripe publishable key is missing for the active mode")
-    elif stripe_mode == "test" and not active_publishable.startswith("pk_test_"):
-        stripe_errors.append("Stripe publishable key must be pk_test_ when using sk_test_*")
-    elif stripe_mode == "live" and not active_publishable.startswith("pk_live_"):
-        stripe_errors.append("Stripe publishable key must be pk_live_ when using sk_live_*")
+        if publishable_invalid:
+            if stripe_mode == "test":
+                stripe_errors.append("Stripe publishable key must be pk_test_ when using sk_test_*")
+            else:
+                stripe_errors.append("Stripe publishable key must be pk_live_ when using sk_live_*")
+        else:
+            stripe_errors.append("Stripe publishable key is missing for the active mode")
 
     active_webhook = _env_value(env_map, "STRIPE_WEBHOOK_SECRET")
     active_billing = _env_value(env_map, "STRIPE_BILLING_WEBHOOK_SECRET")

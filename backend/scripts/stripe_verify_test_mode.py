@@ -65,20 +65,50 @@ def main() -> int:
     warnings: list[str] = []
 
     if mode == "test":
-        active_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY") or _val("STRIPE_PUBLISHABLE_KEY")
+        active_pub = ""
+        publishable_invalid = False
+        test_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY")
+        if test_pub:
+            if _is_test_publishable(test_pub):
+                active_pub = test_pub
+            else:
+                publishable_invalid = True
+        if not active_pub:
+            base_pub = _val("STRIPE_PUBLISHABLE_KEY")
+            if base_pub:
+                if _is_test_publishable(base_pub):
+                    active_pub = base_pub
+                else:
+                    publishable_invalid = True
         active_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET") or _val("STRIPE_WEBHOOK_SECRET")
         active_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET") or _val("STRIPE_BILLING_WEBHOOK_SECRET")
     else:
-        active_pub = _val("STRIPE_PUBLISHABLE_KEY")
+        active_pub = ""
+        publishable_invalid = False
+        base_pub = _val("STRIPE_PUBLISHABLE_KEY")
+        if base_pub:
+            if _is_live_publishable(base_pub):
+                active_pub = base_pub
+            else:
+                publishable_invalid = True
+        if not active_pub:
+            live_pub = _val("STRIPE_LIVE_PUBLISHABLE_KEY")
+            if live_pub:
+                if _is_live_publishable(live_pub):
+                    active_pub = live_pub
+                else:
+                    publishable_invalid = True
         active_webhook = _val("STRIPE_WEBHOOK_SECRET")
         active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
 
     if not active_pub:
-        errors.append("Stripe publishable key is missing for the active mode")
-    elif mode == "test" and not _is_test_publishable(active_pub):
-        errors.append("Stripe publishable key must be pk_test_ when using sk_test_*")
-    elif mode == "live" and not _is_live_publishable(active_pub):
-        errors.append("Stripe publishable key must be pk_live_ when using sk_live_*")
+        if publishable_invalid:
+            if mode == "test":
+                errors.append("Stripe publishable key must be pk_test_ when using sk_test_*")
+            else:
+                errors.append("Stripe publishable key must be pk_live_ when using sk_live_*")
+        else:
+            errors.append("Stripe publishable key is missing for the active mode")
 
     if not active_webhook or not active_billing:
         errors.append("Stripe webhook secrets are missing for the active mode (provide STRIPE_WEBHOOK_SECRET/STRIPE_BILLING_WEBHOOK_SECRET or test equivalents)")
