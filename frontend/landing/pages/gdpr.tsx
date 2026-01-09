@@ -23,7 +23,7 @@ export default function Gdpr() {
         <h2>Dina rättigheter</h2>
         <p>
           Du har rätt att få tillgång till, korrigera eller radera dina uppgifter.
-          Kontakta support@soulwisdom.dev för att utöva dina rättigheter.
+          Kontakta support@aveli.dev för att utöva dina rättigheter.
         </p>
         <h2>Dataportabilitet</h2>
         <p>
