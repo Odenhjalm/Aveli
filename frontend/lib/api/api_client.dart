@@ -285,5 +285,7 @@ class ApiClient {
     return Uint8List.fromList(data);
   }
 
+  String get baseUrl => _dio.options.baseUrl;
+
   Dio get raw => _dio;
 }

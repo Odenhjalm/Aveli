@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 
@@ -46,24 +47,21 @@ final ApiClient _client;
 final Dio _http;
 
   Future<PresignedMedia> fetchPresignedUrl({
-    required String storagePath,
-    String? filename,
-    int? ttlSeconds,
+    required String mediaId,
   }) async {
     try {
       final response = await _client.post<Map<String, dynamic>>(
-        '/media/presign',
-        body: {
-          'intent': 'download',
-          'storage_path': storagePath,
-          if (filename != null) 'filename': filename,
-          if (ttlSeconds != null) 'ttl': ttlSeconds,
-        },
+        ApiPaths.mediaSign,
+        body: {'media_id': mediaId},
       );
 
-      final url = Uri.parse(response['url'] as String);
+      final rawUrl =
+          response['signed_url'] as String? ?? response['url'] as String?;
+      if (rawUrl == null || rawUrl.isEmpty) {
+        throw UnexpectedFailure(message: 'Signerad media-URL saknas.');
+      }
+      final url = _resolveSignedUrl(rawUrl);
       final expiresAtRaw = response['expires_at'] as String?;
-      final headers = _extractHeaders(response['headers']);
 
       final expiresAt = expiresAtRaw != null
           ? DateTime.parse(expiresAtRaw).toUtc()
@@ -71,7 +69,7 @@ final Dio _http;
 
       return PresignedMedia(
         url: url,
-        headers: headers,
+        headers: const {},
         expiresAt: expiresAt,
       );
     } catch (error, stackTrace) {
@@ -115,37 +113,16 @@ final Dio _http;
     required String contentType,
     bool upsert = false,
   }) async {
-    try {
-      final response = await _client.post<Map<String, dynamic>>(
-        '/media/presign',
-        body: {
-          'intent': 'upload',
-          'storage_path': storagePath,
-          'content_type': contentType,
-          'upsert': upsert,
-        },
+    if (storagePath.isEmpty || contentType.isEmpty) {
+      throw UnexpectedFailure(
+        message: 'Uppladdningen saknar sökväg eller content-type.',
       );
-      final method =
-          (response['method'] as String?)?.toUpperCase() ?? 'PUT';
-      if (method != 'PUT') {
-        throw UnexpectedFailure(
-          message: 'Presign returnerade ogiltig metod för uppladdning.',
-        );
-      }
-      final url = Uri.parse(response['url'] as String);
-      final headers = _extractHeaders(response['headers']);
-      final bucket = response['storage_bucket'] as String?;
-      final path = response['storage_path'] as String?;
-      return PresignedUploadTarget(
-        url: url,
-        headers: headers,
-        method: method,
-        storageBucket: bucket,
-        storagePath: path,
-      );
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
     }
+    final mode = upsert ? 'upsert' : 'create';
+    throw UnexpectedFailure(
+      message:
+          'Presign-uppladdning ($mode) stöds inte. Använd /api/upload-endpoints.',
+    );
   }
 
   Future<void> uploadWithPresignedTarget({
@@ -196,17 +173,13 @@ final Dio _http;
     );
   }
 
-  Map<String, String> _extractHeaders(dynamic raw) {
-    if (raw is Map) {
-      final result = <String, String>{};
-      raw.forEach((key, value) {
-        if (key is String && value is String) {
-          result[key] = value;
-        }
-      });
-      return result;
+  Uri _resolveSignedUrl(String value) {
+    final uri = Uri.parse(value);
+    if (uri.hasScheme) {
+      return uri;
     }
-    return const <String, String>{};
+    final base = Uri.parse(_client.baseUrl);
+    return base.resolve(value);
   }
 }
 
