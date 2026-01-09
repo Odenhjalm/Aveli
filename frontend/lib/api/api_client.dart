@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/api/api_paths.dart';
 
 class ApiClient {
   ApiClient({
@@ -145,7 +146,7 @@ class ApiClient {
       }
 
       final refreshResponse = await _dio.post<Map<String, dynamic>>(
-        '/auth/refresh',
+        ApiPaths.authRefresh,
         data: {'refresh_token': refreshToken},
         options: Options(extra: {'skipAuth': true}),
       );

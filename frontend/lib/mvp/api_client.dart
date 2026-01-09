@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:aveli/api/api_paths.dart';
 import 'app_config.dart';
 
 class MvpApiClient {
@@ -46,7 +47,7 @@ class MvpApiClient {
     required String password,
     required String displayName,
   }) async {
-    await _dio.post('/auth/register', data: {
+    await _dio.post(ApiPaths.authRegister, data: {
       'email': email,
       'password': password,
       'display_name': displayName,
@@ -54,7 +55,7 @@ class MvpApiClient {
   }
 
   Future<void> login({required String email, required String password}) async {
-    final response = await _dio.post('/auth/login', data: {
+    final response = await _dio.post(ApiPaths.authLogin, data: {
       'email': email,
       'password': password,
     });
@@ -72,7 +73,7 @@ class MvpApiClient {
   }
 
   Future<ProfileSummary> fetchProfile() async {
-    final response = await _dio.get('/auth/me');
+    final response = await _dio.get(ApiPaths.authMe);
     return ProfileSummary.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -110,7 +111,7 @@ class MvpApiClient {
   }
 
   Future<OrderReceipt> createOrderForService(String serviceId) async {
-    final response = await _dio.post('/orders', data: {'service_id': serviceId});
+    final response = await _dio.post(ApiPaths.orders, data: {'service_id': serviceId});
     return OrderReceipt.fromJson(response.data['order'] as Map<String, dynamic>);
   }
 
@@ -119,10 +120,21 @@ class MvpApiClient {
     required String successUrl,
     required String cancelUrl,
   }) async {
-    final response = await _dio.post('/payments/stripe/create-session', data: {
-      'order_id': orderId,
-      'success_url': successUrl,
-      'cancel_url': cancelUrl,
+    if (successUrl.isEmpty || cancelUrl.isEmpty) {
+      throw StateError('Checkout-URL saknar callback-adresser.');
+    }
+    final orderResponse = await _dio.get(ApiPaths.order(orderId));
+    final order = orderResponse.data['order'] as Map<String, dynamic>;
+    final serviceId = order['service_id'] as String?;
+    final courseId = order['course_id'] as String?;
+    final slug = serviceId ?? courseId;
+    final type = serviceId != null ? 'service' : 'course';
+    if (slug == null || slug.isEmpty) {
+      throw StateError('Ordern saknar checkout-detaljer.');
+    }
+    final response = await _dio.post(ApiPaths.checkoutCreate, data: {
+      'type': type,
+      'slug': slug,
     });
     return response.data['url'] as String;
   }

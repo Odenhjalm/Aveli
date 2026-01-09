@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/data/models/order.dart';
 
@@ -15,7 +16,7 @@ class OrdersRepository {
     String? currency,
   }) async {
     final response = await _client.post<Map<String, dynamic>>(
-      '/orders',
+      ApiPaths.orders,
       body: {
         'service_id': serviceId,
         if (amountCents != null) 'amount_cents': amountCents,
@@ -26,7 +27,7 @@ class OrdersRepository {
   }
 
   Future<Order> fetchOrder(String id) async {
-    final response = await _client.get<Map<String, dynamic>>('/orders/$id');
+    final response = await _client.get<Map<String, dynamic>>(ApiPaths.order(id));
     return Order.fromJson(response['order'] as Map<String, dynamic>);
   }
 
@@ -36,13 +37,30 @@ class OrdersRepository {
     required String cancelUrl,
     String? email,
   }) async {
+    if (successUrl.isEmpty || cancelUrl.isEmpty) {
+      throw Exception('Checkout-URL saknar callback-adresser.');
+    }
+    if (email != null && email.trim().isEmpty) {
+      throw Exception('E-postadressen är tom.');
+    }
+    final order = await fetchOrder(orderId);
+    String? type;
+    String? slug;
+    if (order.serviceId != null) {
+      type = 'service';
+      slug = order.metadata['service_slug'] as String? ?? order.serviceId;
+    } else if (order.courseId != null) {
+      type = 'course';
+      slug = order.metadata['course_slug'] as String? ?? order.courseId;
+    }
+    if (type == null || slug == null || slug.isEmpty) {
+      throw Exception('Ordern saknar checkout-detaljer.');
+    }
     final response = await _client.post<Map<String, dynamic>>(
-      '/payments/stripe/create-session',
+      ApiPaths.checkoutCreate,
       body: {
-        'order_id': orderId,
-        'success_url': successUrl,
-        'cancel_url': cancelUrl,
-        if (email != null) 'customer_email': email,
+        'type': type,
+        'slug': slug,
       },
     );
     return (response['url'] ?? '') as String;

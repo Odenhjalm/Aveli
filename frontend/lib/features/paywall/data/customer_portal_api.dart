@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
@@ -24,7 +25,7 @@ class CustomerPortalApi {
   Future<String> createPortalUrl() async {
     final token = await _accessToken();
     final response = await _client.post(
-      Uri.parse('$_baseUrl/api/billing/customer-portal'),
+      Uri.parse('$_baseUrl${ApiPaths.billingCustomerPortal}'),
       headers: {
         'Content-Type': 'application/json',
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',

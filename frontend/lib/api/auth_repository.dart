@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/token_storage.dart';
@@ -20,7 +21,7 @@ class AuthRepository {
   }) async {
     try {
       final data = await _client.post<Map<String, dynamic>>(
-        '/auth/login',
+        ApiPaths.authLogin,
         body: {'email': email, 'password': password},
         skipAuth: true,
       );
@@ -46,7 +47,7 @@ class AuthRepository {
     required String displayName,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
-      '/auth/register',
+      ApiPaths.authRegister,
       body: {'email': email, 'password': password, 'display_name': displayName},
       skipAuth: true,
     );
@@ -65,7 +66,7 @@ class AuthRepository {
   Future<void> requestPasswordReset(String email) async {
     try {
       await _client.post<Map<String, dynamic>>(
-        '/auth/forgot-password',
+        ApiPaths.authForgotPassword,
         body: {'email': email},
         skipAuth: true,
       );
@@ -83,7 +84,7 @@ class AuthRepository {
   }) async {
     try {
       await _client.post<Map<String, dynamic>>(
-        '/auth/reset-password',
+        ApiPaths.authResetPassword,
         body: {'email': email, 'new_password': newPassword},
         skipAuth: true,
       );
@@ -94,7 +95,7 @@ class AuthRepository {
   }
 
   Future<Profile> getCurrentProfile() async {
-    final data = await _client.get<Map<String, dynamic>>('/auth/me');
+    final data = await _client.get<Map<String, dynamic>>(ApiPaths.authMe);
     return Profile.fromJson(data);
   }
 

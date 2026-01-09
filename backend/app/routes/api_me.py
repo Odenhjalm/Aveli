@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from .. import repositories, schemas
+from .. import models, repositories, schemas
 from ..auth import CurrentUser
 from ..schemas.memberships import MembershipRecord, MembershipResponse
 
@@ -46,3 +46,13 @@ async def get_my_entitlements(current: CurrentUser) -> schemas.EntitlementsRespo
         membership=membership_payload,
         courses=course_slugs,
     )
+
+
+@router.post("/claim-purchase", response_model=schemas.PurchaseClaimResponse)
+async def claim_purchase(
+    payload: schemas.PurchaseClaimRequest, current: CurrentUser
+) -> schemas.PurchaseClaimResponse:
+    ok = await models.claim_purchase_with_token(
+        str(current["id"]), str(payload.token)
+    )
+    return schemas.PurchaseClaimResponse(ok=ok)
