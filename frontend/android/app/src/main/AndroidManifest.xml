@@ -36,7 +36,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:host="auth-callback"
-                    android:scheme="wisdom" />
+                    android:scheme="aveliapp" />
             </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

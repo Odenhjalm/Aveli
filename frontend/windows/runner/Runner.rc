@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "andlig_app" "\0"
+            VALUE "FileDescription", "Aveli" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "andlig_app" "\0"
+            VALUE "InternalName", "aveli" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "andlig_app.exe" "\0"
-            VALUE "ProductName", "andlig_app" "\0"
+            VALUE "OriginalFilename", "aveli.exe" "\0"
+            VALUE "ProductName", "Aveli" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

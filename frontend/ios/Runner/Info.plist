@@ -62,7 +62,6 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>aveliapp</string>
-				<string>wisdom</string>
 			</array>
 		</dict>
 	</array>
