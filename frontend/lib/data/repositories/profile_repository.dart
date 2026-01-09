@@ -4,9 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http_parser/http_parser.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/data/models/profile.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/data/models/profile.dart';
 
 class ProfileRepository {
   ProfileRepository(this._client);

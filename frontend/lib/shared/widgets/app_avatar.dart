@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wisdom/shared/widgets/app_network_image.dart';
+import 'package:aveli/shared/widgets/app_network_image.dart';
 
 /// Circular avatar that loads from network and gracefully falls back on error.
 class AppAvatar extends StatelessWidget {

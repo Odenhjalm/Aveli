@@ -8,18 +8,18 @@ import 'package:mocktail/mocktail.dart';
 import 'package:flutter_quill/flutter_quill.dart'
     show FlutterQuillLocalizations;
 
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/features/studio/data/studio_repository.dart';
-import 'package:wisdom/features/studio/presentation/course_editor_page.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/data/models/profile.dart';
-import 'package:wisdom/features/studio/application/studio_providers.dart';
-import 'package:wisdom/features/studio/application/studio_upload_queue.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
+import 'package:aveli/features/studio/presentation/course_editor_page.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/application/studio_upload_queue.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
 class _MockStudioRepository extends Mock implements StudioRepository {}

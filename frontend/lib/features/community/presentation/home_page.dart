@@ -4,19 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/widgets/courses_grid.dart';
-import 'package:wisdom/shared/widgets/home_hero_panel.dart';
-import 'package:wisdom/data/models/community_post.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/courses_grid.dart';
+import 'package:aveli/shared/widgets/home_hero_panel.dart';
+import 'package:aveli/data/models/community_post.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});

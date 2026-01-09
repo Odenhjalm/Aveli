@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/features/studio/application/studio_providers.dart'
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart'
     as studio;
-import 'package:wisdom/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
 
 class LandingSectionState {
   const LandingSectionState({

@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
 
 class InlineAudioPlayer extends ConsumerStatefulWidget {
   const InlineAudioPlayer({

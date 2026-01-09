@@ -6,31 +6,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/core/env/env_state.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/features/landing/application/landing_providers.dart';
-import 'package:wisdom/shared/theme/ui_consts.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
-import 'package:wisdom/shared/widgets/hero_badge.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/widgets/base_page.dart';
-import 'package:wisdom/shared/utils/course_cover_assets.dart';
-import 'package:wisdom/shared/widgets/app_avatar.dart';
-import 'package:wisdom/features/paywall/data/checkout_api.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/env/env_state.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/features/landing/application/landing_providers.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/hero_badge.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/widgets/base_page.dart';
+import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/widgets/app_avatar.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
 
-const _wisdomBrandGradient = LinearGradient(
+const _aveliBrandGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandLilac],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
 
-const _wisdomPrimaryGradient = LinearGradient(
+const _aveliPrimaryGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandAzure, kBrandLilac],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
@@ -381,14 +381,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
     return false;
   }
 
-  String _currentLandingLocation() {
-    try {
-      return GoRouterState.of(context).uri.toString();
-    } catch (_) {
-      return RoutePath.landing;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -442,7 +434,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
             children: [
               ShaderMask(
                 shaderCallback: (bounds) =>
-                    _wisdomBrandGradient.createShader(bounds),
+                    _aveliBrandGradient.createShader(bounds),
                 blendMode: BlendMode.srcIn,
                 child: Text(
                   'Aveli',
@@ -1011,7 +1003,7 @@ class _PrimaryGradientButton extends StatelessWidget {
     final borderRadius = BorderRadius.circular(14);
     Widget result = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: _wisdomPrimaryGradient,
+        gradient: _aveliPrimaryGradient,
         borderRadius: borderRadius,
         boxShadow: [
           BoxShadow(

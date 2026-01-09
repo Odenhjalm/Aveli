@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/features/community/data/messages_repository.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/data/models/message_record.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/features/community/data/messages_repository.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/data/models/message_record.dart';
 
 class MessagesPage extends ConsumerStatefulWidget {
   const MessagesPage({super.key, required this.kind, required this.id});

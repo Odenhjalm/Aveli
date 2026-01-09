@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/data/models/certificate.dart';
-import 'package:wisdom/data/models/service.dart';
+import 'package:aveli/data/models/certificate.dart';
+import 'package:aveli/data/models/service.dart';
 
 class CertificationGateResult {
   const CertificationGateResult({

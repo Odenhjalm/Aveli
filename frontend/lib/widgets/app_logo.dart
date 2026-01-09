@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/shared/utils/app_images.dart';
 
 const _logoAspectRatio = 2.4;
 

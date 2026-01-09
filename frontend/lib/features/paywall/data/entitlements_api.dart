@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:wisdom/core/auth/token_storage.dart';
-import 'package:wisdom/core/env/env_resolver.dart';
+import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/core/env/env_resolver.dart';
 
 import '../domain/entitlements.dart';
 

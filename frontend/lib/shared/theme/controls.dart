@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:wisdom/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
 
 // Central helpers for Material 3 controls using the WidgetStateProperty APIs (the
 // newer namespace keeps us clear of the legacy MaterialStateProperty warnings).

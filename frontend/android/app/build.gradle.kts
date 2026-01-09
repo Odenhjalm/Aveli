@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.andlig_app"
+    namespace = "com.example.aveli"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -40,7 +40,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.andlig_app"
+        applicationId = "com.example.aveli"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -56,6 +56,10 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

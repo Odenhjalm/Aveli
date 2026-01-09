@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/shared/utils/image_error_logger.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/shared/utils/image_error_logger.dart';
 
 final _webProtectedImageProvider = FutureProvider.family
     .autoDispose<Uint8List?, String>((ref, url) async {

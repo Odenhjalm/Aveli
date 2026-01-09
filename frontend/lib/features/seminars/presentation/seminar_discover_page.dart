@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/data/models/seminar.dart';
-import 'package:wisdom/features/seminars/application/seminar_providers.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/data/models/seminar.dart';
+import 'package:aveli/features/seminars/application/seminar_providers.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
 
 import 'seminar_background.dart';
 

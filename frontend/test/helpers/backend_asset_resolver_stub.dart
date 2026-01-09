@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 
 class TestBackendAssetResolver extends BackendAssetResolver {
   TestBackendAssetResolver() : super('');

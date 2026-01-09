@@ -3,15 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_extras.dart';
-import 'package:wisdom/shared/widgets/background_layer.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
-import 'package:wisdom/shared/widgets/go_router_back_button.dart';
-import 'package:wisdom/shared/widgets/top_nav_action_buttons.dart';
-import 'package:wisdom/features/studio/application/studio_providers.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/features/teacher/application/bundle_providers.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_extras.dart';
+import 'package:aveli/shared/widgets/background_layer.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
 class TeacherHomeScreen extends ConsumerWidget {
   const TeacherHomeScreen({super.key});

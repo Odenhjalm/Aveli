@@ -16,23 +16,23 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_quill/markdown_quill.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
-import 'package:wisdom/shared/widgets/top_nav_action_buttons.dart';
-import 'package:wisdom/shared/theme/ui_consts.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
-import 'package:wisdom/features/studio/data/studio_repository.dart';
-import 'package:wisdom/features/editor/widgets/file_picker_web.dart'
+import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
+import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
-import 'package:wisdom/features/studio/application/studio_providers.dart';
-import 'package:wisdom/features/studio/application/studio_upload_queue.dart';
-import 'package:wisdom/shared/widgets/media_player.dart';
-import 'package:wisdom/features/media/application/media_providers.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/widgets/base_page.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/application/studio_upload_queue.dart';
+import 'package:aveli/shared/widgets/media_player.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/widgets/base_page.dart';
 
 String? _mediaUrl(Map<String, dynamic> media) {
   final download = media['download_url'];
@@ -777,7 +777,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (controller == null) return;
 
     final labelController = TextEditingController(text: 'Boka nu');
-    final urlController = TextEditingController(text: 'wisdom://');
+    final urlController = TextEditingController(text: 'aveliapp://');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -799,7 +799,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               controller: urlController,
               decoration: const InputDecoration(
                 labelText: 'Deeplink',
-                hintText: 'wisdom://checkout?service_id=...',
+                hintText: 'aveliapp://checkout?service_id=...',
               ),
             ),
           ],

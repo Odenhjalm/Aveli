@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
-import 'package:wisdom/shared/utils/course_cover_assets.dart';
-import 'package:wisdom/shared/utils/image_error_logger.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/image_error_logger.dart';
 
 class CoursesGrid extends StatelessWidget {
   final List<CourseSummary> courses;

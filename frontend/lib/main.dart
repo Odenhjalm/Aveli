@@ -5,23 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart'
     show FlutterQuillLocalizations;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:wisdom/l10n/app_localizations.dart';
+import 'package:aveli/l10n/app_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
 
 import 'package:media_kit/media_kit.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/core/env/env_resolver.dart';
-import 'package:wisdom/core/env/env_state.dart';
-import 'package:wisdom/shared/utils/image_error_logger.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/auth/auth_controller.dart' hide AuthState;
-import 'package:wisdom/features/paywall/application/entitlements_notifier.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/core/deeplinks/deep_link_service.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/env/env_resolver.dart';
+import 'package:aveli/core/env/env_state.dart';
+import 'package:aveli/shared/utils/image_error_logger.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/auth_controller.dart' hide AuthState;
+import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/core/deeplinks/deep_link_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
 import 'shared/theme/light_theme.dart';
@@ -124,10 +124,9 @@ void main() {
       if (missingKeys.isNotEmpty) {
         throw StateError(
           'Missing required environment keys: ${missingKeys.join(', ')}. '
-          +
-              (kIsWeb
-                  ? 'Provide them via --dart-define for Flutter Web.'
-                  : 'Provide them via --dart-define or a local environment file.'),
+          '${kIsWeb
+              ? 'Provide them via --dart-define for Flutter Web.'
+              : 'Provide them via --dart-define or a local environment file.'}',
         );
       }
 
@@ -202,7 +201,7 @@ void main() {
               ),
             ),
           ],
-          child: const WisdomApp(),
+          child: const AveliApp(),
         ),
       );
     },
@@ -261,8 +260,8 @@ Future<void> _loadEnvFile({required bool requiredFile}) async {
   }
 }
 
-class WisdomApp extends ConsumerWidget {
-  const WisdomApp({super.key});
+class AveliApp extends ConsumerWidget {
+  const AveliApp({super.key});
 
   static final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();

@@ -1,4 +1,4 @@
-package com.example.andlig_app
+package com.example.aveli
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

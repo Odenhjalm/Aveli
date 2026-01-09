@@ -2,19 +2,19 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/features/community/data/community_repository.dart';
-import 'package:wisdom/features/community/data/posts_repository.dart';
-import 'package:wisdom/features/community/data/admin_repository.dart';
-import 'package:wisdom/features/studio/application/studio_providers.dart';
-import 'package:wisdom/data/models/certificate.dart';
-import 'package:wisdom/features/community/data/meditations_repository.dart';
-import 'package:wisdom/data/models/service.dart';
-import 'package:wisdom/data/models/teacher_profile_media.dart';
-import 'package:wisdom/data/models/community_post.dart';
-import 'package:wisdom/data/repositories/services_repository.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/features/community/data/community_repository.dart';
+import 'package:aveli/features/community/data/posts_repository.dart';
+import 'package:aveli/features/community/data/admin_repository.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/data/models/certificate.dart';
+import 'package:aveli/features/community/data/meditations_repository.dart';
+import 'package:aveli/data/models/service.dart';
+import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/data/models/community_post.dart';
+import 'package:aveli/data/repositories/services_repository.dart';
 
 final communityRepositoryProvider = Provider<CommunityRepository>((ref) {
   final client = ref.watch(apiClientProvider);

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/data/models/teacher_profile_media.dart';
-import 'package:wisdom/features/studio/application/profile_media_controller.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/widgets/hero_background.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/features/studio/application/profile_media_controller.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/hero_background.dart';
 
 class StudioProfilePage extends ConsumerWidget {
   const StudioProfilePage({super.key});

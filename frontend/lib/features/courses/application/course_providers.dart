@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/features/courses/data/progress_repository.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/courses/data/progress_repository.dart';
 
 final coursesRepositoryProvider = Provider<CoursesRepository>((ref) {
   final client = ref.watch(apiClientProvider);

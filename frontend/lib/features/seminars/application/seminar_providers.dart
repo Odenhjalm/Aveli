@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/data/models/seminar.dart';
-import 'package:wisdom/data/repositories/seminar_repository.dart';
+import 'package:aveli/data/models/seminar.dart';
+import 'package:aveli/data/repositories/seminar_repository.dart';
 
 final hostSeminarsProvider = FutureProvider.autoDispose<List<Seminar>>((
   ref,

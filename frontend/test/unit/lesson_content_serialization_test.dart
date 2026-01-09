@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 import 'package:markdown/markdown.dart' as md;
 
-import 'package:wisdom/features/studio/presentation/course_editor_page.dart';
+import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 
 void main() {
   group('Lesson content serialization', () {

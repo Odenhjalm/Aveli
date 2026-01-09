@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 
 import 'course_cover_assets.g.dart' as generated;
 

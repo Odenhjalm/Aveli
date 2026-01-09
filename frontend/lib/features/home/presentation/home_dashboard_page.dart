@@ -4,30 +4,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/core/routing/route_extras.dart';
-import 'package:wisdom/data/models/activity.dart';
-import 'package:wisdom/data/models/certificate.dart';
-import 'package:wisdom/data/models/seminar.dart';
-import 'package:wisdom/data/models/service.dart';
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/features/home/application/home_providers.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/features/landing/application/landing_providers.dart'
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/core/routing/route_extras.dart';
+import 'package:aveli/data/models/activity.dart';
+import 'package:aveli/data/models/certificate.dart';
+import 'package:aveli/data/models/seminar.dart';
+import 'package:aveli/data/models/service.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/home/application/home_providers.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:wisdom/features/paywall/application/entitlements_notifier.dart';
-import 'package:wisdom/features/paywall/data/checkout_api.dart';
-import 'package:wisdom/features/seminars/application/seminar_providers.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
-import 'package:wisdom/shared/utils/course_cover_assets.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/utils/image_error_logger.dart';
+import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
+import 'package:aveli/features/seminars/application/seminar_providers.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/utils/image_error_logger.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -39,21 +39,6 @@ class HomeDashboardPage extends ConsumerStatefulWidget {
 class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   final Set<String> _loadingServiceIds = <String>{};
   bool _redirecting = false;
-
-  Future<void> _startCheckout(BuildContext context) async {
-    try {
-      final url = await ref
-          .read(checkoutApiProvider)
-          .startMembershipCheckout(interval: 'month');
-      if (!mounted) return;
-      context.push(RoutePath.checkout, extra: url);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Kunde inte öppna checkout: $e')));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -221,8 +206,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     Service service,
   ) async {
     if (_loadingServiceIds.contains(service.id)) return;
-    final messenger = ScaffoldMessenger.of(context);
     void showMessage(String message) {
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(message)));
@@ -232,11 +218,11 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     try {
       final checkoutApi = ref.read(checkoutApiProvider);
       final url = await checkoutApi.startServiceCheckout(serviceId: service.id);
-      if (!mounted) return;
+      if (!context.mounted) return;
       context.push(RoutePath.checkout, extra: url);
     } catch (error, stackTrace) {
       debugPrint('checkout failed: $error\n$stackTrace');
-      if (!mounted) return;
+      if (!context.mounted) return;
       final failure = AppFailure.from(error, stackTrace);
       showMessage('Kunde inte skapa beställning: ${failure.message}');
     } finally {
@@ -935,17 +921,6 @@ class _ServicesSection extends StatelessWidget {
       );
     } catch (_) {}
     router.goNamed(AppRoute.login, queryParameters: {'redirect': redirect});
-  }
-}
-
-class _MembershipCta extends StatelessWidget {
-  const _MembershipCta({required this.onCheckout});
-
-  final VoidCallback onCheckout;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox.shrink();
   }
 }
 

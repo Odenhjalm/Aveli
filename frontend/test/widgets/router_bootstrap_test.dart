@@ -4,23 +4,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/env/env_state.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/data/models/activity.dart';
-import 'package:wisdom/data/models/profile.dart';
-import 'package:wisdom/data/models/service.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/features/home/application/home_providers.dart';
-import 'package:wisdom/features/home/presentation/home_dashboard_page.dart';
-import 'package:wisdom/features/landing/application/landing_providers.dart'
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/env/env_state.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/data/models/activity.dart';
+import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/data/models/service.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/home/application/home_providers.dart';
+import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
+import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:wisdom/features/landing/presentation/landing_page.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/main.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/features/landing/presentation/landing_page.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/main.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
 const _transparentPng = <int>[
@@ -220,7 +220,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: _commonOverrides(const AuthState()),
-        child: const WisdomApp(),
+        child: const AveliApp(),
       ),
     );
 
@@ -249,7 +249,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: _commonOverrides(authedState),
-        child: const WisdomApp(),
+        child: const AveliApp(),
       ),
     );
 

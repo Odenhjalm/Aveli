@@ -5,8 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/env/app_config.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/env/app_config.dart';
 
 class MediaRepository {
   MediaRepository({required ApiClient client, required AppConfig config})
@@ -31,7 +31,7 @@ class MediaRepository {
     }
 
     final base = await getTemporaryDirectory();
-    final dir = Directory('${base.path}/wisdom_media');
+    final dir = Directory('${base.path}/aveli_media');
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }

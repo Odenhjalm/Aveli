@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/data/models/teacher_profile_media.dart';
-import 'package:wisdom/features/studio/data/studio_repository.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
 
 import 'studio_providers.dart';
 

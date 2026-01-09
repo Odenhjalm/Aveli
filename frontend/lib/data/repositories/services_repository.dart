@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/data/models/service.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/data/models/service.dart';
 
 class ServicesRepository {
   const ServicesRepository(this._client);

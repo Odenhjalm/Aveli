@@ -1,6 +1,6 @@
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/data/models/order.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/order.dart';
 
 class CouponPreviewResult {
   CouponPreviewResult({required this.valid, required this.payAmountCents});

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wisdom/shared/utils/image_error_logger.dart';
+import 'package:aveli/shared/utils/image_error_logger.dart';
 
 class ServiceCard extends StatelessWidget {
   final String title;

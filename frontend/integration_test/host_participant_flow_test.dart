@@ -3,15 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/data/models/seminar.dart';
-import 'package:wisdom/data/repositories/seminar_repository.dart';
-import 'package:wisdom/features/home/application/livekit_controller.dart';
-import 'package:wisdom/features/seminars/application/seminar_providers.dart';
-import 'package:wisdom/features/seminars/presentation/seminar_detail_page.dart';
-import 'package:wisdom/features/seminars/presentation/seminar_join_page.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/data/models/seminar.dart';
+import 'package:aveli/data/repositories/seminar_repository.dart';
+import 'package:aveli/features/home/application/livekit_controller.dart';
+import 'package:aveli/features/seminars/application/seminar_providers.dart';
+import 'package:aveli/features/seminars/presentation/seminar_detail_page.dart';
+import 'package:aveli/features/seminars/presentation/seminar_join_page.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 
 class _TestAssetResolver extends BackendAssetResolver {
   _TestAssetResolver() : super('');

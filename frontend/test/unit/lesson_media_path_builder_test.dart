@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:wisdom/features/studio/data/lesson_media_path.dart';
+import 'package:aveli/features/studio/data/lesson_media_path.dart';
 
 void main() {
   group('LessonMediaPathBuilder', () {

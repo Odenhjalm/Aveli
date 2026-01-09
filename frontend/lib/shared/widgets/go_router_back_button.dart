@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/app_routes.dart';
 
 /// Back button that works with GoRouter and fallbacks depending on auth state.
 class GoRouterBackButton extends ConsumerWidget {

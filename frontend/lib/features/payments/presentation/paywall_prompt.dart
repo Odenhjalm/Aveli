@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/features/auth/application/user_access_provider.dart';
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/auth/application/user_access_provider.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class PaywallPrompt extends ConsumerWidget {
   const PaywallPrompt({super.key, required this.courseId});

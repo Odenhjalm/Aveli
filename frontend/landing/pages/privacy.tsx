@@ -31,7 +31,7 @@ export default function Privacy() {
         <p>
           Uppgifter sparas så länge kontot är aktivt eller enligt gällande lag.
           Du kan begära export eller radering genom att kontakta
-          support@soulwisdom.dev.
+          support@aveli.dev.
         </p>
         <h2>Delning med tredjepart</h2>
         <p>

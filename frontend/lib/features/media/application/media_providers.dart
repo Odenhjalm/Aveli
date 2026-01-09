@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/env/app_config.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/env/app_config.dart';
 
 import '../data/media_repository.dart';
 

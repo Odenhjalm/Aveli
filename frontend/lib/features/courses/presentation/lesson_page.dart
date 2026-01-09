@@ -5,21 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:markdown_widget/markdown_widget.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/features/courses/presentation/course_access_gate.dart';
-import 'package:wisdom/features/media/application/media_providers.dart';
-import 'package:wisdom/features/paywall/data/checkout_api.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/widgets/media_player.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
-import 'package:wisdom/shared/utils/snack.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/courses/presentation/course_access_gate.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/media_player.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/utils/snack.dart';
 
 class LessonPage extends ConsumerStatefulWidget {
   const LessonPage({super.key, required this.lessonId});
@@ -144,12 +143,10 @@ class _LessonContent extends ConsumerWidget {
     String url,
   ) async {
     final parsed = Uri.tryParse(url);
-    final isBundleLink =
-        parsed != null &&
+    if (parsed != null &&
         parsed.pathSegments.contains('pay') &&
-        parsed.pathSegments.contains('bundle');
-    if (isBundleLink) {
-      final bundleId = parsed!.pathSegments.isNotEmpty
+        parsed.pathSegments.contains('bundle')) {
+      final bundleId = parsed.pathSegments.isNotEmpty
           ? parsed.pathSegments.last
           : parsed.queryParameters['bundle_id'];
       if (bundleId != null && bundleId.isNotEmpty) {

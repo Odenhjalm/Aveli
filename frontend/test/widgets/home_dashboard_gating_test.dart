@@ -3,21 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/auth/auth_claims.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/data/models/certificate.dart';
-import 'package:wisdom/data/models/service.dart';
-import 'package:wisdom/data/models/profile.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/features/home/application/home_providers.dart';
-import 'package:wisdom/features/home/presentation/home_dashboard_page.dart';
-import 'package:wisdom/features/landing/application/landing_providers.dart'
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/auth/auth_claims.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/data/models/certificate.dart';
+import 'package:aveli/data/models/service.dart';
+import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/home/application/home_providers.dart';
+import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
+import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
 class _FakeAuthController extends AuthController {

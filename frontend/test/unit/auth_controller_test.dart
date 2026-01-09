@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/auth/auth_claims.dart';
-import 'package:wisdom/data/models/profile.dart';
-import 'package:wisdom/gate.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/auth_claims.dart';
+import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/gate.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 

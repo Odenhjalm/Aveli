@@ -8,7 +8,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Aveli by SoulWisdom</title>
+        <title>Aveli</title>
         <meta
           name="description"
           content="Guided kurser, community och livesända ceremonier för själslig utveckling."
@@ -17,7 +17,7 @@ export default function Home() {
       <main className={styles.layout}>
         <header className={styles.hero}>
           <div className={styles.badge}>Ny plattform</div>
-          <h1>Aveli by SoulWisdom</h1>
+          <h1>Aveli</h1>
           <p className={styles.lead}>
             Fördjupa din spirituella praktik med kurser, personliga tjänster och
             live-seminarier – byggda för lärare och sökare tillsammans.
@@ -76,7 +76,7 @@ export default function Home() {
             <Link href="/terms">Terms</Link>
             <Link href="/gdpr">GDPR</Link>
           </nav>
-          <p>© {new Date().getFullYear()} SoulWisdom. Alla rättigheter förbehålls.</p>
+          <p>© {new Date().getFullYear()} Aveli. Alla rättigheter förbehålls.</p>
         </footer>
       </main>
     </>

@@ -4,10 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/routing/app_router.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/features/paywall/application/checkout_flow.dart';
+import 'package:aveli/core/routing/app_router.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/features/paywall/application/checkout_flow.dart';
 
 final deepLinkServiceProvider = Provider<DeepLinkService>((ref) {
   final service = DeepLinkService(ref);

@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/widgets/base_page.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/widgets/base_page.dart';
 
 /// Laddar första fria introduktionskursen och navigerar vidare till dess slug.
 class CourseIntroRedirectPage extends ConsumerStatefulWidget {

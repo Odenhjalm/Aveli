@@ -6,25 +6,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/data/models/certificate.dart';
-import 'package:wisdom/data/models/profile.dart';
-import 'package:wisdom/data/repositories/profile_repository.dart';
-import 'package:wisdom/features/courses/application/course_providers.dart'
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/data/models/certificate.dart';
+import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/data/repositories/profile_repository.dart';
+import 'package:aveli/features/courses/application/course_providers.dart'
     as courses_front;
-import 'package:wisdom/features/courses/data/courses_repository.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/widgets/top_nav_action_buttons.dart';
-import 'package:wisdom/features/community/presentation/widgets/profile_logout_section.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
+import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/utils/app_images.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
@@ -113,8 +112,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final profile = authState.profile;
     final certificatesAsync = ref.watch(myCertificatesProvider);
     final coursesAsync = ref.watch(courses_front.myCoursesProvider);
-    final assets = ref.watch(backendAssetResolverProvider);
-
     if (authState.isLoading && profile == null) {
       return const AppScaffold(
         title: 'Profil',

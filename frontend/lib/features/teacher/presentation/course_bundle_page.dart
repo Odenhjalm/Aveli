@@ -3,12 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/shared/widgets/go_router_back_button.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/features/studio/application/studio_providers.dart';
-import 'package:wisdom/features/teacher/application/bundle_providers.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
 class CourseBundlePage extends ConsumerStatefulWidget {
   const CourseBundlePage({super.key});
@@ -54,6 +54,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
         courseIds: _selectedCourses.toList(),
         isActive: _isActive,
       );
+      if (!mounted) return;
       ref.invalidate(teacherBundlesProvider);
       showSnack(context, 'Paketet skapades.');
       _titleController.clear();
@@ -62,6 +63,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
       _selectedCourses.clear();
       setState(() {});
     } catch (e) {
+      if (!mounted) return;
       showSnack(context, 'Kunde inte spara paket: $e');
     } finally {
       if (mounted) {
@@ -290,14 +292,13 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                           await Clipboard.setData(
                                             ClipboardData(text: paymentLink),
                                           );
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content: Text('Länk kopierad'),
-                                              ),
-                                            );
-                                          }
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Länk kopierad'),
+                                            ),
+                                          );
                                         },
                                 ),
                               ],

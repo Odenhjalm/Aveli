@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/theme/ui_consts.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/widgets/top_nav_action_buttons.dart';
-import 'package:wisdom/widgets/base_page.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
+import 'package:aveli/widgets/base_page.dart';
 
-const _wisdomBrandGradient = LinearGradient(
+const _aveliBrandGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandLilac],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
@@ -61,7 +61,7 @@ class _HomeShellState extends State<HomeShell> {
             children: [
               ShaderMask(
                 shaderCallback: (bounds) =>
-                    _wisdomBrandGradient.createShader(bounds),
+                    _aveliBrandGradient.createShader(bounds),
                 blendMode: BlendMode.srcIn,
                 child: Text(
                   'Aveli',

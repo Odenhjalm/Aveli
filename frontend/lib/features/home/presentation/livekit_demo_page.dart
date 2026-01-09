@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/features/home/application/livekit_controller.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
+import 'package:aveli/features/home/application/livekit_controller.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class LiveKitDemoPage extends ConsumerStatefulWidget {
   const LiveKitDemoPage({super.key});

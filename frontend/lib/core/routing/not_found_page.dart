@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class NotFoundPage extends StatelessWidget {
   const NotFoundPage({super.key});
