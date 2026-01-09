@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
@@ -26,7 +27,7 @@ class CheckoutApi {
   }
 
   Future<String> startMembershipCheckout({String interval = 'month'}) {
-    return _startCheckout({'type': 'subscription', 'interval': interval});
+    return _startSubscriptionCheckout(interval: interval);
   }
 
   Future<String> startServiceCheckout({required String serviceId}) {
@@ -36,7 +37,7 @@ class CheckoutApi {
   Future<String> startBundleCheckout({required String bundleId}) async {
     final token = await _accessToken();
     final response = await _client.post(
-      Uri.parse('$_baseUrl/api/course-bundles/$bundleId/checkout-session'),
+      Uri.parse('$_baseUrl${ApiPaths.courseBundleCheckout(bundleId)}'),
       headers: {
         'Content-Type': 'application/json',
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
@@ -55,10 +56,35 @@ class CheckoutApi {
     return url;
   }
 
+  Future<String> _startSubscriptionCheckout({
+    required String interval,
+  }) async {
+    final token = await _accessToken();
+    final response = await _client.post(
+      Uri.parse('$_baseUrl${ApiPaths.billingCreateSubscription}'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'interval': interval}),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Failed to create subscription (${response.statusCode}): ${response.body}',
+      );
+    }
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final url = body['checkout_url'] as String? ?? body['url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw Exception('Checkout-URL saknas');
+    }
+    return url;
+  }
+
   Future<String> _startCheckout(Map<String, dynamic> payload) async {
     final token = await _accessToken();
     final response = await _client.post(
-      Uri.parse('$_baseUrl/api/checkout/create'),
+      Uri.parse('$_baseUrl${ApiPaths.checkoutCreate}'),
       headers: {
         'Content-Type': 'application/json',
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',

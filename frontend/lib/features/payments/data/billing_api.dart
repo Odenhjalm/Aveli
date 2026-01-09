@@ -1,5 +1,5 @@
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 
 String _mapPlanToInterval(String plan) {
@@ -21,56 +21,38 @@ class BillingApi {
 
   final ApiClient _client;
 
-  Future<void> startSubscription({required String plan}) async {
+  Future<String> startSubscription({required String plan}) async {
     try {
       final interval = _mapPlanToInterval(plan);
       final response = await _client.post<Map<String, dynamic>>(
-        '/api/billing/create-subscription-sheet',
+        ApiPaths.billingCreateSubscription,
         body: {'interval': interval},
       );
-      final sheet = (response['payment_sheet'] as Map?)?.cast<String, dynamic>() ??
-          response.cast<String, dynamic>();
-      final clientSecret = sheet['client_secret'] as String? ??
-          sheet['payment_intent'] as String?;
-      final customerId = sheet['customer'] as String? ??
-          sheet['customer_id'] as String?;
-      final ephemeralKey = sheet['ephemeral_key'] as String? ??
-          sheet['ephemeralKey'] as String?;
-      if (clientSecret == null ||
-          customerId == null ||
-          ephemeralKey == null) {
-        throw const FormatException('PaymentSheet saknar fält');
+      final checkoutUrl =
+          response['checkout_url'] as String? ?? response['url'] as String?;
+      if (checkoutUrl == null || checkoutUrl.isEmpty) {
+        throw const FormatException('Checkout-URL saknas');
       }
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Aveli',
-          customerId: customerId,
-          customerEphemeralKeySecret: ephemeralKey,
-        ),
-      );
-      await Stripe.instance.presentPaymentSheet();
+      return checkoutUrl;
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
   }
 
   Future<void> changePlan(String plan) async {
-    try {
-      final interval = _mapPlanToInterval(plan);
-      await _client.post<Map<String, dynamic>>(
-        '/api/billing/change-plan',
-        body: {'interval': interval},
-      );
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
+    final normalized = plan.trim();
+    if (normalized.isEmpty) {
+      throw UnexpectedFailure(message: 'Plan saknas för planbyte.');
     }
+    throw UnexpectedFailure(
+      message: 'Planbyten hanteras via kundportalen.',
+    );
   }
 
   Future<void> cancelSubscription() async {
     try {
       await _client.post<Map<String, dynamic>>(
-        '/api/billing/cancel-subscription',
+        ApiPaths.billingCancelSubscription,
         body: const {},
       );
     } catch (error, stackTrace) {

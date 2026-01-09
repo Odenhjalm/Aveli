@@ -1,16 +1,15 @@
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 
 class SessionCheckoutResult {
   SessionCheckoutResult({
-    required this.orderId,
-    required this.clientSecret,
-    this.paymentIntentId,
+    required this.checkoutUrl,
+    this.orderId,
   });
 
-  final String orderId;
-  final String clientSecret;
-  final String? paymentIntentId;
+  final String checkoutUrl;
+  final String? orderId;
 }
 
 class StripeCheckoutService {
@@ -18,22 +17,28 @@ class StripeCheckoutService {
 
   final ApiClient _client;
 
-  Future<SessionCheckoutResult> createSessionPaymentIntent({
+  Future<SessionCheckoutResult> createSessionCheckout({
     required String sessionId,
     String? sessionSlotId,
   }) async {
     try {
+      if (sessionSlotId != null && sessionSlotId.isEmpty) {
+        throw UnexpectedFailure(message: 'Session-slot saknar giltigt id.');
+      }
       final response = await _client.post<Map<String, dynamic>>(
-        '/checkout/session',
+        ApiPaths.checkoutCreate,
         body: {
-          'session_id': sessionId,
-          if (sessionSlotId != null) 'session_slot_id': sessionSlotId,
+          'type': 'service',
+          'slug': sessionId,
         },
       );
+      final checkoutUrl = response['url'] as String? ?? '';
+      if (checkoutUrl.isEmpty) {
+        throw UnexpectedFailure(message: 'Checkout-URL saknas i svaret.');
+      }
       return SessionCheckoutResult(
-        orderId: response['order_id'] as String,
-        clientSecret: response['client_secret'] as String,
-        paymentIntentId: response['payment_intent_id'] as String?,
+        checkoutUrl: checkoutUrl,
+        orderId: response['order_id'] as String?,
       );
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);

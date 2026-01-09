@@ -383,7 +383,7 @@ class StudioRepository {
       );
       return Map<String, dynamic>.from(res);
     } else {
-      final res = await _client.patch<Map<String, dynamic>>(
+      final res = await _client.put<Map<String, dynamic>>(
         '/studio/quizzes/$quizId/questions/$id',
         body: body,
       );

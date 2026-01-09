@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/env_resolver.dart';
+import 'package:aveli/api/api_paths.dart';
 
 import '../domain/entitlements.dart';
 
@@ -21,7 +22,7 @@ class EntitlementsApi {
 
   Future<Entitlements> fetchEntitlements() async {
     final token = await _tokenStorage.readAccessToken();
-    final uri = Uri.parse('$_baseUrl/api/me/entitlements');
+    final uri = Uri.parse('$_baseUrl${ApiPaths.meEntitlements}');
     final res = await _client.get(
       uri,
       headers: {

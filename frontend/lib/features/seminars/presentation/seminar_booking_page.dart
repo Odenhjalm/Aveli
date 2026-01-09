@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/payments/application/payments_providers.dart';
-import 'package:aveli/features/payments/widgets/payment_panel.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_sessions_repository.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -75,32 +76,12 @@ class _SeminarBookingPageState extends ConsumerState<SeminarBookingPage> {
     });
     try {
       final service = ref.read(stripeCheckoutServiceProvider);
-      final result = await service.createSessionPaymentIntent(
+      final result = await service.createSessionCheckout(
         sessionId: session.id,
         sessionSlotId: slotId,
       );
       if (!mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (modalContext) => Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            bottom: MediaQuery.of(modalContext).viewInsets.bottom + 24,
-            top: 24,
-          ),
-          child: PaymentPanel(
-            clientSecret: result.clientSecret,
-            onPaymentSuccess: () {
-              Navigator.of(modalContext).maybePop();
-              _handleSuccess(session);
-            },
-            onCancelled: () {},
-          ),
-        ),
-      );
+      context.push(RoutePath.checkout, extra: result.checkoutUrl);
     } on AppFailure catch (failure) {
       setState(() => _errorMessage = failure.message);
     } catch (error) {
@@ -110,48 +91,6 @@ class _SeminarBookingPageState extends ConsumerState<SeminarBookingPage> {
         setState(() => _processingPayment = false);
       }
     }
-  }
-
-  void _handleSuccess(StudioSession session) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.check_circle,
-                color: Colors.greenAccent,
-                size: 64,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Betalning genomförd!',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Du har nu bokat din plats i ${session.title}.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              GradientButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  Navigator.of(context).maybePop();
-                },
-                child: const Text('Tillbaka till hem'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    ref.invalidate(publicSessionSlotsProvider(session.id));
   }
 }
 

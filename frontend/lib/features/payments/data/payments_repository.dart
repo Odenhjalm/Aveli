@@ -1,4 +1,5 @@
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/data/models/order.dart';
 
@@ -17,43 +18,28 @@ class CouponRedeemResult {
   final Map<String, dynamic>? subscription;
 }
 
-class CreateSubscriptionResult {
-  CreateSubscriptionResult({
-    required this.subscriptionId,
-    required this.clientSecret,
-    required this.status,
-  });
-
-  final String subscriptionId;
-  final String? clientSecret;
-  final String? status;
-}
-
 class PaymentsRepository {
   PaymentsRepository(this._client);
 
   final ApiClient _client;
 
   Future<List<Map<String, dynamic>>> plans() async {
-    try {
-      final response = await _client.get<Map<String, dynamic>>(
-        '/payments/plans',
-      );
-      final items = (response['items'] as List? ?? [])
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .toList(growable: false);
-      return items;
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return const [];
   }
 
   Future<bool> hasActiveSubscription() async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
-        '/payments/subscription',
+        ApiPaths.meEntitlements,
       );
-      return response['has_active'] == true;
+      final membership = response['membership'];
+      if (membership is Map<String, dynamic>) {
+        return membership['is_active'] == true;
+      }
+      if (membership is Map) {
+        return membership['is_active'] == true;
+      }
+      return false;
     } catch (error, stackTrace) {
       final failure = AppFailure.from(error, stackTrace);
       if (failure is UnauthorizedFailure) {
@@ -66,7 +52,7 @@ class PaymentsRepository {
   Future<Map<String, dynamic>?> currentSubscription() async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
-        '/api/me/membership',
+        ApiPaths.meMembership,
       );
       final membership = response['membership'];
       if (membership is Map<String, dynamic>) {
@@ -100,42 +86,31 @@ class PaymentsRepository {
     required String planId,
     String? code,
   }) async {
-    try {
-      final response = await _client.post<Map<String, dynamic>>(
-        '/payments/coupons/preview',
-        body: {
-          'plan_id': planId,
-          if (code != null && code.trim().isNotEmpty) 'code': code.trim(),
-        },
-      );
-      final pay = (response['pay_amount_cents'] as num?)?.toInt() ?? 0;
-      return CouponPreviewResult(
-        valid: response['valid'] == true,
-        payAmountCents: pay,
-      );
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
+    if (planId.isEmpty) {
+      throw UnexpectedFailure(message: 'Plan-ID saknas.');
     }
+    final normalizedCode = code?.trim();
+    if (normalizedCode != null && normalizedCode.isEmpty) {
+      throw UnexpectedFailure(message: 'Rabattkod saknas.');
+    }
+    throw UnexpectedFailure(
+      message: 'Rabattkoder stöds inte av den nuvarande betalnings-API:n.',
+    );
   }
 
   Future<CouponRedeemResult> redeemCoupon({
     required String planId,
     required String code,
   }) async {
-    try {
-      final response = await _client.post<Map<String, dynamic>>(
-        '/payments/coupons/redeem',
-        body: {'plan_id': planId, 'code': code.trim()},
-      );
-      return CouponRedeemResult(
-        ok: response['ok'] == true,
-        reason: response['reason'] as String?,
-        subscription: (response['subscription'] as Map?)
-            ?.cast<String, dynamic>(),
-      );
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
+    if (planId.isEmpty) {
+      throw UnexpectedFailure(message: 'Plan-ID saknas.');
     }
+    if (code.trim().isEmpty) {
+      throw UnexpectedFailure(message: 'Rabattkod saknas.');
+    }
+    throw UnexpectedFailure(
+      message: 'Rabattkoder stöds inte av den nuvarande betalnings-API:n.',
+    );
   }
 
   Future<Map<String, dynamic>> startCourseOrder({
@@ -146,7 +121,7 @@ class PaymentsRepository {
   }) async {
     try {
       final response = await _client.post<Map<String, dynamic>>(
-        '/payments/orders/course',
+        ApiPaths.orders,
         body: {
           'course_id': courseId,
           'amount_cents': amountCents,
@@ -168,7 +143,7 @@ class PaymentsRepository {
   }) async {
     try {
       final response = await _client.post<Map<String, dynamic>>(
-        '/payments/orders/service',
+        ApiPaths.orders,
         body: {
           'service_id': serviceId,
           'amount_cents': amountCents,
@@ -185,7 +160,7 @@ class PaymentsRepository {
   Future<Map<String, dynamic>?> getOrder(String orderId) async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
-        '/payments/orders/$orderId',
+        ApiPaths.order(orderId),
       );
       return (response['order'] as Map?)?.cast<String, dynamic>();
     } catch (error, stackTrace) {
@@ -200,7 +175,7 @@ class PaymentsRepository {
   Future<List<Order>> listOrders({String? status}) async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
-        '/orders',
+        ApiPaths.orders,
         queryParameters: {
           if (status != null && status.trim().isNotEmpty)
             'status': status.trim().toLowerCase(),
@@ -222,14 +197,37 @@ class PaymentsRepository {
     String? customerEmail,
   }) async {
     try {
+      if (successUrl.isEmpty || cancelUrl.isEmpty) {
+        throw UnexpectedFailure(message: 'Checkout-URL saknar callback-adresser.');
+      }
+      final normalizedEmail = customerEmail?.trim();
+      if (customerEmail != null && (normalizedEmail?.isEmpty ?? true)) {
+        throw UnexpectedFailure(message: 'E-postadressen är tom.');
+      }
+      final order = await getOrder(orderId);
+      if (order == null) {
+        throw NotFoundFailure(message: 'Ordern kunde inte hittas.');
+      }
+      final metadata = order['metadata'] as Map? ?? const {};
+      String? slug;
+      String? type;
+      if (order['course_id'] != null) {
+        type = 'course';
+        slug = metadata['course_slug'] as String? ?? order['course_id'] as String?;
+      } else if (order['service_id'] != null) {
+        type = 'service';
+        slug = metadata['service_slug'] as String? ?? order['service_id'] as String?;
+      }
+      if (type == null || slug == null || slug.isEmpty) {
+        throw UnexpectedFailure(
+          message: 'Ordern saknar checkout-detaljer.',
+        );
+      }
       final response = await _client.post<Map<String, dynamic>>(
-        '/payments/create-checkout-session',
+        ApiPaths.checkoutCreate,
         body: {
-          'order_id': orderId,
-          'success_url': successUrl,
-          'cancel_url': cancelUrl,
-          if (customerEmail != null && customerEmail.isNotEmpty)
-            'customer_email': customerEmail,
+          'type': type,
+          'slug': slug,
         },
       );
       return response['url'] as String? ?? '';
@@ -241,7 +239,7 @@ class PaymentsRepository {
   Future<bool> claimPurchase(String token) async {
     try {
       final response = await _client.post<Map<String, dynamic>>(
-        '/payments/purchases/claim',
+        ApiPaths.meClaimPurchase,
         body: {'token': token},
       );
       return response['ok'] == true;
@@ -250,24 +248,18 @@ class PaymentsRepository {
     }
   }
 
-  Future<CreateSubscriptionResult> createSubscription({
-    required String userId,
-    required String priceId,
-  }) async {
+  Future<String> createSubscription({required String interval}) async {
     try {
       final response = await _client.post<Map<String, dynamic>>(
-        '/payments/create-subscription',
-        body: {'user_id': userId, 'price_id': priceId},
+        ApiPaths.billingCreateSubscription,
+        body: {'interval': interval},
       );
-      final subscriptionId = response['subscription_id'] as String?;
-      if (subscriptionId == null || subscriptionId.isEmpty) {
-        throw ServerFailure(message: 'Subscription-ID saknas i svaret.');
+      final checkoutUrl =
+          response['checkout_url'] as String? ?? response['url'] as String?;
+      if (checkoutUrl == null || checkoutUrl.isEmpty) {
+        throw ServerFailure(message: 'Checkout-URL saknas i svaret.');
       }
-      return CreateSubscriptionResult(
-        subscriptionId: subscriptionId,
-        clientSecret: response['client_secret'] as String?,
-        status: response['status'] as String?,
-      );
+      return checkoutUrl;
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -276,7 +268,7 @@ class PaymentsRepository {
   Future<void> cancelSubscription(String subscriptionId) async {
     try {
       await _client.post<Map<String, dynamic>>(
-        '/api/billing/cancel-subscription',
+        ApiPaths.billingCancelSubscription,
         body: {'subscription_id': subscriptionId},
       );
     } catch (error, stackTrace) {

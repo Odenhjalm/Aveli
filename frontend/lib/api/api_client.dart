@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/api/api_paths.dart';
 
 class ApiClient {
   ApiClient({
@@ -145,7 +146,7 @@ class ApiClient {
       }
 
       final refreshResponse = await _dio.post<Map<String, dynamic>>(
-        '/auth/refresh',
+        ApiPaths.authRefresh,
         data: {'refresh_token': refreshToken},
         options: Options(extra: {'skipAuth': true}),
       );
@@ -212,6 +213,24 @@ class ApiClient {
       return parser(response.data!);
     }
     return (response.data as T);
+  }
+
+  Future<T?> put<T>(
+    String path, {
+    Map<String, dynamic>? body,
+    T Function(Map<String, dynamic> data)? parser,
+    bool skipAuth = false,
+    Map<String, dynamic>? extra,
+  }) async {
+    final response = await _dio.put<Map<String, dynamic>>(
+      path,
+      data: body,
+      options: Options(extra: _buildExtra(extra, skipAuth)),
+    );
+    if (parser != null && response.data != null) {
+      return parser(response.data!);
+    }
+    return response.data as T?;
   }
 
   Future<T?> patch<T>(
@@ -283,6 +302,8 @@ class ApiClient {
     final data = response.data ?? <int>[];
     return Uint8List.fromList(data);
   }
+
+  String get baseUrl => _dio.options.baseUrl;
 
   Dio get raw => _dio;
 }

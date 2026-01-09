@@ -150,6 +150,26 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
     return schemas.Token(access_token=access_token, refresh_token=refresh_token)
 
 
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(payload: schemas.AuthForgotPasswordRequest):
+    user = await repositories.get_user_by_email(payload.email)
+    if user:
+        # Placeholder for email/reset token integration.
+        pass
+    return {"status": "ok"}
+
+
+@router.post("/reset-password")
+async def reset_password(payload: schemas.AuthResetPasswordRequest):
+    user = await repositories.get_user_by_email(payload.email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    await models.update_user_password(user["id"], payload.new_password)
+    return {"status": "ok"}
+
+
 @router.post("/refresh", response_model=schemas.Token)
 async def refresh(payload: schemas.TokenRefreshRequest, request: Request):
     try:
