@@ -215,6 +215,24 @@ class ApiClient {
     return (response.data as T);
   }
 
+  Future<T?> put<T>(
+    String path, {
+    Map<String, dynamic>? body,
+    T Function(Map<String, dynamic> data)? parser,
+    bool skipAuth = false,
+    Map<String, dynamic>? extra,
+  }) async {
+    final response = await _dio.put<Map<String, dynamic>>(
+      path,
+      data: body,
+      options: Options(extra: _buildExtra(extra, skipAuth)),
+    );
+    if (parser != null && response.data != null) {
+      return parser(response.data!);
+    }
+    return response.data as T?;
+  }
+
   Future<T?> patch<T>(
     String path, {
     Map<String, dynamic>? body,
