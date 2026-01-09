@@ -1,0 +1,5151 @@
+{
+  "generated_from": "backend/app/routes/*.py (static analysis)",
+  "notes": [
+    "Tables inferred from SQL strings and referenced repository/service/model functions; dynamic SQL may under-report tables.",
+    "Errors list only explicit HTTPException status codes."
+  ],
+  "unmounted_routers": [
+    "backend/app/routes/auth.py",
+    "backend/app/routes/api_payments.py"
+  ],
+  "hidden_routes": [
+    {
+      "method": "GET",
+      "path": "/courses/",
+      "alias_for": "/courses",
+      "source": "backend/app/routes/courses.py:42",
+      "include_in_schema": false
+    },
+    {
+      "method": "GET",
+      "path": "/courses/config/free-course-limit",
+      "alias_for": "/courses/config/free-limit",
+      "source": "backend/app/routes/courses.py:192",
+      "include_in_schema": false
+    }
+  ],
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/admin/dashboard",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [],
+      "response_model": "schemas.AdminDashboard",
+      "status_code": null,
+      "services_repos": [
+        "models.list_recent_certificates",
+        "models.list_teacher_applications"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.profiles",
+        "app.teacher_approvals"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 23,
+        "handler": "admin_dashboard"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/settings",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [],
+      "response_model": "schemas.AdminSettingsResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.fetch_admin_metrics",
+        "models.list_teacher_course_priorities"
+      ],
+      "tables": [
+        "app.auth_events",
+        "app.course_display_priorities",
+        "app.courses",
+        "app.orders",
+        "app.payments",
+        "app.profiles"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 34,
+        "handler": "admin_settings"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/teacher-requests",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [],
+      "response_model": "schemas.TeacherApplicationListResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_teacher_applications"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.profiles",
+        "app.teacher_approvals"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 48,
+        "handler": "admin_teacher_requests"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/admin/teachers/{user_id}/approve",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "models.approve_teacher_user"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.profiles",
+        "app.teacher_approvals"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 54,
+        "handler": "admin_approve_teacher"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/admin/teacher-requests/{user_id}/approve",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "models.approve_teacher_user"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.profiles",
+        "app.teacher_approvals"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 63,
+        "handler": "admin_teacher_request_approve"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/admin/teachers/{user_id}/reject",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "models.reject_teacher_user"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.teacher_approvals"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 69,
+        "handler": "admin_reject_teacher"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/admin/teacher-requests/{user_id}/reject",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "models.reject_teacher_user"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.teacher_approvals"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 78,
+        "handler": "admin_teacher_request_reject"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/certificates/{certificate_id}",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str",
+        "schemas.CertificateStatusUpdate"
+      ],
+      "response_model": "schemas.CertificateRecord",
+      "status_code": null,
+      "services_repos": [
+        "models.set_certificate_status"
+      ],
+      "tables": [
+        "app.certificates"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 87,
+        "handler": "admin_update_certificate"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/teachers/{teacher_id}/priority",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str",
+        "schemas.TeacherPriorityUpdate"
+      ],
+      "response_model": "schemas.TeacherPriorityRecord",
+      "status_code": null,
+      "services_repos": [
+        "models.get_teacher_course_priority",
+        "models.upsert_teacher_course_priority"
+      ],
+      "tables": [
+        "app.course_display_priorities",
+        "app.courses",
+        "app.profiles"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 102,
+        "handler": "admin_set_teacher_priority"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/admin/teachers/{teacher_id}/priority",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.TeacherPriorityRecord",
+      "status_code": null,
+      "services_repos": [
+        "models.delete_teacher_course_priority",
+        "models.get_teacher_course_priority"
+      ],
+      "tables": [
+        "app.course_display_priorities",
+        "app.courses",
+        "app.profiles"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/admin.py",
+        "line": 126,
+        "handler": "admin_clear_teacher_priority"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/execute",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "AIExecuteRequest",
+        "Request"
+      ],
+      "response_model": "AIExecuteResponse",
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_ai.py",
+        "line": 152,
+        "handler": "execute_ai"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/execute-built",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": "AIExecuteBuiltResponse",
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_500_INTERNAL_SERVER_ERROR"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_ai.py",
+        "line": 184,
+        "handler": "execute_ai_with_built_context"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/tool-call",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": "AIToolCallResponse",
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_ai.py",
+        "line": 289,
+        "handler": "tool_call"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/plan-and-execute",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": "AIPlanExecuteResponse",
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_ai.py",
+        "line": 360,
+        "handler": "plan_and_execute"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/plan-and-execute-v1",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": "AIPlanExecuteV1Response",
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_403_FORBIDDEN"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_ai.py",
+        "line": 498,
+        "handler": "plan_and_execute_v1"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/oauth",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_410_GONE"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 53,
+        "handler": "oauth_legacy_disabled"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/register",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.AuthRegisterRequest",
+        "Request"
+      ],
+      "response_model": "schemas.Token",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "models.is_teacher_user",
+        "repositories.create_user",
+        "repositories.get_profile",
+        "repositories.get_user_by_email",
+        "repositories.insert_auth_event",
+        "repositories.upsert_refresh_token"
+      ],
+      "tables": [
+        "app.auth_events",
+        "app.profiles",
+        "app.refresh_tokens",
+        "app.teacher_approvals",
+        "app.teacher_permissions",
+        "auth.users"
+      ],
+      "errors": [
+        "status.HTTP_409_CONFLICT"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 64,
+        "handler": "register"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.AuthLoginRequest",
+        "Request"
+      ],
+      "response_model": "schemas.Token",
+      "status_code": null,
+      "services_repos": [
+        "models.is_teacher_user",
+        "repositories.get_profile",
+        "repositories.get_user_by_email",
+        "repositories.insert_auth_event",
+        "repositories.upsert_refresh_token"
+      ],
+      "tables": [
+        "app.auth_events",
+        "app.profiles",
+        "app.refresh_tokens",
+        "app.teacher_approvals",
+        "app.teacher_permissions",
+        "auth.users"
+      ],
+      "errors": [
+        "status.HTTP_401_UNAUTHORIZED"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 108,
+        "handler": "login"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.TokenRefreshRequest",
+        "Request"
+      ],
+      "response_model": "schemas.Token",
+      "status_code": null,
+      "services_repos": [
+        "models.is_teacher_user",
+        "repositories.get_profile",
+        "repositories.get_refresh_token",
+        "repositories.insert_auth_event",
+        "repositories.revoke_refresh_token",
+        "repositories.touch_refresh_token_as_rotated",
+        "repositories.upsert_refresh_token"
+      ],
+      "tables": [
+        "app.auth_events",
+        "app.profiles",
+        "app.refresh_tokens",
+        "app.teacher_approvals",
+        "app.teacher_permissions"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_401_UNAUTHORIZED"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 154,
+        "handler": "refresh"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/auth/me",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_profile"
+      ],
+      "tables": [
+        "app.profiles"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 229,
+        "handler": "me"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/auth/me",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.ProfileUpdate"
+      ],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "repositories.update_profile"
+      ],
+      "tables": [
+        "app.profiles"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 239,
+        "handler": "update_me"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/me/avatar",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "UploadFile"
+      ],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "models.cleanup_media_object",
+        "models.create_media_object",
+        "models.get_media_object",
+        "repositories.get_profile",
+        "repositories.update_profile"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.media_objects",
+        "app.profiles"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_404_NOT_FOUND",
+        "status.HTTP_413_REQUEST_ENTITY_TOO_LARGE",
+        "status.HTTP_415_UNSUPPORTED_MEDIA_TYPE",
+        "status.HTTP_500_INTERNAL_SERVER_ERROR"
+      ],
+      "notes": [
+        "multipart upload"
+      ],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 254,
+        "handler": "upload_avatar"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/auth/avatar/{media_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_media_object"
+      ],
+      "tables": [
+        "app.media_objects"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/api_auth.py",
+        "line": 337,
+        "handler": "get_avatar"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/checkout/create",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "CheckoutCreateRequest"
+      ],
+      "response_model": "CheckoutCreateResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "checkout_service.create_course_checkout",
+        "universal_checkout_service.create_checkout_session"
+      ],
+      "tables": [
+        "app.billing_logs",
+        "app.memberships",
+        "app.orders"
+      ],
+      "errors": [
+        "exc.status_code",
+        "status.HTTP_400_BAD_REQUEST"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_checkout.py",
+        "line": 17,
+        "handler": "create_checkout_handler"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/context7/build",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "ContextBuildRequest",
+        "Request"
+      ],
+      "response_model": "ContextBuildResponse",
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_500_INTERNAL_SERVER_ERROR"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_context7.py",
+        "line": 34,
+        "handler": "build_context"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/feed",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "int"
+      ],
+      "response_model": "schemas.FeedResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.list_feed"
+      ],
+      "tables": [
+        "app.activities_feed"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_feed.py",
+        "line": 10,
+        "handler": "get_feed"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/membership",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "MembershipResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_membership"
+      ],
+      "tables": [
+        "app.memberships"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_me.py",
+        "line": 13,
+        "handler": "get_my_membership"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/entitlements",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "schemas.EntitlementsResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_membership",
+        "repositories.list_entitlements_for_user"
+      ],
+      "tables": [
+        "app.course_entitlements",
+        "app.memberships"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_me.py",
+        "line": 32,
+        "handler": "get_my_entitlements"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/orders",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.OrderCreateRequest"
+      ],
+      "response_model": "schemas.OrderResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "repositories.create_order",
+        "repositories.get_service"
+      ],
+      "tables": [
+        "app.orders",
+        "app.services"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_orders.py",
+        "line": 12,
+        "handler": "create_order"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/orders/{order_id}",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.OrderResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_user_order"
+      ],
+      "tables": [
+        "app.orders"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_orders.py",
+        "line": 63,
+        "handler": "get_order"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/orders",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str | None",
+        "int"
+      ],
+      "response_model": "schemas.OrderListResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.list_user_orders"
+      ],
+      "tables": [
+        "app.orders"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_orders.py",
+        "line": 73,
+        "handler": "list_orders"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/payments/create-checkout-session",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "CheckoutSessionRequest"
+      ],
+      "response_model": "CheckoutSessionResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "subscription_service.create_checkout_session"
+      ],
+      "tables": [
+        "app.billing_logs"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_payments.py",
+        "line": 17,
+        "handler": "create_checkout_session"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/profiles/me",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_profile"
+      ],
+      "tables": [
+        "app.profiles"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_profiles.py",
+        "line": 21,
+        "handler": "get_me"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/profiles/me",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.ProfileUpdate"
+      ],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "repositories.update_profile"
+      ],
+      "tables": [
+        "app.profiles"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_profiles.py",
+        "line": 31,
+        "handler": "update_me"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/profiles/me/avatar",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "UploadFile"
+      ],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "models.cleanup_media_object",
+        "models.create_media_object",
+        "models.get_media_object",
+        "repositories.get_profile",
+        "repositories.update_profile"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.media_objects",
+        "app.profiles"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_404_NOT_FOUND",
+        "status.HTTP_413_REQUEST_ENTITY_TOO_LARGE",
+        "status.HTTP_415_UNSUPPORTED_MEDIA_TYPE",
+        "status.HTTP_500_INTERNAL_SERVER_ERROR"
+      ],
+      "notes": [
+        "multipart upload"
+      ],
+      "source": {
+        "file": "backend/app/routes/api_profiles.py",
+        "line": 46,
+        "handler": "upload_avatar"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/profiles/avatar/{media_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_media_object"
+      ],
+      "tables": [
+        "app.media_objects"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/api_profiles.py",
+        "line": 129,
+        "handler": "avatar_file"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/profiles/{user_id}/certificates",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str",
+        "bool"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.certificates_of"
+      ],
+      "tables": [],
+      "errors": [
+        "status.HTTP_403_FORBIDDEN"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/api_profiles.py",
+        "line": 161,
+        "handler": "certificates"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/services",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str | None"
+      ],
+      "response_model": "schemas.ServiceListResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.list_services"
+      ],
+      "tables": [
+        "app.services"
+      ],
+      "errors": [
+        "400"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_services.py",
+        "line": 53,
+        "handler": "list_services"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/sfu/token",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.LiveKitTokenRequest"
+      ],
+      "response_model": "schemas.LiveKitTokenResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_latest_session",
+        "repositories.get_seminar",
+        "repositories.get_seminar_session",
+        "repositories.get_user_seminar_role"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminar_attendees",
+        "app.seminar_sessions",
+        "app.seminars"
+      ],
+      "errors": [
+        "status.HTTP_403_FORBIDDEN",
+        "status.HTTP_404_NOT_FOUND",
+        "status.HTTP_409_CONFLICT",
+        "status.HTTP_503_SERVICE_UNAVAILABLE"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/api_sfu.py",
+        "line": 17,
+        "handler": "create_livekit_token"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/sfu/webhooks/livekit",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "exc.status_code",
+        "status.HTTP_400_BAD_REQUEST"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/api_sfu.py",
+        "line": 104,
+        "handler": "livekit_webhook"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/register",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.AuthRegisterRequest",
+        "Request"
+      ],
+      "response_model": "schemas.Token",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "models.create_user",
+        "models.get_profile_row",
+        "models.get_user_by_email",
+        "models.get_user_by_id",
+        "models.is_teacher_user",
+        "models.record_auth_event",
+        "models.register_refresh_token"
+      ],
+      "tables": [
+        "app.auth_events",
+        "app.profiles",
+        "app.teacher_approvals",
+        "app.teacher_permissions"
+      ],
+      "errors": [
+        "400",
+        "status.HTTP_429_TOO_MANY_REQUESTS"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/auth.py",
+        "line": 100,
+        "handler": "register"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.AuthLoginRequest",
+        "Request"
+      ],
+      "response_model": "schemas.Token",
+      "status_code": null,
+      "services_repos": [
+        "models.get_profile_row",
+        "models.get_user_by_email",
+        "models.get_user_by_id",
+        "models.is_teacher_user",
+        "models.record_auth_event",
+        "models.register_refresh_token"
+      ],
+      "tables": [
+        "app.auth_events",
+        "app.profiles",
+        "app.teacher_approvals",
+        "app.teacher_permissions"
+      ],
+      "errors": [
+        "401",
+        "status.HTTP_429_TOO_MANY_REQUESTS"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/auth.py",
+        "line": 144,
+        "handler": "login"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/forgot-password",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.AuthForgotPasswordRequest"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_202_ACCEPTED",
+      "services_repos": [
+        "models.get_user_by_email"
+      ],
+      "tables": [],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/auth.py",
+        "line": 195,
+        "handler": "forgot_password"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/reset-password",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.AuthResetPasswordRequest"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_user_by_email",
+        "models.update_user_password"
+      ],
+      "tables": [
+        "auth.users"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/auth.py",
+        "line": 205,
+        "handler": "reset_password"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "schemas.TokenRefreshRequest",
+        "Request"
+      ],
+      "response_model": "schemas.Token",
+      "status_code": null,
+      "services_repos": [
+        "models.get_profile_row",
+        "models.get_user_by_id",
+        "models.is_teacher_user",
+        "models.record_auth_event",
+        "models.register_refresh_token",
+        "models.validate_refresh_token"
+      ],
+      "tables": [
+        "app.auth_events",
+        "app.profiles",
+        "app.refresh_tokens",
+        "app.teacher_approvals",
+        "app.teacher_permissions"
+      ],
+      "errors": [
+        "401"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/auth.py",
+        "line": 214,
+        "handler": "refresh_token"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/billing/create-subscription",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "SubscriptionSessionRequest"
+      ],
+      "response_model": "SubscriptionCheckoutResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "subscription_service.create_subscription_checkout"
+      ],
+      "tables": [
+        "app.billing_logs",
+        "app.memberships"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/billing.py",
+        "line": 26,
+        "handler": "create_subscription_endpoint"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/billing/customer-portal",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "BillingPortalResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "billing_portal_service.create_billing_portal_session"
+      ],
+      "tables": [
+        "app.billing_logs",
+        "app.memberships"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/billing.py",
+        "line": 42,
+        "handler": "create_billing_portal"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/billing/create-checkout-session",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "CheckoutSessionRequest"
+      ],
+      "response_model": "CheckoutSessionResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "subscription_service.create_checkout_session"
+      ],
+      "tables": [
+        "app.billing_logs"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/billing.py",
+        "line": 57,
+        "handler": "create_checkout_session"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/billing/session-status",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "SessionStatusResponse",
+      "status_code": null,
+      "services_repos": [
+        "subscription_service.fetch_session_status"
+      ],
+      "tables": [
+        "app.memberships"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/billing.py",
+        "line": 69,
+        "handler": "get_session_status"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/billing/cancel-subscription",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "SubscriptionCancelRequest"
+      ],
+      "response_model": "SubscriptionCancelResponse",
+      "status_code": null,
+      "services_repos": [
+        "subscription_service.cancel_subscription"
+      ],
+      "tables": [
+        "app.billing_logs",
+        "app.memberships"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/billing.py",
+        "line": 82,
+        "handler": "cancel_subscription"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/posts",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "int"
+      ],
+      "response_model": "schemas.CommunityPostListResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_community_posts"
+      ],
+      "tables": [
+        "app.posts",
+        "app.profiles"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 28,
+        "handler": "community_posts"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/community/posts",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.CommunityPostCreate"
+      ],
+      "response_model": "schemas.CommunityPost",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "models.create_community_post"
+      ],
+      "tables": [
+        "app.posts",
+        "app.profiles"
+      ],
+      "errors": [
+        "422"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 36,
+        "handler": "community_create_post"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/teachers",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "int"
+      ],
+      "response_model": "schemas.TeacherDirectoryResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_teacher_directory"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.profiles",
+        "app.teacher_directory"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 52,
+        "handler": "community_teachers"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/teachers/{user_id}",
+      "auth": [
+        "optional",
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.TeacherDetailResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.certificates_of",
+        "models.get_teacher_directory_item",
+        "models.list_teacher_meditations",
+        "models.list_teacher_services"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.meditations",
+        "app.profiles",
+        "app.services",
+        "app.teacher_directory"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 58,
+        "handler": "community_teacher_detail"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/teachers/{user_id}/media",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.TeacherProfileMediaPublicResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.list_public_teacher_profile_media"
+      ],
+      "tables": [
+        "app.courses",
+        "app.lesson_media",
+        "app.lessons",
+        "app.media_objects",
+        "app.modules",
+        "app.seminar_recordings",
+        "app.seminars",
+        "app.teacher_profile_media"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 97,
+        "handler": "community_teacher_profile_media"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/teachers/{user_id}/services",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "List[schemas.ServiceSummary]",
+      "status_code": null,
+      "services_repos": [
+        "models.list_teacher_services"
+      ],
+      "tables": [
+        "app.services"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 104,
+        "handler": "community_teacher_services"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/services/{service_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.ServiceDetailResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.service_detail"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.services"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 112,
+        "handler": "community_service_detail"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/teachers/{user_id}/meditations",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "List[schemas.MeditationSummary]",
+      "status_code": null,
+      "services_repos": [
+        "models.list_teacher_meditations"
+      ],
+      "tables": [
+        "app.meditations"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 122,
+        "handler": "community_teacher_meditations"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/teachers/{user_id}/certificates",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.certificates_of"
+      ],
+      "tables": [],
+      "errors": [
+        "status.HTTP_403_FORBIDDEN"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 127,
+        "handler": "community_teacher_certificates"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/profiles/{user_id}",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.ProfileDetailResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.profile_overview"
+      ],
+      "tables": [],
+      "errors": [
+        "404",
+        "status.HTTP_403_FORBIDDEN"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 142,
+        "handler": "community_profile_detail"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/meditations/public",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "int"
+      ],
+      "response_model": "schemas.MeditationListResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_public_meditations"
+      ],
+      "tables": [
+        "app.meditations"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 159,
+        "handler": "community_public_meditations"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/meditations/audio",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 167,
+        "handler": "community_meditation_audio"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/community/follows/{user_id}",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "models.follow_user"
+      ],
+      "tables": [
+        "app.follows"
+      ],
+      "errors": [
+        "400"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 176,
+        "handler": "community_follow"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/community/follows/{user_id}",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "models.unfollow_user"
+      ],
+      "tables": [
+        "app.follows"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 188,
+        "handler": "community_unfollow"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/certificates/verified-count",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "list[str]"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.verified_certificate_counts"
+      ],
+      "tables": [
+        "app.certificates"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 194,
+        "handler": "community_verified_count"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/tarot/requests",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "schemas.TarotRequestListResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_tarot_requests_for_user"
+      ],
+      "tables": [
+        "app.tarot_requests"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 203,
+        "handler": "community_tarot_requests"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/community/tarot/requests",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.TarotRequestCreate"
+      ],
+      "response_model": "schemas.TarotRequestRecord",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "models.create_tarot_request"
+      ],
+      "tables": [
+        "app.tarot_requests"
+      ],
+      "errors": [
+        "400"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 213,
+        "handler": "community_create_tarot_request"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/notifications",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "bool"
+      ],
+      "response_model": "schemas.NotificationListResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_notifications_for_user"
+      ],
+      "tables": [
+        "app.notifications"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 228,
+        "handler": "community_notifications"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/community/notifications/{notification_id}",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str",
+        "schemas.NotificationUpdate"
+      ],
+      "response_model": "schemas.NotificationRecord",
+      "status_code": null,
+      "services_repos": [
+        "models.mark_notification_read"
+      ],
+      "tables": [
+        "app.notifications"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 237,
+        "handler": "community_update_notification"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/services/{service_id}/reviews",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.ReviewListResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_reviews_for_service"
+      ],
+      "tables": [
+        "app.reviews"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 251,
+        "handler": "service_reviews"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/community/services/{service_id}/reviews",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str",
+        "schemas.ReviewCreate"
+      ],
+      "response_model": "schemas.ReviewRecord",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "models.add_review_for_service"
+      ],
+      "tables": [
+        "app.reviews"
+      ],
+      "errors": [
+        "422"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 261,
+        "handler": "service_add_review"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/community/messages",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "schemas.MessageListResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.list_channel_messages"
+      ],
+      "tables": [
+        "app.messages"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_403_FORBIDDEN"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 279,
+        "handler": "community_messages"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/community/messages",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.MessageCreate"
+      ],
+      "response_model": "schemas.MessageRecord",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "models.create_channel_message"
+      ],
+      "tables": [
+        "app.messages"
+      ],
+      "errors": [
+        "422",
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_403_FORBIDDEN"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/community.py",
+        "line": 300,
+        "handler": "community_send_message"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/connect/onboarding",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.ConnectOnboardingRequest"
+      ],
+      "response_model": "schemas.ConnectOnboardingResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "connect_service.create_onboarding_link"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.teachers"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/connect.py",
+        "line": 17,
+        "handler": "create_onboarding_link"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/connect/status",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [],
+      "response_model": "schemas.ConnectStatusResponse",
+      "status_code": null,
+      "services_repos": [
+        "connect_service.get_connect_status"
+      ],
+      "tables": [
+        "app.teachers"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/connect.py",
+        "line": 33,
+        "handler": "get_connect_status"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/course-bundles/{bundle_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "CourseBundleResponse",
+      "status_code": null,
+      "services_repos": [
+        "course_bundles_service.get_bundle"
+      ],
+      "tables": [],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/course_bundles.py",
+        "line": 23,
+        "handler": "get_bundle"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/teachers/course-bundles",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "CourseBundleCreateRequest"
+      ],
+      "response_model": "CourseBundleResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "course_bundles_service.create_bundle"
+      ],
+      "tables": [
+        "app.course_bundles"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/course_bundles.py",
+        "line": 35,
+        "handler": "create_bundle"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/teachers/course-bundles",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [],
+      "response_model": "CourseBundleListResponse",
+      "status_code": null,
+      "services_repos": [
+        "course_bundles_service.list_teacher_bundles"
+      ],
+      "tables": [
+        "app.course_bundles"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/course_bundles.py",
+        "line": 51,
+        "handler": "list_teacher_bundles"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/teachers/course-bundles/{bundle_id}/courses",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "CourseBundleCourseRequest"
+      ],
+      "response_model": "CourseBundleResponse",
+      "status_code": null,
+      "services_repos": [
+        "course_bundles_service.attach_course"
+      ],
+      "tables": [
+        "app.course_bundles"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/course_bundles.py",
+        "line": 65,
+        "handler": "add_course_to_bundle"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/course-bundles/{bundle_id}/checkout-session",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": "CheckoutCreateResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "course_bundles_service.create_checkout_session"
+      ],
+      "tables": [
+        "app.orders"
+      ],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/course_bundles.py",
+        "line": 88,
+        "handler": "create_bundle_checkout"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "bool",
+        "bool | None",
+        "str | None",
+        "int | None"
+      ],
+      "response_model": "schemas.CourseListResponse",
+      "status_code": null,
+      "services_repos": [
+        "courses_service.list_public_courses"
+      ],
+      "tables": [
+        "app.courses"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 24,
+        "handler": "list_courses"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/{slug}/pricing",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_repo.get_course_by_slug"
+      ],
+      "tables": [],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 46,
+        "handler": "course_pricing"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/courses/{slug}/pricing",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_repo.get_course_by_slug"
+      ],
+      "tables": [],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 56,
+        "handler": "course_pricing_api"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/courses/{slug}/bind-price",
+      "auth": [
+        "admin"
+      ],
+      "request_models": [
+        "str",
+        "dict[str, str]"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_repo.get_course_by_slug",
+        "courses_repo.update_course_stripe_ids"
+      ],
+      "tables": [
+        "app.courses"
+      ],
+      "errors": [
+        "404",
+        "status.HTTP_400_BAD_REQUEST"
+      ],
+      "notes": [
+        "no response_model",
+        "untyped body (dict)"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 61,
+        "handler": "bind_course_price"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/{course_id}/modules",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.list_modules"
+      ],
+      "tables": [
+        "app.modules"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 77,
+        "handler": "modules_for_course"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/modules/{module_id}/lessons",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.list_lessons"
+      ],
+      "tables": [
+        "app.lessons"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 83,
+        "handler": "lessons_for_module"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/lessons/{lesson_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.fetch_lesson",
+        "courses_service.fetch_module",
+        "courses_service.list_course_lessons",
+        "courses_service.list_lesson_media",
+        "courses_service.list_lessons",
+        "courses_service.list_modules"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.lessons",
+        "app.media_objects",
+        "app.modules"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 89,
+        "handler": "lesson_detail"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/me",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "schemas.CourseListResponse",
+      "status_code": null,
+      "services_repos": [
+        "courses_service.list_my_courses"
+      ],
+      "tables": [
+        "app.courses",
+        "app.enrollments"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 118,
+        "handler": "my_courses"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/{course_id}/enrollment",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.is_user_enrolled"
+      ],
+      "tables": [
+        "app.enrollments"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 127,
+        "handler": "enrollment_status"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/courses/{course_id}/enroll",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.enroll_free_intro"
+      ],
+      "tables": [
+        "app.app_config",
+        "app.courses",
+        "app.enrollments",
+        "app.profiles",
+        "app.subscriptions"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_403_FORBIDDEN",
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 133,
+        "handler": "enroll_course"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/{course_id}/latest-order",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.latest_order_for_course"
+      ],
+      "tables": [
+        "app.orders"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 174,
+        "handler": "latest_order"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/free-consumed",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.free_consumed_count",
+        "courses_service.get_free_course_limit"
+      ],
+      "tables": [
+        "app.app_config",
+        "app.courses",
+        "app.enrollments"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 180,
+        "handler": "free_consumed"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/config/free-limit",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.get_free_course_limit"
+      ],
+      "tables": [
+        "app.app_config"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 187,
+        "handler": "free_limit"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/config/free-course-limit",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.get_free_course_limit"
+      ],
+      "tables": [
+        "app.app_config"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 201,
+        "handler": "global_free_course_limit"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/intro-first",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.list_public_courses"
+      ],
+      "tables": [
+        "app.courses"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 206,
+        "handler": "intro_first"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/{course_id}/access",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.course_access_snapshot"
+      ],
+      "tables": [
+        "app.app_config",
+        "app.profiles",
+        "app.subscriptions"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 219,
+        "handler": "course_access"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/{course_id}/quiz",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.course_quiz_info"
+      ],
+      "tables": [
+        "app.certificates",
+        "app.course_quizzes"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 227,
+        "handler": "quiz_info"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/quiz/{quiz_id}/questions",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.quiz_questions"
+      ],
+      "tables": [
+        "app.quiz_questions"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 233,
+        "handler": "quiz_questions"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/courses/quiz/{quiz_id}/submit",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str",
+        "schemas.QuizSubmission"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.submit_quiz"
+      ],
+      "tables": [
+        "app.grade_quiz_and_issue_certificate"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 239,
+        "handler": "quiz_submit"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/by-slug/{slug}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.fetch_course",
+        "courses_service.list_lessons",
+        "courses_service.list_modules"
+      ],
+      "tables": [
+        "app.courses",
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 249,
+        "handler": "course_detail_by_slug"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/courses/{course_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.fetch_course",
+        "courses_service.list_lessons",
+        "courses_service.list_modules"
+      ],
+      "tables": [
+        "app.courses",
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/courses.py",
+        "line": 269,
+        "handler": "course_detail"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/landing/intro-courses",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.list_intro_courses"
+      ],
+      "tables": [],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/landing.py",
+        "line": 10,
+        "handler": "intro_courses"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/landing/popular-courses",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.list_popular_courses"
+      ],
+      "tables": [
+        "app.course_display_priorities",
+        "app.courses"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/landing.py",
+        "line": 18,
+        "handler": "popular_courses"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/landing/teachers",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.list_teachers"
+      ],
+      "tables": [
+        "app.profiles"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/landing.py",
+        "line": 26,
+        "handler": "teachers"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/landing/services",
+      "auth": [
+        "public"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.list_services"
+      ],
+      "tables": [],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/landing.py",
+        "line": 32,
+        "handler": "services"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/webhooks/livekit",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_200_OK",
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "exc.status_code",
+        "status.HTTP_400_BAD_REQUEST"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/livekit_webhooks.py",
+        "line": 18,
+        "handler": "livekit_webhook"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/media/sign",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.MediaSignRequest"
+      ],
+      "response_model": "schemas.MediaSignResponse",
+      "status_code": null,
+      "services_repos": [
+        "models.get_media"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.media_objects"
+      ],
+      "errors": [
+        "404",
+        "503"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/media.py",
+        "line": 134,
+        "handler": "sign_media"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/media/stream/{token}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str",
+        "Request"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_media",
+        "models.get_media_object"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.media_objects"
+      ],
+      "errors": [
+        "400",
+        "401",
+        "404",
+        "503"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/media.py",
+        "line": 153,
+        "handler": "stream_signed_media"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/profiles/me",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "models.get_profile"
+      ],
+      "tables": [],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/profiles.py",
+        "line": 21,
+        "handler": "get_me"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/profiles/me",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.ProfileUpdate"
+      ],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "models.get_profile",
+        "models.update_profile"
+      ],
+      "tables": [],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/profiles.py",
+        "line": 29,
+        "handler": "patch_me"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/profiles/me/avatar",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "UploadFile"
+      ],
+      "response_model": "schemas.Profile",
+      "status_code": null,
+      "services_repos": [
+        "models.cleanup_media_object",
+        "models.create_media_object",
+        "models.get_media_object",
+        "models.get_profile",
+        "models.update_profile"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.media_objects",
+        "app.profiles"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_404_NOT_FOUND",
+        "status.HTTP_413_REQUEST_ENTITY_TOO_LARGE",
+        "status.HTTP_415_UNSUPPORTED_MEDIA_TYPE",
+        "status.HTTP_500_INTERNAL_SERVER_ERROR"
+      ],
+      "notes": [
+        "multipart upload"
+      ],
+      "source": {
+        "file": "backend/app/routes/profiles.py",
+        "line": 58,
+        "handler": "upload_avatar"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/profiles/avatar/{media_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_media_object"
+      ],
+      "tables": [
+        "app.media_objects"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/profiles.py",
+        "line": 141,
+        "handler": "avatar_file"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/profiles/{user_id}/certificates",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str",
+        "bool"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.certificates_of"
+      ],
+      "tables": [],
+      "errors": [
+        "status.HTTP_403_FORBIDDEN"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/profiles.py",
+        "line": 173,
+        "handler": "certificates"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/seminars",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "int"
+      ],
+      "response_model": "schemas.SeminarListResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.list_public_seminars"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminars"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/seminars.py",
+        "line": 43,
+        "handler": "list_public_seminars"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/seminars/{seminar_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SeminarDetailResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.list_seminar_attendees",
+        "repositories.list_seminar_recordings",
+        "repositories.list_seminar_sessions"
+      ],
+      "tables": [
+        "app.courses",
+        "app.enrollments",
+        "app.profiles",
+        "app.seminar_attendees",
+        "app.seminar_recordings",
+        "app.seminar_sessions",
+        "app.seminars"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/seminars.py",
+        "line": 50,
+        "handler": "get_public_seminar"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/seminars/{seminar_id}/register",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SeminarRegistrationResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.register_attendee",
+        "repositories.user_has_seminar_access"
+      ],
+      "tables": [
+        "app.orders",
+        "app.profiles",
+        "app.seminar_attendees",
+        "app.seminars"
+      ],
+      "errors": [
+        "status.HTTP_403_FORBIDDEN",
+        "status.HTTP_404_NOT_FOUND",
+        "status.HTTP_409_CONFLICT"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/seminars.py",
+        "line": 72,
+        "handler": "register_for_seminar"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/seminars/{seminar_id}/register",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "repositories.unregister_attendee"
+      ],
+      "tables": [
+        "app.seminar_attendees"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/seminars.py",
+        "line": 111,
+        "handler": "unregister_from_seminar"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/sessions",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "datetime | None",
+        "int"
+      ],
+      "response_model": "schemas.SessionListResponse",
+      "status_code": null,
+      "services_repos": [
+        "booking_service.list_public_sessions"
+      ],
+      "tables": [
+        "app.sessions"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/session_slots.py",
+        "line": 15,
+        "handler": "list_public_sessions"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{session_id}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SessionResponse",
+      "status_code": null,
+      "services_repos": [
+        "booking_service.get_session"
+      ],
+      "tables": [
+        "app.sessions"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/session_slots.py",
+        "line": 31,
+        "handler": "get_session"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{session_id}/slots",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SessionSlotListResponse",
+      "status_code": null,
+      "services_repos": [
+        "booking_service.get_session",
+        "booking_service.list_slots_for_session"
+      ],
+      "tables": [
+        "app.session_slots",
+        "app.sessions"
+      ],
+      "errors": [
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/session_slots.py",
+        "line": 41,
+        "handler": "list_public_slots"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/billing/webhook",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_200_OK",
+      "services_repos": [
+        "subscription_service.handle_webhook"
+      ],
+      "tables": [],
+      "errors": [
+        "exc.status_code"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/stripe_webhook.py",
+        "line": 11,
+        "handler": "stripe_subscription_webhook"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/webhooks/stripe",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "Request"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_200_OK",
+      "services_repos": [
+        "checkout_service.handle_payment_intent_succeeded",
+        "course_bundles_service.grant_bundle_entitlements",
+        "courses_repo.ensure_course_enrollment",
+        "courses_repo.get_course_by_slug",
+        "repositories.create_order",
+        "repositories.get_order",
+        "repositories.get_teacher_by_account",
+        "repositories.mark_order_paid",
+        "repositories.record_payment",
+        "repositories.update_teacher_status",
+        "subscription_service.process_event"
+      ],
+      "tables": [
+        "app.billing_logs",
+        "app.enrollments",
+        "app.orders",
+        "app.payment_events",
+        "app.payments",
+        "app.teachers"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_500_INTERNAL_SERVER_ERROR",
+        "status.HTTP_503_SERVICE_UNAVAILABLE"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/stripe_webhooks.py",
+        "line": 66,
+        "handler": "stripe_payment_element_webhook"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/courses",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.teacher_courses"
+      ],
+      "tables": [
+        "app.courses"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 79,
+        "handler": "studio_courses"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/status",
+      "auth": [
+        "required"
+      ],
+      "request_models": [],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.teacher_status"
+      ],
+      "tables": [],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 87,
+        "handler": "studio_status"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/certificates",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "bool"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.user_certificates"
+      ],
+      "tables": [
+        "app.certificates"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 93,
+        "handler": "studio_certificates"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/certificates",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "schemas.StudioCertificateCreate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.add_certificate"
+      ],
+      "tables": [
+        "app.certificates"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 99,
+        "handler": "studio_add_certificate"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/courses",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.StudioCourseCreate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.create_course_for_user"
+      ],
+      "tables": [],
+      "errors": [
+        "400"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 114,
+        "handler": "create_course"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/lessons/{lesson_id}/media/presign",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.LessonMediaPresignRequest"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_lesson"
+      ],
+      "tables": [],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 122,
+        "handler": "presign_lesson_media_upload"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/lessons/{lesson_id}/media/complete",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.LessonMediaUploadCompleteRequest"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.add_lesson_media_entry",
+        "models.get_lesson"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.media_objects"
+      ],
+      "errors": [
+        "400",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 151,
+        "handler": "complete_lesson_media_upload"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/lessons/{lesson_id}/media",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.list_lesson_media"
+      ],
+      "tables": [],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 187,
+        "handler": "list_lesson_media"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/profile/media",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [],
+      "response_model": "schemas.TeacherProfileMediaListResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.list_teacher_lesson_media_sources",
+        "repositories.list_teacher_profile_media",
+        "repositories.list_teacher_seminar_recording_sources"
+      ],
+      "tables": [
+        "app.courses",
+        "app.lesson_media",
+        "app.lessons",
+        "app.media_objects",
+        "app.modules",
+        "app.seminar_recordings",
+        "app.seminars",
+        "app.teacher_profile_media"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 196,
+        "handler": "studio_profile_media"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/profile/media",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.TeacherProfileMediaCreate"
+      ],
+      "response_model": "schemas.TeacherProfileMediaItem",
+      "status_code": "201",
+      "services_repos": [
+        "repositories.create_teacher_profile_media"
+      ],
+      "tables": [
+        "app.teacher_profile_media"
+      ],
+      "errors": [
+        "400",
+        "422"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 217,
+        "handler": "studio_create_profile_media"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/profile/media/{item_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.TeacherProfileMediaUpdate"
+      ],
+      "response_model": "schemas.TeacherProfileMediaItem",
+      "status_code": null,
+      "services_repos": [
+        "repositories.update_teacher_profile_media"
+      ],
+      "tables": [
+        "app.teacher_profile_media"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 263,
+        "handler": "studio_update_profile_media"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/profile/media/{item_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": null,
+      "status_code": "204",
+      "services_repos": [
+        "repositories.delete_teacher_profile_media"
+      ],
+      "tables": [
+        "app.teacher_profile_media"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 295,
+        "handler": "studio_delete_profile_media"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/seminars",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [],
+      "response_model": "schemas.SeminarListResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.list_host_seminars"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminars"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 311,
+        "handler": "studio_list_seminars"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/seminars",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.SeminarCreateRequest"
+      ],
+      "response_model": "schemas.SeminarResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.create_seminar"
+      ],
+      "tables": [
+        "app.seminars"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 318,
+        "handler": "studio_create_seminar"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/seminars/{seminar_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SeminarDetailResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.list_seminar_attendees",
+        "repositories.list_seminar_recordings",
+        "repositories.list_seminar_sessions"
+      ],
+      "tables": [
+        "app.courses",
+        "app.enrollments",
+        "app.profiles",
+        "app.seminar_attendees",
+        "app.seminar_recordings",
+        "app.seminar_sessions",
+        "app.seminars"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 333,
+        "handler": "studio_get_seminar"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/seminars/{seminar_id}/attendees",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.SeminarAttendeeGrantRequest"
+      ],
+      "response_model": "schemas.SeminarRegistrationResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.register_attendee"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminar_attendees",
+        "app.seminars"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 354,
+        "handler": "studio_grant_seminar_access"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/seminars/{seminar_id}/attendees/{user_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "UUID"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.unregister_attendee"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminar_attendees",
+        "app.seminars"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 376,
+        "handler": "studio_revoke_seminar_access"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/seminars/{seminar_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.SeminarUpdateRequest"
+      ],
+      "response_model": "schemas.SeminarResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.update_seminar"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminars"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 395,
+        "handler": "studio_update_seminar"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/seminars/{seminar_id}/publish",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SeminarResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.set_seminar_status"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminars"
+      ],
+      "errors": [
+        "404",
+        "409",
+        "500"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 426,
+        "handler": "studio_publish_seminar"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/seminars/{seminar_id}/cancel",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SeminarResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_seminar",
+        "repositories.set_seminar_status"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminars"
+      ],
+      "errors": [
+        "404",
+        "500"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 444,
+        "handler": "studio_cancel_seminar"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/seminars/{seminar_id}/sessions/start",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.SeminarSessionStartRequest"
+      ],
+      "response_model": "schemas.SeminarSessionStartResponse",
+      "status_code": null,
+      "services_repos": [
+        "livekit_service.create_room",
+        "repositories.create_seminar_session",
+        "repositories.get_seminar",
+        "repositories.get_seminar_session",
+        "repositories.update_seminar",
+        "repositories.update_seminar_session"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminar_sessions",
+        "app.seminars"
+      ],
+      "errors": [
+        "404",
+        "409",
+        "503"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 465,
+        "handler": "studio_start_seminar_session"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/seminars/{seminar_id}/sessions/{session_id}/end",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "UUID",
+        "schemas.SeminarSessionEndRequest | None"
+      ],
+      "response_model": "schemas.SeminarSessionResponse",
+      "status_code": null,
+      "services_repos": [
+        "livekit_service.end_room",
+        "repositories.get_seminar",
+        "repositories.get_seminar_session",
+        "repositories.update_seminar_session"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminar_sessions",
+        "app.seminars"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 568,
+        "handler": "studio_end_seminar_session"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/seminars/{seminar_id}/recordings/reserve",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.SeminarRecordingReserveRequest"
+      ],
+      "response_model": "schemas.SeminarRecordingResponse",
+      "status_code": null,
+      "services_repos": [
+        "repositories.get_latest_session",
+        "repositories.get_seminar",
+        "repositories.get_seminar_session",
+        "repositories.upsert_recording"
+      ],
+      "tables": [
+        "app.profiles",
+        "app.seminar_recordings",
+        "app.seminar_sessions",
+        "app.seminars"
+      ],
+      "errors": [
+        "404"
+      ],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 616,
+        "handler": "studio_reserve_recording"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/courses/{course_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_course",
+        "models.is_course_owner"
+      ],
+      "tables": [],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 690,
+        "handler": "course_meta"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/courses/{course_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "schemas.StudioCourseUpdate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.update_course_for_user"
+      ],
+      "tables": [],
+      "errors": [
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 700,
+        "handler": "update_course"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/courses/{course_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.delete_course_for_user"
+      ],
+      "tables": [],
+      "errors": [
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 714,
+        "handler": "delete_course"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/courses/{course_id}/modules",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.list_lessons",
+        "courses_service.list_modules",
+        "models.is_course_owner",
+        "models.list_lesson_media"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 722,
+        "handler": "course_modules"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/modules/{module_id}/lessons",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.get_module_course_id",
+        "courses_service.list_lessons",
+        "models.is_course_owner",
+        "models.list_lesson_media"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 740,
+        "handler": "module_lessons"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/modules",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.StudioModuleCreate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.upsert_module",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.modules"
+      ],
+      "errors": [
+        "400",
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 755,
+        "handler": "create_module"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/modules/{module_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "schemas.StudioModuleUpdate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.fetch_module",
+        "courses_service.get_module_course_id",
+        "courses_service.upsert_module",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.modules"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 774,
+        "handler": "update_module"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/modules/{module_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.delete_module",
+        "courses_service.get_module_course_id",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.modules"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 794,
+        "handler": "delete_module"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/lessons",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.StudioLessonCreate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.get_module_course_id",
+        "courses_service.upsert_lesson",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "400",
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 805,
+        "handler": "create_lesson"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/lessons/{lesson_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "schemas.StudioLessonUpdate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.fetch_lesson",
+        "courses_service.lesson_course_ids",
+        "courses_service.upsert_lesson",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "400",
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 825,
+        "handler": "update_lesson"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/lessons/{lesson_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.delete_lesson",
+        "courses_service.lesson_course_ids",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 845,
+        "handler": "delete_lesson"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/lessons/{lesson_id}/intro",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "schemas.LessonIntroUpdate"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.lesson_course_ids",
+        "models.is_course_owner",
+        "models.set_lesson_intro"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 856,
+        "handler": "set_intro"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/lessons/{lesson_id}/media",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.lesson_course_ids",
+        "models.is_course_owner",
+        "models.list_lesson_media"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 869,
+        "handler": "lesson_media"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/lessons/{lesson_id}/media",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "UploadFile",
+        "bool"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.fetch_lesson",
+        "courses_service.lesson_course_ids",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model",
+        "multipart upload"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 880,
+        "handler": "upload_media"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/media/{media_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.lesson_course_ids",
+        "models.delete_lesson_media_entry",
+        "models.get_media",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.lessons",
+        "app.media_objects",
+        "app.modules"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 950,
+        "handler": "delete_media"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/lessons/{lesson_id}/media/reorder",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "schemas.MediaReorder"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.lesson_course_ids",
+        "models.is_course_owner",
+        "models.reorder_media"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.lessons",
+        "app.modules"
+      ],
+      "errors": [
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 987,
+        "handler": "reorder_media"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/media/{media_id}",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "str",
+        "Request"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.get_media"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.media_objects"
+      ],
+      "errors": [
+        "404",
+        "410"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 1000,
+        "handler": "media_file"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/courses/{course_id}/quiz",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.ensure_quiz_for_user",
+        "models.is_course_owner"
+      ],
+      "tables": [
+        "app.course_quizzes"
+      ],
+      "errors": [
+        "400",
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 1014,
+        "handler": "ensure_quiz"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/quizzes/{quiz_id}/questions",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.quiz_belongs_to_user",
+        "models.quiz_questions"
+      ],
+      "tables": [
+        "app.course_quizzes",
+        "app.courses"
+      ],
+      "errors": [
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 1024,
+        "handler": "quiz_questions"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/quizzes/{quiz_id}/questions",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "schemas.QuizQuestionUpsert"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.quiz_belongs_to_user",
+        "models.upsert_quiz_question"
+      ],
+      "tables": [
+        "app.course_quizzes",
+        "app.courses",
+        "app.quiz_questions"
+      ],
+      "errors": [
+        "400",
+        "403"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 1032,
+        "handler": "create_question"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/studio/quizzes/{quiz_id}/questions/{question_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "str",
+        "schemas.QuizQuestionUpsert"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.quiz_belongs_to_user",
+        "models.upsert_quiz_question"
+      ],
+      "tables": [
+        "app.course_quizzes",
+        "app.courses",
+        "app.quiz_questions"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 1049,
+        "handler": "update_question"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/quizzes/{quiz_id}/questions/{question_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "str",
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "models.delete_quiz_question",
+        "models.quiz_belongs_to_user"
+      ],
+      "tables": [
+        "app.course_quizzes",
+        "app.courses",
+        "app.quiz_questions"
+      ],
+      "errors": [
+        "403",
+        "404"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio.py",
+        "line": 1066,
+        "handler": "delete_question"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/sessions",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.SessionVisibility | None"
+      ],
+      "response_model": "schemas.SessionListResponse",
+      "status_code": null,
+      "services_repos": [
+        "booking_service.list_sessions_for_teacher"
+      ],
+      "tables": [
+        "app.sessions"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio_sessions.py",
+        "line": 15,
+        "handler": "list_teacher_sessions"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/sessions",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "schemas.SessionCreateRequest"
+      ],
+      "response_model": "schemas.SessionResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "booking_service.create_teacher_session"
+      ],
+      "tables": [
+        "app.sessions"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio_sessions.py",
+        "line": 29,
+        "handler": "create_session"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/studio/sessions/{session_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.SessionUpdateRequest"
+      ],
+      "response_model": "schemas.SessionResponse",
+      "status_code": null,
+      "services_repos": [
+        "booking_service.update_teacher_session"
+      ],
+      "tables": [
+        "app.sessions"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio_sessions.py",
+        "line": 38,
+        "handler": "update_session"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/studio/sessions/{session_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "services_repos": [
+        "booking_service.delete_session"
+      ],
+      "tables": [
+        "app.sessions"
+      ],
+      "errors": [],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/studio_sessions.py",
+        "line": 52,
+        "handler": "delete_session"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/studio/sessions/{session_id}/slots",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID"
+      ],
+      "response_model": "schemas.SessionSlotListResponse",
+      "status_code": null,
+      "services_repos": [
+        "booking_service.list_slots_for_session"
+      ],
+      "tables": [
+        "app.session_slots"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio_sessions.py",
+        "line": 58,
+        "handler": "list_session_slots"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/studio/sessions/{session_id}/slots",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "schemas.SessionSlotCreateRequest"
+      ],
+      "response_model": "schemas.SessionSlotResponse",
+      "status_code": "status.HTTP_201_CREATED",
+      "services_repos": [
+        "booking_service.create_session_slot"
+      ],
+      "tables": [
+        "app.session_slots"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio_sessions.py",
+        "line": 72,
+        "handler": "create_session_slot"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/studio/sessions/{session_id}/slots/{slot_id}",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "UUID",
+        "UUID",
+        "schemas.SessionSlotUpdateRequest"
+      ],
+      "response_model": "schemas.SessionSlotResponse",
+      "status_code": null,
+      "services_repos": [
+        "booking_service.update_session_slot"
+      ],
+      "tables": [
+        "app.session_slots"
+      ],
+      "errors": [],
+      "notes": [],
+      "source": {
+        "file": "backend/app/routes/studio_sessions.py",
+        "line": 89,
+        "handler": "update_session_slot"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/upload/profile",
+      "auth": [
+        "required"
+      ],
+      "request_models": [
+        "Request",
+        "Annotated[UploadFile, File(description='Profile image file')]"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_500_INTERNAL_SERVER_ERROR"
+      ],
+      "notes": [
+        "no response_model",
+        "multipart upload"
+      ],
+      "source": {
+        "file": "backend/app/routes/upload.py",
+        "line": 205,
+        "handler": "upload_profile_media"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/upload/course-media",
+      "auth": [
+        "teacher"
+      ],
+      "request_models": [
+        "Request",
+        "Annotated[UploadFile, File(description='Media file for course content')]",
+        "Annotated[str | None, Form()]",
+        "Annotated[str | None, Form()]",
+        "Annotated[UploadMediaType | None, Form(alias='type')]",
+        "Annotated[bool | None, Form()]"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [
+        "courses_service.fetch_lesson",
+        "courses_service.lesson_course_ids",
+        "models.add_lesson_media_entry",
+        "models.create_media_object",
+        "models.is_course_owner",
+        "models.list_lesson_media"
+      ],
+      "tables": [
+        "app.lesson_media",
+        "app.lessons",
+        "app.media_objects",
+        "app.modules"
+      ],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_403_FORBIDDEN",
+        "status.HTTP_404_NOT_FOUND",
+        "status.HTTP_415_UNSUPPORTED_MEDIA_TYPE"
+      ],
+      "notes": [
+        "no response_model",
+        "multipart upload"
+      ],
+      "source": {
+        "file": "backend/app/routes/upload.py",
+        "line": 238,
+        "handler": "upload_course_media"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/files/{path:path}",
+      "auth": [
+        "public"
+      ],
+      "request_models": [
+        "str"
+      ],
+      "response_model": null,
+      "status_code": null,
+      "services_repos": [],
+      "tables": [],
+      "errors": [
+        "status.HTTP_400_BAD_REQUEST",
+        "status.HTTP_403_FORBIDDEN",
+        "status.HTTP_404_NOT_FOUND"
+      ],
+      "notes": [
+        "no response_model"
+      ],
+      "source": {
+        "file": "backend/app/routes/upload.py",
+        "line": 358,
+        "handler": "serve_uploaded_file"
+      }
+    }
+  ]
+}
