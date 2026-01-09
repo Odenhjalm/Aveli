@@ -220,7 +220,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: _commonOverrides(const AuthState()),
-        child: const WisdomApp(),
+        child: const AveliApp(),
       ),
     );
 
@@ -249,7 +249,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: _commonOverrides(authedState),
-        child: const WisdomApp(),
+        child: const AveliApp(),
       ),
     );
 

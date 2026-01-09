@@ -5,6 +5,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 
 import '../data/certificates_repository.dart';
 import '../data/studio_repository.dart';
+import '../data/studio_sessions_repository.dart';
 import 'studio_upload_queue.dart';
 
 final studioRepositoryProvider = Provider<StudioRepository>((ref) {
@@ -15,6 +16,35 @@ final studioRepositoryProvider = Provider<StudioRepository>((ref) {
 final certificatesRepositoryProvider = Provider<CertificatesRepository>((ref) {
   final client = ref.watch(apiClientProvider);
   return CertificatesRepository(client);
+});
+
+final sessionsRepositoryProvider = Provider<SessionsRepository>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return SessionsRepository(client);
+});
+
+final teacherSessionsProvider =
+    FutureProvider.autoDispose<List<StudioSession>>((ref) async {
+      final repo = ref.watch(sessionsRepositoryProvider);
+      return repo.listTeacherSessions();
+    });
+
+final publishedSessionProvider =
+    FutureProvider.autoDispose.family<StudioSession, String>((
+  ref,
+  sessionId,
+) async {
+  final repo = ref.watch(sessionsRepositoryProvider);
+  return repo.fetchPublishedSession(sessionId);
+});
+
+final publicSessionSlotsProvider =
+    FutureProvider.autoDispose.family<List<StudioSessionSlot>, String>((
+  ref,
+  sessionId,
+) async {
+  final repo = ref.watch(sessionsRepositoryProvider);
+  return repo.listPublicSlots(sessionId);
 });
 
 final myCoursesProvider = FutureProvider<List<Map<String, dynamic>>>((

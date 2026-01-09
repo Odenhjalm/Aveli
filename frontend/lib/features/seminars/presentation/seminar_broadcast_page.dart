@@ -11,7 +11,6 @@ import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/features/home/application/livekit_controller.dart';
 import 'package:aveli/features/seminars/presentation/seminar_route_args.dart';
 import 'package:aveli/shared/utils/media_permissions.dart';
-import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/safe_background.dart';
@@ -95,7 +94,6 @@ class _SeminarBroadcastPageState extends ConsumerState<SeminarBroadcastPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(liveSessionControllerProvider);
     final repository = ref.watch(seminarRepositoryProvider);
-    final assets = ref.watch(backendAssetResolverProvider);
     final backgroundImage =
         AppImages.background; // använd bundlad resurs för förladdning
     ref.listen<LiveSessionState>(liveSessionControllerProvider, (

@@ -266,8 +266,6 @@ class _CourseContent extends StatelessWidget {
         : '';
     final isEnrolling = enrollState.isLoading;
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
-    final canPurchase = priceCents > 0 && !hasAccess;
-
     return AppScaffold(
       title: course.title,
       body: ListView(

@@ -40,21 +40,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   final Set<String> _loadingServiceIds = <String>{};
   bool _redirecting = false;
 
-  Future<void> _startCheckout(BuildContext context) async {
-    try {
-      final url = await ref
-          .read(checkoutApiProvider)
-          .startMembershipCheckout(interval: 'month');
-      if (!mounted) return;
-      context.push(RoutePath.checkout, extra: url);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Kunde inte öppna checkout: $e')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
@@ -221,8 +206,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     Service service,
   ) async {
     if (_loadingServiceIds.contains(service.id)) return;
-    final messenger = ScaffoldMessenger.of(context);
     void showMessage(String message) {
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(message)));
@@ -232,11 +218,11 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     try {
       final checkoutApi = ref.read(checkoutApiProvider);
       final url = await checkoutApi.startServiceCheckout(serviceId: service.id);
-      if (!mounted) return;
+      if (!context.mounted) return;
       context.push(RoutePath.checkout, extra: url);
     } catch (error, stackTrace) {
       debugPrint('checkout failed: $error\n$stackTrace');
-      if (!mounted) return;
+      if (!context.mounted) return;
       final failure = AppFailure.from(error, stackTrace);
       showMessage('Kunde inte skapa beställning: ${failure.message}');
     } finally {
@@ -935,17 +921,6 @@ class _ServicesSection extends StatelessWidget {
       );
     } catch (_) {}
     router.goNamed(AppRoute.login, queryParameters: {'redirect': redirect});
-  }
-}
-
-class _MembershipCta extends StatelessWidget {
-  const _MembershipCta({required this.onCheckout});
-
-  final VoidCallback onCheckout;
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox.shrink();
   }
 }
 

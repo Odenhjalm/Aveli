@@ -3,14 +3,11 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
-import 'package:aveli/core/routing/route_paths.dart';
 
 class CheckoutWebViewPage extends ConsumerStatefulWidget {
   const CheckoutWebViewPage({super.key, required this.url});
@@ -32,7 +29,7 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
     super.initState();
     if (kIsWeb || (!kIsWeb && Platform.isLinux)) {
       _fallbackExternal = true;
-      Future.microtask(() => _openExternally(context));
+      Future.microtask(_openExternally);
       return;
     }
     _ensureWebViewPlatform();
@@ -103,17 +100,19 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
     }
   }
 
-  Future<void> _openExternally(BuildContext context) async {
+  Future<void> _openExternally() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final url = widget.url;
-    final launched = await launchUrlString(url, mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final launched =
+        await launchUrlString(url, mode: LaunchMode.externalApplication);
+    if (!mounted) return;
+    if (!launched) {
+      messenger.showSnackBar(
         const SnackBar(content: Text('Kunde inte öppna betalningslänk i webbläsare.')),
       );
     }
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
+    navigator.pop();
   }
 
   @override
@@ -125,8 +124,9 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
     }
 
     return PopScope(
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, _) async {
         await _refreshEntitlements();
+        if (!context.mounted) return;
         if (!didPop) {
           Navigator.of(context).pop();
         }

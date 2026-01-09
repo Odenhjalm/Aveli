@@ -54,6 +54,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
         courseIds: _selectedCourses.toList(),
         isActive: _isActive,
       );
+      if (!mounted) return;
       ref.invalidate(teacherBundlesProvider);
       showSnack(context, 'Paketet skapades.');
       _titleController.clear();
@@ -62,6 +63,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
       _selectedCourses.clear();
       setState(() {});
     } catch (e) {
+      if (!mounted) return;
       showSnack(context, 'Kunde inte spara paket: $e');
     } finally {
       if (mounted) {
@@ -290,14 +292,13 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                           await Clipboard.setData(
                                             ClipboardData(text: paymentLink),
                                           );
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content: Text('Länk kopierad'),
-                                              ),
-                                            );
-                                          }
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Länk kopierad'),
+                                            ),
+                                          );
                                         },
                                 ),
                               ],

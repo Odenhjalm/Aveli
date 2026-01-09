@@ -11,7 +11,7 @@ import 'package:aveli/shared/utils/backend_assets.dart';
 import 'helpers/backend_asset_resolver_stub.dart';
 
 void main() {
-  testWidgets('WisdomApp shows landing hero', (tester) async {
+  testWidgets('AveliApp shows landing hero', (tester) async {
     final router = GoRouter(
       initialLocation: '/',
       routes: [
@@ -38,7 +38,7 @@ void main() {
           ),
           appRouterProvider.overrideWithValue(router),
         ],
-        child: const WisdomApp(),
+        child: const AveliApp(),
       ),
     );
 

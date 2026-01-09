@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/ui_consts.dart';
 
-/// Brand-styled button with the Wisdom turquoise→royal gradient background.
+/// Brand-styled button with the Aveli turquoise→royal gradient background.
 class GradientButton extends StatelessWidget {
   const GradientButton({
     super.key,

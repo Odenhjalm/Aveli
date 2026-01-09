@@ -124,10 +124,9 @@ void main() {
       if (missingKeys.isNotEmpty) {
         throw StateError(
           'Missing required environment keys: ${missingKeys.join(', ')}. '
-          +
-              (kIsWeb
-                  ? 'Provide them via --dart-define for Flutter Web.'
-                  : 'Provide them via --dart-define or a local environment file.'),
+          '${kIsWeb
+              ? 'Provide them via --dart-define for Flutter Web.'
+              : 'Provide them via --dart-define or a local environment file.'}',
         );
       }
 
@@ -202,7 +201,7 @@ void main() {
               ),
             ),
           ],
-          child: const WisdomApp(),
+          child: const AveliApp(),
         ),
       );
     },
@@ -261,8 +260,8 @@ Future<void> _loadEnvFile({required bool requiredFile}) async {
   }
 }
 
-class WisdomApp extends ConsumerWidget {
-  const WisdomApp({super.key});
+class AveliApp extends ConsumerWidget {
+  const AveliApp({super.key});
 
   static final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();

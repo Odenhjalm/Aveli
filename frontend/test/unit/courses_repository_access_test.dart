@@ -103,7 +103,7 @@ void main() {
   });
 
   group('CoursesRepository.fetchCourseDetailBySlug', () {
-    const slug = 'wisdom-course';
+    const slug = 'aveli-course';
     const courseId = 'course-1';
 
     test('enriches detail with enrollment, quota and order info', () async {

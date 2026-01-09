@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
-import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_router.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/checkout_flow.dart';

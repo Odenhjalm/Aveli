@@ -13,7 +13,6 @@ import 'package:aveli/features/payments/application/payments_providers.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/go_router_back_button.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/widgets/base_page.dart';

@@ -777,7 +777,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (controller == null) return;
 
     final labelController = TextEditingController(text: 'Boka nu');
-    final urlController = TextEditingController(text: 'wisdom://');
+    final urlController = TextEditingController(text: 'aveliapp://');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -799,7 +799,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               controller: urlController,
               decoration: const InputDecoration(
                 labelText: 'Deeplink',
-                hintText: 'wisdom://checkout?service_id=...',
+                hintText: 'aveliapp://checkout?service_id=...',
               ),
             ),
           ],

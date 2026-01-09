@@ -24,13 +24,13 @@ import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 
-const _wisdomBrandGradient = LinearGradient(
+const _aveliBrandGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandLilac],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
 
-const _wisdomPrimaryGradient = LinearGradient(
+const _aveliPrimaryGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandAzure, kBrandLilac],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
@@ -381,14 +381,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
     return false;
   }
 
-  String _currentLandingLocation() {
-    try {
-      return GoRouterState.of(context).uri.toString();
-    } catch (_) {
-      return RoutePath.landing;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -442,7 +434,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
             children: [
               ShaderMask(
                 shaderCallback: (bounds) =>
-                    _wisdomBrandGradient.createShader(bounds),
+                    _aveliBrandGradient.createShader(bounds),
                 blendMode: BlendMode.srcIn,
                 child: Text(
                   'Aveli',
@@ -1011,7 +1003,7 @@ class _PrimaryGradientButton extends StatelessWidget {
     final borderRadius = BorderRadius.circular(14);
     Widget result = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: _wisdomPrimaryGradient,
+        gradient: _aveliPrimaryGradient,
         borderRadius: borderRadius,
         boxShadow: [
           BoxShadow(

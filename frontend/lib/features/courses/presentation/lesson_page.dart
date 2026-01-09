@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:markdown_widget/markdown_widget.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
@@ -144,12 +143,10 @@ class _LessonContent extends ConsumerWidget {
     String url,
   ) async {
     final parsed = Uri.tryParse(url);
-    final isBundleLink =
-        parsed != null &&
+    if (parsed != null &&
         parsed.pathSegments.contains('pay') &&
-        parsed.pathSegments.contains('bundle');
-    if (isBundleLink) {
-      final bundleId = parsed!.pathSegments.isNotEmpty
+        parsed.pathSegments.contains('bundle')) {
+      final bundleId = parsed.pathSegments.isNotEmpty
           ? parsed.pathSegments.last
           : parsed.queryParameters['bundle_id'];
       if (bundleId != null && bundleId.isNotEmpty) {

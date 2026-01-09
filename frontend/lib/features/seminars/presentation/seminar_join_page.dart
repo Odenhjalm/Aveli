@@ -9,7 +9,6 @@ import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/data/repositories/seminar_repository.dart';
 import 'package:aveli/features/home/application/livekit_controller.dart';
 import 'package:aveli/shared/utils/error_messages.dart';
-import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/safe_background.dart';
@@ -39,7 +38,6 @@ class _SeminarJoinPageState extends ConsumerState<SeminarJoinPage> {
       publicSeminarDetailProvider(widget.seminarId),
     );
     final sessionState = ref.watch(liveSessionControllerProvider);
-    final assets = ref.watch(backendAssetResolverProvider);
     final backgroundImage =
         AppImages.background; // Bundlad bakgrund kräver ingen auth-token.
     ref.listen<LiveSessionState>(liveSessionControllerProvider, (

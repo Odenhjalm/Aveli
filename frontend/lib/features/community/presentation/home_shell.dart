@@ -11,7 +11,7 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/widgets/base_page.dart';
 
-const _wisdomBrandGradient = LinearGradient(
+const _aveliBrandGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandLilac],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
@@ -61,7 +61,7 @@ class _HomeShellState extends State<HomeShell> {
             children: [
               ShaderMask(
                 shaderCallback: (bounds) =>
-                    _wisdomBrandGradient.createShader(bounds),
+                    _aveliBrandGradient.createShader(bounds),
                 blendMode: BlendMode.srcIn,
                 child: Text(
                   'Aveli',

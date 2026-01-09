@@ -23,7 +23,6 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
 import 'package:aveli/shared/utils/snack.dart';
-import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
@@ -113,8 +112,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final profile = authState.profile;
     final certificatesAsync = ref.watch(myCertificatesProvider);
     final coursesAsync = ref.watch(courses_front.myCoursesProvider);
-    final assets = ref.watch(backendAssetResolverProvider);
-
     if (authState.isLoading && profile == null) {
       return const AppScaffold(
         title: 'Profil',

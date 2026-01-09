@@ -31,7 +31,7 @@ class MediaRepository {
     }
 
     final base = await getTemporaryDirectory();
-    final dir = Directory('${base.path}/wisdom_media');
+    final dir = Directory('${base.path}/aveli_media');
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }

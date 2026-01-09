@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -232,7 +231,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: _commonOverrides(AuthState(profile: profile)),
-        child: const WisdomApp(),
+        child: const AveliApp(),
       ),
     );
 
