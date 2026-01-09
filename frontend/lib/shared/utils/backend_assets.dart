@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/core/env/app_config.dart';
+import 'package:aveli/core/env/app_config.dart';
 
 /// Helper for resolving backend-hostade mediaresurser under `/assets`.
 class BackendAssetResolver {

@@ -4,15 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:wisdom/data/models/seminar.dart';
-import 'package:wisdom/features/seminars/application/seminar_providers.dart';
-import 'package:wisdom/data/repositories/seminar_repository.dart';
-import 'package:wisdom/features/home/application/livekit_controller.dart';
-import 'package:wisdom/shared/utils/error_messages.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/widgets/safe_background.dart';
+import 'package:aveli/data/models/seminar.dart';
+import 'package:aveli/features/seminars/application/seminar_providers.dart';
+import 'package:aveli/data/repositories/seminar_repository.dart';
+import 'package:aveli/features/home/application/livekit_controller.dart';
+import 'package:aveli/shared/utils/error_messages.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/safe_background.dart';
 
 class SeminarJoinPage extends ConsumerStatefulWidget {
   const SeminarJoinPage({required this.seminarId, super.key});

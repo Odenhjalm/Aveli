@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/features/landing/application/landing_providers.dart'
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:wisdom/features/media/application/media_providers.dart';
-import 'package:wisdom/features/media/data/media_repository.dart';
-import 'package:wisdom/shared/widgets/background_layer.dart';
-import 'package:wisdom/shared/widgets/go_router_back_button.dart';
-import 'package:wisdom/shared/widgets/top_nav_action_buttons.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
+import 'package:aveli/shared/widgets/background_layer.dart';
+import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});

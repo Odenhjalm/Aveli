@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/utils/snack.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/utils/snack.dart';
 
 class TarotPage extends ConsumerStatefulWidget {
   const TarotPage({super.key});

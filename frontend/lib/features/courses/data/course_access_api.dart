@@ -1,4 +1,4 @@
-import 'package:wisdom/api/api_client.dart';
+import 'package:aveli/api/api_client.dart';
 
 class CourseAccessApi {
   CourseAccessApi(this._client);

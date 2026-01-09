@@ -1,6 +1,6 @@
-import 'package:wisdom/core/auth/auth_claims.dart';
-import 'package:wisdom/data/models/certificate.dart';
-import 'package:wisdom/data/models/profile.dart';
+import 'package:aveli/core/auth/auth_claims.dart';
+import 'package:aveli/data/models/certificate.dart';
+import 'package:aveli/data/models/profile.dart';
 
 class TeacherApprovalInfo {
   const TeacherApprovalInfo({this.approvedBy, this.approvedAt});

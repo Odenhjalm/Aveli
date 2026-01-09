@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/features/payments/application/billing_providers.dart';
-import 'package:wisdom/features/payments/data/billing_api.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/features/payments/application/billing_providers.dart';
+import 'package:aveli/features/payments/data/billing_api.dart';
 
 import '../data/entitlements_api.dart';
 import '../domain/entitlements.dart';

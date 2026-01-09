@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/features/payments/presentation/paywall_prompt.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
 
 class CourseAccessGate extends ConsumerWidget {
   const CourseAccessGate({

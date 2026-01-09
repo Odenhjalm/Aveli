@@ -4,9 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/auth/token_storage.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/token_storage.dart';
 
 class _MockTokenStorage extends Mock implements TokenStorage {}
 

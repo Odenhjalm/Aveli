@@ -1,5 +1,5 @@
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 
 class FollowsRepository {
   FollowsRepository(this._client);

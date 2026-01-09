@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
-import 'package:wisdom/shared/widgets/hero_background.dart';
-import 'package:wisdom/features/studio/application/studio_providers.dart';
-import 'package:wisdom/features/studio/data/studio_repository.dart';
-import 'package:wisdom/features/studio/presentation/teacher_home_page.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/hero_background.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
+import 'package:aveli/features/studio/presentation/teacher_home_page.dart';
 
 class StudioPage extends ConsumerWidget {
   const StudioPage({super.key});

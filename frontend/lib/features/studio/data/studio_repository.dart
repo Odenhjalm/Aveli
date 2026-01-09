@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:http_parser/http_parser.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/data/models/teacher_profile_media.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/data/models/teacher_profile_media.dart';
 
 class StudioRepository {
   StudioRepository({required ApiClient client}) : _client = client;

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 
 class SeminarBackground extends ConsumerWidget {
   const SeminarBackground({super.key});

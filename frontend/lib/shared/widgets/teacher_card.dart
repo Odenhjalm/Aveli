@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wisdom/shared/widgets/app_avatar.dart';
+import 'package:aveli/shared/widgets/app_avatar.dart';
 
 class TeacherCard extends StatelessWidget {
   final String name;

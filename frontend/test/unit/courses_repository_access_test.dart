@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/features/courses/data/course_access_api.dart';
-import 'package:wisdom/features/courses/data/courses_repository.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/features/courses/data/course_access_api.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
 
 class _MockApiClient extends Mock implements ApiClient {}
 

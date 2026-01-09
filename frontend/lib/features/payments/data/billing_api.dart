@@ -1,6 +1,6 @@
 import 'package:flutter_stripe/flutter_stripe.dart';
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 
 String _mapPlanToInterval(String plan) {
   switch (plan.toLowerCase()) {

@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/features/auth/application/user_access_provider.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/features/auth/application/user_access_provider.dart';
 
 @immutable
 class RouteSessionSnapshot {

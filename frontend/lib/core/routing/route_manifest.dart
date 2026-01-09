@@ -1,4 +1,4 @@
-import 'package:wisdom/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/app_routes.dart';
 
 import 'route_access.dart';
 import 'route_paths.dart';

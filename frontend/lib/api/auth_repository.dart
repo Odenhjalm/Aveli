@@ -2,11 +2,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/auth/token_storage.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/data/models/profile.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/data/models/profile.dart';
 
 class AuthRepository {
   AuthRepository(this._client, this._tokens);

@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/data/models/order.dart';
-import 'package:wisdom/features/payments/data/payments_repository.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/data/models/order.dart';
+import 'package:aveli/features/payments/data/payments_repository.dart';
 
 final paymentsRepositoryProvider = Provider<PaymentsRepository>((ref) {
   final client = ref.watch(apiClientProvider);

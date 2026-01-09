@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/features/paywall/application/entitlements_notifier.dart';
-import 'package:wisdom/features/paywall/data/checkout_api.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
+import 'package:aveli/core/routing/route_paths.dart';
 
 class PaywallGate extends ConsumerWidget {
   const PaywallGate({

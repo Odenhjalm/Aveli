@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import 'package:wisdom/data/models/order.dart';
-import 'package:wisdom/features/payments/application/payments_providers.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
+import 'package:aveli/data/models/order.dart';
+import 'package:aveli/features/payments/application/payments_providers.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class OrderHistoryPage extends ConsumerWidget {
   const OrderHistoryPage({super.key});

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/routing/app_routes.dart';
 
 class TopNavActionButtons extends ConsumerWidget {
   const TopNavActionButtons({super.key, this.iconColor});

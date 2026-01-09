@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/core/routing/route_session.dart';
-import 'package:wisdom/data/models/certificate.dart';
-import 'package:wisdom/data/models/service.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/features/community/presentation/teacher_profile_page.dart';
-import 'package:wisdom/data/models/teacher_profile_media.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/routing/route_session.dart';
+import 'package:aveli/data/models/certificate.dart';
+import 'package:aveli/data/models/service.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/community/presentation/teacher_profile_page.dart';
+import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
 const _baseService = Service(

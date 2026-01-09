@@ -1,6 +1,6 @@
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/data/models/teacher_profile_media.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/teacher_profile_media.dart';
 
 class CommunityRepository {
   CommunityRepository(this._client);

@@ -1,4 +1,4 @@
-import 'package:wisdom/data/models/seminar.dart';
+import 'package:aveli/data/models/seminar.dart';
 
 class SeminarPreJoinArgs {
   const SeminarPreJoinArgs({

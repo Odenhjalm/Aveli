@@ -3,11 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/routing/app_router.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/core/routing/route_session.dart';
-import 'package:wisdom/core/routing/route_extras.dart';
+import 'package:aveli/core/routing/app_router.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/core/routing/route_session.dart';
+import 'package:aveli/core/routing/route_extras.dart';
 
 class _RouterHarness extends ConsumerWidget {
   const _RouterHarness();

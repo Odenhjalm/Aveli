@@ -9,9 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:mime/mime.dart' as mime;
 
 import 'file_picker_web.dart' as web_picker;

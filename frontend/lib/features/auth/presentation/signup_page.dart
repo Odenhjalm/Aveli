@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/env/env_state.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/shared/theme/ui_consts.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/widgets/base_page.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/env/env_state.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/widgets/base_page.dart';
 
 class SignupPage extends ConsumerStatefulWidget {
   const SignupPage({super.key});

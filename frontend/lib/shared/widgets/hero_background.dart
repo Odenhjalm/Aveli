@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 
 /// Fullscreen bakgrundsbild med mjuk gradient för bättre läsbarhet.
 class HeroBackground extends ConsumerWidget {

@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
-import 'package:wisdom/features/community/application/community_providers.dart';
-import 'package:wisdom/data/models/service.dart';
-import 'package:wisdom/core/routing/route_session.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/app_scaffold.dart';
-import 'package:wisdom/features/community/application/certification_gate.dart';
-import 'package:wisdom/features/paywall/data/checkout_api.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/data/models/service.dart';
+import 'package:aveli/core/routing/route_session.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/features/community/application/certification_gate.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
 
 class ServiceDetailPage extends ConsumerStatefulWidget {
   const ServiceDetailPage({super.key, required this.id});

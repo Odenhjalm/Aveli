@@ -5,16 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:livekit_client/livekit_client.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/data/repositories/seminar_repository.dart';
-import 'package:wisdom/features/seminars/application/seminar_providers.dart';
-import 'package:wisdom/features/home/application/livekit_controller.dart';
-import 'package:wisdom/features/seminars/presentation/seminar_route_args.dart';
-import 'package:wisdom/shared/utils/media_permissions.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/widgets/safe_background.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/data/repositories/seminar_repository.dart';
+import 'package:aveli/features/seminars/application/seminar_providers.dart';
+import 'package:aveli/features/home/application/livekit_controller.dart';
+import 'package:aveli/features/seminars/presentation/seminar_route_args.dart';
+import 'package:aveli/shared/utils/media_permissions.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/safe_background.dart';
 
 enum _EndSessionDecision { saveRecording, endOnly }
 

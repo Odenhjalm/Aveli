@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:wisdom/core/auth/token_storage.dart';
-import 'package:wisdom/core/env/env_resolver.dart';
+import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/core/env/env_resolver.dart';
 
 class CoursePricing {
   CoursePricing({required this.amountCents, required this.currency});

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/features/paywall/data/course_pricing_api.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/features/paywall/data/course_pricing_api.dart';
 
 final coursePricingProvider = FutureProvider.family<CoursePricing, String>((
   ref,

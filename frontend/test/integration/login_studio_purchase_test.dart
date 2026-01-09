@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/token_storage.dart';
-import 'package:wisdom/features/paywall/data/checkout_api.dart';
-import 'package:wisdom/features/studio/data/studio_repository.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
 
 class _MockApiClient extends Mock implements ApiClient {}
 

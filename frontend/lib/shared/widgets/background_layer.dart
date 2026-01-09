@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wisdom/shared/utils/app_images.dart';
+import 'package:aveli/shared/utils/app_images.dart';
 
 /// Full-viewport background image with a soft, readable overlay.
 /// - Always covers the entire available space (desktop/web/mobile)

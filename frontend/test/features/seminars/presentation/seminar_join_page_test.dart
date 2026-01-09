@@ -5,15 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/core/auth/token_storage.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/data/models/seminar.dart';
-import 'package:wisdom/data/repositories/seminar_repository.dart';
-import 'package:wisdom/features/home/application/livekit_controller.dart';
-import 'package:wisdom/features/seminars/application/seminar_providers.dart';
-import 'package:wisdom/features/seminars/presentation/seminar_join_page.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/data/models/seminar.dart';
+import 'package:aveli/data/repositories/seminar_repository.dart';
+import 'package:aveli/features/home/application/livekit_controller.dart';
+import 'package:aveli/features/seminars/application/seminar_providers.dart';
+import 'package:aveli/features/seminars/presentation/seminar_join_page.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

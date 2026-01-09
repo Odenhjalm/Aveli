@@ -6,13 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/features/auth/presentation/login_page.dart';
-import 'package:wisdom/gate.dart';
-import 'package:wisdom/shared/utils/backend_assets.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/features/auth/presentation/login_page.dart';
+import 'package:aveli/gate.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}

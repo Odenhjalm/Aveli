@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/api_client.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/data/models/activity.dart';
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/data/models/activity.dart';
 
 class FeedRepository {
   const FeedRepository(this._client);

@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_extras.dart';
-import 'package:wisdom/features/courses/application/course_providers.dart';
-import 'package:wisdom/gate.dart';
-import 'package:wisdom/shared/widgets/course_video.dart';
-import 'package:wisdom/shared/widgets/go_router_back_button.dart';
-import 'package:wisdom/shared/widgets/top_nav_action_buttons.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/widgets/base_page.dart';
-import 'package:wisdom/shared/widgets/glass_card.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_extras.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/gate.dart';
+import 'package:aveli/shared/widgets/course_video.dart';
+import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/widgets/base_page.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
 
 class CourseIntroPage extends ConsumerWidget {
   const CourseIntroPage({super.key});

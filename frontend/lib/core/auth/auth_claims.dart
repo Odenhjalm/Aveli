@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:wisdom/data/models/profile.dart';
+import 'package:aveli/data/models/profile.dart';
 
 class AuthClaims {
   const AuthClaims({

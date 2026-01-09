@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/token_storage.dart';
-import 'package:wisdom/core/env/app_config.dart';
-import 'package:wisdom/core/env/env_resolver.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/env/env_resolver.dart';
 
 class CustomerPortalApi {
   CustomerPortalApi({

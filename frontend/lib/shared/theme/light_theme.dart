@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:wisdom/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
 
 const Color kPrimary = Color(0xFF7AA8F7);
 const Color kSecondary = Color(0xFF63C7D6);

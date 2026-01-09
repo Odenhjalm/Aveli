@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:wisdom/api/auth_repository.dart';
+import 'package:aveli/api/auth_repository.dart';
 
 import '../data/course_bundles_repository.dart';
 

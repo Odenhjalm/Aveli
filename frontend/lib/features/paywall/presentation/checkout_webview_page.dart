@@ -9,8 +9,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
-import 'package:wisdom/features/paywall/application/entitlements_notifier.dart';
-import 'package:wisdom/core/routing/route_paths.dart';
+import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
+import 'package:aveli/core/routing/route_paths.dart';
 
 class CheckoutWebViewPage extends ConsumerStatefulWidget {
   const CheckoutWebViewPage({super.key, required this.url});

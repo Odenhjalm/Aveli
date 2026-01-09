@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:wisdom/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
 
 /// Simple helper for rendering text with the Wisdom gradient palette.
 class GradientText extends StatelessWidget {

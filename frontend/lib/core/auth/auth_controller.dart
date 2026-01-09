@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_claims.dart';
-import 'package:wisdom/core/auth/auth_http_observer.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/data/models/profile.dart';
-import 'package:wisdom/gate.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_claims.dart';
+import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/gate.dart';
 
 @immutable
 class AuthState {

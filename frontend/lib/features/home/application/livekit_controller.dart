@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart';
 
-import 'package:wisdom/data/repositories/sfu_repository.dart';
-import 'package:wisdom/domain/services/analytics_service.dart';
-import 'package:wisdom/domain/services/logging_service.dart';
-import 'package:wisdom/shared/utils/error_messages.dart';
+import 'package:aveli/data/repositories/sfu_repository.dart';
+import 'package:aveli/domain/services/analytics_service.dart';
+import 'package:aveli/domain/services/logging_service.dart';
+import 'package:aveli/shared/utils/error_messages.dart';
 
 class LiveSessionState {
   const LiveSessionState({

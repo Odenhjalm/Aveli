@@ -3,12 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/shared/widgets/go_router_back_button.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/features/studio/application/studio_providers.dart';
-import 'package:wisdom/features/teacher/application/bundle_providers.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
 class CourseBundlePage extends ConsumerStatefulWidget {
   const CourseBundlePage({super.key});

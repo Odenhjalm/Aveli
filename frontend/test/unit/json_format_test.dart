@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wisdom/data/models/order.dart';
-import 'package:wisdom/data/models/service.dart';
+import 'package:aveli/data/models/order.dart';
+import 'package:aveli/data/models/service.dart';
 
 void main() {
   group('JSON format (snake_case)', () {

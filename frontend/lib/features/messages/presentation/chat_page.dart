@@ -4,18 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:wisdom/api/auth_repository.dart';
-import 'package:wisdom/core/auth/auth_controller.dart';
-import 'package:wisdom/data/models/profile.dart';
-import 'package:wisdom/core/errors/app_failure.dart';
-import 'package:wisdom/core/routing/app_routes.dart';
-import 'package:wisdom/core/routing/route_extras.dart';
-import 'package:wisdom/features/community/data/messages_repository.dart';
-import 'package:wisdom/data/models/message_record.dart';
-import 'package:wisdom/shared/utils/snack.dart';
-import 'package:wisdom/shared/widgets/go_router_back_button.dart';
-import 'package:wisdom/shared/widgets/gradient_button.dart';
-import 'package:wisdom/widgets/base_page.dart';
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_extras.dart';
+import 'package:aveli/features/community/data/messages_repository.dart';
+import 'package:aveli/data/models/message_record.dart';
+import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/widgets/base_page.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key});
