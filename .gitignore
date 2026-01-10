@@ -116,5 +116,6 @@ assets/backend/*
 
 # --- IGNORE ---
 .vscode/mcp.json
+.vscode/
 mcp.json
 backend/test.env
