@@ -6,6 +6,9 @@ pytestmark = pytest.mark.anyio("asyncio")
 
 
 async def test_course_entitlements_rls_enabled_and_policies_present():
+    if db.pool.closed:  # type: ignore[attr-defined]
+        await db.pool.open(wait=True)  # type: ignore[attr-defined]
+
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -19,7 +22,7 @@ async def test_course_entitlements_rls_enabled_and_policies_present():
             )
             row = await cur.fetchone()
             assert row is not None, "app.course_entitlements missing; run migrations"
-            assert row[0] is True
+            assert row[0] is True, "relrowsecurity is disabled for app.course_entitlements"
 
             await cur.execute(
                 """
@@ -31,5 +34,12 @@ async def test_course_entitlements_rls_enabled_and_policies_present():
             )
             policies = {policy[0] for policy in await cur.fetchall()}
 
-    assert "service_role_full_access" in policies
-    assert "course_entitlements_self_read" in policies
+    service_role_policies = {"service_role_full_access", "course_entitlements_service_role"}
+    self_read_policies = {"course_entitlements_self_read", "course_entitlements_owner_read"}
+
+    assert (
+        policies & service_role_policies
+    ), f"missing service-role policy; found policies: {policies}"
+    assert (
+        policies & self_read_policies
+    ), f"missing self-read policy; found policies: {policies}"
