@@ -19,6 +19,11 @@ declare
   tbl text;
 begin
   foreach tbl in array table_list loop
+    if to_regclass(format('app.%I', tbl)) is null then
+      raise notice 'Skipping missing table app.%', tbl;
+      continue;
+    end if;
+
     execute format('alter table app.%I enable row level security', tbl);
     execute format('drop policy if exists service_role_full_access on app.%I', tbl);
     execute format(
