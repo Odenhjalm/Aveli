@@ -351,49 +351,62 @@ create policy attendees_write on app.seminar_attendees
   );
 
 -- Seminar sessions & recordings --------------------------------------------
-alter table app.seminar_sessions enable row level security;
-alter table app.seminar_recordings enable row level security;
+-- Guard late-created tables so replay doesn't fail before those migrations run.
+do $$
+begin
+  if to_regclass('app.seminar_sessions') is null then
+    raise notice 'Skipping missing table app.seminar_sessions';
+  else
+    execute $$alter table app.seminar_sessions enable row level security$$;
 
-drop policy if exists seminar_sessions_service on app.seminar_sessions;
-create policy seminar_sessions_service on app.seminar_sessions
-  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+    execute $$drop policy if exists seminar_sessions_service on app.seminar_sessions$$;
+    execute $$create policy seminar_sessions_service on app.seminar_sessions
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$$;
 
-drop policy if exists seminar_sessions_host on app.seminar_sessions;
-create policy seminar_sessions_host on app.seminar_sessions
-  for all to authenticated
-  using (
-    exists (
-      select 1 from app.seminars s
-      where s.id = seminar_id
-        and (s.host_id = auth.uid() or app.is_admin(auth.uid()))
-    )
-  )
-  with check (
-    exists (
-      select 1 from app.seminars s
-      where s.id = seminar_id
-        and (s.host_id = auth.uid() or app.is_admin(auth.uid()))
-    )
-  );
-
-drop policy if exists seminar_recordings_service on app.seminar_recordings;
-create policy seminar_recordings_service on app.seminar_recordings
-  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-
-drop policy if exists seminar_recordings_read on app.seminar_recordings;
-create policy seminar_recordings_read on app.seminar_recordings
-  for select to authenticated
-  using (
-    exists (
-      select 1 from app.seminars s
-      where s.id = seminar_id
-        and (
-          s.host_id = auth.uid()
-          or app.is_admin(auth.uid())
-          or s.status in ('live','ended')
+    execute $$drop policy if exists seminar_sessions_host on app.seminar_sessions$$;
+    execute $$create policy seminar_sessions_host on app.seminar_sessions
+      for all to authenticated
+      using (
+        exists (
+          select 1 from app.seminars s
+          where s.id = seminar_id
+            and (s.host_id = auth.uid() or app.is_admin(auth.uid()))
         )
-    )
-  );
+      )
+      with check (
+        exists (
+          select 1 from app.seminars s
+          where s.id = seminar_id
+            and (s.host_id = auth.uid() or app.is_admin(auth.uid()))
+        )
+      )$$;
+  end if;
+
+  if to_regclass('app.seminar_recordings') is null then
+    raise notice 'Skipping missing table app.seminar_recordings';
+  else
+    execute $$alter table app.seminar_recordings enable row level security$$;
+
+    execute $$drop policy if exists seminar_recordings_service on app.seminar_recordings$$;
+    execute $$create policy seminar_recordings_service on app.seminar_recordings
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$$;
+
+    execute $$drop policy if exists seminar_recordings_read on app.seminar_recordings$$;
+    execute $$create policy seminar_recordings_read on app.seminar_recordings
+      for select to authenticated
+      using (
+        exists (
+          select 1 from app.seminars s
+          where s.id = seminar_id
+            and (
+              s.host_id = auth.uid()
+              or app.is_admin(auth.uid())
+              or s.status in ('live','ended')
+            )
+        )
+      )$$;
+  end if;
+end$$;
 
 -- Activities ---------------------------------------------------------------
 alter table app.activities enable row level security;
@@ -615,10 +628,18 @@ create policy billing_logs_service on app.billing_logs
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 -- LiveKit webhook jobs -----------------------------------------------------
-alter table app.livekit_webhook_jobs enable row level security;
+-- Guard late-created table so replay doesn't fail before the table exists.
+do $$
+begin
+  if to_regclass('app.livekit_webhook_jobs') is null then
+    raise notice 'Skipping missing table app.livekit_webhook_jobs';
+  else
+    execute $$alter table app.livekit_webhook_jobs enable row level security$$;
 
-drop policy if exists livekit_jobs_service on app.livekit_webhook_jobs;
-create policy livekit_jobs_service on app.livekit_webhook_jobs
-  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+    execute $$drop policy if exists livekit_jobs_service on app.livekit_webhook_jobs$$;
+    execute $$create policy livekit_jobs_service on app.livekit_webhook_jobs
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$$;
+  end if;
+end$$;
 
 commit;
