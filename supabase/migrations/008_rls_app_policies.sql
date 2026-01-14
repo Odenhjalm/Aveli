@@ -352,19 +352,20 @@ create policy attendees_write on app.seminar_attendees
 
 -- Seminar sessions & recordings --------------------------------------------
 -- Guard late-created tables so replay doesn't fail before those migrations run.
-do $$
+-- Use distinct dollar-quote tags to avoid nested parsing collisions.
+do $do$
 begin
   if to_regclass('app.seminar_sessions') is null then
     raise notice 'Skipping missing table app.seminar_sessions';
   else
-    execute $$alter table app.seminar_sessions enable row level security$$;
+    execute $sql$alter table app.seminar_sessions enable row level security$sql$;
 
-    execute $$drop policy if exists seminar_sessions_service on app.seminar_sessions$$;
-    execute $$create policy seminar_sessions_service on app.seminar_sessions
-      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$$;
+    execute $sql$drop policy if exists seminar_sessions_service on app.seminar_sessions$sql$;
+    execute $sql$create policy seminar_sessions_service on app.seminar_sessions
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$sql$;
 
-    execute $$drop policy if exists seminar_sessions_host on app.seminar_sessions$$;
-    execute $$create policy seminar_sessions_host on app.seminar_sessions
+    execute $sql$drop policy if exists seminar_sessions_host on app.seminar_sessions$sql$;
+    execute $sql$create policy seminar_sessions_host on app.seminar_sessions
       for all to authenticated
       using (
         exists (
@@ -379,20 +380,20 @@ begin
           where s.id = seminar_id
             and (s.host_id = auth.uid() or app.is_admin(auth.uid()))
         )
-      )$$;
+      )$sql$;
   end if;
 
   if to_regclass('app.seminar_recordings') is null then
     raise notice 'Skipping missing table app.seminar_recordings';
   else
-    execute $$alter table app.seminar_recordings enable row level security$$;
+    execute $sql$alter table app.seminar_recordings enable row level security$sql$;
 
-    execute $$drop policy if exists seminar_recordings_service on app.seminar_recordings$$;
-    execute $$create policy seminar_recordings_service on app.seminar_recordings
-      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$$;
+    execute $sql$drop policy if exists seminar_recordings_service on app.seminar_recordings$sql$;
+    execute $sql$create policy seminar_recordings_service on app.seminar_recordings
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$sql$;
 
-    execute $$drop policy if exists seminar_recordings_read on app.seminar_recordings$$;
-    execute $$create policy seminar_recordings_read on app.seminar_recordings
+    execute $sql$drop policy if exists seminar_recordings_read on app.seminar_recordings$sql$;
+    execute $sql$create policy seminar_recordings_read on app.seminar_recordings
       for select to authenticated
       using (
         exists (
@@ -404,9 +405,9 @@ begin
               or s.status in ('live','ended')
             )
         )
-      )$$;
+      )$sql$;
   end if;
-end$$;
+end$do$;
 
 -- Activities ---------------------------------------------------------------
 alter table app.activities enable row level security;
@@ -629,17 +630,17 @@ create policy billing_logs_service on app.billing_logs
 
 -- LiveKit webhook jobs -----------------------------------------------------
 -- Guard late-created table so replay doesn't fail before the table exists.
-do $$
+do $do$
 begin
   if to_regclass('app.livekit_webhook_jobs') is null then
     raise notice 'Skipping missing table app.livekit_webhook_jobs';
   else
-    execute $$alter table app.livekit_webhook_jobs enable row level security$$;
+    execute $sql$alter table app.livekit_webhook_jobs enable row level security$sql$;
 
-    execute $$drop policy if exists livekit_jobs_service on app.livekit_webhook_jobs$$;
-    execute $$create policy livekit_jobs_service on app.livekit_webhook_jobs
-      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$$;
+    execute $sql$drop policy if exists livekit_jobs_service on app.livekit_webhook_jobs$sql$;
+    execute $sql$create policy livekit_jobs_service on app.livekit_webhook_jobs
+      for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role')$sql$;
   end if;
-end$$;
+end$do$;
 
 commit;
