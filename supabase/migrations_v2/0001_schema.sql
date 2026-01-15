@@ -1,5 +1,7 @@
 -- 0001_schema.sql
--- Base schemas, extensions, and enums for the v2 migration chain.
+-- Schema primitives for the v2 baseline.
+
+begin;
 
 create extension if not exists pgcrypto;
 create extension if not exists "uuid-ossp";
@@ -7,7 +9,10 @@ create extension if not exists "uuid-ossp";
 create schema if not exists auth;
 create schema if not exists app;
 
--- Enumerated types ---------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- Enumerated types
+-- ---------------------------------------------------------------------------
+
 do $$
 begin
   if not exists (
@@ -203,3 +208,5 @@ begin
     create type app.seminar_session_status as enum ('scheduled', 'live', 'ended', 'failed');
   end if;
 end$$;
+
+commit;
