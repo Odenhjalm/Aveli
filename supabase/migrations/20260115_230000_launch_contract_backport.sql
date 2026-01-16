@@ -23,9 +23,32 @@ create table if not exists app.live_events (
   updated_at timestamptz not null default now()
 );
 
+-- If remote already has live_events but is missing these columns, add them safely.
+alter table app.live_events
+  add column if not exists starts_at timestamptz;
+
+alter table app.live_events
+  add column if not exists ends_at timestamptz;
+
 create index if not exists idx_live_events_teacher on app.live_events(teacher_id);
 create index if not exists idx_live_events_course on app.live_events(course_id);
-create index if not exists idx_live_events_starts_at on app.live_events(starts_at);
+
+-- Create starts_at index only when the column exists (remote drift safety).
+do $do$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'app'
+      and table_name = 'live_events'
+      and column_name = 'starts_at'
+  ) then
+    execute 'create index if not exists idx_live_events_starts_at on app.live_events(starts_at)';
+  else
+    raise notice 'Skipping idx_live_events_starts_at: app.live_events.starts_at missing';
+  end if;
+end
+$do$;
 
 -- Add updated_at trigger if helper exists
 do $do$
