@@ -6,13 +6,4 @@ begin;
 
 select 1;
 
-do $$
-begin
-  if to_regclass('supabase_migrations.schema_migrations') is not null then
-    insert into supabase_migrations.schema_migrations (version, name)
-    values ('20260102113700', 'sync_live_db_drift')
-    on conflict (version) do nothing;
-  end if;
-end $$;
-
 commit;
