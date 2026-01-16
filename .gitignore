@@ -119,6 +119,8 @@ assets/backend/*
 .vscode/
 mcp.json
 backend/test.env
+backend/supabase/.temp/
+
 
 # Supabase CLI
 supabase/.temp/
