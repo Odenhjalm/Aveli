@@ -1,6 +1,10 @@
 -- 20260115_230000_launch_contract_backport.sql
 -- Backport from launch contract: ensure live_events surfaces exist so legacy replay and db pull do not fail.
 -- Idempotent: safe to apply even if remote already contains these tables/policies.
+--
+-- NOTE: Remote drift safety
+-- Remote app.live_events may pre-exist with missing columns (e.g. starts_at/ends_at/is_published).
+-- This migration adds missing columns (idempotent) and guards policies/indexes so it remains replay-safe.
 
 begin;
 
@@ -29,6 +33,9 @@ alter table app.live_events
 
 alter table app.live_events
   add column if not exists ends_at timestamptz;
+
+alter table app.live_events
+  add column if not exists is_published boolean not null default false;
 
 create index if not exists idx_live_events_teacher on app.live_events(teacher_id);
 create index if not exists idx_live_events_course on app.live_events(course_id);
@@ -95,28 +102,68 @@ create policy live_events_host_rw on app.live_events
   using (teacher_id = auth.uid() or app.is_admin(auth.uid()))
   with check (teacher_id = auth.uid() or app.is_admin(auth.uid()));
 
+-- live_events_access:
+-- Remote drift safety: If is_published column exists, include the published gate.
+-- Otherwise, omit it to avoid policy compilation errors during backfill.
 drop policy if exists live_events_access on app.live_events;
-create policy live_events_access on app.live_events
-  for select to authenticated
-  using (
-    teacher_id = auth.uid()
-    or app.is_admin(auth.uid())
-    or (
-      is_published = true
-      and (
-        access_type = 'membership'
-        or (
-          access_type = 'course'
-          and course_id is not null
-          and exists (
-            select 1 from app.enrollments e
-            where e.user_id = auth.uid()
-              and e.course_id = live_events.course_id
+
+do $do$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'app'
+      and table_name = 'live_events'
+      and column_name = 'is_published'
+  ) then
+    execute $sql$
+      create policy live_events_access on app.live_events
+        for select to authenticated
+        using (
+          teacher_id = auth.uid()
+          or app.is_admin(auth.uid())
+          or (
+            is_published = true
+            and (
+              access_type = 'membership'
+              or (
+                access_type = 'course'
+                and course_id is not null
+                and exists (
+                  select 1 from app.enrollments e
+                  where e.user_id = auth.uid()
+                    and e.course_id = live_events.course_id
+                )
+              )
+            )
           )
         )
-      )
-    )
-  );
+    $sql$;
+  else
+    -- Fallback: no is_published column. Still allow course/membership access checks.
+    execute $sql$
+      create policy live_events_access on app.live_events
+        for select to authenticated
+        using (
+          teacher_id = auth.uid()
+          or app.is_admin(auth.uid())
+          or (
+            access_type = 'membership'
+            or (
+              access_type = 'course'
+              and course_id is not null
+              and exists (
+                select 1 from app.enrollments e
+                where e.user_id = auth.uid()
+                  and e.course_id = live_events.course_id
+              )
+            )
+          )
+        )
+    $sql$;
+  end if;
+end
+$do$;
 
 drop policy if exists live_event_registrations_read on app.live_event_registrations;
 create policy live_event_registrations_read on app.live_event_registrations
