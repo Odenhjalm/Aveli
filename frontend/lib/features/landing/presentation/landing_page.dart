@@ -292,7 +292,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                           const Icon(Icons.school, color: Colors.black87),
                           const SizedBox(width: 8),
                           const Text(
-                            'Gratis introduktionskurser',
+                            'Introduktionskurser',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
@@ -328,7 +328,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: const Chip(label: Text('Gratis intro')),
+                              trailing: const Chip(label: Text('Intro')),
                               onTap: () {
                                 Navigator.of(context).pop();
                                 final slug = (c['slug'] as String?) ?? '';
@@ -472,14 +472,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
                         ),
                         child: const Text('Skapa konto'),
                       ),
-                      _PrimaryGradientButton(
-                        label: 'Gratis kurser',
-                        onTap: hasEnvIssues ? null : _openIntroModal,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 10,
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -567,7 +559,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              // CTA buttons – hook intro modal
+                              // CTA buttons – medlemskap + login
                               Wrap(
                                 spacing: 12,
                                 runSpacing: 12,
@@ -582,10 +574,10 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                     child: const Text('Bli medlem'),
                                   ),
                                   _GradientOutlineButton(
-                                    label: 'Utforska utan konto',
+                                    label: 'Logga in',
                                     onTap: hasEnvIssues
                                         ? null
-                                        : _openIntroModal,
+                                        : () => _openAppPath(RoutePath.login),
                                   ),
                                 ],
                               ),
@@ -874,7 +866,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Börja gratis idag',
+                                          '14 dagar gratis prövoperiod',
                                           style: t.titleMedium?.copyWith(
                                             color: Colors.white,
                                             fontWeight: FontWeight.w700,
@@ -882,7 +874,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          'Utforska hela biblioteket utan konto.',
+                                          'Efter provperioden får du 14 dagar att testa alla '
+                                          'introduktionskurser. Därefter 130 kr i månaden.',
                                           style: t.bodyMedium?.copyWith(
                                             color: Colors.white,
                                           ),
@@ -896,16 +889,23 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                     runSpacing: 10,
                                     children: [
                                       _PrimaryGradientButton(
-                                        label: 'Börja gratis',
-                                        onTap: _openIntroModal,
+                                        label: 'Starta 14 dagar gratis',
+                                        onTap: hasEnvIssues
+                                            ? null
+                                            : () =>
+                                                _startLandingMembershipCheckout(
+                                                  context,
+                                                ),
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 18,
                                           vertical: 12,
                                         ),
                                       ),
                                       _GradientOutlineButton(
-                                        label: 'Utforska utan konto',
-                                        onTap: _openIntroModal,
+                                        label: 'Se introduktionskurser',
+                                        onTap: hasEnvIssues
+                                            ? null
+                                            : _openIntroModal,
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 22,
                                           vertical: 12,
@@ -1369,7 +1369,7 @@ class _CourseTileGlass extends StatelessWidget {
                         if (isIntro) const SizedBox(width: 8),
                         if (isIntro)
                           Chip(
-                            label: const Text('Gratis intro'),
+                            label: const Text('Intro'),
                             visualDensity: VisualDensity.compact,
                             backgroundColor: theme.colorScheme.primary
                                 .withValues(alpha: 0.18),
