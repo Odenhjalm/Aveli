@@ -323,9 +323,21 @@ if [[ "${RUN_FLUTTER_INTEGRATION:-0}" == "1" ]]; then
       if [[ ${#test_files[@]} -eq 0 ]]; then
         echo "WARN: no integration_test/*_test.dart files found" >&2
       fi
-      for test_file in "${test_files[@]}"; do
-        flutter test "$test_file" -d "$flutter_device"
-      done
+      if [[ "$flutter_device" == "chrome" || "$flutter_device" == "web-server" ]]; then
+        driver_args=(--driver=test_driver/integration_test.dart)
+        web_args=()
+        if [[ "$flutter_device" == "web-server" ]]; then
+          web_port="$(pick_free_port)"
+          web_args+=(--web-port="$web_port")
+        fi
+        for test_file in "${test_files[@]}"; do
+          flutter drive "${driver_args[@]}" --target="$test_file" -d "$flutter_device" "${web_args[@]}"
+        done
+      else
+        for test_file in "${test_files[@]}"; do
+          flutter test "$test_file" -d "$flutter_device"
+        done
+      fi
     ); then
       flutter_integration_status="PASS"
     else
