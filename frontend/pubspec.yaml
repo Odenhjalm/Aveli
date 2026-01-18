@@ -87,6 +87,7 @@ flutter:
   generate: true
 
   assets:
+    - .env.web
     - fonts/
     - assets/images/
 

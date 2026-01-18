@@ -63,11 +63,7 @@ void main() {
       }
 
       MediaKit.ensureInitialized();
-      if (!kIsWeb) {
-        await _loadEnvFile(requiredFile: false);
-      } else {
-        debugPrint('Skipping dotenv load on web; use --dart-define for config.');
-      }
+      await _loadEnvFile(requiredFile: false);
       if (dotenv.isInitialized) {
         debugPrint('ENV KEYS: ${dotenv.env.keys}');
         debugPrint(
@@ -242,11 +238,22 @@ String _resolveApiBaseUrl(String url) {
 }
 
 Future<void> _loadEnvFile({required bool requiredFile}) async {
+  const fileName = String.fromEnvironment('DOTENV_FILE', defaultValue: '');
   if (kIsWeb) {
-    debugPrint('Skipping dotenv load on web (dart-define only).');
+    if (!kDebugMode) {
+      debugPrint('Skipping dotenv load on web (dart-define only).');
+      return;
+    }
+    const fallbackWebFile = '.env.web';
+    final webFile = fileName.isNotEmpty ? fileName : fallbackWebFile;
+    try {
+      await dotenv.load(fileName: webFile, isOptional: true);
+      debugPrint('Loaded web dotenv from $webFile (debug).');
+    } catch (error) {
+      debugPrint('Warning: Could not load $webFile ($error)');
+    }
     return;
   }
-  const fileName = String.fromEnvironment('DOTENV_FILE', defaultValue: '');
   if (fileName.isEmpty) {
     debugPrint('No DOTENV_FILE provided; relying on runtime environment and dart-define.');
     return;

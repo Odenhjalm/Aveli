@@ -25,7 +25,8 @@ const _imageLoggingDefine =
     String.fromEnvironment('IMAGE_LOGGING', defaultValue: '');
 
 class EnvResolver {
-  static bool get _canReadDotenv => !kIsWeb && dotenv.isInitialized;
+  static bool get _canReadDotenv =>
+      dotenv.isInitialized && (!kIsWeb || kDebugMode);
 
   static String _resolveWithDefine({
     required String envKey,
