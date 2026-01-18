@@ -1,13 +1,13 @@
 # Security & Secret Hygiene
 
 ## Current status
-- All committed secrets were removed from the repo. The leaked values in `.env`/`.env.test` included Supabase DB credentials, Supabase anon/service keys, Stripe test keys, LiveKit keys, JWT/media secrets. Rotate them immediately.
+- All committed secrets were removed from the repo. The leaked values in `.env`/`.env.test` included Supabase DB credentials, Supabase API keys (publishable/secret), Stripe test keys, LiveKit keys, JWT/media secrets. Rotate them immediately.
 
 ## Rotation checklist
 1. **Supabase**
-   - Rotate anon and service role keys in the Supabase dashboard.
+   - Rotate publishable + secret API keys in the Supabase dashboard.
    - Generate a new database password and update `SUPABASE_DB_URL`/`DATABASE_URL`.
-   - Regenerate the JWT secret (`SUPABASE_JWT_SECRET`) and update the auth config.
+   - If auth signing keys were exposed, rotate signing keys in Supabase Auth settings.
 2. **Stripe**
    - Create new secret + publishable keys; rotate webhook signing secrets (`STRIPE_WEBHOOK_SECRET`, `STRIPE_BILLING_WEBHOOK_SECRET`).
    - Replace all price/product IDs if they were tied to compromised test data.
