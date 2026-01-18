@@ -5,6 +5,7 @@ import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/customer_portal_api.dart';
 import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
 
 class MySubscriptionPage extends ConsumerStatefulWidget {
   const MySubscriptionPage({super.key});
@@ -102,7 +103,6 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(entitlementsNotifierProvider);
     final data = state.data;
-    final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
 
     final membership = data?.membership;
@@ -141,113 +141,115 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Card(
-          elevation: 2,
-          color: cs.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Medlemskap Aveli',
-                            style: t.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+        child: GlassCard(
+          padding: const EdgeInsets.all(20),
+          opacity: 0.2,
+          borderRadius: BorderRadius.circular(20),
+          borderColor: Colors.white.withValues(alpha: 0.18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Medlemskap Aveli',
+                          style: t.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Få tillgång till allt premiuminnehåll.',
-                            style: t.bodyMedium?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Få tillgång till allt premiuminnehåll.',
+                          style: t.bodyMedium?.copyWith(
+                            color: Colors.white70,
                           ),
-                        ],
-                      ),
-                    ),
-                    Chip(
-                      backgroundColor: statusColor.withValues(alpha: 0.15),
-                      labelStyle: TextStyle(
-                        color: statusColor,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      label: Text(_statusLabel(status)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (isTrial)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      '14 dagars gratis provperiod',
-                      style: TextStyle(
-                        color: Colors.blue,
-                        fontWeight: FontWeight.w600,
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                if (nextBilling != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Nästa debitering: '
-                    '${MaterialLocalizations.of(context).formatFullDate(nextBilling.toLocal())}',
-                    style: t.bodyMedium,
+                  Chip(
+                    backgroundColor: statusColor.withValues(alpha: 0.15),
+                    labelStyle: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    label: Text(_statusLabel(status)),
                   ),
                 ],
-                const SizedBox(height: 12),
-                Text(
-                  'Hantera prenumeration',
-                  style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isUnknownStatus
-                      ? 'Starta och hantera betalningsuppgifter i Stripe-portalen.'
-                      : 'Byt plan, avsluta, uppdatera betalningar och hitta kvitton direkt i kundportalen.',
-                  style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-                ),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: state.loading || _loadingPortal ? null : _openPortal,
-                  child: _loadingPortal
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Hantera prenumeration'),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: () =>
-                        ref.read(entitlementsNotifierProvider.notifier).refresh(),
-                    child: const Text('Uppdatera status'),
+              ),
+              const SizedBox(height: 12),
+              if (isTrial)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    '14 dagars gratis provperiod',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                if (state.loading) ...[
-                  const SizedBox(height: 8),
-                  const LinearProgressIndicator(minHeight: 2),
-                ],
+              if (nextBilling != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Nästa debitering: '
+                  '${MaterialLocalizations.of(context).formatFullDate(nextBilling.toLocal())}',
+                  style: t.bodyMedium?.copyWith(color: Colors.white70),
+                ),
               ],
-            ),
+              const SizedBox(height: 12),
+              Text(
+                'Hantera prenumeration',
+                style: t.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isUnknownStatus
+                    ? 'Starta och hantera betalningsuppgifter i Stripe-portalen.'
+                    : 'Byt plan, avsluta, uppdatera betalningar och hitta kvitton direkt i kundportalen.',
+                style: t.bodyMedium?.copyWith(color: Colors.white70),
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: state.loading || _loadingPortal ? null : _openPortal,
+                child: _loadingPortal
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Hantera prenumeration'),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () =>
+                      ref.read(entitlementsNotifierProvider.notifier).refresh(),
+                  child: const Text('Uppdatera status'),
+                ),
+              ),
+              if (state.loading) ...[
+                const SizedBox(height: 8),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
+            ],
           ),
         ),
       ),

@@ -19,6 +19,7 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
@@ -751,41 +752,43 @@ class _SubscriptionEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cardBorder = Colors.white.withValues(alpha: 0.16);
     final t = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onOpenSubscription,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const Icon(Icons.workspace_premium_rounded, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Min prenumeration',
-                      style: t.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Hantera medlemskap och betalplan.',
-                      style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right),
-            ],
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      opacity: 0.18,
+      borderRadius: BorderRadius.circular(16),
+      borderColor: cardBorder,
+      onTap: onOpenSubscription,
+      child: Row(
+        children: [
+          const Icon(
+            Icons.workspace_premium_rounded,
+            size: 28,
+            color: Colors.white,
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Min prenumeration',
+                  style: t.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Hantera medlemskap och betalplan.',
+                  style: t.bodySmall?.copyWith(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Colors.white70),
+        ],
       ),
     );
   }
