@@ -103,6 +103,7 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(entitlementsNotifierProvider);
     final data = state.data;
+    final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
 
     final membership = data?.membership;
