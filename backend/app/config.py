@@ -20,6 +20,12 @@ class Settings(BaseSettings):
             "SUPABASE_SECRET_API_KEY",
         ),
     )
+    supabase_jwks_url: AnyUrl | None = Field(
+        default=None, validation_alias=AliasChoices("SUPABASE_JWKS_URL")
+    )
+    supabase_jwt_issuer: str | None = Field(
+        default=None, validation_alias=AliasChoices("SUPABASE_JWT_ISSUER")
+    )
     supabase_db_url: AnyUrl
     database_url: AnyUrl | None = None
     jwt_secret: str = "change-me"

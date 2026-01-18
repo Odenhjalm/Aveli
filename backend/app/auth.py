@@ -9,6 +9,7 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 from .config import settings
+from .utils.supabase_jwt import SupabaseJwtError, verify_supabase_access_token
 from .db import get_conn
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -32,6 +33,41 @@ def decode_jwt(token: str) -> dict[str, Any]:
         algorithms=[settings.jwt_algorithm],
         options={"verify_signature": True, "verify_exp": False},
     )
+
+
+def _supabase_jwks_url() -> str | None:
+    if settings.supabase_jwks_url:
+        return str(settings.supabase_jwks_url)
+    if settings.supabase_url is None:
+        return None
+    base = settings.supabase_url.unicode_string().rstrip("/")
+    return f"{base}/auth/v1/.well-known/jwks.json"
+
+
+def _supabase_jwt_issuer() -> str | None:
+    if settings.supabase_jwt_issuer:
+        return settings.supabase_jwt_issuer
+    if settings.supabase_url is None:
+        return None
+    base = settings.supabase_url.unicode_string().rstrip("/")
+    return f"{base}/auth/v1"
+
+
+def _decode_access_token(token: str) -> tuple[dict[str, Any], str]:
+    try:
+        return decode_jwt(token), "local"
+    except JWTError as exc:
+        jwks_url = _supabase_jwks_url()
+        if not jwks_url:
+            raise exc
+        issuer = _supabase_jwt_issuer()
+        try:
+            payload = verify_supabase_access_token(
+                token, jwks_url=jwks_url, issuer=issuer
+            )
+        except SupabaseJwtError as sup_exc:
+            raise JWTError("Supabase JWT verification failed") from sup_exc
+        return payload, "supabase"
 
 
 def is_token_expired(payload: dict[str, Any], *, now: datetime | None = None) -> bool:
@@ -100,14 +136,14 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = decode_jwt(token)
+        payload, source = _decode_access_token(token)
         if is_token_expired(payload):
             raise credentials_exception
         user_id: str | None = payload.get("sub")
         token_type = payload.get("token_type", "access")
         if user_id is None:
             raise credentials_exception
-        if token_type != "access":
+        if source == "local" and token_type != "access":
             raise credentials_exception
     except JWTError as exc:
         raise credentials_exception from exc
@@ -148,14 +184,14 @@ async def get_optional_user(
     if not token:
         return None
     try:
-        payload = decode_jwt(token)
+        payload, source = _decode_access_token(token)
         if is_token_expired(payload):
             return None
         user_id: str | None = payload.get("sub")
         token_type = payload.get("token_type", "access")
         if user_id is None:
             return None
-        if token_type != "access":
+        if source == "local" and token_type != "access":
             return None
     except JWTError:
         return None
