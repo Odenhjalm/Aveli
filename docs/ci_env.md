@@ -8,8 +8,8 @@ repository settings (Settings → Secrets and variables → Actions → Reposito
 | --- | --- | --- |
 | `CI_DATABASE_URL` | `DATABASE_URL` | Point at the Postgres instance you run tests against. |
 | `CI_SUPABASE_URL` | `SUPABASE_URL` | Supabase project URL (only needed for presign/uploads). |
-| `CI_SUPABASE_ANON_KEY` | `SUPABASE_ANON_KEY` | Optional if tests never hit anon endpoints. |
-| `CI_SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SERVICE_ROLE_KEY` | Required for signed URLs and storage presigns. |
+| `CI_SUPABASE_PUBLISHABLE_API_KEY` | `SUPABASE_PUBLISHABLE_API_KEY` | Preferred client key (legacy alias: `CI_SUPABASE_PUBLIC_API_KEY`). |
+| `CI_SUPABASE_SECRET_API_KEY` | `SUPABASE_SECRET_API_KEY` | Preferred secret key (legacy alias: `CI_SUPABASE_SERVICE_ROLE_KEY`). |
 | `CI_SUPABASE_DB_URL` | `SUPABASE_DB_URL` | Optional alias if different from `DATABASE_URL`. |
 | `CI_MEDIA_SIGNING_SECRET` | `MEDIA_SIGNING_SECRET` | Enables `/media/stream/*` smoke tests. |
 | `CI_STRIPE_SECRET_KEY` | `STRIPE_SECRET_KEY` | Needed for checkout/service tests using Stripe mocks. |

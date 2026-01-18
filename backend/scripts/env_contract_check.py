@@ -48,7 +48,19 @@ def _load_required(path: Path) -> list[str]:
 
 
 def _env_value(env_map: dict[str, str], key: str) -> str:
-    return os.environ.get(key) or env_map.get(key, "")
+    value = os.environ.get(key) or env_map.get(key, "")
+    if value:
+        return value
+    if key == "SUPABASE_PUBLISHABLE_API_KEY":
+        return (
+            os.environ.get("SUPABASE_PUBLIC_API_KEY")
+            or env_map.get("SUPABASE_PUBLIC_API_KEY", "")
+        )
+    if key == "SUPABASE_SECRET_API_KEY":
+        return os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or env_map.get(
+            "SUPABASE_SERVICE_ROLE_KEY", ""
+        )
+    return ""
 
 
 def _normalize_stripe_mode(raw: str) -> str | None:

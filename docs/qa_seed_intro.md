@@ -1,7 +1,7 @@
 # QA – Teacher Login & Gratis Introduktionskurser
 
 ## Förutsättningar
-- Miljövariabler i `.env` bör innehålla `SUPABASE_URL` och `SUPABASE_ANON_KEY`.
+- Miljövariabler i `.env` bör innehålla `SUPABASE_URL` och `SUPABASE_PUBLISHABLE_API_KEY`.
 - Testkonto: `teacher.local@example.com` / `ChangeMe123!`.
 
 ## Status (2024-11-23)

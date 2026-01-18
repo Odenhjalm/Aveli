@@ -4,12 +4,16 @@
 - `APP_ENV` – environment name (`development`/`production`).
 - `PORT` – listen port (default `8080`).
 - `SUPABASE_URL` – project URL.
-- `SUPABASE_ANON_KEY` – anon key (optional for backend, required for client paths).
-- `SUPABASE_SERVICE_ROLE_KEY` – service role key (required for Storage/signing).
+- `SUPABASE_PUBLISHABLE_API_KEY` – publishable key (preferred; replaces legacy anon key).
+- `SUPABASE_PUBLIC_API_KEY` – legacy publishable alias (optional).
+- `SUPABASE_SECRET_API_KEY` – secret key (preferred; replaces legacy service role key).
+- `SUPABASE_ANON_KEY` – legacy anon key (optional for backend only).
+- `SUPABASE_SERVICE_ROLE_KEY` – legacy service role key (optional if secret key is provided).
 - `SUPABASE_DB_URL`/`DATABASE_URL` – Postgres URL (Supabase pooler).
 - `SUPABASE_DB_PASSWORD` – Postgres password (used to build DB URL).
-- `SUPABASE_JWT_SECRET` – Supabase JWT secret (tests/edge cases).
 - `SUPABASE_PAT` – PAT for MCP helper (optional).
+- `SUPABASE_JWKS_URL` – JWKS endpoint for Supabase access token verification (optional).
+- `SUPABASE_JWT_ISSUER` – expected issuer for Supabase access tokens (optional).
 - `FRONTEND_BASE_URL` – base URL for checkout redirects.
 - `STRIPE_RETURN_URL` – hosted checkout return URL (include `{CHECKOUT_SESSION_ID}`); mirror to `CHECKOUT_SUCCESS_URL`.
 - `CHECKOUT_SUCCESS_URL` / `CHECKOUT_CANCEL_URL` – explicit override for Stripe success/cancel URLs.
@@ -35,16 +39,18 @@
 - `QA_API_BASE_URL` / `QA_BASE_URL` – smoke test defaults.
 
 ## Flutter client (`frontend/.env`)
+Use `--dart-define` / `--dart-define-from-file` for web builds; do not ship backend secrets in client defines.
 - `API_BASE_URL` – backend URL (use `http://10.0.2.2:8080` on Android emulators).
-- `SUPABASE_URL` / `SUPABASE_ANON_KEY` – client Supabase credentials.
+- `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_API_KEY` – client Supabase credentials (`SUPABASE_PUBLIC_API_KEY` is a legacy alias).
 - `STRIPE_PUBLISHABLE_KEY` – publishable key for PaymentSheet.
 - `STRIPE_MERCHANT_DISPLAY_NAME` – label for Stripe SDK.
+- `OAUTH_REDIRECT_WEB` / `OAUTH_REDIRECT_MOBILE` – OAuth redirect URIs for web and mobile.
 - `SUBSCRIPTIONS_ENABLED` – toggles subscription UI (`true`/`false`).
 - `IMAGE_LOGGING` – enables asset-load logging (`true`/`false`).
 
 ## Landing (Next.js) `frontend/landing`
 - `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (use the Supabase publishable key)
 - `NEXT_PUBLIC_API_BASE_URL` – backend URL (use service name `backend` in compose).
 - `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` – optional monitoring.
 

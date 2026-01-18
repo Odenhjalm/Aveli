@@ -68,12 +68,12 @@ def project_ref_from_url(url: str) -> str:
 
 def get_supabase_config(env: Dict[str, str]) -> tuple[str, str, str]:
     supabase_url = env.get("SUPABASE_URL")
-    service_key = env.get("SUPABASE_SERVICE_ROLE_KEY") or env.get("SUPABASE_SECRET_API_KEY")
+    service_key = env.get("SUPABASE_SECRET_API_KEY") or env.get("SUPABASE_SERVICE_ROLE_KEY")
     project_ref_expected = env.get("SUPABASE_PROJECT_REF")
     if not supabase_url:
         die("SUPABASE_URL is missing in env")
     if not service_key:
-        die("SUPABASE_SERVICE_ROLE_KEY is missing in env")
+        die("SUPABASE_SECRET_API_KEY/SUPABASE_SERVICE_ROLE_KEY is missing in env")
     if not project_ref_expected:
         die("SUPABASE_PROJECT_REF is required for safety")
 

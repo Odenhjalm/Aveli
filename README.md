@@ -23,7 +23,8 @@ Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in 
 - Supabase project (URL, anon key, service role, DB URL), Stripe keys, LiveKit keys
 
 ## Environment
-- Copy `.env.example` → `.env` (root), `.env.example.backend` → `.env.backend`, `.env.example.flutter` → `frontend/.env` as needed.
+- Copy `.env.example` → `.env` (root), `.env.example.backend` → `.env.backend`.
+- Flutter: copy `.env.example.flutter` → `frontend/.env.local` for local defines (or provide `--dart-define` flags directly). Use a separate `frontend/.env.web` for web builds and run `frontend/scripts/guard_web_defines.sh` to block secrets.
 - Do **not** commit real keys (.env files are ignored).
 - Backend listens on port `8080` by default; update `API_BASE_URL`/`NEXT_PUBLIC_API_BASE_URL` accordingly.
 
@@ -56,9 +57,14 @@ make qa.teacher       # smoke against a running backend (port 8080)
 cd frontend
 flutter pub get
 flutter test
-flutter run   # uses API_BASE_URL/SUPABASE_* from frontend/.env
+flutter run --dart-define-from-file=.env.local
 ```
 Android emulator uses `http://10.0.2.2:8080` automatically via the env resolver.
+For web builds, use a web-specific defines file:
+```bash
+flutter run -d chrome --dart-define-from-file=.env.web
+```
+Ensure `.env.local`/`.env.web` include `API_BASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_API_KEY`, and `OAUTH_REDIRECT_WEB`/`OAUTH_REDIRECT_MOBILE` as needed.
 
 ## Landing (Next.js)
 ```bash
@@ -66,7 +72,7 @@ cd frontend/landing
 npm install
 npm run dev   # http://localhost:3000
 ```
-Environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_BASE_URL` (default `http://backend:8080` in compose).
+Environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (set to the Supabase publishable key), `NEXT_PUBLIC_API_BASE_URL` (default `http://backend:8080` in compose).
 
 ## Docker (backend + landing)
 ```bash

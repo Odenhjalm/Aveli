@@ -88,7 +88,7 @@ def main() -> int:
     if not (publishable_key or secret_key or legacy_anon or legacy_service):
         errors.append("No Supabase API keys found (publishable/secret or legacy JWT keys)")
 
-    storage_key = legacy_service or secret_key or publishable_key or legacy_anon
+    storage_key = secret_key or legacy_service or publishable_key or legacy_anon
     if not storage_key:
         errors.append("No Supabase API key available for storage list check")
     else:

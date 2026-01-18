@@ -361,7 +361,6 @@ report_var JWT_REFRESH_EXPIRES_MINUTES "$JWT_REQUIRED"
 note "==> Backend (optional/legacy)"
 report_var SUPABASE_SERVICE_ROLE_KEY optional
 report_var SUPABASE_ANON_KEY optional
-report_var SUPABASE_JWT_SECRET optional
 report_var MEDIA_SIGNING_SECRET optional
 
 note "==> Stripe (active config)"
@@ -393,11 +392,11 @@ report_var STRIPE_TEST_WEBHOOK_BILLING_SECRET optional
 note "==> Flutter (required for app clients)"
 report_var API_BASE_URL required
 report_var SUPABASE_URL required
-if has_value SUPABASE_PUBLISHABLE_API_KEY || has_value SUPABASE_PUBLIC_API_KEY || has_value SUPABASE_ANON_KEY; then
-  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_PUBLIC_API_KEY or SUPABASE_ANON_KEY: set"
+if has_value SUPABASE_PUBLISHABLE_API_KEY || has_value SUPABASE_PUBLIC_API_KEY; then
+  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_PUBLIC_API_KEY: set"
 else
-  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_PUBLIC_API_KEY or SUPABASE_ANON_KEY: missing"
-  warn "SUPABASE_PUBLISHABLE_API_KEY (or SUPABASE_PUBLIC_API_KEY / SUPABASE_ANON_KEY) is required for Flutter"
+  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_PUBLIC_API_KEY: missing"
+  warn "SUPABASE_PUBLISHABLE_API_KEY (or SUPABASE_PUBLIC_API_KEY) is required for Flutter"
 fi
 report_var STRIPE_PUBLISHABLE_KEY optional
 report_var OAUTH_REDIRECT_WEB required

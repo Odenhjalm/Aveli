@@ -42,10 +42,11 @@ docker compose --env-file .env.docker up --build
 
 ## 6) Flutter
 ```
+cd frontend
 flutter pub get
-flutter run -d chrome --web-renderer html   # eller emulator
+flutter run -d chrome --dart-define-from-file=.env.web
 ```
-Ställ in `API_BASE_URL=http://127.0.0.1:8080` i `.env` för lokala körningar.
+För desktop/emulator: använd `--dart-define-from-file=.env.local` (t.ex. `API_BASE_URL=http://127.0.0.1:8080`).
 
 ## 7) QA / tester
 - `make backend.test`
@@ -54,7 +55,7 @@ Ställ in `API_BASE_URL=http://127.0.0.1:8080` i `.env` för lokala körningar.
 - `flutter test`
 
 ## 8) MCP
-`.vscode/mcp.json` pekar på Supabase MCP. Exportera `SUPABASE_PAT`, `SUPABASE_DB_URL`, `SUPABASE_SERVICE_ROLE_KEY` innan du kör verktygen eller låter editorn koppla upp.
+`.vscode/mcp.json` pekar på Supabase MCP. Exportera `SUPABASE_PAT`, `SUPABASE_DB_URL`, `SUPABASE_SECRET_API_KEY` (legacy: `SUPABASE_SERVICE_ROLE_KEY`) innan du kör verktygen eller låter editorn koppla upp.
 
 Troubleshooting:
 - 503 på `/readyz`: kontrollera `DATABASE_URL` och att Supabase IP allowlist släpper igenom dig.
