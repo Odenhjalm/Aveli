@@ -8,6 +8,16 @@ LOG_PATH="/tmp/aveli_remote_db_verify_$(date +%Y%m%d-%H%M%S).json"
 
 LOG_STATUS=""
 LOG_REASON=""
+ENV_STAGE="dev"
+
+is_prod_env() {
+  local raw="${APP_ENV:-${ENVIRONMENT:-${ENV:-}}}"
+  local lowered="${raw,,}"
+  if [[ "$lowered" == "prod" || "$lowered" == "production" || "$lowered" == "live" ]]; then
+    return 0
+  fi
+  return 1
+}
 
 write_log() {
   local status="$1"
@@ -107,6 +117,9 @@ PY
 }
 
 load_master_env
+if is_prod_env; then
+  ENV_STAGE="live"
+fi
 
 DB_URL="${SUPABASE_DB_URL:-}"
 if [[ -z "$DB_URL" ]]; then
@@ -239,8 +252,43 @@ else
 fi
 
 status="COMPLETED"
-if [[ -n "$rls_disabled" || -n "$no_policy" || -n "$storage_issue" || -n "$missing_in_db" || -n "$extra_in_db" ]]; then
-  status="FAILED"
+reason=""
+exit_code=0
+has_rls_issue=false
+has_storage_issue=false
+has_migration_drift=false
+
+if [[ -n "$rls_disabled" || -n "$no_policy" ]]; then
+  has_rls_issue=true
+fi
+if [[ -n "$storage_issue" ]]; then
+  has_storage_issue=true
+fi
+if [[ -n "$missing_in_db" || -n "$extra_in_db" ]]; then
+  has_migration_drift=true
+fi
+
+if [[ "$has_rls_issue" == "true" || "$has_storage_issue" == "true" || "$has_migration_drift" == "true" ]]; then
+  reasons=()
+  if [[ "$has_rls_issue" == "true" ]]; then
+    reasons+=("RLS/policy gaps")
+  fi
+  if [[ "$has_storage_issue" == "true" ]]; then
+    reasons+=("storage bucket/policy issues")
+  fi
+  if [[ "$has_migration_drift" == "true" ]]; then
+    reasons+=("migration drift")
+  fi
+
+  if [[ "$ENV_STAGE" == "dev" && "$has_migration_drift" == "true" && "$has_rls_issue" != "true" && "$has_storage_issue" != "true" ]]; then
+    status="WARN"
+    reason="migration drift (missing/extra migrations) in development"
+    exit_code=2
+  else
+    status="FAILED"
+    reason="$(IFS=", "; echo "${reasons[*]}")"
+    exit_code=1
+  fi
 fi
 
 export MASTER_ENV_FILE
@@ -259,6 +307,7 @@ append_report <<TXT
 
 ## Remote DB Verify (read-only)
 Status: ${status}
+$(if [[ -n "$reason" ]]; then echo "Reason: ${reason}"; fi)
 - Master env: ${MASTER_ENV_FILE}
 - SUPABASE_DB_URL: set
 - App tables: ${app_tables_count}
@@ -275,11 +324,19 @@ TXT
 
 if [[ "$status" == "FAILED" ]]; then
   LOG_STATUS="FAILED"
-  LOG_REASON="remote DB checks failed"
-  echo "Remote DB verify: FAIL" >&2
-  exit 1
+  LOG_REASON="${reason:-remote DB checks failed}"
+  echo "Remote DB verify: FAIL (${LOG_REASON})" >&2
+  exit "$exit_code"
+fi
+
+if [[ "$status" == "WARN" ]]; then
+  LOG_STATUS="WARN"
+  LOG_REASON="$reason"
+  echo "Remote DB verify: WARN (${reason})" >&2
+  exit "$exit_code"
 fi
 
 LOG_STATUS="COMPLETED"
 LOG_REASON=""
 echo "Remote DB verify: PASS"
+exit "$exit_code"

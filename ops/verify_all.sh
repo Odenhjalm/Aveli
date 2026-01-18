@@ -230,7 +230,8 @@ set -e
 if [[ $remote_exit -eq 0 ]]; then
   remote_status="PASS"
 elif [[ $remote_exit -eq 2 ]]; then
-  remote_status="SKIP"
+  remote_status="WARN"
+  echo "WARN: remote db verify reported warnings (non-blocking; see output above)" >&2
 else
   if [[ "$APP_ENV_STAGE" == "live" ]]; then
     remote_status="FAIL"
