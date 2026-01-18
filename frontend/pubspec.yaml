@@ -86,41 +86,41 @@ flutter:
   generate: true
 
   assets:
-    - assets/fonts/
+    - fonts/
     - assets/images/
 
   fonts:
     - family: NotoSans
       fonts:
-        - asset: assets/fonts/NotoSans-Regular.ttf
-        - asset: assets/fonts/NotoSans-Bold.ttf
+        - asset: fonts/NotoSans-Regular.ttf
+        - asset: fonts/NotoSans-Bold.ttf
           weight: 700
 
     - family: Merriweather
       fonts:
-        - asset: assets/fonts/Merriweather-Regular.ttf
-        - asset: assets/fonts/Merriweather-Bold.ttf
+        - asset: fonts/Merriweather-Regular.ttf
+        - asset: fonts/Merriweather-Bold.ttf
           weight: 700
 
     - family: Lora
       fonts:
-        - asset: assets/fonts/Lora-Regular.ttf
-        - asset: assets/fonts/Lora-Bold.ttf
+        - asset: fonts/Lora-Regular.ttf
+        - asset: fonts/Lora-Bold.ttf
           weight: 700
 
     - family: PlayfairDisplay
       fonts:
-        - asset: assets/fonts/PlayfairDisplay-Regular.ttf
-        - asset: assets/fonts/PlayfairDisplay-Bold.ttf
+        - asset: fonts/PlayfairDisplay-Regular.ttf
+        - asset: fonts/PlayfairDisplay-Bold.ttf
           weight: 700
 
     - family: NotoSansSymbols2
       fonts:
-        - asset: assets/fonts/NotoSansSymbols2-Regular.ttf
+        - asset: fonts/NotoSansSymbols2-Regular.ttf
 
     - family: NotoColorEmoji
       fonts:
-        - asset: assets/fonts/NotoColorEmoji.ttf
+        - asset: fonts/NotoColorEmoji.ttf
 
 l10n:
   arb-dir: lib/l10n
