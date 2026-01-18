@@ -9,6 +9,7 @@ kill_timeout = "5s"
 
 [env]
   APP_ENV = "production"
+  CORS_ALLOW_ORIGIN_REGEX = "^https?://localhost(:\\d+)?$"
   PORT = "8080"
 
 [http_service]
