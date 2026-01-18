@@ -1,23 +1,42 @@
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
 
 import httpx
 import psycopg
 import pytest
-from jose import jwt
 
 REQUIRED_ENV_VARS = [
     "SUPABASE_URL",
-    "SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_DB_URL",
-    "SUPABASE_JWT_SECRET",
 ]
+CLIENT_ENV_KEYS = (
+    "SUPABASE_PUBLISHABLE_API_KEY",
+    "SUPABASE_PUBLIC_API_KEY",
+)
+SERVICE_ENV_KEYS = ("SUPABASE_SECRET_API_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+DEFAULT_PASSWORD = "SupabaseTest123!"
+
+
+def _looks_like_jwt(value: str) -> bool:
+    return value.count(".") >= 2
+
+
+def _env_first(*keys: str) -> str:
+    for key in keys:
+        value = os.getenv(key)
+        if value:
+            return value
+    return ""
 
 
 def _require_env():
     missing = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+    if not _env_first(*SERVICE_ENV_KEYS):
+        missing.append("SUPABASE_SECRET_API_KEY/SUPABASE_SERVICE_ROLE_KEY")
+    if not _env_first(*CLIENT_ENV_KEYS):
+        missing.append(
+            "SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY"
+        )
     if missing:
         pytest.skip(f"Supabase env vars missing: {', '.join(missing)}")
 
@@ -38,57 +57,85 @@ def _with_public_profile(headers: dict[str, str]) -> dict[str, str]:
     return enriched
 
 
-def _make_token(user_id: uuid.UUID, email: str, secret: str) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": str(user_id),
-        "email": email,
-        "role": "authenticated",
-        "aud": "authenticated",
-        "exp": now + timedelta(minutes=30),
-        "app_metadata": {"provider": "email"},
-        "user_metadata": {},
+def _admin_headers(service_key: str) -> dict[str, str]:
+    return {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
     }
-    return jwt.encode(payload, secret, algorithm="HS256")
 
 
-def _seed_supabase(db_url: str):
-    host_id = uuid.uuid4()
-    attendee_id = uuid.uuid4()
-    outsider_id = uuid.uuid4()
+def _client_headers(client_key: str) -> dict[str, str]:
+    headers = {
+        "apikey": client_key,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if _looks_like_jwt(client_key):
+        headers["Authorization"] = f"Bearer {client_key}"
+    return headers
+
+
+def _create_auth_user(
+    client: httpx.Client, *, email: str, password: str
+) -> dict[str, str]:
+    payload = {"email": email, "password": password, "email_confirm": True}
+    resp = client.post("/auth/v1/admin/users", json=payload)
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(
+            f"Supabase admin create failed ({resp.status_code}): {resp.text}"
+        )
+    return resp.json()
+
+
+def _issue_access_token(
+    client: httpx.Client, *, email: str, password: str
+) -> str:
+    resp = client.post(
+        "/auth/v1/token?grant_type=password",
+        json={"email": email, "password": password},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Supabase password grant failed ({resp.status_code}): {resp.text}"
+        )
+    data = resp.json()
+    token = data.get("access_token")
+    if not token:
+        raise RuntimeError("Supabase auth response missing access_token")
+    return token
+
+
+def _delete_auth_users(
+    base_url: str, service_key: str, user_ids: list[uuid.UUID]
+) -> None:
+    if not user_ids:
+        return
+    try:
+        with httpx.Client(
+            base_url=base_url, headers=_admin_headers(service_key), timeout=10
+        ) as client:
+            for user_id in user_ids:
+                resp = client.delete(f"/auth/v1/admin/users/{user_id}")
+                if resp.status_code not in (200, 204, 404):
+                    continue
+    except httpx.HTTPError:
+        return
+
+
+def _seed_supabase(db_url: str, users: dict[str, dict[str, str]]):
+    host_id = users["host"]["id"]
+    attendee_id = users["attendee"]["id"]
+    outsider_id = users["outsider"]["id"]
     seminar_id = None
 
-    host_email = f"host_{host_id.hex[:10]}@codecrafters.local"
-    attendee_email = f"attendee_{attendee_id.hex[:10]}@codecrafters.local"
-    outsider_email = f"outsider_{outsider_id.hex[:10]}@codecrafters.local"
+    host_email = users["host"]["email"]
+    attendee_email = users["attendee"]["email"]
+    outsider_email = users["outsider"]["email"]
 
     with psycopg.connect(db_url) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                insert into auth.users (id, email, encrypted_password)
-                values (%s, %s, 'integration-test')
-                on conflict (id) do nothing
-                """,
-                (host_id, host_email),
-            )
-            cur.execute(
-                """
-                insert into auth.users (id, email, encrypted_password)
-                values (%s, %s, 'integration-test')
-                on conflict (id) do nothing
-                """,
-                (attendee_id, attendee_email),
-            )
-            cur.execute(
-                """
-                insert into auth.users (id, email, encrypted_password)
-                values (%s, %s, 'integration-test')
-                on conflict (id) do nothing
-                """,
-                (outsider_id, outsider_email),
-            )
-
             cur.execute(
                 """
                 insert into app.profiles (user_id, email, display_name, role, role_v2, is_admin)
@@ -138,9 +185,6 @@ def _seed_supabase(db_url: str):
         "host_id": host_id,
         "attendee_id": attendee_id,
         "outsider_id": outsider_id,
-        "host_email": host_email,
-        "attendee_email": attendee_email,
-        "outsider_email": outsider_email,
         "seminar_id": seminar_id,
     }
 
@@ -160,28 +204,77 @@ def _cleanup_supabase(db_url: str, ids: dict[str, uuid.UUID]):
                 "delete from app.profiles where user_id in (%s, %s, %s)",
                 (ids["host_id"], ids["attendee_id"], ids["outsider_id"]),
             )
-            cur.execute(
-                "delete from auth.users where id in (%s, %s, %s)",
-                (ids["host_id"], ids["attendee_id"], ids["outsider_id"]),
-            )
         conn.commit()
 
 
 @pytest.fixture(scope="module")
 def supabase_context():
     _require_env()
+    client_key = _env_first(*CLIENT_ENV_KEYS)
+    service_key = _env_first(*SERVICE_ENV_KEYS)
     env = {
         "url": os.environ["SUPABASE_URL"].rstrip("/"),
-        "anon_key": os.environ["SUPABASE_ANON_KEY"],
-        "service_role": os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+        "client_key": client_key,
+        "service_role": service_key,
         "db_url": os.environ["SUPABASE_DB_URL"],
-        "jwt_secret": os.environ["SUPABASE_JWT_SECRET"],
     }
-    ids = _seed_supabase(env["db_url"])
+    user_ids: list[uuid.UUID] = []
+    ids: dict[str, uuid.UUID] = {}
+    users: dict[str, dict[str, str]] = {}
     try:
-        host_token = _make_token(ids["host_id"], ids["host_email"], env["jwt_secret"])
-        attendee_token = _make_token(ids["attendee_id"], ids["attendee_email"], env["jwt_secret"])
-        outsider_token = _make_token(ids["outsider_id"], ids["outsider_email"], env["jwt_secret"])
+        with httpx.Client(
+            base_url=env["url"], headers=_admin_headers(env["service_role"]), timeout=10
+        ) as admin_client:
+            host_seed = uuid.uuid4()
+            attendee_seed = uuid.uuid4()
+            outsider_seed = uuid.uuid4()
+            host_email = f"host_{host_seed.hex[:10]}@codecrafters.local"
+            attendee_email = f"attendee_{attendee_seed.hex[:10]}@codecrafters.local"
+            outsider_email = f"outsider_{outsider_seed.hex[:10]}@codecrafters.local"
+
+            host_user = _create_auth_user(
+                admin_client, email=host_email, password=DEFAULT_PASSWORD
+            )
+            attendee_user = _create_auth_user(
+                admin_client, email=attendee_email, password=DEFAULT_PASSWORD
+            )
+            outsider_user = _create_auth_user(
+                admin_client, email=outsider_email, password=DEFAULT_PASSWORD
+            )
+
+            users = {
+                "host": {
+                    "id": uuid.UUID(host_user["id"]),
+                    "email": host_email,
+                },
+                "attendee": {
+                    "id": uuid.UUID(attendee_user["id"]),
+                    "email": attendee_email,
+                },
+                "outsider": {
+                    "id": uuid.UUID(outsider_user["id"]),
+                    "email": outsider_email,
+                },
+            }
+            user_ids = [
+                users["host"]["id"],
+                users["attendee"]["id"],
+                users["outsider"]["id"],
+            ]
+
+        ids = _seed_supabase(env["db_url"], users)
+        with httpx.Client(
+            base_url=env["url"], headers=_client_headers(env["client_key"]), timeout=10
+        ) as token_client:
+            host_token = _issue_access_token(
+                token_client, email=users["host"]["email"], password=DEFAULT_PASSWORD
+            )
+            attendee_token = _issue_access_token(
+                token_client, email=users["attendee"]["email"], password=DEFAULT_PASSWORD
+            )
+            outsider_token = _issue_access_token(
+                token_client, email=users["outsider"]["email"], password=DEFAULT_PASSWORD
+            )
         yield {
             **env,
             **ids,
@@ -190,14 +283,17 @@ def supabase_context():
             "outsider_token": outsider_token,
         }
     finally:
-        _cleanup_supabase(env["db_url"], ids)
+        if ids:
+            _cleanup_supabase(env["db_url"], ids)
+        if user_ids:
+            _delete_auth_users(env["url"], env["service_role"], user_ids)
 
 
 @pytest.mark.anyio("asyncio")
 async def test_host_can_read_and_update_seminar_postgrest(supabase_context):
     rest_base = f"{supabase_context['url']}/rest/v1"
     headers = _with_public_profile(
-        _auth_headers(supabase_context["anon_key"], supabase_context["host_token"])
+        _auth_headers(supabase_context["client_key"], supabase_context["host_token"])
     )
 
     async with httpx.AsyncClient() as client:
@@ -228,7 +324,7 @@ async def test_attendee_can_read_attendance_postgrest(supabase_context):
     rest_base = f"{supabase_context['url']}/rest/v1"
     headers = _with_public_profile(
         _auth_headers(
-            supabase_context["anon_key"], supabase_context["attendee_token"]
+            supabase_context["client_key"], supabase_context["attendee_token"]
         )
     )
 
@@ -248,7 +344,7 @@ async def test_outsider_cannot_insert_or_update_postgrest(supabase_context):
     rest_base = f"{supabase_context['url']}/rest/v1"
     headers = _with_public_profile(
         _auth_headers(
-            supabase_context["anon_key"], supabase_context["outsider_token"]
+            supabase_context["client_key"], supabase_context["outsider_token"]
         )
     )
 
