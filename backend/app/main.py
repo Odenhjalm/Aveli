@@ -38,6 +38,7 @@ from .routes import (
     community,
     connect,
     courses,
+    home,
     landing,
     livekit_webhooks,
     course_bundles,
@@ -122,6 +123,7 @@ app.include_router(api_checkout.router)
 app.include_router(billing.router)
 app.include_router(connect.router)
 app.include_router(community.router)
+app.include_router(home.router)
 app.include_router(courses.config_router)
 app.include_router(courses.router)
 app.include_router(courses.api_router)

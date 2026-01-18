@@ -840,7 +840,6 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           coalesce(mo.storage_path, lm.storage_path) AS storage_path,
           coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
           lm.media_id,
-          lm.position,
           lm.duration_seconds,
           mo.content_type,
           mo.byte_size,
@@ -853,6 +852,69 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
     """
     async with get_conn() as cur:
         await cur.execute(query, (lesson_id,))
+        return await cur.fetchall()
+
+
+async def list_home_audio_media(
+    user_id: str,
+    *,
+    include_all_courses: bool,
+    limit: int = 20,
+) -> Sequence[dict[str, Any]]:
+    enrollment_join = ""
+    access_clause = ""
+    params: list[Any] = []
+    if not include_all_courses:
+        enrollment_join = """
+        LEFT JOIN app.enrollments e
+          ON e.course_id = c.id
+         AND e.user_id = %s
+         AND e.status = 'active'
+        """
+        access_clause = """
+          AND (
+            l.is_intro = true
+            OR c.is_free_intro = true
+            OR e.user_id IS NOT NULL
+          )
+        """
+        params.append(user_id)
+
+    query = f"""
+        SELECT
+          lm.id,
+          lm.lesson_id,
+          lm.kind,
+          coalesce(mo.storage_path, lm.storage_path) AS storage_path,
+          coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
+          lm.media_id,
+          lm.position,
+          lm.duration_seconds,
+          lm.created_at,
+          mo.content_type,
+          mo.byte_size,
+          mo.original_name,
+          l.title AS lesson_title,
+          l.is_intro,
+          c.id AS course_id,
+          c.slug AS course_slug,
+          c.title AS course_title,
+          c.is_free_intro
+        FROM app.lesson_media lm
+        JOIN app.lessons l ON l.id = lm.lesson_id
+        JOIN app.modules m ON m.id = l.module_id
+        JOIN app.courses c ON c.id = m.course_id
+        LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
+        {enrollment_join}
+        WHERE lm.kind = 'audio'
+          AND c.is_published = true
+          {access_clause}
+        ORDER BY lm.created_at DESC
+        LIMIT %s
+    """
+    params.append(limit)
+    async with get_conn() as cur:
+        await cur.execute(query, params)
         return await cur.fetchall()
 
 
@@ -1115,6 +1177,7 @@ __all__ = [
     "delete_module",
     "list_lessons",
     "list_lesson_media",
+    "list_home_audio_media",
     "list_course_lessons",
     "get_lesson",
     "get_lesson_course_ids",

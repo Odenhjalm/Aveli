@@ -16,7 +16,7 @@ supabase.migrate:
 	SUPABASE_DB_URL=$${SUPABASE_DB_URL:?set SUPABASE_DB_URL} backend/scripts/apply_supabase_migrations.sh
 
 qa.teacher:
-	python3 backend/scripts/qa_teacher_smoke.py --base-url "$${QA_BASE_URL:-http://127.0.0.1:8080}"
+	cd backend && set -a && . ./.env && set +a && poetry run python scripts/qa_teacher_smoke.py --base-url "$${QA_BASE_URL:-http://127.0.0.1:8080}"
 
 docker.up:
 	DOCKER_BUILDKIT=1 docker compose --env-file .env.docker up --build

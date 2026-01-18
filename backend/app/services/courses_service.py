@@ -14,6 +14,7 @@ from ..repositories import (
     get_profile,
 )
 from ..utils.lesson_content import serialize_audio_embeds
+from ..utils import media_signer
 from ..utils.media_signer import public_download_url
 
 
@@ -172,6 +173,34 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
         if not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
         item["download_url"] = _compute_media_download_url(item)
+        items.append(item)
+    return items
+
+
+async def user_has_global_course_access(user_id: str) -> bool:
+    """Return True when the user can access all courses (subscription/admin)."""
+    profile = await get_profile(user_id)
+    subscription = await get_latest_subscription(user_id)
+    return _has_active_subscription(profile, subscription)
+
+
+async def list_home_audio_media(
+    user_id: str,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    include_all = await user_has_global_course_access(user_id)
+    rows = await courses_repo.list_home_audio_media(
+        user_id,
+        include_all_courses=include_all,
+        limit=limit,
+    )
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = _materialize_mapping(row)
+        if not item.get("storage_bucket"):
+            item["storage_bucket"] = "lesson-media"
+        media_signer.attach_media_links(item)
         items.append(item)
     return items
 
@@ -416,6 +445,7 @@ __all__ = [
     "delete_module",
     "list_lessons",
     "list_lesson_media",
+    "list_home_audio_media",
     "upsert_lesson",
     "delete_lesson",
     "reorder_lessons",
@@ -436,4 +466,5 @@ __all__ = [
     "ensure_course_stripe_assets",
     "quiz_questions",
     "submit_quiz",
+    "user_has_global_course_access",
 ]
