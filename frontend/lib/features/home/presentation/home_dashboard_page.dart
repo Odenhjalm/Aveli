@@ -17,8 +17,10 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
+import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
@@ -28,6 +30,7 @@ import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
+import 'package:aveli/shared/widgets/media_player.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -53,6 +56,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final profile = authState.profile;
     final isTeacher = profile?.isTeacher == true || profile?.isAdmin == true;
     final assets = ref.watch(backendAssetResolverProvider);
+    final homeAudioAsync = ref.watch(homeAudioProvider);
+    final homeAudioSection = _HomeAudioSection(audioAsync: homeAudioAsync);
 
     if (!entitlementsState.loading && entitlementsState.data == null) {
       // Kick off entitlements load once.
@@ -134,6 +139,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 560),
+                          child: homeAudioSection,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -173,6 +185,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 110, 16, 32),
                 children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: homeAudioSection,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   _ExploreCoursesSection(
                     section: exploreAsync,
                     fallbackCourses: coursesAsync,
@@ -231,6 +250,226 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       }
     }
   }
+}
+
+class _HomeAudioSection extends StatelessWidget {
+  const _HomeAudioSection({required this.audioAsync});
+
+  final AsyncValue<List<HomeAudioItem>> audioAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      title: 'Lyssna nu',
+      child: audioAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Text(
+          'Kunde inte hämta ljud: ${AppFailure.from(error).message}',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+        ),
+        data: (items) {
+          if (items.isEmpty) {
+            return const Text(
+              'Inga ljudspår tillgängliga ännu.',
+              style: TextStyle(color: Colors.white70),
+            );
+          }
+          return _HomeAudioList(items: items);
+        },
+      ),
+    );
+  }
+}
+
+class _HomeAudioList extends ConsumerStatefulWidget {
+  const _HomeAudioList({required this.items});
+
+  final List<HomeAudioItem> items;
+
+  @override
+  ConsumerState<_HomeAudioList> createState() => _HomeAudioListState();
+}
+
+class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
+  String? _selectedId;
+
+  @override
+  void didUpdateWidget(covariant _HomeAudioList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_selectedId == null) return;
+    final stillExists = widget.items.any((item) => item.id == _selectedId);
+    if (!stillExists) {
+      _selectedId = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    if (items.isEmpty) return const SizedBox.shrink();
+    final selected = _resolveSelected(items);
+    final mediaRepo = ref.watch(mediaRepositoryProvider);
+    String? resolvedUrl = selected.preferredUrl;
+    if (resolvedUrl != null) {
+      try {
+        resolvedUrl = mediaRepo.resolveUrl(resolvedUrl);
+      } catch (_) {}
+    }
+    final durationHint = (selected.durationSeconds ?? 0) > 0
+        ? Duration(seconds: selected.durationSeconds!)
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          selected.displayTitle,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        if (selected.courseTitle.trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            selected.courseTitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+          ),
+        ],
+        const SizedBox(height: 10),
+        if (resolvedUrl == null)
+          const Text(
+            'Ljudlänken saknas för detta spår.',
+            style: TextStyle(color: Colors.white70),
+          )
+        else
+          InlineAudioPlayer(
+            url: resolvedUrl,
+            durationHint: durationHint,
+            compact: true,
+          ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 164,
+          child: ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final isSelected = item.id == selected.id;
+              return _AudioRow(
+                item: item,
+                isSelected: isSelected,
+                onTap: () => setState(() => _selectedId = item.id),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  HomeAudioItem _resolveSelected(List<HomeAudioItem> items) {
+    if (_selectedId == null) {
+      return items.first;
+    }
+    return items.firstWhere(
+      (item) => item.id == _selectedId,
+      orElse: () => items.first,
+    );
+  }
+}
+
+class _AudioRow extends StatelessWidget {
+  const _AudioRow({
+    required this.item,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final HomeAudioItem item;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final duration = (item.durationSeconds ?? 0) > 0
+        ? _formatDuration(Duration(seconds: item.durationSeconds!))
+        : null;
+    final border = BorderSide(
+      color: Colors.white.withValues(alpha: isSelected ? 0.28 : 0.12),
+    );
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: isSelected ? 0.14 : 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.fromBorderSide(border),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
+              color: Colors.white70,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.displayTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (item.courseTitle.trim().isNotEmpty)
+                    Text(
+                      item.courseTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white70,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (duration != null)
+              Text(
+                duration,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.white60,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatDuration(Duration duration) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final totalSeconds = duration.inSeconds;
+  final hours = totalSeconds ~/ 3600;
+  final minutes = (totalSeconds % 3600) ~/ 60;
+  final seconds = totalSeconds % 60;
+  final mm = two(minutes);
+  final ss = two(seconds);
+  return hours > 0 ? '$hours:$mm:$ss' : '$mm:$ss';
 }
 
 class _ExploreCoursesSection extends StatelessWidget {

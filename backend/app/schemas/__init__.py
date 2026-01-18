@@ -451,6 +451,33 @@ class MeditationListResponse(BaseModel):
     items: List[MeditationSummary]
 
 
+class HomeAudioItem(BaseModel):
+    id: UUID
+    lesson_id: UUID
+    lesson_title: str
+    course_id: UUID
+    course_title: str
+    course_slug: Optional[str] = None
+    kind: str
+    storage_path: str
+    storage_bucket: Optional[str] = None
+    media_id: Optional[UUID] = None
+    duration_seconds: Optional[int] = None
+    created_at: datetime
+    content_type: Optional[str] = None
+    byte_size: Optional[int] = None
+    original_name: Optional[str] = None
+    download_url: Optional[str] = None
+    signed_url: Optional[str] = None
+    signed_url_expires_at: Optional[str] = None
+    is_intro: Optional[bool] = None
+    is_free_intro: Optional[bool] = None
+
+
+class HomeAudioFeedResponse(BaseModel):
+    items: List[HomeAudioItem]
+
+
 class MessageRecord(BaseModel):
     id: UUID
     channel: str

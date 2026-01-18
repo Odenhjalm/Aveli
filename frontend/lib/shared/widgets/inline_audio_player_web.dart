@@ -14,12 +14,14 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
     this.title,
     this.onDownload,
     this.durationHint,
+    this.compact = false,
   });
 
   final String url;
   final String? title;
   final Future<void> Function()? onDownload;
   final Duration? durationHint;
+  final bool compact;
 
   @override
   ConsumerState<InlineAudioPlayer> createState() => _InlineAudioPlayerState();
@@ -189,15 +191,47 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final compact = widget.compact;
     final duration = _effectiveDuration;
     final maxMillis = max(1, duration.inMilliseconds);
     final position = _position.inMilliseconds.clamp(0, maxMillis);
     final sliderValue = position.toDouble();
+    final cardShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(compact ? 14 : 12),
+      side: compact
+          ? BorderSide(color: Colors.white.withValues(alpha: 0.16))
+          : BorderSide.none,
+    );
+    final titleStyle = compact
+        ? theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface,
+          )
+        : theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          );
+    final timeStyle = (compact
+            ? theme.textTheme.bodySmall
+            : theme.textTheme.bodyMedium)
+        ?.copyWith(color: theme.colorScheme.onSurface);
+    final sliderTheme = compact
+        ? theme.sliderTheme.copyWith(
+            trackHeight: 2,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+          )
+        : theme.sliderTheme;
+    final padding = compact
+        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
+        : const EdgeInsets.all(16);
 
     return Card(
       margin: EdgeInsets.zero,
+      elevation: compact ? 0 : null,
+      color: compact ? Colors.white.withValues(alpha: 0.08) : null,
+      shape: cardShape,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: padding,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,11 +239,9 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
             if ((widget.title ?? '').isNotEmpty) ...[
               Text(
                 widget.title!,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: titleStyle,
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: compact ? 8 : 12),
             ],
             if (_initializing)
               const Center(child: CircularProgressIndicator())
@@ -230,25 +262,36 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
                           _isPlaying
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded,
+                          size: compact ? 20 : 24,
                         ),
                         onPressed: _toggle,
+                        visualDensity: compact
+                            ? VisualDensity.compact
+                            : VisualDensity.standard,
+                        padding: compact ? EdgeInsets.zero : null,
+                        constraints: compact
+                            ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                            : null,
                       ),
                       Expanded(
-                        child: Slider(
-                          min: 0,
-                          max: maxMillis.toDouble(),
-                          value: sliderValue,
-                          onChanged: duration.inMilliseconds <= 0
-                              ? null
-                              : (value) => _seek(
-                                  Duration(milliseconds: value.round()),
-                                ),
+                        child: SliderTheme(
+                          data: sliderTheme,
+                          child: Slider(
+                            min: 0,
+                            max: maxMillis.toDouble(),
+                            value: sliderValue,
+                            onChanged: duration.inMilliseconds <= 0
+                                ? null
+                                : (value) => _seek(
+                                    Duration(milliseconds: value.round()),
+                                  ),
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(_formatDuration(_position)),
-                      const Text(' / '),
-                      Text(_formatDuration(duration)),
+                      SizedBox(width: compact ? 6 : 8),
+                      Text(_formatDuration(_position), style: timeStyle),
+                      Text(' / ', style: timeStyle),
+                      Text(_formatDuration(duration), style: timeStyle),
                     ],
                   ),
                 ],
