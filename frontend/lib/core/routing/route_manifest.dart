@@ -24,13 +24,13 @@ const List<RouteManifestEntry> routeManifest = [
     name: AppRoute.landingRoot,
     path: RoutePath.landingRoot,
     access: RouteAccessLevel.public,
-    redirectAuthed: true,
+    redirectAuthed: false,
   ),
   RouteManifestEntry(
     name: AppRoute.landing,
     path: RoutePath.landing,
     access: RouteAccessLevel.public,
-    redirectAuthed: true,
+    redirectAuthed: false,
   ),
   RouteManifestEntry(
     name: AppRoute.login,

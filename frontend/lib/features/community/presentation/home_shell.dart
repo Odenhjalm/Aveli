@@ -59,15 +59,25 @@ class _HomeShellState extends State<HomeShell> {
           leading: const SizedBox.shrink(),
           title: Row(
             children: [
-              ShaderMask(
-                shaderCallback: (bounds) =>
-                    _aveliBrandGradient.createShader(bounds),
-                blendMode: BlendMode.srcIn,
-                child: Text(
-                  'Aveli',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: .2,
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => context.goNamed(AppRoute.landing),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 2,
+                  ),
+                  child: ShaderMask(
+                    shaderCallback: (bounds) =>
+                        _aveliBrandGradient.createShader(bounds),
+                    blendMode: BlendMode.srcIn,
+                    child: Text(
+                      'Aveli',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .2,
+                      ),
+                    ),
                   ),
                 ),
               ),
