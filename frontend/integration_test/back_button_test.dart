@@ -19,6 +19,10 @@ import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
+import 'package:aveli/features/payments/data/billing_api.dart';
+import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
+import 'package:aveli/features/paywall/data/entitlements_api.dart';
+import 'package:aveli/features/paywall/domain/entitlements.dart';
 import 'package:aveli/main.dart';
 import 'test_assets.dart';
 
@@ -88,11 +92,53 @@ class _FakeAuthRepository implements AuthRepository {
   Future<String?> currentToken() async => token;
 }
 
+class _StubEntitlementsApi implements EntitlementsApi {
+  @override
+  Future<Entitlements> fetchEntitlements() async {
+    return const Entitlements(
+      membership: MembershipStatus(isActive: true, status: 'active'),
+      courses: <String>[],
+    );
+  }
+}
+
+class _StubBillingApi implements BillingApi {
+  @override
+  Future<String> startSubscription({required String plan}) async {
+    return '';
+  }
+
+  @override
+  Future<void> changePlan(String plan) async {}
+
+  @override
+  Future<void> cancelSubscription() async {}
+}
+
+class _StaticEntitlementsNotifier extends EntitlementsNotifier {
+  _StaticEntitlementsNotifier()
+    : super(_StubEntitlementsApi(), _StubBillingApi()) {
+    state = const EntitlementsState(
+      loading: false,
+      data: Entitlements(
+        membership: MembershipStatus(isActive: true, status: 'active'),
+        courses: <String>[],
+      ),
+    );
+  }
+
+  @override
+  Future<void> refresh() async {}
+}
+
 List<Override> _commonOverrides(AuthState authState) {
   return [
     envInfoProvider.overrideWith((ref) => envInfoOk),
     authControllerProvider.overrideWith(
       (ref) => _FakeAuthController(authState),
+    ),
+    entitlementsNotifierProvider.overrideWith(
+      (ref) => _StaticEntitlementsNotifier(),
     ),
     appConfigProvider.overrideWithValue(
       const AppConfig(
