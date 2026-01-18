@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -22,76 +20,7 @@ import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/main.dart';
-
-const _transparentPng = <int>[
-  0x89,
-  0x50,
-  0x4E,
-  0x47,
-  0x0D,
-  0x0A,
-  0x1A,
-  0x0A,
-  0x00,
-  0x00,
-  0x00,
-  0x0D,
-  0x49,
-  0x48,
-  0x44,
-  0x52,
-  0x00,
-  0x00,
-  0x00,
-  0x01,
-  0x00,
-  0x00,
-  0x00,
-  0x01,
-  0x08,
-  0x06,
-  0x00,
-  0x00,
-  0x00,
-  0x1F,
-  0x15,
-  0xC4,
-  0x89,
-  0x00,
-  0x00,
-  0x00,
-  0x0A,
-  0x49,
-  0x44,
-  0x41,
-  0x54,
-  0x78,
-  0x9C,
-  0x63,
-  0x00,
-  0x01,
-  0x00,
-  0x00,
-  0x05,
-  0x00,
-  0x01,
-  0x0D,
-  0x0A,
-  0x2D,
-  0xB4,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x49,
-  0x45,
-  0x4E,
-  0x44,
-  0xAE,
-  0x42,
-  0x60,
-  0x82,
-];
+import 'test_assets.dart';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(AuthState initialState)
@@ -192,28 +121,7 @@ Future<void> _pumpNavigation(WidgetTester tester) async {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
-  final transparentData = ByteData.view(
-    Uint8List.fromList(_transparentPng).buffer,
-  );
-
-  binding.defaultBinaryMessenger.setMockMessageHandler('flutter/assets', (
-    message,
-  ) async {
-    final key = const StringCodec().decodeMessage(message) ?? '';
-    if (key == 'AssetManifest.json') {
-      return ByteData.view(Uint8List.fromList(utf8.encode('{}')).buffer);
-    }
-    if (key == 'AssetManifest.bin') {
-      return const StandardMessageCodec().encodeMessage(<String, dynamic>{});
-    }
-    if (key == 'FontManifest.json') {
-      return ByteData.view(Uint8List.fromList(utf8.encode('[]')).buffer);
-    }
-    if (key == 'NOTICES' || key == 'LICENSES') {
-      return ByteData.view(Uint8List.fromList(utf8.encode('')).buffer);
-    }
-    return transparentData;
-  });
+  registerTestAssetHandlers();
 
   testWidgets('Android back pops to previous route instead of exiting', (
     tester,
@@ -229,9 +137,11 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: _commonOverrides(AuthState(profile: profile)),
-        child: const AveliApp(),
+      wrapWithTestAssets(
+        ProviderScope(
+          overrides: _commonOverrides(AuthState(profile: profile)),
+          child: const AveliApp(),
+        ),
       ),
     );
 

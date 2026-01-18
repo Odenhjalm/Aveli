@@ -12,13 +12,14 @@ import 'package:aveli/features/seminars/presentation/seminar_discover_page.dart'
 import 'package:aveli/features/seminars/presentation/seminar_join_page.dart';
 import 'package:aveli/features/home/application/livekit_controller.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'test_assets.dart';
 
 class _TestAssetResolver extends BackendAssetResolver {
   _TestAssetResolver() : super('');
 
   @override
   ImageProvider<Object> imageProvider(String assetPath, {double scale = 1.0}) {
-    return const AssetImage('assets/images/bakgrund.png');
+    return MemoryImage(transparentPngBytes, scale: scale);
   }
 }
 
@@ -56,6 +57,7 @@ class _FakeLiveSessionController extends LiveSessionController {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
+  registerTestAssetHandlers();
 
   testWidgets('Seminar list shows live and scheduled badges', (tester) async {
     final liveSeminar = Seminar(
@@ -87,24 +89,26 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost',
-              stripePublishableKey: 'pk_test',
-              stripeMerchantDisplayName: 'Aveli',
-              subscriptionsEnabled: false,
+      wrapWithTestAssets(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost',
+                stripePublishableKey: 'pk_test',
+                stripeMerchantDisplayName: 'Aveli',
+                subscriptionsEnabled: false,
+              ),
             ),
-          ),
-          backendAssetResolverProvider.overrideWithValue(
-            _TestAssetResolver(),
-          ),
-          publicSeminarsProvider.overrideWith(
-            (ref) async => [liveSeminar, scheduledSeminar],
-          ),
-        ],
-        child: const MaterialApp(home: SeminarDiscoverPage()),
+            backendAssetResolverProvider.overrideWithValue(
+              _TestAssetResolver(),
+            ),
+            publicSeminarsProvider.overrideWith(
+              (ref) async => [liveSeminar, scheduledSeminar],
+            ),
+          ],
+          child: const MaterialApp(home: SeminarDiscoverPage()),
+        ),
       ),
     );
 
@@ -145,27 +149,29 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost',
-              stripePublishableKey: 'pk_test',
-              stripeMerchantDisplayName: 'Aveli',
-              subscriptionsEnabled: false,
+      wrapWithTestAssets(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost',
+                stripePublishableKey: 'pk_test',
+                stripeMerchantDisplayName: 'Aveli',
+                subscriptionsEnabled: false,
+              ),
             ),
-          ),
-          backendAssetResolverProvider.overrideWithValue(
-            _TestAssetResolver(),
-          ),
-          publicSeminarDetailProvider(
-            seminar.id,
-          ).overrideWith((ref) async => detail),
-          liveSessionControllerProvider.overrideWith(
-            _FakeLiveSessionController.new,
-          ),
-        ],
-        child: MaterialApp(home: SeminarJoinPage(seminarId: seminar.id)),
+            backendAssetResolverProvider.overrideWithValue(
+              _TestAssetResolver(),
+            ),
+            publicSeminarDetailProvider(
+              seminar.id,
+            ).overrideWith((ref) async => detail),
+            liveSessionControllerProvider.overrideWith(
+              _FakeLiveSessionController.new,
+            ),
+          ],
+          child: MaterialApp(home: SeminarJoinPage(seminarId: seminar.id)),
+        ),
       ),
     );
 
