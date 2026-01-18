@@ -178,6 +178,51 @@ if [[ "$ENV_MODE" == "nonprod" ]]; then
   JWT_REQUIRED="optional"
 fi
 
+supabase_client_source=""
+supabase_client_is_legacy="false"
+if has_value SUPABASE_PUBLISHABLE_API_KEY; then
+  supabase_client_source="SUPABASE_PUBLISHABLE_API_KEY"
+elif has_value SUPABASE_PUBLIC_API_KEY; then
+  supabase_client_source="SUPABASE_PUBLIC_API_KEY"
+  supabase_client_is_legacy="true"
+fi
+
+supabase_service_source=""
+supabase_service_is_legacy="false"
+if has_value SUPABASE_SECRET_API_KEY; then
+  supabase_service_source="SUPABASE_SECRET_API_KEY"
+elif has_value SUPABASE_SERVICE_ROLE_KEY; then
+  supabase_service_source="SUPABASE_SERVICE_ROLE_KEY"
+  supabase_service_is_legacy="true"
+fi
+
+supabase_client_label="$supabase_client_source"
+if [[ "$supabase_client_is_legacy" == "true" && -n "$supabase_client_label" ]]; then
+  supabase_client_label="${supabase_client_label} (legacy)"
+fi
+supabase_service_label="$supabase_service_source"
+if [[ "$supabase_service_is_legacy" == "true" && -n "$supabase_service_label" ]]; then
+  supabase_service_label="${supabase_service_label} (legacy)"
+fi
+
+supabase_client_ok="false"
+if [[ -n "$supabase_client_source" ]]; then
+  if [[ "$ENV_MODE" == "prod" && "$supabase_client_is_legacy" == "true" ]]; then
+    supabase_client_ok="false"
+  else
+    supabase_client_ok="true"
+  fi
+fi
+
+supabase_service_ok="false"
+if [[ -n "$supabase_service_source" ]]; then
+  if [[ "$ENV_MODE" == "prod" && "$supabase_service_is_legacy" == "true" ]]; then
+    supabase_service_ok="false"
+  else
+    supabase_service_ok="true"
+  fi
+fi
+
 stripe_secret_values=()
 test_candidates=()
 live_candidates=()
@@ -350,8 +395,28 @@ fi
 note "==> Backend (required)"
 report_var APP_ENV required
 report_var SUPABASE_URL required
-report_var SUPABASE_PUBLISHABLE_API_KEY required
-report_var SUPABASE_SECRET_API_KEY required
+if [[ "$supabase_client_ok" == "true" ]]; then
+  note "  - SUPABASE client key: set (${supabase_client_label})"
+else
+  if [[ -n "$supabase_client_source" && "$ENV_MODE" == "prod" ]]; then
+    note "  - SUPABASE client key: set (${supabase_client_label})"
+    critical "SUPABASE_PUBLISHABLE_API_KEY required in production (legacy SUPABASE_PUBLIC_API_KEY set)"
+  else
+    note "  - SUPABASE client key: missing"
+    critical "SUPABASE_PUBLISHABLE_API_KEY is required"
+  fi
+fi
+if [[ "$supabase_service_ok" == "true" ]]; then
+  note "  - SUPABASE service key: set (${supabase_service_label})"
+else
+  if [[ -n "$supabase_service_source" && "$ENV_MODE" == "prod" ]]; then
+    note "  - SUPABASE service key: set (${supabase_service_label})"
+    critical "SUPABASE_SECRET_API_KEY required in production (legacy SUPABASE_SERVICE_ROLE_KEY set)"
+  else
+    note "  - SUPABASE service key: missing"
+    critical "SUPABASE_SECRET_API_KEY is required"
+  fi
+fi
 report_var SUPABASE_DB_URL "$DB_REQUIRED"
 report_var JWT_SECRET "$JWT_REQUIRED"
 report_var JWT_ALGORITHM "$JWT_REQUIRED"
@@ -392,10 +457,10 @@ report_var STRIPE_TEST_WEBHOOK_BILLING_SECRET optional
 note "==> Flutter (required for app clients)"
 report_var API_BASE_URL required
 report_var SUPABASE_URL required
-if has_value SUPABASE_PUBLISHABLE_API_KEY || has_value SUPABASE_PUBLIC_API_KEY; then
-  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_PUBLIC_API_KEY: set"
+if [[ -n "$supabase_client_source" ]]; then
+  note "  - SUPABASE client key: set (${supabase_client_label})"
 else
-  note "  - SUPABASE_PUBLISHABLE_API_KEY or SUPABASE_PUBLIC_API_KEY: missing"
+  note "  - SUPABASE client key: missing"
   warn "SUPABASE_PUBLISHABLE_API_KEY (or SUPABASE_PUBLIC_API_KEY) is required for Flutter"
 fi
 report_var STRIPE_PUBLISHABLE_KEY optional

@@ -24,6 +24,14 @@ def _val(key: str) -> str:
     return (os.environ.get(key) or "").strip()
 
 
+def _pick_key(*keys: str) -> tuple[str, str]:
+    for key in keys:
+        value = _val(key)
+        if value:
+            return value, key
+    return "", ""
+
+
 def _is_jwt(token: str) -> bool:
     if token.startswith("eyJ"):
         return True
@@ -68,27 +76,53 @@ def main() -> int:
             print("FAIL: SUPABASE_PROJECT_REF does not match SUPABASE_URL hostname.")
             return 1
 
-    publishable_key = _val("SUPABASE_PUBLISHABLE_API_KEY") or _val("SUPABASE_PUBLIC_API_KEY")
-    secret_key = _val("SUPABASE_SECRET_API_KEY")
+    publishable_key, publishable_source = _pick_key(
+        "SUPABASE_PUBLISHABLE_API_KEY",
+        "SUPABASE_PUBLIC_API_KEY",
+    )
+    secret_key, secret_source = _pick_key(
+        "SUPABASE_SECRET_API_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+    )
     legacy_anon = _val("SUPABASE_ANON_KEY")
-    legacy_service = _val("SUPABASE_SERVICE_ROLE_KEY")
 
     errors: list[str] = []
     warnings: list[str] = []
 
     if publishable_key and not publishable_key.startswith("sb_publishable_"):
-        warnings.append("SUPABASE_PUBLISHABLE_API_KEY does not match sb_publishable_ pattern")
-    if secret_key and not secret_key.startswith("sb_secret_"):
-        warnings.append("SUPABASE_SECRET_API_KEY does not match sb_secret_ pattern")
-    if legacy_anon and not legacy_anon.startswith("eyJ"):
-        warnings.append("SUPABASE_ANON_KEY is not a JWT")
-    if legacy_service and not legacy_service.startswith("eyJ"):
-        warnings.append("SUPABASE_SERVICE_ROLE_KEY is not a JWT")
+        warnings.append(f"{publishable_source} does not match sb_publishable_ pattern")
+    if secret_key:
+        if secret_source == "SUPABASE_SECRET_API_KEY" and not secret_key.startswith("sb_secret_"):
+            warnings.append("SUPABASE_SECRET_API_KEY does not match sb_secret_ pattern")
+        if secret_source == "SUPABASE_SERVICE_ROLE_KEY" and not _is_jwt(secret_key):
+            warnings.append("SUPABASE_SERVICE_ROLE_KEY is not a JWT")
 
-    if not (publishable_key or secret_key or legacy_anon or legacy_service):
+    if not (publishable_key or secret_key or legacy_anon):
         errors.append("No Supabase API keys found (publishable/secret or legacy JWT keys)")
 
-    storage_key = secret_key or legacy_service or publishable_key or legacy_anon
+    storage_key = ""
+    storage_source = ""
+    if secret_key:
+        storage_key = secret_key
+        storage_source = secret_source
+    elif publishable_key:
+        storage_key = publishable_key
+        storage_source = publishable_source
+    elif legacy_anon:
+        storage_key = legacy_anon
+        storage_source = "SUPABASE_ANON_KEY"
+
+    if storage_key and storage_source in {"SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"}:
+        if not _is_jwt(storage_key):
+            warnings.append(f"{storage_source} is not a JWT")
+
+    print(f"INFO: Supabase client key source: {publishable_source or 'missing'}")
+    print(f"INFO: Supabase service key source: {secret_source or 'missing'}")
+    print(f"INFO: Supabase storage key source: {storage_source or 'missing'}")
+    if _val("SUPABASE_PROJECT_REF"):
+        print("INFO: Supabase project ref source: SUPABASE_PROJECT_REF")
+    else:
+        print("INFO: Supabase project ref source: derived from SUPABASE_URL")
     if not storage_key:
         errors.append("No Supabase API key available for storage list check")
     else:
@@ -112,6 +146,7 @@ def main() -> int:
 
     db_url = _val("SUPABASE_DB_URL")
     if db_url:
+        print("INFO: Supabase DB URL source: SUPABASE_DB_URL")
         try:
             with psycopg.connect(
                 db_url,
@@ -124,6 +159,8 @@ def main() -> int:
         except psycopg.Error as exc:
             target = _db_target(db_url)
             errors.append(f"DB connection failed ({target}): {exc.__class__.__name__}")
+    else:
+        print("INFO: Supabase DB URL source: missing")
 
     for warning in warnings:
         print(f"WARN: {warning}")

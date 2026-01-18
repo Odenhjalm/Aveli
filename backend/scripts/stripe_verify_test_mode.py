@@ -64,14 +64,47 @@ def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
+    active_pub = ""
+    active_webhook = ""
+    active_billing = ""
+    active_pub_source = ""
+    active_webhook_source = ""
+    active_billing_source = ""
+
     if mode == "test":
-        active_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY") or _val("STRIPE_PUBLISHABLE_KEY")
-        active_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET") or _val("STRIPE_WEBHOOK_SECRET")
-        active_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET") or _val("STRIPE_BILLING_WEBHOOK_SECRET")
+        if _val("STRIPE_TEST_PUBLISHABLE_KEY"):
+            active_pub = _val("STRIPE_TEST_PUBLISHABLE_KEY")
+            active_pub_source = "STRIPE_TEST_PUBLISHABLE_KEY"
+        else:
+            active_pub = _val("STRIPE_PUBLISHABLE_KEY")
+            active_pub_source = "STRIPE_PUBLISHABLE_KEY" if active_pub else ""
+
+        if _val("STRIPE_TEST_WEBHOOK_SECRET"):
+            active_webhook = _val("STRIPE_TEST_WEBHOOK_SECRET")
+            active_webhook_source = "STRIPE_TEST_WEBHOOK_SECRET"
+        else:
+            active_webhook = _val("STRIPE_WEBHOOK_SECRET")
+            active_webhook_source = "STRIPE_WEBHOOK_SECRET" if active_webhook else ""
+
+        if _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET"):
+            active_billing = _val("STRIPE_TEST_WEBHOOK_BILLING_SECRET")
+            active_billing_source = "STRIPE_TEST_WEBHOOK_BILLING_SECRET"
+        else:
+            active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
+            active_billing_source = "STRIPE_BILLING_WEBHOOK_SECRET" if active_billing else ""
     else:
         active_pub = _val("STRIPE_PUBLISHABLE_KEY")
+        active_pub_source = "STRIPE_PUBLISHABLE_KEY" if active_pub else ""
         active_webhook = _val("STRIPE_WEBHOOK_SECRET")
+        active_webhook_source = "STRIPE_WEBHOOK_SECRET" if active_webhook else ""
         active_billing = _val("STRIPE_BILLING_WEBHOOK_SECRET")
+        active_billing_source = "STRIPE_BILLING_WEBHOOK_SECRET" if active_billing else ""
+
+    print(f"INFO: Stripe mode: {mode}")
+    print(f"INFO: Stripe secret key source: {context.secret_source}")
+    print(f"INFO: Stripe publishable key source: {active_pub_source or 'missing'}")
+    print(f"INFO: Stripe webhook key source: {active_webhook_source or 'missing'}")
+    print(f"INFO: Stripe billing webhook key source: {active_billing_source or 'missing'}")
 
     if not active_pub:
         errors.append("Stripe publishable key is missing for the active mode")
