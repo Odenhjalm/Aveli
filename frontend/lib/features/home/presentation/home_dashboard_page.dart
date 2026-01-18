@@ -259,8 +259,8 @@ class _HomeAudioSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _SectionCard(
-      title: 'Lyssna nu',
+    return _GlassSection(
+      padding: const EdgeInsets.all(20),
       child: audioAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Text(
@@ -353,23 +353,84 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             compact: true,
           ),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 164,
-          child: ListView.separated(
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              final isSelected = item.id == selected.id;
-              return _AudioRow(
-                item: item,
-                isSelected: isSelected,
-                onTap: () => setState(() => _selectedId = item.id),
-              );
-            },
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => _openLibrary(context, items),
+            icon: const Icon(Icons.library_music_outlined),
+            label: Text('Bibliotek (${items.length})'),
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
           ),
         ),
       ],
+    );
+  }
+
+  void _openLibrary(BuildContext context, List<HomeAudioItem> items) {
+    final selectedId = _resolveSelected(items).id;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final height = MediaQuery.of(sheetContext).size.height * 0.7;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: _GlassSection(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                height: height,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Bibliotek',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${items.length} spår',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final isSelected = item.id == selectedId;
+                          return _AudioRow(
+                            item: item,
+                            isSelected: isSelected,
+                            onTap: () {
+                              if (!mounted) return;
+                              setState(() => _selectedId = item.id);
+                              Navigator.of(sheetContext).pop();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

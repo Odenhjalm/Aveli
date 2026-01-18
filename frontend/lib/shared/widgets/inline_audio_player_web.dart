@@ -34,6 +34,8 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   bool _initializing = true;
   bool _isPlaying = false;
   String? _error;
+  double _volume = 1.0;
+  double _lastVolume = 1.0;
   StreamSubscription<Event>? _timeUpdateSub;
   StreamSubscription<Event>? _loadedMetadataSub;
   StreamSubscription<Event>? _playSub;
@@ -47,7 +49,8 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     _audio = AudioElement()
       ..preload = 'auto'
       ..controls = false
-      ..loop = false;
+      ..loop = false
+      ..volume = _volume;
     _duration = widget.durationHint ?? Duration.zero;
     _attachListeners();
     _setSource(widget.url);
@@ -174,6 +177,20 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     }
   }
 
+  void _setVolume(double value) {
+    final clamped = value.clamp(0.0, 1.0).toDouble();
+    if (clamped > 0) {
+      _lastVolume = clamped;
+    }
+    setState(() => _volume = clamped);
+    _audio.volume = clamped;
+  }
+
+  void _toggleMute() {
+    final next = _volume > 0 ? 0.0 : (_lastVolume > 0 ? _lastVolume : 1.0);
+    _setVolume(next);
+  }
+
   void _seek(Duration target) {
     _audio.currentTime = target.inMilliseconds / 1000;
     setState(() {
@@ -196,6 +213,11 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     final maxMillis = max(1, duration.inMilliseconds);
     final position = _position.inMilliseconds.clamp(0, maxMillis);
     final sliderValue = position.toDouble();
+    final volumeIcon = _volume <= 0
+        ? Icons.volume_off_rounded
+        : _volume < 0.5
+            ? Icons.volume_down_rounded
+            : Icons.volume_up_rounded;
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(compact ? 14 : 12),
       side: compact
@@ -221,6 +243,10 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
           )
         : theme.sliderTheme;
+    final volumeSliderTheme = sliderTheme.copyWith(
+      thumbShape: RoundSliderThumbShape(enabledThumbRadius: compact ? 5 : 6),
+      overlayShape: RoundSliderOverlayShape(overlayRadius: compact ? 8 : 10),
+    );
     final padding = compact
         ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
         : const EdgeInsets.all(16);
@@ -292,6 +318,33 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
                       Text(_formatDuration(_position), style: timeStyle),
                       Text(' / ', style: timeStyle),
                       Text(_formatDuration(duration), style: timeStyle),
+                    ],
+                  ),
+                  SizedBox(height: compact ? 6 : 10),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(volumeIcon, size: compact ? 18 : 20),
+                        onPressed: _toggleMute,
+                        visualDensity: compact
+                            ? VisualDensity.compact
+                            : VisualDensity.standard,
+                        padding: compact ? EdgeInsets.zero : null,
+                        constraints: compact
+                            ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                            : null,
+                      ),
+                      Expanded(
+                        child: SliderTheme(
+                          data: volumeSliderTheme,
+                          child: Slider(
+                            min: 0,
+                            max: 1,
+                            value: _volume,
+                            onChanged: _setVolume,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
