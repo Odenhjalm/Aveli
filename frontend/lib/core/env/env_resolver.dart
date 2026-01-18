@@ -7,30 +7,49 @@ const _frontendUrlDefine =
     String.fromEnvironment('FRONTEND_URL', defaultValue: '');
 const _oauthRedirectWebDefine =
     String.fromEnvironment('OAUTH_REDIRECT_WEB', defaultValue: '');
+const _oauthRedirectMobileDefine =
+    String.fromEnvironment('OAUTH_REDIRECT_MOBILE', defaultValue: '');
 const _supabaseUrlDefine =
     String.fromEnvironment('SUPABASE_URL', defaultValue: '');
 const _supabasePublishableApiKeyDefine =
     String.fromEnvironment('SUPABASE_PUBLISHABLE_API_KEY', defaultValue: '');
+const _supabasePublicApiKeyDefine =
+    String.fromEnvironment('SUPABASE_PUBLIC_API_KEY', defaultValue: '');
 const _stripePublishableKeyDefine =
     String.fromEnvironment('STRIPE_PUBLISHABLE_KEY', defaultValue: '');
 const _stripeMerchantDisplayNameDefine =
     String.fromEnvironment('STRIPE_MERCHANT_DISPLAY_NAME', defaultValue: '');
+const _subscriptionsEnabledDefine =
+    String.fromEnvironment('SUBSCRIPTIONS_ENABLED', defaultValue: '');
+const _imageLoggingDefine =
+    String.fromEnvironment('IMAGE_LOGGING', defaultValue: '');
 
 class EnvResolver {
+  static bool get _canReadDotenv => !kIsWeb && dotenv.isInitialized;
+
   static String _resolveWithDefine({
     required String envKey,
     required String defineValue,
   }) {
     final normalizedDefine = defineValue.trim();
     if (normalizedDefine.isNotEmpty) return normalizedDefine;
-    if (kReleaseMode) return '';
+    if (!_canReadDotenv) return '';
     return _readEnv(envKey);
   }
 
   static String _readEnv(String key) {
+    if (!_canReadDotenv) return '';
     final value = dotenv.maybeGet(key);
     if (value != null && value.trim().isNotEmpty) {
       return value.trim();
+    }
+    return '';
+  }
+
+  static String _readEnvFirst(Iterable<String> keys) {
+    for (final key in keys) {
+      final value = _readEnv(key);
+      if (value.isNotEmpty) return value;
     }
     return '';
   }
@@ -45,10 +64,19 @@ class EnvResolver {
         defineValue: _supabaseUrlDefine,
       );
 
-  static String get supabasePublicApiKey => _resolveWithDefine(
-        envKey: 'SUPABASE_PUBLISHABLE_API_KEY',
-        defineValue: _supabasePublishableApiKeyDefine,
-      );
+  static String get supabasePublishableKey {
+    final publishable = _resolveWithDefine(
+      envKey: 'SUPABASE_PUBLISHABLE_API_KEY',
+      defineValue: _supabasePublishableApiKeyDefine,
+    );
+    if (publishable.isNotEmpty) return publishable;
+    final publicDefine = _supabasePublicApiKeyDefine.trim();
+    if (publicDefine.isNotEmpty) return publicDefine;
+    return _readEnvFirst(const [
+      'SUPABASE_PUBLISHABLE_API_KEY',
+      'SUPABASE_PUBLIC_API_KEY',
+    ]);
+  }
 
   static String get apiBaseUrl => _resolveWithDefine(
         envKey: 'API_BASE_URL',
@@ -60,7 +88,10 @@ class EnvResolver {
         defineValue: _oauthRedirectWebDefine,
       );
 
-  static String get oauthRedirectMobile => _readEnv('OAUTH_REDIRECT_MOBILE');
+  static String get oauthRedirectMobile => _resolveWithDefine(
+        envKey: 'OAUTH_REDIRECT_MOBILE',
+        defineValue: _oauthRedirectMobileDefine,
+      );
 
   static String get stripePublishableKey => _resolveWithDefine(
         envKey: 'STRIPE_PUBLISHABLE_KEY',
@@ -73,11 +104,15 @@ class EnvResolver {
       );
 
   static bool get subscriptionsEnabled {
+    final defined = _subscriptionsEnabledDefine.trim();
+    if (defined.isNotEmpty) return defined.toLowerCase() == 'true';
     final raw = _readEnv('SUBSCRIPTIONS_ENABLED');
     return (raw.isEmpty ? 'false' : raw).toLowerCase() == 'true';
   }
 
   static bool get imageLoggingEnabled {
+    final defined = _imageLoggingDefine.trim();
+    if (defined.isNotEmpty) return defined.toLowerCase() != 'false';
     final raw = _readEnv('IMAGE_LOGGING');
     return (raw.isEmpty ? 'true' : raw).toLowerCase() != 'false';
   }
@@ -92,7 +127,7 @@ class EnvResolver {
       'oauthRedirectMobile=${_logValue(oauthRedirectMobile)} '
       'supabaseUrl=${_logValue(supabaseUrl)} '
       'stripeKey=${_logValue(stripePublishableKey)} '
-      'source=${kReleaseMode ? 'dart-define-only' : 'dart-define>dotenv'}',
+      'source=${(_canReadDotenv) ? 'dart-define>dotenv' : 'dart-define-only'}',
     );
   }
 

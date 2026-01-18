@@ -68,13 +68,17 @@ void main() {
       } else {
         debugPrint('Skipping dotenv load on web; use --dart-define for config.');
       }
-      debugPrint('ENV KEYS: ${dotenv.env.keys}');
-      debugPrint(
-        'DOTENV STRIPE_PUBLISHABLE_KEY=${dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY')}',
-      );
-      debugPrint(
-        'DOTENV SUPABASE_PUBLISHABLE_API_KEY=${dotenv.maybeGet('SUPABASE_PUBLISHABLE_API_KEY')}',
-      );
+      if (dotenv.isInitialized) {
+        debugPrint('ENV KEYS: ${dotenv.env.keys}');
+        debugPrint(
+          'DOTENV STRIPE_PUBLISHABLE_KEY=${dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY')}',
+        );
+        debugPrint(
+          'DOTENV SUPABASE_PUBLISHABLE_API_KEY=${dotenv.maybeGet('SUPABASE_PUBLISHABLE_API_KEY')}',
+        );
+      } else {
+        debugPrint('Dotenv not initialized; using dart-define/runtime values only.');
+      }
       EnvResolver.debugLogResolved();
 
       final rawBaseUrl = EnvResolver.apiBaseUrl;
@@ -84,10 +88,9 @@ void main() {
       final subscriptionsEnabled = EnvResolver.subscriptionsEnabled;
 
       final supabaseUrl = EnvResolver.supabaseUrl;
-      final supabaseAnonKey = EnvResolver.supabasePublicApiKey;
+      final supabasePublishableKey = EnvResolver.supabasePublishableKey;
       final oauthRedirectWeb = EnvResolver.oauthRedirectWeb;
       final oauthRedirectMobile = EnvResolver.oauthRedirectMobile;
-      final redirectTo = kIsWeb ? oauthRedirectWeb : oauthRedirectMobile;
 
       final imageLoggingEnabled = EnvResolver.imageLoggingEnabled;
 
@@ -95,7 +98,7 @@ void main() {
         debugPrint(
           'Env resolved apiBase=$baseUrl '
           'supabase=$supabaseUrl '
-          'publicKey=${supabaseAnonKey.isEmpty ? "(empty)" : "(provided)"} '
+          'publishableKey=${supabasePublishableKey.isEmpty ? "(empty)" : "(provided)"} '
           'redirectWeb=$oauthRedirectWeb '
           'redirectMobile=$oauthRedirectMobile',
         );
@@ -111,18 +114,23 @@ void main() {
       if (supabaseUrl.isEmpty) {
         missingKeys.add('SUPABASE_URL');
       }
-      if (supabaseAnonKey.isEmpty) {
-        missingKeys.add('SUPABASE_PUBLISHABLE_API_KEY');
+      if (supabasePublishableKey.isEmpty) {
+        missingKeys.add(
+          'SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY',
+        );
       }
-      if (oauthRedirectWeb.isEmpty) {
-        missingKeys.add('OAUTH_REDIRECT_WEB');
-      }
-      if (oauthRedirectMobile.isEmpty) {
-        missingKeys.add('OAUTH_REDIRECT_MOBILE');
+      if (kIsWeb) {
+        if (oauthRedirectWeb.isEmpty) {
+          missingKeys.add('OAUTH_REDIRECT_WEB');
+        }
+      } else {
+        if (oauthRedirectMobile.isEmpty) {
+          missingKeys.add('OAUTH_REDIRECT_MOBILE');
+        }
       }
 
       if (missingKeys.isNotEmpty) {
-        throw StateError(
+        debugPrint(
           'Missing required environment keys: ${missingKeys.join(', ')}. '
           '${kIsWeb
               ? 'Provide them via --dart-define for Flutter Web.'
@@ -130,16 +138,10 @@ void main() {
         );
       }
 
-      if (redirectTo.isEmpty) {
-        throw StateError(
-          'OAuth redirect saknas. Sätt OAUTH_REDIRECT_WEB/OAUTH_REDIRECT_MOBILE.',
-        );
-      }
-
-      if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
+      if (supabaseUrl.isNotEmpty && supabasePublishableKey.isNotEmpty) {
         await supa.Supabase.initialize(
           url: supabaseUrl,
-          anonKey: supabaseAnonKey,
+          anonKey: supabasePublishableKey,
           authOptions: const supa.FlutterAuthClientOptions(
             authFlowType: supa.AuthFlowType.pkce,
           ),
@@ -250,7 +252,7 @@ Future<void> _loadEnvFile({required bool requiredFile}) async {
     return;
   }
   try {
-    await dotenv.load(fileName: fileName);
+    await dotenv.load(fileName: fileName, isOptional: !requiredFile);
   } catch (error) {
     final message = 'Could not load $fileName ($error)';
     if (requiredFile) {
