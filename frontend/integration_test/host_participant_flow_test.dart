@@ -12,13 +12,14 @@ import 'package:aveli/features/seminars/presentation/seminar_join_page.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'test_assets.dart';
 
 class _TestAssetResolver extends BackendAssetResolver {
   _TestAssetResolver() : super('');
 
   @override
   ImageProvider<Object> imageProvider(String assetPath, {double scale = 1.0}) {
-    return const AssetImage('assets/images/bakgrund.png');
+    return MemoryImage(transparentPngBytes, scale: scale);
   }
 }
 
@@ -30,6 +31,7 @@ Future<void> _pumpFor(WidgetTester tester) async {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
+  registerTestAssetHandlers();
 
   testWidgets('Host studio and participant join show live session state', (
     tester,
@@ -114,9 +116,11 @@ void main() {
     ];
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: overrides,
-        child: MaterialApp(home: SeminarDetailPage(seminarId: seminar.id)),
+      wrapWithTestAssets(
+        ProviderScope(
+          overrides: overrides,
+          child: MaterialApp(home: SeminarDetailPage(seminarId: seminar.id)),
+        ),
       ),
     );
     await _pumpFor(tester);
@@ -125,9 +129,11 @@ void main() {
     expect(find.text('Avsluta'), findsOneWidget);
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: overrides,
-        child: MaterialApp(home: SeminarJoinPage(seminarId: seminar.id)),
+      wrapWithTestAssets(
+        ProviderScope(
+          overrides: overrides,
+          child: MaterialApp(home: SeminarJoinPage(seminarId: seminar.id)),
+        ),
       ),
     );
     await _pumpFor(tester);
@@ -139,9 +145,11 @@ void main() {
     expect(joinButton.onPressed, isNotNull);
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: overrides,
-        child: MaterialApp(home: SeminarDetailPage(seminarId: seminar.id)),
+      wrapWithTestAssets(
+        ProviderScope(
+          overrides: overrides,
+          child: MaterialApp(home: SeminarDetailPage(seminarId: seminar.id)),
+        ),
       ),
     );
     await _pumpFor(tester);
