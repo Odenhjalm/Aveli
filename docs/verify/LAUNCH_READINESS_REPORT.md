@@ -1647,3 +1647,418 @@ storage_signed_private_read [SELECT]
 - Landing deps: PASS
 - Landing tests: PASS
 - Landing build: PASS
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: 027_classroom
+028_media_library
+029_welcome_cards
+auth_profile_provider_columns
+aveli_pro_platform
+course_entitlements_and_storage_policies
+fix_purchases_and_claim_tokens
+lesson_pricing
+live_events
+order_type_bundle
+rls_policies
+storage_buckets
+- Migrations extra in DB: add_next_run_at_to_livekit_webhook_jobs
+add_next_run_at_to_livekit_webhook_jobs
+course_pricing
+remote_schema
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: 027_classroom
+028_media_library
+029_welcome_cards
+auth_profile_provider_columns
+aveli_pro_platform
+course_entitlements_and_storage_policies
+fix_purchases_and_claim_tokens
+lesson_pricing
+live_events
+order_type_bundle
+rls_policies
+storage_buckets
+- Migrations extra in DB: add_next_run_at_to_livekit_webhook_jobs
+add_next_run_at_to_livekit_webhook_jobs
+course_pricing
+remote_schema
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: 027_classroom
+028_media_library
+029_welcome_cards
+auth_profile_provider_columns
+aveli_pro_platform
+course_entitlements_and_storage_policies
+fix_purchases_and_claim_tokens
+lesson_pricing
+live_events
+order_type_bundle
+rls_policies
+storage_buckets
+- Migrations extra in DB: add_next_run_at_to_livekit_webhook_jobs
+add_next_run_at_to_livekit_webhook_jobs
+course_pricing
+remote_schema
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: 027_classroom
+028_media_library
+029_welcome_cards
+auth_profile_provider_columns
+aveli_pro_platform
+course_entitlements_and_storage_policies
+fix_purchases_and_claim_tokens
+lesson_pricing
+live_events
+order_type_bundle
+rls_policies
+storage_buckets
+- Migrations extra in DB: add_next_run_at_to_livekit_webhook_jobs
+add_next_run_at_to_livekit_webhook_jobs
+course_pricing
+remote_schema
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: 027_classroom
+028_media_library
+029_welcome_cards
+auth_profile_provider_columns
+aveli_pro_platform
+course_entitlements_and_storage_policies
+fix_purchases_and_claim_tokens
+lesson_pricing
+live_events
+order_type_bundle
+rls_policies
+storage_buckets
+- Migrations extra in DB: add_next_run_at_to_livekit_webhook_jobs
+add_next_run_at_to_livekit_webhook_jobs
+course_pricing
+remote_schema
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: postgrest_seminar_rpc
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: postgrest_seminar_rpc
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: FAILED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: postgrest_seminar_rpc
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
+
+## Remote DB Verify (read-only)
+Status: COMPLETED
+- Master env: /home/oden/Aveli/backend/.env
+- SUPABASE_DB_URL: set
+- App tables: 58
+- RLS disabled tables: none
+- Tables without policies: none
+- Storage buckets: audio_private (public=false)
+brand (public=false)
+course-media (public=false)
+lesson-media (public=false)
+public-media (public=true)
+welcome-cards (public=false)
+- Storage objects RLS: t
+- Storage policies: storage_owner_private_rw [ALL]
+storage_public_read_avatars_thumbnails [SELECT]
+storage_service_role_full_access [ALL]
+storage_signed_private_read [SELECT]
+- Storage bucket sanity: ok
+- Migration tracking: schema_migrations present
+- Migrations missing in DB: none
+- Migrations extra in DB: none
