@@ -388,6 +388,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
     final isLightMode = theme.brightness == Brightness.light;
     final config = ref.watch(appConfigProvider);
     final envInfo = ref.watch(envInfoProvider);
+    final authState = ref.watch(authControllerProvider);
     final assets = ref.watch(backendAssetResolverProvider);
     final hasEnvIssues = envInfo.hasIssues;
     final mediaQuery = MediaQuery.of(context);
@@ -454,24 +455,41 @@ class _LandingPageState extends ConsumerState<LandingPage>
                     crossAxisAlignment: WrapCrossAlignment.center,
                     alignment: WrapAlignment.end,
                     children: [
-                      TextButton(
-                        onPressed: hasEnvIssues
-                            ? null
-                            : () => _openAppPath(RoutePath.login),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
+                      if (authState.isAuthenticated) ...[
+                        TextButton(
+                          onPressed: () => _openAppPath(RoutePath.home),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Hem'),
                         ),
-                        child: const Text('Logga in'),
-                      ),
-                      TextButton(
-                        onPressed: hasEnvIssues
-                            ? null
-                            : () => _openAppPath(RoutePath.signup),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white70,
+                        TextButton(
+                          onPressed: () => _openAppPath(RoutePath.profile),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white70,
+                          ),
+                          child: const Text('Profil'),
                         ),
-                        child: const Text('Skapa konto'),
-                      ),
+                      ] else ...[
+                        TextButton(
+                          onPressed: hasEnvIssues
+                              ? null
+                              : () => _openAppPath(RoutePath.login),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Logga in'),
+                        ),
+                        TextButton(
+                          onPressed: hasEnvIssues
+                              ? null
+                              : () => _openAppPath(RoutePath.signup),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white70,
+                          ),
+                          child: const Text('Skapa konto'),
+                        ),
+                      ],
                     ],
                   ),
                 ),
