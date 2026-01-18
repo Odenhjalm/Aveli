@@ -41,10 +41,8 @@ class EntitlementsNotifier extends StateNotifier<EntitlementsState> {
     state = state.copyWith(loading: true, clearError: true);
     try {
       final entitlements = await _api.fetchEntitlements();
-      if (!mounted) return;
       state = state.copyWith(loading: false, data: entitlements);
     } catch (e) {
-      if (!mounted) return;
       state = state.copyWith(loading: false, error: e);
     }
   }
@@ -60,10 +58,8 @@ class EntitlementsNotifier extends StateNotifier<EntitlementsState> {
     state = state.copyWith(loading: true, clearError: true);
     try {
       await _billingApi.cancelSubscription();
-      if (!mounted) return;
       state = state.copyWith(loading: false);
     } catch (e) {
-      if (!mounted) return;
       state = state.copyWith(loading: false, error: e);
       rethrow;
     }
