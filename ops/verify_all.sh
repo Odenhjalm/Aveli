@@ -316,7 +316,17 @@ if [[ "${RUN_FLUTTER_INTEGRATION:-0}" == "1" ]]; then
       echo "verify_all: FAIL (flutter integration: no device)" >&2
       exit 1
     fi
-    if (cd "$FRONTEND_DIR" && flutter test integration_test -d "$flutter_device"); then
+    if (
+      cd "$FRONTEND_DIR"
+      shopt -s nullglob
+      test_files=(integration_test/*_test.dart)
+      if [[ ${#test_files[@]} -eq 0 ]]; then
+        echo "WARN: no integration_test/*_test.dart files found" >&2
+      fi
+      for test_file in "${test_files[@]}"; do
+        flutter test "$test_file" -d "$flutter_device"
+      done
+    ); then
       flutter_integration_status="PASS"
     else
       flutter_integration_status="FAIL"

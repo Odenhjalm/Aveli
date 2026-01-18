@@ -186,7 +186,7 @@ List<Override> _commonOverrides(AuthState authState) {
 
 Future<void> _pumpNavigation(WidgetTester tester) async {
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 120));
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 void main() {
