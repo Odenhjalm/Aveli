@@ -244,7 +244,8 @@ fi
 
 # 8) Backend tests
 log "Backend tests"
-if (cd "$BACKEND_DIR" && poetry run pytest); then
+# Force non-prod mode for tests so Stripe test keys are allowed.
+if (cd "$BACKEND_DIR" && APP_ENV=development poetry run pytest); then
   backend_tests_status="PASS"
 else
   backend_tests_status="FAIL"

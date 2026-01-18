@@ -12,8 +12,8 @@ docker compose --env-file .env.docker up --build
 2. Set secrets (rotate from the leaked set listed in `docs/SECURITY.md`):
    ```bash
    flyctl secrets set \
-     SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_SERVICE_ROLE_KEY=... \
-     SUPABASE_DB_URL=... SUPABASE_JWT_SECRET=... \
+     SUPABASE_URL=... SUPABASE_PUBLISHABLE_API_KEY=... SUPABASE_SECRET_API_KEY=... \
+     SUPABASE_DB_URL=... \
      STRIPE_SECRET_KEY=... STRIPE_PUBLISHABLE_KEY=... \
      STRIPE_WEBHOOK_SECRET=... STRIPE_BILLING_WEBHOOK_SECRET=... \
      STRIPE_PRICE_MONTHLY=... STRIPE_PRICE_YEARLY=... \
@@ -31,12 +31,21 @@ docker compose --env-file .env.docker up --build
    - Uses `backend/Dockerfile`, internal port `8080`.
    - Health checks: `/healthz`, `/readyz`.
 
+## Troubleshooting: schema_migrations drift
+If remote DB verify reports missing/extra migrations after you have already applied SQL:
+```bash
+CONFIRM_SCHEMA_MIGRATIONS_FIX=1 \
+SUPABASE_DB_URL=postgresql://... \
+backend/scripts/fix_schema_migrations.sh
+```
+This updates `supabase_migrations.schema_migrations` only (no schema changes).
+
 ## Landing (Next.js)
 - Location: `frontend/landing`
 - Local: `npm install && npm run dev`
 - Production: build static/export or host on Vercel/Netlify with env:
   - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (use the Supabase publishable key)
   - `NEXT_PUBLIC_API_BASE_URL` (backend HTTPS URL)
 
 ## Git history cleanup
