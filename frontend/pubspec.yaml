@@ -98,21 +98,15 @@ flutter:
 
     - family: Merriweather
       fonts:
-        - asset: assets/fonts/Merriweather-Regular.ttf
-        - asset: assets/fonts/Merriweather-Bold.ttf
-          weight: 700
+        - asset: assets/fonts/Merriweather-Variable.ttf
 
     - family: Lora
       fonts:
-        - asset: assets/fonts/Lora-Regular.ttf
-        - asset: assets/fonts/Lora-Bold.ttf
-          weight: 700
+        - asset: assets/fonts/Lora-Variable.ttf
 
     - family: PlayfairDisplay
       fonts:
-        - asset: assets/fonts/PlayfairDisplay-Regular.ttf
-        - asset: assets/fonts/PlayfairDisplay-Bold.ttf
-          weight: 700
+        - asset: assets/fonts/PlayfairDisplay-Variable.ttf
 
     - family: NotoSansSymbols2
       fonts:
