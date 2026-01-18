@@ -311,35 +311,7 @@ fi
 log "Flutter integration tests"
 if [[ "${RUN_FLUTTER_INTEGRATION:-0}" == "1" ]]; then
   if command -v flutter >/dev/null 2>&1; then
-    flutter_device="$(detect_flutter_device || true)"
-    if [[ -z "$flutter_device" ]]; then
-      flutter_integration_status="FAIL"
-      echo "verify_all: FAIL (flutter integration: no device)" >&2
-      exit 1
-    fi
-    if (
-      cd "$FRONTEND_DIR"
-      shopt -s nullglob
-      test_files=(integration_test/*_test.dart)
-      if [[ ${#test_files[@]} -eq 0 ]]; then
-        echo "WARN: no integration_test/*_test.dart files found" >&2
-      fi
-      if [[ "$flutter_device" == "chrome" || "$flutter_device" == "web-server" ]]; then
-        driver_args=(--driver=test_driver/integration_test.dart)
-        web_args=()
-        if [[ "$flutter_device" == "web-server" ]]; then
-          web_port="$(pick_free_port)"
-          web_args+=(--web-port="$web_port")
-        fi
-        for test_file in "${test_files[@]}"; do
-          flutter drive "${driver_args[@]}" --target="$test_file" -d "$flutter_device" "${web_args[@]}"
-        done
-      else
-        for test_file in "${test_files[@]}"; do
-          flutter test "$test_file" -d "$flutter_device"
-        done
-      fi
-    ); then
+    if (cd "$FRONTEND_DIR" && timeout 15m flutter test integration_test -d linux); then
       flutter_integration_status="PASS"
     else
       flutter_integration_status="FAIL"
