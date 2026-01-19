@@ -29,6 +29,7 @@ class MCPClient:
         self.base_url = self._load_server_url(server_name)
         self.session = requests.Session()
         self.req_id = 0
+        self.session_id: Optional[str] = None
         self.token = token or os.getenv("SUPABASE_PAT")
         if not self.token:
             raise SystemExit(
@@ -64,6 +65,8 @@ class MCPClient:
             "Accept": "application/json, text/event-stream",
             "User-Agent": USER_AGENT,
         }
+        if self.session_id:
+            headers["Mcp-Session-Id"] = self.session_id
         response = self.session.post(
             self.base_url, json=payload, headers=headers, timeout=30
         )
@@ -79,6 +82,9 @@ class MCPClient:
             raise SystemExit(
                 f"MCP error {err_obj.get('code')}: {err_obj.get('message')}"
             )
+        session_id = response.headers.get("mcp-session-id")
+        if session_id:
+            self.session_id = session_id
         return data["result"]
 
     def initialize(self) -> Dict[str, Any]:
