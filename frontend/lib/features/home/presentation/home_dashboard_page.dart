@@ -54,7 +54,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final seminarsAsync = ref.watch(publicSeminarsProvider);
     final certificatesAsync = ref.watch(myCertificatesProvider);
     final profile = authState.profile;
-    final isTeacher = profile?.isTeacher == true || profile?.isAdmin == true;
+    final claims = authState.claims;
+    final isTeacher =
+        profile?.isTeacher == true ||
+        profile?.isAdmin == true ||
+        claims?.isTeacher == true ||
+        claims?.isAdmin == true;
     final assets = ref.watch(backendAssetResolverProvider);
     final homeAudioAsync = ref.watch(homeAudioProvider);
     final homeAudioSection = _HomeAudioSection(audioAsync: homeAudioAsync);
@@ -66,7 +71,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       });
     } else if (!_redirecting &&
         entitlementsState.data != null &&
-        entitlementsState.data?.membership.isActive != true) {
+        entitlementsState.data?.membership.isActive != true &&
+        !isTeacher) {
       _redirecting = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
