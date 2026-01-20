@@ -82,14 +82,17 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   static const BorderRadius _borderRadius = BorderRadius.all(
     Radius.circular(16),
   );
+  static const Duration _activationTimeout = Duration(seconds: 12);
   late final bool _useMediaKit;
   VideoPlayerController? _videoController;
   mk.Player? _player;
   VideoController? _mediaVideoController;
   StreamSubscription<mk.VideoParams>? _videoParamsSub;
+  Timer? _activationTimer;
   double? _mediaAspectRatio;
   bool _activated = false;
   bool _initializing = false;
+  bool _timedOut = false;
   String? _error;
 
   @override
@@ -108,6 +111,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         _activated = false;
         _initializing = false;
         _error = null;
+        _timedOut = false;
         _mediaAspectRatio = null;
       });
       _scheduleAutoActivate();
@@ -128,9 +132,28 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     });
   }
 
+  void _startActivationTimeout() {
+    _activationTimer?.cancel();
+    _activationTimer = Timer(_activationTimeout, () {
+      _activationTimer = null;
+      if (!mounted) return;
+      if (_initializing) {
+        setState(() {
+          _initializing = false;
+          _timedOut = true;
+        });
+      }
+    });
+  }
+
+  void _clearActivationTimeout() {
+    _activationTimer?.cancel();
+    _activationTimer = null;
+  }
+
   void _activate() {
     if (_initializing) return;
-    final hasRecoverableError = _activated && _error != null;
+    final hasRecoverableError = (_activated && _error != null) || _timedOut;
     if (_activated && !hasRecoverableError) return;
     if (hasRecoverableError) {
       _resetControllers();
@@ -139,8 +162,10 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _activated = true;
       _initializing = true;
       _error = null;
+      _timedOut = false;
       _mediaAspectRatio = null;
     });
+    _startActivationTimeout();
     if (_useMediaKit) {
       unawaited(_prepareMediaKitPlayer());
     } else {
@@ -157,11 +182,17 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _activated = false;
       _initializing = false;
       _error = null;
+      _timedOut = false;
       _mediaAspectRatio = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _activate();
     });
   }
 
   void _resetControllers() {
+    _clearActivationTimeout();
     final video = _videoController;
     _videoController = null;
     if (video != null) {
@@ -195,9 +226,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await _initMediaKit();
     } catch (error) {
       if (!mounted) return;
+      _clearActivationTimeout();
       setState(() {
         _initializing = false;
         _error = error.toString();
+        _timedOut = false;
       });
     }
   }
@@ -210,15 +243,19 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await controller.setLooping(true);
       await controller.play();
       if (!mounted) return;
+      _clearActivationTimeout();
       setState(() {
         _initializing = false;
         _error = null;
+        _timedOut = false;
       });
     } catch (error) {
       if (!mounted) return;
+      _clearActivationTimeout();
       setState(() {
         _error = error.toString();
         _initializing = false;
+        _timedOut = false;
       });
     }
   }
@@ -232,15 +269,19 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await player.setPlaylistMode(mk.PlaylistMode.loop);
       await controller.waitUntilFirstFrameRendered;
       if (!mounted) return;
+      _clearActivationTimeout();
       setState(() {
         _initializing = false;
         _error = null;
+        _timedOut = false;
       });
     } catch (error) {
       if (!mounted) return;
+      _clearActivationTimeout();
       setState(() {
         _error = error.toString();
         _initializing = false;
+        _timedOut = false;
       });
     }
   }
@@ -299,16 +340,80 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
 
     if (_initializing) {
+      final theme = Theme.of(context);
       return _wrapWithBorder(
-        const AspectRatio(
+        AspectRatio(
           aspectRatio: 16 / 9,
-          child: Center(child: CircularProgressIndicator()),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 12),
+                Text(
+                  'Laddar ström...',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_timedOut) {
+      final theme = Theme.of(context);
+      final canPop = Navigator.of(context).canPop();
+      return _wrapWithBorder(
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.wifi_off_rounded,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Ingen aktiv ström just nu.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Sändningen har inte startat eller är offline.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _handleRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Försök igen'),
+                ),
+                if (canPop) ...[
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    child: const Text('Tillbaka'),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       );
     }
 
     if (_error != null) {
       final theme = Theme.of(context);
+      final canPop = Navigator.of(context).canPop();
       return _wrapWithBorder(
         AspectRatio(
           aspectRatio: 16 / 9,
@@ -331,6 +436,13 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('Försök igen'),
                 ),
+                if (canPop) ...[
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    child: const Text('Tillbaka'),
+                  ),
+                ],
               ],
             ),
           ),
