@@ -571,6 +571,45 @@ async def get_module_course_id(module_id: str) -> str | None:
     return row.get("course_id")
 
 
+async def create_module(
+    course_id: str,
+    *,
+    title: str,
+    position: int = 0,
+    module_id: str | None = None,
+) -> ModuleRow | None:
+    if title is None:
+        raise ValueError("title is required when creating a module.")
+
+    position_value = _coerce_int(position)
+    if position is not None and position_value is None:
+        raise ValueError("position must be an integer.")
+
+    resolved_position = position_value if position_value is not None else 0
+
+    if module_id:
+        query = """
+        INSERT INTO app.modules (id, course_id, title, position)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id, course_id, title, position, created_at, updated_at
+    """
+        params = (module_id, course_id, title, resolved_position)
+    else:
+        query = """
+        INSERT INTO app.modules (course_id, title, position)
+        VALUES (%s, %s, %s)
+        RETURNING id, course_id, title, position, created_at, updated_at
+    """
+        params = (course_id, title, resolved_position)
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+            await conn.commit()
+            return row
+
+
 async def upsert_module(
     course_id: str,
     data: Mapping[str, Any],
@@ -715,6 +754,62 @@ async def get_lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]
     if not row:
         return None, None
     return row.get("module_id"), row.get("course_id")
+
+
+async def create_lesson(
+    module_id: str,
+    *,
+    title: str,
+    content_markdown: str | None = None,
+    position: int = 0,
+    is_intro: bool = False,
+    lesson_id: str | None = None,
+) -> LessonRow | None:
+    if title is None:
+        raise ValueError("title is required when creating a lesson.")
+
+    position_value = _coerce_int(position)
+    if position is not None and position_value is None:
+        raise ValueError("position must be an integer.")
+    intro_value = _coerce_bool(is_intro) if is_intro is not None else None
+
+    resolved_position = position_value if position_value is not None else 0
+    resolved_intro = intro_value if intro_value is not None else False
+
+    if lesson_id:
+        query = """
+        INSERT INTO app.lessons (id, module_id, title, content_markdown, position, is_intro)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id, module_id, title, position, is_intro, content_markdown, created_at, updated_at
+    """
+        params = (
+            lesson_id,
+            module_id,
+            title,
+            content_markdown,
+            resolved_position,
+            resolved_intro,
+        )
+    else:
+        query = """
+        INSERT INTO app.lessons (module_id, title, content_markdown, position, is_intro)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id, module_id, title, position, is_intro, content_markdown, created_at, updated_at
+    """
+        params = (
+            module_id,
+            title,
+            content_markdown,
+            resolved_position,
+            resolved_intro,
+        )
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+            await conn.commit()
+            return row
 
 
 async def upsert_lesson(
@@ -1173,6 +1268,7 @@ __all__ = [
     "list_modules",
     "get_module",
     "get_module_course_id",
+    "create_module",
     "upsert_module",
     "delete_module",
     "list_lessons",
@@ -1181,6 +1277,7 @@ __all__ = [
     "list_course_lessons",
     "get_lesson",
     "get_lesson_course_ids",
+    "create_lesson",
     "upsert_lesson",
     "delete_lesson",
     "reorder_lessons",

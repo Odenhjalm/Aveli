@@ -96,10 +96,17 @@ class StudioRepository {
     required String courseId,
     required String title,
     int position = 0,
+    String? id,
   }) async {
+    final body = {
+      'course_id': courseId,
+      'title': title,
+      'position': position,
+      if (id != null && id.isNotEmpty) 'id': id,
+    };
     final res = await _client.post<Map<String, dynamic>>(
       '/studio/modules',
-      body: {'course_id': courseId, 'title': title, 'position': position},
+      body: body,
     );
     return Map<String, dynamic>.from(res);
   }
@@ -131,6 +138,7 @@ class StudioRepository {
 
   Future<Map<String, dynamic>> upsertLesson({
     String? id,
+    String? createId,
     required String moduleId,
     required String title,
     String? contentMarkdown,
@@ -138,15 +146,17 @@ class StudioRepository {
     bool isIntro = false,
   }) async {
     if (id == null) {
+      final body = {
+        'module_id': moduleId,
+        'title': title,
+        'content_markdown': contentMarkdown,
+        'position': position,
+        'is_intro': isIntro,
+        if (createId != null && createId.isNotEmpty) 'id': createId,
+      };
       final res = await _client.post<Map<String, dynamic>>(
         '/studio/lessons',
-        body: {
-          'module_id': moduleId,
-          'title': title,
-          'content_markdown': contentMarkdown,
-          'position': position,
-          'is_intro': isIntro,
-        },
+        body: body,
       );
       return Map<String, dynamic>.from(res);
     } else {

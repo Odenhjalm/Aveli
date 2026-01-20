@@ -758,12 +758,12 @@ async def create_module(
 ):
     if not await models.is_course_owner(current["id"], payload.course_id):
         raise HTTPException(status_code=403, detail="Not course owner")
-    row = await courses_service.upsert_module(
+    module_id = str(payload.id) if payload.id else None
+    row = await courses_service.create_module(
         payload.course_id,
-        {
-            "title": payload.title,
-            "position": payload.position,
-        },
+        title=payload.title,
+        position=payload.position,
+        module_id=module_id,
     )
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create module")
@@ -809,13 +809,15 @@ async def create_lesson(
     course_id = await courses_service.get_module_course_id(payload.module_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
         raise HTTPException(status_code=403, detail="Not course owner")
-    lesson_payload = {
-        "title": payload.title,
-        "content_markdown": payload.content_markdown,
-        "position": payload.position,
-        "is_intro": payload.is_intro,
-    }
-    row = await courses_service.upsert_lesson(payload.module_id, lesson_payload)
+    lesson_id = str(payload.id) if payload.id else None
+    row = await courses_service.create_lesson(
+        payload.module_id,
+        title=payload.title,
+        content_markdown=payload.content_markdown,
+        position=payload.position,
+        is_intro=payload.is_intro,
+        lesson_id=lesson_id,
+    )
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create lesson")
     return row

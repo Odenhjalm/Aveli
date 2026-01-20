@@ -689,6 +689,7 @@ class StudioCourseUpdate(BaseModel):
 
 
 class StudioModuleCreate(BaseModel):
+    id: UUID | None = None
     course_id: str
     title: str
     position: int = 0
@@ -700,6 +701,7 @@ class StudioModuleUpdate(BaseModel):
 
 
 class StudioLessonCreate(BaseModel):
+    id: UUID | None = None
     module_id: str
     title: str
     content_markdown: str | None = None
