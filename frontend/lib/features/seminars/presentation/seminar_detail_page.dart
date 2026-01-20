@@ -3,16 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/data/repositories/seminar_repository.dart';
 import 'package:aveli/features/home/application/livekit_controller.dart';
 import 'package:aveli/features/seminars/presentation/seminar_route_args.dart';
-import 'package:aveli/shared/utils/error_messages.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 import 'seminar_background.dart';
+
+String _seminarErrorMessage(Object error, [StackTrace? stackTrace]) {
+  final failure = AppFailure.from(error, stackTrace);
+  return failure.message;
+}
 
 class SeminarDetailPage extends ConsumerWidget {
   const SeminarDetailPage({required this.seminarId, super.key});
@@ -44,7 +49,9 @@ class SeminarDetailPage extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Kunde inte läsa seminarium: $error'),
+                Text(
+                  'Kunde inte läsa seminarium: ${_seminarErrorMessage(error, stackTrace)}',
+                ),
                 const SizedBox(height: 12),
                 GradientButton(
                   onPressed: () =>
@@ -119,9 +126,26 @@ class _DetailBody extends ConsumerWidget {
                           seminar.status == SeminarStatus.canceled)
                         GradientButton(
                           onPressed: () async {
-                            await repository.publishSeminar(seminar.id);
-                            ref.invalidate(hostSeminarsProvider);
-                            ref.invalidate(seminarDetailProvider(seminar.id));
+                            try {
+                              await repository.publishSeminar(seminar.id);
+                              ref.invalidate(hostSeminarsProvider);
+                              ref.invalidate(
+                                seminarDetailProvider(seminar.id),
+                              );
+                            } catch (error, stackTrace) {
+                              if (!context.mounted) return;
+                              final message = _seminarErrorMessage(
+                                error,
+                                stackTrace,
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Kunde inte publicera: $message',
+                                  ),
+                                ),
+                              );
+                            }
                           },
                           child: const Text('Publicera'),
                         ),
@@ -129,9 +153,26 @@ class _DetailBody extends ConsumerWidget {
                         const SizedBox(width: 12),
                         OutlinedButton(
                           onPressed: () async {
-                            await repository.cancelSeminar(seminar.id);
-                            ref.invalidate(hostSeminarsProvider);
-                            ref.invalidate(seminarDetailProvider(seminar.id));
+                            try {
+                              await repository.cancelSeminar(seminar.id);
+                              ref.invalidate(hostSeminarsProvider);
+                              ref.invalidate(
+                                seminarDetailProvider(seminar.id),
+                              );
+                            } catch (error, stackTrace) {
+                              if (!context.mounted) return;
+                              final message = _seminarErrorMessage(
+                                error,
+                                stackTrace,
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Kunde inte avbryta: $message',
+                                  ),
+                                ),
+                              );
+                            }
                           },
                           child: const Text('Avbryt'),
                         ),
@@ -194,13 +235,12 @@ class _SessionsSection extends ConsumerWidget {
                           token: result.token,
                         ),
                       );
-                    } catch (error) {
+                    } catch (error, stackTrace) {
                       if (!context.mounted) return;
+                      final message = _seminarErrorMessage(error, stackTrace);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(
-                            'Kunde inte starta session: ${friendlyHttpError(error)}',
-                          ),
+                          content: Text('Kunde inte starta session: $message'),
                         ),
                       );
                     }
@@ -249,11 +289,16 @@ class _SessionsSection extends ConsumerWidget {
                                 ref.invalidate(
                                   seminarDetailProvider(detail.seminar.id),
                                 );
-                              } catch (error) {
+                              } catch (error, stackTrace) {
                                 if (!context.mounted) return;
+                                final message = _seminarErrorMessage(
+                                  error,
+                                  stackTrace,
+                                );
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Kunde inte avsluta: $error'),
+                                    content:
+                                        Text('Kunde inte avsluta: $message'),
                                   ),
                                 );
                               }
@@ -434,10 +479,11 @@ class _AttendeesSection extends ConsumerWidget {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Behörighet tilldelad.')));
-      } catch (error) {
+      } catch (error, stackTrace) {
         if (!context.mounted) return;
+        final message = _seminarErrorMessage(error, stackTrace);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Kunde inte ge behörighet: $error')),
+          SnackBar(content: Text('Kunde inte ge behörighet: $message')),
         );
       }
     } finally {
@@ -484,10 +530,11 @@ class _AttendeesSection extends ConsumerWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Behörigheten togs bort.')));
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!context.mounted) return;
+      final message = _seminarErrorMessage(error, stackTrace);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kunde inte ta bort behörighet: $error')),
+        SnackBar(content: Text('Kunde inte ta bort behörighet: $message')),
       );
     }
   }

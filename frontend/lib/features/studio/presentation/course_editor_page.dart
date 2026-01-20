@@ -1664,6 +1664,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (status == 401) {
       return 'Sessionen verkar ha gått ut. Logga in igen och försök på nytt.';
     }
+    if (status == 403) {
+      return 'Du har inte behörighet att utföra den här åtgärden.';
+    }
+    if (status == 422) {
+      return 'Vissa uppgifter saknas eller är ogiltiga. Kontrollera och försök igen.';
+    }
     final data = error.response?.data;
     if (data is Map<String, dynamic>) {
       final detail = data['detail'] ?? data['message'] ?? data['error'];

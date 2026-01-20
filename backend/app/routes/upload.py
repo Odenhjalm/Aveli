@@ -261,6 +261,12 @@ async def upload_course_media(
     if lesson_id:
         _, lesson_course_id = await courses_service.lesson_course_ids(lesson_id)
         if not lesson_course_id or not await models.is_course_owner(owner, lesson_course_id):
+            logger.warning(
+                "Permission denied: course media upload user_id=%s course_id=%s lesson_id=%s",
+                owner_id,
+                lesson_course_id,
+                lesson_id,
+            )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
         resolved_course_id = lesson_course_id
         lesson_row = await courses_service.fetch_lesson(lesson_id)
@@ -268,6 +274,11 @@ async def upload_course_media(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
         lesson_is_intro = bool(lesson_row.get("is_intro"))
     elif course_id and not await models.is_course_owner(owner, course_id):
+        logger.warning(
+            "Permission denied: course media upload user_id=%s course_id=%s",
+            owner_id,
+            course_id,
+        )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
 
     effective_is_intro = is_intro if is_intro is not None else lesson_is_intro

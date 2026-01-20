@@ -8,10 +8,15 @@ import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/data/repositories/seminar_repository.dart';
 import 'package:aveli/features/home/application/livekit_controller.dart';
-import 'package:aveli/shared/utils/error_messages.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/safe_background.dart';
+
+String _seminarJoinErrorMessage(Object error, [StackTrace? stackTrace]) {
+  final failure = AppFailure.from(error, stackTrace);
+  return failure.message;
+}
 
 class SeminarJoinPage extends ConsumerStatefulWidget {
   const SeminarJoinPage({required this.seminarId, super.key});
@@ -230,7 +235,9 @@ class _SeminarJoinPageState extends ConsumerState<SeminarJoinPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('Kunde inte läsa seminarium: $error'),
+                        Text(
+                          'Kunde inte läsa seminarium: ${_seminarJoinErrorMessage(error, stackTrace)}',
+                        ),
                         const SizedBox(height: 12),
                         GradientButton(
                           onPressed: () => ref.invalidate(
@@ -284,11 +291,12 @@ class _SeminarJoinPageState extends ConsumerState<SeminarJoinPage> {
       await ref
           .read(liveSessionControllerProvider.notifier)
           .connect(widget.seminarId, micEnabled: false, cameraEnabled: false);
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      final message = _seminarJoinErrorMessage(error, stackTrace);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Kunde inte ansluta: ${friendlyHttpError(error)}'),
+          content: Text('Kunde inte ansluta: $message'),
         ),
       );
     } finally {

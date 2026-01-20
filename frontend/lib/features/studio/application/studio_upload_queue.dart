@@ -280,9 +280,13 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
       );
     }
 
-    final normalizedMessage = statusCode == 401
-        ? 'Sessionen har gått ut. Logga in igen för att fortsätta ladda upp.'
-        : message;
+    final normalizedMessage = switch (statusCode) {
+      401 =>
+        'Sessionen har gått ut. Logga in igen för att fortsätta ladda upp.',
+      403 => 'Du har inte behörighet att ladda upp till den här lektionen.',
+      422 => 'Uppladdningen kunde inte valideras. Kontrollera filen och försök igen.',
+      _ => message,
+    };
 
     if (statusCode == 401) {
       _updateJob(
@@ -291,6 +295,16 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
           status: UploadJobStatus.failed,
           error: normalizedMessage,
           clearData: true,
+        ),
+      );
+      return;
+    }
+    if (statusCode == 403 || statusCode == 422) {
+      _updateJob(
+        jobId,
+        (current) => current.copyWith(
+          status: UploadJobStatus.failed,
+          error: normalizedMessage,
         ),
       );
       return;
@@ -337,6 +351,12 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     }
     if (status == 401) {
       return 'Sessionen har gått ut. Logga in igen för att fortsätta.';
+    }
+    if (status == 403) {
+      return 'Du har inte behörighet att ladda upp till den här lektionen.';
+    }
+    if (status == 422) {
+      return 'Uppladdningen kunde inte valideras. Kontrollera filen och försök igen.';
     }
     final data = error.response?.data;
     if (data is Map<String, dynamic>) {
