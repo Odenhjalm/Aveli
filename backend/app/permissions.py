@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -6,9 +7,16 @@ from . import models
 from .auth import CurrentUser
 
 
+logger = logging.getLogger(__name__)
+
+
 async def require_teacher(current: CurrentUser):
     allowed = await models.is_teacher_user(current["id"])
     if not allowed:
+        logger.warning(
+            "Permission denied: teacher_required user_id=%s",
+            current.get("id"),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Teacher permissions required",
@@ -19,6 +27,10 @@ async def require_teacher(current: CurrentUser):
 async def require_admin(current: CurrentUser):
     allowed = await models.is_admin_user(current["id"])
     if not allowed:
+        logger.warning(
+            "Permission denied: admin_required user_id=%s",
+            current.get("id"),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin permissions required",

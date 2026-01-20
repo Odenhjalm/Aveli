@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/data/repositories/seminar_repository.dart';
@@ -12,12 +13,43 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 
 import 'seminar_background.dart';
 
+bool _shouldHideCreateSeminar(Object error) {
+  final failure = AppFailure.from(error);
+  return failure.kind == AppFailureKind.unauthorized ||
+      failure.kind == AppFailureKind.configuration;
+}
+
+String _seminarListErrorMessage(Object error) {
+  final failure = AppFailure.from(error);
+  if (failure.kind == AppFailureKind.unauthorized) {
+    return 'Du har inte behörighet att se liveseminarier.';
+  }
+  if (failure.kind == AppFailureKind.configuration) {
+    return 'Liveseminarier är inte aktiverade i den här miljön.';
+  }
+  return 'Kunde inte läsa seminarier: ${failure.message}';
+}
+
+String _seminarCreateErrorMessage(AppFailure failure) {
+  if (failure.kind == AppFailureKind.unauthorized) {
+    return 'Du har inte behörighet att skapa liveseminarier.';
+  }
+  if (failure.kind == AppFailureKind.configuration) {
+    return 'Liveseminarier är inte aktiverade i den här miljön.';
+  }
+  return failure.message;
+}
+
 class SeminarStudioPage extends ConsumerWidget {
   const SeminarStudioPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final seminarsAsync = ref.watch(hostSeminarsProvider);
+    final createBlocked = seminarsAsync.maybeWhen(
+      error: (error, _) => _shouldHideCreateSeminar(error),
+      orElse: () => false,
+    );
 
     return AppScaffold(
       title: 'Liveseminarium',
@@ -38,11 +70,13 @@ class SeminarStudioPage extends ConsumerWidget {
           tooltip: 'Uppdatera',
         ),
       ],
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCreateDialog(context, ref),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Nytt seminarium'),
-      ),
+      floatingActionButton: createBlocked
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _showCreateDialog(context, ref),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Nytt seminarium'),
+            ),
       body: seminarsAsync.when(
         data: (seminars) => RefreshIndicator(
           onRefresh: () => ref.refresh(hostSeminarsProvider.future),
@@ -62,7 +96,7 @@ class SeminarStudioPage extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Kunde inte läsa seminarier: $error'),
+                Text(_seminarListErrorMessage(error)),
                 const SizedBox(height: 12),
                 GradientButton(
                   onPressed: () => ref.refresh(hostSeminarsProvider),
@@ -191,10 +225,12 @@ class SeminarStudioPage extends ConsumerWidget {
         AppRoute.seminarDetail,
         pathParameters: {'id': seminar.id},
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!context.mounted) return;
+      final failure = AppFailure.from(error, stackTrace);
+      final message = _seminarCreateErrorMessage(failure);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kunde inte skapa seminarium: $error')),
+        SnackBar(content: Text('Kunde inte skapa seminarium: $message')),
       );
     } finally {
       titleCtrl.dispose();

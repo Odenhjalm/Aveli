@@ -16,6 +16,8 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_quill/markdown_quill.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import 'package:uuid/uuid.dart';
+
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -250,6 +252,7 @@ class CourseEditorScreen extends ConsumerStatefulWidget {
 }
 
 class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
+  static const _uuid = Uuid();
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
@@ -447,7 +450,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  Future<void> _loadModules({bool preserveSelection = true}) async {
+  Future<void> _loadModules({bool preserveSelection = true, bool mergeResults = false}) async {
     final courseId = _selectedCourseId;
     if (courseId == null) {
       if (mounted) {
@@ -470,14 +473,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         final list = await _studioRepo.listModules(courseId);
         if (!mounted) return;
         final listTyped = list;
+        final modules = mergeResults
+            ? _sortByPosition(_mergeById(_modules, listTyped))
+            : listTyped;
         final selected =
             preserveSelection &&
                 _selectedModuleId != null &&
-                listTyped.any((m) => m['id'] == _selectedModuleId)
+                modules.any((m) => m['id'] == _selectedModuleId)
             ? _selectedModuleId
-            : (listTyped.isNotEmpty ? listTyped.first['id'] as String : null);
+            : (modules.isNotEmpty ? modules.first['id'] as String : null);
         setState(() {
-          _modules = listTyped;
+          _modules = modules;
           _selectedModuleId = selected;
         });
         _handleCoursePublishFieldsChanged();
@@ -510,7 +516,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  Future<void> _loadLessons({bool preserveSelection = true}) async {
+  Future<void> _loadLessons({bool preserveSelection = true, bool mergeResults = false}) async {
     final moduleId = _selectedModuleId;
     if (moduleId == null) {
       if (mounted) {
@@ -533,18 +539,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     try {
       final list = await _studioRepo.listLessons(moduleId);
       if (!mounted) return;
+      final lessons = mergeResults ? _sortByPosition(_mergeById(_lessons, list)) : list;
       final selected =
           preserveSelection &&
               _selectedLessonId != null &&
-              list.any((lesson) => lesson['id'] == _selectedLessonId)
+              lessons.any((lesson) => lesson['id'] == _selectedLessonId)
           ? _selectedLessonId
-          : (list.isNotEmpty ? list.first['id'] as String : null);
+          : (lessons.isNotEmpty ? lessons.first['id'] as String : null);
       final intro = selected == null
           ? false
-          : (list.firstWhere((item) => item['id'] == selected)['is_intro'] ==
+          : (lessons.firstWhere((item) => item['id'] == selected)['is_intro'] ==
                 true);
       setState(() {
-        _lessons = list;
+        _lessons = lessons;
         _selectedLessonId = selected;
         _lessonIntro = intro;
       });
@@ -617,6 +624,49 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (lesson['id'] == id) return lesson;
     }
     return null;
+  }
+
+  int _positionValue(Map<String, dynamic> item) {
+    final value = item['position'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  List<Map<String, dynamic>> _sortByPosition(
+    List<Map<String, dynamic>> items,
+  ) {
+    final sorted = [...items];
+    sorted.sort((a, b) => _positionValue(a).compareTo(_positionValue(b)));
+    return sorted;
+  }
+
+  List<Map<String, dynamic>> _mergeById(
+    List<Map<String, dynamic>> existing,
+    List<Map<String, dynamic>> incoming,
+  ) {
+    final existingById = <String, Map<String, dynamic>>{};
+    for (final item in existing) {
+      final id = item['id'];
+      if (id is String) {
+        existingById[id] = item;
+      }
+    }
+    final merged = <Map<String, dynamic>>[];
+    for (final item in incoming) {
+      final id = item['id'];
+      if (id is String && existingById.containsKey(id)) {
+        merged.add({...existingById[id]!, ...item});
+        existingById.remove(id);
+      } else {
+        merged.add(item);
+      }
+    }
+    for (final item in existingById.values) {
+      merged.add(item);
+    }
+    return merged;
   }
 
   void _replaceLessonDocument(
@@ -715,16 +765,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return lesson == null ? 0 : (lesson['position'] as int? ?? 0);
   }
 
-  Future<void> _saveLessonContent() async {
+  Future<bool> _saveLessonContent({bool showSuccessSnack = true}) async {
     final controller = _lessonContentController;
     final lessonId = _selectedLessonId;
     final moduleId = _selectedModuleId;
 
     if (controller == null || lessonId == null || moduleId == null) {
       showSnack(context, 'Välj en lektion att spara.');
-      return;
+      return false;
     }
-    if (_lessonContentSaving) return;
+    if (_lessonContentSaving) return false;
 
     final title = _lessonTitleCtrl.text.trim().isEmpty
         ? 'Lektion'
@@ -742,7 +792,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         isIntro: _lessonIntro,
       );
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       setState(() {
         _lessons = _lessons
@@ -756,20 +806,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lessonContentDirty = false;
       });
 
-      if (!mounted || !context.mounted) {
-        return;
+      if (mounted && context.mounted && showSuccessSnack) {
+        showSnack(context, 'Lektion sparad.');
       }
-      showSnack(context, 'Lektion sparad.');
+      return true;
     } on DioException catch (error) {
       final message = _friendlyDioMessage(error);
       if (mounted && context.mounted) {
         showSnack(context, 'Kunde inte spara lektion: $message');
       }
+      return false;
     } catch (e, stackTrace) {
       _showFriendlyErrorSnack('Kunde inte spara lektion', e, stackTrace);
+      return false;
     } finally {
       if (mounted) setState(() => _lessonContentSaving = false);
     }
+  }
+
+  Future<bool> _maybeSaveLessonEdits() async {
+    if (!_lessonContentDirty) return true;
+    return _saveLessonContent(showSuccessSnack: false);
   }
 
   Future<void> _insertMagicLink() async {
@@ -1221,6 +1278,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     final name = title?.trim();
     if (name == null || name.isEmpty) return;
+    if (!await _maybeSaveLessonEdits()) return;
     if (!mounted) return;
     setState(() => _moduleActionBusy = true);
     try {
@@ -1230,14 +1288,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                     .map((module) => (module['position'] as int? ?? 0))
                     .fold<int>(0, (a, b) => a > b ? a : b) +
                 1;
+      final moduleId = _uuid.v4();
       final module = await _studioRepo.createModule(
+        id: moduleId,
         courseId: courseId,
         title: name,
         position: nextPos,
       );
       if (!mounted) return;
-      setState(() => _selectedModuleId = module['id'] as String?);
-      await _loadModules(preserveSelection: true);
+      setState(() {
+        _modules = _sortByPosition(_mergeById(_modules, [module]));
+        _selectedModuleId = module['id'] as String?;
+      });
+      await _loadModules(preserveSelection: true, mergeResults: true);
       if (mounted && context.mounted) {
         showSnack(context, 'Modul skapad.');
       }
@@ -1317,6 +1380,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     final name = title?.trim();
     if (name == null || name.isEmpty) return;
+    if (!await _maybeSaveLessonEdits()) return;
     if (!mounted) return;
     setState(() => _lessonActionBusy = true);
     try {
@@ -1326,18 +1390,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                     .map((lesson) => (lesson['position'] as int? ?? 0))
                     .fold<int>(0, (a, b) => a > b ? a : b) +
                 1;
+      final lessonId = _uuid.v4();
       final lesson = await _studioRepo.upsertLesson(
         moduleId: moduleId,
         title: name,
         position: nextPos,
         isIntro: false,
+        createId: lessonId,
       );
       if (!mounted) return;
       setState(() {
+        _lessons = _sortByPosition(_mergeById(_lessons, [lesson]));
         _selectedLessonId = lesson['id'] as String?;
         _lessonIntro = lesson['is_intro'] == true;
       });
-      await _loadLessons(preserveSelection: true);
+      await _loadLessons(preserveSelection: true, mergeResults: true);
       if (mounted && context.mounted) {
         showSnack(context, 'Lektion skapad.');
       }
@@ -1597,6 +1664,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (status == 401) {
       return 'Sessionen verkar ha gått ut. Logga in igen och försök på nytt.';
     }
+    if (status == 403) {
+      return 'Du har inte behörighet att utföra den här åtgärden.';
+    }
+    if (status == 422) {
+      return 'Vissa uppgifter saknas eller är ogiltiga. Kontrollera och försök igen.';
+    }
     final data = error.response?.data;
     if (data is Map<String, dynamic>) {
       final detail = data['detail'] ?? data['message'] ?? data['error'];
@@ -1643,20 +1716,55 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           contentType: contentType,
           isIntro: _lessonIntro,
         );
+        if (!mounted) return;
+        setState(() {
+          final id = media['id'];
+          if (id is String) {
+            final updated = [..._lessonMedia];
+            final index = updated.indexWhere((item) => item['id'] == id);
+            if (index >= 0) {
+              updated[index] = {...updated[index], ...media};
+            } else {
+              updated.add(media);
+            }
+            _lessonMedia = updated;
+          } else {
+            _lessonMedia = [..._lessonMedia, media];
+          }
+        });
         final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
         final resolved = _resolveMediaUrl(download);
-        await _loadLessonMedia();
-        if (resolved != null) {
-          _insertImageIntoLesson(
-            resolved,
-            targetSelection: selectionBeforePicker,
+        if (resolved == null) {
+          if (mounted) {
+            setState(
+              () => _mediaStatus = 'Uppladdad men saknar länk: $filename',
+            );
+          }
+          if (mounted && context.mounted) {
+            showSnack(context, 'Uppladdningen lyckades men länken saknas.');
+          }
+          return;
+        }
+        _insertImageIntoLesson(
+          resolved,
+          targetSelection: selectionBeforePicker,
+        );
+        final saved = await _saveLessonContent(showSuccessSnack: false);
+        if (mounted) {
+          setState(
+            () =>
+                _mediaStatus = saved
+                    ? 'Bild uppladdad och sparad: $filename'
+                    : 'Bild uppladdad men kunde inte sparas: $filename',
           );
         }
-        if (mounted) {
-          setState(() => _mediaStatus = 'Bild uppladdad: $filename');
-        }
         if (mounted && context.mounted) {
-          showSnack(context, 'Bild infogad i lektionen. Glöm inte att spara.');
+          showSnack(
+            context,
+            saved
+                ? 'Bild infogad och sparad i lektionen.'
+                : 'Bild infogad men kunde inte sparas i lektionen.',
+          );
         }
       } catch (error, stackTrace) {
         final message = AppFailure.from(error, stackTrace).message;
@@ -1848,7 +1956,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _insertMediaIntoLesson(Map<String, dynamic> media) {
+  void _insertMediaIntoLesson(
+    Map<String, dynamic> media, {
+    bool showSaveHint = true,
+  }) {
     final kind = (media['kind'] as String?) ?? '';
     final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
     final resolved = _resolveMediaUrl(download);
@@ -1863,7 +1974,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_isImageMedia(media) || kind == 'image') {
       _insertImageIntoLesson(resolved, targetSelection: _lastLessonSelection);
       if (mounted && context.mounted) {
-        showSnack(context, 'Bild infogad i lektionen. Kom ihåg att spara.');
+        showSnack(
+          context,
+          showSaveHint
+              ? 'Bild infogad i lektionen. Kom ihåg att spara.'
+              : 'Bild infogad i lektionen.',
+        );
       }
       return;
     }
@@ -1871,14 +1987,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ((media['content_type'] as String?) ?? '').startsWith('video/')) {
       _insertVideoIntoLesson(resolved, targetSelection: _lastLessonSelection);
       if (mounted && context.mounted) {
-        showSnack(context, 'Video infogad i lektionen. Kom ihåg att spara.');
+        showSnack(
+          context,
+          showSaveHint
+              ? 'Video infogad i lektionen. Kom ihåg att spara.'
+              : 'Video infogad i lektionen.',
+        );
       }
       return;
     }
     // Audio: inline player embed
     _insertAudioIntoLesson(resolved, targetSelection: _lastLessonSelection);
     if (mounted && context.mounted) {
-      showSnack(context, 'Ljud infogat i lektionen. Kom ihåg att spara.');
+      showSnack(
+        context,
+        showSaveHint
+            ? 'Ljud infogat i lektionen. Kom ihåg att spara.'
+            : 'Ljud infogat i lektionen.',
+      );
     }
   }
 
@@ -2029,11 +2155,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         unawaited(_afterUploadSuccess(job));
       } else if (job.status == UploadJobStatus.failed &&
           old?.status != UploadJobStatus.failed) {
+        final detail = job.error?.trim();
+        final suffix = detail == null || detail.isEmpty ? '' : ' ($detail)';
         if (context.mounted) {
-          showSnack(context, 'Uppladdning misslyckades: ${job.filename}');
+          showSnack(
+            context,
+            'Uppladdning misslyckades: ${job.filename}$suffix',
+          );
         }
         setState(
-          () => _mediaStatus = 'Uppladdning misslyckades: ${job.filename}',
+          () =>
+              _mediaStatus =
+                  'Uppladdning misslyckades: ${job.filename}$suffix',
         );
       }
     }
@@ -2079,18 +2212,52 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
     }
 
-    if (uploaded != null) {
-      if (contentType.startsWith('video/') ||
-          contentType.startsWith('audio/') ||
-          contentType.startsWith('image/')) {
-        _insertMediaIntoLesson(uploaded);
+    if (uploaded == null) {
+      if (context.mounted) {
+        showSnack(
+          context,
+          'Uppladdningen lyckades men hittade inte media. Uppdatera listan.',
+        );
       }
+      if (mounted) {
+        setState(
+          () =>
+              _mediaStatus =
+                  'Uppladdning klar men media saknas: ${job.filename}',
+        );
+      }
+      return;
     }
 
-    if (context.mounted) {
-      showSnack(context, 'Media uppladdad: ${job.filename}');
+    var inserted = false;
+    if (contentType.startsWith('video/') ||
+        contentType.startsWith('audio/') ||
+        contentType.startsWith('image/')) {
+      _insertMediaIntoLesson(uploaded, showSaveHint: false);
+      inserted = true;
     }
-    setState(() => _mediaStatus = 'Media uppladdad: ${job.filename}');
+
+    final saved = inserted
+        ? await _saveLessonContent(showSuccessSnack: false)
+        : false;
+
+    if (context.mounted) {
+      final message = inserted
+          ? (saved
+              ? 'Media infogat och sparat i lektionen.'
+              : 'Media infogat men kunde inte sparas i lektionen.')
+          : 'Media uppladdad: ${job.filename}';
+      showSnack(context, message);
+    }
+    if (mounted) {
+      setState(
+        () => _mediaStatus = inserted
+            ? (saved
+                ? 'Media uppladdad och sparad: ${job.filename}'
+                : 'Media uppladdad men inte sparad: ${job.filename}')
+            : 'Media uppladdad: ${job.filename}',
+      );
+    }
   }
 
   UploadJob? _findJob(List<UploadJob>? jobs, String id) {
@@ -2905,6 +3072,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   )
                   .toList(),
               onChanged: (value) async {
+                if (value == _selectedCourseId) return;
+                final canSwitch = await _maybeSaveLessonEdits();
+                if (!canSwitch || !mounted) return;
                 setState(() => _selectedCourseId = value);
                 await _loadCourseMeta();
                 await _loadModules(preserveSelection: false);
@@ -3051,9 +3221,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       ),
                                     )
                                     .toList(),
-                                onChanged: (value) {
+                                onChanged: (value) async {
+                                  if (value == _selectedModuleId) return;
+                                  final canSwitch = await _maybeSaveLessonEdits();
+                                  if (!canSwitch || !mounted) return;
                                   setState(() => _selectedModuleId = value);
-                                  _loadLessons(preserveSelection: false);
+                                  await _loadLessons(preserveSelection: false);
                                 },
                                 decoration: const InputDecoration(
                                   hintText: 'Välj modul',
@@ -3098,14 +3271,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         ),
                                       )
                                       .toList(),
-                                  onChanged: (value) {
+                                  onChanged: (value) async {
+                                    if (value == _selectedLessonId) return;
+                                    final canSwitch = await _maybeSaveLessonEdits();
+                                    if (!canSwitch || !mounted) return;
                                     setState(() {
                                       _selectedLessonId = value;
                                       final match = _lessonById(value);
                                       _lessonIntro = match?['is_intro'] == true;
                                     });
                                     _applySelectedLesson();
-                                    _loadLessonMedia();
+                                    await _loadLessonMedia();
                                   },
                                   decoration: const InputDecoration(
                                     hintText: 'Välj lektion',

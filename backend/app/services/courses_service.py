@@ -143,6 +143,23 @@ async def list_modules(course_id: str) -> Sequence[dict[str, Any]]:
     return _materialize_rows(rows)
 
 
+async def create_module(
+    course_id: str,
+    *,
+    title: str,
+    position: int = 0,
+    module_id: str | None = None,
+) -> dict[str, Any]:
+    row = await courses_repo.create_module(
+        course_id,
+        title=title,
+        position=position,
+        module_id=module_id,
+    )
+    materialized = _materialize_optional_row(row)
+    return materialized or {}
+
+
 async def upsert_module(
     course_id: str,
     payload: ModulePayload,
@@ -162,6 +179,31 @@ async def list_lessons(module_id: str) -> Sequence[dict[str, Any]]:
     """Return lessons for the supplied module."""
     rows = await courses_repo.list_lessons(module_id)
     return _materialize_rows(rows)
+
+
+async def create_lesson(
+    module_id: str,
+    *,
+    title: str,
+    content_markdown: str | None = None,
+    position: int = 0,
+    is_intro: bool = False,
+    lesson_id: str | None = None,
+) -> dict[str, Any]:
+    content_value = content_markdown
+    if isinstance(content_value, str) and content_value:
+        content_value = serialize_audio_embeds(content_value)
+
+    row = await courses_repo.create_lesson(
+        module_id,
+        title=title,
+        content_markdown=content_value,
+        position=position,
+        is_intro=is_intro,
+        lesson_id=lesson_id,
+    )
+    materialized = _materialize_optional_row(row)
+    return materialized or {}
 
 
 async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
@@ -441,9 +483,11 @@ __all__ = [
     "update_course",
     "delete_course",
     "list_modules",
+    "create_module",
     "upsert_module",
     "delete_module",
     "list_lessons",
+    "create_lesson",
     "list_lesson_media",
     "list_home_audio_media",
     "upsert_lesson",

@@ -711,6 +711,18 @@ class _MediaToolbarState extends ConsumerState<MediaToolbar> {
     if (candidate is String && candidate.isNotEmpty) {
       return _resolveUrl(candidate, baseUrl);
     }
+    final media = payload['media'];
+    if (media is Map<String, dynamic>) {
+      final nested =
+          media['download_url'] ??
+          media['downloadUrl'] ??
+          media['signed_url'] ??
+          media['url'] ??
+          media['path'];
+      if (nested is String && nested.isNotEmpty) {
+        return _resolveUrl(nested, baseUrl);
+      }
+    }
     return null;
   }
 

@@ -26,6 +26,40 @@ router = APIRouter(prefix="/studio", tags=["studio"])
 logger = logging.getLogger(__name__)
 
 
+def _log_course_owner_denied(
+    user_id: str,
+    *,
+    course_id: str | None = None,
+    module_id: str | None = None,
+    lesson_id: str | None = None,
+    media_id: str | None = None,
+) -> None:
+    logger.warning(
+        "Permission denied: course owner required user_id=%s course_id=%s module_id=%s lesson_id=%s media_id=%s",
+        user_id,
+        course_id,
+        module_id,
+        lesson_id,
+        media_id,
+    )
+
+
+def _log_seminar_host_denied(user_id: str, seminar_id: str | None) -> None:
+    logger.warning(
+        "Permission denied: seminar host required user_id=%s seminar_id=%s",
+        user_id,
+        seminar_id,
+    )
+
+
+def _log_quiz_owner_denied(user_id: str, quiz_id: str | None) -> None:
+    logger.warning(
+        "Permission denied: quiz owner required user_id=%s quiz_id=%s",
+        user_id,
+        quiz_id,
+    )
+
+
 def _detect_kind(content_type: str | None) -> str:
     if not content_type:
         return "other"
@@ -180,6 +214,7 @@ async def complete_lesson_media_upload(
     row["content_type"] = payload.content_type
     row["byte_size"] = payload.byte_size
     row["original_name"] = payload.original_name
+    media_signer.attach_media_links(row)
     return row
 
 
@@ -304,6 +339,11 @@ async def studio_delete_profile_media(item_id: UUID, current: TeacherUser):
 
 def _ensure_host_access(seminar: Dict[str, Any], user_id: str) -> None:
     if str(seminar["host_id"]) != user_id:
+        seminar_id = seminar.get("id")
+        _log_seminar_host_denied(
+            user_id,
+            str(seminar_id) if seminar_id else None,
+        )
         raise HTTPException(status_code=403, detail="Not seminar host")
 
 
@@ -689,6 +729,10 @@ async def studio_reserve_recording(
 @router.get("/courses/{course_id}")
 async def course_meta(course_id: str, current: TeacherUser):
     if not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     row = await models.get_course(course_id=course_id)
     if not row:
@@ -706,6 +750,10 @@ async def update_course(
         current["id"], course_id, payload.model_dump(exclude_unset=True)
     )
     if not row:
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     return row
 
@@ -714,6 +762,10 @@ async def update_course(
 async def delete_course(course_id: str, current: TeacherUser):
     deleted = await models.delete_course_for_user(current["id"], course_id)
     if not deleted:
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     return {"deleted": True}
 
@@ -721,6 +773,10 @@ async def delete_course(course_id: str, current: TeacherUser):
 @router.get("/courses/{course_id}/modules")
 async def course_modules(course_id: str, current: TeacherUser):
     if not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     modules_raw = await courses_service.list_modules(course_id)
     modules = [dict(module) for module in modules_raw]
@@ -740,6 +796,10 @@ async def course_modules(course_id: str, current: TeacherUser):
 async def module_lessons(module_id: str, current: TeacherUser):
     course_id = await courses_service.get_module_course_id(module_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     lessons_raw = await courses_service.list_lessons(module_id)
     lessons = [dict(lesson) for lesson in lessons_raw]
@@ -757,13 +817,17 @@ async def create_module(
     current: TeacherUser,
 ):
     if not await models.is_course_owner(current["id"], payload.course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=payload.course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
-    row = await courses_service.upsert_module(
+    module_id = str(payload.id) if payload.id else None
+    row = await courses_service.create_module(
         payload.course_id,
-        {
-            "title": payload.title,
-            "position": payload.position,
-        },
+        title=payload.title,
+        position=payload.position,
+        module_id=module_id,
     )
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create module")
@@ -778,6 +842,10 @@ async def update_module(
 ):
     course_id = await courses_service.get_module_course_id(module_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     patch = payload.model_dump(exclude_unset=True)
     if not patch:
@@ -794,6 +862,10 @@ async def update_module(
 async def delete_module(module_id: str, current: TeacherUser):
     course_id = await courses_service.get_module_course_id(module_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     deleted = await courses_service.delete_module(module_id)
     if not deleted:
@@ -808,14 +880,20 @@ async def create_lesson(
 ):
     course_id = await courses_service.get_module_course_id(payload.module_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
-    lesson_payload = {
-        "title": payload.title,
-        "content_markdown": payload.content_markdown,
-        "position": payload.position,
-        "is_intro": payload.is_intro,
-    }
-    row = await courses_service.upsert_lesson(payload.module_id, lesson_payload)
+    lesson_id = str(payload.id) if payload.id else None
+    row = await courses_service.create_lesson(
+        payload.module_id,
+        title=payload.title,
+        content_markdown=payload.content_markdown,
+        position=payload.position,
+        is_intro=payload.is_intro,
+        lesson_id=lesson_id,
+    )
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create lesson")
     return row
@@ -829,6 +907,10 @@ async def update_lesson(
 ):
     module_id, course_id = await courses_service.lesson_course_ids(lesson_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     existing = await courses_service.fetch_lesson(lesson_id)
     if not existing or not module_id:
@@ -845,6 +927,10 @@ async def update_lesson(
 async def delete_lesson(lesson_id: str, current: TeacherUser):
     _, course_id = await courses_service.lesson_course_ids(lesson_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     deleted = await courses_service.delete_lesson(lesson_id)
     if not deleted:
@@ -858,6 +944,10 @@ async def set_intro(
 ):
     _, course_id = await courses_service.lesson_course_ids(lesson_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     row = await models.set_lesson_intro(lesson_id, payload.is_intro)
     if not row:
@@ -869,6 +959,10 @@ async def set_intro(
 async def lesson_media(lesson_id: str, current: TeacherUser):
     _, course_id = await courses_service.lesson_course_ids(lesson_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     media = list(await models.list_lesson_media(lesson_id))
     for item in media:
@@ -887,6 +981,10 @@ async def upload_media(
     owner_id = str(owner)
     _, course_id = await courses_service.lesson_course_ids(lesson_id)
     if not course_id or not await models.is_course_owner(owner, course_id):
+        _log_course_owner_denied(
+            owner_id,
+            course_id=str(course_id) if course_id else None,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
 
     lesson_row = await courses_service.fetch_lesson(lesson_id)
@@ -953,6 +1051,11 @@ async def delete_media(media_id: str, current: TeacherUser):
         raise HTTPException(status_code=404, detail="Media not found")
     _, course_id = await courses_service.lesson_course_ids(row.get("lesson_id"))
     if course_id and not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+            media_id=media_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     deleted_row = await models.delete_lesson_media_entry(media_id)
     storage_path = (
@@ -991,6 +1094,10 @@ async def reorder_media(
 ):
     _, course_id = await courses_service.lesson_course_ids(lesson_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     await models.reorder_media(lesson_id, payload.media_ids)
     return {"ok": True}
@@ -1013,6 +1120,10 @@ async def media_file(
 @router.post("/courses/{course_id}/quiz")
 async def ensure_quiz(course_id: str, current: TeacherUser):
     if not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     quiz = await models.ensure_quiz_for_user(course_id, current["id"])
     if not quiz:
@@ -1023,6 +1134,10 @@ async def ensure_quiz(course_id: str, current: TeacherUser):
 @router.get("/quizzes/{quiz_id}/questions")
 async def quiz_questions(quiz_id: str, current: TeacherUser):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
+        _log_quiz_owner_denied(
+            str(current["id"]),
+            quiz_id,
+        )
         raise HTTPException(status_code=403, detail="Not quiz owner")
     rows = await models.quiz_questions(quiz_id)
     return {"items": rows}
@@ -1035,6 +1150,10 @@ async def create_question(
     current: TeacherUser,
 ):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
+        _log_quiz_owner_denied(
+            str(current["id"]),
+            quiz_id,
+        )
         raise HTTPException(status_code=403, detail="Not quiz owner")
     row = await models.upsert_quiz_question(
         quiz_id,
@@ -1053,6 +1172,10 @@ async def update_question(
     current: TeacherUser,
 ):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
+        _log_quiz_owner_denied(
+            str(current["id"]),
+            quiz_id,
+        )
         raise HTTPException(status_code=403, detail="Not quiz owner")
     data = payload.model_dump(exclude_unset=True)
     data["id"] = question_id
@@ -1065,6 +1188,10 @@ async def update_question(
 @router.delete("/quizzes/{quiz_id}/questions/{question_id}")
 async def delete_question(quiz_id: str, question_id: str, current: TeacherUser):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
+        _log_quiz_owner_denied(
+            str(current["id"]),
+            quiz_id,
+        )
         raise HTTPException(status_code=403, detail="Not quiz owner")
     deleted = await models.delete_quiz_question(question_id)
     if not deleted:
