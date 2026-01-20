@@ -2506,7 +2506,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     List<Map<String, dynamic>>? modulesOverride,
   }) {
     final price = priceOverride ?? _parseCoursePrice();
-    if (price == null || price <= 0) {
+    final canPublishForPrice =
+        _courseIsFreeIntro || (price != null && price > 0);
+    if (!canPublishForPrice) {
       return 'Ange ett pris större än 0 kr för att kunna publicera kursen.';
     }
 
@@ -2954,9 +2956,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         SwitchListTile.adaptive(
                           contentPadding: EdgeInsets.zero,
                           value: _courseIsFreeIntro,
-                          onChanged: (value) => setState(() {
-                            _courseIsFreeIntro = value;
-                          }),
+                          onChanged: (value) {
+                            setState(() {
+                              _courseIsFreeIntro = value;
+                            });
+                            _handleCoursePublishFieldsChanged();
+                          },
                           title: const Text('Kursen har gratis introduktion'),
                           subtitle: const Text(
                             'Aktivera för att låsa upp introduktionsinnehåll utan köp.',
