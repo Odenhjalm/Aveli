@@ -1710,20 +1710,55 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           contentType: contentType,
           isIntro: _lessonIntro,
         );
+        if (!mounted) return;
+        setState(() {
+          final id = media['id'];
+          if (id is String) {
+            final updated = [..._lessonMedia];
+            final index = updated.indexWhere((item) => item['id'] == id);
+            if (index >= 0) {
+              updated[index] = {...updated[index], ...media};
+            } else {
+              updated.add(media);
+            }
+            _lessonMedia = updated;
+          } else {
+            _lessonMedia = [..._lessonMedia, media];
+          }
+        });
         final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
         final resolved = _resolveMediaUrl(download);
-        await _loadLessonMedia();
-        if (resolved != null) {
-          _insertImageIntoLesson(
-            resolved,
-            targetSelection: selectionBeforePicker,
+        if (resolved == null) {
+          if (mounted) {
+            setState(
+              () => _mediaStatus = 'Uppladdad men saknar länk: $filename',
+            );
+          }
+          if (mounted && context.mounted) {
+            showSnack(context, 'Uppladdningen lyckades men länken saknas.');
+          }
+          return;
+        }
+        _insertImageIntoLesson(
+          resolved,
+          targetSelection: selectionBeforePicker,
+        );
+        final saved = await _saveLessonContent(showSuccessSnack: false);
+        if (mounted) {
+          setState(
+            () =>
+                _mediaStatus = saved
+                    ? 'Bild uppladdad och sparad: $filename'
+                    : 'Bild uppladdad men kunde inte sparas: $filename',
           );
         }
-        if (mounted) {
-          setState(() => _mediaStatus = 'Bild uppladdad: $filename');
-        }
         if (mounted && context.mounted) {
-          showSnack(context, 'Bild infogad i lektionen. Glöm inte att spara.');
+          showSnack(
+            context,
+            saved
+                ? 'Bild infogad och sparad i lektionen.'
+                : 'Bild infogad men kunde inte sparas i lektionen.',
+          );
         }
       } catch (error, stackTrace) {
         final message = AppFailure.from(error, stackTrace).message;
@@ -1915,7 +1950,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _insertMediaIntoLesson(Map<String, dynamic> media) {
+  void _insertMediaIntoLesson(
+    Map<String, dynamic> media, {
+    bool showSaveHint = true,
+  }) {
     final kind = (media['kind'] as String?) ?? '';
     final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
     final resolved = _resolveMediaUrl(download);
@@ -1930,7 +1968,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_isImageMedia(media) || kind == 'image') {
       _insertImageIntoLesson(resolved, targetSelection: _lastLessonSelection);
       if (mounted && context.mounted) {
-        showSnack(context, 'Bild infogad i lektionen. Kom ihåg att spara.');
+        showSnack(
+          context,
+          showSaveHint
+              ? 'Bild infogad i lektionen. Kom ihåg att spara.'
+              : 'Bild infogad i lektionen.',
+        );
       }
       return;
     }
@@ -1938,14 +1981,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ((media['content_type'] as String?) ?? '').startsWith('video/')) {
       _insertVideoIntoLesson(resolved, targetSelection: _lastLessonSelection);
       if (mounted && context.mounted) {
-        showSnack(context, 'Video infogad i lektionen. Kom ihåg att spara.');
+        showSnack(
+          context,
+          showSaveHint
+              ? 'Video infogad i lektionen. Kom ihåg att spara.'
+              : 'Video infogad i lektionen.',
+        );
       }
       return;
     }
     // Audio: inline player embed
     _insertAudioIntoLesson(resolved, targetSelection: _lastLessonSelection);
     if (mounted && context.mounted) {
-      showSnack(context, 'Ljud infogat i lektionen. Kom ihåg att spara.');
+      showSnack(
+        context,
+        showSaveHint
+            ? 'Ljud infogat i lektionen. Kom ihåg att spara.'
+            : 'Ljud infogat i lektionen.',
+      );
     }
   }
 
@@ -2096,11 +2149,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         unawaited(_afterUploadSuccess(job));
       } else if (job.status == UploadJobStatus.failed &&
           old?.status != UploadJobStatus.failed) {
+        final detail = job.error?.trim();
+        final suffix = detail == null || detail.isEmpty ? '' : ' ($detail)';
         if (context.mounted) {
-          showSnack(context, 'Uppladdning misslyckades: ${job.filename}');
+          showSnack(
+            context,
+            'Uppladdning misslyckades: ${job.filename}$suffix',
+          );
         }
         setState(
-          () => _mediaStatus = 'Uppladdning misslyckades: ${job.filename}',
+          () =>
+              _mediaStatus =
+                  'Uppladdning misslyckades: ${job.filename}$suffix',
         );
       }
     }
@@ -2146,18 +2206,52 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
     }
 
-    if (uploaded != null) {
-      if (contentType.startsWith('video/') ||
-          contentType.startsWith('audio/') ||
-          contentType.startsWith('image/')) {
-        _insertMediaIntoLesson(uploaded);
+    if (uploaded == null) {
+      if (context.mounted) {
+        showSnack(
+          context,
+          'Uppladdningen lyckades men hittade inte media. Uppdatera listan.',
+        );
       }
+      if (mounted) {
+        setState(
+          () =>
+              _mediaStatus =
+                  'Uppladdning klar men media saknas: ${job.filename}',
+        );
+      }
+      return;
     }
 
-    if (context.mounted) {
-      showSnack(context, 'Media uppladdad: ${job.filename}');
+    var inserted = false;
+    if (contentType.startsWith('video/') ||
+        contentType.startsWith('audio/') ||
+        contentType.startsWith('image/')) {
+      _insertMediaIntoLesson(uploaded, showSaveHint: false);
+      inserted = true;
     }
-    setState(() => _mediaStatus = 'Media uppladdad: ${job.filename}');
+
+    final saved = inserted
+        ? await _saveLessonContent(showSuccessSnack: false)
+        : false;
+
+    if (context.mounted) {
+      final message = inserted
+          ? (saved
+              ? 'Media infogat och sparat i lektionen.'
+              : 'Media infogat men kunde inte sparas i lektionen.')
+          : 'Media uppladdad: ${job.filename}';
+      showSnack(context, message);
+    }
+    if (mounted) {
+      setState(
+        () => _mediaStatus = inserted
+            ? (saved
+                ? 'Media uppladdad och sparad: ${job.filename}'
+                : 'Media uppladdad men inte sparad: ${job.filename}')
+            : 'Media uppladdad: ${job.filename}',
+      );
+    }
   }
 
   UploadJob? _findJob(List<UploadJob>? jobs, String id) {

@@ -180,6 +180,7 @@ async def complete_lesson_media_upload(
     row["content_type"] = payload.content_type
     row["byte_size"] = payload.byte_size
     row["original_name"] = payload.original_name
+    media_signer.attach_media_links(row)
     return row
 
 
