@@ -69,6 +69,7 @@ class _LegalLinkButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TextButton(
+      style: TextButton.styleFrom(foregroundColor: Colors.black),
       onPressed: () async {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       },

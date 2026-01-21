@@ -244,9 +244,14 @@ class _LandingPageState extends ConsumerState<LandingPage>
 
   void _normalizeCourseCovers(List<Map<String, dynamic>> courses) {
     for (final course in courses) {
-      final cover = course['cover_url'] as String?;
+      final signedCover = course['signed_cover_url'] as String?;
+      final cover = signedCover ?? course['cover_url'] as String?;
       if (cover == null || cover.isEmpty) continue;
-      course['cover_url'] = _resolveCoverUrl(cover);
+      final resolved = _resolveCoverUrl(cover);
+      course['cover_url'] = resolved;
+      if (signedCover != null) {
+        course['signed_cover_url'] = resolved;
+      }
     }
   }
 
@@ -1305,12 +1310,14 @@ class _CourseTileGlass extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = (course['title'] as String?) ?? 'Kurs';
     final desc = (course['description'] as String?) ?? '';
-    final cover = (course['cover_url'] as String?) ?? '';
+    final cover = (course['signed_cover_url'] as String?) ??
+        (course['cover_url'] as String?) ??
+        '';
     final slug = (course['slug'] as String?) ?? '';
     final isIntro = course['is_free_intro'] == true;
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
-      slug: slug,
+      slug: cover.isEmpty ? slug : null,
       coverUrl: cover,
     );
     final fallbackImage = assets.imageProvider(
