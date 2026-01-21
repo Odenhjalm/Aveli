@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     ]
     cors_allow_origin_regex: str | None = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
     lesson_media_max_bytes: int = 2 * 1024 * 1024 * 1024
+    media_upload_max_audio_bytes: int = 5 * 1024 * 1024 * 1024
+    media_upload_max_video_bytes: int = 5 * 1024 * 1024 * 1024
+    media_playback_url_ttl_seconds: int = 3600
     media_signing_secret: str | None = None
     media_signing_ttl_seconds: int = 600
     media_allow_legacy_media: bool = True

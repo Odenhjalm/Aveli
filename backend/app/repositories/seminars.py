@@ -434,6 +434,25 @@ async def list_seminar_recordings(seminar_id: str) -> list[dict]:
         return await cur.fetchall()
 
 
+async def get_recording_by_asset_url(asset_url: str) -> dict | None:
+    query = """
+        select id,
+               seminar_id,
+               asset_url,
+               status,
+               published,
+               metadata,
+               created_at,
+               updated_at
+        from app.seminar_recordings
+        where asset_url = %s
+        limit 1
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (asset_url,))
+        return await cur.fetchone()
+
+
 async def register_attendee(
     *,
     seminar_id: str,

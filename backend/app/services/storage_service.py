@@ -59,6 +59,8 @@ class StorageService:
         path: str,
         ttl: int,
         filename: str | None = None,
+        *,
+        download: bool = True,
     ) -> PresignedUrl:
         if not path:
             raise StorageServiceError("storage path is required")
@@ -102,14 +104,16 @@ class StorageService:
         if not signed_path:
             raise StorageServiceError("signedURL missing in Supabase response")
 
-        connector = "&" if "?" in signed_path else "?"
-        quoted_download = quote(download_name, safe="")
-        signed_with_download = f"{signed_path}{connector}download={quoted_download}"
-        absolute_url = f"{base_url}{signed_with_download}"
-
-        headers = {
-            "Content-Disposition": build_content_disposition(download_name)
-        }
+        if download:
+            connector = "&" if "?" in signed_path else "?"
+            quoted_download = quote(download_name, safe="")
+            signed_path = f"{signed_path}{connector}download={quoted_download}"
+            headers = {
+                "Content-Disposition": build_content_disposition(download_name)
+            }
+        else:
+            headers = {}
+        absolute_url = f"{base_url}{signed_path}"
         return PresignedUrl(url=absolute_url, expires_in=expires_in, headers=headers)
 
     async def create_upload_url(

@@ -28,6 +28,7 @@ from .routes import (
     api_context7,
     api_auth,
     api_feed,
+    api_media,
     api_me,
     api_checkout,
     api_orders,
@@ -118,6 +119,7 @@ app.include_router(api_feed.router)
 app.include_router(api_sfu.router)
 app.include_router(api_profiles.router)
 app.include_router(api_me.router)
+app.include_router(api_media.router)
 app.include_router(admin.router)
 app.include_router(api_checkout.router)
 app.include_router(billing.router)
