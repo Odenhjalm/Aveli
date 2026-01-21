@@ -214,7 +214,9 @@ void main() {
       overrideState: state,
     );
 
-    expect(find.text('Utvalt innehåll'), findsOneWidget);
+    final featuredTitle = find.byKey(const Key('featured_content_title'));
+    await tester.scrollUntilVisible(featuredTitle, 200);
+    expect(featuredTitle, findsOneWidget);
     expect(find.text('Guided Relaxation'), findsOneWidget);
     expect(find.text('Lyssna'), findsOneWidget);
   });

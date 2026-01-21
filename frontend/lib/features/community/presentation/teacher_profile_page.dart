@@ -336,6 +336,7 @@ class _ProfileMediaCard extends StatelessWidget {
           children: [
             Text(
               'Utvalt innehåll',
+              key: const Key('featured_content_title'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
