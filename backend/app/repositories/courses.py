@@ -950,6 +950,37 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
         return await cur.fetchall()
 
 
+async def get_lesson_media_access_by_path(
+    *,
+    storage_path: str,
+    storage_bucket: str,
+) -> dict[str, Any] | None:
+    query = """
+        SELECT
+          lm.id,
+          lm.lesson_id,
+          lm.kind,
+          coalesce(mo.storage_path, lm.storage_path) AS storage_path,
+          coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
+          l.is_intro,
+          c.id AS course_id,
+          c.created_by,
+          c.is_free_intro,
+          c.is_published
+        FROM app.lesson_media lm
+        JOIN app.lessons l ON l.id = lm.lesson_id
+        JOIN app.modules m ON m.id = l.module_id
+        JOIN app.courses c ON c.id = m.course_id
+        LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
+        WHERE coalesce(mo.storage_path, lm.storage_path) = %s
+          AND coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') = %s
+        LIMIT 1
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (storage_path, storage_bucket))
+        return await cur.fetchone()
+
+
 async def list_home_audio_media(
     user_id: str,
     *,
@@ -1273,6 +1304,7 @@ __all__ = [
     "delete_module",
     "list_lessons",
     "list_lesson_media",
+    "get_lesson_media_access_by_path",
     "list_home_audio_media",
     "list_course_lessons",
     "get_lesson",

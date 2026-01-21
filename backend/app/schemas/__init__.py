@@ -804,6 +804,31 @@ class MediaSignResponse(BaseModel):
     expires_at: datetime
 
 
+class MediaUploadUrlRequest(BaseModel):
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+    media_type: Literal["audio", "video"]
+    course_id: UUID | None = None
+    lesson_id: UUID | None = None
+    seminar_id: UUID | None = None
+
+
+class MediaUploadUrlResponse(BaseModel):
+    upload_url: str
+    object_path: str
+    expires_at: datetime
+
+
+class MediaPlaybackUrlRequest(BaseModel):
+    object_path: str
+
+
+class MediaPlaybackUrlResponse(BaseModel):
+    playback_url: str
+    expires_at: datetime
+
+
 class MediaPresignRequest(BaseModel):
     intent: Literal["download", "upload"]
     storage_path: str
