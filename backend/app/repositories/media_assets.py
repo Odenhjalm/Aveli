@@ -148,6 +148,7 @@ async def get_media_asset_access(media_id: str) -> dict[str, Any] | None:
 async def fetch_and_lock_pending_media_assets(
     *,
     limit: int = 5,
+    max_attempts: int | None = None,
 ) -> Iterable[dict[str, Any]]:
     async with get_conn() as cur:
         await cur.execute(
@@ -157,6 +158,7 @@ async def fetch_and_lock_pending_media_assets(
               FROM app.media_assets
               WHERE state IN ('uploaded', 'failed')
                 AND (next_retry_at IS NULL OR next_retry_at <= now())
+                AND (%s IS NULL OR COALESCE(processing_attempts, 0) < %s)
               ORDER BY created_at ASC
               LIMIT %s
               FOR UPDATE SKIP LOCKED
@@ -183,7 +185,7 @@ async def fetch_and_lock_pending_media_assets(
               ma.storage_bucket,
               ma.processing_attempts
             """,
-            (limit,),
+            (max_attempts, max_attempts, limit),
         )
         rows = await cur.fetchall()
     return [dict(row) for row in rows]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,10 @@ def _now() -> datetime:
 
 def _enabled() -> bool:
     return settings.media_transcode_enabled
+
+
+def _env_worker_enabled() -> bool:
+    return os.environ.get("RUN_MEDIA_WORKER", "").strip().lower() == "true"
 
 
 def _truncate(message: str, limit: int = 500) -> str:
@@ -59,6 +64,9 @@ def _derive_cover_output_path(source_path: str, ext: str) -> str:
 
 async def start_worker() -> None:
     global _worker_task
+    if not _env_worker_enabled():
+        logger.info("Media transcode worker disabled: RUN_MEDIA_WORKER not true")
+        return
     if not _enabled():
         logger.info("Media transcode worker disabled by configuration")
         return
@@ -90,7 +98,8 @@ async def _poll_loop() -> None:
     while True:
         try:
             batch = await media_assets_repo.fetch_and_lock_pending_media_assets(
-                limit=settings.media_transcode_batch_size
+                limit=settings.media_transcode_batch_size,
+                max_attempts=settings.media_transcode_max_attempts,
             )
             if not batch:
                 await asyncio.sleep(settings.media_transcode_poll_interval_seconds)
@@ -254,14 +263,23 @@ async def _download_to_file(url: str, destination: Path) -> None:
 async def _upload_file(url: str, source: Path, headers: dict[str, str] | None) -> None:
     timeout = httpx.Timeout(10.0, read=None)
     upload_headers = dict(headers or {})
+
+    async def _file_stream(path: Path, chunk_size: int = 1024 * 1024):
+        with path.open("rb") as handle:
+            while True:
+                chunk = await asyncio.to_thread(handle.read, chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
     async with httpx.AsyncClient(timeout=timeout) as client:
-        with source.open("rb") as handle:
-            response = await client.put(url, headers=upload_headers, content=handle)
+        response = await client.put(url, headers=upload_headers, content=_file_stream(source))
     if response.status_code >= 400:
         raise RuntimeError(f"Upload failed with status {response.status_code}")
 
 
 async def _run_ffmpeg_audio(input_path: Path, output_path: Path) -> None:
+    logger.info("Running ffmpeg audio input=%s output=%s", input_path, output_path)
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -349,3 +367,29 @@ async def _probe_duration(path: Path) -> int | None:
         return int(float(raw))
     except ValueError:
         return None
+
+
+async def _run_worker_forever() -> None:
+    from ..db import pool
+
+    await pool.open(wait=True)
+    try:
+        await start_worker()
+        while True:
+            await asyncio.sleep(3600)
+    finally:
+        await stop_worker()
+        await pool.close()
+
+
+if __name__ == "__main__":
+    from ..logging_utils import setup_logging
+
+    setup_logging()
+    if not _env_worker_enabled():
+        logger.info("Media transcode worker disabled: RUN_MEDIA_WORKER not true")
+        raise SystemExit(0)
+    try:
+        asyncio.run(_run_worker_forever())
+    except KeyboardInterrupt:
+        logger.info("Media transcode worker stopped")

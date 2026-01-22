@@ -44,19 +44,15 @@ Future<void> uploadCoverFile({
   required void Function(int sent, int total) onProgress,
 }) async {
   final dio = Dio();
-  final length = file.size;
   final stream = file.file.openRead();
-  final uploadHeaders = <String, String>{...headers};
-  uploadHeaders['content-length'] = length.toString();
   await dio.putUri<void>(
     uploadUrl,
     data: stream,
     options: Options(
-      headers: uploadHeaders,
-      contentType: file.mimeType ?? 'application/octet-stream',
+      headers: Map<String, String>.from(headers),
     ),
     onSendProgress: (sent, total) {
-      final resolvedTotal = total > 0 ? total : length;
+      final resolvedTotal = total > 0 ? total : file.size;
       onProgress(sent, resolvedTotal);
     },
   );

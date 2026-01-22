@@ -101,9 +101,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
       final uploader = widget.uploadFileOverride ?? uploadCoverFile;
       await uploader(
         uploadUrl: upload.uploadUrl,
-        headers: {
-          'content-type': resolvedMime,
-        },
+        headers: upload.headers,
         file: picked,
         onProgress: (sent, total) {
           if (!mounted) return;

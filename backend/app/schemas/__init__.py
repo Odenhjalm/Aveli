@@ -816,6 +816,7 @@ class MediaUploadUrlResponse(BaseModel):
     media_id: UUID
     upload_url: str
     object_path: str
+    headers: dict[str, str]
     expires_at: datetime
 
 
@@ -830,6 +831,7 @@ class CoverUploadUrlResponse(BaseModel):
     media_id: UUID
     upload_url: str
     object_path: str
+    headers: dict[str, str]
     expires_at: datetime
 
 

@@ -6,12 +6,14 @@ class MediaUploadTarget {
     required this.mediaId,
     required this.uploadUrl,
     required this.objectPath,
+    required this.headers,
     required this.expiresAt,
   });
 
   final String mediaId;
   final Uri uploadUrl;
   final String objectPath;
+  final Map<String, String> headers;
   final DateTime expiresAt;
 
   factory MediaUploadTarget.fromJson(Map<String, dynamic> json) =>
@@ -19,6 +21,9 @@ class MediaUploadTarget {
         mediaId: json['media_id'] as String,
         uploadUrl: Uri.parse(json['upload_url'] as String),
         objectPath: json['object_path'] as String,
+        headers: Map<String, String>.from(
+          json['headers'] as Map<String, dynamic>? ?? const {},
+        ),
         expiresAt: DateTime.parse(json['expires_at'] as String).toUtc(),
       );
 }

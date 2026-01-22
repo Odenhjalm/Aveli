@@ -86,7 +86,15 @@ async def _authorize_lesson_upload(
     if not resolved_course_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lesson missing course")
 
-    if course_id is not None and str(course_id) != resolved_course_id:
+    if course_id is not None and str(course_id) != str(resolved_course_id):
+        logger.warning(
+            "course_id mismatch for lesson upload: provided=%s (type=%s) resolved=%s (type=%s) lesson_id=%s",
+            str(course_id),
+            type(course_id).__name__,
+            str(resolved_course_id),
+            type(resolved_course_id).__name__,
+            lesson_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="course_id does not match lesson course",
@@ -247,6 +255,7 @@ async def request_upload_url(
         media_id=media_asset["id"],
         upload_url=upload.url,
         object_path=upload.path,
+        headers=dict(upload.headers),
         expires_at=expires_at,
     )
 
@@ -327,6 +336,7 @@ async def request_cover_upload_url(
         media_id=media_asset["id"],
         upload_url=upload.url,
         object_path=upload.path,
+        headers=dict(upload.headers),
         expires_at=expires_at,
     )
 

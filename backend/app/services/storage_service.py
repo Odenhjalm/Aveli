@@ -127,7 +127,12 @@ class StorageService:
             }
         else:
             headers = {}
-        absolute_url = f"{base_url}{signed_path}"
+        if signed_path.startswith("/object/"):
+            absolute_url = f"{base_url}/storage/v1{signed_path}"
+        elif signed_path.startswith("/"):
+            absolute_url = f"{base_url}{signed_path}"
+        else:
+            absolute_url = signed_path
         return PresignedUrl(url=absolute_url, expires_in=expires_in, headers=headers)
 
     async def create_upload_url(
@@ -179,11 +184,12 @@ class StorageService:
         relative_url = data.get("url") or data.get("signedUrl")
         if not relative_url:
             raise StorageServiceError("signed upload URL missing in Supabase response")
-        absolute_url = (
-            f"{base_url}{relative_url}"
-            if relative_url.startswith("/")
-            else relative_url
-        )
+        if relative_url.startswith("/object/"):
+            absolute_url = f"{base_url}/storage/v1{relative_url}"
+        elif relative_url.startswith("/"):
+            absolute_url = f"{base_url}{relative_url}"
+        else:
+            absolute_url = relative_url
         resolved_cache = cache_seconds or settings.media_public_cache_seconds or 3600
         resolved_cache = max(60, int(resolved_cache))
         normalized_type = content_type or "application/octet-stream"

@@ -12,12 +12,17 @@ kill_timeout = "5s"
   CORS_ALLOW_ORIGIN_REGEX = "^https?://localhost(:\\d+)?$"
   PORT = "8080"
 
+[processes]
+  app = "uvicorn app.main:app --host 0.0.0.0 --port 8080"
+  worker = "env RUN_MEDIA_WORKER=true python -m app.services.media_transcode_worker"
+
 [http_service]
   internal_port = 8080
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 1
+  processes = ["app"]
 
 [checks]
   [checks.healthz]
@@ -28,3 +33,4 @@ kill_timeout = "5s"
     grace_period = "60s"
     method = "get"
     path = "/healthz"
+    processes = ["app"]

@@ -96,9 +96,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       final uploader = widget.uploadFileOverride ?? uploadWavFile;
       await uploader(
         uploadUrl: upload.uploadUrl,
-        headers: const {
-          'content-type': 'audio/wav',
-        },
+        headers: upload.headers,
         file: picked,
         onProgress: (sent, total) {
           if (!mounted) return;
