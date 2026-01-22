@@ -47,7 +47,6 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
 
   Future<void> _pickAndUpload() async {
     if (widget.courseId == null || widget.courseId!.isEmpty) {
-      showSnack(context, 'Valj kurs innan du laddar upp en kursbild.');
       return;
     }
 
@@ -139,7 +138,8 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
 
   @override
   Widget build(BuildContext context) {
-    final canUpload = widget.courseId != null && !_uploading;
+    final courseReady = widget.courseId != null && widget.courseId!.isNotEmpty;
+    final canUpload = courseReady && !_uploading;
     final theme = Theme.of(context);
     final progressVisible = _uploading && _progress > 0;
 
@@ -183,6 +183,15 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
                 ],
               ],
             ),
+            if (!courseReady) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Spara kursen först för att kunna ladda upp kursbild.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.white70,
+                ),
+              ),
+            ],
             if (progressVisible) ...[
               const SizedBox(height: 12),
               LinearProgressIndicator(value: _progress),
