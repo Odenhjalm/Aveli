@@ -2035,24 +2035,28 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _isWavMedia(Map<String, dynamic> media) {
     final ingestFormat =
         (media['ingest_format'] as String?)?.toLowerCase().trim();
-    if (ingestFormat == 'wav') return true;
     final contentType =
         (media['content_type'] as String?)?.toLowerCase().trim() ?? '';
-    if (contentType == 'audio/wav' || contentType == 'audio/x-wav') {
-      return true;
-    }
     final originalName =
         (media['original_name'] as String?)?.toLowerCase().trim();
-    if (originalName != null && originalName.endsWith('.wav')) {
-      return true;
-    }
+    final isWavSource =
+        ingestFormat == 'wav' ||
+        contentType == 'audio/wav' ||
+        contentType == 'audio/x-wav' ||
+        (originalName != null && originalName.endsWith('.wav'));
+
     if (_isPipelineMedia(media)) {
+      final state = _pipelineState(media);
+      if (state == 'ready') return false;
+      if (isWavSource) return true;
       final kind = (media['kind'] as String?) ?? '';
       if (kind == 'audio' || contentType.startsWith('audio/')) {
         return true;
       }
+      return false;
     }
-    return false;
+
+    return isWavSource;
   }
 
   void _patchLessonMedia(String mediaId, Map<String, dynamic> patch) {
@@ -4222,7 +4226,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                               ),
                                               if (isWavMedia)
                                                 Text(
-                                                  'Bearbetas – ljudet blir tillgängligt när konverteringen är klar',
+                                                  'Bearbetas - ljudet blir tillgängligt när konverteringen är klar',
                                                   style: Theme.of(
                                                     context,
                                                   ).textTheme.labelSmall,

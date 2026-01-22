@@ -110,7 +110,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = 'Uppladdad. Bearbetar…';
+        _status = 'Studiomaster uppladdad. Bearbetas till MP3…';
         _mediaState = 'uploaded';
       });
       await widget.onMediaUpdated?.call();
@@ -161,11 +161,11 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   String _statusLabel(String state) {
     switch (state) {
       case 'uploaded':
-        return 'Uppladdad. Bearbetas…';
+        return 'Studiomaster uppladdad. Bearbetas till MP3…';
       case 'processing':
-        return 'Bearbetas…';
+        return 'Bearbetas till MP3…';
       case 'ready':
-        return 'Klar för uppspelning.';
+        return 'MP3 klar för uppspelning.';
       case 'failed':
         return 'Bearbetningen misslyckades.';
       default:

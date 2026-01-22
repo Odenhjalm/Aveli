@@ -27,8 +27,7 @@ import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
-import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
@@ -61,7 +60,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         profile?.isAdmin == true ||
         claims?.isTeacher == true ||
         claims?.isAdmin == true;
-    final assets = ref.watch(backendAssetResolverProvider);
+    final mediaRepository = ref.watch(mediaRepositoryProvider);
     final homeAudioAsync = ref.watch(homeAudioProvider);
     final homeAudioSection = _HomeAudioSection(audioAsync: homeAudioAsync);
 
@@ -160,7 +159,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                             child: _ExploreCoursesSection(
                               section: exploreAsync,
                               fallbackCourses: coursesAsync,
-                              assets: assets,
+                              mediaRepository: mediaRepository,
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -202,7 +201,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                   _ExploreCoursesSection(
                     section: exploreAsync,
                     fallbackCourses: coursesAsync,
-                    assets: assets,
+                    mediaRepository: mediaRepository,
                   ),
                   const SizedBox(height: 16),
                   _FeedSection(
@@ -609,12 +608,12 @@ class _ExploreCoursesSection extends StatelessWidget {
   const _ExploreCoursesSection({
     required this.section,
     required this.fallbackCourses,
-    required this.assets,
+    required this.mediaRepository,
   });
 
   final AsyncValue<landing.LandingSectionState> section;
   final AsyncValue<List<CourseSummary>> fallbackCourses;
-  final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -631,7 +630,7 @@ class _ExploreCoursesSection extends StatelessWidget {
         data: (state) {
           final items = state.items;
           if (items.isNotEmpty) {
-            return _buildCourseList(context, items, assets);
+            return _buildCourseList(context, items, mediaRepository);
           }
           return _buildFallback(context);
         },
@@ -645,7 +644,11 @@ class _ExploreCoursesSection extends StatelessWidget {
         if (courses.isEmpty) {
           return const Text('Inga kurser publicerade ännu.');
         }
-        return _buildCourseList(context, _mapCourseSummaries(courses), assets);
+        return _buildCourseList(
+          context,
+          _mapCourseSummaries(courses),
+          mediaRepository,
+        );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) {
@@ -673,7 +676,7 @@ class _ExploreCoursesSection extends StatelessWidget {
   Widget _buildCourseList(
     BuildContext context,
     List<Map<String, dynamic>> items,
-    BackendAssetResolver assets,
+    MediaRepository mediaRepository,
   ) {
     if (items.isEmpty) {
       return const Text('Inga kurser publicerade ännu.');
@@ -687,11 +690,10 @@ class _ExploreCoursesSection extends StatelessWidget {
             final description = (course['description'] as String?) ?? '';
             final slug = (course['slug'] as String?) ?? '';
             final isIntro = course['is_free_intro'] == true;
-            final coverUrl = (course['cover_url'] as String?) ?? '';
-            final coverProvider = CourseCoverAssets.resolve(
-              assets: assets,
-              slug: slug,
-              coverUrl: coverUrl,
+            final rawCoverUrl = (course['cover_url'] as String?) ?? '';
+            final resolvedCoverUrl = _resolveCoverUrl(
+              mediaRepository,
+              rawCoverUrl,
             );
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
@@ -707,54 +709,19 @@ class _ExploreCoursesSection extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (coverProvider != null)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: Image(
-                            image: coverProvider,
-                            fit: BoxFit.cover,
-                            height: 72,
-                            width: 96,
-                            errorBuilder: (_, err, stack) {
-                              ImageErrorLogger.log(
-                                source: 'Home/Explore/CoverProvider',
-                                url: coverUrl.isNotEmpty ? coverUrl : slug,
-                                error: err,
-                                stackTrace: stack,
-                              );
-                              if (coverUrl.isNotEmpty) {
-                                return Image.network(
-                                  coverUrl,
-                                  fit: BoxFit.cover,
-                                  height: 72,
-                                  width: 96,
-                                  errorBuilder: (_, err2, stack2) {
-                                    ImageErrorLogger.log(
-                                      source: 'Home/Explore/CoverURL',
-                                      url: coverUrl,
-                                      error: err2,
-                                      stackTrace: stack2,
-                                    );
-                                    return const _CourseIconFallback();
-                                  },
-                                );
-                              }
-                              return const _CourseIconFallback();
-                            },
-                          ),
-                        )
-                      else if (coverUrl.isNotEmpty)
+                      if (resolvedCoverUrl != null &&
+                          resolvedCoverUrl.isNotEmpty)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(14),
                           child: Image.network(
-                            coverUrl,
+                            resolvedCoverUrl,
                             fit: BoxFit.cover,
                             height: 72,
                             width: 96,
                             errorBuilder: (_, err, stack) {
                               ImageErrorLogger.log(
                                 source: 'Home/Explore/CoverURL',
-                                url: coverUrl,
+                                url: resolvedCoverUrl,
                                 error: err,
                                 stackTrace: stack,
                               );
@@ -809,6 +776,15 @@ class _ExploreCoursesSection extends StatelessWidget {
           .toList(growable: false),
     );
   }
+
+  String? _resolveCoverUrl(MediaRepository repository, String? coverUrl) {
+    if (coverUrl == null || coverUrl.isEmpty) return null;
+    try {
+      return repository.resolveUrl(coverUrl);
+    } catch (_) {
+      return coverUrl;
+    }
+  }
 }
 
 class _CourseIconFallback extends StatelessWidget {
@@ -816,15 +792,14 @@ class _CourseIconFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 72,
-      width: 96,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(14),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Image(
+        image: AppImages.background,
+        height: 72,
+        width: 96,
+        fit: BoxFit.cover,
       ),
-      alignment: Alignment.center,
-      child: const Icon(Icons.auto_stories, color: Colors.white70),
     );
   }
 }
