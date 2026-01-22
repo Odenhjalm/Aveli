@@ -18,8 +18,8 @@ class CoverUploadCard extends ConsumerStatefulWidget {
   });
 
   final String? courseId;
-  final void Function(String mediaId)? onCoverQueued;
-  final void Function(String message)? onUploadError;
+  final void Function(String courseId, String mediaId)? onCoverQueued;
+  final void Function(String courseId, String message)? onUploadError;
   final Future<CoverUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
     required Uri uploadUrl,
@@ -46,7 +46,12 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
   bool _uploading = false;
 
   Future<void> _pickAndUpload() async {
-    if (widget.courseId == null || widget.courseId!.isEmpty) {
+    final courseId = widget.courseId;
+    if (courseId == null || courseId.isEmpty) {
+      showSnack(
+        context,
+        'Spara kursen först för att kunna ladda upp kursbild.',
+      );
       return;
     }
 
@@ -69,7 +74,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
         _status = 'Ogiltig bildtyp.';
       });
       showSnack(context, message);
-      widget.onUploadError?.call(message);
+      widget.onUploadError?.call(courseId, message);
       return;
     }
 
@@ -87,7 +92,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
         filename: picked.name,
         mimeType: resolvedMime,
         sizeBytes: picked.size,
-        courseId: widget.courseId!,
+        courseId: courseId,
       );
 
       if (!mounted) return;
@@ -112,7 +117,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
         _uploading = false;
         _status = 'Uppladdad. Bearbetas...';
       });
-      widget.onCoverQueued?.call(upload.mediaId);
+      widget.onCoverQueued?.call(courseId, upload.mediaId);
     } catch (error, stackTrace) {
       final failure = AppFailure.from(error, stackTrace);
       if (!mounted) return;
@@ -122,7 +127,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
         _status = 'Uppladdning misslyckades.';
       });
       showSnack(context, failure.message);
-      widget.onUploadError?.call(failure.message);
+      widget.onUploadError?.call(courseId, failure.message);
     }
   }
 

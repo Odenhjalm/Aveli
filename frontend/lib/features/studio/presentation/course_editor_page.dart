@@ -257,6 +257,8 @@ class CourseEditorScreen extends ConsumerStatefulWidget {
 
 class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   static const _uuid = Uuid();
+  static const int _coverStatusMaxAttempts = 12;
+  static const Duration _coverStatusTimeout = Duration(minutes: 2);
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
@@ -275,6 +277,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   List<Map<String, dynamic>> _lessonMedia = <Map<String, dynamic>>[];
   bool _mediaLoading = false;
   String? _mediaStatus;
+  String? _modulesLoadError;
+  String? _lessonsLoadError;
+  String? _mediaLoadError;
   bool _downloadingMedia = false;
   String? _downloadStatus;
   bool _suppressNextMediaPreview = false;
@@ -312,9 +317,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _coverPipelineMediaId;
   String? _coverPipelineState;
   String? _coverPipelineError;
+  int _coverPollAttempts = 0;
+  DateTime? _coverPollStartedAt;
+  int _coverPollRequestId = 0;
+  int _coverActionRequestId = 0;
+  String? _coverActionCourseId;
   Timer? _coverPollTimer;
 
   ProviderSubscription<List<UploadJob>>? _uploadSubscription;
+  final Set<String> _lessonsNeedingRefresh = <String>{};
+  int _courseMetaRequestId = 0;
+  int _modulesRequestId = 0;
+  int _lessonsRequestId = 0;
+  int _lessonMediaRequestId = 0;
+  int _saveCourseRequestId = 0;
 
   Map<String, dynamic>? _quiz;
   final TextEditingController _qPrompt = TextEditingController();
@@ -333,6 +349,71 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final detail = failure.message.trim();
     final message = detail.isEmpty ? prefix : '$prefix: $detail';
     showSnack(context, message);
+  }
+
+  bool _isStaleRequest({
+    required int requestId,
+    required int currentId,
+    String? courseId,
+    String? moduleId,
+    String? lessonId,
+  }) {
+    // Discard async results if selection changed while the request was in-flight.
+    if (requestId != currentId) return true;
+    if (courseId != null && courseId != _selectedCourseId) return true;
+    if (moduleId != null && moduleId != _selectedModuleId) return true;
+    if (lessonId != null && lessonId != _selectedLessonId) return true;
+    return false;
+  }
+
+  void _resetCoverState({bool clearPreview = false}) {
+    _coverPollTimer?.cancel();
+    _coverPollTimer = null;
+    _coverPollAttempts = 0;
+    _coverPollStartedAt = null;
+    _coverPollRequestId = 0;
+    _coverActionRequestId += 1;
+    _coverActionCourseId = null;
+    _updatingCourseCover = false;
+    _coverPipelineMediaId = null;
+    _coverPipelineState = null;
+    _coverPipelineError = null;
+    if (clearPreview) {
+      _courseCoverPath = null;
+      _courseCoverPreviewUrl = null;
+    }
+  }
+
+  int _beginCoverAction({required String courseId}) {
+    _coverPollTimer?.cancel();
+    _coverPollTimer = null;
+    _coverPollAttempts = 0;
+    _coverPollStartedAt = null;
+    _coverActionRequestId += 1;
+    _coverActionCourseId = courseId;
+    return _coverActionRequestId;
+  }
+
+  void _resetCourseContext({bool clearLists = false}) {
+    _resetCoverState(clearPreview: true);
+    _modulesLoadError = null;
+    _lessonsLoadError = null;
+    _mediaLoadError = null;
+    _mediaStatus = null;
+    _downloadStatus = null;
+    _courseMetaLoading = false;
+    _modulesLoading = false;
+    _lessonsLoading = false;
+    _mediaLoading = false;
+    _lessonsNeedingRefresh.clear();
+    if (clearLists) {
+      _modules = <Map<String, dynamic>>[];
+      _selectedModuleId = null;
+      _lessons = <Map<String, dynamic>>[];
+      _selectedLessonId = null;
+      _lessonIntro = false;
+      _lessonMedia = <Map<String, dynamic>>[];
+    }
   }
 
   void _suppressMediaPreviewOnce() {
@@ -445,9 +526,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<void> _loadCourseMeta() async {
     final courseId = _selectedCourseId;
     if (courseId == null) return;
+    final requestId = ++_courseMetaRequestId;
     setState(() => _courseMetaLoading = true);
     try {
       final map = await _studioRepo.fetchCourseMeta(courseId) ?? {};
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _courseMetaRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
       _courseTitleCtrl.text = (map['title'] as String?) ?? '';
       _courseSlugCtrl.text = (map['slug'] as String?) ?? '';
       _courseDescCtrl.text = (map['description'] as String?) ?? '';
@@ -467,9 +556,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         });
       }
     } catch (e, stackTrace) {
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _courseMetaRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
       _showFriendlyErrorSnack('Kunde inte läsa kursmetadata', e, stackTrace);
     } finally {
-      if (mounted) setState(() => _courseMetaLoading = false);
+      if (mounted &&
+          !_isStaleRequest(
+            requestId: requestId,
+            currentId: _courseMetaRequestId,
+            courseId: courseId,
+          )) {
+        setState(() => _courseMetaLoading = false);
+      }
     }
   }
 
@@ -490,16 +593,31 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _coverPipelineState = null;
           _coverPipelineError = null;
           _updatingCourseCover = false;
+          _modulesLoadError = null;
+          _lessonsLoadError = null;
+          _mediaLoadError = null;
         });
         _coverPollTimer?.cancel();
         _coverPollTimer = null;
         _handleCoursePublishFieldsChanged();
       }
     } else {
-      if (mounted) setState(() => _modulesLoading = true);
+      final requestId = ++_modulesRequestId;
+      if (mounted) {
+        setState(() {
+          _modulesLoading = true;
+          _modulesLoadError = null;
+        });
+      }
       try {
         final list = await _studioRepo.listModules(courseId);
-        if (!mounted) return;
+        if (_isStaleRequest(
+          requestId: requestId,
+          currentId: _modulesRequestId,
+          courseId: courseId,
+        )) {
+          return;
+        }
         final listTyped = list;
         final modules = mergeResults
             ? _sortByPosition(_mergeById(_modules, listTyped))
@@ -513,6 +631,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() {
           _modules = modules;
           _selectedModuleId = selected;
+          _modulesLoadError = null;
         });
         _handleCoursePublishFieldsChanged();
         if (_selectedModuleId != null) {
@@ -527,19 +646,31 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _handleCoursePublishFieldsChanged();
         }
       } catch (e, stackTrace) {
-        if (!mounted) return;
-        setState(() {
-          _modules = <Map<String, dynamic>>[];
-          _selectedModuleId = null;
-          _lessons = <Map<String, dynamic>>[];
-          _selectedLessonId = null;
-          _lessonIntro = false;
-          _lessonMedia = <Map<String, dynamic>>[];
-        });
+        if (_isStaleRequest(
+          requestId: requestId,
+          currentId: _modulesRequestId,
+          courseId: courseId,
+        )) {
+          return;
+        }
+        final failure = AppFailure.from(e, stackTrace);
+        if (mounted) {
+          setState(
+            () =>
+                _modulesLoadError =
+                    'Kunde inte läsa moduler: ${failure.message}',
+          );
+        }
         _handleCoursePublishFieldsChanged();
-        _showFriendlyErrorSnack('Kunde inte läsa moduler', e, stackTrace);
       } finally {
-        if (mounted) setState(() => _modulesLoading = false);
+        if (mounted &&
+            !_isStaleRequest(
+              requestId: requestId,
+              currentId: _modulesRequestId,
+              courseId: courseId,
+            )) {
+          setState(() => _modulesLoading = false);
+        }
       }
     }
   }
@@ -553,6 +684,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _selectedLessonId = null;
           _lessonIntro = false;
           _lessonMedia = <Map<String, dynamic>>[];
+          _lessonsLoadError = null;
+          _mediaLoadError = null;
         });
         _handleCoursePublishFieldsChanged();
       }
@@ -563,10 +696,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ..addListener(_handleLessonTitleChanged);
       return;
     }
-    if (mounted) setState(() => _lessonsLoading = true);
+    final courseId = _selectedCourseId;
+    final requestId = ++_lessonsRequestId;
+    if (mounted) {
+      setState(() {
+        _lessonsLoading = true;
+        _lessonsLoadError = null;
+      });
+    }
     try {
       final list = await _studioRepo.listLessons(moduleId);
-      if (!mounted) return;
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _lessonsRequestId,
+        courseId: courseId,
+        moduleId: moduleId,
+      )) {
+        return;
+      }
       final lessons = mergeResults ? _sortByPosition(_mergeById(_lessons, list)) : list;
       final selected =
           preserveSelection &&
@@ -582,6 +729,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lessons = lessons;
         _selectedLessonId = selected;
         _lessonIntro = intro;
+        _lessonsLoadError = null;
       });
       _handleCoursePublishFieldsChanged();
       _applySelectedLesson();
@@ -591,24 +739,45 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() => _lessonMedia = <Map<String, dynamic>>[]);
       }
     } catch (e, stackTrace) {
-      if (!mounted) return;
-      setState(() {
-        _lessons = <Map<String, dynamic>>[];
-        _selectedLessonId = null;
-        _lessonIntro = false;
-        _lessonMedia = <Map<String, dynamic>>[];
-      });
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _lessonsRequestId,
+        courseId: courseId,
+        moduleId: moduleId,
+      )) {
+        return;
+      }
+      final failure = AppFailure.from(e, stackTrace);
+      if (mounted) {
+        setState(
+          () =>
+              _lessonsLoadError =
+                  'Kunde inte läsa lektioner: ${failure.message}',
+        );
+      }
       _handleCoursePublishFieldsChanged();
-      _showFriendlyErrorSnack('Kunde inte läsa lektioner', e, stackTrace);
     } finally {
-      if (mounted) setState(() => _lessonsLoading = false);
+      if (mounted &&
+          !_isStaleRequest(
+            requestId: requestId,
+            currentId: _lessonsRequestId,
+            courseId: courseId,
+            moduleId: moduleId,
+          )) {
+        setState(() => _lessonsLoading = false);
+      }
     }
   }
 
   Future<void> _loadLessonMedia() async {
     final lessonId = _selectedLessonId;
     if (lessonId == null) {
-      if (mounted) setState(() => _lessonMedia = <Map<String, dynamic>>[]);
+      if (mounted) {
+        setState(() {
+          _lessonMedia = <Map<String, dynamic>>[];
+          _mediaLoadError = null;
+        });
+      }
       _replaceLessonDocument(quill.Document(), resetDirty: true);
       _lessonTitleCtrl
         ..removeListener(_handleLessonTitleChanged)
@@ -616,19 +785,57 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ..addListener(_handleLessonTitleChanged);
       return;
     }
-    if (mounted) setState(() => _mediaLoading = true);
+    final courseId = _selectedCourseId;
+    final requestId = ++_lessonMediaRequestId;
+    if (mounted) {
+      setState(() {
+        _mediaLoading = true;
+        _mediaLoadError = null;
+      });
+    }
     try {
       final media = await _studioRepo.listLessonMedia(lessonId);
-      if (!mounted) return;
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _lessonMediaRequestId,
+        courseId: courseId,
+        lessonId: lessonId,
+      )) {
+        return;
+      }
       setState(() {
         _lessonMedia = media;
+        _mediaLoadError = null;
+        if (_lessonsNeedingRefresh.remove(lessonId)) {
+          _mediaStatus = 'Media uppdaterad för lektionen.';
+        }
       });
     } catch (e, stackTrace) {
-      if (!mounted) return;
-      setState(() => _lessonMedia = <Map<String, dynamic>>[]);
-      _showFriendlyErrorSnack('Kunde inte läsa media', e, stackTrace);
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _lessonMediaRequestId,
+        courseId: courseId,
+        lessonId: lessonId,
+      )) {
+        return;
+      }
+      final failure = AppFailure.from(e, stackTrace);
+      if (mounted) {
+        setState(
+          () =>
+              _mediaLoadError = 'Kunde inte läsa media: ${failure.message}',
+        );
+      }
     } finally {
-      if (mounted) setState(() => _mediaLoading = false);
+      if (mounted &&
+          !_isStaleRequest(
+            requestId: requestId,
+            currentId: _lessonMediaRequestId,
+            courseId: courseId,
+            lessonId: lessonId,
+          )) {
+        setState(() => _mediaLoading = false);
+      }
     }
   }
 
@@ -1211,8 +1418,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           CoverUploadCard(
             courseId: _selectedCourseId,
             onCoverQueued: _queueCoverUpload,
-            onUploadError: (message) {
-              if (!mounted) return;
+            onUploadError: (courseId, message) {
+              if (!mounted || _selectedCourseId != courseId) return;
               setState(() {
                 _coverPipelineError = message;
                 _updatingCourseCover = false;
@@ -2130,30 +2337,83 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _queueCoverUpload(String mediaId) {
+  void _queueCoverUpload(String courseId, String mediaId) {
     if (!mounted) return;
+    if (courseId.isEmpty) {
+      if (context.mounted) {
+        showSnack(
+          context,
+          'Spara kursen först för att kunna ladda upp kursbild.',
+        );
+      }
+      return;
+    }
+    if (_selectedCourseId != courseId) {
+      return;
+    }
+    final requestId = _beginCoverAction(courseId: courseId);
     setState(() {
       _coverPipelineMediaId = mediaId;
       _coverPipelineState = 'uploaded';
       _coverPipelineError = null;
       _updatingCourseCover = true;
     });
-    _startCoverPolling(mediaId);
+    _startCoverPolling(mediaId, requestId: requestId);
   }
 
-  void _startCoverPolling(String mediaId) {
+  void _startCoverPolling(String mediaId, {required int requestId}) {
     _coverPollTimer?.cancel();
+    _coverPollAttempts = 0;
+    _coverPollStartedAt = DateTime.now();
+    _coverPollRequestId = requestId;
     _coverPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _pollCoverStatus(mediaId);
+      _pollCoverStatus(mediaId, requestId: requestId);
     });
-    _pollCoverStatus(mediaId);
+    _pollCoverStatus(mediaId, requestId: requestId);
   }
 
-  Future<void> _pollCoverStatus(String mediaId) async {
+  void _endCoverPollingWithError(String message, {required int requestId}) {
+    if (_coverPollRequestId != requestId) return;
+    _coverPollTimer?.cancel();
+    _coverPollTimer = null;
+    if (!mounted) return;
+    setState(() {
+      _updatingCourseCover = false;
+      _coverPipelineState = 'failed';
+      _coverPipelineError = message;
+    });
+  }
+
+  Future<void> _pollCoverStatus(
+    String mediaId, {
+    required int requestId,
+  }) async {
+    if (_coverPollRequestId != requestId) return;
+    if (_coverPollAttempts >= _coverStatusMaxAttempts) {
+      _endCoverPollingWithError(
+        'Bearbetningen tog för lång tid. Försök igen.',
+        requestId: requestId,
+      );
+      return;
+    }
+    final startedAt = _coverPollStartedAt;
+    if (startedAt != null &&
+        DateTime.now().difference(startedAt) > _coverStatusTimeout) {
+      _endCoverPollingWithError(
+        'Bearbetningen tog för lång tid. Försök igen.',
+        requestId: requestId,
+      );
+      return;
+    }
+    _coverPollAttempts += 1;
     try {
       final repo = ref.read(mediaPipelineRepositoryProvider);
       final status = await repo.fetchStatus(mediaId);
-      if (!mounted) return;
+      if (!mounted || _coverPollRequestId != requestId) return;
+      if (_coverActionCourseId != null &&
+          _coverActionCourseId != _selectedCourseId) {
+        return;
+      }
       setState(() {
         _coverPipelineState = status.state;
         _coverPipelineError = status.errorMessage;
@@ -2176,10 +2436,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         }
       }
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _coverPipelineError = e.toString();
-      });
+      _endCoverPollingWithError(
+        'Kunde inte hämta status för kursbilden. Försök igen.',
+        requestId: requestId,
+      );
     }
   }
 
@@ -2197,7 +2457,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
+    final lessonId = _selectedLessonId;
+    if (lessonId == null) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Välj en lektion innan du anger kursbild.');
+      }
+      return;
+    }
+    final mediaLessonId = media['lesson_id'];
+    if (mediaLessonId is String && mediaLessonId != lessonId) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Bilden tillhör en annan lektion.');
+      }
+      return;
+    }
+    final mediaCourseId = media['course_id'];
+    if (mediaCourseId is String && mediaCourseId != courseId) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Bilden tillhör en annan kurs.');
+      }
+      return;
+    }
 
+    final requestId = _beginCoverAction(courseId: courseId);
     final previousPath = _courseCoverPath;
     final previousPreview = _courseCoverPreviewUrl;
     final previousPipelineId = _coverPipelineMediaId;
@@ -2228,18 +2510,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         courseId: courseId,
         lessonMediaId: media['id'] as String,
       );
-      if (!mounted) return;
+      if (!mounted ||
+          _coverActionRequestId != requestId ||
+          _selectedCourseId != courseId) {
+        return;
+      }
       setState(() {
         _coverPipelineMediaId = response.mediaId;
         _coverPipelineState = response.state;
       });
-      _startCoverPolling(response.mediaId);
+      _startCoverPolling(response.mediaId, requestId: requestId);
       if (context.mounted) {
         showSnack(context, 'Kursbilden bearbetas…');
       }
     } catch (e, stackTrace) {
       final failure = AppFailure.from(e, stackTrace);
       if (!mounted) return;
+      if (_coverActionRequestId != requestId ||
+          _selectedCourseId != courseId) {
+        return;
+      }
       setState(() {
         _updatingCourseCover = false;
         _coverPipelineMediaId = previousPipelineId;
@@ -2256,6 +2546,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_updatingCourseCover) return;
     final courseId = _selectedCourseId;
     if (courseId == null) return;
+    var resumePolling = false;
 
     final previousPath = _courseCoverPath;
     final previousPreview = _courseCoverPreviewUrl;
@@ -2297,11 +2588,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           previousState != null &&
           previousState != 'ready' &&
           previousState != 'failed') {
-        _startCoverPolling(previousMediaId);
+        resumePolling = true;
+        final requestId = _beginCoverAction(courseId: courseId);
+        setState(() => _updatingCourseCover = true);
+        _startCoverPolling(previousMediaId, requestId: requestId);
       }
       _showFriendlyErrorSnack('Kunde inte uppdatera kursbild', e, stackTrace);
     } finally {
-      if (mounted) {
+      if (mounted && !resumePolling) {
         setState(() => _updatingCourseCover = false);
       }
     }
@@ -2310,33 +2604,49 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _onUploadQueueChanged(List<UploadJob>? previous, List<UploadJob> next) {
     if (!mounted) return;
     final lessonId = _selectedLessonId;
-    if (lessonId == null) return;
-
-    for (final job in next.where((job) => job.lessonId == lessonId)) {
+    for (final job in next) {
       final old = _findJob(previous, job.id);
       if (job.status == UploadJobStatus.success &&
           old?.status != UploadJobStatus.success) {
-        unawaited(_afterUploadSuccess(job));
+        if (lessonId != null && job.lessonId == lessonId) {
+          unawaited(_afterUploadSuccess(job));
+        } else {
+          _lessonsNeedingRefresh.add(job.lessonId);
+          if (context.mounted) {
+            showSnack(
+              context,
+              'Media uppladdad i en annan lektion. Byt lektion för att uppdatera.',
+            );
+          }
+        }
       } else if (job.status == UploadJobStatus.failed &&
           old?.status != UploadJobStatus.failed) {
-        final detail = job.error?.trim();
-        final suffix = detail == null || detail.isEmpty ? '' : ' ($detail)';
-        if (context.mounted) {
-          showSnack(
-            context,
-            'Uppladdning misslyckades: ${job.filename}$suffix',
+        if (lessonId != null && job.lessonId == lessonId) {
+          final detail = job.error?.trim();
+          final suffix = detail == null || detail.isEmpty ? '' : ' ($detail)';
+          if (context.mounted) {
+            showSnack(
+              context,
+              'Uppladdning misslyckades: ${job.filename}$suffix',
+            );
+          }
+          setState(
+            () =>
+                _mediaStatus =
+                    'Uppladdning misslyckades: ${job.filename}$suffix',
           );
+        } else {
+          _lessonsNeedingRefresh.add(job.lessonId);
         }
-        setState(
-          () =>
-              _mediaStatus =
-                  'Uppladdning misslyckades: ${job.filename}$suffix',
-        );
       }
     }
   }
 
   Future<void> _afterUploadSuccess(UploadJob job) async {
+    if (job.lessonId != _selectedLessonId) {
+      _lessonsNeedingRefresh.add(job.lessonId);
+      return;
+    }
     // Refresh media list first
     await _loadLessonMedia();
     if (!mounted) return;
@@ -2988,9 +3298,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       patch['slug'] = slug;
     }
 
+    final requestId = ++_saveCourseRequestId;
     setState(() => _savingCourseMeta = true);
     try {
       final updated = await _studioRepo.updateCourse(courseId, patch);
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _saveCourseRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
       final map = Map<String, dynamic>.from(updated);
       setState(() {
         _courses = _courses
@@ -3005,6 +3323,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Kursinformation sparad.');
     } catch (e, stackTrace) {
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _saveCourseRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
       _showFriendlyErrorSnack('Kunde inte spara kurs', e, stackTrace);
     } finally {
       if (mounted) setState(() => _savingCourseMeta = false);
@@ -3057,6 +3382,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) return;
       final row = Map<String, dynamic>.from(inserted);
       setState(() {
+        _resetCourseContext(clearLists: true);
         _courses = <Map<String, dynamic>>[row, ..._courses];
         _selectedCourseId = row['id'] as String;
         final coverPath = (row['cover_url'] as String?)?.trim();
@@ -3296,14 +3622,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 if (value == _selectedCourseId) return;
                 final canSwitch = await _maybeSaveLessonEdits();
                 if (!canSwitch || !mounted) return;
-                _coverPollTimer?.cancel();
-                _coverPollTimer = null;
                 setState(() {
+                  _resetCourseContext(clearLists: true);
                   _selectedCourseId = value;
-                  _coverPipelineMediaId = null;
-                  _coverPipelineState = null;
-                  _coverPipelineError = null;
-                  _updatingCourseCover = false;
                 });
                 await _loadCourseMeta();
                 await _loadModules(preserveSelection: false);
@@ -3410,6 +3731,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (_modulesLoadError != null) ...[
+                        Text(
+                          _modulesLoadError!,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        ),
+                        TextButton(
+                          onPressed: _modulesLoading
+                              ? null
+                              : () => _loadModules(
+                                    preserveSelection: true,
+                                    mergeResults: true,
+                                  ),
+                          child: const Text('Försök igen'),
+                        ),
+                        gap8,
+                      ],
                       if (_modulesLoading)
                         const Padding(
                           padding: EdgeInsets.all(12),
@@ -3475,6 +3814,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           ],
                         ),
                         gap12,
+                        if (_lessonsLoadError != null) ...[
+                          Text(
+                            _lessonsLoadError!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                          ),
+                          TextButton(
+                            onPressed: _lessonsLoading
+                                ? null
+                                : () => _loadLessons(
+                                      preserveSelection: true,
+                                      mergeResults: true,
+                                    ),
+                            child: const Text('Försök igen'),
+                          ),
+                          gap8,
+                        ],
                         if (_lessonsLoading)
                           const Padding(
                             padding: EdgeInsets.all(12),
@@ -3504,6 +3864,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     if (value == _selectedLessonId) return;
                                     final canSwitch = await _maybeSaveLessonEdits();
                                     if (!canSwitch || !mounted) return;
+                                    final needsRefresh =
+                                        value != null &&
+                                        _lessonsNeedingRefresh.remove(value);
                                     setState(() {
                                       _selectedLessonId = value;
                                       final match = _lessonById(value);
@@ -3511,6 +3874,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     });
                                     _applySelectedLesson();
                                     await _loadLessonMedia();
+                                    if (needsRefresh && mounted) {
+                                      setState(
+                                        () =>
+                                            _mediaStatus =
+                                                'Media uppdaterad för lektionen.',
+                                      );
+                                    }
                                   },
                                   decoration: const InputDecoration(
                                     hintText: 'Välj lektion',
@@ -3600,6 +3970,25 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         context,
                                       ).colorScheme.secondary,
                                     ),
+                              ),
+                            ],
+                            if (_mediaLoadError != null) ...[
+                              gap8,
+                              Text(
+                                _mediaLoadError!,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                    ),
+                              ),
+                              TextButton(
+                                onPressed: _mediaLoading
+                                    ? null
+                                    : () => _loadLessonMedia(),
+                                child: const Text('Försök igen'),
                               ),
                             ],
                             if (_selectedLessonId != null) ...[
