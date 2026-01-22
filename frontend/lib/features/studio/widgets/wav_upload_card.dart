@@ -15,6 +15,8 @@ class WavUploadCard extends ConsumerStatefulWidget {
     required this.courseId,
     required this.lessonId,
     this.onMediaUpdated,
+    this.existingMediaState,
+    this.existingFileName,
     this.pickFileOverride,
     this.uploadFileOverride,
     this.pollInterval = const Duration(seconds: 5),
@@ -23,6 +25,8 @@ class WavUploadCard extends ConsumerStatefulWidget {
   final String? courseId;
   final String? lessonId;
   final Future<void> Function()? onMediaUpdated;
+  final String? existingMediaState;
+  final String? existingFileName;
   final Future<WavUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
     required Uri uploadUrl,
@@ -108,7 +112,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = 'Studiomaster uppladdad. Bearbetas till MP3…';
+        _status = 'Studiomaster bearbetas till MP3…';
         _mediaState = 'uploaded';
       });
       await widget.onMediaUpdated?.call();
@@ -159,11 +163,11 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   String _statusLabel(String state) {
     switch (state) {
       case 'uploaded':
-        return 'Studiomaster uppladdad. Bearbetas till MP3…';
+        return 'Studiomaster bearbetas till MP3…';
       case 'processing':
-        return 'Bearbetas till MP3…';
+        return 'Studiomaster bearbetas till MP3…';
       case 'ready':
-        return 'MP3 klar för uppspelning.';
+        return 'MP3 klar';
       case 'failed':
         return 'Bearbetningen misslyckades.';
       default:
@@ -179,33 +183,60 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       color: Colors.white70,
     );
     final progressVisible = _uploading && _progress > 0;
-    final buttonLabel = _selectedFile == null
-        ? 'Ladda upp studiomaster (WAV)'
-        : 'Byt studiomaster (WAV)';
-    final disabledTextStyle = theme.textTheme.bodySmall?.copyWith(
-      color: theme.disabledColor,
-      fontWeight: FontWeight.w500,
-    );
-    final uploadControl = canUpload
-        ? TextButton.icon(
-            onPressed: _uploading ? null : _pickAndUpload,
-            icon: const Icon(Icons.upload_file),
-            label: Text(buttonLabel),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              textStyle: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.upload_file, size: 18, color: theme.disabledColor),
-              const SizedBox(width: 8),
-              Text(buttonLabel, style: disabledTextStyle),
-            ],
-          );
+    final effectiveState = _mediaState ?? widget.existingMediaState;
+    final isProcessingState =
+        effectiveState == 'uploaded' || effectiveState == 'processing';
+    final isReadyState = effectiveState == 'ready';
+    final isFailedState = effectiveState == 'failed';
+    final showProcessingState = _uploading || isProcessingState;
+    final showReadyState = !showProcessingState && (isReadyState || isFailedState);
+    final showUploadAction = !showProcessingState && !showReadyState;
+    final showReplaceAction = showReadyState;
+    final displayFileName = _selectedFile?.name ?? widget.existingFileName;
+
+    String? statusText;
+    if (_uploading) {
+      statusText = _status ?? (effectiveState != null
+          ? _statusLabel(effectiveState)
+          : null);
+    } else if (effectiveState != null) {
+      statusText = _statusLabel(effectiveState);
+    } else {
+      statusText = _status;
+    }
+    if (statusText == null && showProcessingState) {
+      statusText = 'Studiomaster bearbetas till MP3…';
+    }
+
+    Widget? actionButton;
+    if (showUploadAction) {
+      actionButton = ElevatedButton.icon(
+        onPressed: canUpload && !_uploading ? _pickAndUpload : null,
+        icon: const Icon(Icons.upload_file),
+        label: const Text('Ladda upp studiomaster (WAV)'),
+      );
+    } else if (showReplaceAction) {
+      actionButton = OutlinedButton.icon(
+        onPressed: canUpload && !_uploading ? _pickAndUpload : null,
+        icon: const Icon(Icons.sync),
+        label: const Text('Ersätt studiomaster (WAV)'),
+      );
+    }
+
+    final actionRowChildren = <Widget>[
+      if (actionButton != null) actionButton,
+      if (displayFileName != null) ...[
+        if (actionButton != null) const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            displayFileName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ],
+    ];
 
     return Card(
       child: Padding(
@@ -222,23 +253,10 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
               'WAV laddas upp som studiomaster och processas automatiskt till MP3 innan uppspelning.',
               style: warningStyle,
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                uploadControl,
-                if (_selectedFile != null) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _selectedFile!.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            if (actionRowChildren.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(children: actionRowChildren),
+            ],
             if (progressVisible) ...[
               const SizedBox(height: 12),
               LinearProgressIndicator(value: _progress),
@@ -247,15 +265,18 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
               const SizedBox(height: 12),
               Text(_lessonRequiredText, style: warningStyle),
             ],
-            if (canUpload && _status != null) ...[
+            if (canUpload && statusText != null) ...[
               const SizedBox(height: 12),
-              Text(_status!, style: theme.textTheme.bodySmall),
+              Text(
+                statusText,
+                style: theme.textTheme.bodySmall,
+              ),
             ],
-            if (canUpload && _mediaState != null && _mediaId != null) ...[
+            if (canUpload && showProcessingState) ...[
               const SizedBox(height: 4),
               Text(
-                'Status: $_mediaState',
-                style: theme.textTheme.labelSmall,
+                'Du kan ladda upp en ny WAV när bearbetningen är klar.',
+                style: warningStyle,
               ),
             ],
             if (canUpload && _error != null && _error!.isNotEmpty) ...[

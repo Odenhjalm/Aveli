@@ -2059,6 +2059,42 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return isWavSource;
   }
 
+  Map<String, dynamic>? _latestWavSourceMedia(
+    List<Map<String, dynamic>> mediaItems,
+  ) {
+    Map<String, dynamic>? candidate;
+    DateTime? newestTime;
+    for (final media in mediaItems) {
+      final ingestFormat =
+          (media['ingest_format'] as String?)?.toLowerCase().trim();
+      final contentType =
+          (media['content_type'] as String?)?.toLowerCase().trim() ?? '';
+      final originalName =
+          (media['original_name'] as String?)?.toLowerCase().trim();
+      final isWavSource =
+          ingestFormat == 'wav' ||
+          contentType == 'audio/wav' ||
+          contentType == 'audio/x-wav' ||
+          (originalName != null && originalName.endsWith('.wav'));
+      if (!isWavSource) continue;
+
+      candidate ??= media;
+      final created = media['created_at'];
+      DateTime? parsed;
+      if (created is DateTime) {
+        parsed = created;
+      } else if (created is String) {
+        parsed = DateTime.tryParse(created);
+      }
+      if (parsed == null) continue;
+      if (newestTime == null || parsed.isAfter(newestTime)) {
+        newestTime = parsed;
+        candidate = media;
+      }
+    }
+    return candidate;
+  }
+
   void _patchLessonMedia(String mediaId, Map<String, dynamic> patch) {
     final index = _lessonMedia.indexWhere((item) => item['id'] == mediaId);
     if (index < 0) return;
@@ -3653,6 +3689,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final selectedLesson = _lessonById(_selectedLessonId);
     final wavLessonId = selectedLesson?['id'] as String?;
     final wavCourseId = selectedLesson?['course_id'] as String?;
+    final wavMedia = _latestWavSourceMedia(_lessonMedia);
+    final wavMediaState = wavMedia == null ? null : _pipelineState(wavMedia);
+    final wavFileName = wavMedia == null ? null : _fileNameFromMedia(wavMedia);
 
     final lessonVideoPreview = _buildLessonVideoPreview(context);
 
@@ -4092,6 +4131,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 // Lesson is the source of truth for course_id.
                                 courseId: wavCourseId,
                                 lessonId: wavLessonId,
+                                existingMediaState: wavMediaState,
+                                existingFileName: wavFileName,
                                 onMediaUpdated: _loadLessonMedia,
                               ),
                             ],

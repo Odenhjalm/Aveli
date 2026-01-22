@@ -73,6 +73,7 @@ void main() {
       mediaId: 'media-1',
       uploadUrl: Uri.parse('https://storage.test/upload'),
       objectPath: 'media/source/audio/demo.wav',
+      headers: const {},
       expiresAt: DateTime.now().toUtc(),
     );
     final repo = _FakeMediaPipelineRepository(
@@ -128,5 +129,67 @@ void main() {
 
     uploadCompleter.complete();
     await tester.pump();
+  });
+
+  testWidgets('shows upload action only when no WAV exists', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: WavUploadCard(
+              courseId: 'course-1',
+              lessonId: 'lesson-1',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Ladda upp studiomaster (WAV)'), findsOneWidget);
+    expect(find.text('Ersätt studiomaster (WAV)'), findsNothing);
+    expect(find.text('Studiomaster bearbetas till MP3…'), findsNothing);
+  });
+
+  testWidgets('shows processing status when WAV is processing', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: WavUploadCard(
+              courseId: 'course-1',
+              lessonId: 'lesson-1',
+              existingMediaState: 'processing',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Studiomaster bearbetas till MP3…'), findsOneWidget);
+    expect(
+      find.text('Du kan ladda upp en ny WAV när bearbetningen är klar.'),
+      findsOneWidget,
+    );
+    expect(find.text('Ladda upp studiomaster (WAV)'), findsNothing);
+  });
+
+  testWidgets('shows replace action only when WAV is ready', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: WavUploadCard(
+              courseId: 'course-1',
+              lessonId: 'lesson-1',
+              existingMediaState: 'ready',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('MP3 klar'), findsOneWidget);
+    expect(find.text('Ersätt studiomaster (WAV)'), findsOneWidget);
+    expect(find.text('Ladda upp studiomaster (WAV)'), findsNothing);
   });
 }
