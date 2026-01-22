@@ -38,6 +38,8 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
     'image/png',
     'image/webp',
   };
+  static const Color _bodyTextColor = Colors.black;
+  static const Color _secondaryTextColor = Color(0xFF4A4A4A);
 
   CoverUploadFile? _selectedFile;
   double _progress = 0.0;
@@ -145,6 +147,12 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
     final canUpload = courseReady && !_uploading;
     final theme = Theme.of(context);
     final progressVisible = _uploading && _progress > 0;
+    final titleStyle =
+        theme.textTheme.titleMedium?.copyWith(color: Colors.white);
+    final bodyStyle =
+        theme.textTheme.bodySmall?.copyWith(color: _bodyTextColor);
+    final secondaryStyle =
+        theme.textTheme.bodySmall?.copyWith(color: _secondaryTextColor);
 
     return Card(
       child: Padding(
@@ -154,14 +162,12 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
           children: [
             Text(
               'Kursbild (JPG/PNG/WebP)',
-              style: theme.textTheme.titleMedium,
+              style: titleStyle,
             ),
             const SizedBox(height: 8),
             Text(
               'Bilden bearbetas och publiceras automatiskt.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: Colors.white70,
-              ),
+              style: bodyStyle,
             ),
             const SizedBox(height: 12),
             Row(
@@ -180,7 +186,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
                       _selectedFile!.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
+                      style: secondaryStyle,
                     ),
                   ),
                 ],
@@ -190,9 +196,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
               const SizedBox(height: 8),
               Text(
                 'Spara kursen först för att kunna ladda upp kursbild.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white70,
-                ),
+                style: secondaryStyle,
               ),
             ],
             if (progressVisible) ...[
@@ -201,7 +205,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
             ],
             if (_status != null) ...[
               const SizedBox(height: 12),
-              Text(_status!, style: theme.textTheme.bodySmall),
+              Text(_status!, style: bodyStyle),
             ],
             if (_error != null && _error!.isNotEmpty) ...[
               const SizedBox(height: 6),

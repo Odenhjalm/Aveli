@@ -1320,6 +1320,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Widget _buildCourseCoverPicker(BuildContext context) {
     final theme = Theme.of(context);
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: Colors.white,
+    );
+    final bodyStyle =
+        theme.textTheme.bodySmall?.copyWith(color: Colors.black);
     final hasCover =
         _courseCoverPreviewUrl != null && _courseCoverPreviewUrl!.isNotEmpty;
     final status = _coverPipelineState;
@@ -1330,9 +1336,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       children: [
         Text(
           'Kursbild',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: titleStyle,
         ),
         const SizedBox(height: 8),
         ClipRRect(
@@ -1420,7 +1424,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
         if (statusText != null) ...[
           const SizedBox(height: 6),
-          Text(statusText, style: theme.textTheme.bodySmall),
+          Text(statusText, style: bodyStyle),
         ],
         if (_coverPipelineError != null && _coverPipelineError!.isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -4073,7 +4077,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                   child: Text(
                                     'Använd ikonerna i verktygsfältet ovan för att ladda upp bild, video eller ljud. Dokument (PDF) kan laddas upp via knappen med dokumentikonen.',
                                     style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(color: Colors.white70),
+                                        ?.copyWith(color: Colors.black),
                                   ),
                                 );
                               },

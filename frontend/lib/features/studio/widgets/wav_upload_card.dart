@@ -43,6 +43,8 @@ class WavUploadCard extends ConsumerStatefulWidget {
 class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   static const _lessonRequiredText =
       'Spara lektionen för att kunna ladda upp ljud.';
+  static const Color _bodyTextColor = Colors.black;
+  static const Color _secondaryTextColor = Color(0xFF4A4A4A);
   WavUploadFile? _selectedFile;
   double _progress = 0.0;
   String? _status;
@@ -179,9 +181,12 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   Widget build(BuildContext context) {
     final canUpload = widget.courseId != null && widget.lessonId != null;
     final theme = Theme.of(context);
-    final warningStyle = theme.textTheme.bodySmall?.copyWith(
-      color: Colors.white70,
-    );
+    final titleStyle =
+        theme.textTheme.titleMedium?.copyWith(color: Colors.white);
+    final bodyStyle =
+        theme.textTheme.bodySmall?.copyWith(color: _bodyTextColor);
+    final secondaryStyle =
+        theme.textTheme.bodySmall?.copyWith(color: _secondaryTextColor);
     final progressVisible = _uploading && _progress > 0;
     final effectiveState = _mediaState ?? widget.existingMediaState;
     final isProcessingState =
@@ -232,7 +237,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
             displayFileName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall,
+            style: secondaryStyle,
           ),
         ),
       ],
@@ -246,12 +251,12 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
           children: [
             Text(
               'WAV-uppladdning (studiomaster)',
-              style: theme.textTheme.titleMedium,
+              style: titleStyle,
             ),
             const SizedBox(height: 8),
             Text(
               'WAV laddas upp som studiomaster och processas automatiskt till MP3 innan uppspelning.',
-              style: warningStyle,
+              style: bodyStyle,
             ),
             if (actionRowChildren.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -263,20 +268,20 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
             ],
             if (!canUpload) ...[
               const SizedBox(height: 12),
-              Text(_lessonRequiredText, style: warningStyle),
+              Text(_lessonRequiredText, style: secondaryStyle),
             ],
             if (canUpload && statusText != null) ...[
               const SizedBox(height: 12),
               Text(
                 statusText,
-                style: theme.textTheme.bodySmall,
+                style: bodyStyle,
               ),
             ],
             if (canUpload && showProcessingState) ...[
               const SizedBox(height: 4),
               Text(
                 'Du kan ladda upp en ny WAV när bearbetningen är klar.',
-                style: warningStyle,
+                style: secondaryStyle,
               ),
             ],
             if (canUpload && _error != null && _error!.isNotEmpty) ...[
