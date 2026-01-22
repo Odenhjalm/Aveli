@@ -259,6 +259,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   static const _uuid = Uuid();
   static const int _coverStatusMaxAttempts = 12;
   static const Duration _coverStatusTimeout = Duration(minutes: 2);
+  static const Set<String> _publicStorageBuckets = <String>{
+    'public-media',
+    'users',
+    'avatars',
+    'hero',
+    'logos',
+  };
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
@@ -426,6 +433,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _handleMediaPreviewTap(Map<String, dynamic> media) {
     if (_suppressNextMediaPreview) {
       _suppressNextMediaPreview = false;
+      return;
+    }
+    if (_isWavMedia(media)) {
       return;
     }
     _previewMedia(media);
@@ -1455,11 +1465,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final media = video;
     if (media == null) return null;
-    final url = _resolveMediaUrl(
-      _mediaUrl(media) ??
-          (media['url'] as String?) ??
-          (media['storage_path'] as String?),
-    );
+    final url = _resolveMediaDisplayUrl(media);
     if (url == null) return null;
     final label = media['title'] as String? ?? _fileNameFromMedia(media);
     final isIntro =
@@ -1982,6 +1988,73 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  bool _isPublicBucket(String? bucket) {
+    if (bucket == null) return false;
+    final normalized = bucket.trim();
+    if (normalized.isEmpty) return false;
+    return _publicStorageBuckets.contains(normalized);
+  }
+
+  String? _publicDownloadPathForMedia(Map<String, dynamic> media) {
+    final rawPath = (media['storage_path'] as String?)?.trim();
+    if (rawPath == null || rawPath.isEmpty) return null;
+    final normalized = rawPath.replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
+    if (normalized.isEmpty) return null;
+
+    var bucket = (media['storage_bucket'] as String?)?.trim();
+    if (bucket == null || bucket.isEmpty) {
+      final parts = normalized.split('/');
+      if (parts.isNotEmpty) {
+        bucket = parts.first;
+      }
+    }
+    if (!_isPublicBucket(bucket)) return null;
+
+    final pathWithBucket = normalized.startsWith('$bucket/')
+        ? normalized
+        : '$bucket/$normalized';
+    return '/api/files/$pathWithBucket';
+  }
+
+  String? _resolveMediaDisplayUrl(Map<String, dynamic> media) {
+    final direct = _mediaUrl(media);
+    if (direct != null && direct.isNotEmpty) {
+      return _resolveMediaUrl(direct);
+    }
+    final rawUrl = media['url'];
+    if (rawUrl is String && rawUrl.trim().isNotEmpty) {
+      return _resolveMediaUrl(rawUrl.trim());
+    }
+    final publicPath = _publicDownloadPathForMedia(media);
+    if (publicPath != null) {
+      return _resolveMediaUrl(publicPath);
+    }
+    return null;
+  }
+
+  bool _isWavMedia(Map<String, dynamic> media) {
+    final ingestFormat =
+        (media['ingest_format'] as String?)?.toLowerCase().trim();
+    if (ingestFormat == 'wav') return true;
+    final contentType =
+        (media['content_type'] as String?)?.toLowerCase().trim() ?? '';
+    if (contentType == 'audio/wav' || contentType == 'audio/x-wav') {
+      return true;
+    }
+    final originalName =
+        (media['original_name'] as String?)?.toLowerCase().trim();
+    if (originalName != null && originalName.endsWith('.wav')) {
+      return true;
+    }
+    if (_isPipelineMedia(media)) {
+      final kind = (media['kind'] as String?) ?? '';
+      if (kind == 'audio' || contentType.startsWith('audio/')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _patchLessonMedia(String mediaId, Map<String, dynamic> patch) {
     final index = _lessonMedia.indexWhere((item) => item['id'] == mediaId);
     if (index < 0) return;
@@ -2045,8 +2118,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             _lessonMedia = [..._lessonMedia, media];
           }
         });
-        final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
-        final resolved = _resolveMediaUrl(download);
+        final resolved = _resolveMediaDisplayUrl(media);
         if (resolved == null) {
           if (mounted) {
             setState(
@@ -2273,7 +2345,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     Map<String, dynamic> media, {
     bool showSaveHint = true,
   }) {
-    if (_isPipelineMedia(media)) {
+    if (_isWavMedia(media)) {
       if (mounted && context.mounted) {
         showSnack(
           context,
@@ -2283,8 +2355,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final kind = (media['kind'] as String?) ?? '';
-    final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
-    final resolved = _resolveMediaUrl(download);
+    final resolved = _resolveMediaDisplayUrl(media);
     if (resolved == null) {
       if (mounted && context.mounted) {
         showSnack(context, 'Kunde inte resolveda sökvägen för media.');
@@ -2899,6 +2970,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _downloadMedia(Map<String, dynamic> media) async {
     if (_downloadingMedia) return;
+    if (_isWavMedia(media)) {
+      return;
+    }
     final name = _fileNameFromMedia(media);
     if (_isPipelineMedia(media)) {
       final state = _pipelineState(media);
@@ -2928,7 +3002,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     if (kIsWeb) {
-      final resolved = _resolveMediaUrl(_mediaUrl(media));
+      final resolved = _resolveMediaDisplayUrl(media);
       if (resolved == null) {
         if (mounted) {
           setState(
@@ -3087,6 +3161,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _previewMedia(Map<String, dynamic> media) async {
     final kind = media['kind'] as String? ?? 'other';
+    if (_isWavMedia(media)) {
+      return;
+    }
     if (_isPipelineMedia(media)) {
       final state = _pipelineState(media);
       if (state != 'ready') {
@@ -3119,7 +3196,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
       return;
     }
-    final url = _resolveMediaUrl(_mediaUrl(media));
+    final url = _resolveMediaDisplayUrl(media);
     if (!mounted) return;
     if (kind == 'image' && url != null) {
       await showDialog<void>(
@@ -4047,11 +4124,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     final position =
                                         media['position'] as int? ?? index + 1;
                                     final isPipeline = _isPipelineMedia(media);
+                                    final isWavMedia = _isWavMedia(media);
                                     final pipelineState =
                                         isPipeline ? _pipelineState(media) : null;
-                                    final downloadUrl = _resolveMediaUrl(
-                                      _mediaUrl(media),
-                                    );
+                                    final downloadUrl = isWavMedia
+                                        ? null
+                                        : _resolveMediaDisplayUrl(media);
                                     final fileName = _fileNameFromMedia(media);
 
                                     Widget leading;
@@ -4100,8 +4178,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       padding: const EdgeInsets.only(bottom: 8),
                                       child: Card(
                                         child: ListTile(
-                                          onTap: () =>
-                                              _handleMediaPreviewTap(media),
+                                          onTap: isWavMedia
+                                              ? null
+                                              : () => _handleMediaPreviewTap(
+                                                    media,
+                                                  ),
                                           leading: SizedBox(
                                             width: 64,
                                             child: Center(child: leading),
@@ -4139,7 +4220,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   context,
                                                 ).textTheme.labelSmall,
                                               ),
-                                              if (pipelineState != null)
+                                              if (isWavMedia)
+                                                Text(
+                                                  'Bearbetas – ljudet blir tillgängligt när konverteringen är klar',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.labelSmall,
+                                                )
+                                              else if (pipelineState != null)
                                                 Text(
                                                   _pipelineLabel(pipelineState),
                                                   style: Theme.of(
@@ -4212,8 +4300,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                 icon: const Icon(
                                                   Icons.download_outlined,
                                                 ),
-                                                onPressed: () =>
-                                                    _downloadMedia(media),
+                                                onPressed: isWavMedia
+                                                    ? null
+                                                    : () => _downloadMedia(
+                                                          media,
+                                                        ),
                                               ),
                                               IconButton(
                                                 tooltip: 'Ta bort',
