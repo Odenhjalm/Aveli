@@ -181,6 +181,33 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       color: Colors.white70,
     );
     final progressVisible = _uploading && _progress > 0;
+    final buttonLabel = _selectedFile == null
+        ? 'Ladda upp studiomaster (WAV)'
+        : 'Byt studiomaster (WAV)';
+    final disabledTextStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.disabledColor,
+      fontWeight: FontWeight.w500,
+    );
+    final uploadControl = canUpload
+        ? TextButton.icon(
+            onPressed: _uploading ? null : _pickAndUpload,
+            icon: const Icon(Icons.upload_file),
+            label: Text(buttonLabel),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              textStyle: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.upload_file, size: 18, color: theme.disabledColor),
+              const SizedBox(width: 8),
+              Text(buttonLabel, style: disabledTextStyle),
+            ],
+          );
 
     return Card(
       child: Padding(
@@ -194,19 +221,13 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
             ),
             const SizedBox(height: 8),
             Text(
-              'WAV är ett studiomasterformat. Bearbetning kan ta tid.',
+              'WAV laddas upp som studiomaster och processas automatiskt till MP3 innan uppspelning.',
               style: warningStyle,
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                OutlinedButton.icon(
-                  onPressed: canUpload && !_uploading ? _pickAndUpload : null,
-                  icon: const Icon(Icons.upload_file),
-                  label: Text(
-                    _selectedFile == null ? 'Välj WAV' : 'Byt WAV-fil',
-                  ),
-                ),
+                uploadControl,
                 if (_selectedFile != null) ...[
                   const SizedBox(width: 12),
                   Expanded(

@@ -121,7 +121,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Välj WAV'));
+    await tester.tap(find.text('Ladda upp studiomaster (WAV)'));
     await tester.pump();
 
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
