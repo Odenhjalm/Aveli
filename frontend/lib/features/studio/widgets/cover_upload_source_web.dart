@@ -59,16 +59,19 @@ Future<void> uploadCoverFile({
   headers.forEach(request.setRequestHeader);
 
   request.upload.onProgress.listen((event) {
-    final total = event.total > 0 ? event.total : file.size;
-    onProgress(event.loaded.toInt(), total.toInt());
+    final loaded = (event.loaded ?? 0).toInt();
+    final total = (event.total ?? 0).toInt();
+    final totalBytes = total > 0 ? total : file.size;
+    onProgress(loaded, totalBytes);
   });
 
   request.onLoadEnd.listen((_) {
-    if (request.status >= 200 && request.status < 300) {
+    final status = request.status ?? 0;
+    if (status >= 200 && status < 300) {
       completer.complete();
     } else {
       completer.completeError(
-        StateError('Upload failed with status ${request.status}'),
+        StateError('Upload failed with status $status'),
       );
     }
   });
