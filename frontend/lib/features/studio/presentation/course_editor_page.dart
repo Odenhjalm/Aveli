@@ -3569,6 +3569,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? const <UploadJob>[]
         : (uploadJobs.where((job) => job.lessonId == _selectedLessonId).toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
+    final selectedLesson = _lessonById(_selectedLessonId);
+    final wavLessonId = selectedLesson?['id'] as String?;
+    final wavCourseId = selectedLesson?['course_id'] as String?;
 
     final lessonVideoPreview = _buildLessonVideoPreview(context);
 
@@ -4002,9 +4005,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             if (_selectedLessonId != null) ...[
                               gap12,
                               WavUploadCard(
+                                key: ValueKey(
+                                  'wav-${wavLessonId ?? 'none'}-${wavCourseId ?? 'none'}',
+                                ),
                                 // Lesson is the source of truth for course_id.
-                                courseId: _lessonCourseId(_selectedLessonId),
-                                lessonId: _selectedLessonId,
+                                courseId: wavCourseId,
+                                lessonId: wavLessonId,
                                 onMediaUpdated: _loadLessonMedia,
                               ),
                             ],

@@ -37,6 +37,8 @@ class WavUploadCard extends ConsumerStatefulWidget {
 }
 
 class _WavUploadCardState extends ConsumerState<WavUploadCard> {
+  static const _lessonRequiredText =
+      'Spara lektionen för att kunna ladda upp ljud.';
   WavUploadFile? _selectedFile;
   double _progress = 0.0;
   String? _status;
@@ -56,7 +58,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final courseId = widget.courseId;
     final lessonId = widget.lessonId;
     if (courseId == null || lessonId == null) {
-      showSnack(context, 'Välj kurs och lektion innan du laddar upp WAV.');
       return;
     }
 
@@ -64,7 +65,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final picked = await picker();
     if (!mounted) return;
     if (picked == null) {
-      setState(() => _status = 'Ingen fil vald.');
+      setState(() => _status = 'Välj WAV-fil');
       return;
     }
 
@@ -223,18 +224,22 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
               const SizedBox(height: 12),
               LinearProgressIndicator(value: _progress),
             ],
-            if (_status != null) ...[
+            if (!canUpload) ...[
+              const SizedBox(height: 12),
+              Text(_lessonRequiredText, style: warningStyle),
+            ],
+            if (canUpload && _status != null) ...[
               const SizedBox(height: 12),
               Text(_status!, style: theme.textTheme.bodySmall),
             ],
-            if (_mediaState != null && _mediaId != null) ...[
+            if (canUpload && _mediaState != null && _mediaId != null) ...[
               const SizedBox(height: 4),
               Text(
                 'Status: $_mediaState',
                 style: theme.textTheme.labelSmall,
               ),
             ],
-            if (_error != null && _error!.isNotEmpty) ...[
+            if (canUpload && _error != null && _error!.isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(
                 _error!,
