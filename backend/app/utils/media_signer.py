@@ -107,8 +107,33 @@ def public_download_url(storage_path: str | None) -> str | None:
     return _public_download_path(storage_path)
 
 
+def _public_cover_url_prefix() -> str | None:
+    if settings.supabase_url is None:
+        return None
+    base = settings.supabase_url.unicode_string().rstrip("/")
+    bucket = settings.media_public_bucket
+    return f"{base}/storage/v1/object/public/{bucket}/"
+
+
+def _is_public_cover_url(url: str | None) -> bool:
+    if not url:
+        return False
+    normalized = url.strip()
+    if not normalized:
+        return False
+    if normalized.startswith("/api/files/public-media/"):
+        return True
+    public_prefix = _public_cover_url_prefix()
+    if public_prefix and normalized.startswith(public_prefix):
+        return True
+    return False
+
+
 def attach_media_links(item: dict) -> None:
     """Mutate a lesson media dict with download and signed URLs."""
+
+    if item.get("media_asset_id"):
+        return
 
     media_id = item.get("id")
     if not media_id:
@@ -136,15 +161,15 @@ def attach_media_links(item: dict) -> None:
 
 
 def attach_cover_links(course: dict) -> None:
-    """Mutate a course dict with signed cover URL details."""
+    """Mutate a course dict with cover URL details.
 
-    media_id = extract_media_id_from_url(course.get("cover_url"))
-    if not media_id:
-        return
-    issued = issue_signed_url(media_id, purpose="cover")
-    if issued:
-        signed_url, expires_at = issued
-        course["signed_cover_url"] = signed_url
-        course["signed_cover_url_expires_at"] = expires_at.isoformat()
-        if not settings.media_allow_legacy_media:
-            course["cover_url"] = signed_url
+    Legacy course covers stored `/studio/media/{lesson_media_id}` and were signed at
+    read time, which caused expiring links on public pages. We now expose only
+    stable public cover URLs and omit signed cover fields.
+    """
+
+    cover_url = course.get("cover_url")
+    if cover_url and not _is_public_cover_url(cover_url):
+        course["cover_url"] = None
+    course.pop("signed_cover_url", None)
+    course.pop("signed_cover_url_expires_at", None)

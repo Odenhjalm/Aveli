@@ -443,7 +443,7 @@ class CourseSummary {
     required this.title,
     this.description,
     this.coverUrl,
-    this.signedCoverUrl,
+    this.coverMediaId,
     this.videoUrl,
     this.isFreeIntro = false,
     this.isPublished = false,
@@ -455,7 +455,7 @@ class CourseSummary {
   final String title;
   final String? description;
   final String? coverUrl;
-  final String? signedCoverUrl;
+  final String? coverMediaId;
   final String? videoUrl;
   final bool isFreeIntro;
   final bool isPublished;
@@ -467,7 +467,7 @@ class CourseSummary {
     title: (json['title'] ?? '') as String,
     description: json['description'] as String?,
     coverUrl: json['cover_url'] as String?,
-    signedCoverUrl: json['signed_cover_url'] as String?,
+    coverMediaId: json['cover_media_id'] as String?,
     videoUrl: json['video_url'] as String?,
     isFreeIntro: json['is_free_intro'] == true,
     isPublished: json['is_published'] == true,
@@ -475,7 +475,7 @@ class CourseSummary {
     priceCents: _asInt(json['price_cents']) ?? _asInt(json['price_amount_cents']),
   );
 
-  String? get resolvedCoverUrl => signedCoverUrl ?? coverUrl;
+  String? get resolvedCoverUrl => coverUrl;
 
   static int? _asInt(dynamic value) {
     if (value is int) return value;
@@ -570,10 +570,16 @@ class LessonMediaItem {
     this.signedUrl,
     this.signedUrlExpiresAt,
     this.mediaId,
+    this.mediaAssetId,
+    this.durationSeconds,
     this.byteSize,
     this.contentType,
     this.originalName,
     this.position = 0,
+    this.mediaState,
+    this.streamingFormat,
+    this.codec,
+    this.errorMessage,
   });
 
   final String id;
@@ -584,10 +590,16 @@ class LessonMediaItem {
   final String? signedUrl;
   final DateTime? signedUrlExpiresAt;
   final String? mediaId;
+  final String? mediaAssetId;
+  final int? durationSeconds;
   final int? byteSize;
   final String? contentType;
   final String? originalName;
   final int position;
+  final String? mediaState;
+  final String? streamingFormat;
+  final String? codec;
+  final String? errorMessage;
 
   factory LessonMediaItem.fromJson(Map<String, dynamic> json) =>
       LessonMediaItem(
@@ -601,10 +613,16 @@ class LessonMediaItem {
           json['signed_url_expires_at'],
         ),
         mediaId: json['media_id'] as String?,
+        mediaAssetId: json['media_asset_id'] as String?,
+        durationSeconds: CourseSummary._asInt(json['duration_seconds']),
         byteSize: CourseSummary._asInt(json['byte_size']),
         contentType: json['content_type'] as String?,
         originalName: json['original_name'] as String?,
         position: CourseSummary._asInt(json['position']) ?? 0,
+        mediaState: json['media_state'] as String?,
+        streamingFormat: json['streaming_format'] as String?,
+        codec: json['codec'] as String?,
+        errorMessage: json['error_message'] as String?,
       );
 
   bool get isPublicBucket => (storageBucket ?? '').startsWith('public');

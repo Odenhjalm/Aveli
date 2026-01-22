@@ -64,15 +64,11 @@ Future<LandingSectionState> _fetchLandingSection(
     final items = _castList(response['items'])
         .map((item) {
           final map = Map<String, dynamic>.from(item);
-          final signedCover = map['signed_cover_url'] as String?;
-          final cover = signedCover ?? map['cover_url'] as String?;
+          final cover = map['cover_url'] as String?;
           if (cover != null && cover.isNotEmpty) {
             try {
               final resolved = mediaRepository.resolveUrl(cover);
               map['cover_url'] = resolved;
-              if (signedCover != null) {
-                map['signed_cover_url'] = resolved;
-              }
             } catch (_) {
               // Leave original value on resolve failure.
             }

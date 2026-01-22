@@ -80,6 +80,17 @@ from .sessions import (
     get_session_slot,
     list_session_slots,
 )
+from .media_assets import (
+    create_media_asset,
+    delete_media_asset,
+    fetch_and_lock_pending_media_assets,
+    get_media_asset,
+    get_media_asset_access,
+    mark_media_asset_failed,
+    mark_media_asset_ready,
+    release_processing_media_assets,
+    reschedule_media_asset,
+)
 
 __all__ = [
     # Auth
@@ -168,4 +179,14 @@ __all__ = [
     "update_session_slot",
     "get_session_slot",
     "list_session_slots",
+    # Media assets
+    "create_media_asset",
+    "delete_media_asset",
+    "fetch_and_lock_pending_media_assets",
+    "get_media_asset",
+    "get_media_asset_access",
+    "mark_media_asset_failed",
+    "mark_media_asset_ready",
+    "release_processing_media_assets",
+    "reschedule_media_asset",
 ]

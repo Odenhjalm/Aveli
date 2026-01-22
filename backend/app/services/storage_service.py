@@ -54,6 +54,20 @@ class StorageService:
     def enabled(self) -> bool:
         return bool(self._supabase_url and self._service_role_key)
 
+    def public_url(self, path: str) -> str:
+        if not path:
+            raise StorageServiceError("storage path is required")
+
+        supabase_url = self._supabase_url
+        if not supabase_url:
+            raise StorageServiceError("Supabase Storage is not configured")
+
+        normalized_path = path.lstrip("/")
+        base_url = supabase_url.rstrip("/")
+        return (
+            f"{base_url}/storage/v1/object/public/{self._bucket}/{normalized_path}"
+        )
+
     async def get_presigned_url(
         self,
         path: str,
@@ -187,4 +201,17 @@ class StorageService:
         )
 
 
-storage_service = StorageService(bucket="course-media")
+_storage_services: dict[str, StorageService] = {}
+
+
+def get_storage_service(bucket: str | None) -> StorageService:
+    normalized = (bucket or "").strip() or settings.media_source_bucket
+    service = _storage_services.get(normalized)
+    if service is None:
+        service = StorageService(bucket=normalized)
+        _storage_services[normalized] = service
+    return service
+
+
+storage_service = get_storage_service(settings.media_source_bucket)
+public_storage_service = get_storage_service(settings.media_public_bucket)

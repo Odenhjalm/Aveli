@@ -212,9 +212,10 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for row in rows:
         item = _materialize_mapping(row)
-        if not item.get("storage_bucket"):
+        if not item.get("storage_bucket") and not item.get("media_asset_id"):
             item["storage_bucket"] = "lesson-media"
-        item["download_url"] = _compute_media_download_url(item)
+        if not item.get("media_asset_id"):
+            item["download_url"] = _compute_media_download_url(item)
         items.append(item)
     return items
 
@@ -242,7 +243,8 @@ async def list_home_audio_media(
         item = _materialize_mapping(row)
         if not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
-        media_signer.attach_media_links(item)
+        if not item.get("media_asset_id"):
+            media_signer.attach_media_links(item)
         items.append(item)
     return items
 

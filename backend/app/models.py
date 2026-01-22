@@ -23,6 +23,7 @@ from .repositories import (
     set_order_checkout_reference as repo_set_order_checkout_reference,
     update_profile as repo_update_profile,
     upsert_refresh_token as repo_upsert_refresh_token,
+    delete_media_asset as repo_delete_media_asset,
 )
 from .repositories.orders import get_order as repo_get_order
 from .services import courses_service
@@ -270,6 +271,7 @@ async def teacher_courses(user_id: str) -> Iterable[dict]:
                            slug,
                            description,
                            cover_url,
+                           cover_media_id,
                            video_url,
                            branch,
                            is_free_intro,
@@ -293,6 +295,7 @@ async def teacher_courses(user_id: str) -> Iterable[dict]:
                            slug,
                            description,
                            cover_url,
+                           NULL::uuid AS cover_media_id,
                            video_url,
                            branch,
                            is_free_intro,
@@ -447,6 +450,7 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
                         c.title,
                         c.description,
                         c.cover_url,
+                        c.cover_media_id,
                         c.video_url,
                         c.branch,
                         c.is_free_intro,
@@ -476,6 +480,7 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
                         c.title,
                         c.description,
                         c.cover_url,
+                        NULL::uuid AS cover_media_id,
                         c.video_url,
                         c.branch,
                         c.is_free_intro,
@@ -739,6 +744,7 @@ async def add_lesson_media_entry(
     storage_bucket: str,
     position: int,
     media_id: str | None,
+    media_asset_id: str | None = None,
     duration_seconds: int | None = None,
 ) -> dict | None:
     async with pool.connection() as conn:  # type: ignore
@@ -752,11 +758,12 @@ async def add_lesson_media_entry(
                     storage_path,
                     storage_bucket,
                     media_id,
+                    media_asset_id,
                     position,
                     duration_seconds
                   )
-                  VALUES (%s, %s, %s, %s, %s, %s, %s)
-                  RETURNING id, lesson_id, kind, storage_path, storage_bucket, media_id, position, duration_seconds, created_at
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                  RETURNING id, lesson_id, kind, storage_path, storage_bucket, media_id, media_asset_id, position, duration_seconds, created_at
                 )
                 SELECT
                   i.id,
@@ -765,6 +772,7 @@ async def add_lesson_media_entry(
                   coalesce(mo.storage_path, i.storage_path) AS storage_path,
                   coalesce(mo.storage_bucket, i.storage_bucket, 'lesson-media') AS storage_bucket,
                   i.media_id,
+                  i.media_asset_id,
                   i.position,
                   i.duration_seconds,
                   mo.content_type,
@@ -780,6 +788,7 @@ async def add_lesson_media_entry(
                     storage_path,
                     storage_bucket,
                     media_id,
+                    media_asset_id,
                     position,
                     duration_seconds,
                 ),
@@ -797,7 +806,7 @@ async def delete_lesson_media_entry(media_id: str) -> dict | None:
                 WITH deleted AS (
                   DELETE FROM app.lesson_media
                   WHERE id = %s
-                  RETURNING id, lesson_id, storage_path, storage_bucket, media_id
+                  RETURNING id, lesson_id, storage_path, storage_bucket, media_id, media_asset_id
                 )
                 SELECT
                   d.id,
@@ -805,6 +814,7 @@ async def delete_lesson_media_entry(media_id: str) -> dict | None:
                   coalesce(mo.storage_path, d.storage_path) AS storage_path,
                   coalesce(mo.storage_bucket, d.storage_bucket, 'lesson-media') AS storage_bucket,
                   d.media_id,
+                  d.media_asset_id,
                   mo.content_type,
                   mo.byte_size,
                   mo.original_name
@@ -817,6 +827,8 @@ async def delete_lesson_media_entry(media_id: str) -> dict | None:
             await conn.commit()
     if row and row.get("media_id"):
         await cleanup_media_object(row["media_id"])
+    if row and row.get("media_asset_id"):
+        await repo_delete_media_asset(str(row["media_asset_id"]))
     return row
 
 

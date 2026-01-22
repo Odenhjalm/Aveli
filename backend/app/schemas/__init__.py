@@ -776,8 +776,7 @@ class Course(BaseModel):
     title: str
     description: str | None = None
     cover_url: str | None = None
-    signed_cover_url: str | None = None
-    signed_cover_url_expires_at: datetime | None = None
+    cover_media_id: UUID | None = None
     video_url: str | None = None
     is_free_intro: bool
     price_amount_cents: int = 0
@@ -808,25 +807,68 @@ class MediaUploadUrlRequest(BaseModel):
     filename: str
     mime_type: str
     size_bytes: int = Field(ge=1)
-    media_type: Literal["audio", "video"]
+    media_type: Literal["audio"]
     course_id: UUID | None = None
     lesson_id: UUID | None = None
-    seminar_id: UUID | None = None
 
 
 class MediaUploadUrlResponse(BaseModel):
+    media_id: UUID
     upload_url: str
     object_path: str
     expires_at: datetime
 
 
-class MediaPlaybackUrlRequest(BaseModel):
+class CoverUploadUrlRequest(BaseModel):
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+    course_id: UUID
+
+
+class CoverUploadUrlResponse(BaseModel):
+    media_id: UUID
+    upload_url: str
     object_path: str
+    expires_at: datetime
+
+
+class CoverFromLessonMediaRequest(BaseModel):
+    course_id: UUID
+    lesson_media_id: UUID
+
+
+class CoverMediaResponse(BaseModel):
+    media_id: UUID
+    state: Literal["uploaded", "processing", "ready", "failed"]
+
+
+class CoverClearRequest(BaseModel):
+    course_id: UUID
+
+
+class CoverClearResponse(BaseModel):
+    ok: bool
+
+
+class MediaPlaybackUrlRequest(BaseModel):
+    media_id: UUID
 
 
 class MediaPlaybackUrlResponse(BaseModel):
     playback_url: str
     expires_at: datetime
+    format: Literal["mp3"]
+
+
+class MediaStatusResponse(BaseModel):
+    media_id: UUID
+    state: Literal["uploaded", "processing", "ready", "failed"]
+    error_message: str | None = None
+    ingest_format: str | None = None
+    streaming_format: str | None = None
+    duration_seconds: int | None = None
+    codec: str | None = None
 
 
 class MediaPresignRequest(BaseModel):
@@ -872,7 +914,6 @@ class StudioCourseCreate(BaseModel):
     title: str
     slug: str
     description: str | None = None
-    cover_url: str | None = None
     video_url: str | None = None
     is_free_intro: bool = False
     is_published: bool = False
@@ -884,7 +925,6 @@ class StudioCourseUpdate(BaseModel):
     title: str | None = None
     slug: str | None = None
     description: str | None = None
-    cover_url: str | None = None
     video_url: str | None = None
     is_free_intro: bool | None = None
     is_published: bool | None = None

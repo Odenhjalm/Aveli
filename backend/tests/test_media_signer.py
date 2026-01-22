@@ -80,3 +80,21 @@ def test_attach_media_links_excludes_private_bucket(monkeypatch):
     }
     media_signer.attach_media_links(item)
     assert item["download_url"] == "/studio/media/media84"
+
+def test_attach_cover_links_strips_legacy_cover():
+    course = {
+        "cover_url": "/studio/media/cover123",
+        "signed_cover_url": "/media/stream/legacy",
+    }
+    media_signer.attach_cover_links(course)
+    assert course.get("cover_url") is None
+    assert "signed_cover_url" not in course
+    assert "signed_cover_url_expires_at" not in course
+
+
+def test_attach_cover_links_allows_public_media_path():
+    course = {
+        "cover_url": "/api/files/public-media/courses/cover.jpg",
+    }
+    media_signer.attach_cover_links(course)
+    assert course.get("cover_url") == "/api/files/public-media/courses/cover.jpg"

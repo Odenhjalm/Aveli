@@ -632,8 +632,7 @@ class Course(BaseModel):
     title: str
     description: str | None = None
     cover_url: str | None = None
-    signed_cover_url: str | None = None
-    signed_cover_url_expires_at: datetime | None = None
+    cover_media_id: UUID | None = None
     video_url: str | None = None
     is_free_intro: bool
     price_amount_cents: int = 0
@@ -668,7 +667,6 @@ class StudioCourseCreate(BaseModel):
     title: str
     slug: str
     description: str | None = None
-    cover_url: str | None = None
     video_url: str | None = None
     is_free_intro: bool = False
     is_published: bool = False
@@ -680,7 +678,6 @@ class StudioCourseUpdate(BaseModel):
     title: str | None = None
     slug: str | None = None
     description: str | None = None
-    cover_url: str | None = None
     video_url: str | None = None
     is_free_intro: bool | None = None
     is_published: bool | None = None

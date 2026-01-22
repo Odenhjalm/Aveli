@@ -19,6 +19,7 @@ _FULL_COURSE_COLUMNS = """
         title,
         description,
         cover_url,
+        cover_media_id,
         video_url,
         branch,
         is_free_intro,
@@ -64,6 +65,8 @@ def _legacy_course_columns(alias: str | None = None) -> str:
         "updated_at",
     ]
     column_lines = [f"{prefix}{column}" for column in base_columns]
+    cover_index = base_columns.index("cover_url") + 1
+    column_lines.insert(cover_index, "NULL::uuid AS cover_media_id")
     price_source = f"{prefix}price_cents"
     column_lines.extend(
         [
@@ -364,7 +367,6 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
     optional_fields: list[tuple[str, Any]] = [
         ("slug", data.get("slug")),
         ("description", data.get("description")),
-        ("cover_url", data.get("cover_url")),
         ("video_url", data.get("video_url")),
         ("branch", data.get("branch")),
         ("currency", data.get("currency")),
@@ -412,7 +414,6 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
                     for idx, column in enumerate(columns)
                     if column
                     not in {
-                        "cover_url",
                         "video_url",
                         "branch",
                         "currency",
@@ -448,7 +449,6 @@ async def update_course(
         "title",
         "slug",
         "description",
-        "cover_url",
         "video_url",
         "branch",
         "currency",
@@ -511,6 +511,22 @@ async def update_course(
             row = await cur.fetchone()
             await conn.commit()
             return row
+
+
+
+
+async def clear_course_cover(course_id: str) -> None:
+    query = """
+        UPDATE app.courses
+        SET cover_media_id = null,
+            cover_url = null,
+            updated_at = now()
+        WHERE id = %s
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            await conn.commit()
 
 
 async def delete_course(course_id: str) -> bool:
@@ -932,16 +948,34 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           lm.id,
           lm.lesson_id,
           lm.kind,
-          coalesce(mo.storage_path, lm.storage_path) AS storage_path,
-          coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
+          CASE
+            WHEN ma.id IS NOT NULL THEN
+              CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
+            ELSE coalesce(mo.storage_path, lm.storage_path)
+          END AS storage_path,
+          CASE
+            WHEN ma.id IS NOT NULL THEN
+              CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
+            ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+          END AS storage_bucket,
           lm.media_id,
-          lm.duration_seconds,
-          mo.content_type,
+          lm.media_asset_id,
+          coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
+          coalesce(
+            mo.content_type,
+            CASE WHEN ma.state = 'ready' THEN 'audio/mpeg' ELSE NULL END
+          ) AS content_type,
           mo.byte_size,
-          mo.original_name,
+          coalesce(mo.original_name, ma.original_filename) AS original_name,
+          ma.state AS media_state,
+          ma.ingest_format,
+          ma.streaming_format,
+          ma.codec,
+          ma.error_message,
           lm.created_at
         FROM app.lesson_media lm
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
+        LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         WHERE lm.lesson_id = %s
         ORDER BY lm.position
     """
@@ -1011,15 +1045,30 @@ async def list_home_audio_media(
           lm.id,
           lm.lesson_id,
           lm.kind,
-          coalesce(mo.storage_path, lm.storage_path) AS storage_path,
-          coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
+          CASE
+            WHEN ma.id IS NOT NULL THEN
+              CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
+            ELSE coalesce(mo.storage_path, lm.storage_path)
+          END AS storage_path,
+          CASE
+            WHEN ma.id IS NOT NULL THEN
+              CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
+            ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+          END AS storage_bucket,
           lm.media_id,
+          lm.media_asset_id,
           lm.position,
-          lm.duration_seconds,
+          coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
           lm.created_at,
-          mo.content_type,
+          coalesce(
+            mo.content_type,
+            CASE WHEN ma.state = 'ready' THEN 'audio/mpeg' ELSE NULL END
+          ) AS content_type,
           mo.byte_size,
-          mo.original_name,
+          coalesce(mo.original_name, ma.original_filename) AS original_name,
+          ma.state AS media_state,
+          ma.streaming_format,
+          ma.codec,
           l.title AS lesson_title,
           l.is_intro,
           c.id AS course_id,
@@ -1031,9 +1080,11 @@ async def list_home_audio_media(
         JOIN app.modules m ON m.id = l.module_id
         JOIN app.courses c ON c.id = m.course_id
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
+        LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         {enrollment_join}
         WHERE lm.kind = 'audio'
           AND c.is_published = true
+          AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
           {access_clause}
         ORDER BY lm.created_at DESC
         LIMIT %s

@@ -15,6 +15,7 @@ class HomeAudioItem {
     this.storagePath,
     this.storageBucket,
     this.mediaId,
+    this.mediaAssetId,
     this.durationSeconds,
     this.createdAt,
     this.contentType,
@@ -25,6 +26,9 @@ class HomeAudioItem {
     this.signedUrlExpiresAt,
     this.isIntro,
     this.isFreeIntro,
+    this.mediaState,
+    this.streamingFormat,
+    this.codec,
   });
 
   final String id;
@@ -37,6 +41,7 @@ class HomeAudioItem {
   final String? storagePath;
   final String? storageBucket;
   final String? mediaId;
+  final String? mediaAssetId;
   final int? durationSeconds;
   final DateTime? createdAt;
   final String? contentType;
@@ -47,6 +52,9 @@ class HomeAudioItem {
   final DateTime? signedUrlExpiresAt;
   final bool? isIntro;
   final bool? isFreeIntro;
+  final String? mediaState;
+  final String? streamingFormat;
+  final String? codec;
 
   String? get preferredUrl => signedUrl ?? downloadUrl;
 
@@ -67,6 +75,7 @@ class HomeAudioItem {
         storagePath: json['storage_path'] as String?,
         storageBucket: json['storage_bucket'] as String?,
         mediaId: json['media_id'] as String?,
+        mediaAssetId: json['media_asset_id'] as String?,
         durationSeconds: _asInt(json['duration_seconds']),
         createdAt: _parseDate(json['created_at']),
         contentType: json['content_type'] as String?,
@@ -77,6 +86,9 @@ class HomeAudioItem {
         signedUrlExpiresAt: _parseDate(json['signed_url_expires_at']),
         isIntro: json['is_intro'] as bool?,
         isFreeIntro: json['is_free_intro'] as bool?,
+        mediaState: json['media_state'] as String?,
+        streamingFormat: json['streaming_format'] as String?,
+        codec: json['codec'] as String?,
       );
 
   static int? _asInt(dynamic value) {

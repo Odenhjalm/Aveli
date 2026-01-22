@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     ]
     cors_allow_origin_regex: str | None = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
     lesson_media_max_bytes: int = 2 * 1024 * 1024 * 1024
+    media_upload_max_image_bytes: int = 25 * 1024 * 1024
     media_upload_max_audio_bytes: int = 5 * 1024 * 1024 * 1024
     media_upload_max_video_bytes: int = 5 * 1024 * 1024 * 1024
     media_playback_url_ttl_seconds: int = 3600
@@ -135,6 +136,14 @@ class Settings(BaseSettings):
     media_signing_ttl_seconds: int = 600
     media_allow_legacy_media: bool = True
     media_public_cache_seconds: int = 3600
+    media_source_bucket: str = "course-media"
+    media_public_bucket: str = "public-media"
+    media_transcode_enabled: bool = True
+    media_transcode_poll_interval_seconds: int = 10
+    media_transcode_batch_size: int = 3
+    media_transcode_stale_lock_seconds: int = 1800
+    media_transcode_max_attempts: int = 5
+    media_transcode_max_retry_seconds: int = 300
     sentry_dsn: str | None = Field(
         default=None, validation_alias=AliasChoices("SENTRY_DSN", "BACKEND_SENTRY_DSN")
     )

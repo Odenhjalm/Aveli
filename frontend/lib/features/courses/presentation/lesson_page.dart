@@ -13,6 +13,7 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -426,6 +427,7 @@ class _MediaItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mediaRepo = ref.watch(mediaRepositoryProvider);
+    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
     String? downloadUrl;
     if (item.preferredUrl != null) {
       try {
@@ -465,6 +467,54 @@ class _MediaItem extends ConsumerWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.memory(snapshot.data!, fit: BoxFit.cover),
+            ),
+          );
+        },
+      );
+    }
+
+    if (item.kind == 'audio' && item.mediaAssetId != null) {
+      final state = item.mediaState ?? 'uploaded';
+      if (state != 'ready') {
+        final label = state == 'failed'
+            ? 'Ljudet kunde inte bearbetas.'
+            : 'Ljudet bearbetas…';
+        return ListTile(
+          leading: Icon(_iconForKind()),
+          title: Text(_fileName),
+          subtitle: Text(label),
+        );
+      }
+      final durationHint = (item.durationSeconds ?? 0) > 0
+          ? Duration(seconds: item.durationSeconds!)
+          : null;
+      final future = pipelineRepo.fetchPlaybackUrl(item.mediaAssetId!);
+      return FutureBuilder<MediaPlaybackUrl>(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(),
+            );
+          }
+          if (!snapshot.hasData) {
+            return ListTile(
+              leading: Icon(_iconForKind()),
+              title: Text(_fileName),
+              subtitle: const Text('Kunde inte hämta uppspelningslänk.'),
+            );
+          }
+          final playbackUrl = snapshot.data!.playbackUrl.toString();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: InlineAudioPlayer(
+              url: playbackUrl,
+              title: _fileName,
+              durationHint: durationHint,
+              onDownload: () async {
+                await launchUrlString(playbackUrl);
+              },
             ),
           );
         },

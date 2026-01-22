@@ -25,4 +25,10 @@ class ApiPaths {
   static String order(String orderId) => '/orders/$orderId';
 
   static const mediaSign = '/media/sign';
+  static const mediaUploadUrl = '/api/media/upload-url';
+  static const mediaPlaybackUrl = '/api/media/playback-url';
+  static const mediaCoverUploadUrl = '/api/media/cover-upload-url';
+  static const mediaCoverFromMedia = '/api/media/cover-from-media';
+  static const mediaCoverClear = '/api/media/cover-clear';
+  static String mediaStatus(String mediaId) => '/api/media/$mediaId';
 }

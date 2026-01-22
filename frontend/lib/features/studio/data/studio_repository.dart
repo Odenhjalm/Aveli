@@ -21,13 +21,6 @@ class StudioRepository {
     final list = res['items'] as List? ?? const [];
     return list
         .map((e) => Map<String, dynamic>.from(e as Map))
-        .map((course) {
-          final signed = course['signed_cover_url'] as String?;
-          if (signed != null && signed.isNotEmpty) {
-            course['cover_url'] = signed;
-          }
-          return course;
-        })
         .toList(growable: false);
   }
 
@@ -38,7 +31,6 @@ class StudioRepository {
     int? priceCents,
     bool isFreeIntro = false,
     bool isPublished = false,
-    String? coverUrl,
     String? videoUrl,
     String? branch,
   }) async {
@@ -49,7 +41,6 @@ class StudioRepository {
       if (priceCents != null) 'price_cents': priceCents,
       'is_free_intro': isFreeIntro,
       'is_published': isPublished,
-      if (coverUrl != null) 'cover_url': coverUrl,
       if (videoUrl != null) 'video_url': videoUrl,
       if (branch != null) 'branch': branch,
     };

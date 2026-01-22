@@ -27,13 +27,24 @@ _BASE_SELECT = """
         lm.lesson_id,
         lm.kind as lesson_media_kind,
         lm.position as lesson_media_position,
-        lm.duration_seconds as lesson_media_duration_seconds,
+        lm.media_asset_id as lesson_media_media_asset_id,
+        coalesce(ma.duration_seconds, lm.duration_seconds) as lesson_media_duration_seconds,
         lm.created_at as lesson_media_created_at,
-        coalesce(mo.storage_path, lm.storage_path) as lesson_media_storage_path,
-        coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') as lesson_media_storage_bucket,
+        case
+            when ma.id is not null then
+                case when ma.state = 'ready' then ma.streaming_object_path else null end
+            else coalesce(mo.storage_path, lm.storage_path)
+        end as lesson_media_storage_path,
+        case
+            when ma.id is not null then
+                case when ma.state = 'ready' then ma.storage_bucket else null end
+            else coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+        end as lesson_media_storage_bucket,
         mo.content_type as lesson_media_content_type,
         mo.byte_size as lesson_media_byte_size,
         mo.original_name as lesson_media_original_name,
+        ma.state as lesson_media_state,
+        ma.streaming_format as lesson_media_streaming_format,
         l.title as lesson_title,
         l.position as lesson_position,
         m.id as module_id,
@@ -56,6 +67,7 @@ _BASE_SELECT = """
     left join app.lesson_media lm
         on tpm.media_kind = 'lesson_media' and tpm.media_id = lm.id
     left join app.media_objects mo on mo.id = lm.media_id
+    left join app.media_assets ma on ma.id = lm.media_asset_id
     left join app.lessons l on l.id = lm.lesson_id
     left join app.modules m on m.id = l.module_id
     left join app.courses c on c.id = m.course_id
@@ -247,11 +259,21 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
             c.title as course_title,
             c.slug as course_slug,
             lm.kind,
-            coalesce(mo.storage_path, lm.storage_path) as storage_path,
-            coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') as storage_bucket,
+            case
+                when ma.id is not null then
+                    case when ma.state = 'ready' then ma.streaming_object_path else null end
+                else coalesce(mo.storage_path, lm.storage_path)
+            end as storage_path,
+            case
+                when ma.id is not null then
+                    case when ma.state = 'ready' then ma.storage_bucket else null end
+                else coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+            end as storage_bucket,
             mo.content_type,
             mo.byte_size,
-            lm.duration_seconds,
+            lm.media_asset_id,
+            coalesce(ma.duration_seconds, lm.duration_seconds) as duration_seconds,
+            ma.state as media_state,
             lm.position,
             lm.created_at
         from app.lesson_media lm
@@ -259,6 +281,7 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
         join app.modules m on m.id = l.module_id
         join app.courses c on c.id = m.course_id
         left join app.media_objects mo on mo.id = lm.media_id
+        left join app.media_assets ma on ma.id = lm.media_asset_id
         where c.created_by = %s
         order by c.title asc, l.position asc, lm.position asc
     """
@@ -290,6 +313,8 @@ async def list_public_teacher_profile_media(teacher_id: str) -> list[dict[str, A
 
 
 def _attach_lesson_links(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("media_asset_id"):
+        return data
     lesson = {
         "id": data.get("id"),
         "storage_bucket": data.get("storage_bucket") or "lesson-media",
@@ -348,6 +373,7 @@ def _populate_media_links(row: dict[str, Any]) -> dict[str, Any]:
             "storage_bucket": data.get("lesson_media_storage_bucket")
             or "lesson-media",
             "storage_path": data.get("lesson_media_storage_path"),
+            "media_asset_id": data.get("lesson_media_media_asset_id"),
         }
         media_signer.attach_media_links(lesson)
         download_url = lesson.get("download_url")

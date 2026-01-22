@@ -34,9 +34,13 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
+import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/widgets/base_page.dart';
 
 String? _mediaUrl(Map<String, dynamic> media) {
+  final playback = media['playback_url'];
+  if (playback is String && playback.isNotEmpty) return playback;
   final download = media['download_url'];
   if (download is String && download.isNotEmpty) return download;
   final signed = media['signed_url'];
@@ -303,8 +307,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _courseIsPublished = false;
   String? _courseCoverPath;
   String? _courseCoverPreviewUrl;
-  String? _courseCoverMediaId;
   bool _updatingCourseCover = false;
+  String? _coverPipelineMediaId;
+  String? _coverPipelineState;
+  String? _coverPipelineError;
+  Timer? _coverPollTimer;
 
   ProviderSubscription<List<UploadJob>>? _uploadSubscription;
 
@@ -365,6 +372,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonContentFocusNode.dispose();
     _lessonEditorScrollController.dispose();
     _lessonTitleCtrl.dispose();
+    _coverPollTimer?.cancel();
     super.dispose();
   }
 
@@ -440,7 +448,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               ? null
               : coverPath;
           _courseCoverPreviewUrl = _resolveMediaUrl(_courseCoverPath);
-          _courseCoverMediaId = null;
         });
       }
     } catch (e, stackTrace) {
@@ -463,8 +470,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _lessonMedia = <Map<String, dynamic>>[];
           _courseCoverPath = null;
           _courseCoverPreviewUrl = null;
-          _courseCoverMediaId = null;
+          _coverPipelineMediaId = null;
+          _coverPipelineState = null;
+          _coverPipelineError = null;
+          _updatingCourseCover = false;
         });
+        _coverPollTimer?.cancel();
+        _coverPollTimer = null;
         _handleCoursePublishFieldsChanged();
       }
     } else {
@@ -594,20 +606,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) return;
       setState(() {
         _lessonMedia = media;
-        if (_courseCoverPath == null) {
-          _courseCoverMediaId = null;
-        } else {
-          String? matched;
-          for (final item in media) {
-            final download = _mediaUrl(item);
-            final storage = item['storage_path'] as String?;
-            if (_courseCoverPath == download || _courseCoverPath == storage) {
-              matched = item['id'] as String?;
-              break;
-            }
-          }
-          _courseCoverMediaId = matched;
-        }
       });
     } catch (e, stackTrace) {
       if (!mounted) return;
@@ -1083,6 +1081,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final theme = Theme.of(context);
     final hasCover =
         _courseCoverPreviewUrl != null && _courseCoverPreviewUrl!.isNotEmpty;
+    final status = _coverPipelineState;
+    final statusText = status == null ? null : _coverStatusLabel(status);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1146,7 +1147,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           children: [
             TextButton.icon(
               onPressed: hasCover && !_updatingCourseCover
-                  ? _clearCourseCover
+                  ? () => unawaited(_clearCourseCover())
                   : null,
               icon: const Icon(Icons.delete_outline),
               label: const Text('Ta bort kursbild'),
@@ -1176,6 +1177,33 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             ],
           ],
         ),
+        if (statusText != null) ...[
+          const SizedBox(height: 6),
+          Text(statusText, style: theme.textTheme.bodySmall),
+        ],
+        if (_coverPipelineError != null && _coverPipelineError!.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            _coverPipelineError!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+        if (_selectedCourseId != null) ...[
+          const SizedBox(height: 12),
+          CoverUploadCard(
+            courseId: _selectedCourseId,
+            onCoverQueued: _queueCoverUpload,
+            onUploadError: (message) {
+              if (!mounted) return;
+              setState(() {
+                _coverPipelineError = message;
+                _updatingCourseCover = false;
+              });
+            },
+          ),
+        ],
       ],
     );
   }
@@ -1510,6 +1538,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final contentType = (mimeType?.isNotEmpty ?? false)
           ? mimeType!
           : _guessContentType(name);
+      if (contentType == 'audio/wav' || contentType == 'audio/x-wav') {
+        showSnack(
+          context,
+          'WAV-filer laddas upp via WAV-uppladdningen längre ned.',
+        );
+        return;
+      }
       ref
           .read(studioUploadQueueProvider.notifier)
           .enqueueUpload(
@@ -1603,13 +1638,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ], acceptHint: 'video/*');
         break;
       case _UploadKind.audio:
-        await _pickAndUploadWith(const [
-          'mp3',
-          'wav',
-          'm4a',
-          'aac',
-          'ogg',
-        ], acceptHint: 'audio/*');
+        await _pickAndUploadWith(
+          const [
+            'mp3',
+            'm4a',
+            'aac',
+            'ogg',
+          ],
+          acceptHint: 'audio/mpeg,audio/mp4,audio/aac,audio/ogg',
+        );
         break;
       case _UploadKind.pdf:
         await _pickAndUploadWith(const ['pdf'], acceptHint: 'application/pdf');
@@ -1689,6 +1726,51 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (kind == 'image') return true;
     final contentType = (media['content_type'] as String?) ?? '';
     return contentType.startsWith('image/');
+  }
+
+  bool _isPipelineMedia(Map<String, dynamic> media) {
+    return media['media_asset_id'] != null;
+  }
+
+  String _pipelineState(Map<String, dynamic> media) {
+    return (media['media_state'] as String?) ?? 'uploaded';
+  }
+
+  String _pipelineLabel(String state) {
+    switch (state) {
+      case 'uploaded':
+        return 'Uppladdad • väntar på bearbetning';
+      case 'processing':
+        return 'Bearbetas';
+      case 'ready':
+        return 'Klar för uppspelning';
+      case 'failed':
+        return 'Bearbetning misslyckades';
+      default:
+        return 'Okänd status';
+    }
+  }
+
+  void _patchLessonMedia(String mediaId, Map<String, dynamic> patch) {
+    final index = _lessonMedia.indexWhere((item) => item['id'] == mediaId);
+    if (index < 0) return;
+    final updated = {..._lessonMedia[index], ...patch};
+    final copy = [..._lessonMedia];
+    copy[index] = updated;
+    setState(() => _lessonMedia = copy);
+  }
+
+  Future<String?> _fetchPlaybackUrl(Map<String, dynamic> media) async {
+    final mediaAssetId = media['media_asset_id'];
+    if (mediaAssetId == null) return null;
+    final repo = ref.read(mediaPipelineRepositoryProvider);
+    final playback = await repo.fetchPlaybackUrl(mediaAssetId.toString());
+    final url = playback.playbackUrl.toString();
+    final id = media['id'];
+    if (id is String) {
+      _patchLessonMedia(id, {'playback_url': url});
+    }
+    return url;
   }
 
   Future<void> _uploadImageFromToolbar() async {
@@ -1960,6 +2042,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     Map<String, dynamic> media, {
     bool showSaveHint = true,
   }) {
+    if (_isPipelineMedia(media)) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'WAV-master kan inte bäddas in. Den spelas upp via lektionens media.',
+        );
+      }
+      return;
+    }
     final kind = (media['kind'] as String?) ?? '';
     final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
     final resolved = _resolveMediaUrl(download);
@@ -2008,139 +2099,173 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  String? _matchCourseCoverMediaId(String? coverPath) {
-    if (coverPath == null || coverPath.isEmpty) return null;
-    final resolvedCover = _resolveMediaUrl(coverPath);
-    for (final media in _lessonMedia) {
-      final download = _mediaUrl(media);
-      final storage = media['storage_path'] as String?;
-      if (coverPath == download || coverPath == storage) {
-        return media['id'] as String?;
-      }
-      final candidate = download ?? storage;
-      if (candidate != null) {
-        final resolvedCandidate = _resolveMediaUrl(candidate);
-        if (resolvedCover != null && resolvedCover == resolvedCandidate) {
-          return media['id'] as String?;
+  String _coverStatusLabel(String state) {
+    switch (state) {
+      case 'uploaded':
+        return 'Uppladdad. Bearbetas…';
+      case 'processing':
+        return 'Bearbetas…';
+      case 'ready':
+        return 'Kursbilden är klar.';
+      case 'failed':
+        return 'Bearbetningen misslyckades.';
+      default:
+        return 'Status okänd.';
+    }
+  }
+
+  void _queueCoverUpload(String mediaId) {
+    if (!mounted) return;
+    setState(() {
+      _coverPipelineMediaId = mediaId;
+      _coverPipelineState = 'uploaded';
+      _coverPipelineError = null;
+      _updatingCourseCover = true;
+    });
+    _startCoverPolling(mediaId);
+  }
+
+  void _startCoverPolling(String mediaId) {
+    _coverPollTimer?.cancel();
+    _coverPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _pollCoverStatus(mediaId);
+    });
+    _pollCoverStatus(mediaId);
+  }
+
+  Future<void> _pollCoverStatus(String mediaId) async {
+    try {
+      final repo = ref.read(mediaPipelineRepositoryProvider);
+      final status = await repo.fetchStatus(mediaId);
+      if (!mounted) return;
+      setState(() {
+        _coverPipelineState = status.state;
+        _coverPipelineError = status.errorMessage;
+      });
+      if (status.state == 'ready' || status.state == 'failed') {
+        _coverPollTimer?.cancel();
+        _coverPollTimer = null;
+        if (mounted) {
+          setState(() => _updatingCourseCover = false);
+        }
+        await _loadCourseMeta();
+        if (status.state == 'failed' && context.mounted) {
+          final detail = status.errorMessage?.trim();
+          showSnack(
+            context,
+            detail == null || detail.isEmpty
+                ? 'Bearbetningen misslyckades.'
+                : 'Bearbetningen misslyckades: $detail',
+          );
         }
       }
-    }
-    return _courseCoverMediaId;
-  }
-
-  Future<void> _updateCourseCover({
-    required String? path,
-    String? previewUrl,
-    String? mediaId,
-    bool showSuccessMessage = true,
-    String? successMessage,
-  }) async {
-    final trimmedPath = (path == null || path.trim().isEmpty)
-        ? null
-        : path.trim();
-    final effectivePreview =
-        previewUrl ?? _resolveMediaUrl(trimmedPath) ?? previewUrl;
-    final courseId = _selectedCourseId;
-    if (courseId == null) {
-      if (mounted) {
-        setState(() {
-          _courseCoverPath = trimmedPath;
-          _courseCoverPreviewUrl = effectivePreview;
-          _courseCoverMediaId = mediaId;
-        });
-      }
-      return;
-    }
-
-    final previousPath = _courseCoverPath;
-    final previousPreview = _courseCoverPreviewUrl;
-    final previousMediaId = _courseCoverMediaId;
-
-    if (mounted) {
-      setState(() {
-        _updatingCourseCover = true;
-        _courseCoverPath = trimmedPath;
-        _courseCoverPreviewUrl = effectivePreview;
-        _courseCoverMediaId = mediaId;
-      });
-    }
-
-    try {
-      final updated = await _studioRepo.updateCourse(courseId, {
-        'cover_url': trimmedPath,
-      });
-      if (!mounted) return;
-      final map = Map<String, dynamic>.from(updated);
-      final serverCover = (map['cover_url'] as String?)?.trim();
-      final resolved = _resolveMediaUrl(serverCover);
-      final matchedMediaId = _matchCourseCoverMediaId(serverCover);
-      setState(() {
-        _courseCoverPath = (serverCover == null || serverCover.isEmpty)
-            ? null
-            : serverCover;
-        _courseCoverPreviewUrl = resolved;
-        _courseCoverMediaId =
-            matchedMediaId ??
-            ((serverCover == null || serverCover.isEmpty) ? null : mediaId);
-        _courses = _courses
-            .map(
-              (course) =>
-                  course['id'] == courseId ? {...course, ...map} : course,
-            )
-            .toList();
-      });
-      if (showSuccessMessage && context.mounted) {
-        showSnack(context, successMessage ?? 'Kursbild uppdaterad.');
-      }
-    } catch (e, stackTrace) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _courseCoverPath = previousPath;
-        _courseCoverPreviewUrl = previousPreview;
-        _courseCoverMediaId = previousMediaId;
+        _coverPipelineError = e.toString();
       });
-      _showFriendlyErrorSnack('Kunde inte uppdatera kursbild', e, stackTrace);
-    } finally {
-      if (mounted) {
-        setState(() => _updatingCourseCover = false);
-      }
     }
   }
 
-  void _selectCourseCoverFromMedia(Map<String, dynamic> media) {
+  Future<void> _selectCourseCoverFromMedia(Map<String, dynamic> media) async {
     if (!_isImageMedia(media)) {
       if (mounted && context.mounted) {
         showSnack(context, 'Endast bilder kan användas som kursminiatyr.');
       }
       return;
     }
-    final download = _mediaUrl(media) ?? (media['storage_path'] as String?);
-    if (download == null || download.isEmpty) {
+    final courseId = _selectedCourseId;
+    if (courseId == null) {
       if (mounted && context.mounted) {
-        showSnack(context, 'Media saknar en nedladdningsadress.');
+        showSnack(context, 'Välj en kurs innan du anger kursbild.');
       }
       return;
     }
-    final preview = _resolveMediaUrl(download);
-    unawaited(
-      _updateCourseCover(
-        path: download,
-        previewUrl: preview,
-        mediaId: media['id'] as String?,
-      ),
-    );
+
+    // Covers are now processed into public storage; we never reuse lesson URLs directly.
+    if (mounted) {
+      setState(() {
+        _updatingCourseCover = true;
+        _coverPipelineState = 'uploaded';
+        _coverPipelineError = null;
+      });
+    }
+
+    try {
+      final repo = ref.read(mediaPipelineRepositoryProvider);
+      final response = await repo.requestCoverFromLessonMedia(
+        courseId: courseId,
+        lessonMediaId: media['id'] as String,
+      );
+      if (!mounted) return;
+      setState(() {
+        _coverPipelineMediaId = response.mediaId;
+        _coverPipelineState = response.state;
+      });
+      _startCoverPolling(response.mediaId);
+      if (context.mounted) {
+        showSnack(context, 'Kursbilden bearbetas…');
+      }
+    } catch (e, stackTrace) {
+      if (!mounted) return;
+      setState(() => _updatingCourseCover = false);
+      _showFriendlyErrorSnack('Kunde inte välja kursbild', e, stackTrace);
+    }
   }
 
-  void _clearCourseCover() {
+  Future<void> _clearCourseCover() async {
     if (_updatingCourseCover) return;
-    unawaited(
-      _updateCourseCover(
-        path: null,
-        previewUrl: null,
-        mediaId: null,
-        successMessage: 'Kursbild borttagen.',
-      ),
-    );
+    final courseId = _selectedCourseId;
+    if (courseId == null) return;
+
+    final previousPath = _courseCoverPath;
+    final previousPreview = _courseCoverPreviewUrl;
+    final previousMediaId = _coverPipelineMediaId;
+    final previousState = _coverPipelineState;
+    final previousError = _coverPipelineError;
+
+    _coverPollTimer?.cancel();
+    _coverPollTimer = null;
+
+    if (mounted) {
+      setState(() {
+        _updatingCourseCover = true;
+        _courseCoverPath = null;
+        _courseCoverPreviewUrl = null;
+        _coverPipelineMediaId = null;
+        _coverPipelineState = null;
+        _coverPipelineError = null;
+      });
+    }
+
+    try {
+      final repo = ref.read(mediaPipelineRepositoryProvider);
+      await repo.clearCourseCover(courseId);
+      await _loadCourseMeta();
+      if (context.mounted) {
+        showSnack(context, 'Kursbild borttagen.');
+      }
+    } catch (e, stackTrace) {
+      if (!mounted) return;
+      setState(() {
+        _courseCoverPath = previousPath;
+        _courseCoverPreviewUrl = previousPreview;
+        _coverPipelineMediaId = previousMediaId;
+        _coverPipelineState = previousState;
+        _coverPipelineError = previousError;
+      });
+      if (previousMediaId != null &&
+          previousState != null &&
+          previousState != 'ready' &&
+          previousState != 'failed') {
+        _startCoverPolling(previousMediaId);
+      }
+      _showFriendlyErrorSnack('Kunde inte uppdatera kursbild', e, stackTrace);
+    } finally {
+      if (mounted) {
+        setState(() => _updatingCourseCover = false);
+      }
+    }
   }
 
   void _onUploadQueueChanged(List<UploadJob>? previous, List<UploadJob> next) {
@@ -2418,6 +2543,33 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<void> _downloadMedia(Map<String, dynamic> media) async {
     if (_downloadingMedia) return;
     final name = _fileNameFromMedia(media);
+    if (_isPipelineMedia(media)) {
+      final state = _pipelineState(media);
+      if (state != 'ready') {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Ljudet bearbetas fortfarande.');
+        }
+        return;
+      }
+      final playbackUrl = await _fetchPlaybackUrl(media);
+      if (playbackUrl == null || playbackUrl.isEmpty) {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Kunde inte hämta uppspelningslänk.');
+        }
+        return;
+      }
+      if (mounted) {
+        setState(() => _downloadStatus = 'Öppnar ljud i ny flik…');
+      }
+      if (context.mounted) {
+        showSnack(context, 'Ljud öppnas i en ny flik.');
+      }
+      unawaited(launchUrlString(playbackUrl));
+      if (mounted) {
+        setState(() => _downloadStatus = null);
+      }
+      return;
+    }
     if (kIsWeb) {
       final resolved = _resolveMediaUrl(_mediaUrl(media));
       if (resolved == null) {
@@ -2578,6 +2730,38 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _previewMedia(Map<String, dynamic> media) async {
     final kind = media['kind'] as String? ?? 'other';
+    if (_isPipelineMedia(media)) {
+      final state = _pipelineState(media);
+      if (state != 'ready') {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Ljudet bearbetas fortfarande.');
+        }
+        return;
+      }
+      final playbackUrl = await _fetchPlaybackUrl(media);
+      if (playbackUrl == null || playbackUrl.isEmpty) {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Kunde inte hämta uppspelningslänk.');
+        }
+        return;
+      }
+      Duration? durationHint;
+      final durationValue = media['duration_seconds'];
+      if (durationValue is int) {
+        durationHint = Duration(seconds: durationValue);
+      } else if (durationValue is double) {
+        durationHint = Duration(milliseconds: (durationValue * 1000).round());
+      }
+      await showMediaPlayerSheet(
+        context,
+        kind: 'audio',
+        url: playbackUrl,
+        title: _fileNameFromMedia(media),
+        durationHint: durationHint,
+        onDownload: () => _downloadMedia(media),
+      );
+      return;
+    }
     final url = _resolveMediaUrl(_mediaUrl(media));
     if (!mounted) return;
     if (kind == 'image' && url != null) {
@@ -2760,7 +2944,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       'price_cents': price,
       'is_free_intro': _courseIsFreeIntro,
       'is_published': _courseIsPublished,
-      'cover_url': _courseCoverPath,
     };
     if (slug.isNotEmpty) {
       patch['slug'] = slug;
@@ -2842,7 +3025,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             ? null
             : coverPath;
         _courseCoverPreviewUrl = _resolveMediaUrl(_courseCoverPath);
-        _courseCoverMediaId = null;
       });
       ref.invalidate(myCoursesProvider);
       _newCourseTitle.clear();
@@ -3075,7 +3257,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 if (value == _selectedCourseId) return;
                 final canSwitch = await _maybeSaveLessonEdits();
                 if (!canSwitch || !mounted) return;
-                setState(() => _selectedCourseId = value);
+                _coverPollTimer?.cancel();
+                _coverPollTimer = null;
+                setState(() {
+                  _selectedCourseId = value;
+                  _coverPipelineMediaId = null;
+                  _coverPipelineState = null;
+                  _coverPipelineError = null;
+                  _updatingCourseCover = false;
+                });
                 await _loadCourseMeta();
                 await _loadModules(preserveSelection: false);
                 if (!mounted) return;
@@ -3373,6 +3563,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     ),
                               ),
                             ],
+                            if (_selectedLessonId != null) ...[
+                              gap12,
+                              WavUploadCard(
+                                courseId: _selectedCourseId,
+                                lessonId: _selectedLessonId,
+                                onMediaUpdated: _loadLessonMedia,
+                              ),
+                            ],
                             const Divider(height: 24),
                             if (_mediaLoading)
                               const Padding(
@@ -3405,130 +3603,50 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         (media['kind'] as String?) ?? 'other';
                                     final position =
                                         media['position'] as int? ?? index + 1;
+                                    final isPipeline = _isPipelineMedia(media);
+                                    final pipelineState =
+                                        isPipeline ? _pipelineState(media) : null;
                                     final downloadUrl = _resolveMediaUrl(
                                       _mediaUrl(media),
                                     );
                                     final fileName = _fileNameFromMedia(media);
-                                    final isCover =
-                                        _courseCoverPath != null &&
-                                        (_courseCoverMediaId == media['id'] ||
-                                            _courseCoverPath ==
-                                                _mediaUrl(media) ||
-                                            _courseCoverPath ==
-                                                media['storage_path']);
 
-                                    final tileTheme = Theme.of(context);
                                     Widget leading;
                                     if (kind == 'image' &&
                                         downloadUrl != null) {
                                       leading = GestureDetector(
                                         onTap: _updatingCourseCover
                                             ? null
-                                            : () => _selectCourseCoverFromMedia(
-                                                media,
+                                            : () => unawaited(
+                                                _selectCourseCoverFromMedia(
+                                                  media,
+                                                ),
                                               ),
-                                        child: Container(
-                                          width: 64,
-                                          height: 64,
-                                          decoration: BoxDecoration(
-                                            borderRadius:
-                                                const BorderRadius.all(
-                                                  Radius.circular(8),
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              const BorderRadius.all(
+                                                Radius.circular(8),
+                                              ),
+                                          child: Image.network(
+                                            downloadUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (
+                                              context,
+                                              error,
+                                              stackTrace,
+                                            ) =>
+                                                Icon(
+                                                  _iconForMedia(kind),
+                                                  size: 32,
                                                 ),
-                                            border: Border.all(
-                                              color: isCover
-                                                  ? tileTheme
-                                                        .colorScheme
-                                                        .primary
-                                                  : Colors.transparent,
-                                              width: isCover ? 2 : 0,
-                                            ),
-                                          ),
-                                          padding: EdgeInsets.all(
-                                            isCover ? 2 : 0,
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius:
-                                                const BorderRadius.all(
-                                                  Radius.circular(6),
-                                                ),
-                                            child: Stack(
-                                              fit: StackFit.expand,
-                                              children: [
-                                                Image.network(
-                                                  downloadUrl,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (
-                                                    context,
-                                                    error,
-                                                    stackTrace,
-                                                  ) =>
-                                                      Icon(
-                                                        _iconForMedia(kind),
-                                                        size: 32,
-                                                      ),
-                                                ),
-                                                if (isCover)
-                                                  Align(
-                                                    alignment:
-                                                        Alignment.topLeft,
-                                                    child: Container(
-                                                      margin:
-                                                          const EdgeInsets.all(
-                                                            4,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: tileTheme
-                                                            .colorScheme
-                                                            .primary
-                                                            .withValues(
-                                                              alpha: 0.85,
-                                                            ),
-                                                        shape: BoxShape.circle,
-                                                      ),
-                                                      child: const Padding(
-                                                        padding: EdgeInsets.all(
-                                                          4,
-                                                        ),
-                                                        child: Icon(
-                                                          Icons.star,
-                                                          size: 14,
-                                                          color: Colors.white,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
                                           ),
                                         ),
                                       );
                                     } else {
-                                      final baseIcon = Icon(
+                                      leading = Icon(
                                         _iconForMedia(kind),
                                         size: 32,
                                       );
-                                      if (isCover) {
-                                        leading = Stack(
-                                          alignment: Alignment.center,
-                                          children: [
-                                            baseIcon,
-                                            Positioned(
-                                              top: 2,
-                                              right: 2,
-                                              child: Icon(
-                                                Icons.star,
-                                                size: 16,
-                                                color: tileTheme
-                                                    .colorScheme
-                                                    .primary,
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      } else {
-                                        leading = baseIcon;
-                                      }
                                     }
 
                                     return Padding(
@@ -3574,6 +3692,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   context,
                                                 ).textTheme.labelSmall,
                                               ),
+                                              if (pipelineState != null)
+                                                Text(
+                                                  _pipelineLabel(pipelineState),
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.labelSmall,
+                                                ),
                                             ],
                                           ),
                                           trailing: Wrap(
@@ -3583,24 +3708,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             children: [
                                               if (_isImageMedia(media)) ...[
                                                 IconButton(
-                                                  tooltip: isCover
-                                                      ? 'Används som kursbild'
-                                                      : 'Använd som kursbild',
-                                                  icon: Icon(
+                                                  tooltip: 'Använd som kursbild',
+                                                  icon: const Icon(
                                                     Icons.star,
-                                                    color: isCover
-                                                        ? Theme.of(
-                                                            context,
-                                                          ).colorScheme.primary
-                                                        : null,
                                                   ),
                                                   onPressed:
                                                       _updatingCourseCover
                                                       ? null
-                                                      : () =>
+                                                      : () => unawaited(
                                                             _selectCourseCoverFromMedia(
                                                               media,
                                                             ),
+                                                          ),
                                                 ),
                                                 IconButton(
                                                   tooltip: 'Infoga i lektionen',

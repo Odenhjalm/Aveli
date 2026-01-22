@@ -12,7 +12,7 @@ from ..auth import CurrentUser
 from ..config import settings
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
-from ..repositories import seminars as seminars_repo
+from ..repositories import media_assets as media_assets_repo
 from ..services import courses_service, storage_service
 
 logger = logging.getLogger(__name__)
@@ -20,17 +20,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/media", tags=["media"])
 
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
-_AUDIO_MIME_TYPES = {"audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4"}
-_VIDEO_MIME_TYPES = {"video/mp4"}
-_WAV_MIME_TYPES = {"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"}
+_WAV_MIME_TYPES = {"audio/wav", "audio/x-wav"}
+_COVER_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 def _normalize_mime(value: str) -> str:
     return (value or "").strip().lower()
 
 
-def _build_object_path(
-    media_type: str,
+def _build_audio_source_object_path(
     resource_prefix: Path,
     filename: str,
 ) -> str:
@@ -38,7 +36,16 @@ def _build_object_path(
     if not safe_name:
         safe_name = "media"
     token = uuid4().hex
-    path = Path("media") / media_type / resource_prefix / f"{token}_{safe_name}"
+    path = Path("media") / "source" / "audio" / resource_prefix / f"{token}_{safe_name}"
+    return path.as_posix()
+
+
+def _build_cover_source_object_path(course_id: str, filename: str) -> str:
+    safe_name = Path(filename).name.strip()
+    if not safe_name:
+        safe_name = "cover"
+    token = uuid4().hex
+    path = Path("media") / "source" / "cover" / "courses" / course_id / f"{token}_{safe_name}"
     return path.as_posix()
 
 
@@ -48,6 +55,21 @@ def _upload_max_bytes(media_type: str) -> int:
     else:
         configured = settings.media_upload_max_video_bytes
     return max(int(configured), _MIN_MEDIA_BYTES)
+
+
+def _cover_max_bytes() -> int:
+    return max(1, int(settings.media_upload_max_image_bytes))
+
+
+def _cover_ingest_format(mime_type: str, filename: str) -> str:
+    if mime_type == "image/jpeg":
+        return "jpeg"
+    if mime_type == "image/png":
+        return "png"
+    if mime_type == "image/webp":
+        return "webp"
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    return suffix or "image"
 
 
 async def _authorize_lesson_upload(
@@ -95,19 +117,6 @@ async def _authorize_course_upload(user_id: str, course_id: str) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
 
 
-async def _authorize_seminar_upload(user_id: str, seminar_id: str) -> None:
-    seminar = await seminars_repo.get_seminar(seminar_id)
-    if not seminar:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seminar not found")
-    if str(seminar.get("host_id")) != user_id:
-        logger.warning(
-            "Permission denied: seminar host required user_id=%s seminar_id=%s",
-            user_id,
-            seminar_id,
-        )
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not seminar host")
-
-
 async def _authorize_lesson_playback(user_id: str, row: dict) -> None:
     if str(row.get("created_by")) == user_id:
         return
@@ -119,20 +128,6 @@ async def _authorize_lesson_playback(user_id: str, row: dict) -> None:
         return
     course_id = row.get("course_id")
     if course_id and await courses_repo.is_enrolled(user_id, str(course_id)):
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-
-async def _authorize_recording_playback(user_id: str, recording: dict) -> None:
-    seminar_id = recording.get("seminar_id")
-    if not seminar_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seminar not found")
-    seminar = await seminars_repo.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seminar not found")
-    if str(seminar.get("host_id")) == user_id:
-        return
-    if await seminars_repo.user_has_seminar_access(user_id, seminar):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -149,20 +144,10 @@ async def request_upload_url(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="mime_type is required",
         )
-    if mime_type in _WAV_MIME_TYPES:
+    if mime_type not in _WAV_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="WAV uploads are not supported",
-        )
-
-    if payload.media_type == "audio":
-        allowed = _AUDIO_MIME_TYPES
-    else:
-        allowed = _VIDEO_MIME_TYPES
-    if mime_type not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported media type",
+            detail="Only WAV uploads are supported",
         )
 
     max_bytes = _upload_max_bytes(payload.media_type)
@@ -174,17 +159,9 @@ async def request_upload_url(
         )
 
     course_id: str | None = None
-    resource_prefix = None
-    if payload.seminar_id is not None:
-        if payload.lesson_id is not None or payload.course_id is not None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="seminar_id cannot be combined with course_id or lesson_id",
-            )
-        seminar_id = str(payload.seminar_id)
-        await _authorize_seminar_upload(user_id, seminar_id)
-        resource_prefix = Path("seminars") / seminar_id
-    elif payload.lesson_id is not None:
+    lesson_id: str | None = None
+    resource_prefix: Path | None = None
+    if payload.lesson_id is not None:
         lesson_id = str(payload.lesson_id)
         course_id = await _authorize_lesson_upload(
             user_id=user_id,
@@ -200,10 +177,10 @@ async def request_upload_url(
     else:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="course_id, lesson_id, or seminar_id is required",
+            detail="course_id or lesson_id is required",
         )
 
-    object_path = _build_object_path(payload.media_type, resource_prefix, payload.filename)
+    object_path = _build_audio_source_object_path(resource_prefix, payload.filename)
     try:
         upload = await storage_service.storage_service.create_upload_url(
             object_path,
@@ -218,18 +195,250 @@ async def request_upload_url(
             detail="Storage signing unavailable",
         ) from exc
 
+    media_asset = await media_assets_repo.create_media_asset(
+        owner_id=user_id,
+        course_id=course_id,
+        lesson_id=lesson_id,
+        media_type="audio",
+        purpose="lesson_audio",
+        ingest_format="wav",
+        original_object_path=upload.path,
+        original_content_type=mime_type,
+        original_filename=payload.filename,
+        original_size_bytes=payload.size_bytes,
+        storage_bucket=storage_service.storage_service.bucket,
+        state="uploaded",
+    )
+    if not media_asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create media record",
+        )
+
+    if lesson_id:
+        existing = await models.list_lesson_media(lesson_id)
+        position = len(existing) + 1
+        row = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="audio",
+            storage_path=None,
+            storage_bucket=storage_service.storage_service.bucket,
+            media_id=None,
+            media_asset_id=str(media_asset["id"]),
+            position=position,
+            duration_seconds=None,
+        )
+        if not row:
+            await media_assets_repo.delete_media_asset(str(media_asset["id"]))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to record lesson media",
+            )
+
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
     logger.info(
-        "Issued media upload URL user_id=%s media_type=%s size_bytes=%s path=%s",
+        "Issued WAV upload URL user_id=%s size_bytes=%s path=%s media_id=%s",
         user_id,
-        payload.media_type,
         payload.size_bytes,
         upload.path,
+        media_asset["id"],
     )
     return schemas.MediaUploadUrlResponse(
+        media_id=media_asset["id"],
         upload_url=upload.url,
         object_path=upload.path,
         expires_at=expires_at,
+    )
+
+
+@router.post("/cover-upload-url", response_model=schemas.CoverUploadUrlResponse)
+async def request_cover_upload_url(
+    payload: schemas.CoverUploadUrlRequest,
+    current: TeacherUser,
+):
+    user_id = str(current["id"])
+    course_id = str(payload.course_id)
+    await _authorize_course_upload(user_id, course_id)
+
+    mime_type = _normalize_mime(payload.mime_type)
+    if not mime_type:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="mime_type is required",
+        )
+    if mime_type not in _COVER_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported cover image type",
+        )
+
+    max_bytes = _cover_max_bytes()
+    if payload.size_bytes > max_bytes:
+        max_mb = max_bytes // (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Cover image too large (max {max_mb} MB)",
+        )
+
+    object_path = _build_cover_source_object_path(course_id, payload.filename)
+    try:
+        upload = await storage_service.storage_service.create_upload_url(
+            object_path,
+            content_type=mime_type,
+            upsert=False,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning("Cover upload URL issuance failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    media_asset = await media_assets_repo.create_media_asset(
+        owner_id=user_id,
+        course_id=course_id,
+        lesson_id=None,
+        media_type="image",
+        purpose="course_cover",
+        ingest_format=_cover_ingest_format(mime_type, payload.filename),
+        original_object_path=upload.path,
+        original_content_type=mime_type,
+        original_filename=payload.filename,
+        original_size_bytes=payload.size_bytes,
+        storage_bucket=storage_service.storage_service.bucket,
+        state="uploaded",
+    )
+    if not media_asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create cover media record",
+        )
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
+    logger.info(
+        "Issued cover upload URL user_id=%s course_id=%s path=%s media_id=%s",
+        user_id,
+        course_id,
+        upload.path,
+        media_asset["id"],
+    )
+    return schemas.CoverUploadUrlResponse(
+        media_id=media_asset["id"],
+        upload_url=upload.url,
+        object_path=upload.path,
+        expires_at=expires_at,
+    )
+
+
+@router.post("/cover-from-media", response_model=schemas.CoverMediaResponse)
+async def request_cover_from_media(
+    payload: schemas.CoverFromLessonMediaRequest,
+    current: TeacherUser,
+):
+    user_id = str(current["id"])
+    course_id = str(payload.course_id)
+    await _authorize_course_upload(user_id, course_id)
+
+    media = await models.get_media(str(payload.lesson_media_id))
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    lesson_id = str(media.get("lesson_id")) if media.get("lesson_id") else None
+    if not lesson_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lesson media missing lesson association",
+        )
+
+    _, resolved_course_id = await models.lesson_course_ids(lesson_id)
+    if not resolved_course_id or str(resolved_course_id) != course_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Media does not belong to course",
+        )
+
+    kind = (media.get("kind") or "").lower()
+    content_type = _normalize_mime(media.get("content_type") or "")
+    if kind != "image" and not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only image media can be used as a cover",
+        )
+
+    storage_path = media.get("storage_path")
+    if not storage_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Media missing storage path")
+    storage_bucket = media.get("storage_bucket") or settings.media_source_bucket
+
+    original_name = media.get("original_name")
+    ingest_format = _cover_ingest_format(content_type, original_name or storage_path)
+    media_asset = await media_assets_repo.create_media_asset(
+        owner_id=user_id,
+        course_id=course_id,
+        lesson_id=None,
+        media_type="image",
+        purpose="course_cover",
+        ingest_format=ingest_format,
+        original_object_path=storage_path,
+        original_content_type=content_type or None,
+        original_filename=original_name,
+        original_size_bytes=None,
+        storage_bucket=storage_bucket,
+        state="uploaded",
+    )
+    if not media_asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create cover media record",
+        )
+
+    logger.info(
+        "Queued cover from media user_id=%s course_id=%s media_id=%s source=%s",
+        user_id,
+        course_id,
+        media_asset["id"],
+        storage_path,
+    )
+    return schemas.CoverMediaResponse(
+        media_id=media_asset["id"],
+        state=media_asset["state"],
+    )
+
+
+@router.post("/cover-clear", response_model=schemas.CoverClearResponse)
+async def clear_course_cover(
+    payload: schemas.CoverClearRequest,
+    current: TeacherUser,
+):
+    user_id = str(current["id"])
+    course_id = str(payload.course_id)
+    await _authorize_course_upload(user_id, course_id)
+    await courses_repo.clear_course_cover(course_id)
+    return schemas.CoverClearResponse(ok=True)
+
+
+@router.get("/{media_id}", response_model=schemas.MediaStatusResponse)
+async def media_status(
+    media_id: UUID,
+    current: TeacherUser,
+):
+    media = await media_assets_repo.get_media_asset(str(media_id))
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+    owner_id = media.get("owner_id")
+    if owner_id and str(owner_id) != str(current["id"]):
+        course_id = media.get("course_id")
+        if not course_id or not await models.is_course_owner(str(current["id"]), str(course_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return schemas.MediaStatusResponse(
+        media_id=media_id,
+        state=media.get("state"),
+        error_message=media.get("error_message"),
+        ingest_format=media.get("ingest_format"),
+        streaming_format=media.get("streaming_format"),
+        duration_seconds=media.get("duration_seconds"),
+        codec=media.get("codec"),
     )
 
 
@@ -239,32 +448,28 @@ async def request_playback_url(
     current: CurrentUser,
 ):
     user_id = str(current["id"])
-    raw_path = (payload.object_path or "").strip()
-    if not raw_path:
+    media = await media_assets_repo.get_media_asset_access(str(payload.media_id))
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+    if media.get("state") != "ready":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="object_path is required",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media is not ready",
+        )
+    await _authorize_lesson_playback(user_id, media)
+
+    storage_path = media.get("streaming_object_path")
+    if not storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Streaming asset unavailable",
         )
 
-    normalized = raw_path.lstrip("/")
-    bucket = storage_service.storage_service.bucket
-    prefix = f"{bucket}/"
-    storage_path = normalized[len(prefix) :] if normalized.startswith(prefix) else normalized
-
-    row = await courses_repo.get_lesson_media_access_by_path(
-        storage_path=storage_path,
-        storage_bucket=bucket,
-    )
-    if row:
-        await _authorize_lesson_playback(user_id, dict(row))
-    else:
-        recording = await seminars_repo.get_recording_by_asset_url(storage_path)
-        if not recording:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-        await _authorize_recording_playback(user_id, dict(recording))
+    streaming_bucket = media.get("streaming_storage_bucket") or media.get("storage_bucket")
+    storage_client = storage_service.get_storage_service(streaming_bucket)
 
     try:
-        presigned = await storage_service.storage_service.get_presigned_url(
+        presigned = await storage_client.get_presigned_url(
             storage_path,
             ttl=settings.media_playback_url_ttl_seconds,
             filename=Path(storage_path).name,
@@ -282,4 +487,5 @@ async def request_playback_url(
     return schemas.MediaPlaybackUrlResponse(
         playback_url=presigned.url,
         expires_at=expires_at,
+        format="mp3",
     )

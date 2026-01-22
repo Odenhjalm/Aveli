@@ -21,6 +21,7 @@ import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
@@ -300,6 +301,8 @@ class _HomeAudioList extends ConsumerStatefulWidget {
 
 class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   String? _selectedId;
+  Future<MediaPlaybackUrl>? _playbackFuture;
+  String? _playbackMediaId;
 
   @override
   void didUpdateWidget(covariant _HomeAudioList oldWidget) {
@@ -317,6 +320,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     if (items.isEmpty) return const SizedBox.shrink();
     final selected = _resolveSelected(items);
     final mediaRepo = ref.watch(mediaRepositoryProvider);
+    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
     String? resolvedUrl = selected.preferredUrl;
     if (resolvedUrl != null) {
       try {
@@ -326,6 +330,17 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     final durationHint = (selected.durationSeconds ?? 0) > 0
         ? Duration(seconds: selected.durationSeconds!)
         : null;
+
+    if (selected.mediaAssetId != null && selected.mediaState == 'ready') {
+      if (_playbackMediaId != selected.mediaAssetId) {
+        _playbackMediaId = selected.mediaAssetId;
+        _playbackFuture =
+            pipelineRepo.fetchPlaybackUrl(selected.mediaAssetId!);
+      }
+    } else {
+      _playbackMediaId = null;
+      _playbackFuture = null;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,7 +362,12 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
           ),
         ],
         const SizedBox(height: 10),
-        if (resolvedUrl == null)
+        if (selected.mediaAssetId != null)
+          _buildPipelineAudio(
+            selected,
+            durationHint: durationHint,
+          )
+        else if (resolvedUrl == null)
           const Text(
             'Ljudlänken saknas för detta spår.',
             style: TextStyle(color: Colors.white70),
@@ -369,6 +389,52 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPipelineAudio(
+    HomeAudioItem item, {
+    Duration? durationHint,
+  }) {
+    final state = item.mediaState ?? 'uploaded';
+    if (state != 'ready') {
+      final message = state == 'failed'
+          ? 'Ljudet kunde inte bearbetas.'
+          : 'Ljudet bearbetas…';
+      return Text(
+        message,
+        style: const TextStyle(color: Colors.white70),
+      );
+    }
+    final future = _playbackFuture;
+    if (future == null) {
+      return const Text(
+        'Ljudlänken saknas för detta spår.',
+        style: TextStyle(color: Colors.white70),
+      );
+    }
+    return FutureBuilder<MediaPlaybackUrl>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Text(
+            'Kunde inte hämta uppspelningslänk.',
+            style: TextStyle(color: Colors.white70),
+          );
+        }
+        final url = snapshot.data!.playbackUrl.toString();
+        return InlineAudioPlayer(
+          url: url,
+          durationHint: durationHint,
+          compact: true,
+        );
+      },
     );
   }
 
@@ -593,14 +659,12 @@ class _ExploreCoursesSection extends StatelessWidget {
     return courses
         .where((course) => (course.slug ?? '').isNotEmpty)
         .map((course) {
-          final resolvedCover = course.resolvedCoverUrl;
           return {
             'title': course.title,
             'description': course.description ?? '',
             'slug': course.slug ?? '',
             'is_free_intro': course.isFreeIntro,
-            'signed_cover_url': resolvedCover,
-            'cover_url': course.coverUrl ?? resolvedCover,
+            'cover_url': course.coverUrl,
           };
         })
         .toList(growable: false);
@@ -623,10 +687,7 @@ class _ExploreCoursesSection extends StatelessWidget {
             final description = (course['description'] as String?) ?? '';
             final slug = (course['slug'] as String?) ?? '';
             final isIntro = course['is_free_intro'] == true;
-            final coverUrl =
-                (course['signed_cover_url'] as String?) ??
-                (course['cover_url'] as String?) ??
-                '';
+            final coverUrl = (course['cover_url'] as String?) ?? '';
             final coverProvider = CourseCoverAssets.resolve(
               assets: assets,
               slug: slug,

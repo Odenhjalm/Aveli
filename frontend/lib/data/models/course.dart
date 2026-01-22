@@ -10,7 +10,7 @@ class Course {
     required this.title,
     this.description,
     this.coverUrl,
-    this.signedCoverUrl,
+    this.coverMediaId,
     this.videoUrl,
     this.isFreeIntro = false,
     this.isPublished = false,
@@ -25,7 +25,7 @@ class Course {
   final String title;
   final String? description;
   final String? coverUrl;
-  final String? signedCoverUrl;
+  final String? coverMediaId;
   final String? videoUrl;
 
   @JsonKey(defaultValue: false)
@@ -34,5 +34,5 @@ class Course {
   @JsonKey(defaultValue: false)
   final bool isPublished;
 
-  String? get resolvedCoverUrl => signedCoverUrl ?? coverUrl;
+  String? get resolvedCoverUrl => coverUrl;
 }

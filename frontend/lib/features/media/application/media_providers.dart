@@ -4,9 +4,17 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/env/app_config.dart';
 
 import '../data/media_repository.dart';
+import '../data/media_pipeline_repository.dart';
 
 final mediaRepositoryProvider = Provider<MediaRepository>((ref) {
   final client = ref.watch(apiClientProvider);
   final config = ref.watch(appConfigProvider);
   return MediaRepository(client: client, config: config);
+});
+
+final mediaPipelineRepositoryProvider = Provider<MediaPipelineRepository>((
+  ref,
+) {
+  final client = ref.watch(apiClientProvider);
+  return MediaPipelineRepository(client: client);
 });

@@ -131,14 +131,10 @@ class CourseCatalogPage extends ConsumerWidget {
     });
 
     for (final item in items) {
-      final cover =
-          (item['signed_cover_url'] as String?) ?? item['cover_url'] as String?;
+      final cover = item['cover_url'] as String?;
       if (cover != null && cover.isNotEmpty) {
         final resolved = _resolveMediaUrl(mediaRepository, cover) ?? cover;
         item['cover_url'] = resolved;
-        if (item.containsKey('signed_cover_url')) {
-          item['signed_cover_url'] = resolved;
-        }
       }
     }
     return items;
