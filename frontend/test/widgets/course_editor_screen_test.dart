@@ -116,6 +116,7 @@ void main() {
           'title': 'Välkommen',
           'position': 1,
           'is_intro': true,
+          'course_id': 'course-1',
         },
       ],
     );

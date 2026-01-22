@@ -106,6 +106,7 @@ void main() {
           'title': 'Lektion',
           'position': 1,
           'is_intro': false,
+          'course_id': 'course-1',
         },
       ],
     );

@@ -53,7 +53,9 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   }
 
   Future<void> _pickAndUpload() async {
-    if (widget.courseId == null || widget.lessonId == null) {
+    final courseId = widget.courseId;
+    final lessonId = widget.lessonId;
+    if (courseId == null || lessonId == null) {
       showSnack(context, 'Välj kurs och lektion innan du laddar upp WAV.');
       return;
     }
@@ -83,8 +85,8 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         mimeType: picked.mimeType ?? 'audio/wav',
         sizeBytes: picked.size,
         mediaType: 'audio',
-        courseId: widget.courseId,
-        lessonId: widget.lessonId,
+        courseId: courseId,
+        lessonId: lessonId,
       );
 
       _mediaId = upload.mediaId;

@@ -847,6 +847,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return null;
   }
 
+  String? _lessonCourseId(String? lessonId) {
+    // Lesson is the source of truth for course_id in lesson-scoped media actions.
+    final lesson = _lessonById(lessonId);
+    final courseId = lesson?['course_id'];
+    if (courseId is String && courseId.isNotEmpty) return courseId;
+    return null;
+  }
+
   int _positionValue(Map<String, dynamic> item) {
     final value = item['position'];
     if (value is int) return value;
@@ -2450,17 +2458,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
-    final courseId = _selectedCourseId;
-    if (courseId == null) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Välj en kurs innan du anger kursbild.');
-      }
-      return;
-    }
     final lessonId = _selectedLessonId;
     if (lessonId == null) {
       if (mounted && context.mounted) {
         showSnack(context, 'Välj en lektion innan du anger kursbild.');
+      }
+      return;
+    }
+    final courseId = _lessonCourseId(lessonId);
+    if (courseId == null) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Lektionen saknar kurskoppling.');
       }
       return;
     }
@@ -3994,7 +4002,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             if (_selectedLessonId != null) ...[
                               gap12,
                               WavUploadCard(
-                                courseId: _selectedCourseId,
+                                // Lesson is the source of truth for course_id.
+                                courseId: _lessonCourseId(_selectedLessonId),
                                 lessonId: _selectedLessonId,
                                 onMediaUpdated: _loadLessonMedia,
                               ),
