@@ -277,6 +277,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _mediaStatus;
   bool _downloadingMedia = false;
   String? _downloadStatus;
+  bool _suppressNextMediaPreview = false;
   bool _moduleActionBusy = false;
   bool _lessonActionBusy = false;
 
@@ -332,6 +333,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final detail = failure.message.trim();
     final message = detail.isEmpty ? prefix : '$prefix: $detail';
     showSnack(context, message);
+  }
+
+  void _suppressMediaPreviewOnce() {
+    _suppressNextMediaPreview = true;
+    scheduleMicrotask(() {
+      _suppressNextMediaPreview = false;
+    });
+  }
+
+  void _handleMediaPreviewTap(Map<String, dynamic> media) {
+    if (_suppressNextMediaPreview) {
+      _suppressNextMediaPreview = false;
+      return;
+    }
+    _previewMedia(media);
   }
 
   @override
@@ -2182,12 +2198,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
 
+    final previousPath = _courseCoverPath;
+    final previousPreview = _courseCoverPreviewUrl;
+    final previousPipelineId = _coverPipelineMediaId;
+    final previousPipelineState = _coverPipelineState;
+    final previousPipelineError = _coverPipelineError;
+    final storagePath = (media['storage_path'] as String?)?.trim();
+    final previewSource = storagePath?.isNotEmpty == true
+        ? storagePath
+        : _mediaUrl(media);
+    final previewUrl = _resolveMediaUrl(previewSource);
+
     // Covers are now processed into public storage; we never reuse lesson URLs directly.
     if (mounted) {
       setState(() {
         _updatingCourseCover = true;
         _coverPipelineState = 'uploaded';
         _coverPipelineError = null;
+        if (previewUrl != null && previewUrl.isNotEmpty) {
+          _courseCoverPath = previewSource;
+          _courseCoverPreviewUrl = previewUrl;
+        }
       });
     }
 
@@ -2207,8 +2238,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         showSnack(context, 'Kursbilden bearbetas…');
       }
     } catch (e, stackTrace) {
+      final failure = AppFailure.from(e, stackTrace);
       if (!mounted) return;
-      setState(() => _updatingCourseCover = false);
+      setState(() {
+        _updatingCourseCover = false;
+        _coverPipelineMediaId = previousPipelineId;
+        _coverPipelineState = previousPipelineState;
+        _coverPipelineError = failure.message;
+        _courseCoverPath = previousPath;
+        _courseCoverPreviewUrl = previousPreview;
+      });
       _showFriendlyErrorSnack('Kunde inte välja kursbild', e, stackTrace);
     }
   }
@@ -3617,11 +3656,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       leading = GestureDetector(
                                         onTap: _updatingCourseCover
                                             ? null
-                                            : () => unawaited(
-                                                _selectCourseCoverFromMedia(
-                                                  media,
-                                                ),
-                                              ),
+                                            : () {
+                                                _suppressMediaPreviewOnce();
+                                                unawaited(
+                                                  _selectCourseCoverFromMedia(
+                                                    media,
+                                                  ),
+                                                );
+                                              },
                                         child: ClipRRect(
                                           borderRadius:
                                               const BorderRadius.all(
@@ -3654,7 +3696,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       padding: const EdgeInsets.only(bottom: 8),
                                       child: Card(
                                         child: ListTile(
-                                          onTap: () => _previewMedia(media),
+                                          onTap: () =>
+                                              _handleMediaPreviewTap(media),
                                           leading: SizedBox(
                                             width: 64,
                                             child: Center(child: leading),
@@ -3715,11 +3758,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   onPressed:
                                                       _updatingCourseCover
                                                       ? null
-                                                      : () => unawaited(
+                                                      : () {
+                                                          _suppressMediaPreviewOnce();
+                                                          unawaited(
                                                             _selectCourseCoverFromMedia(
                                                               media,
                                                             ),
-                                                          ),
+                                                          );
+                                                        },
                                                 ),
                                                 IconButton(
                                                   tooltip: 'Infoga i lektionen',
