@@ -343,6 +343,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final isReadyState = effectiveState == 'ready';
     final isFailedState = effectiveState == 'failed';
     final showProcessingState = _uploading || isProcessingState;
+    final showProcessingDetails = !_uploading && isProcessingState;
     final showReadyState = !showProcessingState && (isReadyState || isFailedState);
     final showUploadAction = !showProcessingState && !showReadyState;
     final showReplaceAction = showReadyState;
@@ -354,15 +355,13 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
     String? statusText;
     if (_uploading) {
-      statusText = _status ?? (effectiveState != null
-          ? _statusLabel(effectiveState)
-          : null);
+      statusText = _status;
     } else if (effectiveState != null) {
       statusText = _statusLabel(effectiveState);
     } else {
       statusText = _status;
     }
-    if (statusText == null && showProcessingState) {
+    if (statusText == null && showProcessingDetails) {
       statusText = 'Uppladdning klar – bearbetas till MP3';
     }
 
@@ -445,7 +444,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
                 style: bodyStyle,
               ),
             ],
-            if (canUpload && showProcessingState) ...[
+            if (canUpload && showProcessingDetails) ...[
               const SizedBox(height: 4),
               Text(
                 'Du kan ladda upp en ny master när bearbetningen är klar.',

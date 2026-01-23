@@ -22,6 +22,14 @@ class WavUploadFile {
   int? get lastModified => file.lastModified;
 }
 
+String _fingerprintForFile(WavUploadFile file) {
+  return wavUploadFingerprint(
+    fileName: file.name,
+    size: file.size,
+    lastModified: file.lastModified,
+  );
+}
+
 Future<WavUploadFile?> pickWavFile() async {
   final input = FileUploadInputElement()
     ..accept = '.wav,audio/wav,audio/x-wav'
@@ -57,37 +65,86 @@ WavResumableSession? findResumableSession({
   required String lessonId,
   required WavUploadFile file,
 }) {
-  try {
-    final raw = window.localStorage[_sessionKey(courseId, lessonId)];
-    if (raw == null || raw.isEmpty) return null;
-    final session = WavResumableSession.fromStoragePayload(raw);
-    if (session == null) return null;
+  final fingerprint = _fingerprintForFile(file);
+  WavResumableSession? session;
+  var fromLegacy = false;
 
-    if (session.courseId != courseId || session.lessonId != lessonId) {
-      _clearSession(courseId, lessonId);
-      return null;
+  try {
+    session = _loadSession(_sessionKey(courseId, lessonId, fingerprint));
+    if (session == null) {
+      session = _loadSession(_legacySessionKey(courseId, lessonId));
+      fromLegacy = session != null;
     }
-    if (session.size != file.size || session.fileName != file.name) {
-      _clearSession(courseId, lessonId);
-      return null;
-    }
-    if (session.lastModified != null &&
-        file.lastModified != null &&
-        session.lastModified != file.lastModified) {
-      _clearSession(courseId, lessonId);
-      return null;
-    }
-    final expiresAt = session.expiresAt?.toUtc();
-    if (expiresAt != null && expiresAt.isBefore(DateTime.now().toUtc())) {
-      _clearSession(courseId, lessonId);
-      return null;
-    }
-    return session;
   } catch (_) {
     return null;
   }
+
+  if (session == null) return null;
+
+  if (session.courseId != courseId || session.lessonId != lessonId) {
+    _clearStoredSession(
+      courseId: courseId,
+      lessonId: lessonId,
+      fingerprint: fingerprint,
+      fromLegacy: fromLegacy,
+    );
+    return null;
+  }
+  if (session.fingerprint != fingerprint) {
+    _clearStoredSession(
+      courseId: courseId,
+      lessonId: lessonId,
+      fingerprint: fingerprint,
+      fromLegacy: fromLegacy,
+    );
+    return null;
+  }
+  if (session.size != file.size || session.fileName != file.name) {
+    _clearStoredSession(
+      courseId: courseId,
+      lessonId: lessonId,
+      fingerprint: fingerprint,
+      fromLegacy: fromLegacy,
+    );
+    return null;
+  }
+  if (session.lastModified != null &&
+      file.lastModified != null &&
+      session.lastModified != file.lastModified) {
+    _clearStoredSession(
+      courseId: courseId,
+      lessonId: lessonId,
+      fingerprint: fingerprint,
+      fromLegacy: fromLegacy,
+    );
+    return null;
+  }
+  final expiresAt = session.expiresAt?.toUtc();
+  if (expiresAt != null && expiresAt.isBefore(DateTime.now().toUtc())) {
+    _clearStoredSession(
+      courseId: courseId,
+      lessonId: lessonId,
+      fingerprint: fingerprint,
+      fromLegacy: fromLegacy,
+    );
+    return null;
+  }
+
+  if (fromLegacy) {
+    _storeSession(session);
+    _clearLegacySession(courseId, lessonId);
+  }
+
+  return session;
 }
 
+// Verification (manual):
+// 1) Start >=500 MB WAV upload in web app.
+// 2) Close tab at ~30%.
+// 3) Reopen app and select same WAV.
+// 4) Confirm HEAD -> PATCH resume, no new POST.
+// 5) Let upload finish; verify storage.objects row exists.
+// 6) Confirm media_assets: uploaded -> processing -> ready; MP3 plays.
 Future<void> uploadWavFile({
   required String mediaId,
   required String courseId,
@@ -106,8 +163,10 @@ Future<void> uploadWavFile({
     throw const WavUploadFailure(WavUploadFailureKind.cancelled);
   }
 
+  WavResumableSession? session;
+
   try {
-    final session = resumableSession ??
+    session = resumableSession ??
         await _createResumableSession(
           mediaId: mediaId,
           courseId: courseId,
@@ -136,7 +195,7 @@ Future<void> uploadWavFile({
 
     while (offset < file.size) {
       if (cancelToken?.isCancelled == true) {
-        _clearSession(courseId, lessonId);
+        _clearSession(session);
         throw const WavUploadFailure(WavUploadFailureKind.cancelled);
       }
 
@@ -165,11 +224,18 @@ Future<void> uploadWavFile({
       onProgress(offset, file.size);
     }
 
-    _clearSession(courseId, lessonId);
+    _clearSession(session);
   } on WavUploadFailure catch (error) {
-    if (error.kind == WavUploadFailureKind.expired ||
-        error.kind == WavUploadFailureKind.cancelled) {
-      _clearSession(courseId, lessonId);
+    if (session != null) {
+      if (error.kind == WavUploadFailureKind.cancelled) {
+        _clearSession(session);
+      } else if (error.kind == WavUploadFailureKind.expired) {
+        _storeSession(
+          session.copyWith(
+            expiresAt: DateTime.now().toUtc(),
+          ),
+        );
+      }
     }
     rethrow;
   }
@@ -187,24 +253,60 @@ class _SignedUploadInfo {
   final String token;
 }
 
-String _sessionKey(String courseId, String lessonId) {
+String _sessionKey(String courseId, String lessonId, String fingerprint) {
+  return '$_storageKeyPrefix$courseId.$lessonId.$fingerprint';
+}
+
+String _legacySessionKey(String courseId, String lessonId) {
   return '$_storageKeyPrefix$courseId.$lessonId';
+}
+
+WavResumableSession? _loadSession(String key) {
+  final raw = window.localStorage[key];
+  if (raw == null || raw.isEmpty) return null;
+  return WavResumableSession.fromStoragePayload(raw);
 }
 
 void _storeSession(WavResumableSession session) {
   try {
-    window.localStorage[_sessionKey(session.courseId, session.lessonId)] =
-        session.toStoragePayload();
+    window.localStorage[
+        _sessionKey(session.courseId, session.lessonId, session.fingerprint)] =
+      session.toStoragePayload();
   } catch (_) {
     // Ignore localStorage write failures.
   }
 }
 
-void _clearSession(String courseId, String lessonId) {
+void _clearSession(WavResumableSession session) {
+  _clearSessionByKey(session.courseId, session.lessonId, session.fingerprint);
+}
+
+void _clearSessionByKey(String courseId, String lessonId, String fingerprint) {
   try {
-    window.localStorage.remove(_sessionKey(courseId, lessonId));
+    window.localStorage.remove(_sessionKey(courseId, lessonId, fingerprint));
   } catch (_) {
     // Ignore localStorage errors.
+  }
+}
+
+void _clearLegacySession(String courseId, String lessonId) {
+  try {
+    window.localStorage.remove(_legacySessionKey(courseId, lessonId));
+  } catch (_) {
+    // Ignore localStorage errors.
+  }
+}
+
+void _clearStoredSession({
+  required String courseId,
+  required String lessonId,
+  required String fingerprint,
+  required bool fromLegacy,
+}) {
+  if (fromLegacy) {
+    _clearLegacySession(courseId, lessonId);
+  } else {
+    _clearSessionByKey(courseId, lessonId, fingerprint);
   }
 }
 
@@ -284,6 +386,7 @@ Future<WavResumableSession> _createResumableSession({
   final upsertHeader = _headerValue(headers, 'x-upsert') ?? 'false';
   final upsert = upsertHeader.toLowerCase() == 'true';
   final normalizedPath = _normalizeObjectPath(signedInfo.bucket, objectPath);
+  final fingerprint = _fingerprintForFile(file);
 
   final metadataHeader = _buildMetadataHeader({
     'bucketName': signedInfo.bucket,
@@ -333,9 +436,10 @@ Future<WavResumableSession> _createResumableSession({
     contentType: contentType,
     size: file.size,
     fileName: file.name,
-    lastModified: file.lastModified,
+    fingerprint: fingerprint,
     upsert: upsert,
     cacheControl: cacheControl,
+    lastModified: file.lastModified,
     offset: 0,
     expiresAt: expiresAt,
     createdAt: DateTime.now().toUtc(),

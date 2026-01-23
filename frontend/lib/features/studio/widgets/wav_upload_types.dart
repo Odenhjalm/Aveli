@@ -36,6 +36,15 @@ class WavUploadCancelToken {
   }
 }
 
+String wavUploadFingerprint({
+  required String fileName,
+  required int size,
+  required int? lastModified,
+}) {
+  final raw = '$fileName|$size|${lastModified ?? 0}';
+  return base64Url.encode(utf8.encode(raw));
+}
+
 class WavResumableSession {
   const WavResumableSession({
     required this.mediaId,
@@ -48,6 +57,7 @@ class WavResumableSession {
     required this.contentType,
     required this.size,
     required this.fileName,
+    required this.fingerprint,
     required this.upsert,
     this.cacheControl,
     this.lastModified,
@@ -66,6 +76,7 @@ class WavResumableSession {
   final String contentType;
   final int size;
   final String fileName;
+  final String fingerprint;
   final bool upsert;
   final String? cacheControl;
   final int? lastModified;
@@ -88,6 +99,7 @@ class WavResumableSession {
       contentType: contentType,
       size: size,
       fileName: fileName,
+      fingerprint: fingerprint,
       upsert: upsert,
       cacheControl: cacheControl,
       lastModified: lastModified,
@@ -109,6 +121,7 @@ class WavResumableSession {
       'contentType': contentType,
       'size': size,
       'fileName': fileName,
+      'fingerprint': fingerprint,
       'upsert': upsert,
       'cacheControl': cacheControl,
       'lastModified': lastModified,
@@ -126,6 +139,15 @@ class WavResumableSession {
       final size = (json['size'] as num?)?.toInt() ?? 0;
       final offset = (json['offset'] as num?)?.toInt() ?? 0;
       final lastModified = (json['lastModified'] as num?)?.toInt();
+      final fileName = json['fileName'] as String;
+      final fingerprintRaw = json['fingerprint'] as String?;
+      final fingerprint = (fingerprintRaw != null && fingerprintRaw.isNotEmpty)
+          ? fingerprintRaw
+          : wavUploadFingerprint(
+              fileName: fileName,
+              size: size,
+              lastModified: lastModified,
+            );
       return WavResumableSession(
         mediaId: json['mediaId'] as String,
         courseId: json['courseId'] as String,
@@ -136,7 +158,8 @@ class WavResumableSession {
         objectPath: json['objectPath'] as String,
         contentType: json['contentType'] as String,
         size: size,
-        fileName: json['fileName'] as String,
+        fileName: fileName,
+        fingerprint: fingerprint,
         upsert: json['upsert'] == true,
         cacheControl: json['cacheControl'] as String?,
         lastModified: lastModified,
