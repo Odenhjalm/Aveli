@@ -149,11 +149,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     }
 
     final normalizedMime = _normalizeWavMimeType(picked.mimeType, picked.name);
-    final resumeSession = findResumableSession(
-      courseId: courseId!,
-      lessonId: lessonId!,
-      file: picked,
-    );
 
     setState(() {
       _selectedFile = picked;
@@ -164,6 +159,13 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       _mediaState = null;
       _uploading = true;
     });
+
+    final resumeSession = await findResumableSession(
+      courseId: courseId!,
+      lessonId: lessonId!,
+      file: picked,
+    );
+    if (!mounted) return;
 
     WavResumableSession? resumableSession = resumeSession;
     Uri uploadUrl;
@@ -176,9 +178,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       uploadUrl = resumableSession.sessionUrl;
       objectPath = resumableSession.objectPath;
       uploadHeaders = resumableSession.resumableHeaders();
-      if (mounted) {
-        setState(() => _status = 'Återupptar uppladdning…');
-      }
+      setState(() => _status = 'Återupptar uppladdning…');
     } else {
       try {
         final repo = ref.read(mediaPipelineRepositoryProvider);

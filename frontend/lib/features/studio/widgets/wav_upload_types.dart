@@ -39,9 +39,9 @@ class WavUploadCancelToken {
 String wavUploadFingerprint({
   required String fileName,
   required int size,
-  required int? lastModified,
+  required String contentHash,
 }) {
-  final raw = '$fileName|$size|${lastModified ?? 0}';
+  final raw = '$fileName|$size|$contentHash';
   return base64Url.encode(utf8.encode(raw));
 }
 
@@ -139,15 +139,8 @@ class WavResumableSession {
       final size = (json['size'] as num?)?.toInt() ?? 0;
       final offset = (json['offset'] as num?)?.toInt() ?? 0;
       final lastModified = (json['lastModified'] as num?)?.toInt();
-      final fileName = json['fileName'] as String;
-      final fingerprintRaw = json['fingerprint'] as String?;
-      final fingerprint = (fingerprintRaw != null && fingerprintRaw.isNotEmpty)
-          ? fingerprintRaw
-          : wavUploadFingerprint(
-              fileName: fileName,
-              size: size,
-              lastModified: lastModified,
-            );
+      final fingerprint = json['fingerprint'] as String?;
+      if (fingerprint == null || fingerprint.isEmpty) return null;
       return WavResumableSession(
         mediaId: json['mediaId'] as String,
         courseId: json['courseId'] as String,
@@ -158,7 +151,7 @@ class WavResumableSession {
         objectPath: json['objectPath'] as String,
         contentType: json['contentType'] as String,
         size: size,
-        fileName: fileName,
+        fileName: json['fileName'] as String,
         fingerprint: fingerprint,
         upsert: json['upsert'] == true,
         cacheControl: json['cacheControl'] as String?,

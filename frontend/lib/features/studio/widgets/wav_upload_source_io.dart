@@ -22,11 +22,11 @@ Future<WavUploadFile?> pickWavFile() async {
   return WavUploadFile(file, 'audio/wav', size);
 }
 
-WavResumableSession? findResumableSession({
+Future<WavResumableSession?> findResumableSession({
   required String courseId,
   required String lessonId,
   required WavUploadFile file,
-}) {
+}) async {
   return null;
 }
 

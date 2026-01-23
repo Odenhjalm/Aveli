@@ -4,30 +4,37 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:html';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'wav_upload_types.dart';
 
 const String _tusVersion = '1.0.0';
 const int _chunkSize = 6 * 1024 * 1024; // Supabase requires 6MB chunks.
+const int _fingerprintMaxBytes = 4 * 1024 * 1024;
 const String _storageKeyPrefix = 'aveli.wavUpload.';
 
 class WavUploadFile {
   WavUploadFile(this.file);
 
   final File file;
+  String? _contentFingerprint;
 
   String get name => file.name;
   int get size => file.size;
   String? get mimeType => file.type.isEmpty ? null : file.type;
   int? get lastModified => file.lastModified;
-}
 
-String _fingerprintForFile(WavUploadFile file) {
-  return wavUploadFingerprint(
-    fileName: file.name,
-    size: file.size,
-    lastModified: file.lastModified,
-  );
+  Future<String> contentFingerprint() async {
+    if (_contentFingerprint != null) return _contentFingerprint!;
+    final slice = file.slice(0, math.min(size, _fingerprintMaxBytes));
+    final hash = await _hashBlob(slice);
+    _contentFingerprint = wavUploadFingerprint(
+      fileName: name,
+      size: size,
+      contentHash: hash,
+    );
+    return _contentFingerprint!;
+  }
 }
 
 Future<WavUploadFile?> pickWavFile() async {
@@ -60,91 +67,44 @@ Future<WavUploadFile?> pickWavFile() async {
   );
 }
 
-WavResumableSession? findResumableSession({
+Future<WavResumableSession?> findResumableSession({
   required String courseId,
   required String lessonId,
   required WavUploadFile file,
-}) {
-  final fingerprint = _fingerprintForFile(file);
-  WavResumableSession? session;
-  var fromLegacy = false;
-
+}) async {
   try {
-    session = _loadSession(_sessionKey(courseId, lessonId, fingerprint));
-    if (session == null) {
-      session = _loadSession(_legacySessionKey(courseId, lessonId));
-      fromLegacy = session != null;
+    final fingerprint = await file.contentFingerprint();
+    final session = _loadSession(_sessionKey(courseId, lessonId, fingerprint));
+    if (session == null) return null;
+
+    if (session.courseId != courseId || session.lessonId != lessonId) {
+      _clearSessionByKey(courseId, lessonId, fingerprint);
+      return null;
     }
+    if (session.fingerprint != fingerprint) {
+      _clearSessionByKey(courseId, lessonId, fingerprint);
+      return null;
+    }
+    final expiresAt = session.expiresAt?.toUtc();
+    if (expiresAt != null && expiresAt.isBefore(DateTime.now().toUtc())) {
+      _clearSessionByKey(courseId, lessonId, fingerprint);
+      return null;
+    }
+    return session;
   } catch (_) {
     return null;
   }
-
-  if (session == null) return null;
-
-  if (session.courseId != courseId || session.lessonId != lessonId) {
-    _clearStoredSession(
-      courseId: courseId,
-      lessonId: lessonId,
-      fingerprint: fingerprint,
-      fromLegacy: fromLegacy,
-    );
-    return null;
-  }
-  if (session.fingerprint != fingerprint) {
-    _clearStoredSession(
-      courseId: courseId,
-      lessonId: lessonId,
-      fingerprint: fingerprint,
-      fromLegacy: fromLegacy,
-    );
-    return null;
-  }
-  if (session.size != file.size || session.fileName != file.name) {
-    _clearStoredSession(
-      courseId: courseId,
-      lessonId: lessonId,
-      fingerprint: fingerprint,
-      fromLegacy: fromLegacy,
-    );
-    return null;
-  }
-  if (session.lastModified != null &&
-      file.lastModified != null &&
-      session.lastModified != file.lastModified) {
-    _clearStoredSession(
-      courseId: courseId,
-      lessonId: lessonId,
-      fingerprint: fingerprint,
-      fromLegacy: fromLegacy,
-    );
-    return null;
-  }
-  final expiresAt = session.expiresAt?.toUtc();
-  if (expiresAt != null && expiresAt.isBefore(DateTime.now().toUtc())) {
-    _clearStoredSession(
-      courseId: courseId,
-      lessonId: lessonId,
-      fingerprint: fingerprint,
-      fromLegacy: fromLegacy,
-    );
-    return null;
-  }
-
-  if (fromLegacy) {
-    _storeSession(session);
-    _clearLegacySession(courseId, lessonId);
-  }
-
-  return session;
 }
 
 // Verification (manual):
 // 1) Start >=500 MB WAV upload in web app.
-// 2) Close tab at ~30%.
-// 3) Reopen app and select same WAV.
-// 4) Confirm HEAD -> PATCH resume, no new POST.
-// 5) Let upload finish; verify storage.objects row exists.
-// 6) Confirm media_assets: uploaded -> processing -> ready; MP3 plays.
+// 2) Let it reach ~20–40%.
+// 3) Close tab.
+// 4) Reopen app and click "Byt WAV".
+// 5) Select the same WAV.
+// 6) Confirm HEAD -> PATCH resume (no new POST).
+// 7) Let upload finish; verify storage.objects row exists.
+// 8) Confirm media_assets: uploaded -> processing -> ready; MP3 plays.
 Future<void> uploadWavFile({
   required String mediaId,
   required String courseId,
@@ -257,10 +217,6 @@ String _sessionKey(String courseId, String lessonId, String fingerprint) {
   return '$_storageKeyPrefix$courseId.$lessonId.$fingerprint';
 }
 
-String _legacySessionKey(String courseId, String lessonId) {
-  return '$_storageKeyPrefix$courseId.$lessonId';
-}
-
 WavResumableSession? _loadSession(String key) {
   final raw = window.localStorage[key];
   if (raw == null || raw.isEmpty) return null;
@@ -289,25 +245,49 @@ void _clearSessionByKey(String courseId, String lessonId, String fingerprint) {
   }
 }
 
-void _clearLegacySession(String courseId, String lessonId) {
-  try {
-    window.localStorage.remove(_legacySessionKey(courseId, lessonId));
-  } catch (_) {
-    // Ignore localStorage errors.
-  }
+Future<ByteBuffer> _readBlobAsBuffer(Blob blob) {
+  final reader = FileReader();
+  final completer = Completer<ByteBuffer>();
+
+  reader.onError.listen((_) {
+    if (completer.isCompleted) return;
+    completer.completeError(const WavUploadFailure(WavUploadFailureKind.failed));
+  });
+
+  reader.onLoadEnd.listen((_) {
+    if (completer.isCompleted) return;
+    final result = reader.result;
+    if (result is ByteBuffer) {
+      completer.complete(result);
+    } else if (result is Uint8List) {
+      completer.complete(result.buffer);
+    } else {
+      completer.completeError(
+        const WavUploadFailure(WavUploadFailureKind.failed),
+      );
+    }
+  });
+
+  reader.readAsArrayBuffer(blob);
+  return completer.future;
 }
 
-void _clearStoredSession({
-  required String courseId,
-  required String lessonId,
-  required String fingerprint,
-  required bool fromLegacy,
-}) {
-  if (fromLegacy) {
-    _clearLegacySession(courseId, lessonId);
-  } else {
-    _clearSessionByKey(courseId, lessonId, fingerprint);
+String _bytesToHex(Uint8List bytes) {
+  final buffer = StringBuffer();
+  for (final byte in bytes) {
+    buffer.write(byte.toRadixString(16).padLeft(2, '0'));
   }
+  return buffer.toString();
+}
+
+Future<String> _hashBlob(Blob blob) async {
+  final subtle = window.crypto.subtle;
+  if (subtle == null) {
+    throw const WavUploadFailure(WavUploadFailureKind.failed);
+  }
+  final buffer = await _readBlobAsBuffer(blob);
+  final digest = await subtle.digest('SHA-256', buffer);
+  return _bytesToHex(Uint8List.view(digest));
 }
 
 _SignedUploadInfo _parseSignedUploadInfo(Uri uploadUrl) {
@@ -386,7 +366,7 @@ Future<WavResumableSession> _createResumableSession({
   final upsertHeader = _headerValue(headers, 'x-upsert') ?? 'false';
   final upsert = upsertHeader.toLowerCase() == 'true';
   final normalizedPath = _normalizeObjectPath(signedInfo.bucket, objectPath);
-  final fingerprint = _fingerprintForFile(file);
+  final fingerprint = await file.contentFingerprint();
 
   final metadataHeader = _buildMetadataHeader({
     'bucketName': signedInfo.bucket,
@@ -439,7 +419,7 @@ Future<WavResumableSession> _createResumableSession({
     fingerprint: fingerprint,
     upsert: upsert,
     cacheControl: cacheControl,
-    lastModified: file.lastModified,
+    lastModified: null,
     offset: 0,
     expiresAt: expiresAt,
     createdAt: DateTime.now().toUtc(),
