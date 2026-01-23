@@ -4,9 +4,9 @@ import asyncio
 import logging
 import os
 import tempfile
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -116,23 +116,33 @@ async def _poll_loop() -> None:
 async def _process_asset(asset: dict) -> None:
     media_id = str(asset.get("id"))
     attempts = int(asset.get("processing_attempts") or 0)
-    if attempts > settings.media_transcode_max_attempts:
+    if attempts >= settings.media_transcode_max_attempts:
         await media_assets_repo.mark_media_asset_failed(
             media_id=media_id,
             error_message="Max transcode attempts reached",
         )
         return
 
+    attempt_consumed = False
+
+    async def _consume_attempt() -> None:
+        nonlocal attempt_consumed, attempts
+        if attempt_consumed:
+            return
+        await media_assets_repo.increment_processing_attempts(media_id=media_id)
+        attempt_consumed = True
+        attempts += 1
+
     try:
-        await _transcode_asset(asset)
+        await _transcode_asset(asset, _consume_attempt)
     except SourceNotReadyError as exc:
-        next_retry = _now() + timedelta(seconds=15)
-        await media_assets_repo.reschedule_media_asset(
-            media_id=media_id,
-            next_retry_at=next_retry,
-        )
-        logger.info("Source not ready for %s; retrying at %s", media_id, next_retry)
+        # Context7 invariant: source_object_must_exist_before_processing
+        # Missing source objects are a wait condition (no retries consumed, no failure).
+        await media_assets_repo.defer_media_asset_processing(media_id=media_id)
+        logger.debug("Source not ready for %s; deferring processing (%s)", media_id, exc)
     except Exception as exc:  # pragma: no cover - logged and recorded
+        if not attempt_consumed:
+            await _consume_attempt()
         delay = media_assets_repo.compute_backoff(
             attempts,
             max_seconds=settings.media_transcode_max_retry_seconds,
@@ -146,30 +156,36 @@ async def _process_asset(asset: dict) -> None:
         logger.exception("Media transcode failed for %s: %s", media_id, exc)
 
 
-async def _transcode_asset(asset: dict) -> None:
+ConsumeAttemptFn = Callable[[], Awaitable[None]]
+
+
+async def _transcode_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> None:
     media_type = (asset.get("media_type") or "").lower()
     purpose = (asset.get("purpose") or "").lower()
     if media_type == "audio":
-        await _transcode_audio_asset(asset)
+        await _transcode_audio_asset(asset, consume_attempt)
         return
     if media_type == "image" and purpose == "course_cover":
-        await _transcode_cover_asset(asset)
+        await _transcode_cover_asset(asset, consume_attempt)
         return
     raise RuntimeError(f"Unsupported media asset type: {media_type}/{purpose}")
 
 
-async def _transcode_audio_asset(asset: dict) -> None:
+async def _transcode_audio_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> None:
     source_path = asset.get("original_object_path")
     if not source_path:
         raise RuntimeError("Missing source object path")
 
     source_bucket = asset.get("storage_bucket") or settings.media_source_bucket
     source_storage = storage_service.get_storage_service(source_bucket)
-    signed = await source_storage.get_presigned_url(
-        source_path,
-        ttl=settings.media_playback_url_ttl_seconds,
-        download=False,
-    )
+    try:
+        signed = await source_storage.get_presigned_url(
+            source_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+            download=False,
+        )
+    except storage_service.StorageObjectNotFoundError as exc:
+        raise SourceNotReadyError(str(exc)) from exc
     output_path = _derive_audio_output_path(source_path, "mp3")
 
     with tempfile.TemporaryDirectory(prefix="aveli_media_") as temp_dir:
@@ -178,6 +194,7 @@ async def _transcode_audio_asset(asset: dict) -> None:
         output_file = temp_root / "output.mp3"
 
         await _download_to_file(signed.url, input_file)
+        await consume_attempt()
         await _run_ffmpeg_audio(input_file, output_file)
         duration = await _probe_duration(output_file)
 
@@ -200,18 +217,21 @@ async def _transcode_audio_asset(asset: dict) -> None:
     logger.info("Media transcode ready media_id=%s output=%s", asset["id"], output_path)
 
 
-async def _transcode_cover_asset(asset: dict) -> None:
+async def _transcode_cover_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> None:
     source_path = asset.get("original_object_path")
     if not source_path:
         raise RuntimeError("Missing source object path")
 
     source_bucket = asset.get("storage_bucket") or settings.media_source_bucket
     source_storage = storage_service.get_storage_service(source_bucket)
-    signed = await source_storage.get_presigned_url(
-        source_path,
-        ttl=settings.media_playback_url_ttl_seconds,
-        download=False,
-    )
+    try:
+        signed = await source_storage.get_presigned_url(
+            source_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+            download=False,
+        )
+    except storage_service.StorageObjectNotFoundError as exc:
+        raise SourceNotReadyError(str(exc)) from exc
     output_path = _derive_cover_output_path(source_path, "jpg")
 
     with tempfile.TemporaryDirectory(prefix="aveli_cover_") as temp_dir:
@@ -220,6 +240,7 @@ async def _transcode_cover_asset(asset: dict) -> None:
         output_file = temp_root / "cover.jpg"
 
         await _download_to_file(signed.url, input_file)
+        await consume_attempt()
         await _run_ffmpeg_cover(input_file, output_file)
 
         public_storage = storage_service.get_storage_service(settings.media_public_bucket)

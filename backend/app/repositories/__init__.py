@@ -83,13 +83,14 @@ from .sessions import (
 from .media_assets import (
     create_media_asset,
     delete_media_asset,
+    defer_media_asset_processing,
     fetch_and_lock_pending_media_assets,
     get_media_asset,
     get_media_asset_access,
+    increment_processing_attempts,
     mark_media_asset_failed,
     mark_media_asset_ready,
     release_processing_media_assets,
-    reschedule_media_asset,
 )
 
 __all__ = [
@@ -185,8 +186,9 @@ __all__ = [
     "fetch_and_lock_pending_media_assets",
     "get_media_asset",
     "get_media_asset_access",
+    "increment_processing_attempts",
     "mark_media_asset_failed",
     "mark_media_asset_ready",
+    "defer_media_asset_processing",
     "release_processing_media_assets",
-    "reschedule_media_asset",
 ]

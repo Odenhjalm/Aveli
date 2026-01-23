@@ -14,6 +14,21 @@ from ..utils.http_headers import build_content_disposition
 class StorageServiceError(RuntimeError):
     """Raised when Supabase Storage returns an error."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.error = error
+
+
+class StorageObjectNotFoundError(StorageServiceError):
+    """Raised when Supabase Storage reports an object is missing."""
+
 
 @dataclass(slots=True)
 class PresignedUrl:
@@ -109,8 +124,29 @@ class StorageService:
                 raise StorageServiceError("Failed to call Supabase Storage") from exc
 
         if response.status_code >= 400:
+            error = None
+            message = None
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict):
+                error = payload.get("error")
+                message = payload.get("message")
+            if (
+                response.status_code == 400
+                and str(error or "") == "not_found"
+                and str(message or "") == "Object not found"
+            ):
+                raise StorageObjectNotFoundError(
+                    "Supabase Storage object not found",
+                    status_code=response.status_code,
+                    error=str(error),
+                )
             raise StorageServiceError(
-                f"Supabase Storage signing failed with status {response.status_code}"
+                f"Supabase Storage signing failed with status {response.status_code}",
+                status_code=response.status_code,
+                error=str(error) if error is not None else None,
             )
 
         data = response.json()

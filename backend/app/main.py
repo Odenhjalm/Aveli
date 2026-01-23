@@ -96,10 +96,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(RequestContextMiddleware)
+
+app_env_value = os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or ""
+app_env_lower = app_env_value.strip().lower()
+is_production_env = app_env_lower in {"production", "prod", "live"}
+
+cors_allow_origin_regex = None
+if not is_production_env:
+    # Dev-only CORS allowance for local Flutter Web (localhost:* / 127.0.0.1:*).
+    local_origin_regex = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+    configured_regex = (settings.cors_allow_origin_regex or "").strip()
+    if configured_regex:
+        cors_allow_origin_regex = f"(?:{configured_regex})|(?:{local_origin_regex})"
+    else:
+        cors_allow_origin_regex = local_origin_regex
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
-    allow_origin_regex=settings.cors_allow_origin_regex,
+    allow_origin_regex=cors_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[

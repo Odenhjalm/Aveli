@@ -1,7 +1,7 @@
 import pytest
 
 from app.services import storage_service as storage_module
-from app.services.storage_service import StorageService
+from app.services.storage_service import StorageObjectNotFoundError, StorageService
 from app.utils.http_headers import build_content_disposition
 
 
@@ -58,6 +58,47 @@ async def test_get_presigned_url_sets_content_disposition(monkeypatch):
     assert request["json"] == {"expiresIn": 120}
     assert request["headers"]["apikey"] == "service-role-key"
     assert request["headers"]["Authorization"] == "Bearer service-role-key"
+
+
+@pytest.mark.anyio
+async def test_get_presigned_url_object_not_found_raises_typed_error(monkeypatch):
+    class DummyResponse:
+        status_code = 400
+
+        def json(self):
+            return {
+                "error": "not_found",
+                "message": "Object not found",
+                "statusCode": "404",
+            }
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return DummyResponse()
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", DummyAsyncClient)
+
+    service = StorageService(
+        bucket="lesson_media",
+        supabase_url="https://example.supabase.co",
+        service_role_key="service-role-key",
+    )
+
+    with pytest.raises(StorageObjectNotFoundError):
+        await service.get_presigned_url(
+            "course/missing.wav",
+            ttl=120,
+            download=False,
+        )
 
 
 @pytest.mark.anyio

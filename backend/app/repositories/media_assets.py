@@ -166,7 +166,6 @@ async def fetch_and_lock_pending_media_assets(
             UPDATE app.media_assets AS ma
             SET state = 'processing',
                 processing_locked_at = now(),
-                processing_attempts = ma.processing_attempts + 1,
                 updated_at = now()
             FROM candidates
             WHERE ma.id = candidates.id
@@ -335,25 +334,33 @@ async def mark_media_asset_failed(
         )
 
 
-async def reschedule_media_asset(
+async def defer_media_asset_processing(
     *,
     media_id: str,
-    next_retry_at: datetime,
 ) -> None:
     async with get_conn() as cur:
         await cur.execute(
             """
             UPDATE app.media_assets
             SET state = 'uploaded',
-                next_retry_at = %s,
                 processing_locked_at = null,
                 updated_at = now()
             WHERE id = %s
             """,
-            (
-                next_retry_at,
-                media_id,
-            ),
+            (media_id,),
+        )
+
+
+async def increment_processing_attempts(*, media_id: str) -> None:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            UPDATE app.media_assets
+            SET processing_attempts = processing_attempts + 1,
+                updated_at = now()
+            WHERE id = %s
+            """,
+            (media_id,),
         )
 
 

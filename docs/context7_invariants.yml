@@ -1,0 +1,22 @@
+invariants:
+  - id: failed_upload_terminal
+    rule: media_assets.state == "failed"
+    forbid:
+      - resume_upload
+      - reuse_media_asset
+  - id: failed_upload_requires_new_asset
+    rule: media_assets.state == "failed"
+    require:
+      - create_new_media_asset_on_user_action
+  - id: source_object_must_exist_before_processing
+    description: >
+      Media ingest workers must not process or fail a media_asset
+      until its source object exists in storage.
+    rule:
+      if: media_assets.state == "uploaded" AND source_object_exists == false
+      then:
+        forbid:
+          - increment_processing_attempts
+          - set_state_failed
+        require:
+          - defer_processing
