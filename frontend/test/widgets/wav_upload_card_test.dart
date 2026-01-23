@@ -10,6 +10,7 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_source.dart';
+import 'package:aveli/features/studio/widgets/wav_upload_types.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   _FakeMediaPipelineRepository({required this.uploadTarget, required this.status});
@@ -94,10 +95,18 @@ void main() {
     }
 
     Future<void> fakeUpload({
+      required String mediaId,
+      required String courseId,
+      required String lessonId,
       required Uri uploadUrl,
+      required String objectPath,
       required Map<String, String> headers,
       required WavUploadFile file,
+      required String contentType,
       required void Function(int sent, int total) onProgress,
+      WavUploadCancelToken? cancelToken,
+      void Function(bool resumed)? onResume,
+      WavResumableSession? resumableSession,
     }) async {
       onProgress(5, 10);
       await uploadCompleter.future;
@@ -147,7 +156,7 @@ void main() {
 
     expect(find.text('Ladda upp WAV'), findsOneWidget);
     expect(find.text('Byt WAV'), findsNothing);
-    expect(find.text('WAV vald – bearbetas till MP3…'), findsNothing);
+    expect(find.text('Uppladdning klar – bearbetas till MP3'), findsNothing);
   });
 
   testWidgets('shows processing status when WAV is processing', (tester) async {
@@ -165,9 +174,9 @@ void main() {
       ),
     );
 
-    expect(find.text('WAV vald – bearbetas till MP3…'), findsOneWidget);
+    expect(find.text('Uppladdning klar – bearbetas till MP3'), findsOneWidget);
     expect(
-      find.text('Du kan ladda upp en ny WAV när bearbetningen är klar.'),
+      find.text('Du kan ladda upp en ny master när bearbetningen är klar.'),
       findsOneWidget,
     );
     expect(find.text('Ladda upp WAV'), findsNothing);

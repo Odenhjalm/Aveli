@@ -9,6 +9,7 @@ import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
 import 'wav_upload_source.dart';
+import 'wav_upload_types.dart';
 
 class WavUploadCard extends ConsumerStatefulWidget {
   const WavUploadCard({
@@ -30,10 +31,18 @@ class WavUploadCard extends ConsumerStatefulWidget {
   final String? existingFileName;
   final Future<WavUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
+    required String mediaId,
+    required String courseId,
+    required String lessonId,
     required Uri uploadUrl,
+    required String objectPath,
     required Map<String, String> headers,
     required WavUploadFile file,
+    required String contentType,
     required void Function(int sent, int total) onProgress,
+    WavUploadCancelToken? cancelToken,
+    void Function(bool resumed)? onResume,
+    WavResumableSession? resumableSession,
   })? uploadFileOverride;
   final Duration pollInterval;
 
@@ -54,6 +63,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   String? _mediaState;
   Timer? _pollTimer;
   bool _uploading = false;
+  WavUploadCancelToken? _cancelToken;
 
   String? _missingContextMessage({
     required bool hasLessonId,
@@ -92,9 +102,25 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     return lower.isEmpty ? 'audio/wav' : lower;
   }
 
+  String _friendlyUploadFailure(WavUploadFailureKind kind) {
+    switch (kind) {
+      case WavUploadFailureKind.cancelled:
+        return 'Uppladdningen avbröts.';
+      case WavUploadFailureKind.expired:
+        return 'Uppladdningen gick ut. Välj filen igen.';
+      case WavUploadFailureKind.failed:
+        return 'Uppladdningen misslyckades. Försök igen.';
+    }
+  }
+
+  void _cancelUpload() {
+    _cancelToken?.cancel();
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _cancelToken?.cancel();
     super.dispose();
   }
 
@@ -122,60 +148,127 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       return;
     }
 
+    final normalizedMime = _normalizeWavMimeType(picked.mimeType, picked.name);
+    final resumeSession = findResumableSession(
+      courseId: courseId!,
+      lessonId: lessonId!,
+      file: picked,
+    );
+
     setState(() {
       _selectedFile = picked;
       _progress = 0.0;
-      _status = 'WAV vald – förbereder uppladdning…';
+      _status = 'Förbereder uppladdning…';
       _error = null;
       _mediaId = null;
       _mediaState = null;
       _uploading = true;
     });
 
+    WavResumableSession? resumableSession = resumeSession;
+    Uri uploadUrl;
+    String objectPath;
+    Map<String, String> uploadHeaders;
+    String mediaId;
+
+    if (resumableSession != null) {
+      mediaId = resumableSession.mediaId;
+      uploadUrl = resumableSession.sessionUrl;
+      objectPath = resumableSession.objectPath;
+      uploadHeaders = resumableSession.resumableHeaders();
+      if (mounted) {
+        setState(() => _status = 'Återupptar uppladdning…');
+      }
+    } else {
+      try {
+        final repo = ref.read(mediaPipelineRepositoryProvider);
+        final upload = await repo.requestUploadUrl(
+          filename: picked.name,
+          mimeType: normalizedMime,
+          sizeBytes: picked.size,
+          mediaType: 'audio',
+          courseId: courseId,
+          lessonId: lessonId,
+        );
+        mediaId = upload.mediaId;
+        uploadUrl = upload.uploadUrl;
+        objectPath = upload.objectPath;
+        uploadHeaders = upload.headers;
+        if (mounted) {
+          setState(() => _status = 'Laddar upp studiomaster…');
+        }
+      } catch (error, stackTrace) {
+        final failure = AppFailure.from(error, stackTrace);
+        final message = 'Kunde inte starta uppladdningen. Försök igen.';
+        if (!mounted) return;
+        setState(() {
+          _uploading = false;
+          _error = message;
+          _status = message;
+        });
+        showSnack(context, message);
+        return;
+      }
+    }
+
+    _cancelToken = WavUploadCancelToken();
+    _mediaId = mediaId;
+
     try {
-      final repo = ref.read(mediaPipelineRepositoryProvider);
-      setState(() => _status = 'Begär uppladdningslänk…');
-      final upload = await repo.requestUploadUrl(
-        filename: picked.name,
-        mimeType: _normalizeWavMimeType(picked.mimeType, picked.name),
-        sizeBytes: picked.size,
-        mediaType: 'audio',
-        courseId: courseId,
-        lessonId: lessonId,
-      );
-
-      _mediaId = upload.mediaId;
-      setState(() => _status = 'Laddar upp WAV…');
-
       final uploader = widget.uploadFileOverride ?? uploadWavFile;
       await uploader(
-        uploadUrl: upload.uploadUrl,
-        headers: upload.headers,
+        mediaId: mediaId,
+        courseId: courseId!,
+        lessonId: lessonId!,
+        uploadUrl: uploadUrl,
+        objectPath: objectPath,
+        headers: uploadHeaders,
         file: picked,
+        contentType: normalizedMime,
         onProgress: (sent, total) {
           if (!mounted) return;
           final fraction = total <= 0 ? 0.0 : sent / total;
           setState(() => _progress = fraction.clamp(0.0, 1.0));
         },
+        cancelToken: _cancelToken,
+        onResume: (resumed) {
+          if (!mounted) return;
+          if (resumed) {
+            setState(() => _status = 'Återupptar uppladdning…');
+          }
+        },
+        resumableSession: resumableSession,
       );
 
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = 'WAV vald – bearbetas till MP3…';
+        _status = 'Uppladdning klar – bearbetas till MP3';
         _mediaState = 'uploaded';
+        _cancelToken = null;
       });
       await widget.onMediaUpdated?.call();
       _startPolling();
-    } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
+    } on WavUploadFailure catch (failure) {
+      final message = _friendlyUploadFailure(failure.kind);
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _error = failure.message;
-        _status = 'Uppladdning misslyckades.';
+        _error = message;
+        _status = message;
+        _cancelToken = null;
       });
-      showSnack(context, failure.message);
+      showSnack(context, message);
+    } catch (error) {
+      final message = 'Uppladdningen misslyckades. Försök igen.';
+      if (!mounted) return;
+      setState(() {
+        _uploading = false;
+        _error = message;
+        _status = message;
+        _cancelToken = null;
+      });
+      showSnack(context, message);
     }
   }
 
@@ -196,7 +289,9 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       if (!mounted) return;
       setState(() {
         _mediaState = status.state;
-        _error = status.errorMessage;
+        _error = status.errorMessage?.isNotEmpty == true
+            ? 'Bearbetningen misslyckades.'
+            : null;
         _status = _statusLabel(status.state);
       });
       if (status.state == 'ready' || status.state == 'failed') {
@@ -204,18 +299,20 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         _pollTimer = null;
         await widget.onMediaUpdated?.call();
       }
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      setState(() {
+        _error = 'Kunde inte uppdatera statusen just nu.';
+      });
     }
   }
 
   String _statusLabel(String state) {
     switch (state) {
       case 'uploaded':
-        return 'WAV vald – bearbetas till MP3…';
+        return 'Uppladdning klar – bearbetas till MP3';
       case 'processing':
-        return 'WAV vald – bearbetas till MP3…';
+        return 'Uppladdning klar – bearbetas till MP3';
       case 'ready':
         return 'MP3 klar – ljudet kan spelas upp';
       case 'failed':
@@ -266,7 +363,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       statusText = _status;
     }
     if (statusText == null && showProcessingState) {
-      statusText = 'WAV vald – bearbetas till MP3…';
+      statusText = 'Uppladdning klar – bearbetas till MP3';
     }
 
     Widget? actionButton;
@@ -308,12 +405,12 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
             Text(
-              'WAV-uppladdning',
+              'Studiomaster (WAV)',
               style: titleStyle,
             ),
             const SizedBox(height: 8),
             Text(
-              'WAV laddas upp och bearbetas till MP3 innan uppspelning.',
+              'Studiomaster laddas upp och bearbetas till MP3 innan uppspelning.',
               style: bodyStyle,
             ),
             if (actionRowChildren.isNotEmpty) ...[
@@ -323,6 +420,14 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
             if (progressVisible) ...[
               const SizedBox(height: 12),
               LinearProgressIndicator(value: _progress),
+            ],
+            if (_uploading) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _cancelToken == null ? null : _cancelUpload,
+                icon: const Icon(Icons.close),
+                label: const Text('Avbryt'),
+              ),
             ],
             if (!canUpload) ...[
               const SizedBox(height: 12),
@@ -343,7 +448,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
             if (canUpload && showProcessingState) ...[
               const SizedBox(height: 4),
               Text(
-                'Du kan ladda upp en ny WAV när bearbetningen är klar.',
+                'Du kan ladda upp en ny master när bearbetningen är klar.',
                 style: secondaryStyle,
               ),
             ],
