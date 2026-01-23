@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 
 class StudioRepository {
@@ -199,6 +200,17 @@ class StudioRepository {
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
+    if (_isWavUpload(contentType, filename)) {
+      return _uploadLessonWavViaPipeline(
+        courseId: courseId,
+        lessonId: lessonId,
+        data: data,
+        filename: filename,
+        contentType: _normalizeWavMimeType(contentType, filename),
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+    }
     final fields = <String, dynamic>{
       'lesson_id': lessonId,
       'file': MultipartFile.fromBytes(
@@ -235,6 +247,61 @@ class StudioRepository {
       return Map<String, dynamic>.from(media);
     }
     return Map<String, dynamic>.from(payload);
+  }
+
+  Future<Map<String, dynamic>> _uploadLessonWavViaPipeline({
+    required String courseId,
+    required String lessonId,
+    required Uint8List data,
+    required String filename,
+    required String contentType,
+    void Function(UploadProgress progress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final payload = <String, dynamic>{
+      'filename': filename,
+      'mime_type': contentType,
+      'size_bytes': data.length,
+      'media_type': 'audio',
+      if (courseId.isNotEmpty) 'course_id': courseId,
+      'lesson_id': lessonId,
+    };
+
+    final response = await _client.post<Map<String, dynamic>>(
+      ApiPaths.mediaUploadUrl,
+      body: payload,
+    );
+
+    final uploadUrlRaw = response['upload_url'] as String?;
+    if (uploadUrlRaw == null || uploadUrlRaw.isEmpty) {
+      throw StateError('Uppladdningslänk saknas för WAV.');
+    }
+    final headersRaw = response['headers'] as Map? ?? const {};
+    final uploadHeaders = <String, String>{
+      for (final entry in headersRaw.entries)
+        entry.key.toString(): entry.value.toString(),
+    };
+
+    final dio = Dio();
+    await dio.putUri<void>(
+      Uri.parse(uploadUrlRaw),
+      data: data,
+      options: Options(headers: uploadHeaders),
+      cancelToken: cancelToken,
+      onSendProgress: (sent, total) {
+        if (onProgress == null) return;
+        final resolvedTotal = total > 0 ? total : data.length;
+        onProgress(UploadProgress(sent: sent, total: resolvedTotal));
+      },
+    );
+
+    return {
+      'media_asset_id': response['media_id']?.toString(),
+      'media_state': 'uploaded',
+      'ingest_format': 'wav',
+      'original_name': filename,
+      'content_type': contentType,
+    };
   }
 
   Future<void> deleteLessonMedia(String mediaId) async {
@@ -405,6 +472,31 @@ String? _detectUploadMediaType(String contentType) {
   if (lower.startsWith('audio/')) return 'audio';
   if (lower == 'application/pdf') return 'document';
   return null;
+}
+
+bool _isWavUpload(String contentType, String filename) {
+  final lower = contentType.toLowerCase();
+  if (lower == 'audio/wav' ||
+      lower == 'audio/x-wav' ||
+      lower == 'audio/wave' ||
+      lower == 'audio/vnd.wave') {
+    return true;
+  }
+  return filename.toLowerCase().endsWith('.wav');
+}
+
+String _normalizeWavMimeType(String contentType, String filename) {
+  final lower = contentType.toLowerCase();
+  if (lower == 'audio/wav' || lower == 'audio/x-wav') {
+    return lower;
+  }
+  if (lower == 'audio/wave' || lower == 'audio/vnd.wave') {
+    return 'audio/wav';
+  }
+  if (filename.toLowerCase().endsWith('.wav')) {
+    return 'audio/wav';
+  }
+  return lower.isEmpty ? 'audio/wav' : lower;
 }
 
 class UploadProgress {

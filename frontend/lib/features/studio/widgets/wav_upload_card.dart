@@ -54,6 +54,20 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   Timer? _pollTimer;
   bool _uploading = false;
 
+  String _normalizeWavMimeType(String? mimeType, String filename) {
+    final lower = (mimeType ?? '').trim().toLowerCase();
+    if (lower == 'audio/wav' || lower == 'audio/x-wav') {
+      return lower;
+    }
+    if (lower == 'audio/wave' || lower == 'audio/vnd.wave') {
+      return 'audio/wav';
+    }
+    if (filename.toLowerCase().endsWith('.wav')) {
+      return 'audio/wav';
+    }
+    return lower.isEmpty ? 'audio/wav' : lower;
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
@@ -78,7 +92,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     setState(() {
       _selectedFile = picked;
       _progress = 0.0;
-      _status = 'Begär uppladdningslänk…';
+      _status = 'Studiomaster vald.';
       _error = null;
       _mediaId = null;
       _mediaState = null;
@@ -87,9 +101,10 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
     try {
       final repo = ref.read(mediaPipelineRepositoryProvider);
+      setState(() => _status = 'Begär uppladdningslänk…');
       final upload = await repo.requestUploadUrl(
         filename: picked.name,
-        mimeType: picked.mimeType ?? 'audio/wav',
+        mimeType: _normalizeWavMimeType(picked.mimeType, picked.name),
         sizeBytes: picked.size,
         mediaType: 'audio',
         courseId: courseId,
