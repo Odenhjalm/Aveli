@@ -1369,37 +1369,32 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           style: titleStyle,
         ),
         const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: SizedBox(
-            width: 140,
-            height: 96,
+        SizedBox(
+          width: 140,
+          height: 96,
+          child: GlassCard(
+            padding: EdgeInsets.zero,
+            borderRadius: BorderRadius.circular(14),
+            opacity: 0.16,
+            borderColor: Colors.white.withValues(alpha: 0.28),
             child: Stack(
               children: [
-                if (hasCover)
-                  Image.network(
-                    _courseCoverPreviewUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      child: const Center(
-                        child: Icon(Icons.image_not_supported_outlined),
-                      ),
-                    ),
-                  )
-                else
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.18),
-                      ),
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.image_outlined, size: 28),
-                    ),
-                  ),
+                Positioned.fill(
+                  child: hasCover
+                      ? Image.network(
+                          _courseCoverPreviewUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                                child: Icon(
+                                  Icons.image_not_supported_outlined,
+                                ),
+                              ),
+                        )
+                      : const Center(
+                          child: Icon(Icons.image_outlined, size: 28),
+                        ),
+                ),
                 if (_updatingCourseCover)
                   Positioned.fill(
                     child: Container(
@@ -2423,7 +2418,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (mounted && context.mounted) {
         showSnack(
           context,
-          'WAV-master kan inte bäddas in. Den spelas upp via lektionens media.',
+          'WAV-filer kan inte bäddas in. De spelas upp via lektionens media.',
         );
       }
       return;
@@ -3003,10 +2998,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final attemptInfo =
         'Försök ${job.attempts}/${job.maxAttempts} • ${job.createdAt.toLocal()}';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GlassCard(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        borderRadius: BorderRadius.circular(16),
+        opacity: 0.16,
+        borderColor: Colors.white.withValues(alpha: 0.28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -4254,7 +4252,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     return Padding(
                                       key: ValueKey(media['id']),
                                       padding: const EdgeInsets.only(bottom: 8),
-                                      child: Card(
+                                      child: GlassCard(
+                                        padding: EdgeInsets.zero,
+                                        borderRadius: BorderRadius.circular(16),
+                                        opacity: 0.16,
+                                        borderColor: Colors.white.withValues(
+                                          alpha: 0.28,
+                                        ),
                                         child: ListTile(
                                           onTap: isWavMedia
                                               ? null

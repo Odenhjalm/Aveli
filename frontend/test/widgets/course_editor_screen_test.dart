@@ -226,10 +226,10 @@ void main() {
     expect(find.text('Moduler & lektioner'), findsOneWidget);
     expect(find.text('Välkommen'), findsWidgets);
     expect(find.text('Spara lektionsinnehåll'), findsOneWidget);
-    expect(find.text('Ladda upp studiomaster (WAV)'), findsOneWidget);
+    expect(find.text('Ladda upp WAV'), findsOneWidget);
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(
-        of: find.text('Ladda upp studiomaster (WAV)'),
+        of: find.text('Ladda upp WAV'),
         matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
       ),
     );

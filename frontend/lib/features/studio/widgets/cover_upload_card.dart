@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
 import 'cover_upload_source.dart';
@@ -154,12 +155,14 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
     final secondaryStyle =
         theme.textTheme.bodySmall?.copyWith(color: _secondaryTextColor);
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      borderRadius: BorderRadius.circular(18),
+      opacity: 0.16,
+      borderColor: Colors.white.withValues(alpha: 0.28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             Text(
               'Kursbild (JPG/PNG/WebP)',
               style: titleStyle,
@@ -216,8 +219,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
                 ),
               ),
             ],
-          ],
-        ),
+        ],
       ),
     );
   }

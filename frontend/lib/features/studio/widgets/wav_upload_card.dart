@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
 import 'wav_upload_source.dart';
@@ -117,14 +118,14 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final picked = await picker();
     if (!mounted) return;
     if (picked == null) {
-      setState(() => _status = 'Välj WAV-fil');
+      setState(() => _status = 'Ingen fil vald.');
       return;
     }
 
     setState(() {
       _selectedFile = picked;
       _progress = 0.0;
-      _status = 'Studiomaster vald.';
+      _status = 'WAV vald – förbereder uppladdning…';
       _error = null;
       _mediaId = null;
       _mediaState = null;
@@ -161,7 +162,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = 'Studiomaster bearbetas till MP3…';
+        _status = 'WAV vald – bearbetas till MP3…';
         _mediaState = 'uploaded';
       });
       await widget.onMediaUpdated?.call();
@@ -212,11 +213,11 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   String _statusLabel(String state) {
     switch (state) {
       case 'uploaded':
-        return 'Studiomaster bearbetas till MP3…';
+        return 'WAV vald – bearbetas till MP3…';
       case 'processing':
-        return 'Studiomaster bearbetas till MP3…';
+        return 'WAV vald – bearbetas till MP3…';
       case 'ready':
-        return 'MP3 klar';
+        return 'MP3 klar – ljudet kan spelas upp';
       case 'failed':
         return 'Bearbetningen misslyckades.';
       default:
@@ -265,7 +266,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       statusText = _status;
     }
     if (statusText == null && showProcessingState) {
-      statusText = 'Studiomaster bearbetas till MP3…';
+      statusText = 'WAV vald – bearbetas till MP3…';
     }
 
     Widget? actionButton;
@@ -273,13 +274,13 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       actionButton = ElevatedButton.icon(
         onPressed: canUpload && !_uploading ? _pickAndUpload : null,
         icon: const Icon(Icons.upload_file),
-        label: const Text('Ladda upp studiomaster (WAV)'),
+        label: const Text('Ladda upp WAV'),
       );
     } else if (showReplaceAction) {
       actionButton = OutlinedButton.icon(
         onPressed: canUpload && !_uploading ? _pickAndUpload : null,
         icon: const Icon(Icons.sync),
-        label: const Text('Ersätt studiomaster (WAV)'),
+        label: const Text('Byt WAV'),
       );
     }
 
@@ -298,19 +299,21 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       ],
     ];
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      borderRadius: BorderRadius.circular(18),
+      opacity: 0.16,
+      borderColor: Colors.white.withValues(alpha: 0.28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             Text(
-              'WAV-uppladdning (studiomaster)',
+              'WAV-uppladdning',
               style: titleStyle,
             ),
             const SizedBox(height: 8),
             Text(
-              'WAV laddas upp som studiomaster och processas automatiskt till MP3 innan uppspelning.',
+              'WAV laddas upp och bearbetas till MP3 innan uppspelning.',
               style: bodyStyle,
             ),
             if (actionRowChildren.isNotEmpty) ...[
@@ -353,8 +356,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
                 ),
               ),
             ],
-          ],
-        ),
+        ],
       ),
     );
   }

@@ -122,7 +122,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Ladda upp studiomaster (WAV)'));
+    await tester.tap(find.text('Ladda upp WAV'));
     await tester.pump();
 
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
@@ -145,9 +145,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Ladda upp studiomaster (WAV)'), findsOneWidget);
-    expect(find.text('Ersätt studiomaster (WAV)'), findsNothing);
-    expect(find.text('Studiomaster bearbetas till MP3…'), findsNothing);
+    expect(find.text('Ladda upp WAV'), findsOneWidget);
+    expect(find.text('Byt WAV'), findsNothing);
+    expect(find.text('WAV vald – bearbetas till MP3…'), findsNothing);
   });
 
   testWidgets('shows processing status when WAV is processing', (tester) async {
@@ -165,12 +165,12 @@ void main() {
       ),
     );
 
-    expect(find.text('Studiomaster bearbetas till MP3…'), findsOneWidget);
+    expect(find.text('WAV vald – bearbetas till MP3…'), findsOneWidget);
     expect(
       find.text('Du kan ladda upp en ny WAV när bearbetningen är klar.'),
       findsOneWidget,
     );
-    expect(find.text('Ladda upp studiomaster (WAV)'), findsNothing);
+    expect(find.text('Ladda upp WAV'), findsNothing);
   });
 
   testWidgets('shows replace action only when WAV is ready', (tester) async {
@@ -188,9 +188,9 @@ void main() {
       ),
     );
 
-    expect(find.text('MP3 klar'), findsOneWidget);
-    expect(find.text('Ersätt studiomaster (WAV)'), findsOneWidget);
-    expect(find.text('Ladda upp studiomaster (WAV)'), findsNothing);
+    expect(find.text('MP3 klar – ljudet kan spelas upp'), findsOneWidget);
+    expect(find.text('Byt WAV'), findsOneWidget);
+    expect(find.text('Ladda upp WAV'), findsNothing);
   });
 
   testWidgets('shows error when lesson context is missing', (tester) async {
@@ -213,10 +213,10 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Ladda upp studiomaster (WAV)'), findsOneWidget);
+    expect(find.text('Ladda upp WAV'), findsOneWidget);
     final button = tester.widget<ElevatedButton>(
       find.ancestor(
-        of: find.text('Ladda upp studiomaster (WAV)'),
+        of: find.text('Ladda upp WAV'),
         matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
       ),
     );
