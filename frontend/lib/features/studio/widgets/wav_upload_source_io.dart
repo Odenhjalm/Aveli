@@ -30,6 +30,10 @@ Future<WavResumableSession?> findResumableSession({
   return null;
 }
 
+void clearResumableSession(WavResumableSession session) {
+  // No localStorage to clear on IO platforms.
+}
+
 Future<void> uploadWavFile({
   required String mediaId,
   required String courseId,

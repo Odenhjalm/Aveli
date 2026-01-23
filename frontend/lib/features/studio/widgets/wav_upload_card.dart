@@ -155,16 +155,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
     final normalizedMime = _normalizeWavMimeType(picked.mimeType, picked.name);
 
-    setState(() {
-      _selectedFile = picked;
-      _progress = 0.0;
-      _status = 'Förbereder uppladdning…';
-      _error = null;
-      _mediaId = null;
-      _mediaState = null;
-      _uploading = true;
-    });
-
     final resumeSession = await findResumableSession(
       courseId: courseId!,
       lessonId: lessonId!,
@@ -173,6 +163,52 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     if (!mounted) return;
 
     WavResumableSession? resumableSession = resumeSession;
+    if (resumableSession != null) {
+      String? dbState;
+      try {
+        final repo = ref.read(mediaPipelineRepositoryProvider);
+        final status = await repo.fetchStatus(resumableSession.mediaId);
+        dbState = status.state;
+      } catch (_) {
+        dbState = null;
+      }
+
+      final dbAllowsResume =
+          dbState == 'uploaded' || dbState == 'processing';
+      if (!dbAllowsResume) {
+        if (dbState == 'failed') {
+          clearResumableSession(resumableSession);
+          if (!mounted) return;
+          setState(() {
+            _selectedFile = null;
+            _progress = 0.0;
+            _status = _statusLabel('failed');
+            _error = null;
+            _mediaId = null;
+            _mediaState = 'failed';
+            _uploading = false;
+            _cancelToken = null;
+          });
+          return;
+        }
+        resumableSession = null;
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _selectedFile = picked;
+      _progress = 0.0;
+      _status = resumableSession != null
+          ? 'Återupptar uppladdning…'
+          : 'Förbereder uppladdning…';
+      _error = null;
+      _mediaId = null;
+      _mediaState = null;
+      _uploading = true;
+    });
+
     Uri uploadUrl;
     String objectPath;
     Map<String, String> uploadHeaders;
@@ -183,7 +219,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       uploadUrl = resumableSession.sessionUrl;
       objectPath = resumableSession.objectPath;
       uploadHeaders = resumableSession.resumableHeaders();
-      setState(() => _status = 'Återupptar uppladdning…');
     } else {
       try {
         final repo = ref.read(mediaPipelineRepositoryProvider);

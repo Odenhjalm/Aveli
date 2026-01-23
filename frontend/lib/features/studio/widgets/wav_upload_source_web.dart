@@ -92,6 +92,10 @@ Future<WavResumableSession?> findResumableSession({
   }
 }
 
+void clearResumableSession(WavResumableSession session) {
+  _clearSession(session);
+}
+
 // Verification (manual):
 // 1) Start >=500 MB WAV upload in web app.
 // 2) Let it reach ~20–40%.
