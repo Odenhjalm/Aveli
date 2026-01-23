@@ -724,7 +724,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
-      final lessons = mergeResults ? _sortByPosition(_mergeById(_lessons, list)) : list;
+      final merged = mergeResults
+          ? _sortByPosition(_mergeById(_lessons, list))
+          : list;
+      final lessons = _attachLessonCourseIds(
+        lessons: merged,
+        moduleId: moduleId,
+      );
       final selected =
           preserveSelection &&
               _selectedLessonId != null &&
@@ -863,6 +869,30 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final courseId = lesson?['course_id'];
     if (courseId is String && courseId.isNotEmpty) return courseId;
     return null;
+  }
+
+  List<Map<String, dynamic>> _attachLessonCourseIds({
+    required List<Map<String, dynamic>> lessons,
+    required String moduleId,
+  }) {
+    if (lessons.isEmpty) return lessons;
+    final module = _modules.firstWhere(
+      (item) => item['id'] == moduleId,
+      orElse: () => const {},
+    );
+    final courseId = module['course_id'];
+    if (courseId is! String || courseId.isEmpty) {
+      return lessons;
+    }
+    return lessons
+        .map((lesson) {
+          final existing = lesson['course_id'];
+          if (existing is String && existing.isNotEmpty) {
+            return lesson;
+          }
+          return {...lesson, 'course_id': courseId};
+        })
+        .toList(growable: false);
   }
 
   int _positionValue(Map<String, dynamic> item) {
@@ -3690,9 +3720,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? const <UploadJob>[]
         : (uploadJobs.where((job) => job.lessonId == _selectedLessonId).toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
-    final selectedLesson = _lessonById(_selectedLessonId);
-    final wavLessonId = selectedLesson?['id'] as String?;
-    final wavCourseId = selectedLesson?['course_id'] as String?;
+    final wavLessonId = _selectedLessonId;
+    final wavCourseId = _lessonCourseId(_selectedLessonId);
     final wavMedia = _latestWavSourceMedia(_lessonMedia);
     final wavMediaState = wavMedia == null ? null : _pipelineState(wavMedia);
     final wavFileName = wavMedia == null ? null : _fileNameFromMedia(wavMedia);

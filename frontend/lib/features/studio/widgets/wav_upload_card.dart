@@ -54,6 +54,29 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   Timer? _pollTimer;
   bool _uploading = false;
 
+  String? _missingContextMessage({
+    required bool hasLessonId,
+    required bool hasCourseId,
+  }) {
+    if (!hasLessonId) {
+      return _lessonRequiredText;
+    }
+    if (!hasCourseId) {
+      return 'Lektionen saknar kurskoppling. Ladda om eller välj lektion igen.';
+    }
+    return null;
+  }
+
+  void _showMissingContextMessage(String message) {
+    if (!mounted) return;
+    setState(() {
+      _status = message;
+      _error = message;
+      _uploading = false;
+    });
+    showSnack(context, message);
+  }
+
   String _normalizeWavMimeType(String? mimeType, String filename) {
     final lower = (mimeType ?? '').trim().toLowerCase();
     if (lower == 'audio/wav' || lower == 'audio/x-wav') {
@@ -77,7 +100,16 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   Future<void> _pickAndUpload() async {
     final courseId = widget.courseId;
     final lessonId = widget.lessonId;
-    if (courseId == null || lessonId == null) {
+    final hasLessonId = lessonId != null && lessonId.isNotEmpty;
+    final hasCourseId = courseId != null && courseId.isNotEmpty;
+    if (!hasLessonId || !hasCourseId) {
+      final message = _missingContextMessage(
+        hasLessonId: hasLessonId,
+        hasCourseId: hasCourseId,
+      );
+      if (message != null) {
+        _showMissingContextMessage(message);
+      }
       return;
     }
 
@@ -194,7 +226,11 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
   @override
   Widget build(BuildContext context) {
-    final canUpload = widget.courseId != null && widget.lessonId != null;
+    final hasLessonId =
+        widget.lessonId != null && widget.lessonId!.trim().isNotEmpty;
+    final hasCourseId =
+        widget.courseId != null && widget.courseId!.trim().isNotEmpty;
+    final canUpload = hasLessonId && hasCourseId;
     final theme = Theme.of(context);
     final titleStyle =
         theme.textTheme.titleMedium?.copyWith(color: Colors.white);
@@ -213,6 +249,10 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final showUploadAction = !showProcessingState && !showReadyState;
     final showReplaceAction = showReadyState;
     final displayFileName = _selectedFile?.name ?? widget.existingFileName;
+    final missingMessage = _missingContextMessage(
+      hasLessonId: hasLessonId,
+      hasCourseId: hasCourseId,
+    );
 
     String? statusText;
     if (_uploading) {
@@ -283,7 +323,12 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
             ],
             if (!canUpload) ...[
               const SizedBox(height: 12),
-              Text(_lessonRequiredText, style: secondaryStyle),
+              Text(
+                missingMessage ?? _lessonRequiredText,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
             ],
             if (canUpload && statusText != null) ...[
               const SizedBox(height: 12),

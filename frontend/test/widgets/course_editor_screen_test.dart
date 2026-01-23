@@ -106,7 +106,12 @@ void main() {
     );
     when(() => studioRepo.listModules('course-1')).thenAnswer(
       (_) async => [
-        {'id': 'module-1', 'title': 'Intro', 'position': 1},
+        {
+          'id': 'module-1',
+          'title': 'Intro',
+          'position': 1,
+          'course_id': 'course-1',
+        },
       ],
     );
     when(() => studioRepo.listLessons('module-1')).thenAnswer(
@@ -116,7 +121,6 @@ void main() {
           'title': 'Välkommen',
           'position': 1,
           'is_intro': true,
-          'course_id': 'course-1',
         },
       ],
     );
@@ -222,5 +226,13 @@ void main() {
     expect(find.text('Moduler & lektioner'), findsOneWidget);
     expect(find.text('Välkommen'), findsWidgets);
     expect(find.text('Spara lektionsinnehåll'), findsOneWidget);
+    expect(find.text('Ladda upp studiomaster (WAV)'), findsOneWidget);
+    final uploadButton = tester.widget<ElevatedButton>(
+      find.ancestor(
+        of: find.text('Ladda upp studiomaster (WAV)'),
+        matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
+      ),
+    );
+    expect(uploadButton.onPressed, isNotNull);
   });
 }

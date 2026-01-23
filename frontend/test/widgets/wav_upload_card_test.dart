@@ -192,4 +192,34 @@ void main() {
     expect(find.text('Ersätt studiomaster (WAV)'), findsOneWidget);
     expect(find.text('Ladda upp studiomaster (WAV)'), findsNothing);
   });
+
+  testWidgets('shows error when lesson context is missing', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: WavUploadCard(
+              courseId: null,
+              lessonId: 'lesson-1',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text(
+        'Lektionen saknar kurskoppling. Ladda om eller välj lektion igen.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Ladda upp studiomaster (WAV)'), findsOneWidget);
+    final button = tester.widget<ElevatedButton>(
+      find.ancestor(
+        of: find.text('Ladda upp studiomaster (WAV)'),
+        matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
+      ),
+    );
+    expect(button.onPressed, isNull);
+  });
 }
