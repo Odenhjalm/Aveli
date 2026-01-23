@@ -6,6 +6,8 @@ import 'dart:html';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+
 import 'wav_upload_types.dart';
 
 const String _tusVersion = '1.0.0';
@@ -344,13 +346,9 @@ String _bytesToHex(Uint8List bytes) {
 }
 
 Future<String> _hashBlob(Blob blob) async {
-  final subtle = window.crypto.subtle;
-  if (subtle == null) {
-    throw const WavUploadFailure(WavUploadFailureKind.failed);
-  }
   final buffer = await _readBlobAsBuffer(blob);
-  final digest = await subtle.digest('SHA-256', buffer);
-  return _bytesToHex(Uint8List.view(digest));
+  final digest = sha256.convert(Uint8List.view(buffer)).bytes;
+  return _bytesToHex(Uint8List.fromList(digest));
 }
 
 _SignedUploadInfo _parseSignedUploadInfo(Uri uploadUrl) {
