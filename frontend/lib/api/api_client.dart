@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -126,6 +127,50 @@ class ApiClient {
 
   void _notifyForbidden() {
     _authObserver?.emit(AuthHttpEvent.forbidden);
+  }
+
+  bool _isTokenExpired(
+    String token, {
+    Duration leeway = const Duration(seconds: 30),
+  }) {
+    final parts = token.split('.');
+    if (parts.length != 3) return true;
+    try {
+      final normalized = base64Url.normalize(parts[1]);
+      final payload = utf8.decode(base64Url.decode(normalized));
+      final data = json.decode(payload);
+      if (data is! Map<String, dynamic>) return true;
+      final rawExp = data['exp'];
+      if (rawExp == null) return true;
+      final expSeconds = rawExp is int
+          ? rawExp
+          : rawExp is num
+              ? rawExp.toInt()
+              : int.tryParse(rawExp.toString());
+      if (expSeconds == null) return true;
+      final expiry =
+          DateTime.fromMillisecondsSinceEpoch(expSeconds * 1000, isUtc: true);
+      final now = DateTime.now().toUtc();
+      return now.isAfter(expiry.subtract(leeway));
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> ensureAuth({
+    Duration leeway = const Duration(seconds: 30),
+    void Function()? onRefresh,
+  }) async {
+    final token = await _tokenStorage.readAccessToken();
+    if (token == null || token.isEmpty) {
+      onRefresh?.call();
+      return _refreshAccessToken();
+    }
+    if (_isTokenExpired(token, leeway: leeway)) {
+      onRefresh?.call();
+      return _refreshAccessToken();
+    }
+    return true;
   }
 
   Future<bool> _refreshAccessToken() async {

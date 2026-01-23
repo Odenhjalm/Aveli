@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -42,6 +43,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
     required void Function(int sent, int total) onProgress,
     WavUploadCancelToken? cancelToken,
     void Function(bool resumed)? onResume,
+    Future<bool> Function()? ensureAuth,
     Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
         refreshSigning,
     void Function()? onSigningRefresh,
@@ -239,6 +241,15 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
           if (resumed) {
             setState(() => _status = 'Återupptar uppladdning…');
           }
+        },
+        ensureAuth: () async {
+          final client = ref.read(apiClientProvider);
+          return client.ensureAuth(
+            onRefresh: () {
+              if (!mounted) return;
+              setState(() => _status = 'Återautentiserar session…');
+            },
+          );
         },
         refreshSigning: (session) async {
           final repo = ref.read(mediaPipelineRepositoryProvider);

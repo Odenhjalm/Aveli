@@ -111,6 +111,7 @@ Future<void> uploadWavFile({
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
   void Function(bool resumed)? onResume,
+  Future<bool> Function()? ensureAuth,
   Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
       refreshSigning,
   void Function()? onSigningRefresh,
@@ -148,6 +149,15 @@ Future<void> uploadWavFile({
       if (session == null) {
         throw const WavUploadFailure(WavUploadFailureKind.failed);
       }
+
+      final authEnsurer = ensureAuth;
+      if (authEnsurer != null) {
+        final ok = await authEnsurer();
+        if (!ok) {
+          throw const WavUploadFailure(WavUploadFailureKind.expired);
+        }
+      }
+
       final refresher = refreshSigning;
       if (refresher == null) {
         throw const WavUploadFailure(WavUploadFailureKind.expired);

@@ -111,6 +111,7 @@ void main() {
       required void Function(int sent, int total) onProgress,
       WavUploadCancelToken? cancelToken,
       void Function(bool resumed)? onResume,
+      Future<bool> Function()? ensureAuth,
       Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
           refreshSigning,
       void Function()? onSigningRefresh,
