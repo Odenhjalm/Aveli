@@ -11,6 +11,7 @@ import 'wav_upload_types.dart';
 const String _tusVersion = '1.0.0';
 const int _chunkSize = 6 * 1024 * 1024; // Supabase requires 6MB chunks.
 const int _fingerprintMaxBytes = 4 * 1024 * 1024;
+const int _maxSigningRefreshAttempts = 3;
 const String _storageKeyPrefix = 'aveli.wavUpload.';
 
 class WavUploadFile {
@@ -78,16 +79,9 @@ Future<WavResumableSession?> findResumableSession({
     if (session == null) return null;
 
     if (session.courseId != courseId || session.lessonId != lessonId) {
-      _clearSessionByKey(courseId, lessonId, fingerprint);
       return null;
     }
     if (session.fingerprint != fingerprint) {
-      _clearSessionByKey(courseId, lessonId, fingerprint);
-      return null;
-    }
-    final expiresAt = session.expiresAt?.toUtc();
-    if (expiresAt != null && expiresAt.isBefore(DateTime.now().toUtc())) {
-      _clearSessionByKey(courseId, lessonId, fingerprint);
       return null;
     }
     return session;
@@ -117,6 +111,9 @@ Future<void> uploadWavFile({
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
   void Function(bool resumed)? onResume,
+  Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
+      refreshSigning,
+  void Function()? onSigningRefresh,
   WavResumableSession? resumableSession,
 }) async {
   if (cancelToken?.isCancelled == true) {
@@ -141,61 +138,117 @@ Future<void> uploadWavFile({
     final resumed = resumableSession != null;
     onResume?.call(resumed);
 
-    final tusHeaders = _baseTusHeaders(session);
-    var offset = await _fetchOffset(
-      session.sessionUrl,
-      tusHeaders,
-      cancelToken: cancelToken,
-    );
+    var tusHeaders = _baseTusHeaders(session!);
+    var signingRefreshAttempts = 0;
+
+    Future<void> refreshSigningToken() async {
+      if (cancelToken?.isCancelled == true) {
+        throw const WavUploadFailure(WavUploadFailureKind.cancelled);
+      }
+      if (session == null) {
+        throw const WavUploadFailure(WavUploadFailureKind.failed);
+      }
+      final refresher = refreshSigning;
+      if (refresher == null) {
+        throw const WavUploadFailure(WavUploadFailureKind.expired);
+      }
+      if (signingRefreshAttempts >= _maxSigningRefreshAttempts) {
+        throw const WavUploadFailure(WavUploadFailureKind.failed);
+      }
+      signingRefreshAttempts += 1;
+      onSigningRefresh?.call();
+
+      final refreshed = await refresher(session!);
+      final signedInfo = _parseSignedUploadInfo(refreshed.uploadUrl);
+      final normalizedPath =
+          _normalizeObjectPath(signedInfo.bucket, refreshed.objectPath);
+      if (signedInfo.bucket != session!.bucket) {
+        throw const WavUploadFailure(WavUploadFailureKind.failed);
+      }
+      if (normalizedPath != session!.objectPath) {
+        throw const WavUploadFailure(WavUploadFailureKind.failed);
+      }
+
+      session = session!.copyWith(
+        token: signedInfo.token,
+        expiresAt: refreshed.expiresAt.toUtc(),
+      );
+      _storeSession(session!);
+      tusHeaders = _baseTusHeaders(session!);
+      onResume?.call(true);
+    }
+
+    Future<int> fetchOffsetWithRefresh() async {
+      while (true) {
+        try {
+          final offset = await _fetchOffset(
+            session!.sessionUrl,
+            tusHeaders,
+            cancelToken: cancelToken,
+          );
+          signingRefreshAttempts = 0;
+          return offset;
+        } on WavUploadFailure catch (error) {
+          if (error.kind != WavUploadFailureKind.expired) rethrow;
+          await refreshSigningToken();
+        }
+      }
+    }
+
+    Future<int> uploadChunkWithRefresh(Blob chunk, int offset) async {
+      while (true) {
+        try {
+          final nextOffset = await _uploadChunkWithRetry(
+            session!.sessionUrl,
+            chunk,
+            offset,
+            tusHeaders,
+            cancelToken: cancelToken,
+          );
+          signingRefreshAttempts = 0;
+          return nextOffset;
+        } on WavUploadFailure catch (error) {
+          if (error.kind != WavUploadFailureKind.expired) rethrow;
+          await refreshSigningToken();
+          return await fetchOffsetWithRefresh();
+        }
+      }
+    }
+
+    var offset = await fetchOffsetWithRefresh();
     if (offset < 0) offset = 0;
-    if (offset != session.offset) {
-      _storeSession(session.copyWith(offset: offset));
+    if (offset != session!.offset) {
+      session = session!.copyWith(offset: offset);
+      _storeSession(session!);
     }
     onProgress(offset, file.size);
 
     while (offset < file.size) {
       if (cancelToken?.isCancelled == true) {
-        _clearSession(session);
+        _clearSession(session!);
         throw const WavUploadFailure(WavUploadFailureKind.cancelled);
       }
 
       final end = math.min(offset + _chunkSize, file.size);
       final chunk = file.file.slice(offset, end);
 
-      final nextOffset = await _uploadChunkWithRetry(
-        session.sessionUrl,
-        chunk,
-        offset,
-        tusHeaders,
-        cancelToken: cancelToken,
-      );
+      final nextOffset = await uploadChunkWithRefresh(chunk, offset);
 
       if (nextOffset <= offset) {
-        offset = await _fetchOffset(
-          session.sessionUrl,
-          tusHeaders,
-          cancelToken: cancelToken,
-        );
+        offset = await fetchOffsetWithRefresh();
       } else {
         offset = nextOffset;
       }
 
-      _storeSession(session.copyWith(offset: offset));
+      session = session!.copyWith(offset: offset);
+      _storeSession(session!);
       onProgress(offset, file.size);
     }
 
-    _clearSession(session);
+    _clearSession(session!);
   } on WavUploadFailure catch (error) {
-    if (session != null) {
-      if (error.kind == WavUploadFailureKind.cancelled) {
-        _clearSession(session);
-      } else if (error.kind == WavUploadFailureKind.expired) {
-        _storeSession(
-          session.copyWith(
-            expiresAt: DateTime.now().toUtc(),
-          ),
-        );
-      }
+    if (session != null && error.kind == WavUploadFailureKind.cancelled) {
+      _clearSession(session!);
     }
     rethrow;
   }
@@ -440,6 +493,18 @@ Uri _resolveLocation(Uri base, String location) {
   return base.resolve(location);
 }
 
+bool _isSigningFailureResponse(_TusResponse response) {
+  if (response.status != 400) return false;
+  final body = response.body.trim();
+  if (body.isEmpty) return false;
+  final lower = body.toLowerCase();
+  if (lower.contains('signing') || lower.contains('signature')) return true;
+  if (lower.contains('signed url') || lower.contains('signedurl')) return true;
+  if (lower.contains('token') && lower.contains('expired')) return true;
+  if (lower.contains('jwt') && lower.contains('expired')) return true;
+  return false;
+}
+
 Future<int> _fetchOffset(
   Uri sessionUrl,
   Map<String, String> headers, {
@@ -456,6 +521,9 @@ Future<int> _fetchOffset(
     throw const WavUploadFailure(WavUploadFailureKind.expired);
   }
   if (response.status == 401 || response.status == 403) {
+    throw const WavUploadFailure(WavUploadFailureKind.expired);
+  }
+  if (_isSigningFailureResponse(response)) {
     throw const WavUploadFailure(WavUploadFailureKind.expired);
   }
   if (response.status < 200 || response.status >= 300) {
@@ -526,6 +594,9 @@ Future<int> _uploadChunkWithRetry(
       if (response.status == 401 || response.status == 403) {
         throw const WavUploadFailure(WavUploadFailureKind.expired);
       }
+      if (_isSigningFailureResponse(response)) {
+        throw const WavUploadFailure(WavUploadFailureKind.expired);
+      }
       if (response.status < 200 || response.status >= 300) {
         throw WavUploadFailure(
           WavUploadFailureKind.failed,
@@ -556,10 +627,12 @@ class _TusResponse {
   const _TusResponse({
     required this.status,
     required this.headers,
+    required this.body,
   });
 
   final int status;
   final Map<String, String> headers;
+  final String body;
 }
 
 Future<_TusResponse> _sendTusRequest(
@@ -610,6 +683,7 @@ Future<_TusResponse> _sendTusRequest(
       _TusResponse(
         status: status,
         headers: _parseHeaders(request.getAllResponseHeaders()),
+        body: request.responseText ?? '',
       ),
     );
   });

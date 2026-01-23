@@ -42,6 +42,9 @@ class WavUploadCard extends ConsumerStatefulWidget {
     required void Function(int sent, int total) onProgress,
     WavUploadCancelToken? cancelToken,
     void Function(bool resumed)? onResume,
+    Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
+        refreshSigning,
+    void Function()? onSigningRefresh,
     WavResumableSession? resumableSession,
   })? uploadFileOverride;
   final Duration pollInterval;
@@ -107,7 +110,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       case WavUploadFailureKind.cancelled:
         return 'Uppladdningen avbröts.';
       case WavUploadFailureKind.expired:
-        return 'Uppladdningen gick ut. Välj filen igen.';
+        return 'Kunde inte återautentisera uppladdningen. Försök igen.';
       case WavUploadFailureKind.failed:
         return 'Uppladdningen misslyckades. Försök igen.';
     }
@@ -236,6 +239,20 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
           if (resumed) {
             setState(() => _status = 'Återupptar uppladdning…');
           }
+        },
+        refreshSigning: (session) async {
+          final repo = ref.read(mediaPipelineRepositoryProvider);
+          final refreshed = await repo.refreshUploadUrl(mediaId: session.mediaId);
+          return WavUploadSigningRefresh(
+            uploadUrl: refreshed.uploadUrl,
+            objectPath: refreshed.objectPath,
+            headers: refreshed.headers,
+            expiresAt: refreshed.expiresAt,
+          );
+        },
+        onSigningRefresh: () {
+          if (!mounted) return;
+          setState(() => _status = 'Återautentiserar uppladdning…');
         },
         resumableSession: resumableSession,
       );

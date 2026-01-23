@@ -260,6 +260,79 @@ async def request_upload_url(
     )
 
 
+@router.post("/upload-url/refresh", response_model=schemas.MediaUploadUrlResponse)
+async def refresh_upload_url(
+    payload: schemas.MediaUploadUrlRefreshRequest,
+    current: TeacherUser,
+):
+    user_id = str(current["id"])
+    media_asset = await media_assets_repo.get_media_asset(str(payload.media_id))
+    if not media_asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    owner_id = media_asset.get("owner_id")
+    if owner_id and str(owner_id) != user_id:
+        course_id = media_asset.get("course_id")
+        if not course_id or not await models.is_course_owner(user_id, str(course_id)):
+            logger.warning(
+                "Permission denied: media refresh requires owner user_id=%s media_id=%s course_id=%s",
+                user_id,
+                payload.media_id,
+                course_id,
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    media_type = (media_asset.get("media_type") or "").lower()
+    if media_type != "audio":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only WAV uploads are supported",
+        )
+
+    object_path = media_asset.get("original_object_path")
+    if not object_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Media missing storage path",
+        )
+
+    content_type = _normalize_mime(media_asset.get("original_content_type") or "")
+    if not content_type:
+        content_type = "audio/wav"
+
+    storage_bucket = media_asset.get("storage_bucket") or storage_service.storage_service.bucket
+    storage_client = storage_service.get_storage_service(storage_bucket)
+
+    try:
+        upload = await storage_client.create_upload_url(
+            object_path,
+            content_type=content_type,
+            upsert=False,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning("Upload URL refresh failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
+    logger.info(
+        "Refreshed WAV upload URL user_id=%s media_id=%s path=%s",
+        user_id,
+        media_asset.get("id"),
+        upload.path,
+    )
+    return schemas.MediaUploadUrlResponse(
+        media_id=media_asset["id"],
+        upload_url=upload.url,
+        object_path=upload.path,
+        headers=dict(upload.headers),
+        expires_at=expires_at,
+    )
+
+
 @router.post("/cover-upload-url", response_model=schemas.CoverUploadUrlResponse)
 async def request_cover_upload_url(
     payload: schemas.CoverUploadUrlRequest,

@@ -42,6 +42,9 @@ Future<void> uploadWavFile({
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
   void Function(bool resumed)? onResume,
+  Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
+      refreshSigning,
+  void Function()? onSigningRefresh,
   WavResumableSession? resumableSession,
 }) async {
   if (cancelToken?.isCancelled == true) {

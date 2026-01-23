@@ -31,6 +31,11 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   }
 
   @override
+  Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) async {
+    return uploadTarget;
+  }
+
+  @override
   Future<MediaUploadTarget> requestCoverUploadUrl({
     required String filename,
     required String mimeType,
@@ -106,6 +111,9 @@ void main() {
       required void Function(int sent, int total) onProgress,
       WavUploadCancelToken? cancelToken,
       void Function(bool resumed)? onResume,
+      Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
+          refreshSigning,
+      void Function()? onSigningRefresh,
       WavResumableSession? resumableSession,
     }) async {
       onProgress(5, 10);

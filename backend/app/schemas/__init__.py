@@ -812,6 +812,10 @@ class MediaUploadUrlRequest(BaseModel):
     lesson_id: UUID | None = None
 
 
+class MediaUploadUrlRefreshRequest(BaseModel):
+    media_id: UUID
+
+
 class MediaUploadUrlResponse(BaseModel):
     media_id: UUID
     upload_url: str

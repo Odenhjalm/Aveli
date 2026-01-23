@@ -12,6 +12,20 @@ class WavUploadFailure implements Exception {
   String toString() => 'WavUploadFailure($kind)';
 }
 
+class WavUploadSigningRefresh {
+  const WavUploadSigningRefresh({
+    required this.uploadUrl,
+    required this.objectPath,
+    required this.headers,
+    required this.expiresAt,
+  });
+
+  final Uri uploadUrl;
+  final String objectPath;
+  final Map<String, String> headers;
+  final DateTime expiresAt;
+}
+
 class WavUploadCancelToken {
   bool _cancelled = false;
   final List<void Function()> _callbacks = [];
@@ -87,13 +101,14 @@ class WavResumableSession {
   WavResumableSession copyWith({
     int? offset,
     DateTime? expiresAt,
+    String? token,
   }) {
     return WavResumableSession(
       mediaId: mediaId,
       courseId: courseId,
       lessonId: lessonId,
       sessionUrl: sessionUrl,
-      token: token,
+      token: token ?? this.token,
       bucket: bucket,
       objectPath: objectPath,
       contentType: contentType,

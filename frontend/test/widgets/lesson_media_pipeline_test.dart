@@ -30,6 +30,11 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   }
 
   @override
+  Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MediaUploadTarget> requestCoverUploadUrl({
     required String filename,
     required String mimeType,
