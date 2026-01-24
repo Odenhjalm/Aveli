@@ -6,7 +6,6 @@ from typing import Any, Mapping, Sequence
 
 import psycopg
 from fastapi import HTTPException, status
-from psycopg import errors
 
 _READONLY_OPTIONS = "-c default_transaction_read_only=on -c statement_timeout=3000"
 _ALLOWED_ACTIONS: dict[str, set[str]] = {
