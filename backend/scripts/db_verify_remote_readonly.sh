@@ -71,9 +71,11 @@ on_exit() {
 trap on_exit EXIT
 
 append_report() {
-  if [[ -f "$REPORT_PATH" ]]; then
-    cat >>"$REPORT_PATH"
+  if [[ "${VERIFY_WRITE_REPORT:-0}" != "1" ]]; then
+    return 0
   fi
+  mkdir -p "$(dirname "$REPORT_PATH")"
+  cat >>"$REPORT_PATH"
 }
 
 load_master_env() {

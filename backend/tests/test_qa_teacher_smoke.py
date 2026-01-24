@@ -1,4 +1,3 @@
-import pytest
 
 from scripts.qa_teacher_smoke import DEFAULT_BASE_URL, resolve_base_url
 

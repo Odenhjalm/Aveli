@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app import db, models
+from app import db
 from app.config import settings
 from app.repositories import media_assets as media_assets_repo
 from app.services import storage_service as storage_module

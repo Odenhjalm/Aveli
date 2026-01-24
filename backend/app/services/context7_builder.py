@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from typing import Any, Mapping, MutableMapping
-from uuid import UUID
 
 from fastapi import HTTPException, status
 

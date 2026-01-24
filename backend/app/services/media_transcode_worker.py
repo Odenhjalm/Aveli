@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import tempfile
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -125,7 +124,7 @@ async def _process_asset(asset: dict) -> None:
 
     try:
         await _transcode_asset(asset)
-    except SourceNotReadyError as exc:
+    except SourceNotReadyError:
         next_retry = _now() + timedelta(seconds=15)
         await media_assets_repo.reschedule_media_asset(
             media_id=media_id,

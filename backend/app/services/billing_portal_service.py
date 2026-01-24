@@ -101,8 +101,6 @@ async def ensure_customer_id(
         await _persist_customer_id(user_id, customer_id, membership_row)
         return customer_id
 
-    stripe.api_key = secret
-
     def _create_customer() -> dict[str, Any]:
         return stripe.Customer.create(
             email=user.get("email"),

@@ -311,12 +311,34 @@ fi
 log "Flutter integration tests"
 if [[ "${RUN_FLUTTER_INTEGRATION:-0}" == "1" ]]; then
   if command -v flutter >/dev/null 2>&1; then
-    if (cd "$FRONTEND_DIR" && timeout 15m flutter test integration_test -d linux); then
-      flutter_integration_status="PASS"
+    integration_failed=0
+    integration_dir="$FRONTEND_DIR/integration_test"
+    if [[ -d "$integration_dir" ]]; then
+      shopt -s nullglob
+      integration_tests=("$integration_dir"/*_test.dart)
+      shopt -u nullglob
     else
-      flutter_integration_status="FAIL"
-      echo "verify_all: FAIL (flutter integration tests)" >&2
-      exit 1
+      integration_tests=()
+    fi
+
+    if [[ ${#integration_tests[@]} -eq 0 ]]; then
+      echo "WARN: no Flutter integration tests found; skipping" >&2
+      flutter_integration_status="SKIP"
+    else
+      for test_file in "${integration_tests[@]}"; do
+        if !(cd "$FRONTEND_DIR" && timeout 15m flutter test "integration_test/$(basename "$test_file")" -d linux); then
+          integration_failed=1
+          break
+        fi
+      done
+
+      if [[ "$integration_failed" -eq 0 ]]; then
+        flutter_integration_status="PASS"
+      else
+        flutter_integration_status="FAIL"
+        echo "verify_all: FAIL (flutter integration tests)" >&2
+        exit 1
+      fi
     fi
   else
     flutter_integration_status="FAIL"
