@@ -586,7 +586,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  Future<void> _loadModules({bool preserveSelection = true, bool mergeResults = false}) async {
+  Future<void> _loadModules({
+    bool preserveSelection = true,
+    bool mergeResults = false,
+  }) async {
     final courseId = _selectedCourseId;
     if (courseId == null) {
       if (mounted) {
@@ -666,9 +669,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         final failure = AppFailure.from(e, stackTrace);
         if (mounted) {
           setState(
-            () =>
-                _modulesLoadError =
-                    'Kunde inte läsa moduler: ${failure.message}',
+            () => _modulesLoadError =
+                'Kunde inte läsa moduler: ${failure.message}',
           );
         }
         _handleCoursePublishFieldsChanged();
@@ -685,7 +687,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  Future<void> _loadLessons({bool preserveSelection = true, bool mergeResults = false}) async {
+  Future<void> _loadLessons({
+    bool preserveSelection = true,
+    bool mergeResults = false,
+  }) async {
     final moduleId = _selectedModuleId;
     if (moduleId == null) {
       if (mounted) {
@@ -766,9 +771,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final failure = AppFailure.from(e, stackTrace);
       if (mounted) {
         setState(
-          () =>
-              _lessonsLoadError =
-                  'Kunde inte läsa lektioner: ${failure.message}',
+          () => _lessonsLoadError =
+              'Kunde inte läsa lektioner: ${failure.message}',
         );
       }
       _handleCoursePublishFieldsChanged();
@@ -838,8 +842,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final failure = AppFailure.from(e, stackTrace);
       if (mounted) {
         setState(
-          () =>
-              _mediaLoadError = 'Kunde inte läsa media: ${failure.message}',
+          () => _mediaLoadError = 'Kunde inte läsa media: ${failure.message}',
         );
       }
     } finally {
@@ -903,9 +906,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return 0;
   }
 
-  List<Map<String, dynamic>> _sortByPosition(
-    List<Map<String, dynamic>> items,
-  ) {
+  List<Map<String, dynamic>> _sortByPosition(List<Map<String, dynamic>> items) {
     final sorted = [...items];
     sorted.sort((a, b) => _positionValue(a).compareTo(_positionValue(b)));
     return sorted;
@@ -1354,8 +1355,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       fontWeight: FontWeight.w700,
       color: Colors.white,
     );
-    final bodyStyle =
-        theme.textTheme.bodySmall?.copyWith(color: Colors.black);
+    final bodyStyle = theme.textTheme.bodySmall?.copyWith(color: Colors.black);
     final hasCover =
         _courseCoverPreviewUrl != null && _courseCoverPreviewUrl!.isNotEmpty;
     final status = _coverPipelineState;
@@ -1364,10 +1364,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Kursbild',
-          style: titleStyle,
-        ),
+        Text('Kursbild', style: titleStyle),
         const SizedBox(height: 8),
         SizedBox(
           width: 140,
@@ -1386,9 +1383,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
                               const Center(
-                                child: Icon(
-                                  Icons.image_not_supported_outlined,
-                                ),
+                                child: Icon(Icons.image_not_supported_outlined),
                               ),
                         )
                       : const Center(
@@ -1904,15 +1899,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ], acceptHint: 'video/*');
         break;
       case _UploadKind.audio:
-        await _pickAndUploadWith(
-          const [
-            'mp3',
-            'm4a',
-            'aac',
-            'ogg',
-          ],
-          acceptHint: 'audio/mpeg,audio/mp4,audio/aac,audio/ogg',
-        );
+        await _pickAndUploadWith(const [
+          'mp3',
+          'm4a',
+          'aac',
+          'ogg',
+        ], acceptHint: 'audio/mpeg,audio/mp4,audio/aac,audio/ogg');
         break;
       case _UploadKind.pdf:
         await _pickAndUploadWith(const ['pdf'], acceptHint: 'application/pdf');
@@ -2027,7 +2019,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _publicDownloadPathForMedia(Map<String, dynamic> media) {
     final rawPath = (media['storage_path'] as String?)?.trim();
     if (rawPath == null || rawPath.isEmpty) return null;
-    final normalized = rawPath.replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
+    final normalized = rawPath
+        .replaceAll('\\', '/')
+        .replaceFirst(RegExp(r'^/+'), '');
     if (normalized.isEmpty) return null;
 
     var bucket = (media['storage_bucket'] as String?)?.trim();
@@ -2062,12 +2056,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _isWavMedia(Map<String, dynamic> media) {
-    final ingestFormat =
-        (media['ingest_format'] as String?)?.toLowerCase().trim();
+    final ingestFormat = (media['ingest_format'] as String?)
+        ?.toLowerCase()
+        .trim();
     final contentType =
         (media['content_type'] as String?)?.toLowerCase().trim() ?? '';
-    final originalName =
-        (media['original_name'] as String?)?.toLowerCase().trim();
+    final originalName = (media['original_name'] as String?)
+        ?.toLowerCase()
+        .trim();
     final isWavSource =
         ingestFormat == 'wav' ||
         contentType == 'audio/wav' ||
@@ -2094,12 +2090,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     Map<String, dynamic>? candidate;
     DateTime? newestTime;
     for (final media in mediaItems) {
-      final ingestFormat =
-          (media['ingest_format'] as String?)?.toLowerCase().trim();
+      final ingestFormat = (media['ingest_format'] as String?)
+          ?.toLowerCase()
+          .trim();
       final contentType =
           (media['content_type'] as String?)?.toLowerCase().trim() ?? '';
-      final originalName =
-          (media['original_name'] as String?)?.toLowerCase().trim();
+      final originalName = (media['original_name'] as String?)
+          ?.toLowerCase()
+          .trim();
       final isWavSource =
           ingestFormat == 'wav' ||
           contentType == 'audio/wav' ||
@@ -2206,10 +2204,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         final saved = await _saveLessonContent(showSuccessSnack: false);
         if (mounted) {
           setState(
-            () =>
-                _mediaStatus = saved
-                    ? 'Bild uppladdad och sparad: $filename'
-                    : 'Bild uppladdad men kunde inte sparas: $filename',
+            () => _mediaStatus = saved
+                ? 'Bild uppladdad och sparad: $filename'
+                : 'Bild uppladdad men kunde inte sparas: $filename',
           );
         }
         if (mounted && context.mounted) {
@@ -2674,8 +2671,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     } catch (e, stackTrace) {
       final failure = AppFailure.from(e, stackTrace);
       if (!mounted) return;
-      if (_coverActionRequestId != requestId ||
-          _selectedCourseId != courseId) {
+      if (_coverActionRequestId != requestId || _selectedCourseId != courseId) {
         return;
       }
       setState(() {
@@ -2779,9 +2775,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             );
           }
           setState(
-            () =>
-                _mediaStatus =
-                    'Uppladdning misslyckades: ${job.filename}$suffix',
+            () => _mediaStatus =
+                'Uppladdning misslyckades: ${job.filename}$suffix',
           );
         } else {
           _lessonsNeedingRefresh.add(job.lessonId);
@@ -2843,9 +2838,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       if (mounted) {
         setState(
-          () =>
-              _mediaStatus =
-                  'Uppladdning klar men media saknas: ${job.filename}',
+          () => _mediaStatus =
+              'Uppladdning klar men media saknas: ${job.filename}',
         );
       }
       return;
@@ -2866,8 +2860,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (context.mounted) {
       final message = inserted
           ? (saved
-              ? 'Media infogat och sparat i lektionen.'
-              : 'Media infogat men kunde inte sparas i lektionen.')
+                ? 'Media infogat och sparat i lektionen.'
+                : 'Media infogat men kunde inte sparas i lektionen.')
           : 'Media uppladdad: ${job.filename}';
       showSnack(context, message);
     }
@@ -2875,8 +2869,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setState(
         () => _mediaStatus = inserted
             ? (saved
-                ? 'Media uppladdad och sparad: ${job.filename}'
-                : 'Media uppladdad men inte sparad: ${job.filename}')
+                  ? 'Media uppladdad och sparad: ${job.filename}'
+                  : 'Media uppladdad men inte sparad: ${job.filename}')
             : 'Media uppladdad: ${job.filename}',
       );
     }
@@ -3896,7 +3890,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       if (_modulesLoadError != null) ...[
                         Text(
                           _modulesLoadError!,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 color: Theme.of(context).colorScheme.error,
                               ),
                         ),
@@ -3904,9 +3899,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           onPressed: _modulesLoading
                               ? null
                               : () => _loadModules(
-                                    preserveSelection: true,
-                                    mergeResults: true,
-                                  ),
+                                  preserveSelection: true,
+                                  mergeResults: true,
+                                ),
                           child: const Text('Försök igen'),
                         ),
                         gap8,
@@ -3953,7 +3948,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     .toList(),
                                 onChanged: (value) async {
                                   if (value == _selectedModuleId) return;
-                                  final canSwitch = await _maybeSaveLessonEdits();
+                                  final canSwitch =
+                                      await _maybeSaveLessonEdits();
                                   if (!canSwitch || !mounted) return;
                                   setState(() => _selectedModuleId = value);
                                   await _loadLessons(preserveSelection: false);
@@ -3979,9 +3975,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         if (_lessonsLoadError != null) ...[
                           Text(
                             _lessonsLoadError!,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
                                   color: Theme.of(context).colorScheme.error,
                                 ),
@@ -3990,9 +3984,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             onPressed: _lessonsLoading
                                 ? null
                                 : () => _loadLessons(
-                                      preserveSelection: true,
-                                      mergeResults: true,
-                                    ),
+                                    preserveSelection: true,
+                                    mergeResults: true,
+                                  ),
                             child: const Text('Försök igen'),
                           ),
                           gap8,
@@ -4024,7 +4018,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       .toList(),
                                   onChanged: (value) async {
                                     if (value == _selectedLessonId) return;
-                                    final canSwitch = await _maybeSaveLessonEdits();
+                                    final canSwitch =
+                                        await _maybeSaveLessonEdits();
                                     if (!canSwitch || !mounted) return;
                                     final needsRefresh =
                                         value != null &&
@@ -4038,9 +4033,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     await _loadLessonMedia();
                                     if (needsRefresh && mounted) {
                                       setState(
-                                        () =>
-                                            _mediaStatus =
-                                                'Media uppdaterad för lektionen.',
+                                        () => _mediaStatus =
+                                            'Media uppdaterad för lektionen.',
                                       );
                                     }
                                   },
@@ -4138,12 +4132,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               gap8,
                               Text(
                                 _mediaLoadError!,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
+                                style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
-                                      color:
-                                          Theme.of(context).colorScheme.error,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
                                     ),
                               ),
                               TextButton(
@@ -4189,6 +4182,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                   ),
                                   itemBuilder: (context, index) {
                                     final media = _lessonMedia[index];
+                                    final theme = Theme.of(context);
                                     final bucket =
                                         (media['storage_bucket'] as String?) ??
                                         '';
@@ -4201,15 +4195,69 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         media['position'] as int? ?? index + 1;
                                     final isPipeline = _isPipelineMedia(media);
                                     final isWavMedia = _isWavMedia(media);
-                                    final pipelineState =
-                                        isPipeline ? _pipelineState(media) : null;
+                                    final pipelineState = isPipeline
+                                        ? _pipelineState(media)
+                                        : null;
+                                    final rawPipelineState =
+                                        media['media_state'];
+                                    final pipelineStateFromDb =
+                                        rawPipelineState is String
+                                        ? rawPipelineState.trim()
+                                        : null;
+                                    final hasInvalidPipelineReference =
+                                        isPipeline &&
+                                        (pipelineStateFromDb == null ||
+                                            pipelineStateFromDb.isEmpty);
+                                    final statusKey =
+                                        hasInvalidPipelineReference
+                                        ? 'failed'
+                                        : isPipeline
+                                        ? pipelineState == 'ready'
+                                              ? 'ready'
+                                              : pipelineState == 'failed'
+                                              ? 'failed'
+                                              : 'processing'
+                                        : 'ready';
+                                    final statusColor = statusKey == 'ready'
+                                        ? theme.colorScheme.primary
+                                        : statusKey == 'failed'
+                                        ? theme.colorScheme.error
+                                        : theme.colorScheme.secondary;
+                                    final canPipelinePlay =
+                                        isPipeline &&
+                                        !hasInvalidPipelineReference &&
+                                        pipelineState == 'ready' &&
+                                        (kind == 'audio' ||
+                                            ((media['content_type']
+                                                        as String?) ??
+                                                    '')
+                                                .startsWith('audio/'));
+                                    final canPreview =
+                                        !hasInvalidPipelineReference &&
+                                        !isWavMedia &&
+                                        (!isPipeline || canPipelinePlay);
                                     final downloadUrl = isWavMedia
                                         ? null
                                         : _resolveMediaDisplayUrl(media);
                                     final fileName = _fileNameFromMedia(media);
+                                    final canInsertIntoLesson =
+                                        !hasInvalidPipelineReference &&
+                                        !isWavMedia &&
+                                        downloadUrl != null &&
+                                        downloadUrl.isNotEmpty;
+                                    final canDownload =
+                                        !hasInvalidPipelineReference &&
+                                        !isWavMedia &&
+                                        (!isPipeline || canPipelinePlay);
 
                                     Widget leading;
-                                    if (kind == 'image' &&
+                                    if (hasInvalidPipelineReference) {
+                                      leading = Icon(
+                                        Icons.error_outline,
+                                        size: 32,
+                                        color: theme.colorScheme.error,
+                                      );
+                                    } else if (kind == 'image' &&
                                         downloadUrl != null) {
                                       leading = GestureDetector(
                                         onTap: _updatingCourseCover
@@ -4223,22 +4271,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                 );
                                               },
                                         child: ClipRRect(
-                                          borderRadius:
-                                              const BorderRadius.all(
-                                                Radius.circular(8),
-                                              ),
+                                          borderRadius: const BorderRadius.all(
+                                            Radius.circular(8),
+                                          ),
                                           child: Image.network(
                                             downloadUrl,
                                             fit: BoxFit.cover,
-                                            errorBuilder: (
-                                              context,
-                                              error,
-                                              stackTrace,
-                                            ) =>
-                                                Icon(
-                                                  _iconForMedia(kind),
-                                                  size: 32,
-                                                ),
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    Icon(
+                                                      _iconForMedia(kind),
+                                                      size: 32,
+                                                    ),
                                           ),
                                         ),
                                       );
@@ -4260,11 +4304,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                           alpha: 0.28,
                                         ),
                                         child: ListTile(
-                                          onTap: isWavMedia
-                                              ? null
-                                              : () => _handleMediaPreviewTap(
-                                                    media,
-                                                  ),
+                                          onTap: canPreview
+                                              ? () => _handleMediaPreviewTap(
+                                                  media,
+                                                )
+                                              : null,
                                           leading: SizedBox(
                                             width: 64,
                                             child: Center(child: leading),
@@ -4279,14 +4323,45 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                 CrossAxisAlignment.start,
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Chip(
-                                                label: Text(
-                                                  intro
-                                                      ? 'Intro (gratis)'
-                                                      : 'Premium',
-                                                ),
-                                                visualDensity:
-                                                    VisualDensity.compact,
+                                              Wrap(
+                                                spacing: 6,
+                                                runSpacing: 4,
+                                                crossAxisAlignment:
+                                                    WrapCrossAlignment.center,
+                                                children: [
+                                                  Chip(
+                                                    label: Text(
+                                                      intro
+                                                          ? 'Intro (gratis)'
+                                                          : 'Premium',
+                                                    ),
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                  ),
+                                                  Chip(
+                                                    label: Text(statusKey),
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    backgroundColor: statusColor
+                                                        .withValues(
+                                                          alpha: 0.14,
+                                                        ),
+                                                    side: BorderSide(
+                                                      color: statusColor
+                                                          .withValues(
+                                                            alpha: 0.35,
+                                                          ),
+                                                    ),
+                                                    labelStyle: theme
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          color: statusColor,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                  ),
+                                                ],
                                               ),
                                               Text(
                                                 bucket.isEmpty
@@ -4302,12 +4377,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   context,
                                                 ).textTheme.labelSmall,
                                               ),
-                                              if (isWavMedia)
+                                              if (hasInvalidPipelineReference)
                                                 Text(
-                                                  'Bearbetas - ljudet blir tillgängligt när konverteringen är klar',
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.labelSmall,
+                                                  'Ogiltig media_asset-referens (saknas i databasen).',
+                                                  style: theme
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        color: theme
+                                                            .colorScheme
+                                                            .error,
+                                                      ),
                                                 )
                                               else if (pipelineState != null)
                                                 Text(
@@ -4325,10 +4405,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             children: [
                                               if (_isImageMedia(media)) ...[
                                                 IconButton(
-                                                  tooltip: 'Använd som kursbild',
-                                                  icon: const Icon(
-                                                    Icons.star,
-                                                  ),
+                                                  tooltip:
+                                                      'Använd som kursbild',
+                                                  icon: const Icon(Icons.star),
                                                   onPressed:
                                                       _updatingCourseCover
                                                       ? null
@@ -4347,10 +4426,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                     Icons
                                                         .add_photo_alternate_outlined,
                                                   ),
-                                                  onPressed: () =>
-                                                      _insertMediaIntoLesson(
-                                                        media,
-                                                      ),
+                                                  onPressed: canInsertIntoLesson
+                                                      ? () =>
+                                                            _insertMediaIntoLesson(
+                                                              media,
+                                                            )
+                                                      : null,
                                                 ),
                                               ] else ...[
                                                 IconButton(
@@ -4371,10 +4452,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                         : Icons
                                                               .audiotrack_outlined,
                                                   ),
-                                                  onPressed: () =>
-                                                      _insertMediaIntoLesson(
-                                                        media,
-                                                      ),
+                                                  onPressed: canInsertIntoLesson
+                                                      ? () =>
+                                                            _insertMediaIntoLesson(
+                                                              media,
+                                                            )
+                                                      : null,
                                                 ),
                                               ],
                                               IconButton(
@@ -4382,11 +4465,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                 icon: const Icon(
                                                   Icons.download_outlined,
                                                 ),
-                                                onPressed: isWavMedia
-                                                    ? null
-                                                    : () => _downloadMedia(
-                                                          media,
-                                                        ),
+                                                onPressed: canDownload
+                                                    ? () =>
+                                                          _downloadMedia(media)
+                                                    : null,
                                               ),
                                               IconButton(
                                                 tooltip: 'Ta bort',
