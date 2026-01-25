@@ -23,7 +23,6 @@ from .repositories import (
     set_order_checkout_reference as repo_set_order_checkout_reference,
     update_profile as repo_update_profile,
     upsert_refresh_token as repo_upsert_refresh_token,
-    delete_media_asset as repo_delete_media_asset,
 )
 from .repositories.orders import get_order as repo_get_order
 from .services import courses_service
@@ -807,6 +806,31 @@ async def delete_lesson_media_entry(media_id: str) -> dict | None:
                   DELETE FROM app.lesson_media
                   WHERE id = %s
                   RETURNING id, lesson_id, storage_path, storage_bucket, media_id, media_asset_id
+                ),
+                usage AS (
+                  SELECT
+                    d.media_asset_id,
+                    EXISTS(
+                      SELECT 1
+                      FROM app.lesson_media lm
+                      WHERE lm.media_asset_id = d.media_asset_id
+                        AND lm.id <> d.id
+                    ) AS used_in_lessons,
+                    EXISTS(
+                      SELECT 1
+                      FROM app.courses c
+                      WHERE c.cover_media_id = d.media_asset_id
+                    ) AS used_as_cover
+                  FROM deleted d
+                ),
+                deleted_asset AS (
+                  DELETE FROM app.media_assets ma
+                  USING usage u
+                  WHERE ma.id = u.media_asset_id
+                    AND u.media_asset_id IS NOT NULL
+                    AND NOT u.used_in_lessons
+                    AND NOT u.used_as_cover
+                  RETURNING ma.id
                 )
                 SELECT
                   d.id,
@@ -817,7 +841,8 @@ async def delete_lesson_media_entry(media_id: str) -> dict | None:
                   d.media_asset_id,
                   mo.content_type,
                   mo.byte_size,
-                  mo.original_name
+                  mo.original_name,
+                  EXISTS(SELECT 1 FROM deleted_asset) AS media_asset_deleted
                 FROM deleted d
                 LEFT JOIN app.media_objects mo ON mo.id = d.media_id
                 """,
@@ -827,8 +852,6 @@ async def delete_lesson_media_entry(media_id: str) -> dict | None:
             await conn.commit()
     if row and row.get("media_id"):
         await cleanup_media_object(row["media_id"])
-    if row and row.get("media_asset_id"):
-        await repo_delete_media_asset(str(row["media_asset_id"]))
     return row
 
 
@@ -856,6 +879,7 @@ async def get_media(media_id: str) -> dict | None:
               coalesce(mo.storage_path, lm.storage_path) AS storage_path,
               coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
               lm.media_id,
+              lm.media_asset_id,
               mo.content_type,
               mo.byte_size,
               mo.original_name

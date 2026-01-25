@@ -311,26 +311,28 @@ fi
 log "Flutter integration tests"
 if [[ "${RUN_FLUTTER_INTEGRATION:-0}" == "1" ]]; then
   if command -v flutter >/dev/null 2>&1; then
-    if (
-      cd "$FRONTEND_DIR" && timeout 15m bash -lc '
-        set -euo pipefail
-        shopt -s nullglob
-        tests=(integration_test/*_test.dart)
-        if [[ "${#tests[@]}" -eq 0 ]]; then
-          echo "WARN: no integration_test/*_test.dart found; skipping"
-          exit 0
-        fi
-        for test_file in "${tests[@]}"; do
-          echo "==> Flutter integration: ${test_file}"
-          flutter test "${test_file}" -d linux
-        done
-      '
-    ); then
-      flutter_integration_status="PASS"
+    integration_dir="$FRONTEND_DIR/integration_test"
+    if [[ -d "$integration_dir" ]]; then
+      shopt -s nullglob
+      integration_tests=("$integration_dir"/*_test.dart)
+      shopt -u nullglob
     else
-      flutter_integration_status="FAIL"
-      echo "verify_all: FAIL (flutter integration tests)" >&2
-      exit 1
+      integration_tests=()
+    fi
+
+    if [[ ${#integration_tests[@]} -eq 0 ]]; then
+      echo "WARN: no Flutter integration tests found; skipping" >&2
+      flutter_integration_status="SKIP"
+    else
+      for test_file in "${integration_tests[@]}"; do
+        echo "==> Flutter integration: integration_test/$(basename "$test_file")"
+        if !(cd "$FRONTEND_DIR" && timeout 15m flutter test "integration_test/$(basename "$test_file")" -d linux); then
+          flutter_integration_status="FAIL"
+          echo "verify_all: FAIL (flutter integration tests)" >&2
+          exit 1
+        fi
+      done
+      flutter_integration_status="PASS"
     fi
   else
     flutter_integration_status="FAIL"

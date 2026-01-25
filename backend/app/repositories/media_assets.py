@@ -159,6 +159,12 @@ async def fetch_and_lock_pending_media_assets(
               WHERE state IN ('uploaded', 'failed')
                 AND (next_retry_at IS NULL OR next_retry_at <= now())
                 AND (%s IS NULL OR COALESCE(processing_attempts, 0) < %s)
+                AND EXISTS (
+                  SELECT 1
+                  FROM storage.objects o
+                  WHERE o.bucket_id = app.media_assets.storage_bucket
+                    AND o.name = app.media_assets.original_object_path
+                )
               ORDER BY created_at ASC
               LIMIT %s
               FOR UPDATE SKIP LOCKED

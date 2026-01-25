@@ -3715,6 +3715,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final wavLessonId = _selectedLessonId;
     final wavCourseId = _lessonCourseId(_selectedLessonId);
     final wavMedia = _latestWavSourceMedia(_lessonMedia);
+    final wavLessonMediaId = wavMedia == null ? null : wavMedia['id']?.toString();
     final wavMediaState = wavMedia == null ? null : _pipelineState(wavMedia);
     final wavFileName = wavMedia == null ? null : _fileNameFromMedia(wavMedia);
 
@@ -4155,6 +4156,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 // Lesson is the source of truth for course_id.
                                 courseId: wavCourseId,
                                 lessonId: wavLessonId,
+                                existingLessonMediaId: wavLessonMediaId,
                                 existingMediaState: wavMediaState,
                                 existingFileName: wavFileName,
                                 onMediaUpdated: _loadLessonMedia,
