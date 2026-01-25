@@ -28,7 +28,7 @@ class HeroBackground extends ConsumerWidget {
           // Bundlade bakgrunder används lokalt; övriga hämtas via backend-resolvern.
           image: provider,
           fit: BoxFit.cover,
-          alignment: Alignment.center,
+          alignment: Alignment.topCenter,
         ),
         // Subtil mörk gradient för att text/widgets ligger tydligt ovanpå
         DecoratedBox(
