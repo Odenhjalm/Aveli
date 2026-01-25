@@ -1049,6 +1049,12 @@ async def delete_media(media_id: str, current: TeacherUser):
     row = await models.get_media(media_id)
     if not row:
         raise HTTPException(status_code=404, detail="Media not found")
+    media_asset_id = row.get("media_asset_id")
+    media_asset = (
+        await repositories.get_media_asset(str(media_asset_id))
+        if media_asset_id
+        else None
+    )
     _, course_id = await courses_service.lesson_course_ids(row.get("lesson_id"))
     if course_id and not await models.is_course_owner(current["id"], course_id):
         _log_course_owner_denied(
@@ -1083,6 +1089,37 @@ async def delete_media(media_id: str, current: TeacherUser):
             seen.add(candidate)
             if candidate.exists():
                 candidate.unlink()
+
+    if media_asset and deleted_row and deleted_row.get("media_asset_deleted"):
+        delete_targets: set[tuple[str, str]] = set()
+        original_path = media_asset.get("original_object_path")
+        original_bucket = (
+            media_asset.get("storage_bucket") or settings.media_source_bucket
+        )
+        if original_path and original_bucket:
+            delete_targets.add((str(original_bucket), str(original_path)))
+            if (media_asset.get("media_type") or "").lower() == "audio":
+                normalized = str(original_path).lstrip("/")
+                prefix = "media/source/audio/"
+                if normalized.startswith(prefix):
+                    normalized = "media/derived/audio/" + normalized[len(prefix) :]
+                else:
+                    normalized = "media/derived/audio/" + normalized
+                derived_path = Path(normalized).with_suffix(".mp3").as_posix()
+                delete_targets.add((str(original_bucket), derived_path))
+
+        streaming_path = media_asset.get("streaming_object_path")
+        if streaming_path:
+            streaming_bucket = media_asset.get("streaming_storage_bucket") or original_bucket
+            if streaming_bucket:
+                delete_targets.add((str(streaming_bucket), str(streaming_path)))
+
+        for bucket, path in sorted(delete_targets):
+            try:
+                service = storage_service.get_storage_service(bucket)
+                await service.delete_object(path)
+            except storage_service.StorageServiceError as exc:
+                logger.warning("Storage delete failed bucket=%s path=%s: %s", bucket, path, exc)
     return {"deleted": True}
 
 

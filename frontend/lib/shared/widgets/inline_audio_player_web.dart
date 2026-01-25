@@ -74,10 +74,12 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
             milliseconds: (rawDuration * 1000).round(),
           ).abs();
           _initializing = false;
+          _error = null;
         });
       } else {
         setState(() {
           _initializing = false;
+          _error = null;
         });
       }
     });
@@ -103,6 +105,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       setState(() {
         _isPlaying = true;
         _initializing = false;
+        _error = null;
       });
     });
     _pauseSub = _audio.onPause.listen((event) {

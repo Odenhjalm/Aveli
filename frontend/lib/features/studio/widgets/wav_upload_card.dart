@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
@@ -18,6 +19,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
     required this.courseId,
     required this.lessonId,
     this.onMediaUpdated,
+    this.existingLessonMediaId,
     this.existingMediaState,
     this.existingFileName,
     this.pickFileOverride,
@@ -28,6 +30,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
   final String? courseId;
   final String? lessonId;
   final Future<void> Function()? onMediaUpdated;
+  final String? existingLessonMediaId;
   final String? existingMediaState;
   final String? existingFileName;
   final Future<WavUploadFile?> Function()? pickFileOverride;
@@ -68,7 +71,18 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   String? _mediaState;
   Timer? _pollTimer;
   bool _uploading = false;
+  bool _deleting = false;
+  bool _deleted = false;
   WavUploadCancelToken? _cancelToken;
+
+  @override
+  void didUpdateWidget(covariant WavUploadCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextId = widget.existingLessonMediaId;
+    if (nextId != null && nextId.trim().isNotEmpty) {
+      _deleted = false;
+    }
+  }
 
   String? _missingContextMessage({
     required bool hasLessonId,
@@ -120,6 +134,50 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
   void _cancelUpload() {
     _cancelToken?.cancel();
+  }
+
+  Future<void> _deleteExisting() async {
+    final mediaId = widget.existingLessonMediaId;
+    if (mediaId == null || mediaId.trim().isEmpty) return;
+    if (_deleting) return;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _cancelToken?.cancel();
+    setState(() {
+      _deleting = true;
+      _error = null;
+      _status = 'Tar bort…';
+    });
+    try {
+      final repo = ref.read(studioRepositoryProvider);
+      await repo.deleteLessonMedia(mediaId);
+      if (!mounted) return;
+      setState(() {
+        _deleting = false;
+        _deleted = true;
+        _selectedFile = null;
+        _progress = 0.0;
+        _status = null;
+        _error = null;
+        _mediaId = null;
+        _mediaState = null;
+        _uploading = false;
+        _cancelToken = null;
+      });
+      await widget.onMediaUpdated?.call();
+      if (!mounted) return;
+      showSnack(context, 'Ljud borttaget.');
+    } catch (error, stackTrace) {
+      final failure = AppFailure.from(error, stackTrace);
+      final message = 'Kunde inte ta bort ljud: ${failure.message}';
+      if (!mounted) return;
+      setState(() {
+        _deleting = false;
+        _error = message;
+        _status = message;
+      });
+      showSnack(context, message);
+    }
   }
 
   @override
@@ -400,7 +458,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final secondaryStyle =
         theme.textTheme.bodySmall?.copyWith(color: _secondaryTextColor);
     final progressVisible = _uploading && _progress > 0;
-    final effectiveState = _mediaState ?? widget.existingMediaState;
+    final effectiveState = _deleted ? null : (_mediaState ?? widget.existingMediaState);
     final isProcessingState =
         effectiveState == 'uploaded' || effectiveState == 'processing';
     final isReadyState = effectiveState == 'ready';
@@ -410,14 +468,14 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final showReadyState = !showProcessingState && (isReadyState || isFailedState);
     final showUploadAction = !showProcessingState && !showReadyState;
     final showReplaceAction = showReadyState;
-    final displayFileName = _selectedFile?.name ?? widget.existingFileName;
+    final displayFileName = _deleted ? null : (_selectedFile?.name ?? widget.existingFileName);
     final missingMessage = _missingContextMessage(
       hasLessonId: hasLessonId,
       hasCourseId: hasCourseId,
     );
 
     String? statusText;
-    if (_uploading) {
+    if (_uploading || _deleting) {
       statusText = _status;
     } else if (effectiveState != null) {
       statusText = _statusLabel(effectiveState);
@@ -431,13 +489,13 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     Widget? actionButton;
     if (showUploadAction) {
       actionButton = ElevatedButton.icon(
-        onPressed: canUpload && !_uploading ? _pickAndUpload : null,
+        onPressed: canUpload && !_uploading && !_deleting ? _pickAndUpload : null,
         icon: const Icon(Icons.upload_file),
         label: const Text('Ladda upp WAV'),
       );
     } else if (showReplaceAction) {
       actionButton = OutlinedButton.icon(
-        onPressed: canUpload && !_uploading ? _pickAndUpload : null,
+        onPressed: canUpload && !_uploading && !_deleting ? _pickAndUpload : null,
         icon: const Icon(Icons.sync),
         label: const Text('Byt WAV'),
       );
@@ -457,6 +515,11 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         ),
       ],
     ];
+
+    final canDelete = canUpload && !_uploading && !_deleting;
+    final showDeleteButton = widget.existingLessonMediaId != null &&
+        widget.existingLessonMediaId!.trim().isNotEmpty &&
+        !_deleted;
 
     return GlassCard(
       padding: const EdgeInsets.all(16),
@@ -489,6 +552,14 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
                 onPressed: _cancelToken == null ? null : _cancelUpload,
                 icon: const Icon(Icons.close),
                 label: const Text('Avbryt'),
+              ),
+            ],
+            if (showDeleteButton) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: canDelete ? _deleteExisting : null,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Ta bort'),
               ),
             ],
             if (!canUpload) ...[

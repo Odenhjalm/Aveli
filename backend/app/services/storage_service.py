@@ -206,6 +206,42 @@ class StorageService:
             expires_in=7200,
         )
 
+    async def delete_object(self, path: str) -> bool:
+        if not path:
+            raise StorageServiceError("storage path is required")
+
+        supabase_url = self._supabase_url
+        service_role_key = self._service_role_key
+        if not supabase_url or not service_role_key:
+            raise StorageServiceError("Supabase Storage is not configured")
+
+        normalized_path = path.lstrip("/")
+        base_url = supabase_url.rstrip("/")
+        quoted_path = quote(normalized_path, safe="/")
+        request_url = f"{base_url}/storage/v1/object/{self._bucket}/{quoted_path}"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.delete(
+                    request_url,
+                    headers={
+                        "apikey": service_role_key,
+                        "Authorization": f"Bearer {service_role_key}",
+                    },
+                )
+            except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                raise StorageServiceError("Failed to call Supabase Storage") from exc
+
+        if response.status_code in {200, 204}:
+            return True
+        if response.status_code == 404:
+            return False
+        if response.status_code >= 400:
+            raise StorageServiceError(
+                f"Supabase Storage delete failed with status {response.status_code}"
+            )
+        return True
+
 
 _storage_services: dict[str, StorageService] = {}
 

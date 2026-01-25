@@ -103,13 +103,46 @@ async def _poll_loop() -> None:
             if not batch:
                 await asyncio.sleep(settings.media_transcode_poll_interval_seconds)
                 continue
-            for asset in batch:
-                await _process_asset(asset)
+            for index, asset in enumerate(batch):
+                try:
+                    await _process_asset(asset)
+                except asyncio.CancelledError:
+                    _uncancel_current_task()
+                    await _reschedule_cancelled_assets(batch[index:])
+                    raise
         except asyncio.CancelledError:
             break
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("Media transcode poller error: %s", exc)
             await asyncio.sleep(settings.media_transcode_poll_interval_seconds)
+
+
+def _uncancel_current_task() -> None:
+    task = asyncio.current_task()
+    if task is None:
+        return
+    uncancel = getattr(task, "uncancel", None)
+    if callable(uncancel):
+        uncancel()
+
+
+async def _reschedule_cancelled_assets(batch: list[dict]) -> None:
+    now = _now()
+    for asset in batch:
+        media_id = asset.get("id")
+        if not media_id:
+            continue
+        try:
+            await media_assets_repo.reschedule_media_asset(
+                media_id=str(media_id),
+                next_retry_at=now,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort cleanup
+            logger.warning(
+                "Failed to reschedule cancelled media asset %s: %s",
+                media_id,
+                exc,
+            )
 
 
 async def _process_asset(asset: dict) -> None:
