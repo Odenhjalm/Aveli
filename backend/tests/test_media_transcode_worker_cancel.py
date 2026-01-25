@@ -15,7 +15,7 @@ async def test_worker_reschedules_locked_batch_on_cancel(monkeypatch):
 
     rescheduled: list[str] = []
 
-    async def fake_reschedule_media_asset(*, media_id, next_retry_at):
+    async def fake_defer_media_asset_processing(*, media_id):
         rescheduled.append(str(media_id))
 
     async def fake_process_asset(asset):
@@ -29,8 +29,8 @@ async def test_worker_reschedules_locked_batch_on_cancel(monkeypatch):
     )
     monkeypatch.setattr(
         worker.media_assets_repo,
-        "reschedule_media_asset",
-        fake_reschedule_media_asset,
+        "defer_media_asset_processing",
+        fake_defer_media_asset_processing,
         raising=True,
     )
     monkeypatch.setattr(worker, "_process_asset", fake_process_asset, raising=True)
@@ -38,4 +38,3 @@ async def test_worker_reschedules_locked_batch_on_cancel(monkeypatch):
     await worker._poll_loop()
 
     assert set(rescheduled) == {"a", "b"}
-
