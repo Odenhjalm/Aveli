@@ -470,9 +470,10 @@ class HomeAudioItem(BaseModel):
     course_title: str
     course_slug: Optional[str] = None
     kind: str
-    storage_path: str
+    storage_path: Optional[str] = None
     storage_bucket: Optional[str] = None
     media_id: Optional[UUID] = None
+    media_asset_id: Optional[UUID] = None
     duration_seconds: Optional[int] = None
     created_at: datetime
     content_type: Optional[str] = None
@@ -483,6 +484,9 @@ class HomeAudioItem(BaseModel):
     signed_url_expires_at: Optional[str] = None
     is_intro: Optional[bool] = None
     is_free_intro: Optional[bool] = None
+    media_state: Optional[str] = None
+    streaming_format: Optional[str] = None
+    codec: Optional[str] = None
 
 
 class HomeAudioFeedResponse(BaseModel):

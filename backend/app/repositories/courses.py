@@ -1033,9 +1033,28 @@ async def list_home_audio_media(
         """
         access_clause = """
           AND (
-            l.is_intro = true
-            OR c.is_free_intro = true
-            OR e.user_id IS NOT NULL
+            c.created_by = %s
+            OR (
+              c.is_published = true
+              AND (
+                l.is_intro = true
+                OR c.is_free_intro = true
+                OR e.user_id IS NOT NULL
+              )
+              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
+            )
+          )
+        """
+        params.append(user_id)  # enrollment join
+        params.append(user_id)  # owner access
+    else:
+        access_clause = """
+          AND (
+            c.created_by = %s
+            OR (
+              c.is_published = true
+              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
+            )
           )
         """
         params.append(user_id)
@@ -1083,8 +1102,6 @@ async def list_home_audio_media(
         LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         {enrollment_join}
         WHERE lm.kind = 'audio'
-          AND c.is_published = true
-          AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
           {access_clause}
         ORDER BY lm.created_at DESC
         LIMIT %s

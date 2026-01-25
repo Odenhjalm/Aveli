@@ -241,7 +241,7 @@ async def list_home_audio_media(
     items: list[dict[str, Any]] = []
     for row in rows:
         item = _materialize_mapping(row)
-        if not item.get("storage_bucket"):
+        if not item.get("media_asset_id") and not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
         if not item.get("media_asset_id"):
             media_signer.attach_media_links(item)
