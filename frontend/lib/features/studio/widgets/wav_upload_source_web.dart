@@ -282,6 +282,19 @@ class _SignedUploadInfo {
   final String token;
 }
 
+Uri _signedResumableSessionUrl(Uri sessionUrl) {
+  final segments = sessionUrl.pathSegments;
+  final resumableIndex = segments.indexOf('resumable');
+  if (resumableIndex == -1) return sessionUrl;
+  if (resumableIndex + 1 < segments.length &&
+      segments[resumableIndex + 1] == 'sign') {
+    return sessionUrl;
+  }
+  final updatedSegments = <String>[...segments];
+  updatedSegments.insert(resumableIndex + 1, 'sign');
+  return sessionUrl.replace(path: updatedSegments.join('/'));
+}
+
 String _sessionKey(String courseId, String lessonId, String fingerprint) {
   return '$_storageKeyPrefix$courseId.$lessonId.$fingerprint';
 }
@@ -441,7 +454,8 @@ Future<WavResumableSession> _createResumableSession({
   });
 
   final endpoint = signedInfo.storageBaseUrl.replace(
-    path: '${signedInfo.storageBaseUrl.path}/upload/resumable',
+    path:
+        '${signedInfo.storageBaseUrl.path}/upload/resumable/sign/${signedInfo.bucket}/$normalizedPath',
   );
 
   final response = await _sendTusRequest(
@@ -467,7 +481,9 @@ Future<WavResumableSession> _createResumableSession({
   if (location == null || location.isEmpty) {
     throw const WavUploadFailure(WavUploadFailureKind.failed);
   }
-  final sessionUrl = _resolveLocation(endpoint, location);
+  // Supabase returns a non-signed session URL under /upload/resumable/<id>, but
+  // signed uploads must use /upload/resumable/sign/<id> for HEAD/PATCH.
+  final sessionUrl = _signedResumableSessionUrl(_resolveLocation(endpoint, location));
   final expiresAt = _parseUploadExpires(response.headers['upload-expires']);
 
   final session = WavResumableSession(
@@ -510,6 +526,7 @@ bool _isSigningFailureResponse(_TusResponse response) {
   final body = response.body.trim();
   if (body.isEmpty) return false;
   final lower = body.toLowerCase();
+  if (lower.contains('invalid compact jws')) return true;
   if (lower.contains('signing') || lower.contains('signature')) return true;
   if (lower.contains('signed url') || lower.contains('signedurl')) return true;
   if (lower.contains('token') && lower.contains('expired')) return true;

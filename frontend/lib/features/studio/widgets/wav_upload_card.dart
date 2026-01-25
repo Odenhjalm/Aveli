@@ -297,7 +297,16 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         }
       } catch (error, stackTrace) {
         final failure = AppFailure.from(error, stackTrace);
-        final message = 'Kunde inte starta uppladdningen. Försök igen.';
+        var message = 'Kunde inte starta uppladdningen. Försök igen.';
+        if (failure is ValidationFailure) {
+          final detail = failure.message.trim();
+          if (detail.isNotEmpty) {
+            final localized = detail.startsWith('File too large')
+                ? detail.replaceFirst('File too large', 'Filen är för stor')
+                : detail;
+            message = localized;
+          }
+        }
         if (!mounted) return;
         setState(() {
           _uploading = false;
