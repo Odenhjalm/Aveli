@@ -44,7 +44,7 @@ async def test_home_audio_returns_list(async_client):
 
 
 @pytest.mark.anyio("asyncio")
-async def test_home_audio_includes_owner_unpublished_pipeline_audio(async_client):
+async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_client):
     email = f"home_audio_owner_{uuid.uuid4().hex[:6]}@example.com"
     password = "Passw0rd!"
     register_resp = await async_client.post(
@@ -152,11 +152,30 @@ async def test_home_audio_includes_owner_unpublished_pipeline_audio(async_client
     payload = resp.json()
     items = payload.get("items") or []
     item = next((it for it in items if it.get("id") == lesson_media_id), None)
-    assert item, payload
-    assert item.get("course_id") == course_id
-    assert item.get("media_asset_id") == media_asset_id
-    assert item.get("media_state") == "processing"
-    assert item.get("storage_path") is None
+    assert item is None, payload
+
+    await media_assets_repo.mark_media_asset_ready(
+        media_id=media_asset_id,
+        streaming_object_path="media/derived/audio/courses/test.mp3",
+        streaming_format="mp3",
+        duration_seconds=12,
+        codec="mp3",
+        streaming_storage_bucket="course-media",
+    )
+
+    resp_ready = await async_client.get(
+        "/home/audio",
+        headers=headers,
+        params={"limit": 50},
+    )
+    assert resp_ready.status_code == 200, resp_ready.text
+    items_ready = resp_ready.json().get("items") or []
+    item_ready = next((it for it in items_ready if it.get("id") == lesson_media_id), None)
+    assert item_ready, resp_ready.json()
+    assert item_ready.get("course_id") == course_id
+    assert item_ready.get("media_asset_id") == media_asset_id
+    assert item_ready.get("media_state") == "ready"
+    assert item_ready.get("storage_path") == "media/derived/audio/courses/test.mp3"
 
     email2 = f"home_audio_other_{uuid.uuid4().hex[:6]}@example.com"
     register2 = await async_client.post(

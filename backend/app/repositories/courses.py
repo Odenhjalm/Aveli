@@ -1033,7 +1033,10 @@ async def list_home_audio_media(
         """
         access_clause = """
           AND (
-            c.created_by = %s
+            (
+              c.created_by = %s
+              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
+            )
             OR (
               c.is_published = true
               AND (
@@ -1050,7 +1053,10 @@ async def list_home_audio_media(
     else:
         access_clause = """
           AND (
-            c.created_by = %s
+            (
+              c.created_by = %s
+              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
+            )
             OR (
               c.is_published = true
               AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
