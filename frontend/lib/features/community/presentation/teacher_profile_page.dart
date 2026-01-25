@@ -385,12 +385,7 @@ class _ProfileMediaTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_subtitleFor(item) != null)
-            Text(
-              _subtitleFor(item)!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+            Text(_subtitleFor(item)!, style: theme.textTheme.bodySmall),
           if ((item.description ?? '').trim().isNotEmpty)
             Text(item.description!.trim(), style: theme.textTheme.bodySmall),
           Padding(
@@ -625,12 +620,12 @@ class _ServiceTile extends StatelessWidget {
       if (gate.pending)
         Text(
           'Kontrollerar behörighet...',
-          style: t.bodySmall?.copyWith(color: theme.colorScheme.tertiary),
+          style: t.bodyMedium?.copyWith(color: theme.colorScheme.tertiary),
         )
       else if (gate.message != null)
         Text(
           gate.message!,
-          style: t.bodySmall?.copyWith(
+          style: t.bodyMedium?.copyWith(
             color: theme.colorScheme.error,
             fontWeight: FontWeight.w600,
           ),

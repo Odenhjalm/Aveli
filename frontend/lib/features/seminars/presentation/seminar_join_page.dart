@@ -294,11 +294,9 @@ class _SeminarJoinPageState extends ConsumerState<SeminarJoinPage> {
     } catch (error, stackTrace) {
       if (!mounted) return;
       final message = _seminarJoinErrorMessage(error, stackTrace);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Kunde inte ansluta: $message'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Kunde inte ansluta: $message')));
     } finally {
       if (mounted) {
         setState(() => _joining = false);
@@ -463,7 +461,7 @@ class _ParticipantPreJoinSheet extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Vill du delta aktivt kontaktar du läraren, annars kan du luta dig tillbaka och lyssna.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.primary,
               ),
             ),

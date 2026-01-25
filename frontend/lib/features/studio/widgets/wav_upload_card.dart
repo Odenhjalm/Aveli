@@ -48,10 +48,11 @@ class WavUploadCard extends ConsumerStatefulWidget {
     void Function(bool resumed)? onResume,
     Future<bool> Function()? ensureAuth,
     Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-        refreshSigning,
+    refreshSigning,
     void Function()? onSigningRefresh,
     WavResumableSession? resumableSession,
-  })? uploadFileOverride;
+  })?
+  uploadFileOverride;
   final Duration pollInterval;
 
   @override
@@ -61,8 +62,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
 class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   static const _lessonRequiredText =
       'Spara lektionen för att kunna ladda upp ljud.';
-  static const Color _bodyTextColor = Colors.black;
-  static const Color _secondaryTextColor = Color(0xFF4A4A4A);
+
   WavUploadFile? _selectedFile;
   double _progress = 0.0;
   String? _status;
@@ -231,8 +231,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         dbState = null;
       }
 
-      final dbAllowsResume =
-          dbState == 'uploaded' || dbState == 'processing';
+      final dbAllowsResume = dbState == 'uploaded' || dbState == 'processing';
       if (!dbAllowsResume) {
         if (dbState == 'failed') {
           clearResumableSession(resumableSession);
@@ -355,7 +354,9 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         },
         refreshSigning: (session) async {
           final repo = ref.read(mediaPipelineRepositoryProvider);
-          final refreshed = await repo.refreshUploadUrl(mediaId: session.mediaId);
+          final refreshed = await repo.refreshUploadUrl(
+            mediaId: session.mediaId,
+          );
           return WavUploadSigningRefresh(
             uploadUrl: refreshed.uploadUrl,
             objectPath: refreshed.objectPath,
@@ -460,24 +461,28 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         widget.courseId != null && widget.courseId!.trim().isNotEmpty;
     final canUpload = hasLessonId && hasCourseId;
     final theme = Theme.of(context);
-    final titleStyle =
-        theme.textTheme.titleMedium?.copyWith(color: Colors.white);
-    final bodyStyle =
-        theme.textTheme.bodySmall?.copyWith(color: _bodyTextColor);
-    final secondaryStyle =
-        theme.textTheme.bodySmall?.copyWith(color: _secondaryTextColor);
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      color: Colors.white,
+    );
+    final bodyStyle = theme.textTheme.bodySmall;
+    final secondaryStyle = theme.textTheme.bodySmall;
     final progressVisible = _uploading && _progress > 0;
-    final effectiveState = _deleted ? null : (_mediaState ?? widget.existingMediaState);
+    final effectiveState = _deleted
+        ? null
+        : (_mediaState ?? widget.existingMediaState);
     final isProcessingState =
         effectiveState == 'uploaded' || effectiveState == 'processing';
     final isReadyState = effectiveState == 'ready';
     final isFailedState = effectiveState == 'failed';
     final showProcessingState = _uploading || isProcessingState;
     final showProcessingDetails = !_uploading && isProcessingState;
-    final showReadyState = !showProcessingState && (isReadyState || isFailedState);
+    final showReadyState =
+        !showProcessingState && (isReadyState || isFailedState);
     final showUploadAction = !showProcessingState && !showReadyState;
     final showReplaceAction = showReadyState;
-    final displayFileName = _deleted ? null : (_selectedFile?.name ?? widget.existingFileName);
+    final displayFileName = _deleted
+        ? null
+        : (_selectedFile?.name ?? widget.existingFileName);
     final missingMessage = _missingContextMessage(
       hasLessonId: hasLessonId,
       hasCourseId: hasCourseId,
@@ -498,13 +503,17 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     Widget? actionButton;
     if (showUploadAction) {
       actionButton = ElevatedButton.icon(
-        onPressed: canUpload && !_uploading && !_deleting ? _pickAndUpload : null,
+        onPressed: canUpload && !_uploading && !_deleting
+            ? _pickAndUpload
+            : null,
         icon: const Icon(Icons.upload_file),
         label: const Text('Ladda upp WAV'),
       );
     } else if (showReplaceAction) {
       actionButton = OutlinedButton.icon(
-        onPressed: canUpload && !_uploading && !_deleting ? _pickAndUpload : null,
+        onPressed: canUpload && !_uploading && !_deleting
+            ? _pickAndUpload
+            : null,
         icon: const Icon(Icons.sync),
         label: const Text('Byt WAV'),
       );
@@ -526,7 +535,8 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     ];
 
     final canDelete = canUpload && !_uploading && !_deleting;
-    final showDeleteButton = widget.existingLessonMediaId != null &&
+    final showDeleteButton =
+        widget.existingLessonMediaId != null &&
         widget.existingLessonMediaId!.trim().isNotEmpty &&
         !_deleted;
 
@@ -538,71 +548,65 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            Text(
-              'Studiomaster (WAV)',
-              style: titleStyle,
-            ),
+          Text('Studiomaster (WAV)', style: titleStyle),
+          const SizedBox(height: 8),
+          Text(
+            'Studiomaster laddas upp och bearbetas till MP3 innan uppspelning.',
+            style: bodyStyle,
+          ),
+          if (actionRowChildren.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(children: actionRowChildren),
+          ],
+          if (progressVisible) ...[
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: _progress),
+          ],
+          if (_uploading) ...[
             const SizedBox(height: 8),
-            Text(
-              'Studiomaster laddas upp och bearbetas till MP3 innan uppspelning.',
-              style: bodyStyle,
+            TextButton.icon(
+              onPressed: _cancelToken == null ? null : _cancelUpload,
+              icon: const Icon(Icons.close),
+              label: const Text('Avbryt'),
             ),
-            if (actionRowChildren.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Row(children: actionRowChildren),
-            ],
-            if (progressVisible) ...[
-              const SizedBox(height: 12),
-              LinearProgressIndicator(value: _progress),
-            ],
-            if (_uploading) ...[
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: _cancelToken == null ? null : _cancelUpload,
-                icon: const Icon(Icons.close),
-                label: const Text('Avbryt'),
+          ],
+          if (showDeleteButton) ...[
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: canDelete ? _deleteExisting : null,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Ta bort'),
+            ),
+          ],
+          if (!canUpload) ...[
+            const SizedBox(height: 12),
+            Text(
+              missingMessage ?? _lessonRequiredText,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
               ),
-            ],
-            if (showDeleteButton) ...[
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: canDelete ? _deleteExisting : null,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Ta bort'),
+            ),
+          ],
+          if (canUpload && statusText != null) ...[
+            const SizedBox(height: 12),
+            Text(statusText, style: bodyStyle),
+          ],
+          if (canUpload && showProcessingDetails) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Du kan ladda upp en ny master när bearbetningen är klar.',
+              style: secondaryStyle,
+            ),
+          ],
+          if (canUpload && _error != null && _error!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              _error!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
               ),
-            ],
-            if (!canUpload) ...[
-              const SizedBox(height: 12),
-              Text(
-                missingMessage ?? _lessonRequiredText,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
-            if (canUpload && statusText != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                statusText,
-                style: bodyStyle,
-              ),
-            ],
-            if (canUpload && showProcessingDetails) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Du kan ladda upp en ny master när bearbetningen är klar.',
-                style: secondaryStyle,
-              ),
-            ],
-            if (canUpload && _error != null && _error!.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                _error!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
+            ),
+          ],
         ],
       ),
     );

@@ -33,16 +33,28 @@ ThemeData buildLightTheme({bool forLanding = false}) {
   final textTheme = forLanding
       ? baseTextTheme
       : baseTextTheme.copyWith(
-          bodyLarge: baseTextTheme.bodyLarge?.copyWith(color: AppTextColor.body),
-          bodyMedium: baseTextTheme.bodyMedium?.copyWith(color: AppTextColor.body),
-          bodySmall: baseTextTheme.bodySmall?.copyWith(color: AppTextColor.meta),
-          labelLarge: baseTextTheme.labelLarge?.copyWith(color: AppTextColor.body),
-          labelMedium: baseTextTheme.labelMedium?.copyWith(color: AppTextColor.meta),
-          labelSmall: baseTextTheme.labelSmall?.copyWith(color: AppTextColor.meta),
+          bodyLarge: baseTextTheme.bodyLarge?.copyWith(
+            color: AppTextColor.body,
+          ),
+          bodyMedium: baseTextTheme.bodyMedium?.copyWith(
+            color: AppTextColor.body,
+          ),
+          bodySmall: baseTextTheme.bodySmall?.copyWith(
+            color: AppTextColor.body,
+          ),
+          labelLarge: baseTextTheme.labelLarge?.copyWith(
+            color: AppTextColor.body,
+          ),
+          labelMedium: baseTextTheme.labelMedium?.copyWith(
+            color: AppTextColor.body,
+          ),
+          labelSmall: baseTextTheme.labelSmall?.copyWith(
+            color: AppTextColor.body,
+          ),
         );
   final navLabelStyle = TextStyle(
-    fontWeight: FontWeight.w600,
-    color: forLanding ? null : AppTextColor.meta,
+    fontWeight: FontWeight.w500,
+    color: AppTextColor.body,
   );
 
   return ThemeData(
@@ -117,7 +129,7 @@ ThemeData buildLightTheme({bool forLanding = false}) {
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       indicatorColor: scheme.primary.withValues(alpha: 0.12),
-      labelTextStyle: WidgetStatePropertyAll(navLabelStyle),
+      labelTextStyle: forLanding ? null : WidgetStatePropertyAll(navLabelStyle),
     ),
     textTheme: textTheme,
   );

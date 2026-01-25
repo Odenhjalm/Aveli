@@ -97,7 +97,7 @@ class _LiveKitDemoPageState extends ConsumerState<LiveKitDemoPage> {
                       const SizedBox(height: 12),
                       Text(
                         state.error!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.error,
                         ),
                       ),

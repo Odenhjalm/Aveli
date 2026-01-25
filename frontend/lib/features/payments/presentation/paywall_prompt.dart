@@ -94,7 +94,7 @@ class _PaywallBody extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     'Pris: $priceLabel',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.primary,
                       fontWeight: FontWeight.w600,
                     ),
@@ -142,9 +142,7 @@ class _PaywallBody extends StatelessWidget {
                 Text(
                   'Har du redan köpt kursen? Försök uppdatera sidan efter betalning '
                   'eller kontakta supporten om åtkomsten inte låses upp.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: theme.textTheme.bodySmall,
                 ),
               ],
             ),

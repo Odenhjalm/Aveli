@@ -268,9 +268,7 @@ class _MediaToolbarState extends ConsumerState<MediaToolbar> {
                   children: [
                     Text(
                       result.mediaType.label,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: theme.textTheme.labelMedium,
                     ),
                     const SizedBox(height: 2),
                     Text(

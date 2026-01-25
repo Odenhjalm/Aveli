@@ -234,21 +234,12 @@ class _ProfileMediaTile extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       if (subtitle != null) ...[
-                        Text(
-                          subtitle,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
+                        Text(subtitle, style: theme.textTheme.bodySmall),
                         const SizedBox(height: 4),
                       ],
                       Text(
                         'Position ${index + 1} av $total · ${_kindLabel(item.mediaKind)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.9,
-                          ),
-                        ),
+                        style: theme.textTheme.bodySmall,
                       ),
                     ],
                   ),
@@ -433,9 +424,7 @@ class _AvailableContentList extends StatelessWidget {
                   title: Text(entry.title),
                   subtitle: Text(
                     entry.subtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    style: theme.textTheme.bodySmall,
                   ),
                 ),
             ],

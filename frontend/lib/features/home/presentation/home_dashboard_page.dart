@@ -333,8 +333,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     if (selected.mediaAssetId != null && selected.mediaState == 'ready') {
       if (_playbackMediaId != selected.mediaAssetId) {
         _playbackMediaId = selected.mediaAssetId;
-        _playbackFuture =
-            pipelineRepo.fetchPlaybackUrl(selected.mediaAssetId!);
+        _playbackFuture = pipelineRepo.fetchPlaybackUrl(selected.mediaAssetId!);
       }
     } else {
       _playbackMediaId = null;
@@ -355,17 +354,15 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
           const SizedBox(height: 4),
           Text(
             selected.courseTitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
         const SizedBox(height: 10),
         if (selected.mediaAssetId != null)
-          _buildPipelineAudio(
-            selected,
-            durationHint: durationHint,
-          )
+          _buildPipelineAudio(selected, durationHint: durationHint)
         else if (resolvedUrl == null)
           const Text(
             'Ljudlänken saknas för detta spår.',
@@ -391,19 +388,13 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     );
   }
 
-  Widget _buildPipelineAudio(
-    HomeAudioItem item, {
-    Duration? durationHint,
-  }) {
+  Widget _buildPipelineAudio(HomeAudioItem item, {Duration? durationHint}) {
     final state = item.mediaState ?? 'uploaded';
     if (state != 'ready') {
       final message = state == 'failed'
           ? 'Ljudet kunde inte bearbetas.'
           : 'Ljudet bearbetas…';
-      return Text(
-        message,
-        style: const TextStyle(color: Colors.white70),
-      );
+      return Text(message, style: const TextStyle(color: Colors.white70));
     }
     final future = _playbackFuture;
     if (future == null) {
@@ -470,7 +461,8 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                         Text(
                           '${items.length} spår',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.white70,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
@@ -573,7 +565,8 @@ class _AudioRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white70,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                 ],
@@ -583,7 +576,8 @@ class _AudioRow extends StatelessWidget {
               Text(
                 duration,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white60,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
           ],
@@ -1033,9 +1027,10 @@ class _SeminarHighlightTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   infoLine,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.white60),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
               if (seminar.description != null &&
@@ -1045,9 +1040,10 @@ class _SeminarHighlightTile extends StatelessWidget {
                   seminar.description!,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.white60),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
               if (action != null) ...[

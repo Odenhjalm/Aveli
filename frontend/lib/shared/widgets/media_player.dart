@@ -350,10 +350,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
               children: [
                 const CircularProgressIndicator(),
                 const SizedBox(height: 12),
-                Text(
-                  'Laddar ström...',
-                  style: theme.textTheme.bodyMedium,
-                ),
+                Text('Laddar ström...', style: theme.textTheme.bodyMedium),
               ],
             ),
           ),
@@ -387,9 +384,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                 Text(
                   'Sändningen har inte startat eller är offline.',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
                 FilledButton.icon(

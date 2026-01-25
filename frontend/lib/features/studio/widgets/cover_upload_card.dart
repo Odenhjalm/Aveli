@@ -27,7 +27,8 @@ class CoverUploadCard extends ConsumerStatefulWidget {
     required Map<String, String> headers,
     required CoverUploadFile file,
     required void Function(int sent, int total) onProgress,
-  })? uploadFileOverride;
+  })?
+  uploadFileOverride;
 
   @override
   ConsumerState<CoverUploadCard> createState() => _CoverUploadCardState();
@@ -39,8 +40,6 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
     'image/png',
     'image/webp',
   };
-  static const Color _bodyTextColor = Colors.black;
-  static const Color _secondaryTextColor = Color(0xFF4A4A4A);
 
   CoverUploadFile? _selectedFile;
   double _progress = 0.0;
@@ -148,12 +147,11 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
     final canUpload = courseReady && !_uploading;
     final theme = Theme.of(context);
     final progressVisible = _uploading && _progress > 0;
-    final titleStyle =
-        theme.textTheme.titleMedium?.copyWith(color: Colors.white);
-    final bodyStyle =
-        theme.textTheme.bodySmall?.copyWith(color: _bodyTextColor);
-    final secondaryStyle =
-        theme.textTheme.bodySmall?.copyWith(color: _secondaryTextColor);
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      color: Colors.white,
+    );
+    final bodyStyle = theme.textTheme.bodySmall;
+    final secondaryStyle = theme.textTheme.bodySmall;
 
     return GlassCard(
       padding: const EdgeInsets.all(16),
@@ -163,62 +161,57 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            Text(
-              'Kursbild (JPG/PNG/WebP)',
-              style: titleStyle,
-            ),
+          Text('Kursbild (JPG/PNG/WebP)', style: titleStyle),
+          const SizedBox(height: 8),
+          Text(
+            'Bilden bearbetas och publiceras automatiskt.',
+            style: bodyStyle,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: canUpload ? _pickAndUpload : null,
+                icon: const Icon(Icons.upload_file),
+                label: Text(_selectedFile == null ? 'Valj bild' : 'Byt bild'),
+              ),
+              if (_selectedFile != null) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _selectedFile!.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: secondaryStyle,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (!courseReady) ...[
             const SizedBox(height: 8),
             Text(
-              'Bilden bearbetas och publiceras automatiskt.',
-              style: bodyStyle,
+              'Spara kursen först för att kunna ladda upp kursbild.',
+              style: secondaryStyle,
             ),
+          ],
+          if (progressVisible) ...[
             const SizedBox(height: 12),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: canUpload ? _pickAndUpload : null,
-                  icon: const Icon(Icons.upload_file),
-                  label: Text(
-                    _selectedFile == null ? 'Valj bild' : 'Byt bild',
-                  ),
-                ),
-                if (_selectedFile != null) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _selectedFile!.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: secondaryStyle,
-                    ),
-                  ),
-                ],
-              ],
+            LinearProgressIndicator(value: _progress),
+          ],
+          if (_status != null) ...[
+            const SizedBox(height: 12),
+            Text(_status!, style: bodyStyle),
+          ],
+          if (_error != null && _error!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              _error!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             ),
-            if (!courseReady) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Spara kursen först för att kunna ladda upp kursbild.',
-                style: secondaryStyle,
-              ),
-            ],
-            if (progressVisible) ...[
-              const SizedBox(height: 12),
-              LinearProgressIndicator(value: _progress),
-            ],
-            if (_status != null) ...[
-              const SizedBox(height: 12),
-              Text(_status!, style: bodyStyle),
-            ],
-            if (_error != null && _error!.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                _error!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
+          ],
         ],
       ),
     );

@@ -263,9 +263,7 @@ class _VideoPlaceholder extends StatelessWidget {
                 Text(
                   hint!,
                   textAlign: TextAlign.center,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ],

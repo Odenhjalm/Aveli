@@ -1450,7 +1450,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           const SizedBox(height: 4),
           Text(
             _coverPipelineError!,
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),
           ),
@@ -3391,7 +3391,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             guard,
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),
           ),
@@ -3715,7 +3715,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final wavLessonId = _selectedLessonId;
     final wavCourseId = _lessonCourseId(_selectedLessonId);
     final wavMedia = _latestWavSourceMedia(_lessonMedia);
-    final wavLessonMediaId = wavMedia == null ? null : wavMedia['id']?.toString();
+    final wavLessonMediaId = wavMedia == null
+        ? null
+        : wavMedia['id']?.toString();
     final wavMediaState = wavMedia == null ? null : _pipelineState(wavMedia);
     final wavFileName = wavMedia == null ? null : _fileNameFromMedia(wavMedia);
 

@@ -221,14 +221,7 @@ class _SectionTitle extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.textTheme.bodySmall?.color?.withValues(
-                      alpha: 0.7,
-                    ),
-                  ),
-                ),
+                Text(subtitle, style: theme.textTheme.bodySmall),
               ],
             ),
           ),
@@ -423,11 +416,7 @@ class _PriorityCard extends StatelessWidget {
                       if (subtitle.isNotEmpty)
                         Text(
                           subtitle.join(' • '),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.textTheme.bodySmall?.color?.withValues(
-                              alpha: 0.7,
-                            ),
-                          ),
+                          style: theme.textTheme.bodySmall,
                         ),
                     ],
                   ),

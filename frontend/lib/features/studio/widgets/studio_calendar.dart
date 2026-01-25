@@ -238,14 +238,18 @@ class _CalendarDayCell extends StatelessWidget {
                   session.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
                 ),
               if (sessions.length > 2)
                 Text(
                   '+${sessions.length - 2} till',
-                  style: Theme.of(context).textTheme.labelSmall,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
                 ),
             ] else
               Expanded(
@@ -254,7 +258,8 @@ class _CalendarDayCell extends StatelessWidget {
                   child: Text(
                     'Fri slot',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.4),
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
                     ),
                   ),
                 ),

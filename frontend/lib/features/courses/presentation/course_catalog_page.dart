@@ -359,7 +359,10 @@ class _ErrorState extends StatelessWidget {
           if (error != null)
             Text(
               error.toString(),
-              style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
               textAlign: TextAlign.center,
             ),
         ],

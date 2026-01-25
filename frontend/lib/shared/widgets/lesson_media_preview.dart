@@ -283,7 +283,7 @@ class _ErrorOverlay extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             message,
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error.withValues(alpha: 0.8),
             ),
             textAlign: TextAlign.center,

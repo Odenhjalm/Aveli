@@ -50,9 +50,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(30),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.25),
-              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -69,9 +67,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             style: const TextStyle(color: Colors.white),
             cursorColor: Colors.white,
             decoration: InputDecoration(
-              hintStyle: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
+              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
@@ -174,12 +170,7 @@ class _MethodChip extends StatelessWidget {
       children: [
         const Icon(Icons.adjust, size: 12),
         const SizedBox(width: 4),
-        Text(
-          label,
-          style: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600),
-        ),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
       ],
     );
   }

@@ -316,18 +316,18 @@ class _CourseContent extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   'Använda gratis-intros: ${detail.freeConsumed}/${detail.freeLimit} $enrolledText',
-                  style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  style: t.bodySmall,
                 ),
                 if (hasAccess && priceCents > 0) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Du har redan full åtkomst till kursen.',
-                    style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    style: t.bodySmall,
                   ),
                   if (hasSubscription && !isEnrolled)
                     Text(
                       'Din prenumeration ger dig åtkomst till allt innehåll.',
-                      style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      style: t.bodySmall,
                     ),
                 ],
                 const SizedBox(height: 8),
@@ -350,7 +350,7 @@ class _CourseContent extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       _friendlyError(enrollError),
-                      style: t.bodySmall?.copyWith(color: cs.error),
+                      style: t.bodyMedium?.copyWith(color: cs.error),
                     ),
                   ),
               ],

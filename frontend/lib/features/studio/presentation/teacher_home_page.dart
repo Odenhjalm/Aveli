@@ -76,9 +76,8 @@ class TeacherHomeScreen extends ConsumerWidget {
                                 ),
                               ),
                               GradientButton.icon(
-                                onPressed: () => context.goNamed(
-                                  AppRoute.teacherBundles,
-                                ),
+                                onPressed: () =>
+                                    context.goNamed(AppRoute.teacherBundles),
                                 icon: const Icon(Icons.link_outlined),
                                 label: const Text('Skapa paket'),
                               ),
@@ -111,7 +110,9 @@ class TeacherHomeScreen extends ConsumerWidget {
                                     Text(
                                       'Inga paket ännu',
                                       style: theme.textTheme.titleMedium
-                                          ?.copyWith(fontWeight: FontWeight.w600),
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
@@ -125,8 +126,9 @@ class TeacherHomeScreen extends ConsumerWidget {
                                 children: bundles
                                     .map(
                                       (bundle) => Padding(
-                                        padding:
-                                            const EdgeInsets.symmetric(vertical: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 6,
+                                        ),
                                         child: GlassCard(
                                           opacity: 0.18,
                                           padding: const EdgeInsets.all(16),
@@ -141,20 +143,23 @@ class TeacherHomeScreen extends ConsumerWidget {
                                                 children: [
                                                   Expanded(
                                                     child: Text(
-                                                      bundle['title'] as String? ??
+                                                      bundle['title']
+                                                              as String? ??
                                                           'Paket',
                                                       style: theme
-                                                          .textTheme.titleMedium
+                                                          .textTheme
+                                                          .titleMedium
                                                           ?.copyWith(
                                                             fontWeight:
                                                                 FontWeight.w700,
                                                           ),
                                                     ),
                                                   ),
-                                                  if (bundle['is_active'] == true)
+                                                  if (bundle['is_active'] ==
+                                                      true)
                                                     _CourseBadge(
-                                                      icon:
-                                                          Icons.check_circle_outline,
+                                                      icon: Icons
+                                                          .check_circle_outline,
                                                       label: 'Aktivt',
                                                     )
                                                   else
@@ -166,30 +171,36 @@ class TeacherHomeScreen extends ConsumerWidget {
                                               ),
                                               const SizedBox(height: 6),
                                               Text(
-                                                bundle['description'] as String? ??
+                                                bundle['description']
+                                                        as String? ??
                                                     '',
                                                 style: theme.textTheme.bodySmall
                                                     ?.copyWith(
-                                                  color: Colors.white.withValues(
-                                                    alpha: 0.8,
-                                                  ),
-                                                ),
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.8,
+                                                          ),
+                                                    ),
                                               ),
                                               const SizedBox(height: 10),
                                               Row(
                                                 children: [
                                                   TextButton.icon(
                                                     onPressed: () async {
-                                                      final link = bundle['payment_link']
+                                                      final link =
+                                                          bundle['payment_link']
                                                               as String? ??
                                                           '';
                                                       if (link.isEmpty) return;
                                                       await Clipboard.setData(
-                                                        ClipboardData(text: link),
+                                                        ClipboardData(
+                                                          text: link,
+                                                        ),
                                                       );
                                                       if (context.mounted) {
-                                                        ScaffoldMessenger.of(context)
-                                                            .showSnackBar(
+                                                        ScaffoldMessenger.of(
+                                                          context,
+                                                        ).showSnackBar(
                                                           const SnackBar(
                                                             content: Text(
                                                               'Betalningslänk kopierad',
@@ -198,31 +209,44 @@ class TeacherHomeScreen extends ConsumerWidget {
                                                         );
                                                       }
                                                     },
-                                                    icon: const Icon(Icons.copy),
-                                                    label:
-                                                        const Text('Kopiera länk'),
+                                                    icon: const Icon(
+                                                      Icons.copy,
+                                                    ),
+                                                    label: const Text(
+                                                      'Kopiera länk',
+                                                    ),
                                                   ),
                                                   const SizedBox(width: 8),
-                                                  if (bundle['courses'] is List &&
-                                                      (bundle['courses'] as List)
+                                                  if (bundle['courses']
+                                                          is List &&
+                                                      (bundle['courses']
+                                                              as List)
                                                           .isNotEmpty)
                                                     Wrap(
                                                       spacing: 6,
-                                                      children: (bundle['courses']
-                                                              as List<dynamic>)
-                                                          .take(3)
-                                                          .map(
-                                                        (course) {
-                                                          final c = course
-                                                              as Map<String, dynamic>;
-                                                          return _CourseBadge(
-                                                            icon: Icons.menu_book,
-                                                            label:
-                                                                c['title'] as String? ??
-                                                                'Kurs',
-                                                          );
-                                                        },
-                                                      ).toList(),
+                                                      children:
+                                                          (bundle['courses']
+                                                                  as List<
+                                                                    dynamic
+                                                                  >)
+                                                              .take(3)
+                                                              .map((course) {
+                                                                final c =
+                                                                    course
+                                                                        as Map<
+                                                                          String,
+                                                                          dynamic
+                                                                        >;
+                                                                return _CourseBadge(
+                                                                  icon: Icons
+                                                                      .menu_book,
+                                                                  label:
+                                                                      c['title']
+                                                                          as String? ??
+                                                                      'Kurs',
+                                                                );
+                                                              })
+                                                              .toList(),
                                                     ),
                                                 ],
                                               ),
@@ -519,7 +543,7 @@ class _CourseBadge extends StatelessWidget {
             Text(
               label,
               style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],

@@ -782,7 +782,10 @@ class _SubscriptionEntry extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'Hantera medlemskap och betalplan.',
-                  style: t.bodySmall?.copyWith(color: Colors.white70),
+                  style: t.bodySmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -823,7 +826,10 @@ class _ServicesSection extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Öppna Studio för att uppdatera tjänster, priser och tillgänglighet.',
-              style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -842,7 +848,10 @@ class _ServicesSection extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Dina publicerade tjänster visas här så snart certifieringen är klar.',
-            style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -1058,7 +1067,8 @@ class _CertificateBadge extends StatelessWidget {
               Text(
                 _statusLabel(certificate),
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white70,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],

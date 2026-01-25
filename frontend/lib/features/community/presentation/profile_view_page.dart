@@ -132,7 +132,7 @@ class _ProfileViewPageState extends ConsumerState<ProfileViewPage> {
                                 if (service.requiresCertification)
                                   Text(
                                     'Certifiering krävs för att boka.',
-                                    style: t.bodySmall?.copyWith(
+                                    style: t.bodyMedium?.copyWith(
                                       color: theme.colorScheme.error,
                                     ),
                                   ),
