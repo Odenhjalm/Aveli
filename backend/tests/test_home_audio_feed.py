@@ -62,7 +62,7 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     assert me_resp.status_code == 200, me_resp.text
     owner_id = me_resp.json()["user_id"]
 
-    slug = f"home-audio-unpublished-{uuid.uuid4().hex[:8]}"
+    slug = f"home-audio-published-{uuid.uuid4().hex[:8]}"
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
@@ -77,7 +77,7 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
                       is_published,
                       created_by
                     )
-                    VALUES (%s, %s, false, 1000, 'sek', false, %s)
+                    VALUES (%s, %s, false, 1000, 'sek', true, %s)
                     RETURNING id
                     """,
                     (slug, f"Course {slug}", owner_id),
@@ -95,7 +95,7 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
                       is_published,
                       created_by
                     )
-                    VALUES (%s, %s, false, 1000, 'sek', false, %s)
+                    VALUES (%s, %s, false, 1000, 'sek', true, %s)
                     RETURNING id
                     """,
                     (slug, f"Course {slug}", owner_id),

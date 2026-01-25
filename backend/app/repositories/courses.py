@@ -1021,22 +1021,18 @@ async def list_home_audio_media(
     include_all_courses: bool,
     limit: int = 20,
 ) -> Sequence[dict[str, Any]]:
-    enrollment_join = ""
-    access_clause = ""
     params: list[Any] = []
-    if not include_all_courses:
-        enrollment_join = """
+    # Home audio access is granted only for course owners, enrolled users, and free/intro lessons.
+    # (include_all_courses is intentionally ignored to avoid exposing media without enrollment.)
+    enrollment_join = """
         LEFT JOIN app.enrollments e
           ON e.course_id = c.id
          AND e.user_id = %s
          AND e.status = 'active'
-        """
-        access_clause = """
+    """
+    access_clause = """
           AND (
-            (
-              c.created_by = %s
-              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
-            )
+            c.created_by = %s
             OR (
               c.is_published = true
               AND (
@@ -1044,26 +1040,12 @@ async def list_home_audio_media(
                 OR c.is_free_intro = true
                 OR e.user_id IS NOT NULL
               )
-              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
             )
           )
-        """
-        params.append(user_id)  # enrollment join
-        params.append(user_id)  # owner access
-    else:
-        access_clause = """
-          AND (
-            (
-              c.created_by = %s
-              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
-            )
-            OR (
-              c.is_published = true
-              AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
-            )
-          )
-        """
-        params.append(user_id)
+          AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
+    """
+    params.append(user_id)  # enrollment join
+    params.append(user_id)  # owner check
 
     query = f"""
         SELECT

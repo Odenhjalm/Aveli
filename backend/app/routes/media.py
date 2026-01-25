@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from .. import models, schemas
 from ..auth import CurrentUser
 from ..config import settings
+from ..repositories import courses as courses_repo
 from ..utils.http_headers import build_content_disposition
 from ..utils.media_signer import (
     MediaTokenError,
@@ -138,6 +139,26 @@ async def sign_media(payload: schemas.MediaSignRequest, current: CurrentUser):
     row = await models.get_media(payload.media_id)
     if not row:
         raise HTTPException(status_code=404, detail="Media not found")
+
+    storage_path = row.get("storage_path")
+    storage_bucket = row.get("storage_bucket")
+    if not storage_path or not storage_bucket:
+        raise HTTPException(status_code=404, detail="Media not found")
+    access_row = await courses_repo.get_lesson_media_access_by_path(
+        storage_path=storage_path,
+        storage_bucket=storage_bucket,
+    )
+    if not access_row:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    user_id = str(current["id"])
+    if str(access_row.get("created_by")) != user_id:
+        if not access_row.get("is_published"):
+            raise HTTPException(status_code=403, detail="Course not published")
+        if not (access_row.get("is_intro") or access_row.get("is_free_intro")):
+            course_id = access_row.get("course_id")
+            if not course_id or not await courses_repo.is_enrolled(user_id, str(course_id)):
+                raise HTTPException(status_code=403, detail="Access denied")
 
     issued = issue_signed_url(row["id"])
     if not issued:

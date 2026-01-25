@@ -11,6 +11,7 @@ from .. import models, repositories, schemas
 from ..auth import CurrentUser
 from ..config import settings
 from ..permissions import TeacherUser
+from ..repositories import courses as courses_repo
 from ..services import courses_service, livekit as livekit_service, storage_service
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 from ..utils import media_signer
@@ -1144,13 +1145,34 @@ async def reorder_media(
 async def media_file(
     media_id: str,
     request: Request,
-    current: CurrentUser | None = None,
+    current: CurrentUser,
 ):
     if not settings.media_allow_legacy_media:
         raise HTTPException(status_code=410, detail="Legacy media endpoint disabled")
     row = await models.get_media(media_id)
     if not row:
         raise HTTPException(status_code=404, detail="Media not found")
+
+    storage_path = row.get("storage_path")
+    storage_bucket = row.get("storage_bucket")
+    if not storage_path or not storage_bucket:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    access_row = await courses_repo.get_lesson_media_access_by_path(
+        storage_path=storage_path,
+        storage_bucket=storage_bucket,
+    )
+    if not access_row:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    user_id = str(current["id"])
+    if str(access_row.get("created_by")) != user_id:
+        if not access_row.get("is_published"):
+            raise HTTPException(status_code=403, detail="Course not published")
+        if not (access_row.get("is_intro") or access_row.get("is_free_intro")):
+            course_id = access_row.get("course_id")
+            if not course_id or not await courses_repo.is_enrolled(user_id, str(course_id)):
+                raise HTTPException(status_code=403, detail="Access denied")
     return _build_streaming_response(row, request)
 
 

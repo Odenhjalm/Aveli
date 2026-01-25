@@ -232,10 +232,9 @@ async def list_home_audio_media(
     *,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    include_all = await user_has_global_course_access(user_id)
     rows = await courses_repo.list_home_audio_media(
         user_id,
-        include_all_courses=include_all,
+        include_all_courses=False,
         limit=limit,
     )
     items: list[dict[str, Any]] = []

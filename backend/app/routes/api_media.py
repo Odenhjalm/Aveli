@@ -13,7 +13,7 @@ from ..config import settings
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
-from ..services import courses_service, storage_service
+from ..services import storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +130,6 @@ async def _authorize_lesson_playback(user_id: str, row: dict) -> None:
         return
     if not row.get("is_published"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course not published")
-    if await courses_service.user_has_global_course_access(user_id):
-        return
     if row.get("is_intro") or row.get("is_free_intro"):
         return
     course_id = row.get("course_id")
