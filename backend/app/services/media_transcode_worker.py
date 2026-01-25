@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections.abc import Awaitable, Callable
 
@@ -167,7 +167,13 @@ async def _process_asset(asset: dict) -> None:
     except SourceNotReadyError as exc:
         # Context7 invariant: source_object_must_exist_before_processing
         # Missing source objects are a wait condition (no retries consumed, no failure).
-        await media_assets_repo.defer_media_asset_processing(media_id=media_id)
+        # Guardrail: never sleep/retry in-process; always reschedule via next_retry_at.
+        # TODO: consider a dedicated source-not-ready delay setting.
+        delay_seconds = max(1, int(settings.media_transcode_poll_interval_seconds))
+        await media_assets_repo.defer_media_asset_processing(
+            media_id=media_id,
+            next_retry_at=_now() + timedelta(seconds=delay_seconds),
+        )
         logger.debug("Source not ready for %s; deferring processing (%s)", media_id, exc)
     except Exception as exc:  # pragma: no cover - logged and recorded
         if not attempt_consumed:

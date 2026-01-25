@@ -343,6 +343,7 @@ async def mark_media_asset_failed(
 async def defer_media_asset_processing(
     *,
     media_id: str,
+    next_retry_at: datetime | None = None,
 ) -> None:
     async with get_conn() as cur:
         await cur.execute(
@@ -350,10 +351,11 @@ async def defer_media_asset_processing(
             UPDATE app.media_assets
             SET state = 'uploaded',
                 processing_locked_at = null,
+                next_retry_at = %s,
                 updated_at = now()
             WHERE id = %s
             """,
-            (media_id,),
+            (next_retry_at, media_id),
         )
 
 

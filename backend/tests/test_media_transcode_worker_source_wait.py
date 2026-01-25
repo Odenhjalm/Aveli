@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from app.services import media_transcode_worker as worker
@@ -7,10 +9,15 @@ from app.services import media_transcode_worker as worker
 async def test_worker_defers_without_consuming_attempt_when_presign_object_missing(
     monkeypatch,
 ):
-    calls: dict[str, str] = {}
+    fixed_now = datetime(2026, 1, 25, tzinfo=timezone.utc)
+    monkeypatch.setattr(worker, "_now", lambda: fixed_now)
+    monkeypatch.setattr(worker.settings, "media_transcode_poll_interval_seconds", 10)
 
-    async def defer_media_asset_processing(*, media_id: str) -> None:
+    calls: dict[str, object] = {}
+
+    async def defer_media_asset_processing(*, media_id: str, next_retry_at=None) -> None:
         calls["defer"] = media_id
+        calls["next_retry_at"] = next_retry_at
 
     async def increment_processing_attempts(*, media_id: str) -> None:
         raise AssertionError("processing_attempts must not be consumed while source is missing")
@@ -52,15 +59,23 @@ async def test_worker_defers_without_consuming_attempt_when_presign_object_missi
         }
     )
 
-    assert calls == {"defer": "media-1"}
+    assert calls == {
+        "defer": "media-1",
+        "next_retry_at": fixed_now + timedelta(seconds=10),
+    }
 
 
 @pytest.mark.anyio
 async def test_worker_defers_without_consuming_attempt_when_download_returns_404(monkeypatch):
-    calls: dict[str, str] = {}
+    fixed_now = datetime(2026, 1, 25, tzinfo=timezone.utc)
+    monkeypatch.setattr(worker, "_now", lambda: fixed_now)
+    monkeypatch.setattr(worker.settings, "media_transcode_poll_interval_seconds", 10)
 
-    async def defer_media_asset_processing(*, media_id: str) -> None:
+    calls: dict[str, object] = {}
+
+    async def defer_media_asset_processing(*, media_id: str, next_retry_at=None) -> None:
         calls["defer"] = media_id
+        calls["next_retry_at"] = next_retry_at
 
     async def increment_processing_attempts(*, media_id: str) -> None:
         raise AssertionError("processing_attempts must not be consumed while source is missing")
@@ -105,5 +120,7 @@ async def test_worker_defers_without_consuming_attempt_when_download_returns_404
         }
     )
 
-    assert calls == {"defer": "media-2"}
-
+    assert calls == {
+        "defer": "media-2",
+        "next_retry_at": fixed_now + timedelta(seconds=10),
+    }
