@@ -1,20 +1,48 @@
 import 'package:flutter/material.dart';
 
+import 'package:aveli/shared/theme/app_text_colors.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 const Color kPrimary = Color(0xFF7AA8F7);
 const Color kSecondary = Color(0xFF63C7D6);
 
-ThemeData buildLightTheme() {
-  final scheme = ColorScheme.fromSeed(
+ThemeData buildLightTheme({bool forLanding = false}) {
+  final baseScheme = ColorScheme.fromSeed(
     seedColor: kPrimary,
     brightness: Brightness.light,
     primary: kPrimary,
     secondary: kSecondary,
   );
+  final scheme = forLanding
+      ? baseScheme
+      : baseScheme.copyWith(
+          onSurface: AppTextColor.body,
+          onBackground: AppTextColor.body,
+          onSurfaceVariant: AppTextColor.meta,
+        );
 
   final buttonShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.circular(14),
+  );
+
+  final baseTextTheme = ThemeData.light().textTheme.apply(
+    fontFamily: 'NotoSans',
+    displayColor: scheme.onSurface,
+    bodyColor: scheme.onSurface,
+  );
+  final textTheme = forLanding
+      ? baseTextTheme
+      : baseTextTheme.copyWith(
+          bodyLarge: baseTextTheme.bodyLarge?.copyWith(color: AppTextColor.body),
+          bodyMedium: baseTextTheme.bodyMedium?.copyWith(color: AppTextColor.body),
+          bodySmall: baseTextTheme.bodySmall?.copyWith(color: AppTextColor.meta),
+          labelLarge: baseTextTheme.labelLarge?.copyWith(color: AppTextColor.body),
+          labelMedium: baseTextTheme.labelMedium?.copyWith(color: AppTextColor.meta),
+          labelSmall: baseTextTheme.labelSmall?.copyWith(color: AppTextColor.meta),
+        );
+  final navLabelStyle = TextStyle(
+    fontWeight: FontWeight.w600,
+    color: forLanding ? null : AppTextColor.meta,
   );
 
   return ThemeData(
@@ -24,9 +52,9 @@ ThemeData buildLightTheme() {
     fontFamily: 'NotoSans',
     fontFamilyFallback: const ['NotoSansSymbols2', 'NotoColorEmoji'],
     scaffoldBackgroundColor: Colors.transparent,
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       backgroundColor: Colors.white,
-      foregroundColor: Colors.black87,
+      foregroundColor: forLanding ? Colors.black87 : AppTextColor.body,
       elevation: 0,
       centerTitle: false,
     ),
@@ -77,6 +105,7 @@ ThemeData buildLightTheme() {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: Colors.grey.shade100,
+      hintStyle: forLanding ? null : const TextStyle(color: AppTextColor.meta),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -88,14 +117,8 @@ ThemeData buildLightTheme() {
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       indicatorColor: scheme.primary.withValues(alpha: 0.12),
-      labelTextStyle: const WidgetStatePropertyAll(
-        TextStyle(fontWeight: FontWeight.w600),
-      ),
+      labelTextStyle: WidgetStatePropertyAll(navLabelStyle),
     ),
-    textTheme: ThemeData.light().textTheme.apply(
-      fontFamily: 'NotoSans',
-      displayColor: scheme.onSurface,
-      bodyColor: scheme.onSurface,
-    ),
+    textTheme: textTheme,
   );
 }

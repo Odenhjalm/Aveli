@@ -378,13 +378,18 @@ class AveliApp extends ConsumerWidget {
       routerConfig: router,
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();
-        final themed = Theme(
-          data: Theme.of(
-            context,
-          ).copyWith(radioTheme: cleanRadioTheme(context)),
-          child: AppBackground(child: child),
-        );
-        return themed;
+        final path = router.routeInformationProvider.value.uri.path;
+        final isLandingSurface =
+            path == RoutePath.landingRoot ||
+            path == RoutePath.landing ||
+            path == RoutePath.privacy ||
+            path == RoutePath.terms;
+        final baseTheme = Theme.of(context);
+        final themeData = (isLandingSurface
+                ? buildLightTheme(forLanding: true)
+                : baseTheme)
+            .copyWith(radioTheme: cleanRadioTheme(context));
+        return Theme(data: themeData, child: AppBackground(child: child));
       },
     );
   }
