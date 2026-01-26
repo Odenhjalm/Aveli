@@ -58,9 +58,7 @@ void main() {
             base.fragment.contains('code=') ||
             base.fragment.contains('token_type');
         if (fragmentHasAuth) {
-          debugPrint(
-            'OAuth fragment detected, preserving Uri.fragment for Supabase session parse.',
-          );
+          debugPrint('OAuth fragment detected, preserving Uri.fragment for Supabase session parse.');
         }
       }
 
@@ -75,9 +73,7 @@ void main() {
           'DOTENV SUPABASE_PUBLISHABLE_API_KEY=${dotenv.maybeGet('SUPABASE_PUBLISHABLE_API_KEY')}',
         );
       } else {
-        debugPrint(
-          'Dotenv not initialized; using dart-define/runtime values only.',
-        );
+        debugPrint('Dotenv not initialized; using dart-define/runtime values only.');
       }
       EnvResolver.debugLogResolved();
 
@@ -115,7 +111,9 @@ void main() {
         missingKeys.add('SUPABASE_URL');
       }
       if (supabasePublishableKey.isEmpty) {
-        missingKeys.add('SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY');
+        missingKeys.add(
+          'SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY',
+        );
       }
       if (kIsWeb) {
         if (oauthRedirectWeb.isEmpty) {
@@ -130,7 +128,9 @@ void main() {
       if (missingKeys.isNotEmpty) {
         debugPrint(
           'Missing required environment keys: ${missingKeys.join(', ')}. '
-          '${kIsWeb ? 'Provide them via --dart-define for Flutter Web.' : 'Provide them via --dart-define or a local environment file.'}',
+          '${kIsWeb
+              ? 'Provide them via --dart-define for Flutter Web.'
+              : 'Provide them via --dart-define or a local environment file.'}',
         );
       }
 
@@ -255,9 +255,7 @@ Future<void> _loadEnvFile({required bool requiredFile}) async {
     return;
   }
   if (fileName.isEmpty) {
-    debugPrint(
-      'No DOTENV_FILE provided; relying on runtime environment and dart-define.',
-    );
+    debugPrint('No DOTENV_FILE provided; relying on runtime environment and dart-define.');
     return;
   }
   try {
@@ -387,13 +385,11 @@ class AveliApp extends ConsumerWidget {
             path == RoutePath.privacy ||
             path == RoutePath.terms;
         final baseTheme = Theme.of(context);
-        final themeData =
-            (isLandingSurface ? buildLightTheme(forLanding: true) : baseTheme)
-                .copyWith(radioTheme: cleanRadioTheme(context));
-        return Theme(
-          data: themeData,
-          child: AppBackground(child: child),
-        );
+        final themeData = (isLandingSurface
+                ? buildLightTheme(forLanding: true)
+                : baseTheme)
+            .copyWith(radioTheme: cleanRadioTheme(context));
+        return Theme(data: themeData, child: AppBackground(child: child));
       },
     );
   }

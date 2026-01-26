@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
-import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/routing/app_routes.dart';
@@ -94,75 +92,6 @@ class _FakeAuthRepository implements AuthRepository {
   Future<String?> currentToken() async => token;
 }
 
-class _FakeFlutterSecureStorage extends FlutterSecureStorage {
-  const _FakeFlutterSecureStorage();
-
-  @override
-  Future<void> write({
-    required String key,
-    required String? value,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {}
-
-  @override
-  Future<String?> read({
-    required String key,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => null;
-
-  @override
-  Future<Map<String, String>> readAll({
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => const {};
-
-  @override
-  Future<void> delete({
-    required String key,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {}
-
-  @override
-  Future<void> deleteAll({
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {}
-
-  @override
-  Future<bool> containsKey({
-    required String key,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => false;
-}
-
 class _StubEntitlementsApi implements EntitlementsApi {
   @override
   Future<Entitlements> fetchEntitlements() async {
@@ -205,9 +134,6 @@ class _StaticEntitlementsNotifier extends EntitlementsNotifier {
 List<Override> _commonOverrides(AuthState authState) {
   return [
     envInfoProvider.overrideWith((ref) => envInfoOk),
-    tokenStorageProvider.overrideWith(
-      (_) => const TokenStorage(storage: _FakeFlutterSecureStorage()),
-    ),
     authControllerProvider.overrideWith(
       (ref) => _FakeAuthController(authState),
     ),
@@ -226,11 +152,6 @@ List<Override> _commonOverrides(AuthState authState) {
     homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
     landing.popularCoursesProvider.overrideWith(
       (ref) => Future.value(const landing.LandingSectionState(items: [])),
-    ),
-    teacherDirectoryProvider.overrideWith(
-      (ref) => Future.value(
-        const TeacherDirectoryState(teachers: [], certCount: {}),
-      ),
     ),
     communityServicesProvider.overrideWith(
       (ref) => Future.value(const <Service>[]),
