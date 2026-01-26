@@ -190,3 +190,45 @@ async def test_complete_rejects_bucket_mismatch(async_client, monkeypatch):
         assert "storage_bucket" in bad_resp.text
     finally:
         await cleanup_user(user_id)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_direct_lesson_media_upload_requires_course_owner(async_client, monkeypatch):
+    owner_headers, owner_id = await register_teacher(async_client)
+    other_headers, other_id = await register_teacher(async_client)
+    try:
+        _, lesson_id = await create_lesson(async_client, owner_headers)
+
+        async def fake_create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={
+                    "x-upsert": "true" if upsert else "false",
+                    "content-type": content_type,
+                    "cache-control": f"max-age={cache_seconds}",
+                },
+                path=path,
+                expires_in=3600,
+            )
+
+        monkeypatch.setattr(
+            "app.services.storage_service.StorageService.create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+
+        presign_denied = await async_client.post(
+            f"/studio/lessons/{lesson_id}/media/presign",
+            headers=other_headers,
+            json={"filename": "demo.mp3", "content_type": "audio/mpeg", "media_type": "audio"},
+        )
+        assert presign_denied.status_code == 403, presign_denied.text
+
+        list_denied = await async_client.get(
+            f"/studio/lessons/{lesson_id}/media",
+            headers=other_headers,
+        )
+        assert list_denied.status_code == 403, list_denied.text
+    finally:
+        await cleanup_user(other_id)
+        await cleanup_user(owner_id)

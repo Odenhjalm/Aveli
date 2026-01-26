@@ -159,10 +159,15 @@ async def presign_lesson_media_upload(
     payload: schemas.LessonMediaPresignRequest,
     current: TeacherUser,
 ):
-    # Ensure lesson exists (ownership check skipped for streamlined test environments)
-    lesson = await models.get_lesson(str(lesson_id))
+    # Ensure lesson exists and current user owns the course.
+    lesson_id_str = str(lesson_id)
+    lesson = await models.get_lesson(lesson_id_str)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
+    _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
+    if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
+        raise HTTPException(status_code=403, detail="Not course owner")
 
     bucket = "course-media"
     path = f"{bucket}/lessons/{lesson_id}/{payload.filename}"
@@ -188,10 +193,15 @@ async def complete_lesson_media_upload(
     payload: schemas.LessonMediaUploadCompleteRequest,
     current: TeacherUser,
 ):
-    # Ensure lesson exists (lightweight guard)
-    lesson = await models.get_lesson(str(lesson_id))
+    # Ensure lesson exists and current user owns the course.
+    lesson_id_str = str(lesson_id)
+    lesson = await models.get_lesson(lesson_id_str)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
+    _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
+    if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
+        raise HTTPException(status_code=403, detail="Not course owner")
 
     kind = _detect_kind(payload.content_type)
     expected_bucket = "course-media"
@@ -221,6 +231,11 @@ async def complete_lesson_media_upload(
 
 @router.get("/lessons/{lesson_id}/media")
 async def list_lesson_media(lesson_id: UUID, current: TeacherUser):
+    lesson_id_str = str(lesson_id)
+    _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
+    if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
+        raise HTTPException(status_code=403, detail="Not course owner")
     items = await models.list_lesson_media(str(lesson_id))
     return {"items": items}
 
@@ -1173,7 +1188,7 @@ async def media_file(
             course_id = access_row.get("course_id")
             if not course_id or not await courses_repo.is_enrolled(user_id, str(course_id)):
                 raise HTTPException(status_code=403, detail="Access denied")
-    return _build_streaming_response(row, request)
+    return await _build_streaming_response(row, request)
 
 
 @router.post("/courses/{course_id}/quiz")

@@ -123,7 +123,11 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
         if can_access_media:
             media_rows = await courses_service.list_lesson_media(lesson_id)
             for item in media_rows:
-                if item.get("media_asset_id") and item.get("media_state") != "ready":
+                if (
+                    (item.get("kind") or "").lower() == "audio"
+                    and item.get("media_asset_id")
+                    and item.get("media_state") != "ready"
+                ):
                     continue
                 _attach_media_links(item)
                 media.append(item)

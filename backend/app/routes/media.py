@@ -3,13 +3,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 from .. import models, schemas
 from ..auth import CurrentUser
 from ..config import settings
 from ..repositories import courses as courses_repo
+from ..services import storage_service
 from ..utils.http_headers import build_content_disposition
 from ..utils.media_signer import (
     MediaTokenError,
@@ -24,7 +27,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/media", tags=["media"])
 
 
-def _build_streaming_response(row: dict, request: Request) -> StreamingResponse:
+async def _build_streaming_response(row: dict, request: Request) -> StreamingResponse:
     storage_path = row.get("storage_path")
     if not storage_path:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -51,12 +54,112 @@ def _build_streaming_response(row: dict, request: Request) -> StreamingResponse:
             break
 
     if file_path is None or not file_path.exists():
-        logger.warning(
-            "Media file missing on disk: media_id=%s expected_path=%s",
-            row.get("id"),
-            candidates[0].resolve() if candidates else storage_path,
+        bucket = (row.get("storage_bucket") or "").strip() or None
+        storage_client = storage_service.get_storage_service(bucket)
+        if not storage_client.enabled:
+            logger.warning(
+                "Media file missing and storage disabled: media_id=%s storage_bucket=%s storage_path=%s",
+                row.get("id"),
+                bucket,
+                storage_path,
+            )
+            raise HTTPException(status_code=404, detail="File missing")
+
+        filename = row.get("original_name") or Path(storage_path).name or "media"
+        ttl_seconds = settings.media_signing_ttl_seconds
+        if ttl_seconds <= 0:
+            ttl_seconds = settings.media_playback_url_ttl_seconds
+        ttl_seconds = max(60, int(ttl_seconds))
+
+        try:
+            presigned = await storage_client.get_presigned_url(
+                storage_path,
+                ttl=ttl_seconds,
+                filename=filename,
+                download=False,
+            )
+        except storage_service.StorageObjectNotFoundError:
+            logger.warning(
+                "Media missing in storage: media_id=%s storage_bucket=%s storage_path=%s",
+                row.get("id"),
+                bucket,
+                storage_path,
+            )
+            raise HTTPException(status_code=404, detail="File missing") from None
+        except storage_service.StorageServiceError as exc:
+            logger.warning(
+                "Storage proxy signing failed: media_id=%s storage_bucket=%s storage_path=%s error=%s",
+                row.get("id"),
+                bucket,
+                storage_path,
+                exc,
+            )
+            raise HTTPException(status_code=503, detail="Storage unavailable") from exc
+
+        range_header = request.headers.get("range")
+        request_headers: dict[str, str] = {}
+        if range_header:
+            request_headers["Range"] = range_header
+
+        client = httpx.AsyncClient(follow_redirects=True, timeout=None)
+        upstream_ctx = client.stream("GET", presigned.url, headers=request_headers)
+        try:
+            upstream = await upstream_ctx.__aenter__()
+        except httpx.HTTPError as exc:
+            await client.aclose()
+            logger.warning(
+                "Storage proxy request failed: media_id=%s storage_bucket=%s storage_path=%s error=%s",
+                row.get("id"),
+                bucket,
+                storage_path,
+                exc,
+            )
+            raise HTTPException(status_code=503, detail="Storage unavailable") from exc
+
+        if upstream.status_code >= 400:
+            status_code = upstream.status_code
+            await upstream_ctx.__aexit__(None, None, None)
+            await client.aclose()
+            logger.warning(
+                "Storage proxy returned error: media_id=%s status=%s storage_bucket=%s storage_path=%s",
+                row.get("id"),
+                status_code,
+                bucket,
+                storage_path,
+            )
+            if status_code == 404:
+                raise HTTPException(status_code=404, detail="File missing") from None
+            raise HTTPException(status_code=503, detail="Storage unavailable") from None
+
+        content_type = upstream.headers.get("content-type") or row.get("content_type") or "application/octet-stream"
+        response_headers = {
+            "Accept-Ranges": upstream.headers.get("accept-ranges", "bytes"),
+            "Access-Control-Allow-Origin": "*",
+        }
+        cache_seconds = max(0, ttl_seconds)
+        if cache_seconds > 0:
+            response_headers["Cache-Control"] = f"private, max-age={cache_seconds}"
+        else:
+            response_headers["Cache-Control"] = "no-store"
+        response_headers["Content-Disposition"] = build_content_disposition(
+            filename,
+            disposition="inline",
         )
-        raise HTTPException(status_code=404, detail="File missing")
+        for header_name in ("content-range", "content-length"):
+            if header_name in upstream.headers:
+                response_headers[header_name.title()] = upstream.headers[header_name]
+
+        async def _cleanup() -> None:
+            await upstream_ctx.__aexit__(None, None, None)
+            await client.aclose()
+
+        return StreamingResponse(
+            upstream.aiter_bytes(),
+            status_code=upstream.status_code,
+            media_type=content_type,
+            headers=response_headers,
+            background=BackgroundTask(_cleanup),
+        )
 
     file_size = file_path.stat().st_size
     content_type = row.get("content_type") or "application/octet-stream"
@@ -196,4 +299,4 @@ async def stream_signed_media(token: str, request: Request):
             "content_type": media_object.get("content_type"),
         }
 
-    return _build_streaming_response(row, request)
+    return await _build_streaming_response(row, request)
