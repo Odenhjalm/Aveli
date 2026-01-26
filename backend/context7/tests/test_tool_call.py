@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from app import db
@@ -15,6 +17,11 @@ from .test_context_builder import (
 )
 
 pytestmark = pytest.mark.anyio("asyncio")
+
+requires_supabase_db = pytest.mark.skipif(
+    not os.environ.get("SUPABASE_DB_URL"),
+    reason="SUPABASE_DB_URL missing",
+)
 
 
 async def promote_user(user_id: str):
@@ -58,6 +65,7 @@ async def enroll_user(course_id: str, user_id: str):
             await conn.commit()
 
 
+@requires_supabase_db
 async def test_tool_call_allowed(async_client):
     token, user_id = await create_teacher(async_client)
     course_id = None
@@ -227,6 +235,7 @@ def test_supabase_readonly_sets_read_only_options(monkeypatch):
     assert result["truncated"] is False
 
 
+@requires_supabase_db
 async def test_tool_call_list_intro_courses_wrapper(async_client):
     token, user_id = await create_teacher(async_client)
     course_id = None
@@ -261,6 +270,7 @@ async def test_tool_call_list_intro_courses_wrapper(async_client):
         await cleanup_user(user_id)
 
 
+@requires_supabase_db
 async def test_tool_call_get_course_by_id_wrapper(async_client):
     token, user_id = await create_teacher(async_client)
     course_id = None
@@ -294,6 +304,7 @@ async def test_tool_call_get_course_by_id_wrapper(async_client):
         await cleanup_user(user_id)
 
 
+@requires_supabase_db
 async def test_tool_call_get_course_by_slug_wrapper(async_client):
     token, user_id = await create_teacher(async_client)
     course_id = None
@@ -333,6 +344,7 @@ async def test_tool_call_get_course_by_slug_wrapper(async_client):
         await cleanup_user(user_id)
 
 
+@requires_supabase_db
 async def test_tool_call_list_seminars_wrapper(async_client):
     token, user_id = await create_teacher(async_client)
     seminar_id = None
@@ -391,6 +403,7 @@ async def test_tool_call_invalid_args_wrapper(async_client):
         await cleanup_user(user_id)
 
 
+@requires_supabase_db
 async def test_tool_call_list_course_students_allowed(async_client):
     teacher_token, teacher_id = await create_teacher(async_client)
     student_token, student_id = await register_user(async_client)
@@ -449,6 +462,7 @@ async def test_tool_call_list_course_students_denied_out_of_scope(async_client):
         await cleanup_user(teacher_id)
 
 
+@requires_supabase_db
 async def test_tool_call_get_user_summary_admin(async_client):
     admin_token, admin_id = await register_user(async_client)
     await promote_admin(admin_id)

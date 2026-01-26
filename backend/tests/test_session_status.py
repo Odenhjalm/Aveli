@@ -51,7 +51,10 @@ async def test_session_status_happy(async_client, monkeypatch):
         return {"status": "active", "updated_at": "2026-01-06T00:00:00Z"}
 
     monkeypatch.setattr("stripe.checkout.Session.retrieve", fake_retrieve)
-    monkeypatch.setattr("app.repositories.memberships.get_membership_by_stripe_reference", fake_get_membership_by_customer)
+    monkeypatch.setattr(
+        "app.repositories.memberships.get_membership_by_stripe_reference",
+        fake_get_membership_by_customer,
+    )
 
     resp = await async_client.get(
         "/api/billing/session-status", params={"session_id": "cs_test_123"}

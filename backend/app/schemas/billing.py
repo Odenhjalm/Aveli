@@ -62,4 +62,3 @@ class SessionStatusResponse(BaseModel):
     membership_status: str | None = None
     updated_at: datetime | None = None
     poll_after_ms: int = 2000
-

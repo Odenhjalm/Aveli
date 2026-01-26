@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -13,6 +15,7 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
@@ -87,21 +90,30 @@ class _LessonContent extends ConsumerWidget {
 
   final LessonDetailData detail;
 
-  String _cleanMarkdown(String? value) {
+  String _normalizeMarkdown(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Inget innehåll.';
     }
-    var cleaned = value;
-    final regexes = <RegExp>[
-      RegExp(r'<video[^>]*?>.*?</video>', caseSensitive: false, dotAll: true),
-      RegExp(r'<audio[^>]*?>.*?</audio>', caseSensitive: false, dotAll: true),
-      RegExp(r'<source[^>]*?>', caseSensitive: false),
-    ];
-    for (final regex in regexes) {
-      cleaned = cleaned.replaceAll(regex, '');
+    return value;
+  }
+
+  Set<String> _extractEmbeddedMediaIds(String markdown) {
+    final ids = <String>{};
+    for (final match in _studioMediaIdPattern.allMatches(markdown)) {
+      final id = match.group(1);
+      if (id != null && id.isNotEmpty) {
+        ids.add(id);
+      }
     }
-    final trimmed = cleaned.trim();
-    return trimmed.isEmpty ? 'Inget innehåll.' : trimmed;
+    for (final match in _mediaStreamTokenPattern.allMatches(markdown)) {
+      final token = match.group(1);
+      if (token == null || token.isEmpty) continue;
+      final id = _extractMediaIdFromToken(token);
+      if (id != null && id.isNotEmpty) {
+        ids.add(id);
+      }
+    }
+    return ids;
   }
 
   List<_BundleLink> _extractBundleLinks(String content) {
@@ -163,6 +175,7 @@ class _LessonContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lesson = detail.lesson;
+    final mediaRepo = ref.watch(mediaRepositoryProvider);
     final screenWidth = MediaQuery.of(context).size.width;
     final contentWidth = screenWidth >= 1100
         ? 720.0
@@ -185,30 +198,27 @@ class _LessonContent extends ConsumerWidget {
       }
     }
 
-    LessonMediaItem? primaryVideo;
-    final remainingMedia = <LessonMediaItem>[];
-    for (final item in mediaItems) {
-      if (primaryVideo == null && item.kind == 'video') {
-        primaryVideo = item;
-      } else {
-        remainingMedia.add(item);
-      }
-    }
-    final featuredVideo = primaryVideo;
+    final remainingMedia = [...mediaItems];
 
-    final markdownContent = _cleanMarkdown(lesson.contentMarkdown);
+    final markdownContent = _normalizeMarkdown(lesson.contentMarkdown);
     final bundleLinks = _extractBundleLinks(markdownContent);
+    final embeddedMediaIds = _extractEmbeddedMediaIds(markdownContent);
+    bool isEmbedded(LessonMediaItem item) {
+      if (embeddedMediaIds.contains(item.id)) return true;
+      final candidateUrls = <String?>[item.downloadUrl, item.signedUrl];
+      for (final url in candidateUrls) {
+        if (url == null || url.isEmpty) continue;
+        if (markdownContent.contains(url)) return true;
+        try {
+          final resolved = mediaRepo.resolveUrl(url);
+          if (markdownContent.contains(resolved)) return true;
+        } catch (_) {}
+      }
+      return false;
+    }
     final coreContent = ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        if (featuredVideo != null) ...[
-          GlassCard(
-            padding: const EdgeInsets.all(12),
-            borderRadius: BorderRadius.circular(16),
-            child: _MediaItem(item: featuredVideo),
-          ),
-          const SizedBox(height: 16),
-        ],
         GlassCard(
           padding: const EdgeInsets.all(16),
           borderRadius: BorderRadius.circular(16),
@@ -219,6 +229,7 @@ class _LessonContent extends ConsumerWidget {
               context,
               onLinkTap: (url) => _handleLinkTap(context, ref, url),
             ),
+            generator: _lessonMarkdownGenerator,
           ),
         ),
         if (bundleLinks.isNotEmpty) ...[
@@ -235,7 +246,7 @@ class _LessonContent extends ConsumerWidget {
             ),
           ),
         ],
-        if (remainingMedia.isNotEmpty) ...[
+        if (remainingMedia.where((item) => !isEmbedded(item)).isNotEmpty) ...[
           const SizedBox(height: 16),
           GlassCard(
             padding: const EdgeInsets.all(12),
@@ -243,7 +254,9 @@ class _LessonContent extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...remainingMedia.map((item) => _MediaItem(item: item)),
+                ...remainingMedia
+                    .where((item) => !isEmbedded(item))
+                    .map((item) => _MediaItem(item: item)),
               ],
             ),
           ),
@@ -553,6 +566,335 @@ class _MediaItem extends ConsumerWidget {
         onPressed: () => launchUrlString(url),
       ),
       onTap: () => launchUrlString(url),
+    );
+  }
+}
+
+final RegExp _studioMediaIdPattern = RegExp(
+  r'/studio/media/([0-9a-fA-F-]{36})',
+);
+
+final RegExp _mediaStreamTokenPattern = RegExp(
+  r'/media/stream/([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)',
+);
+
+String? _extractMediaIdFromToken(String token) {
+  final parts = token.split('.');
+  if (parts.length != 3) return null;
+  try {
+    final payloadRaw = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+    final jsonValue = json.decode(payloadRaw);
+    if (jsonValue is! Map<String, dynamic>) return null;
+    final sub = jsonValue['sub'];
+    return sub is String && sub.isNotEmpty ? sub : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+class _HtmlAudioTagSyntax extends md.InlineSyntax {
+  _HtmlAudioTagSyntax()
+      : super(
+          r'<audio\\b[^>]*?>[\\s\\S]*?<\\/audio>',
+          startCharacter: 0x3c,
+          caseSensitive: false,
+        );
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final raw = match.group(0);
+    if (raw == null) return false;
+    final element = md.Element('audio', const []);
+    element.attributes.addAll(_parseHtmlAttributes(raw));
+    parser.addNode(element);
+    return true;
+  }
+}
+
+class _HtmlVideoTagSyntax extends md.InlineSyntax {
+  _HtmlVideoTagSyntax()
+      : super(
+          r'<video\\b[^>]*?>[\\s\\S]*?<\\/video>',
+          startCharacter: 0x3c,
+          caseSensitive: false,
+        );
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final raw = match.group(0);
+    if (raw == null) return false;
+    final element = md.Element('video', const []);
+    element.attributes.addAll(_parseHtmlAttributes(raw));
+    parser.addNode(element);
+    return true;
+  }
+}
+
+Map<String, String> _parseHtmlAttributes(String html) {
+  final attributes = <String, String>{};
+  for (final match in _htmlAttributePattern.allMatches(html)) {
+    final key = match.group(1);
+    if (key == null || key.isEmpty) continue;
+    final value = match.group(3) ?? match.group(4) ?? '';
+    attributes[key.toLowerCase()] = value;
+  }
+  return attributes;
+}
+
+final RegExp _htmlAttributePattern = RegExp(
+  r'''([a-zA-Z_:][a-zA-Z0-9_\-:.]*)\s*=\s*("([^"]*)"|'([^']*)')''',
+);
+
+class _AudioNode extends SpanNode {
+  _AudioNode(this.attributes);
+
+  final Map<String, String> attributes;
+
+  @override
+  InlineSpan build() {
+    final src = attributes['src'] ?? '';
+    if (src.trim().isEmpty) {
+      return const TextSpan();
+    }
+    return WidgetSpan(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _SignedAudioEmbed(source: src.trim()),
+      ),
+    );
+  }
+}
+
+class _VideoNode extends SpanNode {
+  _VideoNode(this.attributes);
+
+  final Map<String, String> attributes;
+
+  @override
+  InlineSpan build() {
+    final src = attributes['src'] ?? '';
+    if (src.trim().isEmpty) {
+      return const TextSpan();
+    }
+    return WidgetSpan(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _SignedVideoEmbed(source: src.trim()),
+      ),
+    );
+  }
+}
+
+final MarkdownGenerator _lessonMarkdownGenerator = MarkdownGenerator(
+  inlineSyntaxList: [
+    _HtmlAudioTagSyntax(),
+    _HtmlVideoTagSyntax(),
+    _HtmlImageTagSyntax(),
+  ],
+  generators: [
+    SpanNodeGeneratorWithTag(
+      tag: 'img',
+      generator: (e, config, visitor) => _ImageNode(e.attributes),
+    ),
+    SpanNodeGeneratorWithTag(
+      tag: 'audio',
+      generator: (e, config, visitor) => _AudioNode(e.attributes),
+    ),
+    SpanNodeGeneratorWithTag(
+      tag: 'video',
+      generator: (e, config, visitor) => _VideoNode(e.attributes),
+    ),
+  ],
+);
+
+class _HtmlImageTagSyntax extends md.InlineSyntax {
+  _HtmlImageTagSyntax()
+      : super(
+          r'<img\\b[^>]*?>',
+          startCharacter: 0x3c,
+          caseSensitive: false,
+        );
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final raw = match.group(0);
+    if (raw == null) return false;
+    final element = md.Element('img', const []);
+    element.attributes.addAll(_parseHtmlAttributes(raw));
+    parser.addNode(element);
+    return true;
+  }
+}
+
+class _ImageNode extends SpanNode {
+  _ImageNode(this.attributes);
+
+  final Map<String, String> attributes;
+
+  @override
+  InlineSpan build() {
+    final src = attributes['src'] ?? '';
+    if (src.trim().isEmpty) {
+      return const TextSpan();
+    }
+    return WidgetSpan(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: _SignedImageEmbed(source: src.trim()),
+        ),
+      ),
+    );
+  }
+}
+
+String? _tryExtractMediaIdFromSource(String source) {
+  final studioMatch = _studioMediaIdPattern.firstMatch(source);
+  final studioId = studioMatch?.group(1);
+  if (studioId != null && studioId.isNotEmpty) {
+    return studioId;
+  }
+  final streamMatch = _mediaStreamTokenPattern.firstMatch(source);
+  final token = streamMatch?.group(1);
+  if (token == null || token.isEmpty) return null;
+  return _extractMediaIdFromToken(token);
+}
+
+Future<String> _resolveSignedEmbedUrl(
+  MediaRepository repo,
+  String source,
+) async {
+  final mediaId = _tryExtractMediaIdFromSource(source);
+  if (mediaId != null && mediaId.isNotEmpty) {
+    final signed = await repo.signMedia(mediaId);
+    try {
+      return repo.resolveUrl(signed.signedUrl);
+    } catch (_) {
+      return signed.signedUrl;
+    }
+  }
+  try {
+    return repo.resolveUrl(source);
+  } catch (_) {
+    return source;
+  }
+}
+
+class _SignedImageEmbed extends ConsumerWidget {
+  const _SignedImageEmbed({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(mediaRepositoryProvider);
+    return FutureBuilder<String>(
+      future: _resolveSignedEmbedUrl(repo, source),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              'Kunde inte ladda bild.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          );
+        }
+        final url = snapshot.data;
+        if (url == null || url.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Image.network(
+          url,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              'Kunde inte ladda bild.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SignedAudioEmbed extends ConsumerWidget {
+  const _SignedAudioEmbed({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(mediaRepositoryProvider);
+    return FutureBuilder<String>(
+      future: _resolveSignedEmbedUrl(repo, source),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              'Kunde inte ladda ljud.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          );
+        }
+        final url = snapshot.data;
+        if (url == null || url.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return InlineAudioPlayer(url: url);
+      },
+    );
+  }
+}
+
+class _SignedVideoEmbed extends ConsumerWidget {
+  const _SignedVideoEmbed({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(mediaRepositoryProvider);
+    return FutureBuilder<String>(
+      future: _resolveSignedEmbedUrl(repo, source),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              'Kunde inte ladda video.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          );
+        }
+        final url = snapshot.data;
+        if (url == null || url.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return InlineVideoPlayer(url: url, autoPlay: false);
+      },
     );
   }
 }

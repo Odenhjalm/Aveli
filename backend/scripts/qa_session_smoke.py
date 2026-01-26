@@ -54,6 +54,17 @@ def _env_or_default(key: str, value: Optional[str], fallback: Optional[str] = No
     return value or os.environ.get(key) or fallback
 
 
+def _ensure_db_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    if "sslmode=" in url:
+        return url
+    if "localhost" in url or "127.0.0.1" in url:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}sslmode=require"
+
+
 def _auth_headers(session: AuthSession) -> dict[str, str]:
     return {"Authorization": f"Bearer {session.token}"}
 
@@ -261,6 +272,43 @@ def _end_session(base_url: str, seminar_id: str, seminar_session_id: str, sessio
     return payload
 
 
+def _cleanup(
+    database_url: Optional[str],
+    *,
+    seminar_id: Optional[str],
+    host_email: str,
+    participant_email: str,
+    delete_host: bool,
+    delete_participant: bool,
+) -> None:
+    if not database_url:
+        print(
+            "[cleanup] skipped (missing --database-url / QA_DATABASE_URL)",
+            file=sys.stderr,
+        )
+        return
+
+    db_url = _ensure_db_url(database_url)
+    if not db_url:
+        print("[cleanup] skipped (database url empty)", file=sys.stderr)
+        return
+
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            if seminar_id:
+                cur.execute("DELETE FROM app.seminars WHERE id = %s", (seminar_id,))
+            if delete_participant:
+                cur.execute(
+                    "DELETE FROM auth.users WHERE lower(email) = lower(%s)",
+                    (participant_email,),
+                )
+            if delete_host:
+                cur.execute(
+                    "DELETE FROM auth.users WHERE lower(email) = lower(%s)",
+                    (host_email,),
+                )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -309,10 +357,13 @@ def main() -> int:
         default=9753,
         help="LiveKit mock bind port (default: %(default)s)",
     )
+    parser.add_argument("--keep-data", action="store_true", help="Skip cleanup of QA artifacts")
 
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
+    generated_host = not bool(args.host_email)
+    generated_participant = not bool(args.participant_email)
     host_email = args.host_email or f"host_{uuid.uuid4().hex[:8]}@qa.wisdom"
     host_password = args.host_password or f"Host-{uuid.uuid4().hex[:8]}!"
     participant_email = args.participant_email or f"participant_{uuid.uuid4().hex[:8]}@qa.wisdom"
@@ -326,6 +377,7 @@ def main() -> int:
             file=sys.stderr,
         )
 
+    seminar_id: Optional[str] = None
     try:
         print(f"[info] Ensuring host account {host_email}")
         host_session = _ensure_account(base_url, host_email, host_password, display_name="QA Host")
@@ -382,6 +434,15 @@ def main() -> int:
     finally:
         if mock_server:
             _stop_livekit_mock(mock_server)
+        if not args.keep_data:
+            _cleanup(
+                args.database_url,
+                seminar_id=seminar_id,
+                host_email=host_email,
+                participant_email=participant_email,
+                delete_host=generated_host,
+                delete_participant=generated_participant,
+            )
 
 
 if __name__ == "__main__":

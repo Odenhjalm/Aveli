@@ -4,6 +4,7 @@ import pytest
 
 from app import db
 from app.services import storage_service as storage_module
+from app.utils import media_signer
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -137,6 +138,16 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
         assert body["storage_bucket"] == presign_data["storage_bucket"]
         assert body["content_type"] == "video/mp4"
 
+        monkeypatch.setattr(
+            media_signer.settings, "media_allow_legacy_media", False, raising=False
+        )
+        monkeypatch.setattr(
+            media_signer.settings, "media_signing_secret", "dev-secret", raising=False
+        )
+        monkeypatch.setattr(
+            media_signer.settings, "media_signing_ttl_seconds", 60, raising=False
+        )
+
         # Lesson media list should include the new row.
         list_resp = await async_client.get(
             f"/studio/lessons/{lesson_id}/media", headers=headers
@@ -144,6 +155,10 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
         assert list_resp.status_code == 200
         items = list_resp.json()["items"]
         assert any(item["id"] == body["id"] for item in items)
+        listed = next(item for item in items if item["id"] == body["id"])
+        assert listed["signed_url"].startswith("/media/stream/")
+        assert "signed_url_expires_at" in listed
+        assert "download_url" not in listed
     finally:
         await cleanup_user(user_id)
 
@@ -154,6 +169,7 @@ async def test_complete_rejects_bucket_mismatch(async_client, monkeypatch):
     try:
         course_id, lesson_id = await create_lesson(async_client, headers)
         # Short-circuit storage presign
+
         async def fake_create_upload_url(self, path, *, content_type, upsert, cache_seconds):
             return storage_module.PresignedUpload(
                 url=f"https://storage.local/{path}",

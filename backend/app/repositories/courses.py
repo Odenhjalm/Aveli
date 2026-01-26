@@ -513,8 +513,6 @@ async def update_course(
             return row
 
 
-
-
 async def clear_course_cover(course_id: str) -> None:
     query = """
         UPDATE app.courses

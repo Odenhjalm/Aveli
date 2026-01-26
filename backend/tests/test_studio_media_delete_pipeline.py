@@ -156,4 +156,3 @@ async def test_delete_pipeline_audio_removes_storage_objects(async_client, monke
         assert derived_path in called_paths
     finally:
         await cleanup_user(user_id)
-

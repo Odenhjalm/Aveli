@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from app import db
@@ -76,6 +78,8 @@ async def test_plan_execute_v1_unknown_intent(async_client):
 
 
 async def test_plan_execute_v1_list_students(async_client):
+    if not os.environ.get("SUPABASE_DB_URL"):
+        pytest.skip("SUPABASE_DB_URL missing")
     teacher_token, teacher_id = await create_teacher(async_client)
     student_token, student_id = await register_user(async_client)
     course_id = None
@@ -105,6 +109,8 @@ async def test_plan_execute_v1_list_students(async_client):
 
 
 async def test_plan_execute_v1_user_summary(async_client):
+    if not os.environ.get("SUPABASE_DB_URL"):
+        pytest.skip("SUPABASE_DB_URL missing")
     admin_token, admin_id = await register_user(async_client)
     await promote_admin(admin_id)
     course_creator_token, course_creator_id = await create_teacher(async_client)

@@ -29,8 +29,14 @@ async def grant_course_entitlement(
                 VALUES (%s, %s, %s, %s, now(), now())
                 ON CONFLICT (user_id, course_slug)
                 DO UPDATE SET
-                    stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, app.course_entitlements.stripe_customer_id),
-                    stripe_payment_intent_id = COALESCE(EXCLUDED.stripe_payment_intent_id, app.course_entitlements.stripe_payment_intent_id),
+                    stripe_customer_id = COALESCE(
+                        EXCLUDED.stripe_customer_id,
+                        app.course_entitlements.stripe_customer_id
+                    ),
+                    stripe_payment_intent_id = COALESCE(
+                        EXCLUDED.stripe_payment_intent_id,
+                        app.course_entitlements.stripe_payment_intent_id
+                    ),
                     updated_at = now()
                 RETURNING id,
                           user_id,

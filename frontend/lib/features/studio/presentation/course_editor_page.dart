@@ -41,10 +41,10 @@ import 'package:aveli/widgets/base_page.dart';
 String? _mediaUrl(Map<String, dynamic> media) {
   final playback = media['playback_url'];
   if (playback is String && playback.isNotEmpty) return playback;
-  final download = media['download_url'];
-  if (download is String && download.isNotEmpty) return download;
   final signed = media['signed_url'];
   if (signed is String && signed.isNotEmpty) return signed;
+  final download = media['download_url'];
+  if (download is String && download.isNotEmpty) return download;
   return null;
 }
 
@@ -140,6 +140,49 @@ final RegExp _videoHtmlTagPattern = RegExp(
   r'''<video\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*></video>''',
   caseSensitive: false,
 );
+
+final RegExp _studioMediaUrlPattern = RegExp(
+  r'''(?:https?:\/\/[^\s"'()]+)?\/studio\/media\/([0-9a-fA-F-]{36})''',
+  caseSensitive: false,
+);
+
+final RegExp _mediaStreamUrlPattern = RegExp(
+  r'''(?:https?:\/\/[^\s"'()]+)?\/media\/stream\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)''',
+);
+
+String? _extractMediaIdFromToken(String token) {
+  final parts = token.split('.');
+  if (parts.length != 3) return null;
+  try {
+    final payloadRaw = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+    final jsonValue = json.decode(payloadRaw);
+    if (jsonValue is! Map<String, dynamic>) return null;
+    final sub = jsonValue['sub'];
+    return sub is String && sub.isNotEmpty ? sub : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+@visibleForTesting
+String normalizeLessonMarkdownForStorage(String markdown) {
+  if (markdown.isEmpty) return markdown;
+
+  var normalized = markdown;
+  normalized = normalized.replaceAllMapped(_studioMediaUrlPattern, (match) {
+    final id = match.group(1);
+    if (id == null || id.isEmpty) return match.group(0) ?? '';
+    return '/studio/media/$id';
+  });
+  normalized = normalized.replaceAllMapped(_mediaStreamUrlPattern, (match) {
+    final token = match.group(1);
+    if (token == null || token.isEmpty) return match.group(0) ?? '';
+    final id = _extractMediaIdFromToken(token);
+    if (id == null || id.isEmpty) return match.group(0) ?? '';
+    return '/studio/media/$id';
+  });
+  return normalized;
+}
 
 @visibleForTesting
 quill_delta.Delta convertLessonMarkdownToDelta(
@@ -337,6 +380,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _modulesRequestId = 0;
   int _lessonsRequestId = 0;
   int _lessonMediaRequestId = 0;
+  int _lessonContentRequestId = 0;
   int _saveCourseRequestId = 0;
 
   Map<String, dynamic>? _quiz;
@@ -753,7 +797,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lessonsLoadError = null;
       });
       _handleCoursePublishFieldsChanged();
-      _applySelectedLesson();
+      await _applySelectedLesson();
       if (_selectedLessonId != null) {
         await _loadLessonMedia();
       } else if (mounted) {
@@ -986,41 +1030,111 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _applySelectedLesson() {
-    final lesson = _lessonById(_selectedLessonId);
+  Future<String> _prepareLessonMarkdownForEditing(String markdown) async {
+    if (markdown.trim().isEmpty) return markdown;
 
-    final markdown = lesson?['content_markdown'] as String? ?? '';
-    quill.Document document;
-    try {
-      final delta = convertLessonMarkdownToDelta(_markdownToDelta, markdown);
-      document = quill.Document.fromDelta(delta);
-    } catch (_) {
-      document = quill.Document()..insert(0, markdown);
+    final ids = <String>{};
+    for (final match in _studioMediaUrlPattern.allMatches(markdown)) {
+      final id = match.group(1);
+      if (id != null && id.isNotEmpty) {
+        ids.add(id);
+      }
     }
+    for (final match in _mediaStreamUrlPattern.allMatches(markdown)) {
+      final token = match.group(1);
+      if (token == null || token.isEmpty) continue;
+      final id = _extractMediaIdFromToken(token);
+      if (id != null && id.isNotEmpty) {
+        ids.add(id);
+      }
+    }
+    if (ids.isEmpty) return markdown;
 
-    _lastSavedLessonMarkdown = markdown;
-    _lastSavedLessonTitle = lesson?['title'] as String? ?? '';
+    final repo = ref.read(mediaRepositoryProvider);
+    final signedUrls = <String, String>{};
+    for (final id in ids) {
+      try {
+        final signed = await repo.signMedia(id);
+        signedUrls[id] = _resolveMediaUrl(signed.signedUrl) ?? signed.signedUrl;
+      } catch (_) {}
+    }
+    if (signedUrls.isEmpty) return markdown;
 
-    _lessonTitleCtrl.removeListener(_handleLessonTitleChanged);
-    _lessonTitleCtrl.text = _lastSavedLessonTitle;
-    _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
-
-    _replaceLessonDocument(document);
-    setState(() {
-      _lessonContentDirty = false;
+    var resolved = markdown;
+    resolved = resolved.replaceAllMapped(_studioMediaUrlPattern, (match) {
+      final id = match.group(1);
+      if (id == null || id.isEmpty) return match.group(0) ?? '';
+      return signedUrls[id] ?? (match.group(0) ?? '');
     });
+    resolved = resolved.replaceAllMapped(_mediaStreamUrlPattern, (match) {
+      final token = match.group(1);
+      if (token == null || token.isEmpty) return match.group(0) ?? '';
+      final id = _extractMediaIdFromToken(token);
+      if (id == null || id.isEmpty) return match.group(0) ?? '';
+      return signedUrls[id] ?? (match.group(0) ?? '');
+    });
+    return resolved;
   }
 
-  void _resetLessonEdits() {
+  Future<void> _applySelectedLesson() async {
+    final lesson = _lessonById(_selectedLessonId);
+    final storedMarkdown = lesson?['content_markdown'] as String? ?? '';
+    final storedTitle = lesson?['title'] as String? ?? '';
+
+    _lastSavedLessonMarkdown = storedMarkdown;
+    _lastSavedLessonTitle = storedTitle;
+
+    _lessonTitleCtrl.removeListener(_handleLessonTitleChanged);
+    _lessonTitleCtrl.text = storedTitle;
+    _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
+
+    final requestId = ++_lessonContentRequestId;
+    final prepared = await _prepareLessonMarkdownForEditing(storedMarkdown);
+    if (!mounted ||
+        _isStaleRequest(
+          requestId: requestId,
+          currentId: _lessonContentRequestId,
+          courseId: _selectedCourseId,
+          lessonId: _selectedLessonId,
+        )) {
+      return;
+    }
+
     quill.Document document;
     try {
-      final delta = convertLessonMarkdownToDelta(
-        _markdownToDelta,
-        _lastSavedLessonMarkdown,
-      );
+      final delta = convertLessonMarkdownToDelta(_markdownToDelta, prepared);
       document = quill.Document.fromDelta(delta);
     } catch (_) {
-      document = quill.Document()..insert(0, _lastSavedLessonMarkdown);
+      document = quill.Document()..insert(0, prepared);
+    }
+
+    _replaceLessonDocument(document);
+    if (mounted) {
+      setState(() => _lessonContentDirty = false);
+    }
+  }
+
+  Future<void> _resetLessonEdits() async {
+    final requestId = ++_lessonContentRequestId;
+    final prepared = await _prepareLessonMarkdownForEditing(
+      _lastSavedLessonMarkdown,
+    );
+    if (!mounted ||
+        _isStaleRequest(
+          requestId: requestId,
+          currentId: _lessonContentRequestId,
+          courseId: _selectedCourseId,
+          lessonId: _selectedLessonId,
+        )) {
+      return;
+    }
+
+    quill.Document document;
+    try {
+      final delta = convertLessonMarkdownToDelta(_markdownToDelta, prepared);
+      document = quill.Document.fromDelta(delta);
+    } catch (_) {
+      document = quill.Document()..insert(0, prepared);
     }
 
     _lessonTitleCtrl.removeListener(_handleLessonTitleChanged);
@@ -1049,7 +1163,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final title = _lessonTitleCtrl.text.trim().isEmpty
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
-    final markdown = _deltaToMarkdown.convert(controller.document.toDelta());
+    final rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
+    final markdown = normalizeLessonMarkdownForStorage(rawMarkdown);
 
     setState(() => _lessonContentSaving = true);
     try {
@@ -4031,7 +4146,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       final match = _lessonById(value);
                                       _lessonIntro = match?['is_intro'] == true;
                                     });
-                                    _applySelectedLesson();
+                                    await _applySelectedLesson();
                                     await _loadLessonMedia();
                                     if (needsRefresh && mounted) {
                                       setState(

@@ -15,7 +15,6 @@ from ..repositories import (
 )
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
-from ..utils.media_signer import public_download_url
 
 
 CoursePayload = Mapping[str, Any]
@@ -47,11 +46,6 @@ def _has_active_subscription(
         return True
     status_value = (subscription or {}).get("status")
     return status_value not in _INACTIVE_SUBSCRIPTION_STATUSES
-
-
-def _compute_media_download_url(item: Mapping[str, Any]) -> str:
-    download_url = public_download_url(item.get("storage_path"))
-    return download_url or f"/studio/media/{item['id']}"
 
 
 def _normalize_value(value: Any) -> Any:
@@ -215,7 +209,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
         if not item.get("storage_bucket") and not item.get("media_asset_id"):
             item["storage_bucket"] = "lesson-media"
         if not item.get("media_asset_id"):
-            item["download_url"] = _compute_media_download_url(item)
+            media_signer.attach_media_links(item)
         items.append(item)
     return items
 

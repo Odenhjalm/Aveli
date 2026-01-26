@@ -65,6 +65,7 @@ def _is_prod_env() -> bool:
     )
     return raw.strip().lower() in ("prod", "production", "live")
 
+
 def _infer_mode_from_keys() -> StripeMode | None:
     env_candidates = [
         ((os.environ.get("STRIPE_SECRET_KEY") or "").strip(), "STRIPE_SECRET_KEY"),
@@ -253,7 +254,11 @@ def resolve_webhook_secret(kind: str, context: StripeContext) -> tuple[str, str]
             env_var = "STRIPE_TEST_WEBHOOK_BILLING_SECRET"
         else:
             secret = settings.stripe_billing_webhook_secret or settings.stripe_webhook_secret
-            env_var = "STRIPE_BILLING_WEBHOOK_SECRET" if settings.stripe_billing_webhook_secret else "STRIPE_WEBHOOK_SECRET"
+            env_var = (
+                "STRIPE_BILLING_WEBHOOK_SECRET"
+                if settings.stripe_billing_webhook_secret
+                else "STRIPE_WEBHOOK_SECRET"
+            )
     else:
         if context.mode is StripeMode.test:
             secret = settings.stripe_test_webhook_secret
@@ -279,31 +284,36 @@ async def ensure_price_accessible(
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
         if getattr(exc, "code", "") == "resource_missing":
             raise StripeConfigurationError(
-                f"{price_config.env_var} ({price_config.price_id}) is not available in Stripe {context.mode.value} mode ({context.secret_source})"
+                f"{price_config.env_var} ({price_config.price_id}) is not available in "
+                f"Stripe {context.mode.value} mode ({context.secret_source})"
             ) from exc
         raise StripeConfigurationError(
             f"Stripe rejected price {price_config.price_id} from {price_config.env_var} ({context.mode.value} mode)"
         ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise StripeConfigurationError(
-            f"Failed to load Stripe price {price_config.price_id} from {price_config.env_var} ({context.mode.value} mode)"
+            f"Failed to load Stripe price {price_config.price_id} from {price_config.env_var} "
+            f"({context.mode.value} mode)"
         ) from exc
 
     livemode = price.get("livemode")
     if isinstance(livemode, bool):
         if context.mode is StripeMode.test and livemode:
             raise StripeConfigurationError(
-                f"{price_config.env_var} ({price_config.price_id}) points to a live price while using sk_test_* ({context.secret_source})"
+                f"{price_config.env_var} ({price_config.price_id}) points to a live price while "
+                f"using sk_test_* ({context.secret_source})"
             )
         if context.mode is StripeMode.live and not livemode:
             raise StripeConfigurationError(
-                f"{price_config.env_var} ({price_config.price_id}) points to a test price while using sk_live_* ({context.secret_source})"
+                f"{price_config.env_var} ({price_config.price_id}) points to a test price while "
+                f"using sk_live_* ({context.secret_source})"
             )
 
     product = price.get("product")
     if price_config.product_id and str(product) != price_config.product_id:
         raise StripeConfigurationError(
-            f"{price_config.env_var} ({price_config.price_id}) is linked to product {product} instead of {price_config.product_id}"
+            f"{price_config.env_var} ({price_config.price_id}) is linked to product {product} "
+            f"instead of {price_config.product_id}"
         )
 
     return price

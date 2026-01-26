@@ -47,7 +47,10 @@ async def build_context(payload: ContextBuildRequest, request: Request, current:
             "Context7 build failed",
             extra={"request_id": request_id, "user_id": str(current.get("id"))},
         )
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to build context") from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to build context",
+        ) from exc
 
     context_dict = ctx.model_dump(mode="json", exclude_none=True)
     return ContextBuildResponse(

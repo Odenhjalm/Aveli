@@ -81,6 +81,7 @@ def test_attach_media_links_excludes_private_bucket(monkeypatch):
     media_signer.attach_media_links(item)
     assert item["download_url"] == "/studio/media/media84"
 
+
 def test_attach_cover_links_strips_legacy_cover():
     course = {
         "cover_url": "/studio/media/cover123",

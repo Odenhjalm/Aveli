@@ -13,11 +13,77 @@ import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
-class TeacherHomeScreen extends ConsumerWidget {
+class TeacherHomeScreen extends ConsumerStatefulWidget {
   const TeacherHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
+}
+
+class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
+  final Set<String> _deletingCourseIds = <String>{};
+  final Set<String> _hiddenCourseIds = <String>{};
+
+  Future<void> _confirmAndDeleteCourse(
+    BuildContext context,
+    Map<String, dynamic> course,
+  ) async {
+    final courseId = course['id']?.toString();
+    if (courseId == null || courseId.isEmpty) return;
+
+    final title = course['title']?.toString().trim();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ta bort kurs'),
+        content: Text(
+          title == null || title.isEmpty
+              ? 'Vill du ta bort kursen? Detta går inte att ångra.'
+              : 'Vill du ta bort \"$title\"? Detta går inte att ångra.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Avbryt'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Ta bort'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _deletingCourseIds.add(courseId);
+      _hiddenCourseIds.add(courseId);
+    });
+
+    try {
+      final repo = ref.read(studioRepositoryProvider);
+      await repo.deleteCourse(courseId);
+      if (!mounted) return;
+      setState(() => _deletingCourseIds.remove(courseId));
+      ref.invalidate(myCoursesProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kurs borttagen.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _deletingCourseIds.remove(courseId);
+        _hiddenCourseIds.remove(courseId);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kunde inte ta bort kursen: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final coursesAsync = ref.watch(myCoursesProvider);
     final bundlesAsync = ref.watch(teacherBundlesProvider);
@@ -322,7 +388,12 @@ class TeacherHomeScreen extends ConsumerWidget {
                               ),
                             ),
                             data: (courses) {
-                              if (courses.isEmpty) {
+                              final visibleCourses = courses.where((course) {
+                                final id = course['id']?.toString();
+                                if (id == null || id.isEmpty) return true;
+                                return !_hiddenCourseIds.contains(id);
+                              }).toList(growable: false);
+                              if (visibleCourses.isEmpty) {
                                 return Column(
                                   children: [
                                     Icon(
@@ -357,7 +428,7 @@ class TeacherHomeScreen extends ConsumerWidget {
                               }
                               return Column(
                                 children: [
-                                  for (final course in courses)
+                                  for (final course in visibleCourses)
                                     Padding(
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 8,
@@ -446,11 +517,55 @@ class TeacherHomeScreen extends ConsumerWidget {
                                               ),
                                             ),
                                             const SizedBox(width: 12),
-                                            Icon(
-                                              Icons.chevron_right,
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Builder(
+                                                  builder: (context) {
+                                                    final courseId = course['id']
+                                                        ?.toString();
+                                                    final isDeleting =
+                                                        courseId != null &&
+                                                            _deletingCourseIds
+                                                                .contains(
+                                                              courseId,
+                                                            );
+                                                    return IconButton(
+                                                      tooltip: 'Ta bort kurs',
+                                                      onPressed: isDeleting
+                                                          ? null
+                                                          : () =>
+                                                                _confirmAndDeleteCourse(
+                                                                  context,
+                                                                  course,
+                                                                ),
+                                                      icon: isDeleting
+                                                          ? const SizedBox(
+                                                              width: 20,
+                                                              height: 20,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                strokeWidth:
+                                                                    2,
+                                                              ),
+                                                            )
+                                                          : Icon(
+                                                              Icons
+                                                                  .delete_outline,
+                                                              color: theme
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
+                                                            ),
+                                                    );
+                                                  },
+                                                ),
+                                                Icon(
+                                                  Icons.chevron_right,
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),

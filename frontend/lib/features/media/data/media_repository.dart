@@ -6,7 +6,37 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/env/app_config.dart';
+
+class MediaSignedUrl {
+  const MediaSignedUrl({
+    required this.mediaId,
+    required this.signedUrl,
+    required this.expiresAt,
+  });
+
+  final String mediaId;
+  final String signedUrl;
+  final DateTime expiresAt;
+
+  factory MediaSignedUrl.fromJson(Map<String, dynamic> json) {
+    final mediaId = json['media_id']?.toString() ?? '';
+    final signedUrl = json['signed_url']?.toString() ?? '';
+    final expiresRaw = json['expires_at']?.toString() ?? '';
+    final expiresAt = DateTime.tryParse(expiresRaw) ?? DateTime.now().toUtc();
+    return MediaSignedUrl(
+      mediaId: mediaId,
+      signedUrl: signedUrl,
+      expiresAt: expiresAt.toUtc(),
+    );
+  }
+
+  bool isValid({Duration leeway = const Duration(seconds: 30)}) {
+    return signedUrl.isNotEmpty &&
+        DateTime.now().toUtc().isBefore(expiresAt.subtract(leeway));
+  }
+}
 
 class MediaRepository {
   MediaRepository({required ApiClient client, required AppConfig config})
@@ -19,6 +49,41 @@ class MediaRepository {
   Directory? _cacheDir;
   final Map<String, Future<File>> _inflight = {};
   final Map<String, Uint8List> _memoryCache = {};
+  final Map<String, MediaSignedUrl> _signedUrlCache = {};
+  final Map<String, Future<MediaSignedUrl>> _signedUrlInflight = {};
+
+  Future<MediaSignedUrl> signMedia(
+    String mediaId, {
+    Duration leeway = const Duration(seconds: 30),
+  }) {
+    final normalized = mediaId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError('mediaId may not be empty');
+    }
+
+    final cached = _signedUrlCache[normalized];
+    if (cached != null && cached.isValid(leeway: leeway)) {
+      return Future.value(cached);
+    }
+
+    final pending = _signedUrlInflight[normalized];
+    if (pending != null) return pending;
+
+    final future = _signMedia(normalized);
+    _signedUrlInflight[normalized] = future;
+    future.whenComplete(() => _signedUrlInflight.remove(normalized));
+    return future;
+  }
+
+  Future<MediaSignedUrl> _signMedia(String mediaId) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      ApiPaths.mediaSign,
+      body: {'media_id': mediaId},
+    );
+    final signed = MediaSignedUrl.fromJson(response);
+    _signedUrlCache[mediaId] = signed;
+    return signed;
+  }
 
   Future<Directory> _ensureCacheDir() async {
     final existing = _cacheDir;

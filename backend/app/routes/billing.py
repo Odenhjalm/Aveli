@@ -65,6 +65,7 @@ async def create_checkout_session(
     except subscription_service.SubscriptionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
+
 @router.get("/session-status", response_model=SessionStatusResponse)
 async def get_session_status(session_id: str) -> SessionStatusResponse:
     try:

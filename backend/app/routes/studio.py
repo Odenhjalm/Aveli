@@ -800,10 +800,7 @@ async def course_modules(course_id: str, current: TeacherUser):
         lessons_raw = await courses_service.list_lessons(module["id"])
         lessons = [dict(lesson) for lesson in lessons_raw]
         for lesson in lessons:
-            media = list(await models.list_lesson_media(lesson["id"]))
-            for item in media:
-                media_signer.attach_media_links(item)
-            lesson["media"] = media
+            lesson["media"] = await models.list_lesson_media(lesson["id"])
         module["lessons"] = lessons
     return {"items": modules}
 
@@ -820,10 +817,7 @@ async def module_lessons(module_id: str, current: TeacherUser):
     lessons_raw = await courses_service.list_lessons(module_id)
     lessons = [dict(lesson) for lesson in lessons_raw]
     for lesson in lessons:
-        media = list(await models.list_lesson_media(lesson["id"]))
-        for item in media:
-            media_signer.attach_media_links(item)
-        lesson["media"] = media
+        lesson["media"] = await models.list_lesson_media(lesson["id"])
     return {"items": lessons}
 
 
@@ -969,21 +963,6 @@ async def set_intro(
     if not row:
         raise HTTPException(status_code=404, detail="Lesson not found")
     return row
-
-
-@router.get("/lessons/{lesson_id}/media")
-async def lesson_media(lesson_id: str, current: TeacherUser):
-    _, course_id = await courses_service.lesson_course_ids(lesson_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    media = list(await models.list_lesson_media(lesson_id))
-    for item in media:
-        media_signer.attach_media_links(item)
-    return {"items": media}
 
 
 @router.post("/lessons/{lesson_id}/media")

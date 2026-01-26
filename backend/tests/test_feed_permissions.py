@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+
 @pytest.mark.anyio("asyncio")
 async def test_feed_requires_auth(async_client):
     resp = await async_client.get('/feed')

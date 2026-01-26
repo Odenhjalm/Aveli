@@ -245,7 +245,9 @@ async def is_teacher_user(user_id: str) -> bool:
 
     async with get_conn() as cur:
         await cur.execute(
-            "SELECT 1 FROM app.teacher_permissions WHERE profile_id = %s AND (can_edit_courses = true OR can_publish = true) LIMIT 1",
+            "SELECT 1 FROM app.teacher_permissions "
+            "WHERE profile_id = %s AND (can_edit_courses = true OR can_publish = true) "
+            "LIMIT 1",
             (user_id,),
         )
         if await _fetchone(cur):
@@ -762,7 +764,17 @@ async def add_lesson_media_entry(
                     duration_seconds
                   )
                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                  RETURNING id, lesson_id, kind, storage_path, storage_bucket, media_id, media_asset_id, position, duration_seconds, created_at
+                  RETURNING
+                    id,
+                    lesson_id,
+                    kind,
+                    storage_path,
+                    storage_bucket,
+                    media_id,
+                    media_asset_id,
+                    position,
+                    duration_seconds,
+                    created_at
                 )
                 SELECT
                   i.id,
@@ -1279,7 +1291,13 @@ async def redeem_coupon(
             if teacher_grant:
                 await cur.execute(
                     """
-                    INSERT INTO app.teacher_permissions (profile_id, can_edit_courses, can_publish, granted_by, granted_at)
+                    INSERT INTO app.teacher_permissions (
+                      profile_id,
+                      can_edit_courses,
+                      can_publish,
+                      granted_by,
+                      granted_at
+                    )
                     VALUES (%s, true, true, %s, now())
                     ON CONFLICT (profile_id) DO UPDATE
                       SET can_edit_courses = true,
@@ -1391,7 +1409,15 @@ async def upsert_subscription_record(
             try:
                 await cur.execute(
                     """
-                    INSERT INTO app.subscriptions (user_id, subscription_id, status, customer_id, price_id, created_at, updated_at)
+                    INSERT INTO app.subscriptions (
+                      user_id,
+                      subscription_id,
+                      status,
+                      customer_id,
+                      price_id,
+                      created_at,
+                      updated_at
+                    )
                     VALUES (%s, %s, %s, %s, %s, now(), now())
                     ON CONFLICT (subscription_id) DO UPDATE
                       SET user_id = excluded.user_id,
@@ -1399,7 +1425,15 @@ async def upsert_subscription_record(
                           customer_id = COALESCE(excluded.customer_id, app.subscriptions.customer_id),
                           price_id = COALESCE(excluded.price_id, app.subscriptions.price_id),
                           updated_at = now()
-                    RETURNING id, user_id, subscription_id, status, customer_id, price_id, created_at, updated_at
+                    RETURNING
+                      id,
+                      user_id,
+                      subscription_id,
+                      status,
+                      customer_id,
+                      price_id,
+                      created_at,
+                      updated_at
                     """,
                     (user_id, subscription_id, status, customer_id, price_id),
                 )
@@ -1536,7 +1570,8 @@ async def ensure_quiz_for_user(course_id: str, user_id: str) -> dict | None:
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             try:
                 await cur.execute(
-                    "SELECT id, course_id, title, pass_score, created_at FROM app.course_quizzes WHERE course_id = %s LIMIT 1",
+                    "SELECT id, course_id, title, pass_score, created_at "
+                    "FROM app.course_quizzes WHERE course_id = %s LIMIT 1",
                     (course_id,),
                 )
             except errors.UndefinedTable:
@@ -1590,7 +1625,8 @@ async def upsert_quiz_question(quiz_id: str, data: dict) -> dict | None:
                         params.append(value)
                 if not fields:
                     await cur.execute(
-                        "SELECT id, quiz_id, position, kind, prompt, options, correct FROM app.quiz_questions WHERE id = %s",
+                        "SELECT id, quiz_id, position, kind, prompt, options, correct "
+                        "FROM app.quiz_questions WHERE id = %s",
                         (data["id"],),
                     )
                 else:

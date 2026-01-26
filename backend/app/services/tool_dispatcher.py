@@ -407,7 +407,17 @@ def dispatch_tool_action(
         if action == "query":
             return _run_supabase_readonly_query(args)
         restricted_actions = {"list_course_students", "get_user_summary", "get_course_progress"}
-        if action in {"list_intro_courses", "get_course_by_id", "get_course_by_slug", "list_seminars", "get_seminar_by_id", "list_course_students", "get_user_summary", "get_course_progress"}:
+        allowed_actions = {
+            "list_intro_courses",
+            "get_course_by_id",
+            "get_course_by_slug",
+            "list_seminars",
+            "get_seminar_by_id",
+            "list_course_students",
+            "get_user_summary",
+            "get_course_progress",
+        }
+        if action in allowed_actions:
             if action in restricted_actions:
                 course_arg = args.get("course_id") if args else None
                 _require_insight_access(actor_role=actor_role, scope=scope, course_id=course_arg)

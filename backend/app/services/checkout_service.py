@@ -39,7 +39,6 @@ def _require_stripe() -> None:
     stripe.api_key = context.secret_key
 
 
-
 async def create_course_checkout(
     user: Mapping[str, Any],
     slug: str,

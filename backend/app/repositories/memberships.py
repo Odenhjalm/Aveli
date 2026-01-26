@@ -176,7 +176,10 @@ async def upsert_membership_record(
                         price_id = EXCLUDED.price_id,
                         status = COALESCE(EXCLUDED.status, app.memberships.status),
                         stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, app.memberships.stripe_customer_id),
-                        stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, app.memberships.stripe_subscription_id),
+                        stripe_subscription_id = COALESCE(
+                            EXCLUDED.stripe_subscription_id,
+                            app.memberships.stripe_subscription_id
+                        ),
                         start_date = COALESCE(EXCLUDED.start_date, app.memberships.start_date),
                         end_date = COALESCE(EXCLUDED.end_date, app.memberships.end_date),
                         updated_at = now()

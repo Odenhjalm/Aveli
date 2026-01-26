@@ -138,15 +138,13 @@ class AIPlanExecuteV1Response(BaseModel):
     message: str | None = None
 
 
-
-
-
 def _request_id(request: Request) -> str:
     return (
         getattr(request.state, "request_id", None)
         or request.headers.get("X-Request-ID")
         or uuid.uuid4().hex
     )
+
 
 @router.post("/execute", response_model=AIExecuteResponse)
 async def execute_ai(  # type: ignore[valid-type]
@@ -221,7 +219,10 @@ async def execute_ai_with_built_context(request: Request, current: CurrentUser):
             "Context7 execute-built failed",
             extra={"request_id": request_id, "user_id": str(current.get("id"))},
         )
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to build context") from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to build context",
+        ) from exc
 
     context_payload = built_context.model_dump(mode="json", exclude_none=True)
     gate_result = context7_gate.validate_context_payload(
@@ -345,7 +346,18 @@ async def tool_call(request: Request, current: CurrentUser):
         tools_allowed=policy.tools_allowed,
     )
 
-    result = dispatch_tool_action(tool=payload.tool, action=payload.action, args=payload.args, actor_role=getattr(context_obj.actor, "role", None), scope=context_payload.get("scope") if isinstance(context_payload.get("scope"), dict) else {})
+    scope_payload = (
+        context_payload.get("scope")
+        if isinstance(context_payload.get("scope"), dict)
+        else {}
+    )
+    result = dispatch_tool_action(
+        tool=payload.tool,
+        action=payload.action,
+        args=payload.args,
+        actor_role=getattr(context_obj.actor, "role", None),
+        scope=scope_payload,
+    )
 
     return AIToolCallResponse(
         ok=True,
@@ -460,7 +472,18 @@ async def plan_and_execute(request: Request, current: CurrentUser):
         tools_allowed=policy.tools_allowed,
     )
 
-    result = dispatch_tool_action(tool=tool, action=action, args=payload.args, actor_role=getattr(context_obj.actor, "role", None), scope=context_payload.get("scope") if isinstance(context_payload.get("scope"), dict) else {})
+    scope_payload = (
+        context_payload.get("scope")
+        if isinstance(context_payload.get("scope"), dict)
+        else {}
+    )
+    result = dispatch_tool_action(
+        tool=tool,
+        action=action,
+        args=payload.args,
+        actor_role=getattr(context_obj.actor, "role", None),
+        scope=scope_payload,
+    )
 
     steps.append(
         PlanStep(

@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from app.services import context7_builder
@@ -74,6 +76,8 @@ async def test_plan_execute_tool_not_allowed(async_client, monkeypatch):
 
 
 async def test_plan_execute_successful_query(async_client):
+    if not os.environ.get("SUPABASE_DB_URL"):
+        pytest.skip("SUPABASE_DB_URL missing")
     token, user_id = await create_teacher(async_client)
     course_id = None
     try:

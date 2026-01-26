@@ -156,7 +156,16 @@ async def test_backend_api_smoke(async_client, monkeypatch):
                     )
                     await cur.execute(
                         """
-                        INSERT INTO app.profiles (user_id, email, display_name, role, role_v2, is_admin, created_at, updated_at)
+                        INSERT INTO app.profiles (
+                            user_id,
+                            email,
+                            display_name,
+                            role,
+                            role_v2,
+                            is_admin,
+                            created_at,
+                            updated_at
+                        )
                         SELECT id, email, %s, 'student', 'user', false, NOW(), NOW()
                         FROM auth.users WHERE email = %s
                         ON CONFLICT (user_id) DO NOTHING

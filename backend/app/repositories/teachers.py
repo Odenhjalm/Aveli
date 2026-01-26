@@ -77,7 +77,10 @@ async def upsert_teacher(
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
                 ON CONFLICT (profile_id) DO UPDATE
-                   SET stripe_connect_account_id = COALESCE(excluded.stripe_connect_account_id, app.teachers.stripe_connect_account_id),
+                   SET stripe_connect_account_id = COALESCE(
+                       excluded.stripe_connect_account_id,
+                       app.teachers.stripe_connect_account_id
+                   ),
                        payout_split_pct = COALESCE(%s, app.teachers.payout_split_pct),
                        onboarded_at = COALESCE(excluded.onboarded_at, app.teachers.onboarded_at),
                        charges_enabled = COALESCE(excluded.charges_enabled, app.teachers.charges_enabled),
