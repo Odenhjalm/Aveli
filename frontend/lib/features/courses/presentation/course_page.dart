@@ -18,6 +18,7 @@ import 'package:aveli/features/paywall/data/course_pricing_api.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class CoursePage extends ConsumerStatefulWidget {
   const CoursePage({super.key, required this.slug});
@@ -288,7 +289,7 @@ class _CourseContent extends StatelessWidget {
                 if (course.description != null)
                   Text(
                     course.description!,
-                    style: t.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
+                    style: context.semanticTextStyles.courseDetailDescription,
                   ),
                 const SizedBox(height: 12),
                 Row(

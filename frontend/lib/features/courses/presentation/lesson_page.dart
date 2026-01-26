@@ -20,6 +20,7 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class LessonPage extends ConsumerStatefulWidget {
   const LessonPage({super.key, required this.lessonId});
@@ -109,10 +110,8 @@ class _LessonContent extends ConsumerWidget {
     return regex
         .allMatches(content)
         .map(
-          (match) => _BundleLink(
-            url: match.group(0)!,
-            bundleId: match.group(1) ?? '',
-          ),
+          (match) =>
+              _BundleLink(url: match.group(0)!, bundleId: match.group(1) ?? ''),
         )
         .where((item) => item.bundleId.isNotEmpty)
         .toList(growable: false);
@@ -231,11 +230,8 @@ class _LessonContent extends ConsumerWidget {
               child: FilledButton.icon(
                 icon: const Icon(Icons.shopping_bag_outlined),
                 label: const Text('Köp paketet'),
-                onPressed: () => _startBundleCheckout(
-                  context,
-                  ref,
-                  link.bundleId,
-                ),
+                onPressed: () =>
+                    _startBundleCheckout(context, ref, link.bundleId),
               ),
             ),
           ),
@@ -325,12 +321,7 @@ MarkdownConfig _buildMarkdownConfig(
 
   return MarkdownConfig(
     configs: [
-      PConfig(
-        textStyle: resolveStyle(
-          textTheme.bodyMedium,
-          const TextStyle(fontSize: 16),
-        ),
-      ),
+      PConfig(textStyle: context.semanticTextStyles.readerBody),
       H1Config(
         style: resolveStyle(
           textTheme.headlineMedium,

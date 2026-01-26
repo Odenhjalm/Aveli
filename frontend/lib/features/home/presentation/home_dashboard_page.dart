@@ -31,6 +31,7 @@ import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
+import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -743,8 +744,9 @@ class _ExploreCoursesSection extends StatelessWidget {
                               const SizedBox(height: 6),
                               Text(
                                 description,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(color: Colors.white70),
+                                style: context
+                                    .semanticTextStyles
+                                    .courseCardDescription,
                               ),
                             ],
                             if (isIntro) ...[

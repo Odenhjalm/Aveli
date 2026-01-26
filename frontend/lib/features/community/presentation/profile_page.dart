@@ -25,6 +25,7 @@ import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
@@ -719,9 +720,9 @@ class _CoursesSection extends StatelessWidget {
                               const SizedBox(height: 6),
                               Text(
                                 course.description!,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white70,
-                                ),
+                                style: context
+                                    .semanticTextStyles
+                                    .courseCardDescription,
                               ),
                             ],
                             if (course.isFreeIntro) ...[

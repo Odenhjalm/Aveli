@@ -11,6 +11,7 @@ import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/go_router_back_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});
@@ -260,9 +261,7 @@ class _CourseTile extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       description,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white70,
-                      ),
+                      style: context.semanticTextStyles.courseCardDescription,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
