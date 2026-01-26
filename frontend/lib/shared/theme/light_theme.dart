@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/app_text_colors.dart';
+import 'package:aveli/shared/theme/small_text_color_rule.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 const Color kPrimary = Color(0xFF7AA8F7);
@@ -30,26 +31,34 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     displayColor: scheme.onSurface,
     bodyColor: scheme.onSurface,
   );
+
+  TextStyle? enforceBody(TextStyle? style, {double? fallbackFontSize}) {
+    if (style == null) return null;
+    return style.copyWith(
+      color: AppTextColor.body,
+      fontSize: style.fontSize ?? fallbackFontSize,
+    );
+  }
+
   final textTheme = forLanding
       ? baseTextTheme
-      : baseTextTheme.copyWith(
-          bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-            color: AppTextColor.body,
-          ),
-          bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-            color: AppTextColor.body,
-          ),
-          bodySmall: baseTextTheme.bodySmall?.copyWith(
-            color: AppTextColor.body,
-          ),
-          labelLarge: baseTextTheme.labelLarge?.copyWith(
-            color: AppTextColor.body,
-          ),
-          labelMedium: baseTextTheme.labelMedium?.copyWith(
-            color: AppTextColor.body,
-          ),
-          labelSmall: baseTextTheme.labelSmall?.copyWith(
-            color: AppTextColor.body,
+      : SmallTextColorRule.applyTo(
+          baseTextTheme.copyWith(
+            bodyLarge: enforceBody(baseTextTheme.bodyLarge, fallbackFontSize: 16),
+            bodyMedium: enforceBody(
+              baseTextTheme.bodyMedium,
+              fallbackFontSize: 14,
+            ),
+            bodySmall: enforceBody(baseTextTheme.bodySmall, fallbackFontSize: 12),
+            labelLarge: enforceBody(baseTextTheme.labelLarge),
+            labelMedium: enforceBody(
+              baseTextTheme.labelMedium,
+              fallbackFontSize: 12,
+            ),
+            labelSmall: enforceBody(
+              baseTextTheme.labelSmall,
+              fallbackFontSize: 11,
+            ),
           ),
         );
   final navLabelStyle = TextStyle(
