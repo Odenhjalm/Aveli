@@ -238,19 +238,19 @@ class _CaptionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Align(
       alignment: Alignment.bottomLeft,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.6),
+          color: theme.colorScheme.surface.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.white,
+            style: theme.textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -284,7 +284,7 @@ class _ErrorOverlay extends StatelessWidget {
           Text(
             message,
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.error.withValues(alpha: 0.8),
+              color: theme.colorScheme.error,
             ),
             textAlign: TextAlign.center,
           ),

@@ -24,7 +24,7 @@ class Section extends StatelessWidget {
         Text(title, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
         if (subtitle != null) ...[
           const Gap(4),
-          Text(subtitle!, style: t.bodyMedium?.copyWith(color: Colors.grey)),
+          Text(subtitle!, style: t.bodyMedium),
         ],
         const Gap(12),
         child,

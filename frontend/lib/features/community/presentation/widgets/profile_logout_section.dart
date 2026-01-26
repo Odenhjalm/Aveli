@@ -53,7 +53,7 @@ class ProfileLogoutSection extends ConsumerWidget {
               GoRouter.of(context).goNamed(AppRoute.landing);
             }
           },
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+          icon: const Icon(Icons.logout_rounded),
           label: const Text('Logga ut'),
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         ),

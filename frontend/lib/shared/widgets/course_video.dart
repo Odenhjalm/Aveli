@@ -211,7 +211,6 @@ class CourseVideoSkeleton extends StatelessWidget {
                   Text(
                     message,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.black54,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

@@ -23,10 +23,11 @@ class GradientText extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolvedGradient = gradient ?? _defaultGradient;
     return ShaderMask(
+      blendMode: BlendMode.srcIn,
       shaderCallback: (bounds) => resolvedGradient.createShader(
         Rect.fromLTWH(0, 0, bounds.width, bounds.height),
       ),
-      child: Text(text, style: style.copyWith(color: Colors.white)),
+      child: Text(text, style: style),
     );
   }
 }

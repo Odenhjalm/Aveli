@@ -115,37 +115,32 @@ class CoursesGrid extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   buildCover(),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: .06),
-                          Colors.black.withValues(alpha: .28),
-                        ],
-                      ),
-                    ),
-                  ),
                   Padding(
                     padding: const EdgeInsets.all(14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: t.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            shadows: const [
-                              Shadow(
-                                color: Colors.black54,
-                                blurRadius: 4,
-                                offset: Offset(0, 1),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            child: Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: t.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
                               ),
-                            ],
+                            ),
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -154,10 +149,10 @@ class CoursesGrid extends StatelessWidget {
                             borderRadius: BorderRadius.circular(999),
                             child: LinearProgressIndicator(
                               value: pct,
-                              backgroundColor: Colors.white.withValues(
-                                alpha: .24,
+                              backgroundColor: Colors.black.withValues(
+                                alpha: 0.12,
                               ),
-                              color: Colors.white,
+                              color: Colors.black,
                               minHeight: 6,
                             ),
                           ),

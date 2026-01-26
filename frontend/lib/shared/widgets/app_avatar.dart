@@ -34,10 +34,11 @@ class AppAvatar extends StatelessWidget {
   }
 
   Widget _fallbackIcon(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      color: theme.colorScheme.surfaceContainerHigh,
       alignment: Alignment.center,
-      child: Icon(icon, color: Colors.black54),
+      child: Icon(icon, color: theme.colorScheme.onSurface),
     );
   }
 }

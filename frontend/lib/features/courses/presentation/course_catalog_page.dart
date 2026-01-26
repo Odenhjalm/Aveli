@@ -11,7 +11,6 @@ import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/go_router_back_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
-import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});
@@ -40,10 +39,9 @@ class CourseCatalogPage extends ConsumerWidget {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: Colors.white,
         leading: const GoRouterBackButton(),
         title: const Text('Alla kurser'),
-        actions: const [TopNavActionButtons(iconColor: Colors.white)],
+        actions: const [TopNavActionButtons()],
       ),
       body: AppBackground(
         child: SafeArea(
@@ -167,22 +165,19 @@ class _CourseList extends StatelessWidget {
             Icon(
               Icons.menu_book_outlined,
               size: 56,
-              color: Colors.white.withValues(alpha: 0.85),
+              color: theme.colorScheme.onSurface,
             ),
             const SizedBox(height: 12),
             Text(
               'Inga publicerade kurser ännu.',
               style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               'Publicera en kurs i studion för att visa den här.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white70,
-              ),
+              style: theme.textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
           ],
@@ -254,14 +249,13 @@ class _CourseTile extends StatelessWidget {
                     title,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
                     ),
                   ),
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
                       description,
-                      style: context.semanticTextStyles.courseCardDescription,
+                      style: theme.textTheme.bodyMedium,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -305,6 +299,7 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.14),
@@ -316,12 +311,11 @@ class _Chip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: Colors.white),
+            Icon(icon, size: 16, color: theme.colorScheme.onSurface),
             const SizedBox(width: 6),
             Text(
               label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.white,
+              style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -349,7 +343,6 @@ class _ErrorState extends StatelessWidget {
           Text(
             'Kunde inte hämta kurser just nu.',
             style: theme.textTheme.titleMedium?.copyWith(
-              color: Colors.white,
               fontWeight: FontWeight.w600,
             ),
             textAlign: TextAlign.center,
@@ -359,7 +352,6 @@ class _ErrorState extends StatelessWidget {
             Text(
               error.toString(),
               style: theme.textTheme.bodySmall?.copyWith(
-                color: Colors.white,
                 fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.center,

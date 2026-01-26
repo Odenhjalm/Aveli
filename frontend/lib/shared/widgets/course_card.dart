@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
-import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class CourseCard extends StatefulWidget {
   final String title;
@@ -95,8 +94,7 @@ class _CourseCardState extends State<CourseCard> {
                           widget.description!,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              context.semanticTextStyles.courseCardDescription,
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ],
                     ],

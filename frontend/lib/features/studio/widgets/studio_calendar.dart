@@ -27,9 +27,7 @@ class StudioCalendar extends ConsumerWidget {
         const SizedBox(height: 8),
         Text(
           'Planera dina livesändningar med månfas-kort och dra block för att skapa tider.',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-          ),
+          style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
         GlassContainer(
@@ -221,12 +219,9 @@ class _CalendarDayCell extends StatelessWidget {
               children: [
                 Text(
                   '${date.day}',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: isCurrentMonth
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.4),
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 Icon(icon, size: 18, color: badgeColor),
               ],
@@ -238,18 +233,16 @@ class _CalendarDayCell extends StatelessWidget {
                   session.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
               if (sessions.length > 2)
                 Text(
                   '+${sessions.length - 2} till',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
             ] else
               Expanded(
@@ -259,7 +252,6 @@ class _CalendarDayCell extends StatelessWidget {
                     'Fri slot',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
                     ),
                   ),
                 ),

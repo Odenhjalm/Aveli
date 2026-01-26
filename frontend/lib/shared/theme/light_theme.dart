@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/app_text_colors.dart';
-import 'package:aveli/shared/theme/semantic_text_styles.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 const Color kPrimary = Color(0xFF7AA8F7);
@@ -34,6 +33,15 @@ ThemeData buildLightTheme({bool forLanding = false}) {
   final textTheme = forLanding
       ? baseTextTheme
       : baseTextTheme.copyWith(
+          titleLarge: baseTextTheme.titleLarge?.copyWith(
+            color: AppTextColor.body,
+          ),
+          titleMedium: baseTextTheme.titleMedium?.copyWith(
+            color: AppTextColor.body,
+          ),
+          titleSmall: baseTextTheme.titleSmall?.copyWith(
+            color: AppTextColor.body,
+          ),
           bodyLarge: baseTextTheme.bodyLarge?.copyWith(
             color: AppTextColor.body,
           ),
@@ -57,7 +65,6 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     fontWeight: FontWeight.w500,
     color: AppTextColor.body,
   );
-  final semanticTextStyles = SemanticTextStyles.fromTextTheme(textTheme);
 
   return ThemeData(
     useMaterial3: true,
@@ -134,6 +141,5 @@ ThemeData buildLightTheme({bool forLanding = false}) {
       labelTextStyle: forLanding ? null : WidgetStatePropertyAll(navLabelStyle),
     ),
     textTheme: textTheme,
-    extensions: <ThemeExtension<dynamic>>[semanticTextStyles],
   );
 }

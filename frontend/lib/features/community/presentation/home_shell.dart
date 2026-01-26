@@ -90,10 +90,9 @@ class _HomeShellState extends State<HomeShell> {
               const SizedBox(width: 12),
               Text(
                 sectionTitle,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -294,16 +293,10 @@ class _ServicesTab extends ConsumerWidget {
                   if (profile == null)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Logga in för att köpa.',
-                        style: TextStyle(color: Colors.black54),
-                      ),
+                      child: Text('Logga in för att köpa.'),
                     ),
                 ] else
-                  const Text(
-                    'Prenumerationer är inte aktiverade ännu.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
+                  const Text('Prenumerationer är inte aktiverade ännu.'),
               ],
             ),
           ),

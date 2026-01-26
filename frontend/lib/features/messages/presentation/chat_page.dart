@@ -202,12 +202,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         : Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    message.content,
-                    style: TextStyle(
-                      color: isMe ? Colors.white : Colors.black87,
-                    ),
-                  ),
+                  child: Text(message.content),
                 ),
               );
             },

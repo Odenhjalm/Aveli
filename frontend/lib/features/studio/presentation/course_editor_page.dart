@@ -1353,9 +1353,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final theme = Theme.of(context);
     final titleStyle = theme.textTheme.titleSmall?.copyWith(
       fontWeight: FontWeight.w700,
-      color: Colors.white,
     );
-    final bodyStyle = theme.textTheme.bodySmall?.copyWith(color: Colors.black);
+    final bodyStyle = theme.textTheme.bodySmall;
     final hasCover =
         _courseCoverPreviewUrl != null && _courseCoverPreviewUrl!.isNotEmpty;
     final status = _coverPipelineState;
@@ -4100,8 +4099,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
                                     'Använd ikonerna i verktygsfältet ovan för att ladda upp bild, video eller ljud. Dokument (PDF) kan laddas upp via knappen med dokumentikonen.',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(color: Colors.black),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
                                   ),
                                 );
                               },

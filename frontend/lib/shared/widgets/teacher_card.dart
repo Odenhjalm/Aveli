@@ -43,7 +43,7 @@ class TeacherCard extends StatelessWidget {
                   if ((subjects ?? '').isNotEmpty)
                     Text(
                       subjects!,
-                      style: const TextStyle(color: Colors.black54),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                 ],
               ),

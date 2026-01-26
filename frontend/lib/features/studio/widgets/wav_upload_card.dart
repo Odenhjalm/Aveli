@@ -461,9 +461,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         widget.courseId != null && widget.courseId!.trim().isNotEmpty;
     final canUpload = hasLessonId && hasCourseId;
     final theme = Theme.of(context);
-    final titleStyle = theme.textTheme.titleMedium?.copyWith(
-      color: Colors.white,
-    );
+    final titleStyle = theme.textTheme.titleMedium;
     final bodyStyle = theme.textTheme.bodySmall;
     final secondaryStyle = theme.textTheme.bodySmall;
     final progressVisible = _uploading && _progress > 0;

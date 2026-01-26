@@ -59,7 +59,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       disableBack: true,
       extendBodyBehindAppBar: true,
       transparentAppBar: true,
-      appBarForegroundColor: Colors.white,
       background: FullBleedBackground(
         // Den gemensamma bakgrunden ligger lokalt i appen för stabil rendering.
         image: AppImages.background,

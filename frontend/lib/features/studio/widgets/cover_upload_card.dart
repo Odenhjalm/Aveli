@@ -147,9 +147,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
     final canUpload = courseReady && !_uploading;
     final theme = Theme.of(context);
     final progressVisible = _uploading && _progress > 0;
-    final titleStyle = theme.textTheme.titleMedium?.copyWith(
-      color: Colors.white,
-    );
+    final titleStyle = theme.textTheme.titleMedium;
     final bodyStyle = theme.textTheme.bodySmall;
     final secondaryStyle = theme.textTheme.bodySmall;
 

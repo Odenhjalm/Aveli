@@ -20,7 +20,6 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
-import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class LessonPage extends ConsumerStatefulWidget {
   const LessonPage({super.key, required this.lessonId});
@@ -321,7 +320,7 @@ MarkdownConfig _buildMarkdownConfig(
 
   return MarkdownConfig(
     configs: [
-      PConfig(textStyle: context.semanticTextStyles.readerBody),
+      PConfig(textStyle: textTheme.bodyMedium ?? const TextStyle(fontSize: 16)),
       H1Config(
         style: resolveStyle(
           textTheme.headlineMedium,

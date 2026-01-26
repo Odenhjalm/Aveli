@@ -64,10 +64,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
           ),
           const SizedBox(height: 16),
           CardField(
-            style: const TextStyle(color: Colors.white),
-            cursorColor: Colors.white,
+            style: Theme.of(context).textTheme.bodyMedium ?? const TextStyle(),
+            cursorColor: Theme.of(context).colorScheme.onSurface,
             decoration: InputDecoration(
-              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(

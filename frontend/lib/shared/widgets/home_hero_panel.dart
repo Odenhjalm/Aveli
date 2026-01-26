@@ -29,24 +29,12 @@ class HomeHeroPanel extends StatelessWidget {
                   displayName == null
                       ? 'Välkommen tillbaka'
                       : 'Hej ${displayName!}',
-                  style: t.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    shadows: const [
-                      Shadow(
-                        color: Colors.black54,
-                        blurRadius: 4,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
-                  ),
+                  style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   'Fortsätt din resa eller utforska fler introduktioner.',
-                  style: t.bodyLarge?.copyWith(
-                    color: Colors.white.withValues(alpha: .95),
-                  ),
+                  style: t.bodyLarge,
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -105,7 +93,7 @@ class _HeroOutlineButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
+        foregroundColor: Colors.black,
         side: const BorderSide(color: Colors.transparent),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

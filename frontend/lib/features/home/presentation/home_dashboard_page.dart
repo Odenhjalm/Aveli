@@ -31,7 +31,6 @@ import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
-import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -94,14 +93,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
             child: Text(
               'Aveli',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
         ),
-        actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             tooltip: 'Home',
@@ -272,16 +269,11 @@ class _HomeAudioSection extends StatelessWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Text(
           'Kunde inte hämta ljud: ${AppFailure.from(error).message}',
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
         data: (items) {
           if (items.isEmpty) {
-            return const Text(
-              'Inga ljudspår tillgängliga ännu.',
-              style: TextStyle(color: Colors.white70),
-            );
+            return const Text('Inga ljudspår tillgängliga ännu.');
           }
           return _HomeAudioList(items: items);
         },
@@ -346,29 +338,24 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
       children: [
         Text(
           selected.displayTitle,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         if (selected.courseTitle.trim().isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
             selected.courseTitle,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
         ],
         const SizedBox(height: 10),
         if (selected.mediaAssetId != null)
           _buildPipelineAudio(selected, durationHint: durationHint)
         else if (resolvedUrl == null)
-          const Text(
-            'Ljudlänken saknas för detta spår.',
-            style: TextStyle(color: Colors.white70),
-          )
+          const Text('Ljudlänken saknas för detta spår.')
         else
           InlineAudioPlayer(
             url: resolvedUrl,
@@ -382,7 +369,6 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             onPressed: () => _openLibrary(context, items),
             icon: const Icon(Icons.library_music_outlined),
             label: Text('Bibliotek (${items.length})'),
-            style: TextButton.styleFrom(foregroundColor: Colors.white),
           ),
         ),
       ],
@@ -395,14 +381,11 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
       final message = state == 'failed'
           ? 'Ljudet kunde inte bearbetas.'
           : 'Ljudet bearbetas…';
-      return Text(message, style: const TextStyle(color: Colors.white70));
+      return Text(message);
     }
     final future = _playbackFuture;
     if (future == null) {
-      return const Text(
-        'Ljudlänken saknas för detta spår.',
-        style: TextStyle(color: Colors.white70),
-      );
+      return const Text('Ljudlänken saknas för detta spår.');
     }
     return FutureBuilder<MediaPlaybackUrl>(
       future: future,
@@ -414,10 +397,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
           );
         }
         if (!snapshot.hasData) {
-          return const Text(
-            'Kunde inte hämta uppspelningslänk.',
-            style: TextStyle(color: Colors.white70),
-          );
+          return const Text('Kunde inte hämta uppspelningslänk.');
         }
         final url = snapshot.data!.playbackUrl.toString();
         return InlineAudioPlayer(
@@ -454,7 +434,6 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                         Text(
                           'Bibliotek',
                           style: theme.textTheme.titleLarge?.copyWith(
-                            color: Colors.white,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -462,7 +441,6 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                         Text(
                           '${items.length} spår',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.white,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -543,7 +521,6 @@ class _AudioRow extends StatelessWidget {
           children: [
             Icon(
               isSelected ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
-              color: Colors.white70,
               size: 18,
             ),
             const SizedBox(width: 8),
@@ -556,7 +533,6 @@ class _AudioRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: Colors.white,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -566,7 +542,6 @@ class _AudioRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -577,7 +552,6 @@ class _AudioRow extends StatelessWidget {
               Text(
                 duration,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -615,7 +589,6 @@ class _ExploreCoursesSection extends StatelessWidget {
     return _SectionCard(
       title: 'Utforska kurser',
       trailing: TextButton(
-        style: TextButton.styleFrom(foregroundColor: Colors.white),
         onPressed: () => context.goNamed(AppRoute.courseCatalog),
         child: const Text('Visa alla'),
       ),
@@ -735,18 +708,13 @@ class _ExploreCoursesSection extends StatelessWidget {
                             Text(
                               title,
                               style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                             if (description.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
                                 description,
-                                style: context
-                                    .semanticTextStyles
-                                    .courseCardDescription,
+                                style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             ],
                             if (isIntro) ...[
@@ -762,7 +730,7 @@ class _ExploreCoursesSection extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right, color: Colors.white70),
+                      const Icon(Icons.chevron_right),
                     ],
                   ),
                 ),
@@ -811,7 +779,6 @@ class _FeedSection extends StatelessWidget {
     return _SectionCard(
       title: 'Gemensam vägg',
       trailing: TextButton(
-        style: TextButton.styleFrom(foregroundColor: Colors.white),
         onPressed: () => context.goNamed(AppRoute.community),
         child: const Text('Visa allt'),
       ),
@@ -821,10 +788,7 @@ class _FeedSection extends StatelessWidget {
         data: (activities) {
           final seminarHighlights = _buildSeminarHighlights(context);
           if (activities.isEmpty && seminarHighlights == null) {
-            return const Text(
-              'Inga aktiviteter ännu.',
-              style: TextStyle(color: Colors.white70),
-            );
+            return const Text('Inga aktiviteter ännu.');
           }
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -834,10 +798,7 @@ class _FeedSection extends StatelessWidget {
                 if (activities.isNotEmpty) const SizedBox(height: 12),
               ],
               if (activities.isEmpty)
-                const Text(
-                  'Inga aktiviteter ännu.',
-                  style: TextStyle(color: Colors.white70),
-                )
+                const Text('Inga aktiviteter ännu.')
               else
                 for (final activity in activities.take(10))
                   Padding(
@@ -846,10 +807,7 @@ class _FeedSection extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(
-                            Icons.bolt_outlined,
-                            color: Colors.white70,
-                          ),
+                          const Icon(Icons.bolt_outlined),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -861,10 +819,7 @@ class _FeedSection extends StatelessWidget {
                                       ? activity.type
                                       : activity.summary,
                                   style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
-                                      ),
+                                      ?.copyWith(fontWeight: FontWeight.w600),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
@@ -873,8 +828,7 @@ class _FeedSection extends StatelessWidget {
                                   ).formatFullDate(
                                     activity.occurredAt.toLocal(),
                                   ),
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: Colors.white70),
+                                  style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ],
                             ),
@@ -900,10 +854,9 @@ class _FeedSection extends StatelessWidget {
           children: [
             Text(
               'Livesändningar',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             for (final seminar in upcoming.take(2))
@@ -1013,26 +966,22 @@ class _SeminarHighlightTile extends StatelessWidget {
             children: [
               Text(
                 seminar.title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
               Text(
                 'Lärare: $hostName',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               if (infoLine.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
                   infoLine,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
               if (seminar.description != null &&
@@ -1042,10 +991,9 @@ class _SeminarHighlightTile extends StatelessWidget {
                   seminar.description!,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
               if (action != null) ...[
@@ -1080,7 +1028,6 @@ class _ServicesSection extends StatelessWidget {
     return _SectionCard(
       title: 'Tjänster',
       trailing: TextButton(
-        style: TextButton.styleFrom(foregroundColor: Colors.white),
         onPressed: () => context.goNamed(
           AppRoute.community,
           queryParameters: const {'tab': 'services'},
@@ -1095,10 +1042,7 @@ class _ServicesSection extends StatelessWidget {
         ),
         data: (services) {
           if (services.isEmpty) {
-            return const Text(
-              'Inga tjänster publicerade just nu.',
-              style: TextStyle(color: Colors.white70),
-            );
+            return const Text('Inga tjänster publicerade just nu.');
           }
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -1141,17 +1085,13 @@ class _ServicesSection extends StatelessWidget {
                           Text(
                             service.title,
                             style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           if (service.description.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Text(
                               service.description,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: Colors.white70),
+                              style: Theme.of(context).textTheme.bodyMedium,
                             ),
                           ],
                           if (service.requiresCertification) ...[
@@ -1160,7 +1100,6 @@ class _ServicesSection extends StatelessWidget {
                               children: [
                                 const Icon(
                                   Icons.verified_user_rounded,
-                                  color: Colors.white70,
                                   size: 16,
                                 ),
                                 const SizedBox(width: 6),
@@ -1168,8 +1107,7 @@ class _ServicesSection extends StatelessWidget {
                                   service.certifiedArea?.isNotEmpty == true
                                       ? 'Kräver certifiering: ${service.certifiedArea}'
                                       : 'Kräver certifiering',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: Colors.white70),
+                                  style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ],
                             ),
@@ -1181,10 +1119,7 @@ class _ServicesSection extends StatelessWidget {
                               Text(
                                 '${service.price.toStringAsFixed(2)} ${service.currency.toUpperCase()}',
                                 style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
+                                    ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                               GradientButton(
                                 onPressed: effectiveAction,
@@ -1196,8 +1131,7 @@ class _ServicesSection extends StatelessWidget {
                             const SizedBox(height: 8),
                             Text(
                               gate.helper!,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.white70),
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
                         ],
@@ -1286,10 +1220,9 @@ class _SectionCard extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               if (trailing != null) trailing!,
             ],

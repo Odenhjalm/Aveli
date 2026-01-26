@@ -28,10 +28,9 @@ class TeacherHomeScreen extends ConsumerWidget {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: Colors.white,
         leading: const GoRouterBackButton(),
         title: const Text('Kurssudio'),
-        actions: const [TopNavActionButtons(iconColor: Colors.white)],
+        actions: const [TopNavActionButtons()],
       ),
       body: AppBackground(
         child: SafeArea(
@@ -46,16 +45,13 @@ class TeacherHomeScreen extends ConsumerWidget {
                     Text(
                       'Studio för lärare',
                       style: theme.textTheme.headlineMedium?.copyWith(
-                        color: Colors.white,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Administrera dina kurser, publicera nytt innehåll och följ din katalog.',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.85),
-                      ),
+                      style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 24),
                     GlassCard(
@@ -86,9 +82,7 @@ class TeacherHomeScreen extends ConsumerWidget {
                           const SizedBox(height: 12),
                           Text(
                             'Sätt paketpris för flera kurser och dela betalningslänkar direkt i dina lektioner.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.8),
-                            ),
+                            style: theme.textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 16),
                           bundlesAsync.when(
@@ -174,13 +168,8 @@ class TeacherHomeScreen extends ConsumerWidget {
                                                 bundle['description']
                                                         as String? ??
                                                     '',
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: Colors.white
-                                                          .withValues(
-                                                            alpha: 0.8,
-                                                          ),
-                                                    ),
+                                                style:
+                                                    theme.textTheme.bodySmall,
                                               ),
                                               const SizedBox(height: 10),
                                               Row(
@@ -279,9 +268,7 @@ class TeacherHomeScreen extends ConsumerWidget {
                           const SizedBox(height: 12),
                           Text(
                             'Välj vilka meditationer och livesändningar som ska presenteras på din offentliga sida. Ladda upp omslag, redigera titlar och styr ordningen.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
+                            style: theme.textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 16),
                           GradientButton.icon(
@@ -493,9 +480,7 @@ class TeacherHomeScreen extends ConsumerWidget {
                           const SizedBox(height: 12),
                           Text(
                             'Planera och sänd live-seminarier med deltagare från Aveli-communityn. Du kan skapa schemalagda rum, bjuda in deltagare och starta sändningen direkt från studion.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
+                            style: theme.textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 16),
                           GradientButton.icon(

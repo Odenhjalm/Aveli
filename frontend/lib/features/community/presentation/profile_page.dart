@@ -25,7 +25,6 @@ import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/app_images.dart';
-import 'package:aveli/shared/theme/semantic_text_styles.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
@@ -132,9 +131,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       title: 'Profil',
       extendBodyBehindAppBar: true,
       transparentAppBar: true,
-      appBarForegroundColor: Colors.white,
       showHomeAction: false,
-      actions: const [TopNavActionButtons(iconColor: Colors.white)],
+      actions: const [TopNavActionButtons()],
       background: FullBleedBackground(
         image: AppImages.background,
         alignment: Alignment.center,
@@ -274,16 +272,14 @@ class _IdentitySection extends StatelessWidget {
       actions.add(
         TextButton.icon(
           onPressed: onStartEditing,
-          icon: const Icon(Icons.edit_outlined, color: Colors.white),
+          icon: const Icon(Icons.edit_outlined),
           label: const Text('Ändra'),
-          style: TextButton.styleFrom(foregroundColor: Colors.white),
         ),
       );
     } else {
       actions.addAll([
         TextButton(
           onPressed: saving ? null : onCancelEditing,
-          style: TextButton.styleFrom(foregroundColor: Colors.white70),
           child: const Text('Avbryt'),
         ),
         FilledButton.icon(
@@ -334,17 +330,11 @@ class _IdentitySection extends StatelessWidget {
                       Text(
                         displayName,
                         style: theme.textTheme.headlineSmall?.copyWith(
-                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     const SizedBox(height: 4),
-                    Text(
-                      profile.email,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white70,
-                      ),
-                    ),
+                    Text(profile.email, style: theme.textTheme.bodyMedium),
                   ],
                 ),
               ),
@@ -526,7 +516,6 @@ class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
                   ? Text(
                       initials,
                       style: theme.textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
                         fontWeight: FontWeight.w700,
                       ),
                     )
@@ -639,10 +628,7 @@ class _BioSection extends StatelessWidget {
               bio?.isNotEmpty == true
                   ? bio!
                   : 'Berätta kort om dig själv och vad du erbjuder. Denna text visas i communityt och för potentiella kunder.',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: Colors.white70,
-                height: 1.5,
-              ),
+              style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
             ),
     );
   }
@@ -660,25 +646,19 @@ class _CoursesSection extends StatelessWidget {
     return _GlassSection(
       title: 'Pågående kurser',
       actions: [
-        TextButton(
-          onPressed: onSeeAll,
-          style: TextButton.styleFrom(foregroundColor: Colors.white),
-          child: const Text('Utforska fler'),
-        ),
+        TextButton(onPressed: onSeeAll, child: const Text('Utforska fler')),
       ],
       child: coursesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Text(
           error is AppFailure ? error.message : error.toString(),
-          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+          style: theme.textTheme.bodyMedium,
         ),
         data: (courses) {
           if (courses.isEmpty) {
             return Text(
               'Du är inte inskriven i någon kurs ännu.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white70,
-              ),
+              style: theme.textTheme.bodyMedium,
             );
           }
           return Column(
@@ -713,16 +693,13 @@ class _CoursesSection extends StatelessWidget {
                               course.title,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white,
                               ),
                             ),
                             if ((course.description ?? '').isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
                                 course.description!,
-                                style: context
-                                    .semanticTextStyles
-                                    .courseCardDescription,
+                                style: theme.textTheme.bodyMedium,
                               ),
                             ],
                             if (course.isFreeIntro) ...[
@@ -763,11 +740,7 @@ class _SubscriptionEntry extends StatelessWidget {
       onTap: onOpenSubscription,
       child: Row(
         children: [
-          const Icon(
-            Icons.workspace_premium_rounded,
-            size: 28,
-            color: Colors.white,
-          ),
+          const Icon(Icons.workspace_premium_rounded, size: 28),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -775,23 +748,17 @@ class _SubscriptionEntry extends StatelessWidget {
               children: [
                 Text(
                   'Min prenumeration',
-                  style: t.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
+                  style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Hantera medlemskap och betalplan.',
-                  style: t.bodySmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: Colors.white70),
+          const Icon(Icons.chevron_right),
         ],
       ),
     );
@@ -815,9 +782,7 @@ class _ServicesSection extends StatelessWidget {
           children: [
             Text(
               'Du är certifierad Pro och kan sälja sessioner, ceremonier och vägledning.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white70,
-              ),
+              style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
             GradientButton(
@@ -828,7 +793,6 @@ class _ServicesSection extends StatelessWidget {
             Text(
               'Öppna Studio för att uppdatera tjänster, priser och tillgänglighet.',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: Colors.white,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -844,13 +808,12 @@ class _ServicesSection extends StatelessWidget {
         children: [
           Text(
             'När du slutfört sista delen i Pro-kursen aktiveras möjligheten att sälja tjänster.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+            style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 8),
           Text(
             'Dina publicerade tjänster visas här så snart certifieringen är klar.',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.white,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -873,7 +836,7 @@ class _OrdersSection extends StatelessWidget {
         children: [
           Text(
             'Håll koll på dina kurs- och tjänsteköp. Här kan du se status och kvitton.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+            style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),
           GradientButton.icon(
@@ -901,15 +864,13 @@ class _CertificatesSection extends StatelessWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Text(
           error is AppFailure ? error.message : error.toString(),
-          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+          style: theme.textTheme.bodyMedium,
         ),
         data: (certificates) {
           if (certificates.isEmpty) {
             return Text(
               'Inga certifikat är registrerade ännu. Lägg till dina diplom och intyg via Studio.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white70,
-              ),
+              style: theme.textTheme.bodyMedium,
             );
           }
           return Wrap(
@@ -966,7 +927,6 @@ class _GlassSection extends StatelessWidget {
                       child: Text(
                         title,
                         style: theme.textTheme.titleLarge?.copyWith(
-                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -994,6 +954,7 @@ class _ProfileChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -1004,9 +965,9 @@ class _ProfileChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: Colors.white70),
+          Icon(icon, size: 16, color: theme.colorScheme.onSurface),
           const SizedBox(width: 6),
-          Text(label, style: const TextStyle(color: Colors.white70)),
+          Text(label, style: theme.textTheme.bodySmall),
         ],
       ),
     );
@@ -1060,7 +1021,6 @@ class _CertificateBadge extends StatelessWidget {
                     ? 'Certifikat'
                     : certificate.title,
                 style: theme.textTheme.titleSmall?.copyWith(
-                  color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1068,7 +1028,6 @@ class _CertificateBadge extends StatelessWidget {
               Text(
                 _statusLabel(certificate),
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
               ),

@@ -502,6 +502,7 @@ class _BroadcastPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -510,21 +511,11 @@ class _BroadcastPreview extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: DecoratedBox(
-              decoration: const BoxDecoration(color: Colors.black87),
+              decoration: BoxDecoration(color: theme.colorScheme.surface),
               child: !connected
-                  ? const Center(
-                      child: Text(
-                        'Ansluter...',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    )
+                  ? const Center(child: Text('Ansluter...'))
                   : !cameraEnabled
-                  ? const Center(
-                      child: Text(
-                        'Kameran är avstängd',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    )
+                  ? const Center(child: Text('Kameran är avstängd'))
                   : track == null
                   ? const Center(child: CircularProgressIndicator())
                   : VideoTrackRenderer(

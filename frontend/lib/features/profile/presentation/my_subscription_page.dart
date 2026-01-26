@@ -71,17 +71,13 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
       final url = await api.createPortalUrl();
       if (!mounted) return;
       await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => SubscriptionWebViewPage(url: url),
-        ),
+        MaterialPageRoute(builder: (_) => SubscriptionWebViewPage(url: url)),
       );
     } catch (e) {
       if (!mounted) return;
       final detail = _formatError(e);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Kunde inte öppna kundportal: $detail'),
-        ),
+        SnackBar(content: Text('Kunde inte öppna kundportal: $detail')),
       );
     } finally {
       if (mounted) {
@@ -113,13 +109,16 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
     final nextBilling = membership?.nextBillingAt;
     final statusColor = _statusColor(status, cs);
     final isTrial = status.toLowerCase() == 'trialing';
+    final statusLabelStyle =
+        t.labelLarge?.copyWith(fontWeight: FontWeight.w700) ??
+        const TextStyle(fontWeight: FontWeight.w700);
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () {
             if (context.canPop()) {
               context.pop();
@@ -130,14 +129,11 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.home, color: Colors.white),
+            icon: const Icon(Icons.home),
             onPressed: () => context.go('/'),
           ),
         ],
-        title: const Text(
-          'Min prenumeration',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('Min prenumeration'),
         centerTitle: true,
       ),
       body: Padding(
@@ -161,25 +157,19 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
                           'Medlemskap Aveli',
                           style: t.titleLarge?.copyWith(
                             fontWeight: FontWeight.w800,
-                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Få tillgång till allt premiuminnehåll.',
-                          style: t.bodyMedium?.copyWith(
-                            color: Colors.white70,
-                          ),
+                          style: t.bodyMedium,
                         ),
                       ],
                     ),
                   ),
                   Chip(
                     backgroundColor: statusColor.withValues(alpha: 0.15),
-                    labelStyle: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    labelStyle: statusLabelStyle,
                     label: Text(_statusLabel(status)),
                   ),
                 ],
@@ -195,12 +185,9 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
                     color: Colors.blue.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Text(
+                  child: Text(
                     '14 dagars gratis provperiod',
-                    style: TextStyle(
-                      color: Colors.blue,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
               if (nextBilling != null) ...[
@@ -208,23 +195,20 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
                 Text(
                   'Nästa debitering: '
                   '${MaterialLocalizations.of(context).formatFullDate(nextBilling.toLocal())}',
-                  style: t.bodyMedium?.copyWith(color: Colors.white70),
+                  style: t.bodyMedium,
                 ),
               ],
               const SizedBox(height: 12),
               Text(
                 'Hantera prenumeration',
-                style: t.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+                style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
                 isUnknownStatus
                     ? 'Starta och hantera betalningsuppgifter i Stripe-portalen.'
                     : 'Byt plan, avsluta, uppdatera betalningar och hitta kvitton direkt i kundportalen.',
-                style: t.bodyMedium?.copyWith(color: Colors.white70),
+                style: t.bodyMedium,
               ),
               const SizedBox(height: 20),
               FilledButton(
