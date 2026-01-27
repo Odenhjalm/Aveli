@@ -1986,7 +1986,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         if not row:
             await cur.execute(
                 """
-                SELECT user_id, display_name, photo_url, bio
+                SELECT user_id, display_name, photo_url, bio, created_at
                 FROM app.profiles
                 WHERE user_id = %s
                   AND (role_v2 = 'teacher' OR is_admin = true)
@@ -2014,7 +2014,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
             "headline": "",
             "specialties": [],
             "rating": None,
-            "created_at": None,
+            "created_at": fallback_profile.get("created_at"),
             "profile": profile,
             "verified_certificates": 0,
         }
