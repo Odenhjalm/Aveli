@@ -192,3 +192,74 @@ async def test_cover_from_lesson_media_creates_asset(async_client):
         assert asset["purpose"] == "course_cover"
     finally:
         await cleanup_user(user_id)
+
+
+async def test_cover_clear_deletes_assets(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+
+        source_path = f"media/source/cover/courses/{course_id}/demo.jpg"
+        derived_path = f"media/derived/cover/courses/{course_id}/demo.jpg"
+
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format="jpeg",
+            original_object_path=source_path,
+            original_content_type="image/jpeg",
+            original_filename="demo.jpg",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="uploaded",
+        )
+        assert asset
+
+        await media_assets_repo.mark_course_cover_ready(
+            media_id=str(asset["id"]),
+            streaming_object_path=derived_path,
+            streaming_format="jpg",
+            streaming_storage_bucket=storage_module.public_storage_service.bucket,
+            public_url=f"https://public.local/{derived_path}",
+            codec="jpeg",
+        )
+
+        calls: list[tuple[str, str]] = []
+
+        async def fake_delete_object(self, path):
+            calls.append((self.bucket, path))
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "delete_object",
+            fake_delete_object,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/cover-clear",
+            headers=headers,
+            json={"course_id": course_id},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"ok": True}
+
+        meta = await async_client.get(
+            f"/studio/courses/{course_id}",
+            headers=headers,
+        )
+        assert meta.status_code == 200, meta.text
+        meta_json = meta.json()
+        assert meta_json.get("cover_media_id") is None
+        assert meta_json.get("cover_url") is None
+
+        assert await media_assets_repo.get_media_asset(str(asset["id"])) is None
+
+        assert (storage_module.storage_service.bucket, source_path) in calls
+        assert (storage_module.public_storage_service.bucket, derived_path) in calls
+    finally:
+        await cleanup_user(user_id)

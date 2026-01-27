@@ -316,6 +316,17 @@ async def studio_update_profile_media(
     payload: schemas.TeacherProfileMediaUpdate,
     current: TeacherUser,
 ):
+    previous_cover_media_id: str | None = None
+    if payload.cover_media_id is not None:
+        existing = await repositories.get_teacher_profile_media(
+            item_id=str(item_id),
+            teacher_id=str(current["id"]),
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="Profile media item not found")
+        if existing.get("cover_media_id"):
+            previous_cover_media_id = str(existing["cover_media_id"])
+
     fields: Dict[str, Any] = {}
     if payload.title is not None:
         fields["title"] = payload.title
@@ -339,17 +350,29 @@ async def studio_update_profile_media(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Profile media item not found")
+    current_cover_media_id = str(row["cover_media_id"]) if row.get("cover_media_id") else None
+    if previous_cover_media_id and previous_cover_media_id != current_cover_media_id:
+        await models.cleanup_media_object(previous_cover_media_id)
     return profile_media_item_from_row(row)
 
 
 @router.delete("/profile/media/{item_id}", status_code=204)
 async def studio_delete_profile_media(item_id: UUID, current: TeacherUser):
+    existing = await repositories.get_teacher_profile_media(
+        item_id=str(item_id),
+        teacher_id=str(current["id"]),
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Profile media item not found")
+    cover_media_id = str(existing["cover_media_id"]) if existing.get("cover_media_id") else None
     deleted = await repositories.delete_teacher_profile_media(
         item_id=str(item_id),
         teacher_id=str(current["id"]),
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Profile media item not found")
+    if cover_media_id:
+        await models.cleanup_media_object(cover_media_id)
     return Response(status_code=204)
 
 
@@ -1065,25 +1088,6 @@ async def delete_media(media_id: str, current: TeacherUser):
     storage_bucket = (
         deleted_row.get("storage_bucket") if deleted_row else row.get("storage_bucket")
     )
-    if storage_path:
-        candidates: list[Path] = []
-        try:
-            relative = Path(storage_path)
-            candidates.append(
-                upload_routes._safe_join(upload_routes.UPLOADS_ROOT, *relative.parts)
-            )
-        except HTTPException:
-            pass
-        if storage_bucket:
-            candidates.append(Path(settings.media_root) / storage_bucket / storage_path)
-        candidates.append(Path(settings.media_root) / storage_path)
-        seen: set[Path] = set()
-        for candidate in candidates:
-            if candidate in seen:
-                continue
-            seen.add(candidate)
-            if candidate.exists():
-                candidate.unlink()
 
     if media_asset and deleted_row and deleted_row.get("media_asset_deleted"):
         delete_targets: set[tuple[str, str]] = set()

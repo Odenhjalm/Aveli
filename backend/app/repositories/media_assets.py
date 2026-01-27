@@ -223,32 +223,36 @@ async def mark_media_asset_ready(
     duration_seconds: int | None,
     codec: str | None,
     streaming_storage_bucket: str | None = None,
-) -> None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            UPDATE app.media_assets
-            SET state = 'ready',
-                streaming_object_path = %s,
-                streaming_storage_bucket = coalesce(%s, streaming_storage_bucket, storage_bucket),
-                streaming_format = %s,
-                duration_seconds = %s,
-                codec = %s,
-                error_message = null,
-                next_retry_at = null,
-                processing_locked_at = null,
-                updated_at = now()
-            WHERE id = %s
-            """,
-            (
-                streaming_object_path,
-                streaming_storage_bucket,
-                streaming_format,
-                duration_seconds,
-                codec,
-                media_id,
-            ),
-        )
+) -> bool:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.media_assets
+                SET state = 'ready',
+                    streaming_object_path = %s,
+                    streaming_storage_bucket = coalesce(%s, streaming_storage_bucket, storage_bucket),
+                    streaming_format = %s,
+                    duration_seconds = %s,
+                    codec = %s,
+                    error_message = null,
+                    next_retry_at = null,
+                    processing_locked_at = null,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (
+                    streaming_object_path,
+                    streaming_storage_bucket,
+                    streaming_format,
+                    duration_seconds,
+                    codec,
+                    media_id,
+                ),
+            )
+            updated = cur.rowcount > 0
+            await conn.commit()
+            return updated
 
 
 async def mark_course_cover_ready(
@@ -259,7 +263,7 @@ async def mark_course_cover_ready(
     streaming_storage_bucket: str,
     public_url: str,
     codec: str | None,
-) -> bool:
+) -> dict[str, Any]:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -299,6 +303,7 @@ async def mark_course_cover_ready(
                 )
                 SELECT
                   (SELECT course_id FROM updated) AS course_id,
+                  EXISTS(SELECT 1 FROM updated) AS updated,
                   EXISTS(SELECT 1 FROM applied) AS cover_applied
                 """,
                 (
@@ -312,7 +317,14 @@ async def mark_course_cover_ready(
             )
             row = await cur.fetchone()
             await conn.commit()
-            return bool(row and row.get("cover_applied"))
+            course_id = str(row["course_id"]) if row and row.get("course_id") else None
+            updated = bool(row and row.get("updated"))
+            applied = bool(row and row.get("cover_applied"))
+            return {
+                "course_id": course_id,
+                "updated": updated,
+                "cover_applied": applied,
+            }
 
 
 async def mark_media_asset_failed(

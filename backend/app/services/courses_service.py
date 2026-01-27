@@ -13,6 +13,7 @@ from ..repositories import (
     get_latest_subscription,
     get_profile,
 )
+from . import media_cleanup
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
 
@@ -128,7 +129,10 @@ async def update_course(
 
 async def delete_course(course_id: str) -> bool:
     """Delete a course; additional side-effects land here later."""
-    return await courses_repo.delete_course(course_id)
+    deleted = await courses_repo.delete_course(course_id)
+    if deleted:
+        await media_cleanup.garbage_collect_media()
+    return deleted
 
 
 async def list_modules(course_id: str) -> Sequence[dict[str, Any]]:
@@ -166,7 +170,10 @@ async def upsert_module(
 
 async def delete_module(module_id: str) -> bool:
     """Remove a module using the repository."""
-    return await courses_repo.delete_module(module_id)
+    deleted = await courses_repo.delete_module(module_id)
+    if deleted:
+        await media_cleanup.garbage_collect_media()
+    return deleted
 
 
 async def list_lessons(module_id: str) -> Sequence[dict[str, Any]]:
@@ -260,7 +267,10 @@ async def upsert_lesson(
 
 async def delete_lesson(lesson_id: str) -> bool:
     """Delete a lesson via the repository layer."""
-    return await courses_repo.delete_lesson(lesson_id)
+    deleted = await courses_repo.delete_lesson(lesson_id)
+    if deleted:
+        await media_cleanup.garbage_collect_media()
+    return deleted
 
 
 async def reorder_lessons(

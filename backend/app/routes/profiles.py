@@ -118,20 +118,6 @@ async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...))
 
     previous_media_id = profile.get("avatar_media_id")
     if previous_media_id and previous_media_id != media_id:
-        previous_media = await models.get_media_object(previous_media_id)
-        if previous_media:
-            previous_path = previous_media.get("storage_path")
-            bucket = previous_media.get("storage_bucket")
-            if previous_path:
-                candidates = []
-                if bucket:
-                    candidates.append(
-                        Path(settings.media_root) / bucket / previous_path
-                    )
-                candidates.append(Path(settings.media_root) / previous_path)
-                for candidate in candidates:
-                    if candidate.exists() and candidate != dest_path:
-                        candidate.unlink()
         await models.cleanup_media_object(previous_media_id)
 
     return schemas.Profile(**updated)

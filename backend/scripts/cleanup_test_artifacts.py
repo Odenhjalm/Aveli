@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import asyncio
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -149,10 +150,31 @@ def main() -> int:
             return 2
 
         _delete_targets(conn, targets)
+        try:
+            from app.db import pool as async_pool
+            from app.services import media_cleanup
+
+            async def _run_media_gc():
+                if async_pool.closed:
+                    await async_pool.open(wait=True)
+                try:
+                    return await media_cleanup.garbage_collect_media()
+                finally:
+                    await async_pool.close()
+
+            results = asyncio.run(_run_media_gc())
+            print(
+                "\nMedia GC:",
+                f"lesson_audio_assets={results.get('media_assets_lesson_audio_deleted')}",
+                f"course_cover_assets={results.get('media_assets_course_cover_deleted')}",
+                f"media_objects={results.get('media_objects_deleted')}",
+            )
+        except Exception as exc:
+            print(f"\n[cleanup] warning: media GC failed: {exc}", file=sys.stderr)
+
         print(f"\nDeleted {len(targets)} records.")
         return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

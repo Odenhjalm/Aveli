@@ -2,6 +2,7 @@ import json
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import quote
 
@@ -26,6 +27,7 @@ from .repositories import (
 )
 from .repositories.orders import get_order as repo_get_order
 from .services import courses_service
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +91,10 @@ async def create_media_object(
 async def cleanup_media_object(media_id: str) -> None:
     if not media_id:
         return
+    row = None
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
+            queries = [
                 """
                 DELETE FROM app.media_objects mo
                 WHERE mo.id = %s
@@ -101,10 +104,83 @@ async def cleanup_media_object(media_id: str) -> None:
                   AND NOT EXISTS (
                     SELECT 1 FROM app.profiles p WHERE p.avatar_media_id = mo.id
                   )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.teacher_profile_media tpm WHERE tpm.cover_media_id = mo.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.meditations m WHERE m.media_id = mo.id
+                  )
+                RETURNING mo.storage_path, mo.storage_bucket
                 """,
-                (media_id,),
-            )
+                """
+                DELETE FROM app.media_objects mo
+                WHERE mo.id = %s
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.lesson_media lm WHERE lm.media_id = mo.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.profiles p WHERE p.avatar_media_id = mo.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.meditations m WHERE m.media_id = mo.id
+                  )
+                RETURNING mo.storage_path, mo.storage_bucket
+                """,
+                """
+                DELETE FROM app.media_objects mo
+                WHERE mo.id = %s
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.lesson_media lm WHERE lm.media_id = mo.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.profiles p WHERE p.avatar_media_id = mo.id
+                  )
+                RETURNING mo.storage_path, mo.storage_bucket
+                """,
+            ]
+            for query in queries:
+                try:
+                    await cur.execute(query, (media_id,))
+                    row = await _fetchone(cur)
+                    break
+                except errors.UndefinedTable:
+                    await conn.rollback()
             await conn.commit()
+
+    if not row:
+        return
+
+    storage_path = row.get("storage_path") if isinstance(row, dict) else None
+    storage_bucket = row.get("storage_bucket") if isinstance(row, dict) else None
+    if not storage_path:
+        return
+
+    candidates: list[Path] = []
+    uploads_root = Path(__file__).resolve().parents[1] / "assets" / "uploads"
+    try:
+        relative = Path(str(storage_path))
+        if not relative.is_absolute() and ".." not in relative.parts:
+            candidate = (uploads_root / relative).resolve()
+            if str(candidate).startswith(str(uploads_root.resolve())):
+                candidates.append(candidate)
+    except Exception:  # pragma: no cover - defensive
+        pass
+
+    base_dir = Path(settings.media_root)
+    if storage_bucket:
+        candidates.append(base_dir / str(storage_bucket) / str(storage_path))
+    candidates.append(base_dir / str(storage_path))
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            if candidate.exists() and candidate.is_file():
+                candidate.unlink()
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Failed to delete media object file %s: %s", candidate, exc)
 
 
 async def get_media_object(media_id: str) -> dict | None:

@@ -13,6 +13,7 @@ from ..config import settings
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
+from ..services import media_cleanup
 from ..services import storage_service
 
 logger = logging.getLogger(__name__)
@@ -496,6 +497,7 @@ async def clear_course_cover(
     course_id = str(payload.course_id)
     await _authorize_course_upload(user_id, course_id)
     await courses_repo.clear_course_cover(course_id)
+    await media_cleanup.delete_course_cover_assets_for_course(course_id=course_id)
     return schemas.CoverClearResponse(ok=True)
 
 

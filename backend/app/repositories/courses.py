@@ -513,18 +513,31 @@ async def update_course(
             return row
 
 
-async def clear_course_cover(course_id: str) -> None:
+async def clear_course_cover(course_id: str) -> str | None:
     query = """
-        UPDATE app.courses
-        SET cover_media_id = null,
-            cover_url = null,
-            updated_at = now()
-        WHERE id = %s
+        WITH previous AS (
+          SELECT cover_media_id
+          FROM app.courses
+          WHERE id = %s
+        ),
+        updated AS (
+          UPDATE app.courses
+          SET cover_media_id = null,
+              cover_url = null,
+              updated_at = now()
+          WHERE id = %s
+          RETURNING id
+        )
+        SELECT previous.cover_media_id
+        FROM previous
+        JOIN updated ON true
     """
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (course_id,))
+            await cur.execute(query, (course_id, course_id))
+            row = await cur.fetchone()
             await conn.commit()
+            return str(row["cover_media_id"]) if row and row.get("cover_media_id") else None
 
 
 async def delete_course(course_id: str) -> bool:

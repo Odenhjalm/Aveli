@@ -156,3 +156,79 @@ async def test_delete_pipeline_audio_removes_storage_objects(async_client, monke
         assert derived_path in called_paths
     finally:
         await cleanup_user(user_id)
+
+
+async def test_delete_lesson_cleans_pipeline_assets(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+
+        source_path = (
+            f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.wav"
+        )
+        derived_path = (
+            f"media/derived/audio/courses/{course_id}/lessons/{lesson_id}/demo.mp3"
+        )
+
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=lesson_id,
+            media_type="audio",
+            purpose="lesson_audio",
+            ingest_format="wav",
+            original_object_path=source_path,
+            original_content_type="audio/wav",
+            original_filename="demo.wav",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="ready",
+        )
+        assert asset
+        await media_assets_repo.mark_media_asset_ready(
+            media_id=str(asset["id"]),
+            streaming_object_path=derived_path,
+            streaming_format="mp3",
+            duration_seconds=120,
+            codec="mp3",
+        )
+
+        media_row = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="audio",
+            storage_path=None,
+            storage_bucket=storage_module.storage_service.bucket,
+            media_id=None,
+            media_asset_id=str(asset["id"]),
+            position=1,
+            duration_seconds=None,
+        )
+        assert media_row
+
+        calls: list[tuple[str, str]] = []
+
+        async def fake_delete_object(self, path):
+            calls.append((self.bucket, path))
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "delete_object",
+            fake_delete_object,
+            raising=True,
+        )
+
+        resp = await async_client.delete(
+            f"/studio/lessons/{lesson_id}",
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"deleted": True}
+
+        assert await media_assets_repo.get_media_asset(str(asset["id"])) is None
+
+        called_paths = {path for _, path in calls}
+        assert source_path in called_paths
+        assert derived_path in called_paths
+    finally:
+        await cleanup_user(user_id)

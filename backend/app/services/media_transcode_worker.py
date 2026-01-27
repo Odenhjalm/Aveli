@@ -13,6 +13,7 @@ import httpx
 from ..config import settings
 from ..repositories import media_assets as media_assets_repo
 from ..services import storage_service
+from . import media_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +242,7 @@ async def _transcode_audio_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
         )
         await _upload_file(upload.url, output_file, upload.headers)
 
-    await media_assets_repo.mark_media_asset_ready(
+    updated = await media_assets_repo.mark_media_asset_ready(
         media_id=str(asset["id"]),
         streaming_object_path=output_path,
         streaming_format="mp3",
@@ -249,6 +250,22 @@ async def _transcode_audio_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
         codec="mp3",
         streaming_storage_bucket=source_storage.bucket,
     )
+    if not updated:
+        try:
+            await source_storage.delete_object(output_path)
+        except storage_service.StorageServiceError as exc:
+            logger.warning(
+                "Failed to cleanup derived audio after missing media asset %s (%s): %s",
+                asset.get("id"),
+                output_path,
+                exc,
+            )
+        logger.info(
+            "Media asset missing after audio transcode; cleaned up derived output media_id=%s output=%s",
+            asset.get("id"),
+            output_path,
+        )
+        return
     logger.info("Media transcode ready media_id=%s output=%s", asset["id"], output_path)
 
 
@@ -288,7 +305,7 @@ async def _transcode_cover_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
         await _upload_file(upload.url, output_file, upload.headers)
         public_url = public_storage.public_url(output_path)
 
-    applied = await media_assets_repo.mark_course_cover_ready(
+    result = await media_assets_repo.mark_course_cover_ready(
         media_id=str(asset["id"]),
         streaming_object_path=output_path,
         streaming_storage_bucket=public_storage.bucket,
@@ -296,11 +313,37 @@ async def _transcode_cover_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
         public_url=public_url,
         codec="jpeg",
     )
+    if not result.get("updated"):
+        try:
+            await public_storage.delete_object(output_path)
+        except storage_service.StorageServiceError as exc:
+            logger.warning(
+                "Failed to cleanup derived cover after missing media asset %s (%s): %s",
+                asset.get("id"),
+                output_path,
+                exc,
+            )
+        logger.info(
+            "Media asset missing after cover transcode; cleaned up derived output media_id=%s output=%s",
+            asset.get("id"),
+            output_path,
+        )
+        return
+
+    if result.get("cover_applied") and asset.get("course_id"):
+        try:
+            await media_cleanup.prune_course_cover_assets(course_id=str(asset["course_id"]))
+        except Exception as exc:  # pragma: no cover - best-effort cleanup
+            logger.warning(
+                "Course cover prune failed course_id=%s: %s",
+                asset.get("course_id"),
+                exc,
+            )
     logger.info(
         "Course cover ready media_id=%s output=%s applied=%s",
         asset["id"],
         output_path,
-        applied,
+        result.get("cover_applied"),
     )
 
 
