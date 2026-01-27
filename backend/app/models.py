@@ -539,9 +539,13 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
                         c.updated_at,
                         COALESCE(pr.priority, 1000) AS teacher_priority
                     FROM app.courses c
+                    JOIN app.profiles prof
+                      ON prof.user_id = c.created_by
                     LEFT JOIN app.course_display_priorities pr
                       ON pr.teacher_id = c.created_by
                     WHERE c.is_published = true
+                      AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+                      AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
                     ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC
                     LIMIT %s
                     """,
@@ -569,9 +573,13 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
                         c.updated_at,
                         COALESCE(pr.priority, 1000) AS teacher_priority
                     FROM app.courses c
+                    JOIN app.profiles prof
+                      ON prof.user_id = c.created_by
                     LEFT JOIN app.course_display_priorities pr
                       ON pr.teacher_id = c.created_by
                     WHERE c.is_published = true
+                      AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+                      AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
                     ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC
                     LIMIT %s
                     """,
