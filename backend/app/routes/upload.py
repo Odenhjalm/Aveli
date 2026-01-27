@@ -43,6 +43,7 @@ class UploadMediaType(str, Enum):
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 files_router = APIRouter(prefix="/api/files", tags=["files"])
+legacy_router = APIRouter(prefix="/upload", tags=["upload"])
 
 _ALLOWED_PROFILE_PREFIXES = ("image/",)
 _ALLOWED_MEDIA_PREFIXES = {
@@ -379,6 +380,40 @@ async def upload_course_media(
     return response
 
 
+@legacy_router.post("/public-media")
+async def upload_public_media(
+    request: Request,
+    file: Annotated[UploadFile, File(description="Public media upload")],
+    current: TeacherUser,
+) -> dict[str, Any]:
+    user_id = str(current["id"])
+    relative_dir = Path("public-media") / user_id
+    destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)
+    write_result = await _write_upload(
+        destination_dir,
+        file,
+        allowed_prefixes=_LESSON_ALLOWED_PREFIXES + tuple(_LESSON_ALLOWED_EXACT_TYPES),
+    )
+    relative_path = relative_dir / write_result.filename
+    content_type = (
+        file.content_type
+        or mimetypes.guess_type(write_result.destination_path.name)[0]
+        or "application/octet-stream"
+    )
+    url = _public_url(request, relative_path)
+    if url is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Public upload storage misconfigured",
+        )
+    return {
+        "url": url,
+        "path": relative_path.as_posix(),
+        "content_type": content_type,
+        "size": write_result.size,
+    }
+
+
 @files_router.get("/{path:path}", name="serve_uploaded_file")
 async def serve_uploaded_file(path: str):
     if not path:
@@ -404,4 +439,9 @@ async def serve_uploaded_file(path: str):
     return response
 
 
-__all__ = ["router", "files_router"]
+# Backwards-compatible aliases for older Flutter Web routes.
+legacy_router.add_api_route("/profile", upload_profile_media, methods=["POST"])
+legacy_router.add_api_route("/course-media", upload_course_media, methods=["POST"])
+
+
+__all__ = ["router", "files_router", "legacy_router"]

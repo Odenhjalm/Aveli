@@ -156,6 +156,7 @@ app.include_router(stripe_webhooks.router)
 app.include_router(livekit_webhooks.router)
 app.include_router(upload.router)
 app.include_router(upload.files_router)
+app.include_router(upload.legacy_router)
 
 
 @app.get("/healthz")
