@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from psycopg import InterfaceError, errors
 from psycopg.rows import dict_row
@@ -28,6 +28,7 @@ from .repositories import (
 from .repositories.orders import get_order as repo_get_order
 from .services import courses_service
 from .config import settings
+from .utils import media_signer
 
 logger = logging.getLogger(__name__)
 
@@ -595,7 +596,7 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
             """
             SELECT
               user_id,
-              COALESCE(NULLIF(display_name, ''), initcap(split_part(email, '@', 1))) AS display_name,
+              display_name,
               photo_url,
               bio
             FROM app.profiles
@@ -606,7 +607,38 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
             """,
             ("avelibooks@gmail.com", limit),
         )
-        return await cur.fetchall()
+        rows = await cur.fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["photo_url"] = _normalize_public_profile_photo_url(item.get("photo_url"))
+        items.append(item)
+    return items
+
+
+def _normalize_public_profile_photo_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    value = url.strip()
+    if not value:
+        return None
+
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"}:
+        if parsed.path.startswith(("/api/files/", "/profiles/avatar/", "/auth/avatar/")):
+            suffix = f"?{parsed.query}" if parsed.query else ""
+            return f"{parsed.path}{suffix}"
+        return value
+
+    if value.startswith(("api/files/", "profiles/avatar/", "auth/avatar/")):
+        return f"/{value}"
+
+    if value.startswith(("/api/files/", "/profiles/avatar/", "/auth/avatar/")):
+        return value
+
+    public_url = media_signer.public_download_url(value)
+    return public_url or value
 
 
 async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]:
@@ -1907,7 +1939,7 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
             profile = {
                 "user_id": row.get("user_id"),
                 "display_name": row.get("display_name"),
-                "photo_url": row.get("photo_url"),
+                "photo_url": _normalize_public_profile_photo_url(row.get("photo_url")),
                 "bio": row.get("bio"),
             }
         items.append(
@@ -1951,8 +1983,41 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         )
         row = await _fetchone(cur)
 
-    if not row:
+        if not row:
+            await cur.execute(
+                """
+                SELECT user_id, display_name, photo_url, bio
+                FROM app.profiles
+                WHERE user_id = %s
+                  AND (role_v2 = 'teacher' OR is_admin = true)
+                  AND lower(email) = lower(%s)
+                LIMIT 1
+                """,
+                (user_id, "avelibooks@gmail.com"),
+            )
+            fallback_profile = await _fetchone(cur)
+        else:
+            fallback_profile = None
+
+    if not row and not fallback_profile:
         return None
+
+    if not row and fallback_profile:
+        profile = {
+            "user_id": fallback_profile.get("user_id"),
+            "display_name": fallback_profile.get("display_name"),
+            "photo_url": _normalize_public_profile_photo_url(fallback_profile.get("photo_url")),
+            "bio": fallback_profile.get("bio"),
+        }
+        return {
+            "user_id": fallback_profile.get("user_id"),
+            "headline": "",
+            "specialties": [],
+            "rating": None,
+            "created_at": None,
+            "profile": profile,
+            "verified_certificates": 0,
+        }
 
     specialties = _as_string_list(row.get("specialties"))
     rating = row.get("rating")
@@ -1963,7 +2028,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         profile = {
             "user_id": row.get("user_id"),
             "display_name": row.get("display_name"),
-            "photo_url": row.get("photo_url"),
+            "photo_url": _normalize_public_profile_photo_url(row.get("photo_url")),
             "bio": row.get("bio"),
         }
     return {

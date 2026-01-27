@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_extras.dart';
@@ -16,6 +17,7 @@ import 'package:aveli/features/community/application/certification_gate.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/widgets/app_network_image.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
@@ -54,6 +56,9 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
         }
         final profile = (teacher['profile'] as Map?)?.cast<String, dynamic>();
         final display = profile?['display_name'] as String? ?? 'Lärare';
+        final avatarPath = profile?['photo_url'] as String? ?? '';
+        final config = ref.read(appConfigProvider);
+        final resolvedAvatar = _resolveUrl(config.apiBaseUrl, avatarPath);
         final headline = (teacher['headline'] as String?) ?? '';
         final session = ref.watch(routeSessionSnapshotProvider);
         final viewerCerts = ref.watch(myCertificatesProvider);
@@ -64,7 +69,11 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
             children: [
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.person_rounded),
+                  leading: AppAvatar(
+                    url: resolvedAvatar,
+                    size: 48,
+                    icon: Icons.person_rounded,
+                  ),
                   title: Text(
                     display,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -183,6 +192,16 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
   }
 
   String _friendlyError(Object error) => AppFailure.from(error).message;
+
+  static String? _resolveUrl(String apiBaseUrl, String? value) {
+    if (value == null || value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null) return value;
+    if (uri.hasScheme) return uri.toString();
+    final base = Uri.parse(apiBaseUrl);
+    final normalized = value.startsWith('/') ? value : '/$value';
+    return base.resolve(normalized).toString();
+  }
 }
 
 class _CertificatesCard extends StatelessWidget {

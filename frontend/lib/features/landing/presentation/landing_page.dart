@@ -152,26 +152,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
           .map((e) => Map<String, dynamic>.from(e))
           .toList(growable: true);
 
-      final hasOden = teacherItems.any((item) {
-        final profile = (item['profile'] as Map?) ?? item;
-        final name = (profile['display_name'] ?? profile['name'])
-            ?.toString()
-            .toLowerCase();
-        return name == 'oden';
-      });
-
-      if (!hasOden) {
-        final currentProfile = ref.read(authControllerProvider).profile;
-        if (currentProfile != null && currentProfile.isTeacher) {
-          teacherItems.insert(0, {
-            'display_name': currentProfile.displayName ?? currentProfile.email,
-            'photo_url': currentProfile.photoUrl,
-            'bio': currentProfile.bio,
-            'user_id': currentProfile.id,
-          });
-        }
-      }
-
       final teachersWithOden = LandingSectionState(
         items: teacherItems,
         errorMessage: teachers.errorMessage,
@@ -1475,47 +1455,60 @@ class _TeacherPillData extends StatelessWidget {
     final merged = rawProfile.isNotEmpty
         ? rawProfile
         : map.cast<String, dynamic>();
+    final userId = (map['user_id'] ?? merged['user_id'])?.toString() ?? '';
     final name = (merged['display_name'] as String?) ?? 'Lärare';
     final avatar = (merged['photo_url'] as String?) ?? '';
     final bio = (merged['bio'] as String?) ?? '';
     final resolvedAvatar = _resolveUrl(avatar);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: .65),
-            border: Border.all(color: Colors.transparent),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppAvatar(url: resolvedAvatar, size: 48),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: userId.isEmpty
+            ? null
+            : () => context.goNamed(
+                  AppRoute.teacherProfile,
+                  pathParameters: {'id': userId},
+                ),
+        borderRadius: BorderRadius.circular(22),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .65),
+                border: Border.all(color: Colors.transparent),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    name,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  if (bio.isNotEmpty)
-                    Text(
-                      bio,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
+                  AppAvatar(url: resolvedAvatar, size: 48),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                      if (bio.isNotEmpty)
+                        Text(
+                          bio,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
