@@ -45,7 +45,7 @@ async def test_home_audio_returns_list(async_client):
 
 @pytest.mark.anyio("asyncio")
 async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_client):
-    email = f"home_audio_owner_{uuid.uuid4().hex[:6]}@example.com"
+    email = f"home_audio_owner_{uuid.uuid4().hex[:6]}@example.org"
     password = "Passw0rd!"
     register_resp = await async_client.post(
         "/auth/register",
@@ -61,6 +61,14 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     me_resp = await async_client.get("/auth/me", headers=headers)
     assert me_resp.status_code == 200, me_resp.text
     owner_id = me_resp.json()["user_id"]
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
+                (owner_id,),
+            )
+            await conn.commit()
 
     slug = f"home-audio-published-{uuid.uuid4().hex[:8]}"
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]

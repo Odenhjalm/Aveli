@@ -1097,10 +1097,13 @@ async def list_home_audio_media(
         JOIN app.lessons l ON l.id = lm.lesson_id
         JOIN app.modules m ON m.id = l.module_id
         JOIN app.courses c ON c.id = m.course_id
+        JOIN app.profiles prof ON prof.user_id = c.created_by
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
         LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         {enrollment_join}
         WHERE lm.kind = 'audio'
+          AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+          AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
           {access_clause}
         ORDER BY lm.created_at DESC
         LIMIT %s

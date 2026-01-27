@@ -32,6 +32,16 @@ async def register_user(client, email: str, password: str, display_name: str) ->
     return tokens["access_token"], me_resp.json()["user_id"]
 
 
+async def promote_to_teacher(user_id: str) -> None:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
+                (user_id,),
+            )
+            await conn.commit()
+
+
 async def insert_course(
     *,
     slug: str,
@@ -186,10 +196,11 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     password = "Passw0rd!"
     owner_token, owner_id = await register_user(
         async_client,
-        f"media_owner_{uuid.uuid4().hex[:6]}@example.com",
+        f"media_owner_{uuid.uuid4().hex[:6]}@example.org",
         password,
         "Owner",
     )
+    await promote_to_teacher(owner_id)
     student_token, student_id = await register_user(
         async_client,
         f"media_student_{uuid.uuid4().hex[:6]}@example.com",
