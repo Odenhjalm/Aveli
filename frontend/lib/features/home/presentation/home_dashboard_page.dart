@@ -21,7 +21,6 @@ import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
@@ -50,7 +49,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final feedAsync = ref.watch(homeFeedProvider);
     final servicesAsync = ref.watch(homeServicesProvider);
     final exploreAsync = ref.watch(landing.popularCoursesProvider);
-    final coursesAsync = ref.watch(coursesProvider);
     final seminarsAsync = ref.watch(publicSeminarsProvider);
     final certificatesAsync = ref.watch(myCertificatesProvider);
     final profile = authState.profile;
@@ -156,7 +154,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                           Expanded(
                             child: _ExploreCoursesSection(
                               section: exploreAsync,
-                              fallbackCourses: coursesAsync,
                               mediaRepository: mediaRepository,
                             ),
                           ),
@@ -198,7 +195,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                   const SizedBox(height: 16),
                   _ExploreCoursesSection(
                     section: exploreAsync,
-                    fallbackCourses: coursesAsync,
                     mediaRepository: mediaRepository,
                   ),
                   const SizedBox(height: 16),
@@ -293,8 +289,6 @@ class _HomeAudioList extends ConsumerStatefulWidget {
 
 class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   String? _selectedId;
-  Future<MediaPlaybackUrl>? _playbackFuture;
-  String? _playbackMediaId;
 
   @override
   void didUpdateWidget(covariant _HomeAudioList oldWidget) {
@@ -311,27 +305,9 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     final items = widget.items;
     if (items.isEmpty) return const SizedBox.shrink();
     final selected = _resolveSelected(items);
-    final mediaRepo = ref.watch(mediaRepositoryProvider);
-    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
-    String? resolvedUrl = selected.preferredUrl;
-    if (resolvedUrl != null) {
-      try {
-        resolvedUrl = mediaRepo.resolveUrl(resolvedUrl);
-      } catch (_) {}
-    }
     final durationHint = (selected.durationSeconds ?? 0) > 0
         ? Duration(seconds: selected.durationSeconds!)
         : null;
-
-    if (selected.mediaAssetId != null && selected.mediaState == 'ready') {
-      if (_playbackMediaId != selected.mediaAssetId) {
-        _playbackMediaId = selected.mediaAssetId;
-        _playbackFuture = pipelineRepo.fetchPlaybackUrl(selected.mediaAssetId!);
-      }
-    } else {
-      _playbackMediaId = null;
-      _playbackFuture = null;
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,15 +329,9 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
         ],
         const SizedBox(height: 10),
         if (selected.mediaAssetId != null)
-          _buildPipelineAudio(selected, durationHint: durationHint)
-        else if (resolvedUrl == null)
-          const Text('Ljudlänken saknas för detta spår.')
+          _buildPipelineStatusOrPlay(selected, durationHint: durationHint)
         else
-          InlineAudioPlayer(
-            url: resolvedUrl,
-            durationHint: durationHint,
-            compact: true,
-          ),
+          _buildLegacyStatusOrPlay(selected, durationHint: durationHint),
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerRight,
@@ -375,7 +345,10 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     );
   }
 
-  Widget _buildPipelineAudio(HomeAudioItem item, {Duration? durationHint}) {
+  Widget _buildPipelineStatusOrPlay(
+    HomeAudioItem item, {
+    Duration? durationHint,
+  }) {
     final state = item.mediaState ?? 'uploaded';
     if (state != 'ready') {
       final message = state == 'failed'
@@ -383,29 +356,79 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
           : 'Ljudet bearbetas…';
       return Text(message);
     }
-    final future = _playbackFuture;
-    if (future == null) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ElevatedButton.icon(
+        onPressed: () => _playPipeline(item, durationHint: durationHint),
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('Spela'),
+      ),
+    );
+  }
+
+  Widget _buildLegacyStatusOrPlay(
+    HomeAudioItem item, {
+    Duration? durationHint,
+  }) {
+    final url = item.preferredUrl;
+    if (url == null || url.trim().isEmpty) {
       return const Text('Ljudlänken saknas för detta spår.');
     }
-    return FutureBuilder<MediaPlaybackUrl>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: LinearProgressIndicator(),
-          );
-        }
-        if (!snapshot.hasData) {
-          return const Text('Kunde inte hämta uppspelningslänk.');
-        }
-        final url = snapshot.data!.playbackUrl.toString();
-        return InlineAudioPlayer(
-          url: url,
-          durationHint: durationHint,
-          compact: true,
-        );
-      },
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ElevatedButton.icon(
+        onPressed: () => _playLegacy(item, durationHint: durationHint),
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('Spela'),
+      ),
+    );
+  }
+
+  Future<void> _playPipeline(
+    HomeAudioItem item, {
+    Duration? durationHint,
+  }) async {
+    final mediaId = item.mediaAssetId;
+    if (mediaId == null || mediaId.trim().isEmpty) return;
+    try {
+      final repo = ref.read(mediaPipelineRepositoryProvider);
+      final playback = await repo.fetchPlaybackUrl(mediaId);
+      if (!mounted) return;
+      await showMediaPlayerSheet(
+        context,
+        kind: 'audio',
+        url: playback.playbackUrl.toString(),
+        title: item.displayTitle,
+        durationHint: durationHint,
+      );
+    } catch (error, stackTrace) {
+      if (!mounted) return;
+      final failure = AppFailure.from(error, stackTrace);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Kunde inte spela upp ljud: ${failure.message}'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _playLegacy(HomeAudioItem item, {Duration? durationHint}) async {
+    final preferred = item.preferredUrl;
+    if (preferred == null || preferred.trim().isEmpty) return;
+    String url = preferred.trim();
+    final repo = ref.read(mediaRepositoryProvider);
+    try {
+      url = repo.resolveUrl(url);
+    } catch (_) {
+      // Keep original URL when it's already absolute (e.g. signed storage URL).
+    }
+    if (!mounted) return;
+    await showMediaPlayerSheet(
+      context,
+      kind: 'audio',
+      url: url,
+      title: item.displayTitle,
+      durationHint: durationHint,
     );
   }
 
@@ -573,19 +596,17 @@ String _formatDuration(Duration duration) {
   return hours > 0 ? '$hours:$mm:$ss' : '$mm:$ss';
 }
 
-class _ExploreCoursesSection extends StatelessWidget {
+class _ExploreCoursesSection extends ConsumerWidget {
   const _ExploreCoursesSection({
     required this.section,
-    required this.fallbackCourses,
     required this.mediaRepository,
   });
 
   final AsyncValue<landing.LandingSectionState> section;
-  final AsyncValue<List<CourseSummary>> fallbackCourses;
   final MediaRepository mediaRepository;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return _SectionCard(
       title: 'Utforska kurser',
       trailing: TextButton(
@@ -593,20 +614,25 @@ class _ExploreCoursesSection extends StatelessWidget {
         child: const Text('Visa alla'),
       ),
       child: section.when(
-        loading: () => _buildFallback(context),
-        error: (error, _) => _buildFallback(context, fallbackError: error),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => _buildFallback(context, ref, fallbackError: error),
         data: (state) {
           final items = state.items;
           if (items.isNotEmpty) {
             return _buildCourseList(context, items, mediaRepository);
           }
-          return _buildFallback(context);
+          return _buildFallback(context, ref);
         },
       ),
     );
   }
 
-  Widget _buildFallback(BuildContext context, {Object? fallbackError}) {
+  Widget _buildFallback(
+    BuildContext context,
+    WidgetRef ref, {
+    Object? fallbackError,
+  }) {
+    final fallbackCourses = ref.watch(coursesProvider);
     return fallbackCourses.when(
       data: (courses) {
         if (courses.isEmpty) {

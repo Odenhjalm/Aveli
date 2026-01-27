@@ -41,7 +41,7 @@ class _FakeAuthController extends AuthController {
   }
 
   @override
-  Future<void> loadSession() async {}
+  Future<void> loadSession({bool hydrateProfile = true}) async {}
 }
 
 class _FakeAuthRepository implements AuthRepository {

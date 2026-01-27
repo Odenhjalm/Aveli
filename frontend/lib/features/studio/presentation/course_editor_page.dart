@@ -29,6 +29,10 @@ import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/landing/application/landing_providers.dart'
+    as landing;
+import 'package:aveli/features/courses/application/course_providers.dart'
+    show coursesProvider;
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
@@ -154,7 +158,9 @@ String? _extractMediaIdFromToken(String token) {
   final parts = token.split('.');
   if (parts.length != 3) return null;
   try {
-    final payloadRaw = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+    final payloadRaw = utf8.decode(
+      base64Url.decode(base64Url.normalize(parts[1])),
+    );
     final jsonValue = json.decode(payloadRaw);
     if (jsonValue is! Map<String, dynamic>) return null;
     final sub = jsonValue['sub'];
@@ -3584,6 +3590,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             .toList();
       });
       ref.invalidate(myCoursesProvider);
+      ref.invalidate(landing.popularCoursesProvider);
+      ref.invalidate(landing.myStudioCoursesProvider);
+      ref.invalidate(coursesProvider);
       await _loadCourseMeta();
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Kursinformation sparad.');
