@@ -117,12 +117,9 @@ app.add_middleware(
     allow_origin_regex=cors_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Authorization",
-        "Content-Type",
-        "Accept",
-        "X-Requested-With",
-    ],
+    # Allow all headers so browser preflights don't fail when uploads include
+    # additional metadata headers (e.g. resumable/tus uploads).
+    allow_headers=["*"],
 )
 
 app.mount("/assets", StaticFiles(directory=ASSETS_ROOT), name="assets")
