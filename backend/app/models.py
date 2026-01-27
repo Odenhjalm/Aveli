@@ -593,13 +593,18 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT user_id, display_name, photo_url, bio
+            SELECT
+              user_id,
+              COALESCE(NULLIF(display_name, ''), initcap(split_part(email, '@', 1))) AS display_name,
+              photo_url,
+              bio
             FROM app.profiles
-            WHERE role_v2 = 'teacher' OR is_admin = true
+            WHERE (role_v2 = 'teacher' OR is_admin = true)
+              AND lower(email) = lower(%s)
             ORDER BY display_name NULLS LAST
             LIMIT %s
             """,
-            (limit,),
+            ("avelibooks@gmail.com", limit),
         )
         return await cur.fetchall()
 
