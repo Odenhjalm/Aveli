@@ -54,6 +54,18 @@ void main() {
       verifyNever(() => repo.logout());
     });
 
+    test('skips profile fetch when hydrateProfile is false', () async {
+      when(() => repo.currentToken()).thenAnswer((_) async => 'token');
+
+      await controller.loadSession(hydrateProfile: false);
+
+      expect(controller.state.profile, isNull);
+      expect(controller.state.isLoading, isFalse);
+      expect(gate.allowed, isFalse);
+      verifyNever(() => repo.getCurrentProfile());
+      verifyNever(() => repo.logout());
+    });
+
     test('clears state when no token stored', () async {
       when(() => repo.currentToken()).thenAnswer((_) async => null);
 

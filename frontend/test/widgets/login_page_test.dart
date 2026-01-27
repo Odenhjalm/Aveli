@@ -21,7 +21,7 @@ class _TestAuthController extends AuthController {
   _TestAuthController(AuthRepository repo) : super(repo, AuthHttpObserver());
 
   @override
-  Future<void> loadSession() async {}
+  Future<void> loadSession({bool hydrateProfile = true}) async {}
 }
 
 void main() {

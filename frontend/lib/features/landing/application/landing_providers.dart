@@ -60,7 +60,10 @@ Future<LandingSectionState> _fetchLandingSection(
   final api = ref.read(apiClientProvider);
   final mediaRepository = ref.read(mediaRepositoryProvider);
   try {
-    final response = await api.get<Map<String, dynamic>>(path);
+    final response = await api.get<Map<String, dynamic>>(
+      path,
+      skipAuth: true,
+    );
     final items = _castList(response['items'])
         .map((item) {
           final map = Map<String, dynamic>.from(item);

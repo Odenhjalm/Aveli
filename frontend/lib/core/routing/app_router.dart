@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/not_found_page.dart';
 import 'package:aveli/core/routing/route_access.dart';
@@ -74,6 +77,17 @@ class AppRouterNotifier extends ChangeNotifier {
     final session = ref.read(routeSessionSnapshotProvider);
     final meta = _resolveRouteMeta(state);
     final isAuthed = session.isAuthenticated;
+
+    if (isAuthed && meta.level != RouteAccessLevel.public) {
+      try {
+        final authState = ref.read(authControllerProvider);
+        if (authState.profile == null && !authState.isLoading) {
+          unawaited(ref.read(authControllerProvider.notifier).hydrateProfile());
+        }
+      } catch (_) {
+        // Auth stack might be intentionally stubbed out (tests).
+      }
+    }
 
     if (!isAuthed) {
       if (meta.level == RouteAccessLevel.public) {
