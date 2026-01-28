@@ -603,9 +603,9 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
               u.raw_user_meta_data->>'picture' AS auth_picture_url
             FROM app.profiles prof
             LEFT JOIN auth.users u ON u.id = prof.user_id
-            WHERE (role_v2 = 'teacher' OR is_admin = true)
-              AND lower(email) = lower(%s)
-            ORDER BY display_name NULLS LAST
+            WHERE (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+              AND lower(prof.email) = lower(%s)
+            ORDER BY prof.display_name NULLS LAST
             LIMIT %s
             """,
             ("avelibooks@gmail.com", limit),
@@ -2072,9 +2072,9 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                        u.raw_user_meta_data->>'picture' AS auth_picture_url
                 FROM app.profiles prof
                 LEFT JOIN auth.users u ON u.id = prof.user_id
-                WHERE user_id = %s
-                  AND (role_v2 = 'teacher' OR is_admin = true)
-                  AND lower(email) = lower(%s)
+                WHERE prof.user_id = %s
+                  AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+                  AND lower(prof.email) = lower(%s)
                 LIMIT 1
                 """,
                 (user_id, "avelibooks@gmail.com"),
