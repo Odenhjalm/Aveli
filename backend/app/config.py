@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
-    supabase_url: AnyUrl
+    supabase_url: AnyUrl | None = None
     supabase_anon_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -14,7 +14,8 @@ class Settings(BaseSettings):
             "SUPABASE_PUBLIC_API_KEY",
         ),
     )
-    supabase_service_role_key: str = Field(
+    supabase_service_role_key: str | None = Field(
+        default=None,
         validation_alias=AliasChoices(
             "SUPABASE_SERVICE_ROLE_KEY",
             "SUPABASE_SECRET_API_KEY",
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     supabase_jwt_issuer: str | None = Field(
         default=None, validation_alias=AliasChoices("SUPABASE_JWT_ISSUER")
     )
-    supabase_db_url: AnyUrl
+    supabase_db_url: AnyUrl | None = None
     database_url: AnyUrl | None = None
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
@@ -158,6 +159,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _populate_database_url(self):
         if self.database_url is None:
+            if self.supabase_db_url is None:
+                raise ValueError("DATABASE_URL or SUPABASE_DB_URL is required")
             self.database_url = self.supabase_db_url
         return self
 
