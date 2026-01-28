@@ -17,7 +17,7 @@ AVELI uses Supabase Storage plus the FastAPI media service to keep course files 
 
 | Endpoint | Bucket | Notes |
 | --- | --- | --- |
-| `POST /api/upload/profile` | `public-media` (under `users/` + user id) | Image-only; response includes `/api/files/...` URL. |
+| `POST /api/upload/profile` | `public-media` (under `users/` + user id) | Image-only; response includes a stable public URL for the uploaded image. |
 | `POST /api/upload/course-media` (intro) | `public-media` | Accepts audio/video/image/pdf; stored under course + lesson. |
 | `POST /api/upload/course-media` (non-intro) | `course-media` | Requires teacher permissions; FastAPI immediately registers the media row and issues signed URL metadata. |
 
