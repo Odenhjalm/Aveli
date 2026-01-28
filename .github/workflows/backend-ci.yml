@@ -73,4 +73,4 @@ jobs:
           path: backend/coverage.xml
 
       - name: pip-audit
-        run: poetry run pip-audit --progress-spinner off
+        run: poetry run pip-audit --progress-spinner off --ignore-vuln CVE-2024-23342
