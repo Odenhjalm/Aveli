@@ -16,30 +16,34 @@ if [[ -n "$WEB_DEFINE_FILE" ]]; then
   "$SCRIPT_DIR/guard_web_defines.sh" "$WEB_DEFINE_FILE"
   DEFINE_ARGS+=(--dart-define-from-file="$WEB_DEFINE_FILE")
 else
-  if [[ -z "${SUPABASE_URL:-}" ]]; then
-    echo "Missing required env var: SUPABASE_URL" >&2
-    exit 1
-  fi
-  SUPABASE_CLIENT_KEY="${SUPABASE_PUBLISHABLE_API_KEY:-${SUPABASE_PUBLIC_API_KEY:-}}"
-  if [[ -z "$SUPABASE_CLIENT_KEY" ]]; then
-    echo "Missing required env var: SUPABASE_PUBLISHABLE_API_KEY (or SUPABASE_PUBLIC_API_KEY)" >&2
-    exit 1
-  fi
-  for var in STRIPE_PUBLISHABLE_KEY STRIPE_MERCHANT_DISPLAY_NAME; do
+  for var in API_BASE_URL SUPABASE_URL STRIPE_PUBLISHABLE_KEY OAUTH_REDIRECT_WEB; do
     if [[ -z "${!var:-}" ]]; then
       echo "Missing required env var: $var" >&2
       exit 1
     fi
   done
+  SUPABASE_CLIENT_KEY="${SUPABASE_PUBLISHABLE_API_KEY:-${SUPABASE_PUBLIC_API_KEY:-}}"
+  if [[ -z "$SUPABASE_CLIENT_KEY" ]]; then
+    echo "Missing required env var: SUPABASE_PUBLIC_API_KEY (or SUPABASE_PUBLISHABLE_API_KEY)" >&2
+    exit 1
+  fi
+  STRIPE_MERCHANT_DISPLAY_NAME="${STRIPE_MERCHANT_DISPLAY_NAME:-Aveli}"
   DEFINE_ARGS+=(
-    --dart-define=API_BASE_URL=https://aveli.fly.dev
+    --dart-define=API_BASE_URL="$API_BASE_URL"
     --dart-define=SUPABASE_URL="$SUPABASE_URL"
-    --dart-define=SUPABASE_PUBLISHABLE_API_KEY="$SUPABASE_CLIENT_KEY"
+    --dart-define=SUPABASE_PUBLIC_API_KEY="$SUPABASE_CLIENT_KEY"
     --dart-define=STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY"
     --dart-define=STRIPE_MERCHANT_DISPLAY_NAME="$STRIPE_MERCHANT_DISPLAY_NAME"
-    --dart-define=FRONTEND_URL=https://app.aveli.app
-    --dart-define=OAUTH_REDIRECT_WEB=https://app.aveli.app/login-callback
+    --dart-define=FRONTEND_URL="${FRONTEND_URL:-https://app.aveli.app}"
+    --dart-define=OAUTH_REDIRECT_WEB="$OAUTH_REDIRECT_WEB"
   )
+
+  if [[ -n "${SUBSCRIPTIONS_ENABLED:-}" ]]; then
+    DEFINE_ARGS+=(--dart-define=SUBSCRIPTIONS_ENABLED="$SUBSCRIPTIONS_ENABLED")
+  fi
+  if [[ -n "${IMAGE_LOGGING:-}" ]]; then
+    DEFINE_ARGS+=(--dart-define=IMAGE_LOGGING="$IMAGE_LOGGING")
+  fi
 fi
 
 if [[ ! -f "pubspec.yaml" ]]; then
