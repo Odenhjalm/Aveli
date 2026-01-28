@@ -595,11 +595,14 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
         await cur.execute(
             """
             SELECT
-              user_id,
-              display_name,
-              photo_url,
-              bio
-            FROM app.profiles
+              prof.user_id,
+              prof.display_name,
+              prof.photo_url,
+              prof.bio,
+              u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
+              u.raw_user_meta_data->>'picture' AS auth_picture_url
+            FROM app.profiles prof
+            LEFT JOIN auth.users u ON u.id = prof.user_id
             WHERE (role_v2 = 'teacher' OR is_admin = true)
               AND lower(email) = lower(%s)
             ORDER BY display_name NULLS LAST
@@ -612,7 +615,13 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
     items: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
-        item["photo_url"] = _normalize_public_profile_photo_url(item.get("photo_url"))
+        item["photo_url"] = _choose_public_profile_photo_url(
+            item.get("photo_url"),
+            auth_avatar_url=item.get("auth_avatar_url"),
+            auth_picture_url=item.get("auth_picture_url"),
+        )
+        item.pop("auth_avatar_url", None)
+        item.pop("auth_picture_url", None)
         items.append(item)
     return items
 
@@ -639,6 +648,64 @@ def _normalize_public_profile_photo_url(url: str | None) -> str | None:
 
     public_url = media_signer.public_download_url(value)
     return public_url or value
+
+
+_UPLOADS_ROOT = Path(__file__).resolve().parents[1] / "assets" / "uploads"
+
+
+def _public_upload_exists(api_files_url: str) -> bool:
+    if not api_files_url:
+        return False
+    base = api_files_url.split("?", 1)[0]
+    if not base.startswith("/api/files/"):
+        return True
+
+    relative = base[len("/api/files/") :]
+    if not relative:
+        return False
+    path = Path(relative)
+    if path.is_absolute() or ".." in path.parts:
+        return False
+
+    base_root = _UPLOADS_ROOT.resolve()
+    candidate = (_UPLOADS_ROOT / path).resolve()
+    if not str(candidate).startswith(str(base_root)):
+        return False
+    return candidate.exists() and candidate.is_file()
+
+
+def _sanitize_public_avatar_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    value = url.strip()
+    if not value:
+        return None
+
+    parsed = urlparse(value)
+    if parsed.scheme == "https":
+        return parsed.geturl()
+    if parsed.scheme == "http":
+        return parsed._replace(scheme="https").geturl()
+    if not parsed.scheme and parsed.netloc:
+        return f"https:{value}"
+    return None
+
+
+def _choose_public_profile_photo_url(
+    photo_url: str | None,
+    *,
+    auth_avatar_url: str | None = None,
+    auth_picture_url: str | None = None,
+) -> str | None:
+    resolved = _normalize_public_profile_photo_url(photo_url)
+    if resolved and resolved.startswith("/api/files/") and not _public_upload_exists(resolved):
+        resolved = None
+
+    return (
+        resolved
+        or _sanitize_public_avatar_url(auth_avatar_url)
+        or _sanitize_public_avatar_url(auth_picture_url)
+    )
 
 
 async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]:
@@ -1913,9 +1980,12 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
                    prof.display_name,
                    prof.photo_url,
                    prof.bio,
+                   u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
+                   u.raw_user_meta_data->>'picture' AS auth_picture_url,
                    COALESCE(cert.count, 0) AS verified_certificates
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
+            LEFT JOIN auth.users u ON u.id = td.user_id
             LEFT JOIN (
                 SELECT user_id, COUNT(*) FILTER (WHERE status = 'verified') AS count
                 FROM app.certificates
@@ -1939,7 +2009,11 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
             profile = {
                 "user_id": row.get("user_id"),
                 "display_name": row.get("display_name"),
-                "photo_url": _normalize_public_profile_photo_url(row.get("photo_url")),
+                "photo_url": _choose_public_profile_photo_url(
+                    row.get("photo_url"),
+                    auth_avatar_url=row.get("auth_avatar_url"),
+                    auth_picture_url=row.get("auth_picture_url"),
+                ),
                 "bio": row.get("bio"),
             }
         items.append(
@@ -1968,9 +2042,12 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                    prof.display_name,
                    prof.photo_url,
                    prof.bio,
+                   u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
+                   u.raw_user_meta_data->>'picture' AS auth_picture_url,
                    COALESCE(cert.count, 0) AS verified_certificates
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
+            LEFT JOIN auth.users u ON u.id = td.user_id
             LEFT JOIN (
                 SELECT user_id, COUNT(*) FILTER (WHERE status = 'verified') AS count
                 FROM app.certificates
@@ -1986,8 +2063,15 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         if not row:
             await cur.execute(
                 """
-                SELECT user_id, display_name, photo_url, bio, created_at
-                FROM app.profiles
+                SELECT prof.user_id,
+                       prof.display_name,
+                       prof.photo_url,
+                       prof.bio,
+                       prof.created_at,
+                       u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
+                       u.raw_user_meta_data->>'picture' AS auth_picture_url
+                FROM app.profiles prof
+                LEFT JOIN auth.users u ON u.id = prof.user_id
                 WHERE user_id = %s
                   AND (role_v2 = 'teacher' OR is_admin = true)
                   AND lower(email) = lower(%s)
@@ -2006,7 +2090,11 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         profile = {
             "user_id": fallback_profile.get("user_id"),
             "display_name": fallback_profile.get("display_name"),
-            "photo_url": _normalize_public_profile_photo_url(fallback_profile.get("photo_url")),
+            "photo_url": _choose_public_profile_photo_url(
+                fallback_profile.get("photo_url"),
+                auth_avatar_url=fallback_profile.get("auth_avatar_url"),
+                auth_picture_url=fallback_profile.get("auth_picture_url"),
+            ),
             "bio": fallback_profile.get("bio"),
         }
         return {
@@ -2028,7 +2116,11 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         profile = {
             "user_id": row.get("user_id"),
             "display_name": row.get("display_name"),
-            "photo_url": _normalize_public_profile_photo_url(row.get("photo_url")),
+            "photo_url": _choose_public_profile_photo_url(
+                row.get("photo_url"),
+                auth_avatar_url=row.get("auth_avatar_url"),
+                auth_picture_url=row.get("auth_picture_url"),
+            ),
             "bio": row.get("bio"),
         }
     return {
