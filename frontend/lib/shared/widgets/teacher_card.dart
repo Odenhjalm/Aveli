@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 
 class TeacherCard extends StatelessWidget {
   final String name;
@@ -34,11 +35,10 @@ class TeacherCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  TeacherNameText(
                     name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    baseStyle: Theme.of(context).textTheme.titleMedium,
+                    fontWeight: FontWeight.w700,
                   ),
                   if ((subjects ?? '').isNotEmpty)
                     Text(

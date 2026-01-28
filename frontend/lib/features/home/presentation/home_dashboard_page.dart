@@ -30,6 +30,7 @@ import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -731,16 +732,20 @@ class _ExploreCoursesSection extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
+                            CourseTitleText(
                               title,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
+                              baseStyle: Theme.of(
+                                context,
+                              ).textTheme.titleMedium,
+                              fontWeight: FontWeight.w600,
                             ),
                             if (description.isNotEmpty) ...[
                               const SizedBox(height: 6),
-                              Text(
+                              CourseDescriptionText(
                                 description,
-                                style: Theme.of(context).textTheme.bodyMedium,
+                                baseStyle: Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium,
                               ),
                             ],
                             if (isIntro) ...[

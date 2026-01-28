@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 
 class CourseCard extends StatefulWidget {
   final String title;
@@ -72,12 +73,12 @@ class _CourseCardState extends State<CourseCard> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
+                            child: CourseTitleText(
                               widget.title,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              baseStyle: Theme.of(
+                                context,
+                              ).textTheme.titleMedium,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                           if (widget.isIntro) const SizedBox(width: 8),
@@ -90,11 +91,11 @@ class _CourseCardState extends State<CourseCard> {
                       ),
                       if ((widget.description ?? '').isNotEmpty) ...[
                         const SizedBox(height: 6),
-                        Text(
+                        CourseDescriptionText(
                           widget.description!,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                          baseStyle: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ],
                     ],

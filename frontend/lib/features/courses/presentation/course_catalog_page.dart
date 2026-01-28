@@ -11,6 +11,7 @@ import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/go_router_back_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});
@@ -245,17 +246,18 @@ class _CourseTile extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  CourseTitleText(
                     title,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    baseStyle: theme.textTheme.titleLarge,
+                    fontWeight: FontWeight.w700,
+                    maxLines: null,
+                    overflow: null,
                   ),
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(
+                    CourseDescriptionText(
                       description,
-                      style: theme.textTheme.bodyMedium,
+                      baseStyle: theme.textTheme.bodyMedium,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),

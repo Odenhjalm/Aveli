@@ -22,6 +22,7 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/widgets/base_page.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 
 const _aveliBrandGradient = LinearGradient(
@@ -1395,13 +1396,10 @@ class _CourseTileGlass extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
+                          child: CourseTitleText(
                             title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                            baseStyle: theme.textTheme.titleMedium,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         if (isIntro) const SizedBox(width: 8),
@@ -1419,15 +1417,11 @@ class _CourseTileGlass extends StatelessWidget {
                     ),
                     if (desc.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text(
+                      CourseDescriptionText(
                         desc,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(
-                            alpha: 0.8,
-                          ),
-                        ),
+                        baseStyle: theme.textTheme.bodyMedium,
                       ),
                     ],
                     const SizedBox(height: 10),
@@ -1533,10 +1527,7 @@ class _TeacherPillData extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        name,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
+                      TeacherNameText(name),
                       if (bio.isNotEmpty)
                         Text(
                           bio,
