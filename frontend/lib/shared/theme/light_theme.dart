@@ -87,7 +87,7 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     colorScheme: scheme,
     brightness: Brightness.light,
     fontFamily: 'NotoSans',
-    fontFamilyFallback: const ['NotoSansSymbols2', 'NotoColorEmoji'],
+    fontFamilyFallback: const ['NotoSansSymbols2'],
     scaffoldBackgroundColor: Colors.transparent,
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.white,
