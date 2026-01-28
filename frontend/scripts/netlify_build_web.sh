@@ -15,6 +15,31 @@ set -euo pipefail
 : "${FLUTTER_STRIPE_PUBLISHABLE_KEY:?Missing FLUTTER_STRIPE_PUBLISHABLE_KEY}"
 : "${FLUTTER_OAUTH_REDIRECT_WEB:?Missing FLUTTER_OAUTH_REDIRECT_WEB}"
 
+normalize_url() {
+  local url="$1"
+  # Remove a trailing slash (common source of double-slash bugs).
+  echo "${url%/}"
+}
+
+export FLUTTER_API_BASE_URL
+export FLUTTER_SUPABASE_URL
+export FLUTTER_OAUTH_REDIRECT_WEB
+FLUTTER_API_BASE_URL="$(normalize_url "$FLUTTER_API_BASE_URL")"
+FLUTTER_SUPABASE_URL="$(normalize_url "$FLUTTER_SUPABASE_URL")"
+FLUTTER_OAUTH_REDIRECT_WEB="$(normalize_url "$FLUTTER_OAUTH_REDIRECT_WEB")"
+
+NETLIFY_CONTEXT="${CONTEXT:-${DEPLOY_CONTEXT:-}}"
+EXPECTED_PROD_API_BASE_URL="https://aveli.fly.dev"
+
+# Hard fail for production builds if the backend URL is wrong. This prevents
+# silently shipping a miscompiled bundle (String.fromEnvironment is compile-time).
+if [[ "$NETLIFY_CONTEXT" == "production" ]]; then
+  if [[ "$FLUTTER_API_BASE_URL" != "$EXPECTED_PROD_API_BASE_URL" ]]; then
+    echo "Refusing production build: FLUTTER_API_BASE_URL must be ${EXPECTED_PROD_API_BASE_URL} (got ${FLUTTER_API_BASE_URL})" >&2
+    exit 1
+  fi
+fi
+
 FLUTTER_VERSION="${FLUTTER_VERSION:-3.35.7}"
 
 install_flutter() {
@@ -59,4 +84,25 @@ export SUBSCRIPTIONS_ENABLED="${FLUTTER_SUBSCRIPTIONS_ENABLED:-}"
 export IMAGE_LOGGING="${FLUTTER_IMAGE_LOGGING:-}"
 export FRONTEND_URL="${FLUTTER_FRONTEND_URL:-https://app.aveli.app}"
 
+echo "Netlify context: ${NETLIFY_CONTEXT:-unknown}" >&2
+echo "Building Flutter Web with API_BASE_URL=${API_BASE_URL}" >&2
+
 bash scripts/build_prod.sh
+
+# Post-build integrity checks: ensure the compiled bundle contains the expected
+# API base URL (compile-time constant) and doesn't contain legacy endpoints.
+if [[ "$NETLIFY_CONTEXT" == "production" ]]; then
+  main_js="build/web/main.dart.js"
+  if [[ ! -f "$main_js" ]]; then
+    echo "Build output missing: $main_js" >&2
+    exit 1
+  fi
+  if ! grep -Fq "$EXPECTED_PROD_API_BASE_URL" "$main_js"; then
+    echo "Build integrity check failed: ${EXPECTED_PROD_API_BASE_URL} not found in $main_js" >&2
+    exit 1
+  fi
+  if grep -Fq "api.aveli.app" "$main_js"; then
+    echo "Build integrity check failed: legacy api.aveli.app found in $main_js" >&2
+    exit 1
+  fi
+fi

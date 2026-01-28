@@ -65,7 +65,17 @@ rm -f "$BUILD_DIR/flutter_service_worker.js"
 rm -f "$BUILD_DIR/version.json"
 
 # Also strip SW registration from generated runtime files.
-python <<'PY'
+PYTHON_BIN=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+else
+  echo "Python is required to post-process Flutter Web artifacts (python3 or python not found)." >&2
+  exit 1
+fi
+
+"$PYTHON_BIN" <<'PY'
 import os
 import re
 from pathlib import Path
