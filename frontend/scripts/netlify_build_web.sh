@@ -57,10 +57,37 @@ install_flutter() {
     rm -rf "${flutter_root}"
 
     local archive="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
+    local archive_path="${cache_dir}/${archive}"
     local url="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/${archive}"
-    curl -fsSL "${url}" -o "${archive}"
-    tar -xf "${archive}" -C "${cache_dir}"
-    rm -f "${archive}"
+    curl -fsSL "${url}" -o "${archive_path}"
+
+    if ! tar -xf "${archive_path}" -C "${cache_dir}" >/dev/null 2>&1; then
+      # Some minimal CI images don't ship xz support for tar. Fall back to
+      # Python's tarfile which can handle xz (lzma) without external tools.
+      local py=""
+      if command -v python3 >/dev/null 2>&1; then
+        py="python3"
+      elif command -v python >/dev/null 2>&1; then
+        py="python"
+      else
+        echo "Failed to extract Flutter archive and no python interpreter is available." >&2
+        exit 1
+      fi
+
+      rm -rf "${flutter_root}"
+      "${py}" - <<PY
+import tarfile
+from pathlib import Path
+
+archive = Path("${archive_path}")
+dest = Path("${cache_dir}")
+
+with tarfile.open(archive, "r:*") as tf:
+    tf.extractall(dest)
+PY
+    fi
+
+    rm -f "${archive_path}"
   fi
 
   export PATH="${flutter_root}/bin:${PATH}"
