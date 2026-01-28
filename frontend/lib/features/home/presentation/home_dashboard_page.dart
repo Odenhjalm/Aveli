@@ -32,6 +32,7 @@ import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
+import 'package:aveli/shared/widgets/semantic_text.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -264,7 +265,7 @@ class _HomeAudioSection extends StatelessWidget {
         ),
         data: (items) {
           if (items.isEmpty) {
-            return const Text('Inga ljudspår tillgängliga ännu.');
+            return const MetaText('Inga ljudspår tillgängliga ännu.');
           }
           return _HomeAudioList(items: items);
         },
@@ -631,7 +632,7 @@ class _ExploreCoursesSection extends ConsumerWidget {
     return fallbackCourses.when(
       data: (courses) {
         if (courses.isEmpty) {
-          return const Text('Inga kurser publicerade ännu.');
+          return const MetaText('Inga kurser publicerade ännu.');
         }
         return _buildCourseList(
           context,
@@ -668,7 +669,7 @@ class _ExploreCoursesSection extends ConsumerWidget {
     MediaRepository mediaRepository,
   ) {
     if (items.isEmpty) {
-      return const Text('Inga kurser publicerade ännu.');
+      return const MetaText('Inga kurser publicerade ännu.');
     }
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -813,7 +814,7 @@ class _FeedSection extends StatelessWidget {
         data: (activities) {
           final seminarHighlights = _buildSeminarHighlights(context);
           if (activities.isEmpty && seminarHighlights == null) {
-            return const Text('Inga aktiviteter ännu.');
+            return const MetaText('Inga aktiviteter ännu.');
           }
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -823,7 +824,7 @@ class _FeedSection extends StatelessWidget {
                 if (activities.isNotEmpty) const SizedBox(height: 12),
               ],
               if (activities.isEmpty)
-                const Text('Inga aktiviteter ännu.')
+                const MetaText('Inga aktiviteter ännu.')
               else
                 for (final activity in activities.take(10))
                   Padding(
@@ -839,21 +840,27 @@ class _FeedSection extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
+                                NameText(
                                   activity.summary.isEmpty
                                       ? activity.type
                                       : activity.summary,
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                  baseStyle: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                  fontWeight: FontWeight.w600,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
+                                MetaText(
                                   MaterialLocalizations.of(
                                     context,
                                   ).formatFullDate(
                                     activity.occurredAt.toLocal(),
                                   ),
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                  baseStyle: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall,
                                 ),
                               ],
                             ),
@@ -877,11 +884,11 @@ class _FeedSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            SectionHeading(
               'Livesändningar',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              baseStyle: Theme.of(context).textTheme.titleMedium,
+              fontWeight: FontWeight.w600,
+              maxLines: 2,
             ),
             const SizedBox(height: 8),
             for (final seminar in upcoming.take(2))
@@ -1067,7 +1074,7 @@ class _ServicesSection extends StatelessWidget {
         ),
         data: (services) {
           if (services.isEmpty) {
-            return const Text('Inga tjänster publicerade just nu.');
+            return const MetaText('Inga tjänster publicerade just nu.');
           }
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -1107,16 +1114,20 @@ class _ServicesSection extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
+                          NameText(
                             service.title,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                            baseStyle: Theme.of(context).textTheme.titleMedium,
+                            fontWeight: FontWeight.w600,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           if (service.description.isNotEmpty) ...[
                             const SizedBox(height: 8),
-                            Text(
+                            MetaText(
                               service.description,
-                              style: Theme.of(context).textTheme.bodyMedium,
+                              baseStyle: Theme.of(context).textTheme.bodyMedium,
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                           if (service.requiresCertification) ...[
@@ -1243,11 +1254,12 @@ class _SectionCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              SectionHeading(
                 title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                baseStyle: Theme.of(context).textTheme.titleLarge,
+                fontWeight: FontWeight.bold,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               if (trailing != null) trailing!,
             ],

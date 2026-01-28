@@ -25,6 +25,7 @@ import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 
 const _aveliPrimaryGradient = LinearGradient(
@@ -617,21 +618,15 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                 ),
                                 const SizedBox(height: 12),
                                 const SizedBox(height: 14),
-                                Text(
+                                SectionHeading(
                                   'Populära kurser',
-                                  style: t.headlineSmall?.copyWith(
-                                    color: DesignTokens.headingTextColor,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: .2,
-                                  ),
+                                  baseStyle: t.headlineSmall,
+                                  fontWeight: FontWeight.w800,
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
+                                MetaText(
                                   'Se vad andra gillar just nu.',
-                                  style: t.bodyLarge?.copyWith(
-                                    color: DesignTokens.headingTextColor
-                                        .withValues(alpha: 0.7),
-                                  ),
+                                  baseStyle: t.bodyLarge,
                                 ),
                                 const SizedBox(height: 16),
                                 GlassCard(
@@ -645,7 +640,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                       : _popularItems.isEmpty
                                       ? const Padding(
                                           padding: EdgeInsets.all(12),
-                                          child: Text('Inga kurser ännu.'),
+                                          child: MetaText('Inga kurser ännu.'),
                                         )
                                       : LayoutBuilder(
                                           builder: (context, c) {
@@ -716,20 +711,15 @@ class _LandingPageState extends ConsumerState<LandingPage>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              SectionHeading(
                                 'Lärare',
-                                style: t.headlineSmall?.copyWith(
-                                  color: DesignTokens.headingTextColor,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                baseStyle: t.headlineSmall,
+                                fontWeight: FontWeight.w800,
                               ),
                               const SizedBox(height: 6),
-                              Text(
+                              MetaText(
                                 'Möt certifierade lärare.',
-                                style: t.bodyLarge?.copyWith(
-                                  color: DesignTokens.headingTextColor
-                                      .withValues(alpha: 0.7),
-                                ),
+                                baseStyle: t.bodyLarge,
                               ),
                               const SizedBox(height: 10),
                               GlassCard(
@@ -747,7 +737,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                         )
                                       : _teacherItems.isEmpty
                                       ? const Center(
-                                          child: Text('Inga lärare ännu.'),
+                                          child: MetaText('Inga lärare ännu.'),
                                         )
                                       : ListView.separated(
                                           scrollDirection: Axis.horizontal,
@@ -791,20 +781,15 @@ class _LandingPageState extends ConsumerState<LandingPage>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              SectionHeading(
                                 'Tjänster',
-                                style: t.headlineSmall?.copyWith(
-                                  color: DesignTokens.headingTextColor,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                baseStyle: t.headlineSmall,
+                                fontWeight: FontWeight.w800,
                               ),
                               const SizedBox(height: 6),
-                              Text(
+                              MetaText(
                                 'Nya sessioner och läsningar.',
-                                style: t.bodyLarge?.copyWith(
-                                  color: DesignTokens.headingTextColor
-                                      .withValues(alpha: 0.7),
-                                ),
+                                baseStyle: t.bodyLarge,
                               ),
                               const SizedBox(height: 10),
                               GlassCard(
@@ -818,7 +803,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                     : _serviceItems.isEmpty
                                     ? const Padding(
                                         padding: EdgeInsets.all(12),
-                                        child: Text('Inga tjänster ännu.'),
+                                        child: MetaText('Inga tjänster ännu.'),
                                       )
                                     : LayoutBuilder(
                                         builder: (context, c) {

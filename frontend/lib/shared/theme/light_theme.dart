@@ -35,8 +35,19 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     displayColor: scheme.onSurface,
     bodyColor: scheme.onSurface,
   );
+  final brandedTextTheme = baseTextTheme.copyWith(
+    bodyLarge: baseTextTheme.bodyLarge?.copyWith(
+      color: DesignTokens.headingTextColor.withValues(alpha: 0.92),
+    ),
+    bodyMedium: baseTextTheme.bodyMedium?.copyWith(
+      color: DesignTokens.headingTextColor.withValues(alpha: 0.90),
+    ),
+    bodySmall: baseTextTheme.bodySmall?.copyWith(
+      color: DesignTokens.headingTextColor.withValues(alpha: 0.78),
+    ),
+  );
   final textTheme = forLanding
-      ? baseTextTheme
+      ? brandedTextTheme
       : baseTextTheme.copyWith(
           titleLarge: baseTextTheme.titleLarge?.copyWith(
             color: AppTextColor.body,
@@ -124,7 +135,9 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: scheme.primary,
+        foregroundColor: forLanding
+            ? DesignTokens.headingTextColor
+            : scheme.primary,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         textStyle: const TextStyle(fontWeight: FontWeight.w600),
         shape: buttonShape,
