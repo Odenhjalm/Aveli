@@ -148,9 +148,11 @@ class _LandingPageState extends ConsumerState<LandingPage>
       final services = await servicesFuture;
       final teachers = await teachersFuture;
       final myStudio = await myStudioFuture;
-      final teacherItems = teachers.items
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList(growable: true);
+      final teacherItems = _dedupeTeachers(
+        teachers.items
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(growable: true),
+      );
 
       final teachersWithOden = LandingSectionState(
         items: teacherItems,
@@ -169,6 +171,28 @@ class _LandingPageState extends ConsumerState<LandingPage>
       if (!mounted) return;
       setState(() => _loading = false);
     }
+  }
+
+  List<Map<String, dynamic>> _dedupeTeachers(List<Map<String, dynamic>> items) {
+    if (items.isEmpty) return items;
+    final deduped = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final item in items) {
+      final rawProfile = item['profile'];
+      final profile = rawProfile is Map
+          ? rawProfile
+          : const <String, dynamic>{};
+      final rawUserId = profile['user_id'] ?? item['user_id'];
+      final userId = rawUserId?.toString().trim() ?? '';
+      if (userId.isEmpty) {
+        deduped.add(item);
+        continue;
+      }
+      if (seen.add(userId)) {
+        deduped.add(item);
+      }
+    }
+    return deduped;
   }
 
   LandingSectionState _mergePopularWithMyCourses(
@@ -751,11 +775,25 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                           itemCount: _teacherItems.length,
                                           separatorBuilder: (context, _) =>
                                               const SizedBox(width: 8),
-                                          itemBuilder: (context, index) =>
-                                              _TeacherPillData(
-                                                map: _teacherItems[index],
-                                                apiBaseUrl: config.apiBaseUrl,
-                                              ),
+                                          itemBuilder: (context, index) {
+                                            final map = _teacherItems[index];
+                                            final rawUserId =
+                                                map['user_id'] ??
+                                                (map['profile'] is Map
+                                                    ? (map['profile']
+                                                          as Map)['user_id']
+                                                    : null);
+                                            final userId =
+                                                rawUserId?.toString().trim() ??
+                                                '';
+                                            return _TeacherPillData(
+                                              key: userId.isEmpty
+                                                  ? null
+                                                  : ValueKey(userId),
+                                              map: map,
+                                              apiBaseUrl: config.apiBaseUrl,
+                                            );
+                                          },
                                         ),
                                 ),
                               ),
@@ -892,9 +930,9 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                         onTap: hasEnvIssues
                                             ? null
                                             : () =>
-                                                _startLandingMembershipCheckout(
-                                                  context,
-                                                ),
+                                                  _startLandingMembershipCheckout(
+                                                    context,
+                                                  ),
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 18,
                                           vertical: 12,
@@ -1448,7 +1486,11 @@ class _TeacherPillSkeleton extends StatelessWidget {
 class _TeacherPillData extends StatelessWidget {
   final Map<String, dynamic> map;
   final String apiBaseUrl;
-  const _TeacherPillData({required this.map, required this.apiBaseUrl});
+  const _TeacherPillData({
+    super.key,
+    required this.map,
+    required this.apiBaseUrl,
+  });
   @override
   Widget build(BuildContext context) {
     final rawProfile = (map['profile'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -1466,9 +1508,9 @@ class _TeacherPillData extends StatelessWidget {
         onTap: userId.isEmpty
             ? null
             : () => context.goNamed(
-                  AppRoute.teacherProfile,
-                  pathParameters: {'id': userId},
-                ),
+                AppRoute.teacherProfile,
+                pathParameters: {'id': userId},
+              ),
         borderRadius: BorderRadius.circular(22),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(22),
