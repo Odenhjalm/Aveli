@@ -72,7 +72,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
   bool _envSnackShown = false;
 
   List<Map<String, dynamic>> get _popularItems => _popularCourses.items;
-  List<Map<String, dynamic>> get _teacherItems => _teachers.items;
+  List<Map<String, dynamic>> get _teacherItems =>
+      _dedupeTeachers(_teachers.items);
   List<Map<String, dynamic>> get _serviceItems => _services.items;
 
   bool get _isLandingDomain {
