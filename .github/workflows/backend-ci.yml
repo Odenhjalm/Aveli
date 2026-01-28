@@ -29,6 +29,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       SUPABASE_DB_URL: postgresql://postgres:postgres@localhost:5432/postgres
       SUPABASE_DB_PASSWORD: postgres
+      MEDIA_SIGNING_SECRET: ci-test-secret
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
