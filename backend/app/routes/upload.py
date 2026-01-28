@@ -330,6 +330,8 @@ async def upload_course_media(
             detail="course_id or lesson_id must be provided",
         )
 
+    normalized_content_type = (file.content_type or "").lower()
+
     type_prefixes: tuple[str, ...] | None = None
     if media_type:
         type_prefixes = _ALLOWED_MEDIA_PREFIXES.get(media_type)
@@ -365,7 +367,8 @@ async def upload_course_media(
 
     storage_bucket = _COURSE_MEDIA_BUCKET
     if lesson_id:
-        storage_bucket = _PUBLIC_MEDIA_BUCKET if effective_is_intro else _COURSE_MEDIA_BUCKET
+        is_image_upload = media_type == UploadMediaType.image or normalized_content_type.startswith("image/")
+        storage_bucket = _PUBLIC_MEDIA_BUCKET if (is_image_upload or effective_is_intro) else _COURSE_MEDIA_BUCKET
 
     resolved_course_id_str: str | None = str(resolved_course_id) if resolved_course_id else None
     lesson_id_str = str(lesson_id) if lesson_id else None
@@ -381,7 +384,6 @@ async def upload_course_media(
     if media_type:
         relative_dir /= media_type.value
 
-    normalized_content_type = (file.content_type or "").lower()
     allowed_prefixes = type_prefixes
     allowed_exact: set[str] = set()
     if allowed_prefixes is None:
@@ -438,6 +440,9 @@ async def upload_course_media(
             checksum=write_result.checksum,
             storage_bucket=storage_bucket,
         )
+        if storage_bucket == _PUBLIC_MEDIA_BUCKET and media_row.get("kind") == "image":
+            media_row.pop("signed_url", None)
+            media_row.pop("signed_url_expires_at", None)
         response["media"] = media_row
 
     return response
