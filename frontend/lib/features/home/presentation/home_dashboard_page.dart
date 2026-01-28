@@ -31,6 +31,7 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/brand_header.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -85,18 +86,11 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: const BrandLogo(height: 40),
         title: InkWell(
           onTap: () => context.goNamed(AppRoute.landing),
           borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-            child: Text(
-              'Aveli',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
+          child: const BrandHeaderTitle(),
         ),
         actions: [
           IconButton(

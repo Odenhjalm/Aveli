@@ -23,13 +23,9 @@ import 'package:aveli/widgets/base_page.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/brand_header.dart';
+import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
-
-const _aveliBrandGradient = LinearGradient(
-  colors: [kBrandTurquoise, kBrandLilac],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
 
 const _aveliPrimaryGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandAzure, kBrandLilac],
@@ -435,72 +431,50 @@ class _LandingPageState extends ConsumerState<LandingPage>
             child: Container(color: Colors.transparent),
           ),
         ),
-        leading: _Logo(height: topLogoHeight),
-        title: Padding(
-          padding: const EdgeInsets.only(right: 16),
-          child: Row(
+        leading: BrandLogo(height: topLogoHeight),
+        title: BrandHeaderTitle(
+          wordmarkStyle: t.titleMedium,
+          actions: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.end,
             children: [
-              ShaderMask(
-                shaderCallback: (bounds) =>
-                    _aveliBrandGradient.createShader(bounds),
-                blendMode: BlendMode.srcIn,
-                child: Text(
-                  'Aveli',
-                  style: t.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .25,
+              if (authState.isAuthenticated) ...[
+                TextButton(
+                  onPressed: () => _openAppPath(RoutePath.home),
+                  style: TextButton.styleFrom(
+                    foregroundColor: DesignTokens.headingTextColor,
                   ),
+                  child: const Text('Hem'),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Flexible(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      if (authState.isAuthenticated) ...[
-                        TextButton(
-                          onPressed: () => _openAppPath(RoutePath.home),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('Hem'),
-                        ),
-                        TextButton(
-                          onPressed: () => _openAppPath(RoutePath.profile),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                          ),
-                          child: const Text('Profil'),
-                        ),
-                      ] else ...[
-                        TextButton(
-                          onPressed: hasEnvIssues
-                              ? null
-                              : () => _openAppPath(RoutePath.login),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('Logga in'),
-                        ),
-                        TextButton(
-                          onPressed: hasEnvIssues
-                              ? null
-                              : () => _openAppPath(RoutePath.signup),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                          ),
-                          child: const Text('Skapa konto'),
-                        ),
-                      ],
-                    ],
+                TextButton(
+                  onPressed: () => _openAppPath(RoutePath.profile),
+                  style: TextButton.styleFrom(
+                    foregroundColor: DesignTokens.headingTextColor,
                   ),
+                  child: const Text('Profil'),
                 ),
-              ),
+              ] else ...[
+                TextButton(
+                  onPressed: hasEnvIssues
+                      ? null
+                      : () => _openAppPath(RoutePath.login),
+                  style: TextButton.styleFrom(
+                    foregroundColor: DesignTokens.headingTextColor,
+                  ),
+                  child: const Text('Logga in'),
+                ),
+                TextButton(
+                  onPressed: hasEnvIssues
+                      ? null
+                      : () => _openAppPath(RoutePath.signup),
+                  style: TextButton.styleFrom(
+                    foregroundColor: DesignTokens.headingTextColor,
+                  ),
+                  child: const Text('Skapa konto'),
+                ),
+              ],
             ],
           ),
         ),
@@ -543,7 +517,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                   ? 'API-konfiguration saknas. Lägg till API_BASE_URL via --dart-define (web) eller en lokal env-fil för att aktivera inloggning.'
                                   : 'Saknade nycklar: ${envInfo.missingKeys.join(', ')}. Lägg till dem via --dart-define (web) eller en lokal env-fil för att aktivera inloggning.',
                               style: t.bodyMedium?.copyWith(
-                                color: Colors.white,
+                                color: DesignTokens.headingTextColor,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -570,7 +544,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                 'privata sessioner och djupa lärdomar som förändrar ditt liv.',
                                 textAlign: TextAlign.center,
                                 style: t.titleMedium?.copyWith(
-                                  color: Colors.white.withValues(alpha: .92),
+                                  color: DesignTokens.headingTextColor
+                                      .withValues(alpha: .92),
                                   height: 1.36,
                                   letterSpacing: .2,
                                 ),
@@ -579,7 +554,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                               Text(
                                 'Börja gratis idag',
                                 style: t.titleLarge?.copyWith(
-                                  color: Colors.white,
+                                  color: DesignTokens.headingTextColor,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -645,7 +620,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                 Text(
                                   'Populära kurser',
                                   style: t.headlineSmall?.copyWith(
-                                    color: Colors.white,
+                                    color: DesignTokens.headingTextColor,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: .2,
                                   ),
@@ -654,7 +629,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                 Text(
                                   'Se vad andra gillar just nu.',
                                   style: t.bodyLarge?.copyWith(
-                                    color: Colors.white70,
+                                    color: DesignTokens.headingTextColor
+                                        .withValues(alpha: 0.7),
                                   ),
                                 ),
                                 const SizedBox(height: 16),
@@ -743,7 +719,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                               Text(
                                 'Lärare',
                                 style: t.headlineSmall?.copyWith(
-                                  color: Colors.white,
+                                  color: DesignTokens.headingTextColor,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -751,7 +727,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
                               Text(
                                 'Möt certifierade lärare.',
                                 style: t.bodyLarge?.copyWith(
-                                  color: Colors.white70,
+                                  color: DesignTokens.headingTextColor
+                                      .withValues(alpha: 0.7),
                                 ),
                               ),
                               const SizedBox(height: 10),
@@ -817,7 +794,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                               Text(
                                 'Tjänster',
                                 style: t.headlineSmall?.copyWith(
-                                  color: Colors.white,
+                                  color: DesignTokens.headingTextColor,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -825,7 +802,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
                               Text(
                                 'Nya sessioner och läsningar.',
                                 style: t.bodyLarge?.copyWith(
-                                  color: Colors.white70,
+                                  color: DesignTokens.headingTextColor
+                                      .withValues(alpha: 0.7),
                                 ),
                               ),
                               const SizedBox(height: 10),
@@ -1004,26 +982,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
   }
 }
 
-class _Logo extends StatelessWidget {
-  const _Logo({required this.height});
-
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16, right: 12),
-      child: Image(
-        image: AppImages
-            .logo, // Lokalt asset så att landing funkar offline vid authed fel.
-        height: height,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-      ),
-    );
-  }
-}
-
 /* ---------- Små UI-komponenter i denna fil ---------- */
 
 class _PrimaryGradientButton extends StatelessWidget {
@@ -1063,7 +1021,7 @@ class _PrimaryGradientButton extends StatelessWidget {
               label,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Colors.white,
+                color: DesignTokens.headingTextColor,
                 fontWeight: FontWeight.w800,
                 letterSpacing: .2,
               ),
@@ -1113,7 +1071,7 @@ class _GradientOutlineButton extends StatelessWidget {
             label,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Colors.white,
+              color: DesignTokens.headingTextColor,
               fontWeight: FontWeight.w700,
               letterSpacing: .15,
             ),
@@ -1162,7 +1120,7 @@ class _GradientHeadlineState extends State<_GradientHeadline>
   Widget build(BuildContext context) {
     final base = Theme.of(context).textTheme.displayLarge?.copyWith(
       fontWeight: FontWeight.w900,
-      color: Colors.white,
+      color: DesignTokens.headingTextColor,
       height: 1.04,
       letterSpacing: -.5,
     );
@@ -1191,7 +1149,7 @@ class _GradientHeadlineState extends State<_GradientHeadline>
           child: Text(
             widget.gradientWord,
             textAlign: TextAlign.center,
-            style: base?.copyWith(color: Colors.white),
+            style: base?.copyWith(color: DesignTokens.headingTextColor),
           ),
         ),
       ],
@@ -1282,11 +1240,11 @@ class _SocialProofRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final styleA = Theme.of(context).textTheme.labelLarge?.copyWith(
-      color: Colors.white,
+      color: DesignTokens.headingTextColor,
       fontWeight: FontWeight.w800,
     );
     final styleB = Theme.of(context).textTheme.labelLarge?.copyWith(
-      color: Colors.white70,
+      color: DesignTokens.headingTextColor.withValues(alpha: 0.7),
       fontWeight: FontWeight.w600,
     );
 
@@ -1533,7 +1491,7 @@ class _TeacherPillData extends StatelessWidget {
                           bio,
                           style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.black54,
+                            color: DesignTokens.mutedTextColor,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

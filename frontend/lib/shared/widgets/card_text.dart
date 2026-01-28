@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:aveli/shared/theme/design_tokens.dart';
 
 class CourseTitleText extends StatelessWidget {
   final String text;
@@ -22,7 +23,7 @@ class CourseTitleText extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final style = (baseStyle ?? theme.textTheme.titleMedium)?.copyWith(
-      color: Colors.white,
+      color: DesignTokens.headingTextColor,
       fontWeight: fontWeight,
     );
     return Text(
@@ -55,7 +56,7 @@ class CourseDescriptionText extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final style = (baseStyle ?? theme.textTheme.bodyMedium)?.copyWith(
-      color: Colors.black,
+      color: DesignTokens.bodyTextColor,
     );
     return Text(
       text,
@@ -89,7 +90,7 @@ class TeacherNameText extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final style = (baseStyle ?? theme.textTheme.titleMedium)?.copyWith(
-      color: Colors.white,
+      color: DesignTokens.nameTextColor,
       fontWeight: fontWeight,
     );
     return Text(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/app_text_colors.dart';
+import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 const Color kPrimary = Color(0xFF7AA8F7);
@@ -14,7 +15,11 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     secondary: kSecondary,
   );
   final scheme = forLanding
-      ? baseScheme
+      ? baseScheme.copyWith(
+          onSurface: DesignTokens.headingTextColor,
+          onBackground: DesignTokens.headingTextColor,
+          onSurfaceVariant: DesignTokens.headingTextColor,
+        )
       : baseScheme.copyWith(
           onSurface: AppTextColor.body,
           onBackground: AppTextColor.body,
@@ -75,7 +80,9 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     scaffoldBackgroundColor: Colors.transparent,
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.white,
-      foregroundColor: forLanding ? Colors.black87 : AppTextColor.body,
+      foregroundColor: forLanding
+          ? DesignTokens.headingTextColor
+          : AppTextColor.body,
       elevation: 0,
       centerTitle: false,
     ),
