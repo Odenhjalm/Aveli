@@ -1,6 +1,17 @@
 [build]
   base = "frontend"
-  command = "echo 'prebuilt'"
+  # Flutter Web production builds MUST be configured via Netlify env vars and
+  # injected at build time using --dart-define (compiled into the app).
+  #
+  # Required Netlify env vars:
+  # - FLUTTER_API_BASE_URL
+  # - FLUTTER_SUPABASE_URL
+  # - FLUTTER_SUPABASE_PUBLIC_API_KEY
+  # - FLUTTER_STRIPE_PUBLISHABLE_KEY
+  # - FLUTTER_OAUTH_REDIRECT_WEB
+  #
+  # The build will fail fast if any are missing.
+  command = "bash scripts/netlify_build_web.sh"
   publish = "build/web"
 
 [[redirects]]

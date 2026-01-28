@@ -48,6 +48,18 @@ This updates `supabase_migrations.schema_migrations` only (no schema changes).
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (use the Supabase publishable key)
   - `NEXT_PUBLIC_API_BASE_URL` (backend HTTPS URL)
 
+## Netlify (Flutter Web app)
+- Source: Flutter app in `frontend/`
+- Netlify config: `netlify.toml` runs `frontend/scripts/netlify_build_web.sh`
+- Required Netlify env vars (set in Netlify UI; **no `.env` files for web**):
+  - `FLUTTER_API_BASE_URL` → `--dart-define=API_BASE_URL=...`
+  - `FLUTTER_SUPABASE_URL` → `--dart-define=SUPABASE_URL=...`
+  - `FLUTTER_SUPABASE_PUBLIC_API_KEY` → `--dart-define=SUPABASE_PUBLIC_API_KEY=...`
+  - `FLUTTER_STRIPE_PUBLISHABLE_KEY` → `--dart-define=STRIPE_PUBLISHABLE_KEY=...`
+  - `FLUTTER_OAUTH_REDIRECT_WEB` → `--dart-define=OAUTH_REDIRECT_WEB=...`
+- Build safety: the Netlify build **fails fast** if any required env var is missing (prevents the red config banner in production).
+- Reminder: `--dart-define` values are compiled into the frontend bundle (public). Never pass backend secrets.
+
 ## Git history cleanup
 Rewrite to purge leaked secrets and binary artifacts:
 ```bash
