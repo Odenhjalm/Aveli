@@ -76,7 +76,7 @@ void main() {
         );
       } else {
         debugPrint(
-          'Dotenv not initialized; using dart-define/runtime values only.',
+          'Dotenv not initialized; using runtime (process env) and dart-define values.',
         );
       }
       EnvResolver.debugLogResolved();
@@ -104,33 +104,13 @@ void main() {
         );
       }
 
-      final missingKeys = <String>[];
-      if (rawBaseUrl.isEmpty) {
-        missingKeys.add('API_BASE_URL');
-      }
-      if (publishableKey.isEmpty) {
-        missingKeys.add('STRIPE_PUBLISHABLE_KEY');
-      }
-      if (supabaseUrl.isEmpty) {
-        missingKeys.add('SUPABASE_URL');
-      }
-      if (supabasePublishableKey.isEmpty) {
-        missingKeys.add('SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY');
-      }
-      if (kIsWeb) {
-        if (oauthRedirectWeb.isEmpty) {
-          missingKeys.add('OAUTH_REDIRECT_WEB');
-        }
-      } else {
-        if (oauthRedirectMobile.isEmpty) {
-          missingKeys.add('OAUTH_REDIRECT_MOBILE');
-        }
-      }
+      final envValidation = EnvResolver.validateRequired();
+      final missingKeys = envValidation.missingKeys;
 
       if (missingKeys.isNotEmpty) {
         debugPrint(
-          'Missing required environment keys: ${missingKeys.join(', ')}. '
-          '${kIsWeb ? 'Provide them via --dart-define for Flutter Web.' : 'Provide them via --dart-define or a local environment file.'}',
+          'Missing required environment keys (${envValidation.mode.name}): ${missingKeys.join(', ')}. '
+          '${kIsWeb ? 'Provide them via --dart-define/--dart-define-from-file for Flutter Web.' : 'Provide them via DOTENV_FILE (dotenv), process env, or --dart-define.'}',
         );
       }
 
@@ -240,23 +220,15 @@ String _resolveApiBaseUrl(String url) {
 Future<void> _loadEnvFile({required bool requiredFile}) async {
   const fileName = String.fromEnvironment('DOTENV_FILE', defaultValue: '');
   if (kIsWeb) {
-    if (!kDebugMode) {
-      debugPrint('Skipping dotenv load on web (dart-define only).');
-      return;
-    }
-    const fallbackWebFile = '.env.web';
-    final webFile = fileName.isNotEmpty ? fileName : fallbackWebFile;
-    try {
-      await dotenv.load(fileName: webFile, isOptional: true);
-      debugPrint('Loaded web dotenv from $webFile (debug).');
-    } catch (error) {
-      debugPrint('Warning: Could not load $webFile ($error)');
-    }
+    debugPrint(
+      'Skipping dotenv load on web (compile-time dart-define only). '
+      'Use --dart-define-from-file for local dev.',
+    );
     return;
   }
   if (fileName.isEmpty) {
     debugPrint(
-      'No DOTENV_FILE provided; relying on runtime environment and dart-define.',
+      'No DOTENV_FILE provided; relying on process env and dart-define.',
     );
     return;
   }
