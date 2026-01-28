@@ -1082,12 +1082,6 @@ async def delete_media(media_id: str, current: TeacherUser):
         )
         raise HTTPException(status_code=403, detail="Not course owner")
     deleted_row = await models.delete_lesson_media_entry(media_id)
-    storage_path = (
-        deleted_row.get("storage_path") if deleted_row else row.get("storage_path")
-    )
-    storage_bucket = (
-        deleted_row.get("storage_bucket") if deleted_row else row.get("storage_bucket")
-    )
 
     if media_asset and deleted_row and deleted_row.get("media_asset_deleted"):
         delete_targets: set[tuple[str, str]] = set()
