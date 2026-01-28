@@ -8,9 +8,9 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/gradient_text.dart';
-import 'package:aveli/widgets/base_page.dart';
 
 class ForgotPasswordPage extends ConsumerStatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -36,110 +36,109 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     final envInfo = ref.watch(envInfoProvider);
     final envBlocked = envInfo.hasIssues;
     final textTheme = Theme.of(context).textTheme;
-    return Scaffold(
-      body: BasePage(
-        child: SafeArea(
-          top: false,
-          child: Center(
-            child: SingleChildScrollView(
-              padding: p16,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Form(
-                      key: _formKey,
-                      child: AutofillGroup(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (envBlocked)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: Text(
-                                  '${envInfo.message} Återställning av lösenord är avstängd tills konfigurationen är klar.',
-                                  style: textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+    return AppScaffold(
+      title: 'Glömt lösenord',
+      showHomeAction: false,
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: p16,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: AutofillGroup(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (envBlocked)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Text(
+                                '${envInfo.message} Återställning av lösenord är avstängd tills konfigurationen är klar.',
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            Text(
-                              'Glömt lösenord?',
-                              style: textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
                             ),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 200),
-                              child: _errorMessage != null
-                                  ? Padding(
-                                      key: const ValueKey('forgot-error'),
-                                      padding: const EdgeInsets.only(top: 12),
-                                      child: Text(
-                                        _errorMessage!,
-                                        style: textTheme.bodyMedium?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.error,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                          Text(
+                            'Glömt lösenord?',
+                            style: textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: _errorMessage != null
+                                ? Padding(
+                                    key: const ValueKey('forgot-error'),
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      _errorMessage!,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                    )
-                                  : const SizedBox(key: ValueKey('forgot-ok')),
-                            ),
-                            gap16,
-                            const Text(
-                              'Ange din e-postadress så skickar vi instruktioner för hur du återställer ditt lösenord.',
-                            ),
-                            gap24,
-                            TextFormField(
-                              controller: _emailCtrl,
-                              enabled: !envBlocked,
-                              keyboardType: TextInputType.emailAddress,
-                              autofillHints: const [AutofillHints.email],
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: _busy || envBlocked
-                                  ? null
-                                  : (_) => _sendLink(context),
-                              decoration: const InputDecoration(
-                                labelText: 'E-postadress',
-                                hintText: 'namn@example.com',
-                              ),
-                              validator: _validateEmail,
-                            ),
-                            gap24,
-                            GradientButton(
-                              onPressed: _busy || envBlocked
-                                  ? null
-                                  : () => _sendLink(context),
-                              child: _busy
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Skicka återställningsinstruktioner',
                                     ),
+                                  )
+                                : const SizedBox(key: ValueKey('forgot-ok')),
+                          ),
+                          gap16,
+                          const Text(
+                            'Ange din e-postadress så skickar vi instruktioner för hur du återställer ditt lösenord.',
+                          ),
+                          gap24,
+                          TextFormField(
+                            controller: _emailCtrl,
+                            enabled: !envBlocked,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: _busy || envBlocked
+                                ? null
+                                : (_) => _sendLink(context),
+                            decoration: const InputDecoration(
+                              labelText: 'E-postadress',
+                              hintText: 'namn@example.com',
                             ),
-                            gap12,
-                            TextButton(
-                              onPressed: _busy || envBlocked
-                                  ? null
-                                  : () => context.goNamed(AppRoute.login),
-                              child: GradientText(
-                                'Tillbaka till logga in',
-                                style:
-                                    textTheme.bodyMedium ?? const TextStyle(),
-                              ),
+                            validator: _validateEmail,
+                          ),
+                          gap24,
+                          GradientButton(
+                            onPressed: _busy || envBlocked
+                                ? null
+                                : () => _sendLink(context),
+                            child: _busy
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Skicka återställningsinstruktioner',
+                                  ),
+                          ),
+                          gap12,
+                          TextButton(
+                            onPressed: _busy || envBlocked
+                                ? null
+                                : () => context.goNamed(AppRoute.login),
+                            child: GradientText(
+                              'Tillbaka till logga in',
+                              style: textTheme.bodyMedium ?? const TextStyle(),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

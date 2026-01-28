@@ -13,9 +13,8 @@ import 'package:aveli/features/payments/application/payments_providers.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/widgets/base_page.dart';
 
 class SubscribeScreen extends ConsumerStatefulWidget {
   const SubscribeScreen({super.key});
@@ -35,28 +34,18 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
   Widget build(BuildContext context) {
     final config = ref.watch(appConfigProvider);
     if (!config.subscriptionsEnabled) {
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        extendBodyBehindAppBar: true,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          leading: const GoRouterBackButton(),
-          title: const Text('Abonnemang'),
-        ),
-        body: const BasePage(
-          child: Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Card(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    'Prenumerationer är inte aktiverade ännu. '
-                    'Vi uppdaterar roadmapen när medlemskap ersätter traditionella subscription-flöden.',
-                    textAlign: TextAlign.center,
-                  ),
+      return const AppScaffold(
+        title: 'Abonnemang',
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Prenumerationer är inte aktiverade ännu. '
+                  'Vi uppdaterar roadmapen när medlemskap ersätter traditionella subscription-flöden.',
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),
@@ -88,102 +77,88 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
       _cancelSubscription(id);
     }
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: const GoRouterBackButton(),
-        title: const Text('Abonnemang'),
-      ),
-      body: BasePage(
-        child: SafeArea(
-          top: false,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
+    return AppScaffold(
+      title: 'Abonnemang',
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Padding(
+            padding: p16,
+            child: Card(
               child: Padding(
-                padding: p16,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (envBlocked)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Text(
-                              '${envInfo.message} Abonnemang är avstängt tills konfigurationen är klar.',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                          ),
-                        if (authState.profile == null)
-                          _LoginPrompt(onRequestLogin: _redirectToLogin)
-                        else
-                          _SubscriptionStatusBadge(
-                            status: effectiveStatus,
-                            subscriptionId: effectiveSubscriptionId,
-                            loading: subscriptionAsync.isLoading,
-                          ),
-                        gap16,
-                        Text(
-                          'Bli medlem',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (envBlocked)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          '${envInfo.message} Abonnemang är avstängt tills konfigurationen är klar.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
-                        gap12,
-                        if (_errorMessage != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Text(
-                              _errorMessage!,
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                          ),
-                        if (_statusMessage != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Text(
-                              _statusMessage!,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        GradientButton(
-                          onPressed: envBlocked || _loading
-                              ? null
-                              : () => _startSubscription(authState.profile),
-                          child: _loading
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text('Bli medlem'),
-                        ),
-                        const SizedBox(height: 12),
-                        GradientButton.tonal(
-                          onPressed:
-                              envBlocked ||
-                                  _loading ||
-                                  effectiveSubscriptionId == null ||
-                                  authState.profile == null
-                              ? null
-                              : cancelSubscription,
-                          child: const Text('Avbryt prenumeration'),
-                        ),
-                      ],
+                      ),
+                    if (authState.profile == null)
+                      _LoginPrompt(onRequestLogin: _redirectToLogin)
+                    else
+                      _SubscriptionStatusBadge(
+                        status: effectiveStatus,
+                        subscriptionId: effectiveSubscriptionId,
+                        loading: subscriptionAsync.isLoading,
+                      ),
+                    gap16,
+                    Text(
+                      'Bli medlem',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
+                    gap12,
+                    if (_errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    if (_statusMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          _statusMessage!,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    GradientButton(
+                      onPressed: envBlocked || _loading
+                          ? null
+                          : () => _startSubscription(authState.profile),
+                      child: _loading
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Bli medlem'),
+                    ),
+                    const SizedBox(height: 12),
+                    GradientButton.tonal(
+                      onPressed:
+                          envBlocked ||
+                              _loading ||
+                              effectiveSubscriptionId == null ||
+                              authState.profile == null
+                          ? null
+                          : cancelSubscription,
+                      child: const Text('Avbryt prenumeration'),
+                    ),
+                  ],
                 ),
               ),
             ),

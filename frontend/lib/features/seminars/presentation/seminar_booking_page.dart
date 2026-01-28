@@ -9,7 +9,7 @@ import 'package:aveli/features/payments/application/payments_providers.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_sessions_repository.dart';
 import 'package:aveli/shared/utils/snack.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/widgets/glass_container.dart';
 
@@ -41,11 +41,9 @@ class _SeminarBookingPageState extends ConsumerState<SeminarBookingPage> {
       }
     });
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Boka live-session'),
-        leading: const GoRouterBackButton(),
-      ),
+    return AppScaffold(
+      title: 'Boka live-session',
+      showHomeAction: false,
       body: SafeArea(
         child: sessionAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),

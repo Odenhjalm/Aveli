@@ -7,8 +7,7 @@ import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
-import 'package:aveli/shared/widgets/background_layer.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
@@ -33,27 +32,18 @@ class CourseCatalogPage extends ConsumerWidget {
     final Object? error = popularAsync.error ?? myAsync.error;
     final courses = combined ?? const <Map<String, dynamic>>[];
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: const GoRouterBackButton(),
-        title: const Text('Alla kurser'),
-        actions: const [TopNavActionButtons()],
-      ),
-      body: AppBackground(
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
-            child: isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : error != null
-                ? _ErrorState(error: error)
-                : _CourseList(courses: courses, theme: theme),
-          ),
+    return AppScaffold(
+      title: 'Alla kurser',
+      showHomeAction: false,
+      actions: const [TopNavActionButtons()],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+          child: isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : error != null
+              ? _ErrorState(error: error)
+              : _CourseList(courses: courses, theme: theme),
         ),
       ),
     );

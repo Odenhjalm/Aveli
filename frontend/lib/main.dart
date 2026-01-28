@@ -349,51 +349,55 @@ class AveliApp extends ConsumerWidget {
     });
 
     final router = ref.watch(appRouterProvider);
-    return MaterialApp.router(
-      debugShowCheckedModeBanner: false,
-      onGenerateTitle: (context) => context.l10n.appTitle,
-      theme: buildLightTheme(),
-      themeMode: ThemeMode.light,
-      localizationsDelegates: const [
-        ...AppLocalizations.localizationsDelegates,
-        FlutterQuillLocalizations.delegate,
-      ],
-      supportedLocales: AppLocalizations.supportedLocales,
-      localeListResolutionCallback: (locales, supported) {
-        if (locales != null) {
-          for (final locale in locales) {
-            if (supported.contains(locale)) return locale;
-            final languageMatch = supported.firstWhere(
-              (supportedLocale) =>
-                  supportedLocale.languageCode == locale.languageCode,
-              orElse: () => const Locale('en'),
-            );
-            if (languageMatch.languageCode == locale.languageCode) {
-              return languageMatch;
+    final baseTheme = buildLightTheme();
+    final brandedTheme = buildLightTheme(forLanding: true);
+    final baseThemeData = baseTheme.copyWith(
+      radioTheme: cleanRadioThemeForScheme(baseTheme.colorScheme),
+    );
+    final brandedThemeData = brandedTheme.copyWith(
+      radioTheme: cleanRadioThemeForScheme(brandedTheme.colorScheme),
+    );
+
+    return ValueListenableBuilder<RouteInformation>(
+      valueListenable: router.routeInformationProvider,
+      builder: (context, routeInfo, _) {
+        final path = _normalizeThemePath(routeInfo.uri.path);
+        final isBrandedSurface = _isBrandedSurfacePath(path);
+        final themeData = isBrandedSurface ? brandedThemeData : baseThemeData;
+
+        return MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          onGenerateTitle: (context) => context.l10n.appTitle,
+          theme: themeData,
+          themeMode: ThemeMode.light,
+          localizationsDelegates: const [
+            ...AppLocalizations.localizationsDelegates,
+            FlutterQuillLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          localeListResolutionCallback: (locales, supported) {
+            if (locales != null) {
+              for (final locale in locales) {
+                if (supported.contains(locale)) return locale;
+                final languageMatch = supported.firstWhere(
+                  (supportedLocale) =>
+                      supportedLocale.languageCode == locale.languageCode,
+                  orElse: () => const Locale('en'),
+                );
+                if (languageMatch.languageCode == locale.languageCode) {
+                  return languageMatch;
+                }
+              }
             }
-          }
-        }
-        return const Locale('en');
-      },
-      scrollBehavior: const AveliScrollBehavior(),
-      scaffoldMessengerKey: _messengerKey,
-      routerConfig: router,
-      builder: (context, child) {
-        if (child == null) return const SizedBox.shrink();
-        final path = router.routeInformationProvider.value.uri.path;
-        final isBrandedSurface =
-            path == RoutePath.landingRoot ||
-            path == RoutePath.landing ||
-            path == RoutePath.home ||
-            path == RoutePath.privacy ||
-            path == RoutePath.terms;
-        final baseTheme = Theme.of(context);
-        final themeData =
-            (isBrandedSurface ? buildLightTheme(forLanding: true) : baseTheme)
-                .copyWith(radioTheme: cleanRadioTheme(context));
-        return Theme(
-          data: themeData,
-          child: AppBackground(child: child),
+            return const Locale('en');
+          },
+          scrollBehavior: const AveliScrollBehavior(),
+          scaffoldMessengerKey: _messengerKey,
+          routerConfig: router,
+          builder: (context, child) {
+            if (child == null) return const SizedBox.shrink();
+            return AppBackground(child: child);
+          },
         );
       },
     );
@@ -421,4 +425,20 @@ class AveliScrollBehavior extends MaterialScrollBehavior {
     PointerDeviceKind.trackpad,
     PointerDeviceKind.stylus,
   };
+}
+
+String _normalizeThemePath(String path) {
+  if (path.isEmpty) return RoutePath.landingRoot;
+  if (path.length > 1 && path.endsWith('/')) {
+    return path.substring(0, path.length - 1);
+  }
+  return path;
+}
+
+bool _isBrandedSurfacePath(String path) {
+  return path == RoutePath.landingRoot ||
+      path == RoutePath.landing ||
+      path == RoutePath.home ||
+      path == RoutePath.privacy ||
+      path == RoutePath.terms;
 }

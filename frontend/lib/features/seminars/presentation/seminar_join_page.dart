@@ -10,6 +10,7 @@ import 'package:aveli/data/repositories/seminar_repository.dart';
 import 'package:aveli/features/home/application/livekit_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/safe_background.dart';
 
@@ -57,202 +58,178 @@ class _SeminarJoinPageState extends ConsumerState<SeminarJoinPage> {
       }
     });
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('Delta i liveseminarium'),
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+    return AppScaffold(
+      title: 'Delta i liveseminarium',
+      showHomeAction: false,
+      useBasePage: false,
+      contentPadding: EdgeInsets.zero,
+      background: SafeBackground(
+        image: backgroundImage,
+        child: const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0x33000000), Colors.transparent],
+              stops: [0.0, 0.35],
+            ),
+          ),
+        ),
       ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: SafeBackground(
-              image: backgroundImage,
-              child: const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0x33000000), Colors.transparent],
-                    stops: [0.0, 0.35],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: SafeArea(
-              child: detailAsync.when(
-                data: (detail) {
-                  _schedulePoll(detail, ref);
-                  final seminar = detail.seminar;
-                  SeminarSession? liveSession;
-                  for (final session in detail.sessions) {
-                    if (session.status == SeminarSessionStatus.live) {
-                      liveSession = session;
-                      break;
-                    }
-                  }
-                  liveSession ??= detail.sessions.isNotEmpty
-                      ? detail.sessions.first
-                      : null;
-                  final String sessionStatusLabel = liveSession != null
-                      ? liveSession.status.name.toUpperCase()
-                      : 'Ingen session';
-                  final DateTime? sessionStartedAt = liveSession?.startedAt;
-                  final bool canJoin =
-                      liveSession != null &&
-                      liveSession.status == SeminarSessionStatus.live;
+      body: SafeArea(
+        child: detailAsync.when(
+          data: (detail) {
+            _schedulePoll(detail, ref);
+            final seminar = detail.seminar;
+            SeminarSession? liveSession;
+            for (final session in detail.sessions) {
+              if (session.status == SeminarSessionStatus.live) {
+                liveSession = session;
+                break;
+              }
+            }
+            liveSession ??= detail.sessions.isNotEmpty
+                ? detail.sessions.first
+                : null;
+            final String sessionStatusLabel = liveSession != null
+                ? liveSession.status.name.toUpperCase()
+                : 'Ingen session';
+            final DateTime? sessionStartedAt = liveSession?.startedAt;
+            final bool canJoin =
+                liveSession != null &&
+                liveSession.status == SeminarSessionStatus.live;
 
-                  return Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  seminar.title,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                if (seminar.description != null) ...[
-                                  const SizedBox(height: 8),
-                                  Text(seminar.description!),
-                                ],
-                                const SizedBox(height: 12),
-                                Text('Status: ${seminar.status.name}'),
-                                if (seminar.scheduledAt != null)
-                                  Text(
-                                    'Start: ${seminar.scheduledAt!.toLocal()}',
-                                  ),
-                              ],
-                            ),
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            seminar.title,
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Session',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 8),
-                                Text('Status: $sessionStatusLabel'),
-                                if (sessionStartedAt != null)
-                                  Text(
-                                    'Startade: ${sessionStartedAt.toLocal()}',
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GradientButton.icon(
-                                onPressed:
-                                    _joining ||
-                                        sessionState.connecting ||
-                                        !canJoin
-                                    ? null
-                                    : () => _joinSeminar(ref, seminar),
-                                icon: _joining || sessionState.connecting
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.play_arrow_rounded),
-                                label: const Text('Anslut'),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: sessionState.connected
-                                    ? ref
-                                          .read(
-                                            liveSessionControllerProvider
-                                                .notifier,
-                                          )
-                                          .disconnect
-                                    : null,
-                                icon: const Icon(Icons.stop),
-                                label: const Text('Koppla från'),
-                              ),
-                            ),
+                          if (seminar.description != null) ...[
+                            const SizedBox(height: 8),
+                            Text(seminar.description!),
                           ],
-                        ),
-                        const SizedBox(height: 16),
-                        if (!canJoin)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 12),
-                            child: Text(
-                              'Vi uppdaterar listan automatiskt. Knappen blir aktiv när sändningen går live.',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        Expanded(
-                          child: _ParticipantView(
-                            state: sessionState,
-                            seminar: seminar,
-                            recordings: detail.recordings,
-                          ),
-                        ),
-                        if (seminar.status == SeminarStatus.ended &&
-                            detail.recordings.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _RecordingCard(recordings: detail.recordings),
+                          const SizedBox(height: 12),
+                          Text('Status: ${seminar.status.name}'),
+                          if (seminar.scheduledAt != null)
+                            Text('Start: ${seminar.scheduledAt!.toLocal()}'),
                         ],
-                      ],
-                    ),
-                  );
-                },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, stackTrace) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Kunde inte läsa seminarium: ${_seminarJoinErrorMessage(error, stackTrace)}',
-                        ),
-                        const SizedBox(height: 12),
-                        GradientButton(
-                          onPressed: () => ref.invalidate(
-                            publicSeminarDetailProvider(widget.seminarId),
-                          ),
-                          child: const Text('Försök igen'),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Session',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text('Status: $sessionStatusLabel'),
+                          if (sessionStartedAt != null)
+                            Text('Startade: ${sessionStartedAt.toLocal()}'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GradientButton.icon(
+                          onPressed:
+                              _joining || sessionState.connecting || !canJoin
+                              ? null
+                              : () => _joinSeminar(ref, seminar),
+                          icon: _joining || sessionState.connecting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.play_arrow_rounded),
+                          label: const Text('Anslut'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: sessionState.connected
+                              ? ref
+                                    .read(
+                                      liveSessionControllerProvider.notifier,
+                                    )
+                                    .disconnect
+                              : null,
+                          icon: const Icon(Icons.stop),
+                          label: const Text('Koppla från'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (!canJoin)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'Vi uppdaterar listan automatiskt. Knappen blir aktiv när sändningen går live.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  Expanded(
+                    child: _ParticipantView(
+                      state: sessionState,
+                      seminar: seminar,
+                      recordings: detail.recordings,
+                    ),
+                  ),
+                  if (seminar.status == SeminarStatus.ended &&
+                      detail.recordings.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _RecordingCard(recordings: detail.recordings),
+                  ],
+                ],
+              ),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stackTrace) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Kunde inte läsa seminarium: ${_seminarJoinErrorMessage(error, stackTrace)}',
+                  ),
+                  const SizedBox(height: 12),
+                  GradientButton(
+                    onPressed: () => ref.invalidate(
+                      publicSeminarDetailProvider(widget.seminarId),
+                    ),
+                    child: const Text('Försök igen'),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

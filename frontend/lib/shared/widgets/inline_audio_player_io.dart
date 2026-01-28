@@ -18,6 +18,7 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
     this.onDownload,
     this.durationHint,
     this.compact = false,
+    this.autoPlay = false,
   });
 
   final String url;
@@ -25,6 +26,7 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
   final Future<void> Function()? onDownload;
   final Duration? durationHint;
   final bool compact;
+  final bool autoPlay;
 
   @override
   ConsumerState<InlineAudioPlayer> createState() => _InlineAudioPlayerState();
@@ -41,6 +43,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   Uint8List? _cachedBytes;
   double _volume = 1.0;
   double _lastVolume = 1.0;
+  bool _didAutoPlay = false;
 
   @override
   void initState() {
@@ -93,6 +96,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
           _duration = widget.durationHint!;
         }
       });
+      unawaited(_maybeAutoPlay());
     } on PlatformException catch (error) {
       await _prepareFromBytes(error);
     } catch (error) {
@@ -120,6 +124,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
         _usingBytes = true;
         _cachedBytes = bytes;
       });
+      unawaited(_maybeAutoPlay());
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -129,6 +134,19 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
             ? error.toString()
             : '$original / ${error.toString()}';
       });
+    }
+  }
+
+  Future<void> _maybeAutoPlay() async {
+    if (!mounted) return;
+    if (!widget.autoPlay) return;
+    if (_didAutoPlay) return;
+    if (_error != null) return;
+    _didAutoPlay = true;
+    try {
+      await _toggle();
+    } catch (_) {
+      // Ignore auto-play failures (e.g. platform restrictions).
     }
   }
 
@@ -194,8 +212,8 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     final volumeIcon = _volume <= 0
         ? Icons.volume_off_rounded
         : _volume < 0.5
-            ? Icons.volume_down_rounded
-            : Icons.volume_up_rounded;
+        ? Icons.volume_down_rounded
+        : Icons.volume_up_rounded;
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(compact ? 14 : 12),
       side: compact
@@ -207,13 +225,10 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
             fontWeight: FontWeight.w600,
             color: theme.colorScheme.onSurface,
           )
-        : theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          );
-    final timeStyle = (compact
-            ? theme.textTheme.bodySmall
-            : theme.textTheme.bodyMedium)
-        ?.copyWith(color: theme.colorScheme.onSurface);
+        : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
+    final timeStyle =
+        (compact ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
+            ?.copyWith(color: theme.colorScheme.onSurface);
     final sliderTheme = compact
         ? theme.sliderTheme.copyWith(
             trackHeight: 2,
@@ -241,10 +256,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if ((widget.title ?? '').isNotEmpty) ...[
-              Text(
-                widget.title!,
-                style: titleStyle,
-              ),
+              Text(widget.title!, style: titleStyle),
               SizedBox(height: compact ? 8 : 12),
             ],
             if (_initializing)

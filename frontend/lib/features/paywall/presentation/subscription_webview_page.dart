@@ -10,6 +10,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class SubscriptionWebViewPage extends ConsumerStatefulWidget {
   const SubscriptionWebViewPage({super.key, required this.url});
@@ -89,12 +90,16 @@ class _SubscriptionWebViewPageState
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final url = widget.url;
-    final launched =
-        await launchUrlString(url, mode: LaunchMode.externalApplication);
+    final launched = await launchUrlString(
+      url,
+      mode: LaunchMode.externalApplication,
+    );
     if (!mounted) return;
     if (!launched) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Kunde inte öppna betalningslänk i webbläsare.')),
+        const SnackBar(
+          content: Text('Kunde inte öppna betalningslänk i webbläsare.'),
+        ),
       );
     }
     navigator.pop();
@@ -108,7 +113,12 @@ class _SubscriptionWebViewPageState
   @override
   Widget build(BuildContext context) {
     if (_fallbackExternal) {
-      return const Scaffold(
+      return const AppScaffold(
+        title: 'Hantera prenumeration',
+        disableBack: true,
+        showHomeAction: false,
+        useBasePage: false,
+        contentPadding: EdgeInsets.zero,
         body: Center(child: CircularProgressIndicator()),
       );
     }
@@ -122,16 +132,11 @@ class _SubscriptionWebViewPageState
         }
         _returnToSubscription();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text("Hantera prenumeration"),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ),
+      child: AppScaffold(
+        title: 'Hantera prenumeration',
+        showHomeAction: false,
+        useBasePage: false,
+        contentPadding: EdgeInsets.zero,
         body: Stack(
           children: [
             WebViewWidget(controller: _controller),
@@ -151,9 +156,7 @@ class _SubscriptionWebViewPageState
               ),
             if (_isLoading)
               const Positioned.fill(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
+                child: Center(child: CircularProgressIndicator()),
               ),
           ],
         ),
@@ -199,10 +202,7 @@ class _PortalErrorView extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.cloud_off_outlined,
-                    size: 48,
-                  ),
+                  const Icon(Icons.cloud_off_outlined, size: 48),
                   const SizedBox(height: 16),
                   Text(
                     'Kunde inte öppna kundportalen',
@@ -222,10 +222,7 @@ class _PortalErrorView extends StatelessWidget {
                     onPressed: onRetry,
                     child: const Text('Försök igen'),
                   ),
-                  TextButton(
-                    onPressed: onClose,
-                    child: const Text('Stäng'),
-                  ),
+                  TextButton(onPressed: onClose, child: const Text('Stäng')),
                 ],
               ),
             ),

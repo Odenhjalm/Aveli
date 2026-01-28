@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/features/home/application/livekit_controller.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class LiveKitDemoPage extends ConsumerStatefulWidget {
@@ -38,8 +39,9 @@ class _LiveKitDemoPageState extends ConsumerState<LiveKitDemoPage> {
       }
     });
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('LiveKit demo')),
+    return AppScaffold(
+      title: 'LiveKit demo',
+      showHomeAction: false,
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

@@ -8,8 +8,8 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/widgets/base_page.dart';
 
 class SignupPage extends ConsumerStatefulWidget {
   const SignupPage({super.key});
@@ -40,141 +40,141 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     final busy = authState.isLoading;
     final textTheme = Theme.of(context).textTheme;
 
-    return Scaffold(
-      body: BasePage(
-        child: SafeArea(
-          top: false,
-          child: Center(
-            child: SingleChildScrollView(
-              padding: p16,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Form(
-                      key: _formKey,
-                      child: AutofillGroup(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (envBlocked)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: Text(
-                                  '${envInfo.message} Nyregistrering är avstängd tills konfigurationen är klar.',
-                                  style: textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+    return AppScaffold(
+      title: 'Skapa konto',
+      showHomeAction: false,
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: p16,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: AutofillGroup(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (envBlocked)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Text(
+                                '${envInfo.message} Nyregistrering är avstängd tills konfigurationen är klar.',
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            Text(
-                              'Skapa konto',
-                              style: textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
                             ),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 200),
-                              child: authState.error != null
-                                  ? Padding(
-                                      key: const ValueKey('signup-error'),
-                                      padding: const EdgeInsets.only(top: 12),
-                                      child: Text(
-                                        authState.error!,
-                                        style: textTheme.bodyMedium?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.error,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                          Text(
+                            'Skapa konto',
+                            style: textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: authState.error != null
+                                ? Padding(
+                                    key: const ValueKey('signup-error'),
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      authState.error!,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                    )
-                                  : const SizedBox(key: ValueKey('signup-ok')),
+                                    ),
+                                  )
+                                : const SizedBox(key: ValueKey('signup-ok')),
+                          ),
+                          gap24,
+                          TextFormField(
+                            controller: _emailCtrl,
+                            enabled: !envBlocked,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'E-postadress',
+                              hintText: 'namn@example.com',
                             ),
-                            gap24,
-                            TextFormField(
-                              controller: _emailCtrl,
-                              enabled: !envBlocked,
-                              keyboardType: TextInputType.emailAddress,
-                              autofillHints: const [AutofillHints.email],
-                              textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
-                                labelText: 'E-postadress',
-                                hintText: 'namn@example.com',
-                              ),
-                              validator: _validateEmail,
+                            validator: _validateEmail,
+                          ),
+                          gap16,
+                          TextFormField(
+                            controller: _displayNameCtrl,
+                            enabled: !envBlocked,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Namn',
+                              hintText: 'Vad vill du kallas?',
                             ),
-                            gap16,
-                            TextFormField(
-                              controller: _displayNameCtrl,
-                              enabled: !envBlocked,
-                              textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
-                                labelText: 'Namn',
-                                hintText: 'Vad vill du kallas?',
-                              ),
-                              validator: _validateDisplayName,
+                            validator: _validateDisplayName,
+                          ),
+                          gap16,
+                          TextFormField(
+                            controller: _passwordCtrl,
+                            enabled: !envBlocked,
+                            obscureText: true,
+                            autofillHints: const [AutofillHints.newPassword],
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: busy || envBlocked
+                                ? null
+                                : (_) => _signUp(context),
+                            decoration: const InputDecoration(
+                              labelText: 'Lösenord',
+                              hintText: 'Minst 6 tecken',
                             ),
-                            gap16,
-                            TextFormField(
-                              controller: _passwordCtrl,
-                              enabled: !envBlocked,
-                              obscureText: true,
-                              autofillHints: const [AutofillHints.newPassword],
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: busy || envBlocked
-                                  ? null
-                                  : (_) => _signUp(context),
-                              decoration: const InputDecoration(
-                                labelText: 'Lösenord',
-                                hintText: 'Minst 6 tecken',
-                              ),
-                              validator: _validatePassword,
+                            validator: _validatePassword,
+                          ),
+                          gap24,
+                          GradientButton(
+                            onPressed: busy || envBlocked
+                                ? null
+                                : () => _signUp(context),
+                            child: busy
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Skapa konto'),
+                          ),
+                          gap12,
+                          TextButton(
+                            onPressed: busy || envBlocked
+                                ? null
+                                : () => context.goNamed(AppRoute.login),
+                            child: const Text('Har du konto? Logga in'),
+                          ),
+                          gap24,
+                          Text(
+                            'Alternativ',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
-                            gap24,
-                            GradientButton(
-                              onPressed: busy || envBlocked
-                                  ? null
-                                  : () => _signUp(context),
-                              child: busy
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('Skapa konto'),
+                          ),
+                          gap12,
+                          OutlinedButton(
+                            onPressed: () => showSnack(
+                              context,
+                              'Magiska länkar kommer tillbaka när e-postflödet är klart.',
                             ),
-                            gap12,
-                            TextButton(
-                              onPressed: busy || envBlocked
-                                  ? null
-                                  : () => context.goNamed(AppRoute.login),
-                              child: const Text('Har du konto? Logga in'),
+                            child: const Text(
+                              'Skicka magisk länk (ej tillgängligt)',
                             ),
-                            gap24,
-                            Text(
-                              'Alternativ',
-                              style: textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            gap12,
-                            OutlinedButton(
-                              onPressed: () => showSnack(
-                                context,
-                                'Magiska länkar kommer tillbaka när e-postflödet är klart.',
-                              ),
-                              child: const Text(
-                                'Skicka magisk länk (ej tillgängligt)',
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

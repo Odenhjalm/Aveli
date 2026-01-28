@@ -5,6 +5,7 @@ import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/customer_portal_api.dart';
 import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 
 class MySubscriptionPage extends ConsumerStatefulWidget {
@@ -113,29 +114,15 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
         t.labelLarge?.copyWith(fontWeight: FontWeight.w700) ??
         const TextStyle(fontWeight: FontWeight.w700);
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go(RoutePath.profile);
-            }
-          },
+    return AppScaffold(
+      title: 'Min prenumeration',
+      showHomeAction: false,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.home),
+          onPressed: () => context.go(RoutePath.landingRoot),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.home),
-            onPressed: () => context.go('/'),
-          ),
-        ],
-        title: const Text('Min prenumeration'),
-        centerTitle: true,
-      ),
+      ],
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: GlassCard(

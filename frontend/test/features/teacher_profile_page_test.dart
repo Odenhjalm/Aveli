@@ -52,12 +52,12 @@ Future<void> _pumpPage(
     ProviderScope(
       overrides: [
         appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost',
-              stripePublishableKey: 'pk_test',
-              stripeMerchantDisplayName: 'Aveli',
-              subscriptionsEnabled: false,
-            ),
+          const AppConfig(
+            apiBaseUrl: 'http://localhost',
+            stripePublishableKey: 'pk_test',
+            stripeMerchantDisplayName: 'Aveli',
+            subscriptionsEnabled: false,
+          ),
         ),
         backendAssetResolverProvider.overrideWith(
           (ref) => TestBackendAssetResolver(),
@@ -218,6 +218,6 @@ void main() {
     await tester.scrollUntilVisible(featuredTitle, 200);
     expect(featuredTitle, findsOneWidget);
     expect(find.text('Guided Relaxation'), findsOneWidget);
-    expect(find.text('Lyssna'), findsOneWidget);
+    expect(find.text('Spela'), findsOneWidget);
   });
 }

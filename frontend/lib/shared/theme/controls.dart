@@ -48,7 +48,10 @@ ButtonStyle elevatedPrimaryStyle(BuildContext context) {
 }
 
 RadioThemeData cleanRadioTheme(BuildContext context) {
-  final scheme = Theme.of(context).colorScheme;
+  return cleanRadioThemeForScheme(Theme.of(context).colorScheme);
+}
+
+RadioThemeData cleanRadioThemeForScheme(ColorScheme scheme) {
 
   Color fillResolver(Set<WidgetState> states) {
     if (states.contains(WidgetState.disabled)) {

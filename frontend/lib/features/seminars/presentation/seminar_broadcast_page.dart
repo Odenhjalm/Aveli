@@ -12,6 +12,7 @@ import 'package:aveli/features/home/application/livekit_controller.dart';
 import 'package:aveli/features/seminars/presentation/seminar_route_args.dart';
 import 'package:aveli/shared/utils/media_permissions.dart';
 import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/safe_background.dart';
 
@@ -131,53 +132,41 @@ class _SeminarBroadcastPageState extends ConsumerState<SeminarBroadcastPage> {
     final localVideoTrack = _selectLocalVideoTrack(room);
     final controlsEnabled = state.connected && !_ending;
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('Livesändning'),
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: _ending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.stop_circle_outlined),
-            tooltip: 'Avsluta sändning',
-            onPressed: state.connected && !_ending
-                ? () => _handleEndSession(repository)
-                : null,
-          ),
-        ],
-      ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: SafeBackground(
-              image: backgroundImage,
-              child: const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0x33000000), Colors.transparent],
-                    stops: [0.0, 0.35],
-                  ),
-                ),
-              ),
+    return AppScaffold(
+      title: 'Livesändning',
+      showHomeAction: false,
+      actions: [
+        IconButton(
+          icon: _ending
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.stop_circle_outlined),
+          tooltip: 'Avsluta sändning',
+          onPressed: state.connected && !_ending
+              ? () => _handleEndSession(repository)
+              : null,
+        ),
+      ],
+      background: SafeBackground(
+        image: backgroundImage,
+        child: const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0x33000000), Colors.transparent],
+              stops: [0.0, 0.35],
             ),
           ),
-          Positioned.fill(
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
+        ),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Card(
@@ -357,11 +346,8 @@ class _SeminarBroadcastPageState extends ConsumerState<SeminarBroadcastPage> {
                             ),
                     ),
                   ],
-                ),
-              ),
-            ),
           ),
-        ],
+        ),
       ),
     );
   }

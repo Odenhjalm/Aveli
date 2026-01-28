@@ -21,6 +21,7 @@ import 'package:uuid/uuid.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/editor/widgets/file_picker_web.dart'
@@ -40,7 +41,6 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
-import 'package:aveli/widgets/base_page.dart';
 
 String? _mediaUrl(Map<String, dynamic> media) {
   final playback = media['playback_url'];
@@ -3623,16 +3623,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return '$base-$random-$ts';
   }
 
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      title: const Text('Kursstudio'),
-      actions: const [TopNavActionButtons()],
-    );
-  }
-
   Future<void> _createCourse() async {
     final profile = ref.read(authControllerProvider).profile;
     if (profile == null) {
@@ -3802,14 +3792,25 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   @override
   Widget build(BuildContext context) {
     if (_checking) {
-      return const Scaffold(
-        body: BasePage(child: Center(child: CircularProgressIndicator())),
+      return const AppScaffold(
+        title: 'Kursstudio',
+        logoSize: 0,
+        showHomeAction: false,
+        maxContentWidth: 1920,
+        contentPadding: EdgeInsets.zero,
+        actions: [TopNavActionButtons()],
+        body: Center(child: CircularProgressIndicator()),
       );
     }
     if (!_allowed) {
-      return _GlassScaffold(
-        appBar: _buildAppBar(),
-        child: Center(
+      return AppScaffold(
+        title: 'Kursstudio',
+        logoSize: 0,
+        showHomeAction: false,
+        maxContentWidth: 1920,
+        contentPadding: EdgeInsets.zero,
+        actions: const [TopNavActionButtons()],
+        body: Center(
           child: GlassCard(
             padding: const EdgeInsets.all(32),
             borderRadius: BorderRadius.circular(24),
@@ -4729,29 +4730,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       ),
     );
 
-    return _GlassScaffold(appBar: _buildAppBar(), child: editorContent);
-  }
-}
-
-class _GlassScaffold extends StatelessWidget {
-  final Widget child;
-  final PreferredSizeWidget? appBar;
-  const _GlassScaffold({required this.child, this.appBar});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: appBar,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1920),
-            child: BasePage(child: child),
-          ),
-        ),
-      ),
+    return AppScaffold(
+      title: 'Kursstudio',
+      logoSize: 0,
+      showHomeAction: false,
+      maxContentWidth: 1920,
+      contentPadding: EdgeInsets.zero,
+      actions: const [TopNavActionButtons()],
+      body: editorContent,
     );
   }
 }

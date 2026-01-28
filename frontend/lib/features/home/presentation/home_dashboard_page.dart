@@ -20,6 +20,7 @@ import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
+import 'package:aveli/features/media/application/media_playback_controller.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
@@ -31,7 +32,6 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
-import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
@@ -81,106 +81,102 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       });
     }
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: const BrandLogo(height: 40),
-        title: InkWell(
-          onTap: () => context.goNamed(AppRoute.landing),
-          borderRadius: BorderRadius.circular(8),
-          child: const BrandHeaderTitle(),
+    return AppScaffold(
+      title: '',
+      disableBack: true,
+      showHomeAction: false,
+      logoSize: 0,
+      contentPadding: EdgeInsets.zero,
+      actions: [
+        IconButton(
+          tooltip: 'Home',
+          onPressed: () => context.goNamed(AppRoute.home),
+          icon: const Icon(Icons.home_outlined),
         ),
-        actions: [
+        if (isTeacher)
           IconButton(
-            tooltip: 'Home',
-            onPressed: () => context.goNamed(AppRoute.home),
-            icon: const Icon(Icons.home_outlined),
+            tooltip: 'Studio',
+            onPressed: () => context.goNamed(AppRoute.studio),
+            icon: const Icon(Icons.edit),
           ),
-          if (isTeacher)
-            IconButton(
-              tooltip: 'Studio',
-              onPressed: () => context.goNamed(AppRoute.studio),
-              icon: const Icon(Icons.edit),
-            ),
-          IconButton(
-            tooltip: 'Profil',
-            onPressed: () => context.goNamed(AppRoute.profile),
-            icon: const Icon(Icons.person),
-          ),
-        ],
-      ),
-      body: FullBleedBackground(
+        IconButton(
+          tooltip: 'Profil',
+          onPressed: () => context.goNamed(AppRoute.profile),
+          icon: const Icon(Icons.person),
+        ),
+      ],
+      background: FullBleedBackground(
         // Bundlade bakgrunder laddas lokalt för att slippa 401-svar från API:t.
         image: AppImages.background,
         alignment: Alignment.center,
         topOpacity: 0.22,
         overlayColor: Theme.of(context).brightness == Brightness.dark
-            ? Colors.black.withValues(alpha: 0.3)
+            ? const Color(0xFF000000).withValues(alpha: 0.3)
             : const Color(0xFFFFE2B8).withValues(alpha: 0.16),
-        child: RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(homeFeedProvider);
-            ref.invalidate(homeServicesProvider);
-            ref.invalidate(landing.popularCoursesProvider);
-            await ref.read(authControllerProvider.notifier).loadSession();
-          },
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 900;
-              if (isWide) {
-                return SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 110, 16, 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 560),
-                          child: homeAudioSection,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: _ExploreCoursesSection(
-                              section: exploreAsync,
-                              mediaRepository: mediaRepository,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _FeedSection(
-                              feedAsync: feedAsync,
-                              seminarsAsync: seminarsAsync,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _ServicesSection(
-                              servicesAsync: servicesAsync,
-                              isLoading: (id) =>
-                                  _loadingServiceIds.contains(id),
-                              onCheckout: (service) =>
-                                  _handleServiceCheckout(context, service),
-                              certificatesAsync: certificatesAsync,
-                              isAuthenticated: authState.isAuthenticated,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              return ListView(
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(homeFeedProvider);
+          ref.invalidate(homeServicesProvider);
+          ref.invalidate(landing.popularCoursesProvider);
+          await ref.read(authControllerProvider.notifier).loadSession();
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 900;
+            if (isWide) {
+              return SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 110, 16, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: homeAudioSection,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _ExploreCoursesSection(
+                            section: exploreAsync,
+                            mediaRepository: mediaRepository,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _FeedSection(
+                            feedAsync: feedAsync,
+                            seminarsAsync: seminarsAsync,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _ServicesSection(
+                            servicesAsync: servicesAsync,
+                            isLoading: (id) => _loadingServiceIds.contains(id),
+                            onCheckout: (service) =>
+                                _handleServiceCheckout(context, service),
+                            certificatesAsync: certificatesAsync,
+                            isAuthenticated: authState.isAuthenticated,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 110, 16, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Center(
                     child: ConstrainedBox(
@@ -208,9 +204,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                     isAuthenticated: authState.isAuthenticated,
                   ),
                 ],
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -301,6 +297,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     final items = widget.items;
     if (items.isEmpty) return const SizedBox.shrink();
     final selected = _resolveSelected(items);
+    final playback = ref.watch(mediaPlaybackControllerProvider);
     final durationHint = (selected.durationSeconds ?? 0) > 0
         ? Duration(seconds: selected.durationSeconds!)
         : null;
@@ -325,9 +322,17 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
         ],
         const SizedBox(height: 10),
         if (selected.mediaAssetId != null)
-          _buildPipelineStatusOrPlay(selected, durationHint: durationHint)
+          _buildPipelineStatusOrPlay(
+            selected,
+            playback: playback,
+            durationHint: durationHint,
+          )
         else
-          _buildLegacyStatusOrPlay(selected, durationHint: durationHint),
+          _buildLegacyStatusOrPlay(
+            selected,
+            playback: playback,
+            durationHint: durationHint,
+          ),
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerRight,
@@ -343,6 +348,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
 
   Widget _buildPipelineStatusOrPlay(
     HomeAudioItem item, {
+    required MediaPlaybackState playback,
     Duration? durationHint,
   }) {
     final state = item.mediaState ?? 'uploaded';
@@ -352,63 +358,123 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
           : 'Ljudet bearbetas…';
       return Text(message);
     }
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ElevatedButton.icon(
-        onPressed: () => _playPipeline(item, durationHint: durationHint),
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('Spela'),
-      ),
+    return _buildInlineControls(
+      item,
+      playback: playback,
+      durationHint: durationHint,
+      onPlay: () => _playPipelineInline(item, durationHint: durationHint),
     );
   }
 
   Widget _buildLegacyStatusOrPlay(
     HomeAudioItem item, {
+    required MediaPlaybackState playback,
     Duration? durationHint,
   }) {
     final url = item.preferredUrl;
     if (url == null || url.trim().isEmpty) {
       return const Text('Ljudlänken saknas för detta spår.');
     }
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ElevatedButton.icon(
-        onPressed: () => _playLegacy(item, durationHint: durationHint),
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('Spela'),
-      ),
+    return _buildInlineControls(
+      item,
+      playback: playback,
+      durationHint: durationHint,
+      onPlay: () => _playLegacyInline(item, durationHint: durationHint),
     );
   }
 
-  Future<void> _playPipeline(
+  Widget _buildInlineControls(
+    HomeAudioItem item, {
+    required MediaPlaybackState playback,
+    required Future<void> Function() onPlay,
+    Duration? durationHint,
+  }) {
+    final mediaType = item.kind == 'video'
+        ? MediaPlaybackType.video
+        : MediaPlaybackType.audio;
+    final isActive =
+        playback.currentMediaId == item.id &&
+        playback.isPlaying &&
+        playback.mediaType == mediaType;
+    final hasUrl = (playback.url ?? '').trim().isNotEmpty;
+    final showLoading = isActive && playback.isLoading;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ElevatedButton.icon(
+            onPressed: isActive
+                ? () =>
+                      ref.read(mediaPlaybackControllerProvider.notifier).stop()
+                : () async => await onPlay(),
+            icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
+            label: Text(isActive ? 'Stoppa' : 'Spela'),
+          ),
+        ),
+        if (showLoading)
+          const Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: LinearProgressIndicator(),
+          ),
+        if (isActive && hasUrl) ...[
+          const SizedBox(height: 10),
+          if (mediaType == MediaPlaybackType.audio)
+            InlineAudioPlayer(
+              url: playback.url!,
+              title: item.displayTitle,
+              durationHint: durationHint,
+              autoPlay: true,
+            )
+          else
+            InlineVideoPlayer(
+              url: playback.url!,
+              title: item.displayTitle,
+              autoPlay: true,
+            ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _playPipelineInline(
     HomeAudioItem item, {
     Duration? durationHint,
   }) async {
-    final mediaId = item.mediaAssetId;
-    if (mediaId == null || mediaId.trim().isEmpty) return;
+    final mediaAssetId = item.mediaAssetId;
+    if (mediaAssetId == null || mediaAssetId.trim().isEmpty) return;
+    final mediaType = item.kind == 'video'
+        ? MediaPlaybackType.video
+        : MediaPlaybackType.audio;
+    final controller = ref.read(mediaPlaybackControllerProvider.notifier);
     try {
-      final repo = ref.read(mediaPipelineRepositoryProvider);
-      final playback = await repo.fetchPlaybackUrl(mediaId);
-      if (!mounted) return;
-      await showMediaPlayerSheet(
-        context,
-        kind: 'audio',
-        url: playback.playbackUrl.toString(),
+      await controller.play(
+        mediaId: item.id,
+        mediaType: mediaType,
         title: item.displayTitle,
         durationHint: durationHint,
+        urlLoader: () async {
+          final repo = ref.read(mediaPipelineRepositoryProvider);
+          final playback = await repo.fetchPlaybackUrl(mediaAssetId);
+          return playback.playbackUrl.toString();
+        },
       );
     } catch (error, stackTrace) {
       if (!mounted) return;
       final failure = AppFailure.from(error, stackTrace);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Kunde inte spela upp ljud: ${failure.message}'),
+          content: Text('Kunde inte spela upp media: ${failure.message}'),
         ),
       );
     }
   }
 
-  Future<void> _playLegacy(HomeAudioItem item, {Duration? durationHint}) async {
+  Future<void> _playLegacyInline(
+    HomeAudioItem item, {
+    Duration? durationHint,
+  }) async {
     final preferred = item.preferredUrl;
     if (preferred == null || preferred.trim().isEmpty) return;
     String url = preferred.trim();
@@ -418,14 +484,18 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     } catch (_) {
       // Keep original URL when it's already absolute (e.g. signed storage URL).
     }
-    if (!mounted) return;
-    await showMediaPlayerSheet(
-      context,
-      kind: 'audio',
-      url: url,
-      title: item.displayTitle,
-      durationHint: durationHint,
-    );
+    final mediaType = item.kind == 'video'
+        ? MediaPlaybackType.video
+        : MediaPlaybackType.audio;
+    await ref
+        .read(mediaPlaybackControllerProvider.notifier)
+        .play(
+          mediaId: item.id,
+          mediaType: mediaType,
+          url: url,
+          title: item.displayTitle,
+          durationHint: durationHint,
+        );
   }
 
   void _openLibrary(BuildContext context, List<HomeAudioItem> items) {
