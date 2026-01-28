@@ -101,6 +101,7 @@ out/
 *.png
 !frontend/assets/images/
 !frontend/assets/images/**
+!backend/scripts/ci_course_sample/media/*.jpg
 
 # Legacy frontend asset exceptions
 assets/backend/***
