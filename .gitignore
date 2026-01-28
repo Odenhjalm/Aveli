@@ -102,6 +102,9 @@ out/
 *.png
 !frontend/assets/images/
 !frontend/assets/images/**
+!frontend/web/favicon.png
+!frontend/web/icons/
+!frontend/web/icons/**
 !backend/scripts/ci_course_sample/media/*.jpg
 !courses/assets/**/*.jpg
 
