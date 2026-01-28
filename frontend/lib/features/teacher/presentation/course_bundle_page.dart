@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
@@ -79,18 +79,16 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: const GoRouterBackButton(),
-        title: const Text('Paketpriser'),
-        actions: [
-          IconButton(
-            tooltip: 'Hem',
-            icon: const Icon(Icons.home_outlined),
-            onPressed: () => context.goNamed(AppRoute.teacherHome),
-          ),
-        ],
-      ),
+    return AppScaffold(
+      title: 'Paketpriser',
+      showHomeAction: false,
+      actions: [
+        IconButton(
+          tooltip: 'Hem',
+          icon: const Icon(Icons.home_outlined),
+          onPressed: () => context.goNamed(AppRoute.teacherHome),
+        ),
+      ],
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         child: Column(

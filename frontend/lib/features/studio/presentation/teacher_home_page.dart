@@ -5,9 +5,8 @@ import 'package:flutter/services.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_extras.dart';
-import 'package:aveli/shared/widgets/background_layer.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -87,27 +86,19 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
     final theme = Theme.of(context);
     final coursesAsync = ref.watch(myCoursesProvider);
     final bundlesAsync = ref.watch(teacherBundlesProvider);
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: const GoRouterBackButton(),
-        title: const Text('Kurssudio'),
-        actions: const [TopNavActionButtons()],
-      ),
-      body: AppBackground(
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 980),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 32, 16, 48),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+    return AppScaffold(
+      title: 'Kurstudio',
+      maxContentWidth: 980,
+      logoSize: 0,
+      showHomeAction: false,
+      actions: const [TopNavActionButtons()],
+      contentPadding: EdgeInsets.zero,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 32, 16, 48),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
                     Text(
                       'Studio för lärare',
                       style: theme.textTheme.headlineMedium?.copyWith(
@@ -607,10 +598,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
+            ],
           ),
         ),
       ),

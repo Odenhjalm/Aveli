@@ -14,6 +14,7 @@ import 'package:aveli/data/models/service.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/community/application/certification_gate.dart';
+import 'package:aveli/features/media/application/media_playback_controller.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -379,8 +380,9 @@ class _ProfileMediaCard extends StatelessWidget {
   }
 }
 
-class _ProfileMediaTile extends StatelessWidget {
+class _ProfileMediaTile extends ConsumerWidget {
   const _ProfileMediaTile({
+    super.key,
     required this.item,
     required this.onOpenCourse,
     required this.onOpenLink,
@@ -393,13 +395,24 @@ class _ProfileMediaTile extends StatelessWidget {
   final void Function(String message) onShowMessage;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final action = _resolveAction(context);
+    final title = _titleFor(item);
+    final playback = ref.watch(mediaPlaybackControllerProvider);
+    final controller = ref.read(mediaPlaybackControllerProvider.notifier);
+    final playable = _resolvePlayable();
+    final openAction = _resolveOpenAction();
+    final openLabel = _resolveOpenLabel();
+    final isActive =
+        playable != null &&
+        playback.currentMediaId == item.id &&
+        playback.isPlaying &&
+        playback.mediaType == playable.mediaType;
+    final hasUrl = (playback.url ?? '').trim().isNotEmpty;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: _buildLeading(),
-      title: Text(_titleFor(item), style: theme.textTheme.titleMedium),
+      title: Text(title, style: theme.textTheme.titleMedium),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -411,19 +424,65 @@ class _ProfileMediaTile extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6),
             child: Chip(label: Text(_kindLabel(item.mediaKind))),
           ),
+          if (openAction != null || playable != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (openAction != null)
+                  OutlinedButton.icon(
+                    onPressed: () async => await openAction(),
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    label: Text(openLabel),
+                  ),
+                if (playable != null)
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      if (isActive) {
+                        controller.stop();
+                        return;
+                      }
+                      try {
+                        await controller.play(
+                          mediaId: item.id,
+                          mediaType: playable.mediaType,
+                          url: playable.url,
+                          title: title,
+                          durationHint: playable.durationHint,
+                        );
+                      } catch (_) {
+                        onShowMessage('Kunde inte starta uppspelning.');
+                      }
+                    },
+                    icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
+                    label: Text(isActive ? 'Stoppa' : 'Spela'),
+                  ),
+              ],
+            ),
+          ],
+          if (isActive && playback.isLoading) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(),
+          ],
+          if (isActive && hasUrl) ...[
+            const SizedBox(height: 10),
+            if (playable!.mediaType == MediaPlaybackType.audio)
+              InlineAudioPlayer(
+                url: playback.url!,
+                title: title,
+                durationHint: playable.durationHint,
+                autoPlay: true,
+              )
+            else
+              InlineVideoPlayer(
+                url: playback.url!,
+                title: title,
+                autoPlay: true,
+              ),
+          ],
         ],
       ),
-      trailing: action == null
-          ? null
-          : ElevatedButton(
-              onPressed: () async => await action.invoke(),
-              child: Text(action.label),
-            ),
-      onTap: action == null
-          ? null
-          : () async {
-              await action.invoke();
-            },
     );
   }
 
@@ -453,80 +512,62 @@ class _ProfileMediaTile extends StatelessWidget {
     return CircleAvatar(radius: 28, child: Icon(icon));
   }
 
-  _MediaAction? _resolveAction(BuildContext context) {
+  _PlayableMedia? _resolvePlayable() {
     switch (item.mediaKind) {
       case TeacherProfileMediaKind.lessonMedia:
-        return _lessonAction(context);
+        final source = item.source.lessonMedia;
+        if (source == null) return null;
+        final kind = source.kind;
+        final url = (source.signedUrl ?? source.downloadUrl)?.trim();
+        final mediaType = switch (kind) {
+          'audio' => MediaPlaybackType.audio,
+          'video' => MediaPlaybackType.video,
+          _ => null,
+        };
+        if (mediaType == null || url == null || url.isEmpty) return null;
+        return _PlayableMedia(
+          mediaType: mediaType,
+          url: url,
+          durationHint: source.durationSeconds != null
+              ? Duration(seconds: source.durationSeconds!)
+              : null,
+        );
       case TeacherProfileMediaKind.seminarRecording:
-        return _recordingAction(context);
+        final source = item.source.seminarRecording;
+        final url = (source?.assetUrl ?? '').trim();
+        if (url.isEmpty) return null;
+        return _PlayableMedia(mediaType: MediaPlaybackType.video, url: url);
       case TeacherProfileMediaKind.external:
-        final url = item.externalUrl;
+        return null;
+    }
+  }
+
+  Future<void> Function()? _resolveOpenAction() {
+    switch (item.mediaKind) {
+      case TeacherProfileMediaKind.lessonMedia:
+        final slug = item.source.lessonMedia?.courseSlug?.trim();
+        if (slug == null || slug.isEmpty) return null;
+        return () async => onOpenCourse(slug);
+      case TeacherProfileMediaKind.seminarRecording:
+        final url = (item.source.seminarRecording?.assetUrl ?? '').trim();
+        if (url.isEmpty) return null;
+        return () async => onOpenLink(url);
+      case TeacherProfileMediaKind.external:
+        final url = item.externalUrl?.trim();
         if (url == null || url.isEmpty) return null;
-        return _MediaAction(label: 'Öppna länk', invoke: () => onOpenLink(url));
+        return () async => onOpenLink(url);
     }
   }
 
-  _MediaAction? _lessonAction(BuildContext context) {
-    final source = item.source.lessonMedia;
-    if (source == null) return null;
-    final slug = source.courseSlug;
-    final kind = source.kind;
-    final playbackKind = switch (kind) {
-      'audio' => 'audio',
-      'video' => 'video',
-      _ => null,
-    };
-    final url = source.signedUrl ?? source.downloadUrl;
-    if (playbackKind != null && url != null && url.isNotEmpty) {
-      final label = playbackKind == 'audio' ? 'Lyssna' : 'Spela upp';
-      return _MediaAction(
-        label: label,
-        invoke: () async {
-          try {
-            await showMediaPlayerSheet(
-              context,
-              kind: playbackKind,
-              url: url,
-              title: _titleFor(item),
-              durationHint: source.durationSeconds != null
-                  ? Duration(seconds: source.durationSeconds!)
-                  : null,
-            );
-          } catch (error) {
-            onShowMessage('Kunde inte starta uppspelning.');
-          }
-        },
-      );
+  String _resolveOpenLabel() {
+    switch (item.mediaKind) {
+      case TeacherProfileMediaKind.lessonMedia:
+        return 'Visa kurs';
+      case TeacherProfileMediaKind.seminarRecording:
+        return 'Öppna';
+      case TeacherProfileMediaKind.external:
+        return 'Öppna länk';
     }
-    if (slug != null && slug.isNotEmpty) {
-      return _MediaAction(
-        label: 'Visa kurs',
-        invoke: () async => onOpenCourse(slug),
-      );
-    }
-    return null;
-  }
-
-  _MediaAction? _recordingAction(BuildContext context) {
-    final source = item.source.seminarRecording;
-    if (source == null) return null;
-    final url = source.assetUrl;
-    if (url.isEmpty) return null;
-    return _MediaAction(
-      label: 'Spela upp',
-      invoke: () async {
-        try {
-          await showMediaPlayerSheet(
-            context,
-            kind: 'video',
-            url: url,
-            title: _titleFor(item),
-          );
-        } catch (error) {
-          onShowMessage('Kunde inte starta uppspelning.');
-        }
-      },
-    );
   }
 
   static String _titleFor(TeacherProfileMediaItem item) {
@@ -566,11 +607,16 @@ class _ProfileMediaTile extends StatelessWidget {
   }
 }
 
-class _MediaAction {
-  const _MediaAction({required this.label, required this.invoke});
+class _PlayableMedia {
+  const _PlayableMedia({
+    required this.mediaType,
+    required this.url,
+    this.durationHint,
+  });
 
-  final String label;
-  final Future<void> Function() invoke;
+  final MediaPlaybackType mediaType;
+  final String url;
+  final Duration? durationHint;
 }
 
 class _ServiceTile extends StatelessWidget {

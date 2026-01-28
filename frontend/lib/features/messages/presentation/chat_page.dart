@@ -13,9 +13,8 @@ import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/features/community/data/messages_repository.dart';
 import 'package:aveli/data/models/message_record.dart';
 import 'package:aveli/shared/utils/snack.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/widgets/base_page.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key});
@@ -140,22 +139,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final profile = ref.watch(authControllerProvider).profile;
     final channelMissing = _channel == null;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: const GoRouterBackButton(),
-        title: Text(_title),
-      ),
-      body: BasePage(
-        child: SafeArea(
-          top: false,
-          bottom: false,
-          child: _buildBody(context, profile, channelMissing),
-        ),
+    return AppScaffold(
+      title: _title,
+      showHomeAction: false,
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: _buildBody(context, profile, channelMissing),
       ),
     );
   }

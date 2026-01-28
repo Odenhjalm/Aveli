@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class CheckoutResultPage extends ConsumerWidget {
   const CheckoutResultPage({super.key, required this.success});
@@ -20,7 +21,12 @@ class CheckoutResultPage extends ConsumerWidget {
       }
     });
 
-    return const Scaffold(
+    return const AppScaffold(
+      title: '',
+      disableBack: true,
+      showHomeAction: false,
+      useBasePage: false,
+      contentPadding: EdgeInsets.zero,
       body: Center(child: CircularProgressIndicator()),
     );
   }

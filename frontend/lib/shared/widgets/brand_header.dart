@@ -75,3 +75,78 @@ class BrandHeaderTitle extends StatelessWidget {
     );
   }
 }
+
+class BrandHeader extends StatelessWidget {
+  const BrandHeader({
+    super.key,
+    required this.title,
+    this.leading,
+    this.actions,
+    this.onBrandTap,
+    this.logoHeight = 36,
+  });
+
+  final String title;
+  final Widget? leading;
+  final List<Widget>? actions;
+  final VoidCallback? onBrandTap;
+  final double logoHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dividerColor = theme.colorScheme.onSurface.withValues(alpha: 0.22);
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
+
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Row(
+          children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 8)],
+            BrandLogo(height: logoHeight),
+            const SizedBox(width: 10),
+            InkWell(
+              onTap: onBrandTap,
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                child: BrandWordmark(style: titleStyle),
+              ),
+            ),
+            if (title.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              Container(width: 1, height: 18, color: dividerColor),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: titleStyle,
+                ),
+              ),
+            ] else
+              const Spacer(),
+            if (actions != null)
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: actions!,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}

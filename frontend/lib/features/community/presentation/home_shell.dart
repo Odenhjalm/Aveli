@@ -7,15 +7,9 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
-import 'package:aveli/widgets/base_page.dart';
-
-const _aveliBrandGradient = LinearGradient(
-  colors: [kBrandTurquoise, kBrandLilac],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -45,65 +39,18 @@ class _HomeShellState extends State<HomeShell> {
           setState(() => _index = 0);
         }
       },
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        extendBodyBehindAppBar: true,
+      child: AppScaffold(
+        title: sectionTitle,
+        disableBack: true,
+        showHomeAction: false,
         extendBody: true,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          toolbarHeight: 96,
-          leadingWidth: 0,
-          titleSpacing: 0,
-          leading: const SizedBox.shrink(),
-          title: Row(
-            children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => context.goNamed(AppRoute.landing),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 4,
-                    horizontal: 2,
-                  ),
-                  child: ShaderMask(
-                    shaderCallback: (bounds) =>
-                        _aveliBrandGradient.createShader(bounds),
-                    blendMode: BlendMode.srcIn,
-                    child: Text(
-                      'Aveli',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .2,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                width: 1,
-                height: 18,
-                color: Colors.white.withValues(alpha: 0.25),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                sectionTitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-          actions: const [TopNavActionButtons()],
-        ),
-        body: BasePage(
-          child: SafeArea(
-            top: false,
-            bottom: false,
-            child: IndexedStack(index: _index, children: pages),
-          ),
+        logoSize: 0,
+        contentPadding: EdgeInsets.zero,
+        actions: const [TopNavActionButtons()],
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: IndexedStack(index: _index, children: pages),
         ),
         bottomNavigationBar: NavigationBar(
           backgroundColor: Colors.transparent,

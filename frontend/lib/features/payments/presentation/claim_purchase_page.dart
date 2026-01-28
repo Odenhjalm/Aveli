@@ -6,6 +6,7 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/features/payments/application/payments_providers.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class ClaimPurchasePage extends ConsumerStatefulWidget {
@@ -141,8 +142,8 @@ class _ClaimPurchasePageState extends ConsumerState<ClaimPurchasePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Hämta kursköp')),
+    return AppScaffold(
+      title: 'Hämta kursköp',
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),

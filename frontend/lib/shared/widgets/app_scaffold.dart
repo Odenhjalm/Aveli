@@ -4,17 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/widgets/background_layer.dart';
+import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/widgets/base_page.dart';
 
 import 'go_router_back_button.dart';
 
-/// Baslayout: backknapp (pop eller fallback hem), maxbredd, padding, diskret bakgrund.
+/// CONTRACT:
+/// All pages MUST render via AppScaffold.
+/// BrandHeader is mandatory.
+/// Headings/names must use semantic wrappers (no raw `Text()` for headings).
 class AppScaffold extends StatelessWidget {
   final String title;
   final Widget body;
   final List<Widget>? actions;
   final Widget? floatingActionButton;
+  final Widget? bottomNavigationBar;
+  final bool extendBody;
+  final bool useBasePage;
 
   /// Sätt true där du *inte* vill visa back (t.ex. på Home).
   final bool disableBack;
@@ -50,6 +57,9 @@ class AppScaffold extends StatelessWidget {
     required this.body,
     this.actions,
     this.floatingActionButton,
+    this.bottomNavigationBar,
+    this.extendBody = false,
+    this.useBasePage = true,
     this.disableBack = false,
     this.maxContentWidth = 860,
     this.contentPadding = const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -66,9 +76,6 @@ class AppScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final showBack = !disableBack;
-    final appBarColor = transparentAppBar
-        ? Colors.transparent
-        : theme.scaffoldBackgroundColor;
     final fg = appBarForegroundColor ?? theme.colorScheme.onSurface;
     final computedActions = <Widget>[
       if (actions != null) ...actions!,
@@ -77,32 +84,37 @@ class AppScaffold extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: extendBodyBehindAppBar,
-      appBar: AppBar(
-        backgroundColor: appBarColor,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: fg,
-        title: _AppBarTitle(title: title, color: fg),
-        flexibleSpace: background != null
-            ? IgnorePointer(child: background!)
-            : null,
-        leading: showBack ? const GoRouterBackButton() : null,
-        actions: computedActions.isEmpty ? null : computedActions,
-      ),
       floatingActionButton: floatingActionButton,
+      bottomNavigationBar: bottomNavigationBar,
+      extendBody: extendBody,
       body: Stack(
         children: [
           if (neutralBackground)
             const Positioned.fill(child: ColoredBox(color: Color(0xFFFFFFFF)))
           else if (background != null)
             Positioned.fill(child: background!),
+          if (!neutralBackground && background == null)
+            const Positioned.fill(child: BackgroundLayer()),
           Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxContentWidth),
-              child: Padding(
-                padding: contentPadding,
-                child: BasePage(logoSize: logoSize, child: body),
+              child: Column(
+                children: [
+                  BrandHeader(
+                    title: title,
+                    leading: showBack ? const GoRouterBackButton() : null,
+                    actions: computedActions,
+                    onBrandTap: () => context.goNamed(AppRoute.landing),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: contentPadding,
+                      child: useBasePage
+                          ? BasePage(logoSize: logoSize, child: body)
+                          : body,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -314,45 +326,6 @@ class _SideVignette extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-const _logoAspectRatio = 2.4;
-
-class _AppBarTitle extends StatelessWidget {
-  const _AppBarTitle({required this.title, required this.color});
-
-  final String title;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    const logoHeight = 32.0;
-    final logoWidth = logoHeight * _logoAspectRatio;
-    return Row(
-      mainAxisSize: MainAxisSize.max,
-      children: [
-        SizedBox(
-          height: logoHeight,
-          width: logoWidth,
-          child: Image(
-            // Logotypen laddas från bundlad asset för att undvika nätverksfel.
-            image: AppImages.logo,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Flexible(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontWeight: FontWeight.w700, color: color),
-          ),
-        ),
-      ],
     );
   }
 }

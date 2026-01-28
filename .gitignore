@@ -78,6 +78,7 @@ node_modules/
 frontend/landing/node_modules/
 frontend/landing/.next/
 frontend/landing/.vercel/
+*.tsbuildinfo
 
 # Deployment / hosting state
 /.netlify/
@@ -101,6 +102,8 @@ out/
 *.png
 !frontend/assets/images/
 !frontend/assets/images/**
+!backend/scripts/ci_course_sample/media/*.jpg
+!courses/assets/**/*.jpg
 
 # Legacy frontend asset exceptions
 assets/backend/***

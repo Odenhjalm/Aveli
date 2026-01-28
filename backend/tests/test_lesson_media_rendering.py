@@ -97,4 +97,3 @@ async def test_lesson_detail_includes_processing_pipeline_media(async_client):
     item = next(it for it in media_items if it.get("id") == lesson_media_id)
     assert item.get("media_asset_id") == str(media_asset["id"])
     assert item.get("media_state") == "processing"
-

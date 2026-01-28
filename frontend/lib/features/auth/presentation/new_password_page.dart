@@ -7,8 +7,8 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/widgets/base_page.dart';
 
 class NewPasswordPage extends ConsumerStatefulWidget {
   const NewPasswordPage({super.key});
@@ -38,127 +38,127 @@ class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
     final envInfo = ref.watch(envInfoProvider);
     final envBlocked = envInfo.hasIssues;
 
-    return Scaffold(
-      body: BasePage(
-        child: SafeArea(
-          top: false,
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Form(
-                      key: _formKey,
-                      child: AutofillGroup(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (envBlocked)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: Text(
-                                  '${envInfo.message} Lösenordsbyte är avstängt tills konfigurationen är klar.',
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
+    return AppScaffold(
+      title: 'Nytt lösenord',
+      showHomeAction: false,
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: AutofillGroup(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (envBlocked)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Text(
+                                '${envInfo.message} Lösenordsbyte är avstängt tills konfigurationen är klar.',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                               ),
-                            Text(
-                              'Sätt nytt lösenord',
-                              style: Theme.of(context).textTheme.headlineSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 200),
-                              child: _errorMessage != null
-                                  ? Padding(
-                                      key: const ValueKey('newpass-error'),
-                                      padding: const EdgeInsets.only(top: 12),
-                                      child: Text(
-                                        _errorMessage!,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.error,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    )
-                                  : const SizedBox(key: ValueKey('newpass-ok')),
+                          Text(
+                            'Sätt nytt lösenord',
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: _errorMessage != null
+                                ? Padding(
+                                    key: const ValueKey('newpass-error'),
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      _errorMessage!,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  )
+                                : const SizedBox(key: ValueKey('newpass-ok')),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Ange den e-postadress som är kopplad till kontot och välj ett nytt lösenord. '
+                            'För lokala konton krävs inget e-poststeg.',
+                          ),
+                          const SizedBox(height: 24),
+                          TextFormField(
+                            controller: _emailCtrl,
+                            enabled: !envBlocked,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                            decoration: const InputDecoration(
+                              labelText: 'E-postadress',
                             ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Ange den e-postadress som är kopplad till kontot och välj ett nytt lösenord. '
-                              'För lokala konton krävs inget e-poststeg.',
+                            textInputAction: TextInputAction.next,
+                            validator: _validateEmail,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _passwordCtrl,
+                            enabled: !envBlocked,
+                            obscureText: true,
+                            autofillHints: const [AutofillHints.newPassword],
+                            decoration: const InputDecoration(
+                              labelText: 'Nytt lösenord',
+                              hintText: 'Minst 6 tecken',
                             ),
-                            const SizedBox(height: 24),
-                            TextFormField(
-                              controller: _emailCtrl,
-                              enabled: !envBlocked,
-                              keyboardType: TextInputType.emailAddress,
-                              autofillHints: const [AutofillHints.email],
-                              decoration: const InputDecoration(
-                                labelText: 'E-postadress',
-                              ),
-                              textInputAction: TextInputAction.next,
-                              validator: _validateEmail,
+                            textInputAction: TextInputAction.next,
+                            validator: _validatePassword,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _confirmCtrl,
+                            enabled: !envBlocked,
+                            obscureText: true,
+                            autofillHints: const [AutofillHints.newPassword],
+                            decoration: const InputDecoration(
+                              labelText: 'Bekräfta nytt lösenord',
                             ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _passwordCtrl,
-                              enabled: !envBlocked,
-                              obscureText: true,
-                              autofillHints: const [AutofillHints.newPassword],
-                              decoration: const InputDecoration(
-                                labelText: 'Nytt lösenord',
-                                hintText: 'Minst 6 tecken',
-                              ),
-                              textInputAction: TextInputAction.next,
-                              validator: _validatePassword,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _confirmCtrl,
-                              enabled: !envBlocked,
-                              obscureText: true,
-                              autofillHints: const [AutofillHints.newPassword],
-                              decoration: const InputDecoration(
-                                labelText: 'Bekräfta nytt lösenord',
-                              ),
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: _busy || envBlocked
-                                  ? null
-                                  : (_) => _updatePassword(context),
-                              validator: _validateConfirm,
-                            ),
-                            const SizedBox(height: 24),
-                            GradientButton(
-                              onPressed: _busy || envBlocked
-                                  ? null
-                                  : () => _updatePassword(context),
-                              child: _busy
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('Spara nytt lösenord'),
-                            ),
-                          ],
-                        ),
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: _busy || envBlocked
+                                ? null
+                                : (_) => _updatePassword(context),
+                            validator: _validateConfirm,
+                          ),
+                          const SizedBox(height: 24),
+                          GradientButton(
+                            onPressed: _busy || envBlocked
+                                ? null
+                                : () => _updatePassword(context),
+                            child: _busy
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Spara nytt lösenord'),
+                          ),
+                        ],
                       ),
                     ),
                   ),

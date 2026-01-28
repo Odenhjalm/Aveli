@@ -15,6 +15,7 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
     this.onDownload,
     this.durationHint,
     this.compact = false,
+    this.autoPlay = false,
   });
 
   final String url;
@@ -22,6 +23,7 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
   final Future<void> Function()? onDownload;
   final Duration? durationHint;
   final bool compact;
+  final bool autoPlay;
 
   @override
   ConsumerState<InlineAudioPlayer> createState() => _InlineAudioPlayerState();
@@ -42,6 +44,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   StreamSubscription<Event>? _pauseSub;
   StreamSubscription<Event>? _endedSub;
   StreamSubscription<Event>? _errorSub;
+  bool _didAutoPlay = false;
 
   @override
   void initState() {
@@ -147,6 +150,10 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     _audio.pause();
     _audio.src = url;
     _audio.load();
+    _didAutoPlay = false;
+    if (widget.autoPlay) {
+      unawaited(_attemptAutoPlay());
+    }
   }
 
   @override
@@ -171,6 +178,22 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       } else {
         await _audio.play();
       }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _initializing = false;
+      });
+    }
+  }
+
+  Future<void> _attemptAutoPlay() async {
+    if (!mounted) return;
+    if (_didAutoPlay) return;
+    if (_error != null) return;
+    _didAutoPlay = true;
+    try {
+      await _audio.play();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -219,8 +242,8 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     final volumeIcon = _volume <= 0
         ? Icons.volume_off_rounded
         : _volume < 0.5
-            ? Icons.volume_down_rounded
-            : Icons.volume_up_rounded;
+        ? Icons.volume_down_rounded
+        : Icons.volume_up_rounded;
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(compact ? 14 : 12),
       side: compact
@@ -232,13 +255,10 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
             fontWeight: FontWeight.w600,
             color: theme.colorScheme.onSurface,
           )
-        : theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          );
-    final timeStyle = (compact
-            ? theme.textTheme.bodySmall
-            : theme.textTheme.bodyMedium)
-        ?.copyWith(color: theme.colorScheme.onSurface);
+        : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
+    final timeStyle =
+        (compact ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
+            ?.copyWith(color: theme.colorScheme.onSurface);
     final sliderTheme = compact
         ? theme.sliderTheme.copyWith(
             trackHeight: 2,
@@ -266,10 +286,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if ((widget.title ?? '').isNotEmpty) ...[
-              Text(
-                widget.title!,
-                style: titleStyle,
-              ),
+              Text(widget.title!, style: titleStyle),
               SizedBox(height: compact ? 8 : 12),
             ],
             if (_initializing)

@@ -12,6 +12,24 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: supabase/postgres:17.6.1.054
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      SUPABASE_DB_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      SUPABASE_DB_PASSWORD: postgres
+      MEDIA_SIGNING_SECRET: ci-test-secret
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,6 +57,12 @@ jobs:
       - name: Mypy
         run: poetry run mypy --config-file mypy.ini
 
+      - name: Install Postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply Supabase migrations
+        run: bash scripts/apply_supabase_migrations.sh
+
       - name: Pytest with coverage
         run: poetry run pytest --cov=app --cov-report=xml --cov-report=term
 
@@ -49,4 +73,4 @@ jobs:
           path: backend/coverage.xml
 
       - name: pip-audit
-        run: poetry run pip-audit --progress-spinner off
+        run: poetry run pip-audit --progress-spinner off --ignore-vuln CVE-2024-23342

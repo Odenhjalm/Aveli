@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
 
 class SectionHeading extends StatelessWidget {
   const SectionHeading(
@@ -100,6 +101,82 @@ class MetaText extends StatelessWidget {
       maxLines: maxLines,
       overflow: overflow,
       textAlign: textAlign,
+    );
+  }
+}
+
+class HeroHeading extends StatefulWidget {
+  const HeroHeading({
+    super.key,
+    required this.leading,
+    required this.gradientWord,
+  });
+
+  final String leading;
+  final String gradientWord;
+
+  @override
+  State<HeroHeading> createState() => _HeroHeadingState();
+}
+
+class _HeroHeadingState extends State<HeroHeading>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = theme.textTheme.displayLarge?.copyWith(
+      fontWeight: FontWeight.w900,
+      color: DesignTokens.headingTextColor,
+      height: 1.04,
+      letterSpacing: -.5,
+    );
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 6,
+      children: [
+        Text(widget.leading, textAlign: TextAlign.center, style: base),
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return ShaderMask(
+              blendMode: BlendMode.srcIn,
+              shaderCallback: (bounds) {
+                final sweep = bounds.width * 1.5;
+                final start = -bounds.width + sweep * _controller.value;
+                return const LinearGradient(
+                  colors: [kBrandTurquoise, kBrandLilac, kBrandTurquoise],
+                  stops: [0.0, 0.5, 1.0],
+                ).createShader(Rect.fromLTWH(start, 0, sweep, bounds.height));
+              },
+              child: child,
+            );
+          },
+          child: Text(
+            widget.gradientWord,
+            textAlign: TextAlign.center,
+            style: base?.copyWith(color: DesignTokens.headingTextColor),
+          ),
+        ),
+      ],
     );
   }
 }

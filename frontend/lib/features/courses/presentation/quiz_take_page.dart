@@ -13,9 +13,8 @@ import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/widgets/base_page.dart';
 
 class QuizTakePage extends ConsumerStatefulWidget {
   const QuizTakePage({super.key});
@@ -100,17 +99,10 @@ class _QuizTakePageState extends ConsumerState<QuizTakePage> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: const GoRouterBackButton(),
-        title: const Text('Quiz'),
-      ),
-      body: BasePage(child: SafeArea(top: false, child: content)),
+    return AppScaffold(
+      title: 'Quiz',
+      showHomeAction: false,
+      body: SafeArea(top: false, child: content),
     );
   }
 

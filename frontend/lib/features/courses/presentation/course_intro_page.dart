@@ -8,10 +8,9 @@ import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/gate.dart';
 import 'package:aveli/shared/widgets/course_video.dart';
-import 'package:aveli/shared/widgets/go_router_back_button.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/widgets/base_page.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 
 class CourseIntroPage extends ConsumerWidget {
@@ -26,65 +25,55 @@ class CourseIntroPage extends ConsumerWidget {
     final courseId = args?.courseId ?? qp['id'] ?? '';
     final title = args?.title ?? qp['title'] ?? 'Introduktionskurs';
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: const GoRouterBackButton(),
-        title: Text(title),
-        actions: const [TopNavActionButtons()],
-      ),
-      body: BasePage(
-        child: SafeArea(
-          top: false,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: GlassCard(
-                  padding: const EdgeInsets.all(24),
-                  opacity: 0.18,
-                  borderRadius: BorderRadius.circular(28),
-                  borderColor: Colors.white.withValues(alpha: 0.18),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        courseId.isEmpty
-                            ? 'Detta är en introduktionskurs.'
-                            : 'Detta är introduktionen för kursen med ID: $courseId.',
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                      const SizedBox(height: 24),
-                      _IntroVideoPreview(courseId: courseId),
-                      const SizedBox(height: 16),
-                      _QuizActions(courseId: courseId),
-                      const SizedBox(height: 24),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: GradientButton.icon(
-                          onPressed: () {
-                            gate.allow();
-                            context.goNamed(AppRoute.home);
-                          },
-                          icon: const Icon(Icons.arrow_forward),
-                          label: const Text('Gå vidare till Home'),
-                        ),
-                      ),
-                    ],
+    return AppScaffold(
+      title: title,
+      maxContentWidth: 900,
+      showHomeAction: false,
+      actions: const [TopNavActionButtons()],
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: GlassCard(
+              padding: const EdgeInsets.all(24),
+              opacity: 0.18,
+              borderRadius: BorderRadius.circular(28),
+              borderColor: Colors.white.withValues(alpha: 0.18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  Text(
+                    courseId.isEmpty
+                        ? 'Detta är en introduktionskurs.'
+                        : 'Detta är introduktionen för kursen med ID: $courseId.',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 24),
+                  _IntroVideoPreview(courseId: courseId),
+                  const SizedBox(height: 16),
+                  _QuizActions(courseId: courseId),
+                  const SizedBox(height: 24),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: GradientButton.icon(
+                      onPressed: () {
+                        gate.allow();
+                        context.goNamed(AppRoute.home);
+                      },
+                      icon: const Icon(Icons.arrow_forward),
+                      label: const Text('Gå vidare till Home'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

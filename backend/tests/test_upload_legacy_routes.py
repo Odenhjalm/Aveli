@@ -133,4 +133,3 @@ async def test_upload_preflight_includes_cors_headers(async_client):
     assert resp.status_code == 200
     assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
     assert "access-control-allow-headers" in resp.headers
-

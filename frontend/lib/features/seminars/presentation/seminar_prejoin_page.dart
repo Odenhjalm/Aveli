@@ -9,6 +9,7 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/home/application/livekit_controller.dart';
 import 'package:aveli/features/seminars/presentation/seminar_route_args.dart';
 import 'package:aveli/shared/utils/media_permissions.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class SeminarPreJoinPage extends ConsumerStatefulWidget {
@@ -259,11 +260,9 @@ class _SeminarPreJoinPageState extends ConsumerState<SeminarPreJoinPage> {
         if (didPop) return;
         _handleCancel();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Förbered livesändning'),
-          leading: BackButton(onPressed: _handleCancel),
-        ),
+      child: AppScaffold(
+        title: 'Förbered livesändning',
+        showHomeAction: false,
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: _loadingDevices
