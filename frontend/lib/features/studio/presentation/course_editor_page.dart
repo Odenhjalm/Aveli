@@ -112,6 +112,45 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
         final escaped = _htmlAttributeEscape.convert(url);
         out.write('<audio controls src="$escaped"></audio>');
       },
+      quill.BlockEmbed.imageType: (embed, out) {
+        final url = lessonMediaUrlFromEmbedValue(embed.value.data);
+        if (url == null || url.isEmpty) return;
+
+        final styleValue =
+            embed.style.attributes[quill.Attribute.style.key]?.value;
+        final widthValue =
+            embed.style.attributes[quill.Attribute.width.key]?.value;
+        final heightValue =
+            embed.style.attributes[quill.Attribute.height.key]?.value;
+
+        final style =
+            (styleValue is String ? styleValue : styleValue?.toString() ?? '')
+                .trim();
+        final width =
+            (widthValue is String ? widthValue : widthValue?.toString() ?? '')
+                .trim();
+        final height =
+            (heightValue is String ? heightValue : heightValue?.toString() ?? '')
+                .trim();
+
+        if (style.isEmpty && width.isEmpty && height.isEmpty) {
+          out.write('![]($url)');
+          return;
+        }
+
+        final escaped = _htmlAttributeEscape.convert(url);
+        out.write('<img src="$escaped"');
+        if (style.isNotEmpty) {
+          out.write(' style="${_htmlAttributeEscape.convert(style)}"');
+        }
+        if (width.isNotEmpty) {
+          out.write(' width="${_htmlAttributeEscape.convert(width)}"');
+        }
+        if (height.isNotEmpty) {
+          out.write(' height="${_htmlAttributeEscape.convert(height)}"');
+        }
+        out.write(' />');
+      },
       quill.BlockEmbed.videoType: (embed, out) {
         final url = lessonMediaUrlFromEmbedValue(embed.value.data);
         if (url == null || url.isEmpty) return;
@@ -142,6 +181,11 @@ final RegExp _audioHtmlTagPattern = RegExp(
 
 final RegExp _videoHtmlTagPattern = RegExp(
   r'''<video\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*></video>''',
+  caseSensitive: false,
+);
+
+final RegExp _imgHtmlTagPattern = RegExp(
+  r'''<img\b[^>]*?>''',
   caseSensitive: false,
 );
 
@@ -206,7 +250,8 @@ quill_delta.Delta convertLessonMarkdownToDelta(
     _videoHtmlTagPattern,
     (url) => quill.BlockEmbed.video(url),
   );
-  return withVideo;
+  final withImages = _replaceHtmlImgTagsWithEmbeds(withVideo);
+  return withImages;
 }
 
 quill_delta.Delta _replaceHtmlTagWithEmbed(
@@ -249,6 +294,94 @@ quill_delta.Delta _replaceHtmlTagWithEmbed(
       }
       cursor = match.end;
     }
+    if (cursor < value.length) {
+      final remainder = value.substring(cursor);
+      if (remainder.isNotEmpty) {
+        result.insert(remainder, operation.attributes);
+      }
+    }
+  }
+  return result;
+}
+
+final RegExp _htmlAttributePattern = RegExp(
+  r'''([a-zA-Z_:][a-zA-Z0-9_\-:.]*)\s*=\s*("([^"]*)"|'([^']*)')''',
+);
+
+Map<String, String> _parseHtmlAttributes(String html) {
+  final attributes = <String, String>{};
+  for (final match in _htmlAttributePattern.allMatches(html)) {
+    final key = match.group(1);
+    if (key == null || key.isEmpty) continue;
+    final value = match.group(3) ?? match.group(4) ?? '';
+    attributes[key.toLowerCase()] = value;
+  }
+  return attributes;
+}
+
+quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
+  final result = quill_delta.Delta();
+  for (final operation in source.toList()) {
+    if (!operation.isInsert) {
+      result.push(operation);
+      continue;
+    }
+    final value = operation.value;
+    if (value is! String) {
+      result.push(operation);
+      continue;
+    }
+
+    final matches = _imgHtmlTagPattern.allMatches(value).toList();
+    if (matches.isEmpty) {
+      result.insert(value, operation.attributes);
+      continue;
+    }
+
+    var cursor = 0;
+    for (final match in matches) {
+      if (match.start > cursor) {
+        final chunk = value.substring(cursor, match.start);
+        if (chunk.isNotEmpty) {
+          result.insert(chunk, operation.attributes);
+        }
+      }
+
+      final raw = match.group(0) ?? '';
+      final attrs = _parseHtmlAttributes(raw);
+      final src = _normalizeMediaSourceAttribute(attrs);
+      if (src.isEmpty) {
+        if (raw.isNotEmpty) {
+          result.insert(raw, operation.attributes);
+        }
+      } else {
+        final mergedAttrs =
+            operation.attributes == null
+                ? <String, dynamic>{}
+                : Map<String, dynamic>.from(operation.attributes!);
+
+        final style = attrs['style'];
+        if (style != null && style.trim().isNotEmpty) {
+          mergedAttrs[quill.Attribute.style.key] = style.trim();
+        }
+        final width = attrs['width'];
+        if (width != null && width.trim().isNotEmpty) {
+          mergedAttrs[quill.Attribute.width.key] = width.trim();
+        }
+        final height = attrs['height'];
+        if (height != null && height.trim().isNotEmpty) {
+          mergedAttrs[quill.Attribute.height.key] = height.trim();
+        }
+
+        result.insert(
+          quill.BlockEmbed.image(src),
+          mergedAttrs.isEmpty ? null : mergedAttrs,
+        );
+      }
+
+      cursor = match.end;
+    }
+
     if (cursor < value.length) {
       final remainder = value.substring(cursor);
       if (remainder.isNotEmpty) {
@@ -1173,6 +1306,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         : _lessonTitleCtrl.text.trim();
     final rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
     final markdown = normalizeLessonMarkdownForStorage(rawMarkdown);
+
+    if (kDebugMode) {
+      debugPrint(
+        '[LessonEditor] saving lesson=$lessonId module=$moduleId '
+        'delta_ops=${controller.document.toDelta().length} '
+        'rawMarkdownLen=${rawMarkdown.length} normalizedLen=${markdown.length}',
+      );
+      debugPrint(
+        '[LessonEditor] payload.content_markdown (normalized) preview: '
+        '${markdown.length > 400 ? '${markdown.substring(0, 400)}…' : markdown}',
+      );
+    }
 
     setState(() => _lessonContentSaving = true);
     try {
