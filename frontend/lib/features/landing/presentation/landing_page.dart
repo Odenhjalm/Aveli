@@ -22,11 +22,12 @@ import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 
 const _aveliPrimaryGradient = LinearGradient(
-  colors: [kBrandTurquoise, kBrandAzure, kBrandLilac],
+  colors: [kBrandTurquoise, kBrandLilac],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
@@ -490,7 +491,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       runSpacing: 12,
                       alignment: WrapAlignment.center,
                       children: [
-                        FilledButton(
+                        GradientButton(
                           onPressed: hasEnvIssues
                               ? null
                               : () => _startLandingMembershipCheckout(context),
@@ -578,13 +579,13 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                   const mediaAspectRatio = 16 / 9;
                                   final mediaHeight =
                                       itemWidth / mediaAspectRatio;
-                                  const reservedHeight = 250.0;
+                                  const reservedHeight = 300.0;
                                   final tileHeight =
                                       mediaHeight + reservedHeight;
                                   final computedAspectRatio =
                                       itemWidth / tileHeight;
                                   final childAspectRatio = computedAspectRatio
-                                      .clamp(0.72, 1.05)
+                                      .clamp(0.62, 1.05)
                                       .toDouble();
                                   return GridView.builder(
                                     shrinkWrap: true,
@@ -1184,7 +1185,7 @@ class _CourseTileGlass extends StatelessWidget {
                   ),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1200,16 +1201,22 @@ class _CourseTileGlass extends StatelessWidget {
                               ),
                               if (isIntro) const SizedBox(width: 8),
                               if (isIntro)
-                                Chip(
-                                  label: const Text('Introduktion'),
-                                  visualDensity: VisualDensity.compact,
-                                  backgroundColor: theme.colorScheme.primary
-                                      .withValues(alpha: 0.18),
-                                  labelStyle: theme.textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: theme.colorScheme.onPrimary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(999),
+                                    gradient: kBrandPrimaryGradient,
+                                  ),
+                                  child: Text(
+                                    'Introduktion',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: DesignTokens.headingTextColor,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                 ),
                             ],
                           ),
@@ -1217,28 +1224,21 @@ class _CourseTileGlass extends StatelessWidget {
                             const SizedBox(height: 8),
                             CourseDescriptionText(
                               desc,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
+                              maxLines: 5,
+                              overflow: TextOverflow.fade,
                               baseStyle: theme.textTheme.bodyMedium,
                             ),
                           ],
                           const Spacer(),
                           Align(
                             alignment: Alignment.centerRight,
-                            child: ElevatedButton(
+                            child: GradientButton(
                               onPressed: openCourse,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colorScheme.primary,
-                                foregroundColor: theme.colorScheme.onPrimary,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                minimumSize: const Size(0, 40),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
                               ),
+                              borderRadius: BorderRadius.circular(12),
                               child: const Text('Öppna'),
                             ),
                           ),

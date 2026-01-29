@@ -87,7 +87,7 @@ class GradientButton extends StatelessWidget {
   }
 
   Gradient _resolveGradient({required bool enabled}) {
-    final Gradient base = gradient ?? kBrandVibrantGradient;
+    final Gradient base = gradient ?? kBrandPrimaryGradient;
     if (enabled) return base;
     if (base is LinearGradient) {
       return LinearGradient(
