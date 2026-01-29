@@ -338,7 +338,7 @@ class AveliApp extends ConsumerWidget {
         final path = _normalizeThemePath(routeInfo.uri.path);
         final isBrandedSurface = _isBrandedSurfacePath(path);
         final themeData = isBrandedSurface ? brandedThemeData : baseThemeData;
-        final guardContext = GuardContextResolver.fromPath(path);
+        final guardContext = GuardContextResolver.fromUri(routeInfo.uri);
         final envInfo = ref.watch(envInfoProvider);
 
         return MaterialApp.router(

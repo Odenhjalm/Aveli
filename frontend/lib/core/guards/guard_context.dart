@@ -22,21 +22,59 @@ enum GuardContext {
 class GuardContextResolver {
   const GuardContextResolver._();
 
-  static const Set<String> _publicPaths = <String>{
+  /// Public routes are matched by prefix to survive:
+  /// - trailing slashes
+  /// - query params
+  /// - hash fragments
+  /// - router normalization timing during Flutter Web startup
+  ///
+  /// Note: `/` must be handled via exact equality, otherwise it would match
+  /// everything.
+  static const List<String> publicRoutePrefixes = <String>[
     RoutePath.landingRoot,
     RoutePath.landing,
-    RoutePath.home,
     RoutePath.privacy,
     RoutePath.terms,
-  };
+  ];
 
-  static GuardContext fromUri(Uri uri) => fromPath(uri.path);
+  static GuardContext fromUri(Uri uri) {
+    return fromLocation(uri.toString());
+  }
 
-  static GuardContext fromPath(String rawPath) {
-    final path = _normalizePath(rawPath);
-    if (path.isEmpty) return GuardContext.unknown;
-    if (_publicPaths.contains(path)) return GuardContext.publicLanding;
+  static GuardContext fromLocation(String location) {
+    final normalizedPath = _normalizeLocationToPath(location);
+    if (normalizedPath.isEmpty) return GuardContext.unknown;
+    if (normalizedPath == RoutePath.landingRoot) {
+      return GuardContext.publicLanding;
+    }
+
+    for (final prefix in publicRoutePrefixes) {
+      if (prefix == RoutePath.landingRoot) continue;
+      if (normalizedPath == prefix || normalizedPath.startsWith('$prefix/')) {
+        return GuardContext.publicLanding;
+      }
+    }
+
     return GuardContext.appCore;
+  }
+
+  static String _normalizeLocationToPath(String location) {
+    final parsed = Uri.tryParse(location);
+    if (parsed == null) {
+      return _normalizePath(location);
+    }
+
+    // Hash-based routing encodes the "real" location inside the fragment.
+    // Example: https://app.aveli.app/#/landing?x=1
+    if (parsed.fragment.startsWith('/')) {
+      final fragmentUri = Uri.tryParse(parsed.fragment);
+      if (fragmentUri != null) {
+        return _normalizePath(fragmentUri.path);
+      }
+      return _normalizePath(parsed.fragment);
+    }
+
+    return _normalizePath(parsed.path);
   }
 
   static String _normalizePath(String path) {
