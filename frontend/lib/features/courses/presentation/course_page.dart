@@ -301,7 +301,7 @@ class _CourseContent extends StatelessWidget {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text('Starta gratis intro'),
+                            : const Text('Starta introduktion'),
                       ),
                     ),
                     if (priceCents > 0) ...[
@@ -312,7 +312,7 @@ class _CourseContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Använda gratis-intros: ${detail.freeConsumed}/${detail.freeLimit} $enrolledText',
+                  'Använda introduktioner: ${detail.freeConsumed}/${detail.freeLimit} $enrolledText',
                   style: t.bodySmall,
                 ),
                 if (hasAccess && priceCents > 0) ...[

@@ -345,6 +345,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   quill.QuillController? _lessonContentController;
   final FocusNode _lessonContentFocusNode = FocusNode();
   final ScrollController _lessonEditorScrollController = ScrollController();
+  final ScrollController _panelScrollController = ScrollController();
   final TextEditingController _lessonTitleCtrl = TextEditingController();
   bool _lessonContentDirty = false;
   bool _lessonContentSaving = false;
@@ -528,6 +529,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonContentController?.dispose();
     _lessonContentFocusNode.dispose();
     _lessonEditorScrollController.dispose();
+    _panelScrollController.dispose();
     _lessonTitleCtrl.dispose();
     _coverPollTimer?.cancel();
     super.dispose();
@@ -1304,7 +1306,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  Widget _buildLessonContentEditor(BuildContext context) {
+  Widget _buildLessonContentEditor(
+    BuildContext context, {
+    bool expandEditor = false,
+    double editorHeight = 320,
+  }) {
     final controller = _lessonContentController;
     if (controller == null) {
       return const Text('Välj en lektion för att redigera innehållet.');
@@ -1321,7 +1327,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_lessonIntro) {
       badges.add(
         const Chip(
-          label: Text('Gratis introduktion'),
+          label: Text('Introduktion'),
           visualDensity: VisualDensity.compact,
         ),
       );
@@ -1398,6 +1404,31 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       ],
     );
 
+    final editorSurface = Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
+        color: Colors.white.withValues(alpha: 0.92),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: quill.QuillEditor.basic(
+          controller: controller,
+          focusNode: _lessonContentFocusNode,
+          scrollController: _lessonEditorScrollController,
+          config: quill.QuillEditorConfig(
+            minHeight: 280,
+            padding: const EdgeInsets.all(16),
+            placeholder: 'Skriv eller klistra in lektionsinnehåll...',
+            embedBuilders: [
+              ...FlutterQuillEmbeds.defaultEditorBuilders(),
+              const _AudioEmbedBuilder(),
+            ],
+          ),
+        ),
+      ),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1415,31 +1446,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         gap12,
         quill.QuillSimpleToolbar(controller: controller, config: toolbarConfig),
         gap12,
-        Container(
-          height: 320,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-            color: Colors.white.withValues(alpha: 0.08),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: quill.QuillEditor.basic(
-              controller: controller,
-              focusNode: _lessonContentFocusNode,
-              scrollController: _lessonEditorScrollController,
-              config: quill.QuillEditorConfig(
-                minHeight: 280,
-                padding: const EdgeInsets.all(16),
-                placeholder: 'Skriv eller klistra in lektionsinnehåll...',
-                embedBuilders: [
-                  ...FlutterQuillEmbeds.defaultEditorBuilders(),
-                  const _AudioEmbedBuilder(),
-                ],
-              ),
-            ),
-          ),
-        ),
+        if (expandEditor)
+          Expanded(child: editorSurface)
+        else
+          SizedBox(height: editorHeight, child: editorSurface),
         gap12,
         Row(
           children: [
@@ -1467,6 +1477,38 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildLessonEditorWorkspace(BuildContext context) {
+    final theme = Theme.of(context);
+    final titleStyle = theme.textTheme.titleLarge?.copyWith(
+      fontWeight: FontWeight.w700,
+    );
+
+    return GlassCard(
+      padding: p16,
+      borderRadius: BorderRadius.circular(20),
+      opacity: 0.16,
+      borderColor: Colors.white.withValues(alpha: 0.35),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Texteditor', style: titleStyle),
+          gap12,
+          Expanded(
+            child: _lessonContentController == null
+                ? Center(
+                    child: Text(
+                      'Välj en lektion för att redigera innehållet.',
+                      style: theme.textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : _buildLessonContentEditor(context, expandEditor: true),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1629,7 +1671,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           Row(
             children: [
               Chip(
-                label: Text(isIntro ? 'Intro (gratis)' : 'Premium'),
+                label: Text(isIntro ? 'Introduktion' : 'Premium'),
                 visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 12),
@@ -3847,419 +3889,194 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     final lessonVideoPreview = _buildLessonVideoPreview(context);
 
-    final editorContent = SingleChildScrollView(
-      padding: p16,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SectionCard(
-            title: 'Skapa ny kurs',
+    final editorContent = LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 1200;
+        final editorHeight = max(420.0, constraints.maxHeight * 0.55);
+
+        final panel = Scrollbar(
+          controller: _panelScrollController,
+          thumbVisibility: isWide,
+          child: SingleChildScrollView(
+            controller: _panelScrollController,
+            padding: p16,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _newCourseTitle,
-                        decoration: const InputDecoration(labelText: 'Titel'),
+                _SectionCard(
+                  title: 'Skapa ny kurs',
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _newCourseTitle,
+                              decoration: const InputDecoration(
+                                labelText: 'Titel',
+                              ),
+                            ),
+                          ),
+                          gap12,
+                          Expanded(
+                            child: TextField(
+                              controller: _newCourseDesc,
+                              decoration: const InputDecoration(
+                                labelText: 'Beskrivning (valfri)',
+                              ),
+                              maxLines: 2,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    gap12,
-                    Expanded(
-                      child: TextField(
-                        controller: _newCourseDesc,
-                        decoration: const InputDecoration(
-                          labelText: 'Beskrivning (valfri)',
+                      gap12,
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: GradientButton(
+                          onPressed: _createCourse,
+                          child: const Text('Skapa kurs'),
                         ),
-                        maxLines: 2,
                       ),
-                    ),
-                  ],
-                ),
-                gap12,
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: GradientButton(
-                    onPressed: _createCourse,
-                    child: const Text('Skapa kurs'),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          gap16,
-          _SectionCard(
-            title: 'Välj kurs',
-            child: DropdownButtonFormField<String>(
-              key: ValueKey('course-${_selectedCourseId ?? 'none'}'),
-              initialValue: _selectedCourseId,
-              items: _courses
-                  .map(
-                    (c) => DropdownMenuItem<String>(
-                      value: c['id'] as String,
-                      child: Text('${c['title']}'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) async {
-                if (value == _selectedCourseId) return;
-                final canSwitch = await _maybeSaveLessonEdits();
-                if (!canSwitch || !mounted) return;
-                setState(() {
-                  _resetCourseContext(clearLists: true);
-                  _selectedCourseId = value;
-                });
-                await _loadCourseMeta();
-                await _loadModules(preserveSelection: false);
-                if (!mounted) return;
-                setState(() {
-                  _quiz = null;
-                  _questions = <Map<String, dynamic>>[];
-                });
-              },
-              decoration: const InputDecoration(hintText: 'Välj kurs'),
-            ),
-          ),
-          if (_selectedCourseId != null) ...[
-            gap12,
-            _SectionCard(
-              title: 'Kursinformation',
-              child: _courseMetaLoading
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TextField(
-                          controller: _courseTitleCtrl,
-                          decoration: const InputDecoration(labelText: 'Titel'),
-                        ),
-                        gap12,
-                        TextField(
-                          controller: _courseDescCtrl,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'Beskrivning',
+                gap16,
+                _SectionCard(
+                  title: 'Välj kurs',
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('course-${_selectedCourseId ?? 'none'}'),
+                    initialValue: _selectedCourseId,
+                    items: _courses
+                        .map(
+                          (c) => DropdownMenuItem<String>(
+                            value: c['id'] as String,
+                            child: Text('${c['title']}'),
                           ),
-                        ),
-                        gap12,
-                        _buildCourseCoverPicker(context),
-                        gap12,
-                        TextField(
-                          controller: _coursePriceCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Pris (SEK)',
-                            helperText: 'Ange 0 för gratis kurs',
-                          ),
-                        ),
-                        gap8,
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: _courseIsFreeIntro,
-                          onChanged: (value) {
-                            setState(() {
-                              _courseIsFreeIntro = value;
-                            });
-                            _handleCoursePublishFieldsChanged();
-                          },
-                          title: const Text('Kursen har gratis introduktion'),
-                          subtitle: const Text(
-                            'Aktivera för att låsa upp introduktionsinnehåll utan köp.',
-                          ),
-                        ),
-                        _buildPublishToggle(context),
-                        Row(
-                          children: [
-                            GradientButton.icon(
-                              onPressed: _savingCourseMeta
-                                  ? null
-                                  : _saveCourseMeta,
-                              icon: _savingCourseMeta
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.save_outlined),
-                              label: const Text('Spara kurs'),
-                            ),
-                            const SizedBox(width: 12),
-                          ],
-                        ),
-                      ],
-                    ),
-            ),
-            if (lessonVideoPreview != null) ...[gap12, lessonVideoPreview],
-          ],
-          gap16,
-          _SectionCard(
-            title: 'Moduler & lektioner',
-            actions: [
-              if (_selectedCourseId != null)
-                OutlinedButton.icon(
-                  onPressed: _moduleActionBusy ? null : _promptCreateModule,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Ny modul'),
+                        )
+                        .toList(),
+                    onChanged: (value) async {
+                      if (value == _selectedCourseId) return;
+                      final canSwitch = await _maybeSaveLessonEdits();
+                      if (!canSwitch || !mounted) return;
+                      setState(() {
+                        _resetCourseContext(clearLists: true);
+                        _selectedCourseId = value;
+                      });
+                      await _loadCourseMeta();
+                      await _loadModules(preserveSelection: false);
+                      if (!mounted) return;
+                      setState(() {
+                        _quiz = null;
+                        _questions = <Map<String, dynamic>>[];
+                      });
+                    },
+                    decoration: const InputDecoration(hintText: 'Välj kurs'),
+                  ),
                 ),
-            ],
-            child: _selectedCourseId == null
-                ? const Text(
-                    'Välj en kurs för att hantera moduler och lektioner.',
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_modulesLoadError != null) ...[
-                        Text(
-                          _modulesLoadError!,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                        ),
-                        TextButton(
-                          onPressed: _modulesLoading
-                              ? null
-                              : () => _loadModules(
-                                  preserveSelection: true,
-                                  mergeResults: true,
-                                ),
-                          child: const Text('Försök igen'),
-                        ),
-                        gap8,
-                      ],
-                      if (_modulesLoading)
-                        const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else if (_modules.isEmpty)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Inga moduler ännu.'),
-                            gap8,
-                            OutlinedButton.icon(
-                              onPressed: _moduleActionBusy
-                                  ? null
-                                  : _promptCreateModule,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Skapa första modul'),
-                            ),
-                          ],
-                        )
-                      else ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                key: ValueKey(
-                                  'module-${_selectedModuleId ?? 'none'}',
-                                ),
-                                initialValue: _selectedModuleId,
-                                items: _modules
-                                    .map(
-                                      (module) => DropdownMenuItem<String>(
-                                        value: module['id'] as String,
-                                        child: Text(
-                                          (module['title'] as String?) ??
-                                              'Modul',
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) async {
-                                  if (value == _selectedModuleId) return;
-                                  final canSwitch =
-                                      await _maybeSaveLessonEdits();
-                                  if (!canSwitch || !mounted) return;
-                                  setState(() => _selectedModuleId = value);
-                                  await _loadLessons(preserveSelection: false);
-                                },
-                                decoration: const InputDecoration(
-                                  hintText: 'Välj modul',
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              tooltip: 'Ta bort modul',
-                              onPressed:
-                                  (_selectedModuleId == null ||
-                                      _moduleActionBusy)
-                                  ? null
-                                  : () => _deleteModule(_selectedModuleId!),
-                              icon: const Icon(Icons.delete_outline),
-                            ),
-                          ],
-                        ),
-                        gap12,
-                        if (_lessonsLoadError != null) ...[
-                          Text(
-                            _lessonsLoadError!,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                          ),
-                          TextButton(
-                            onPressed: _lessonsLoading
-                                ? null
-                                : () => _loadLessons(
-                                    preserveSelection: true,
-                                    mergeResults: true,
-                                  ),
-                            child: const Text('Försök igen'),
-                          ),
-                          gap8,
-                        ],
-                        if (_lessonsLoading)
-                          const Padding(
+                if (_selectedCourseId != null) ...[
+                  gap12,
+                  _SectionCard(
+                    title: 'Kursinformation',
+                    child: _courseMetaLoading
+                        ? const Padding(
                             padding: EdgeInsets.all(12),
                             child: Center(child: CircularProgressIndicator()),
                           )
-                        else ...[
-                          Row(
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  key: ValueKey(
-                                    'lesson-${_selectedLessonId ?? 'none'}',
-                                  ),
-                                  initialValue: _selectedLessonId,
-                                  items: _lessons
-                                      .map(
-                                        (lesson) => DropdownMenuItem<String>(
-                                          value: lesson['id'] as String,
-                                          child: Text(
-                                            (lesson['title'] as String?) ??
-                                                'Lektion',
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (value) async {
-                                    if (value == _selectedLessonId) return;
-                                    final canSwitch =
-                                        await _maybeSaveLessonEdits();
-                                    if (!canSwitch || !mounted) return;
-                                    final needsRefresh =
-                                        value != null &&
-                                        _lessonsNeedingRefresh.remove(value);
-                                    setState(() {
-                                      _selectedLessonId = value;
-                                      final match = _lessonById(value);
-                                      _lessonIntro = match?['is_intro'] == true;
-                                    });
-                                    await _applySelectedLesson();
-                                    await _loadLessonMedia();
-                                    if (needsRefresh && mounted) {
-                                      setState(
-                                        () => _mediaStatus =
-                                            'Media uppdaterad för lektionen.',
-                                      );
-                                    }
-                                  },
-                                  decoration: const InputDecoration(
-                                    hintText: 'Välj lektion',
-                                  ),
+                              TextField(
+                                controller: _courseTitleCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Titel',
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                tooltip: 'Ta bort lektion',
-                                onPressed:
-                                    (_selectedLessonId == null ||
-                                        _lessonActionBusy)
-                                    ? null
-                                    : () => _deleteLesson(_selectedLessonId!),
-                                icon: const Icon(Icons.delete_outline),
+                              gap12,
+                              TextField(
+                                controller: _courseDescCtrl,
+                                maxLines: 3,
+                                decoration: const InputDecoration(
+                                  labelText: 'Beskrivning',
+                                ),
                               ),
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                onPressed:
-                                    (_selectedModuleId == null ||
-                                        _lessonActionBusy)
-                                    ? null
-                                    : _promptCreateLesson,
-                                icon: const Icon(Icons.add),
-                                label: const Text('Ny lektion'),
+                              gap12,
+                              _buildCourseCoverPicker(context),
+                              gap12,
+                              TextField(
+                                controller: _coursePriceCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'Pris (SEK)',
+                                  helperText: 'Ange 0 för introduktionskurs',
+                                ),
                               ),
-                            ],
-                          ),
-                          if (_selectedLessonId != null) ...[
-                            gap12,
-                            _buildLessonContentEditor(context),
-                          ],
-                          if (_lessons.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 8),
-                              child: Text('Modulen har inga lektioner ännu.'),
-                            )
-                          else ...[
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              value: _lessonIntro,
-                              onChanged:
-                                  (_selectedLessonId == null ||
-                                      _updatingLessonIntro)
-                                  ? null
-                                  : (value) => _setLessonIntro(value),
-                              title: const Text(
-                                'Lektionen är introduktion (gratis)',
-                              ),
-                              subtitle: const Text(
-                                'Intro laddas upp till public-media, betalt till course-media.',
-                              ),
-                            ),
-                            gap12,
-                            Builder(
-                              builder: (context) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    'Använd ikonerna i verktygsfältet ovan för att ladda upp bild, video eller ljud. Dokument (PDF) kan laddas upp via knappen med dokumentikonen.',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                );
-                              },
-                            ),
-                            if (lessonUploadJobs.isNotEmpty) ...[
                               gap8,
-                              Column(
+                              SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                value: _courseIsFreeIntro,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _courseIsFreeIntro = value;
+                                  });
+                                  _handleCoursePublishFieldsChanged();
+                                },
+                                title: const Text('Introduktionskurs'),
+                                subtitle: const Text(
+                                  'Aktivera för att låsa upp introduktionsinnehåll utan köp.',
+                                ),
+                              ),
+                              _buildPublishToggle(context),
+                              Row(
                                 children: [
-                                  for (final job in lessonUploadJobs)
-                                    _buildUploadJobCard(job),
+                                  GradientButton.icon(
+                                    onPressed: _savingCourseMeta
+                                        ? null
+                                        : _saveCourseMeta,
+                                    icon: _savingCourseMeta
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.save_outlined),
+                                    label: const Text('Spara kurs'),
+                                  ),
+                                  const SizedBox(width: 12),
                                 ],
                               ),
                             ],
-                            if (_mediaStatus != null) ...[
-                              gap8,
-                              Text(_mediaStatus!),
-                            ],
-                            if (_downloadStatus != null) ...[
-                              gap4,
+                          ),
+                  ),
+                  if (lessonVideoPreview != null) ...[
+                    gap12,
+                    lessonVideoPreview,
+                  ],
+                ],
+                gap16,
+                _SectionCard(
+                  title: 'Moduler & lektioner',
+                  actions: [
+                    if (_selectedCourseId != null)
+                      OutlinedButton.icon(
+                        onPressed: _moduleActionBusy
+                            ? null
+                            : _promptCreateModule,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Ny modul'),
+                      ),
+                  ],
+                  child: _selectedCourseId == null
+                      ? const Text(
+                          'Välj en kurs för att hantera moduler och lektioner.',
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_modulesLoadError != null) ...[
                               Text(
-                                _downloadStatus!,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.secondary,
-                                    ),
-                              ),
-                            ],
-                            if (_mediaLoadError != null) ...[
-                              gap8,
-                              Text(
-                                _mediaLoadError!,
+                                _modulesLoadError!,
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: Theme.of(
@@ -4268,466 +4085,810 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     ),
                               ),
                               TextButton(
-                                onPressed: _mediaLoading
+                                onPressed: _modulesLoading
                                     ? null
-                                    : () => _loadLessonMedia(),
+                                    : () => _loadModules(
+                                        preserveSelection: true,
+                                        mergeResults: true,
+                                      ),
                                 child: const Text('Försök igen'),
                               ),
+                              gap8,
                             ],
-                            if (_selectedLessonId != null) ...[
-                              gap12,
-                              WavUploadCard(
-                                key: ValueKey(
-                                  'wav-${wavLessonId ?? 'none'}-${wavCourseId ?? 'none'}',
-                                ),
-                                // Lesson is the source of truth for course_id.
-                                courseId: wavCourseId,
-                                lessonId: wavLessonId,
-                                existingLessonMediaId: wavLessonMediaId,
-                                existingMediaState: wavMediaState,
-                                existingFileName: wavFileName,
-                                onMediaUpdated: _loadLessonMedia,
-                              ),
-                            ],
-                            const Divider(height: 24),
-                            if (_mediaLoading)
+                            if (_modulesLoading)
                               const Padding(
                                 padding: EdgeInsets.all(12),
                                 child: Center(
                                   child: CircularProgressIndicator(),
                                 ),
                               )
-                            else if (_lessonMedia.isEmpty)
-                              const Text('Inget media uppladdat ännu.')
-                            else
-                              SizedBox(
-                                height: 260,
-                                child: ReorderableListView.builder(
-                                  itemCount: _lessonMedia.length,
-                                  onReorder: _handleMediaReorder,
-                                  buildDefaultDragHandles: false,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 4,
-                                  ),
-                                  itemBuilder: (context, index) {
-                                    final media = _lessonMedia[index];
-                                    final theme = Theme.of(context);
-                                    final bucket =
-                                        (media['storage_bucket'] as String?) ??
-                                        '';
-                                    final intro =
-                                        media['is_intro'] == true ||
-                                        bucket == 'public-media';
-                                    final kind =
-                                        (media['kind'] as String?) ?? 'other';
-                                    final position =
-                                        media['position'] as int? ?? index + 1;
-                                    final isPipeline = _isPipelineMedia(media);
-                                    final isWavMedia = _isWavMedia(media);
-                                    final pipelineState = isPipeline
-                                        ? _pipelineState(media)
-                                        : null;
-                                    final rawPipelineState =
-                                        media['media_state'];
-                                    final pipelineStateFromDb =
-                                        rawPipelineState is String
-                                        ? rawPipelineState.trim()
-                                        : null;
-                                    final hasInvalidPipelineReference =
-                                        isPipeline &&
-                                        (pipelineStateFromDb == null ||
-                                            pipelineStateFromDb.isEmpty);
-                                    final statusKey =
-                                        hasInvalidPipelineReference
-                                        ? 'failed'
-                                        : isPipeline
-                                        ? pipelineState == 'ready'
-                                              ? 'ready'
-                                              : pipelineState == 'failed'
-                                              ? 'failed'
-                                              : 'processing'
-                                        : 'ready';
-                                    final statusColor = statusKey == 'ready'
-                                        ? theme.colorScheme.primary
-                                        : statusKey == 'failed'
-                                        ? theme.colorScheme.error
-                                        : theme.colorScheme.secondary;
-                                    final canPipelinePlay =
-                                        isPipeline &&
-                                        !hasInvalidPipelineReference &&
-                                        pipelineState == 'ready' &&
-                                        (kind == 'audio' ||
-                                            ((media['content_type']
-                                                        as String?) ??
-                                                    '')
-                                                .startsWith('audio/'));
-                                    final canPreview =
-                                        !hasInvalidPipelineReference &&
-                                        !isWavMedia &&
-                                        (!isPipeline || canPipelinePlay);
-                                    final downloadUrl = isWavMedia
+                            else if (_modules.isEmpty)
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Inga moduler ännu.'),
+                                  gap8,
+                                  OutlinedButton.icon(
+                                    onPressed: _moduleActionBusy
                                         ? null
-                                        : _resolveMediaDisplayUrl(media);
-                                    final fileName = _fileNameFromMedia(media);
-                                    final canInsertIntoLesson =
-                                        !hasInvalidPipelineReference &&
-                                        !isWavMedia &&
-                                        downloadUrl != null &&
-                                        downloadUrl.isNotEmpty;
-                                    final canDownload =
-                                        !hasInvalidPipelineReference &&
-                                        !isWavMedia &&
-                                        (!isPipeline || canPipelinePlay);
-
-                                    Widget leading;
-                                    if (hasInvalidPipelineReference) {
-                                      leading = Icon(
-                                        Icons.error_outline,
-                                        size: 32,
-                                        color: theme.colorScheme.error,
-                                      );
-                                    } else if (kind == 'image' &&
-                                        downloadUrl != null) {
-                                      leading = GestureDetector(
-                                        onTap: _updatingCourseCover
-                                            ? null
-                                            : () {
-                                                _suppressMediaPreviewOnce();
-                                                unawaited(
-                                                  _selectCourseCoverFromMedia(
-                                                    media,
+                                        : _promptCreateModule,
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Skapa första modul'),
+                                  ),
+                                ],
+                              )
+                            else ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: DropdownButtonFormField<String>(
+                                      key: ValueKey(
+                                        'module-${_selectedModuleId ?? 'none'}',
+                                      ),
+                                      initialValue: _selectedModuleId,
+                                      items: _modules
+                                          .map(
+                                            (module) =>
+                                                DropdownMenuItem<String>(
+                                                  value: module['id'] as String,
+                                                  child: Text(
+                                                    (module['title']
+                                                            as String?) ??
+                                                        'Modul',
                                                   ),
-                                                );
-                                              },
-                                        child: ClipRRect(
-                                          borderRadius: const BorderRadius.all(
-                                            Radius.circular(8),
-                                          ),
-                                          child: Image.network(
-                                            downloadUrl,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) =>
-                                                    Icon(
-                                                      _iconForMedia(kind),
-                                                      size: 32,
-                                                    ),
-                                          ),
+                                                ),
+                                          )
+                                          .toList(),
+                                      onChanged: (value) async {
+                                        if (value == _selectedModuleId) return;
+                                        final canSwitch =
+                                            await _maybeSaveLessonEdits();
+                                        if (!canSwitch || !mounted) return;
+                                        setState(
+                                          () => _selectedModuleId = value,
+                                        );
+                                        await _loadLessons(
+                                          preserveSelection: false,
+                                        );
+                                      },
+                                      decoration: const InputDecoration(
+                                        hintText: 'Välj modul',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    tooltip: 'Ta bort modul',
+                                    onPressed:
+                                        (_selectedModuleId == null ||
+                                            _moduleActionBusy)
+                                        ? null
+                                        : () =>
+                                              _deleteModule(_selectedModuleId!),
+                                    icon: const Icon(Icons.delete_outline),
+                                  ),
+                                ],
+                              ),
+                              gap12,
+                              if (_lessonsLoadError != null) ...[
+                                Text(
+                                  _lessonsLoadError!,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                ),
+                                TextButton(
+                                  onPressed: _lessonsLoading
+                                      ? null
+                                      : () => _loadLessons(
+                                          preserveSelection: true,
+                                          mergeResults: true,
                                         ),
-                                      );
-                                    } else {
-                                      leading = Icon(
-                                        _iconForMedia(kind),
-                                        size: 32,
-                                      );
-                                    }
-
-                                    return Padding(
-                                      key: ValueKey(media['id']),
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: GlassCard(
-                                        padding: EdgeInsets.zero,
-                                        borderRadius: BorderRadius.circular(16),
-                                        opacity: 0.16,
-                                        borderColor: Colors.white.withValues(
-                                          alpha: 0.28,
+                                  child: const Text('Försök igen'),
+                                ),
+                                gap8,
+                              ],
+                              if (_lessonsLoading)
+                                const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                )
+                              else ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        key: ValueKey(
+                                          'lesson-${_selectedLessonId ?? 'none'}',
                                         ),
-                                        child: ListTile(
-                                          onTap: canPreview
-                                              ? () => _handleMediaPreviewTap(
-                                                  media,
-                                                )
-                                              : null,
-                                          leading: SizedBox(
-                                            width: 64,
-                                            child: Center(child: leading),
-                                          ),
-                                          title: Text(
-                                            fileName,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          subtitle: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Wrap(
-                                                spacing: 6,
-                                                runSpacing: 4,
-                                                crossAxisAlignment:
-                                                    WrapCrossAlignment.center,
-                                                children: [
-                                                  Chip(
-                                                    label: Text(
-                                                      intro
-                                                          ? 'Intro (gratis)'
-                                                          : 'Premium',
+                                        initialValue: _selectedLessonId,
+                                        items: _lessons
+                                            .map(
+                                              (lesson) =>
+                                                  DropdownMenuItem<String>(
+                                                    value:
+                                                        lesson['id'] as String,
+                                                    child: Text(
+                                                      (lesson['title']
+                                                              as String?) ??
+                                                          'Lektion',
                                                     ),
-                                                    visualDensity:
-                                                        VisualDensity.compact,
                                                   ),
-                                                  Chip(
-                                                    label: Text(statusKey),
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    backgroundColor: statusColor
-                                                        .withValues(
-                                                          alpha: 0.14,
-                                                        ),
-                                                    side: BorderSide(
-                                                      color: statusColor
-                                                          .withValues(
-                                                            alpha: 0.35,
-                                                          ),
-                                                    ),
-                                                    labelStyle: theme
-                                                        .textTheme
-                                                        .labelSmall
-                                                        ?.copyWith(
-                                                          color: statusColor,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ),
-                                              Text(
-                                                bucket.isEmpty
-                                                    ? 'Intern lagring'
-                                                    : bucket,
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.labelSmall,
-                                              ),
-                                              Text(
-                                                'Position $position • ${kind.toUpperCase()}',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.labelSmall,
-                                              ),
-                                              if (hasInvalidPipelineReference)
-                                                Text(
-                                                  'Ogiltig media_asset-referens (saknas i databasen).',
-                                                  style: theme
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        color: theme
-                                                            .colorScheme
-                                                            .error,
-                                                      ),
-                                                )
-                                              else if (pipelineState != null)
-                                                Text(
-                                                  _pipelineLabel(pipelineState),
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.labelSmall,
-                                                ),
-                                            ],
-                                          ),
-                                          trailing: Wrap(
-                                            spacing: 4,
-                                            crossAxisAlignment:
-                                                WrapCrossAlignment.center,
-                                            children: [
-                                              if (_isImageMedia(media)) ...[
-                                                IconButton(
-                                                  tooltip:
-                                                      'Använd som kursbild',
-                                                  icon: const Icon(Icons.star),
-                                                  onPressed:
-                                                      _updatingCourseCover
-                                                      ? null
-                                                      : () {
-                                                          _suppressMediaPreviewOnce();
-                                                          unawaited(
-                                                            _selectCourseCoverFromMedia(
-                                                              media,
-                                                            ),
-                                                          );
-                                                        },
-                                                ),
-                                                IconButton(
-                                                  tooltip: 'Infoga i lektionen',
-                                                  icon: const Icon(
-                                                    Icons
-                                                        .add_photo_alternate_outlined,
-                                                  ),
-                                                  onPressed: canInsertIntoLesson
-                                                      ? () =>
-                                                            _insertMediaIntoLesson(
-                                                              media,
-                                                            )
-                                                      : null,
-                                                ),
-                                              ] else ...[
-                                                IconButton(
-                                                  tooltip: 'Infoga i lektionen',
-                                                  icon: Icon(
-                                                    ((media['kind']
-                                                                        as String?) ??
-                                                                    '') ==
-                                                                'video' ||
-                                                            ((media['content_type']
-                                                                        as String?) ??
-                                                                    '')
-                                                                .startsWith(
-                                                                  'video/',
-                                                                )
-                                                        ? Icons
-                                                              .movie_creation_outlined
-                                                        : Icons
-                                                              .audiotrack_outlined,
-                                                  ),
-                                                  onPressed: canInsertIntoLesson
-                                                      ? () =>
-                                                            _insertMediaIntoLesson(
-                                                              media,
-                                                            )
-                                                      : null,
-                                                ),
-                                              ],
-                                              IconButton(
-                                                tooltip: 'Ladda ner',
-                                                icon: const Icon(
-                                                  Icons.download_outlined,
-                                                ),
-                                                onPressed: canDownload
-                                                    ? () =>
-                                                          _downloadMedia(media)
-                                                    : null,
-                                              ),
-                                              IconButton(
-                                                tooltip: 'Ta bort',
-                                                icon: const Icon(
-                                                  Icons.delete_outline,
-                                                ),
-                                                onPressed: () => _deleteMedia(
-                                                  media['id'] as String,
-                                                ),
-                                              ),
-                                              ReorderableDragStartListener(
-                                                index: index,
-                                                child: const Icon(
-                                                  Icons.drag_handle_rounded,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                            )
+                                            .toList(),
+                                        onChanged: (value) async {
+                                          if (value == _selectedLessonId)
+                                            return;
+                                          final canSwitch =
+                                              await _maybeSaveLessonEdits();
+                                          if (!canSwitch || !mounted) return;
+                                          final needsRefresh =
+                                              value != null &&
+                                              _lessonsNeedingRefresh.remove(
+                                                value,
+                                              );
+                                          setState(() {
+                                            _selectedLessonId = value;
+                                            final match = _lessonById(value);
+                                            _lessonIntro =
+                                                match?['is_intro'] == true;
+                                          });
+                                          await _applySelectedLesson();
+                                          await _loadLessonMedia();
+                                          if (needsRefresh && mounted) {
+                                            setState(
+                                              () => _mediaStatus =
+                                                  'Media uppdaterad för lektionen.',
+                                            );
+                                          }
+                                        },
+                                        decoration: const InputDecoration(
+                                          hintText: 'Välj lektion',
                                         ),
                                       ),
-                                    );
-                                  },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      tooltip: 'Ta bort lektion',
+                                      onPressed:
+                                          (_selectedLessonId == null ||
+                                              _lessonActionBusy)
+                                          ? null
+                                          : () => _deleteLesson(
+                                              _selectedLessonId!,
+                                            ),
+                                      icon: const Icon(Icons.delete_outline),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    OutlinedButton.icon(
+                                      onPressed:
+                                          (_selectedModuleId == null ||
+                                              _lessonActionBusy)
+                                          ? null
+                                          : _promptCreateLesson,
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Ny lektion'),
+                                    ),
+                                  ],
+                                ),
+                                if (!isWide && _selectedLessonId != null) ...[
+                                  gap12,
+                                  _buildLessonContentEditor(
+                                    context,
+                                    editorHeight: editorHeight,
+                                  ),
+                                ],
+                                if (_lessons.isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      'Modulen har inga lektioner ännu.',
+                                    ),
+                                  )
+                                else ...[
+                                  SwitchListTile.adaptive(
+                                    contentPadding: EdgeInsets.zero,
+                                    value: _lessonIntro,
+                                    onChanged:
+                                        (_selectedLessonId == null ||
+                                            _updatingLessonIntro)
+                                        ? null
+                                        : (value) => _setLessonIntro(value),
+                                    title: const Text(
+                                      'Lektionen är introduktion',
+                                    ),
+                                    subtitle: const Text(
+                                      'Intro laddas upp till public-media, betalt till course-media.',
+                                    ),
+                                  ),
+                                  gap12,
+                                  Builder(
+                                    builder: (context) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          'Använd ikonerna i verktygsfältet ovan för att ladda upp bild, video eller ljud. Dokument (PDF) kan laddas upp via knappen med dokumentikonen.',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  if (lessonUploadJobs.isNotEmpty) ...[
+                                    gap8,
+                                    Column(
+                                      children: [
+                                        for (final job in lessonUploadJobs)
+                                          _buildUploadJobCard(job),
+                                      ],
+                                    ),
+                                  ],
+                                  if (_mediaStatus != null) ...[
+                                    gap8,
+                                    Text(_mediaStatus!),
+                                  ],
+                                  if (_downloadStatus != null) ...[
+                                    gap4,
+                                    Text(
+                                      _downloadStatus!,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.secondary,
+                                          ),
+                                    ),
+                                  ],
+                                  if (_mediaLoadError != null) ...[
+                                    gap8,
+                                    Text(
+                                      _mediaLoadError!,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                    ),
+                                    TextButton(
+                                      onPressed: _mediaLoading
+                                          ? null
+                                          : () => _loadLessonMedia(),
+                                      child: const Text('Försök igen'),
+                                    ),
+                                  ],
+                                  if (_selectedLessonId != null) ...[
+                                    gap12,
+                                    WavUploadCard(
+                                      key: ValueKey(
+                                        'wav-${wavLessonId ?? 'none'}-${wavCourseId ?? 'none'}',
+                                      ),
+                                      // Lesson is the source of truth for course_id.
+                                      courseId: wavCourseId,
+                                      lessonId: wavLessonId,
+                                      existingLessonMediaId: wavLessonMediaId,
+                                      existingMediaState: wavMediaState,
+                                      existingFileName: wavFileName,
+                                      onMediaUpdated: _loadLessonMedia,
+                                    ),
+                                  ],
+                                  const Divider(height: 24),
+                                  if (_mediaLoading)
+                                    const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    )
+                                  else if (_lessonMedia.isEmpty)
+                                    const Text('Inget media uppladdat ännu.')
+                                  else
+                                    SizedBox(
+                                      height: 260,
+                                      child: ReorderableListView.builder(
+                                        itemCount: _lessonMedia.length,
+                                        onReorder: _handleMediaReorder,
+                                        buildDefaultDragHandles: false,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 4,
+                                        ),
+                                        itemBuilder: (context, index) {
+                                          final media = _lessonMedia[index];
+                                          final theme = Theme.of(context);
+                                          final bucket =
+                                              (media['storage_bucket']
+                                                  as String?) ??
+                                              '';
+                                          final intro =
+                                              media['is_intro'] == true ||
+                                              bucket == 'public-media';
+                                          final kind =
+                                              (media['kind'] as String?) ??
+                                              'other';
+                                          final position =
+                                              media['position'] as int? ??
+                                              index + 1;
+                                          final isPipeline = _isPipelineMedia(
+                                            media,
+                                          );
+                                          final isWavMedia = _isWavMedia(media);
+                                          final pipelineState = isPipeline
+                                              ? _pipelineState(media)
+                                              : null;
+                                          final rawPipelineState =
+                                              media['media_state'];
+                                          final pipelineStateFromDb =
+                                              rawPipelineState is String
+                                              ? rawPipelineState.trim()
+                                              : null;
+                                          final hasInvalidPipelineReference =
+                                              isPipeline &&
+                                              (pipelineStateFromDb == null ||
+                                                  pipelineStateFromDb.isEmpty);
+                                          final statusKey =
+                                              hasInvalidPipelineReference
+                                              ? 'failed'
+                                              : isPipeline
+                                              ? pipelineState == 'ready'
+                                                    ? 'ready'
+                                                    : pipelineState == 'failed'
+                                                    ? 'failed'
+                                                    : 'processing'
+                                              : 'ready';
+                                          final statusColor =
+                                              statusKey == 'ready'
+                                              ? theme.colorScheme.primary
+                                              : statusKey == 'failed'
+                                              ? theme.colorScheme.error
+                                              : theme.colorScheme.secondary;
+                                          final canPipelinePlay =
+                                              isPipeline &&
+                                              !hasInvalidPipelineReference &&
+                                              pipelineState == 'ready' &&
+                                              (kind == 'audio' ||
+                                                  ((media['content_type']
+                                                              as String?) ??
+                                                          '')
+                                                      .startsWith('audio/'));
+                                          final canPreview =
+                                              !hasInvalidPipelineReference &&
+                                              !isWavMedia &&
+                                              (!isPipeline || canPipelinePlay);
+                                          final downloadUrl = isWavMedia
+                                              ? null
+                                              : _resolveMediaDisplayUrl(media);
+                                          final fileName = _fileNameFromMedia(
+                                            media,
+                                          );
+                                          final canInsertIntoLesson =
+                                              !hasInvalidPipelineReference &&
+                                              !isWavMedia &&
+                                              downloadUrl != null &&
+                                              downloadUrl.isNotEmpty;
+                                          final canDownload =
+                                              !hasInvalidPipelineReference &&
+                                              !isWavMedia &&
+                                              (!isPipeline || canPipelinePlay);
+
+                                          Widget leading;
+                                          if (hasInvalidPipelineReference) {
+                                            leading = Icon(
+                                              Icons.error_outline,
+                                              size: 32,
+                                              color: theme.colorScheme.error,
+                                            );
+                                          } else if (kind == 'image' &&
+                                              downloadUrl != null) {
+                                            leading = GestureDetector(
+                                              onTap: _updatingCourseCover
+                                                  ? null
+                                                  : () {
+                                                      _suppressMediaPreviewOnce();
+                                                      unawaited(
+                                                        _selectCourseCoverFromMedia(
+                                                          media,
+                                                        ),
+                                                      );
+                                                    },
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    const BorderRadius.all(
+                                                      Radius.circular(8),
+                                                    ),
+                                                child: Image.network(
+                                                  downloadUrl,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) => Icon(
+                                                        _iconForMedia(kind),
+                                                        size: 32,
+                                                      ),
+                                                ),
+                                              ),
+                                            );
+                                          } else {
+                                            leading = Icon(
+                                              _iconForMedia(kind),
+                                              size: 32,
+                                            );
+                                          }
+
+                                          return Padding(
+                                            key: ValueKey(media['id']),
+                                            padding: const EdgeInsets.only(
+                                              bottom: 8,
+                                            ),
+                                            child: GlassCard(
+                                              padding: EdgeInsets.zero,
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                              opacity: 0.16,
+                                              borderColor: Colors.white
+                                                  .withValues(alpha: 0.28),
+                                              child: ListTile(
+                                                onTap: canPreview
+                                                    ? () =>
+                                                          _handleMediaPreviewTap(
+                                                            media,
+                                                          )
+                                                    : null,
+                                                leading: SizedBox(
+                                                  width: 64,
+                                                  child: Center(child: leading),
+                                                ),
+                                                title: Text(
+                                                  fileName,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                subtitle: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Wrap(
+                                                      spacing: 6,
+                                                      runSpacing: 4,
+                                                      crossAxisAlignment:
+                                                          WrapCrossAlignment
+                                                              .center,
+                                                      children: [
+                                                        Chip(
+                                                          label: Text(
+                                                            intro
+                                                                ? 'Introduktion'
+                                                                : 'Premium',
+                                                          ),
+                                                          visualDensity:
+                                                              VisualDensity
+                                                                  .compact,
+                                                        ),
+                                                        Chip(
+                                                          label: Text(
+                                                            statusKey,
+                                                          ),
+                                                          visualDensity:
+                                                              VisualDensity
+                                                                  .compact,
+                                                          backgroundColor:
+                                                              statusColor
+                                                                  .withValues(
+                                                                    alpha: 0.14,
+                                                                  ),
+                                                          side: BorderSide(
+                                                            color: statusColor
+                                                                .withValues(
+                                                                  alpha: 0.35,
+                                                                ),
+                                                          ),
+                                                          labelStyle: theme
+                                                              .textTheme
+                                                              .labelSmall
+                                                              ?.copyWith(
+                                                                color:
+                                                                    statusColor,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    Text(
+                                                      bucket.isEmpty
+                                                          ? 'Intern lagring'
+                                                          : bucket,
+                                                      style: Theme.of(
+                                                        context,
+                                                      ).textTheme.labelSmall,
+                                                    ),
+                                                    Text(
+                                                      'Position $position • ${kind.toUpperCase()}',
+                                                      style: Theme.of(
+                                                        context,
+                                                      ).textTheme.labelSmall,
+                                                    ),
+                                                    if (hasInvalidPipelineReference)
+                                                      Text(
+                                                        'Ogiltig media_asset-referens (saknas i databasen).',
+                                                        style: theme
+                                                            .textTheme
+                                                            .labelSmall
+                                                            ?.copyWith(
+                                                              color: theme
+                                                                  .colorScheme
+                                                                  .error,
+                                                            ),
+                                                      )
+                                                    else if (pipelineState !=
+                                                        null)
+                                                      Text(
+                                                        _pipelineLabel(
+                                                          pipelineState,
+                                                        ),
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.labelSmall,
+                                                      ),
+                                                  ],
+                                                ),
+                                                trailing: Wrap(
+                                                  spacing: 4,
+                                                  crossAxisAlignment:
+                                                      WrapCrossAlignment.center,
+                                                  children: [
+                                                    if (_isImageMedia(
+                                                      media,
+                                                    )) ...[
+                                                      IconButton(
+                                                        tooltip:
+                                                            'Använd som kursbild',
+                                                        icon: const Icon(
+                                                          Icons.star,
+                                                        ),
+                                                        onPressed:
+                                                            _updatingCourseCover
+                                                            ? null
+                                                            : () {
+                                                                _suppressMediaPreviewOnce();
+                                                                unawaited(
+                                                                  _selectCourseCoverFromMedia(
+                                                                    media,
+                                                                  ),
+                                                                );
+                                                              },
+                                                      ),
+                                                      IconButton(
+                                                        tooltip:
+                                                            'Infoga i lektionen',
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .add_photo_alternate_outlined,
+                                                        ),
+                                                        onPressed:
+                                                            canInsertIntoLesson
+                                                            ? () =>
+                                                                  _insertMediaIntoLesson(
+                                                                    media,
+                                                                  )
+                                                            : null,
+                                                      ),
+                                                    ] else ...[
+                                                      IconButton(
+                                                        tooltip:
+                                                            'Infoga i lektionen',
+                                                        icon: Icon(
+                                                          ((media['kind']
+                                                                              as String?) ??
+                                                                          '') ==
+                                                                      'video' ||
+                                                                  ((media['content_type']
+                                                                              as String?) ??
+                                                                          '')
+                                                                      .startsWith(
+                                                                        'video/',
+                                                                      )
+                                                              ? Icons
+                                                                    .movie_creation_outlined
+                                                              : Icons
+                                                                    .audiotrack_outlined,
+                                                        ),
+                                                        onPressed:
+                                                            canInsertIntoLesson
+                                                            ? () =>
+                                                                  _insertMediaIntoLesson(
+                                                                    media,
+                                                                  )
+                                                            : null,
+                                                      ),
+                                                    ],
+                                                    IconButton(
+                                                      tooltip: 'Ladda ner',
+                                                      icon: const Icon(
+                                                        Icons.download_outlined,
+                                                      ),
+                                                      onPressed: canDownload
+                                                          ? () =>
+                                                                _downloadMedia(
+                                                                  media,
+                                                                )
+                                                          : null,
+                                                    ),
+                                                    IconButton(
+                                                      tooltip: 'Ta bort',
+                                                      icon: const Icon(
+                                                        Icons.delete_outline,
+                                                      ),
+                                                      onPressed: () =>
+                                                          _deleteMedia(
+                                                            media['id']
+                                                                as String,
+                                                          ),
+                                                    ),
+                                                    ReorderableDragStartListener(
+                                                      index: index,
+                                                      child: const Icon(
+                                                        Icons
+                                                            .drag_handle_rounded,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                ],
+                              ],
+                            ],
+                          ],
+                        ),
+                ),
+                gap16,
+                _SectionCard(
+                  title: 'Quiz',
+                  actions: [
+                    OutlinedButton.icon(
+                      onPressed: _selectedCourseId == null ? null : _ensureQuiz,
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text('Skapa/Hämta quiz'),
+                    ),
+                  ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_quiz == null) const Text('Inget quiz laddat.'),
+                      if (_quiz != null) ...[
+                        Text(
+                          'Quiz: ${_quiz!['title']} (gräns: ${_quiz!['pass_score']}%)',
+                        ),
+                        gap12,
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final kind in <String>[
+                              'single',
+                              'multi',
+                              'boolean',
+                            ])
+                              ChoiceChip(
+                                label: Text(kind),
+                                selected: _qKind == kind,
+                                onSelected: (selected) => setState(
+                                  () => _qKind = selected ? kind : _qKind,
                                 ),
                               ),
                           ],
+                        ),
+                        gap8,
+                        TextField(
+                          controller: _qPrompt,
+                          decoration: const InputDecoration(
+                            labelText: 'Frågetext',
+                          ),
+                        ),
+                        if (_qKind != 'boolean') ...[
+                          gap8,
+                          TextField(
+                            controller: _qOptions,
+                            decoration: const InputDecoration(
+                              labelText: 'Alternativ (komma-separerade)',
+                            ),
+                          ),
+                          gap8,
+                          TextField(
+                            controller: _qCorrect,
+                            decoration: const InputDecoration(
+                              labelText: 'Rätt svar (index eller index, index)',
+                            ),
+                          ),
+                        ] else ...[
+                          gap8,
+                          TextField(
+                            controller: _qCorrect,
+                            decoration: const InputDecoration(
+                              labelText: 'Rätt svar (true/false)',
+                            ),
+                          ),
                         ],
+                        gap10,
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: GradientButton(
+                            onPressed: _addQuestion,
+                            child: const Text('Lägg till fråga'),
+                          ),
+                        ),
+                        const Divider(height: 24),
+                        const Text('Frågor'),
+                        gap6,
+                        if (_questions.isEmpty)
+                          const Text('Inga frågor ännu.')
+                        else
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _questions.length,
+                            separatorBuilder: (context, _) => gap6,
+                            itemBuilder: (context, index) {
+                              final q = _questions[index];
+                              return ListTile(
+                                leading: const Icon(Icons.help_outline),
+                                title: Text('${q['prompt']}'),
+                                subtitle: Text(
+                                  'Typ: ${q['kind']} • Pos: ${q['position']}',
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete_outline),
+                                  onPressed: () =>
+                                      _deleteQuestion(q['id'] as String),
+                                ),
+                              );
+                            },
+                          ),
                       ],
                     ],
                   ),
-          ),
-          gap16,
-          _SectionCard(
-            title: 'Quiz',
-            actions: [
-              OutlinedButton.icon(
-                onPressed: _selectedCourseId == null ? null : _ensureQuiz,
-                icon: const Icon(Icons.auto_awesome),
-                label: const Text('Skapa/Hämta quiz'),
-              ),
-            ],
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_quiz == null) const Text('Inget quiz laddat.'),
-                if (_quiz != null) ...[
-                  Text(
-                    'Quiz: ${_quiz!['title']} (gräns: ${_quiz!['pass_score']}%)',
-                  ),
-                  gap12,
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final kind in <String>['single', 'multi', 'boolean'])
-                        ChoiceChip(
-                          label: Text(kind),
-                          selected: _qKind == kind,
-                          onSelected: (selected) =>
-                              setState(() => _qKind = selected ? kind : _qKind),
-                        ),
-                    ],
-                  ),
-                  gap8,
-                  TextField(
-                    controller: _qPrompt,
-                    decoration: const InputDecoration(labelText: 'Frågetext'),
-                  ),
-                  if (_qKind != 'boolean') ...[
-                    gap8,
-                    TextField(
-                      controller: _qOptions,
-                      decoration: const InputDecoration(
-                        labelText: 'Alternativ (komma-separerade)',
-                      ),
-                    ),
-                    gap8,
-                    TextField(
-                      controller: _qCorrect,
-                      decoration: const InputDecoration(
-                        labelText: 'Rätt svar (index eller index, index)',
-                      ),
-                    ),
-                  ] else ...[
-                    gap8,
-                    TextField(
-                      controller: _qCorrect,
-                      decoration: const InputDecoration(
-                        labelText: 'Rätt svar (true/false)',
-                      ),
-                    ),
-                  ],
-                  gap10,
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: GradientButton(
-                      onPressed: _addQuestion,
-                      child: const Text('Lägg till fråga'),
-                    ),
-                  ),
-                  const Divider(height: 24),
-                  const Text('Frågor'),
-                  gap6,
-                  if (_questions.isEmpty)
-                    const Text('Inga frågor ännu.')
-                  else
-                    ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _questions.length,
-                      separatorBuilder: (context, _) => gap6,
-                      itemBuilder: (context, index) {
-                        final q = _questions[index];
-                        return ListTile(
-                          leading: const Icon(Icons.help_outline),
-                          title: Text('${q['prompt']}'),
-                          subtitle: Text(
-                            'Typ: ${q['kind']} • Pos: ${q['position']}',
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _deleteQuestion(q['id'] as String),
-                          ),
-                        );
-                      },
-                    ),
-                ],
+                ),
               ],
             ),
           ),
-        ],
-      ),
+        );
+
+        if (!isWide) return panel;
+
+        final panelWidth = min(460.0, max(340.0, constraints.maxWidth * 0.34));
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(width: panelWidth, child: panel),
+              const SizedBox(width: 16),
+              Expanded(child: _buildLessonEditorWorkspace(context)),
+            ],
+          ),
+        );
+      },
     );
 
     return AppScaffold(
@@ -4736,6 +4897,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       showHomeAction: false,
       maxContentWidth: 1920,
       contentPadding: EdgeInsets.zero,
+      useBasePage: false,
       actions: const [TopNavActionButtons()],
       body: editorContent,
     );

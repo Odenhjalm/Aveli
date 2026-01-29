@@ -28,7 +28,7 @@ class HeroCTA extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          child: const Text('Starta gratis idag'),
+          child: const Text('Kom igång idag'),
         ),
         OutlinedButton(
           onPressed: () => context.pushNamed(AppRoute.courseCatalog),

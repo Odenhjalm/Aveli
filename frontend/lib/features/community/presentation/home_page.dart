@@ -293,7 +293,7 @@ class _ShortcutCards extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Utforska introduktionskurser (gratis förhandsvisningar).',
+            'Utforska introduktionskurser (förhandsvisningar).',
             style: t.bodyLarge,
           ),
           const SizedBox(height: 14),

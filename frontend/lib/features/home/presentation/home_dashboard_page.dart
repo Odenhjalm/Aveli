@@ -1006,14 +1006,13 @@ class _CourseExploreCard extends StatelessWidget {
                               ),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(999),
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha: 0.14,
-                                ),
+                                color: theme.colorScheme.primary,
                               ),
                               child: Text(
-                                'Gratis',
+                                'Introduktion',
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.onPrimary,
                                 ),
                               ),
                             ),

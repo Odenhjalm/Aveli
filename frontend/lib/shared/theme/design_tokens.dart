@@ -21,4 +21,10 @@ abstract class DesignTokens {
   static const Color bodyTextColor = Colors.black;
   // Muted text on dark branded surfaces (gray-white, not black).
   static const Color mutedTextColor = Color(0xB3FFFFFF);
+
+  /// True when the current [ThemeData] represents a branded/hero surface where
+  /// text defaults should be light (landing / glass overlays).
+  static bool isBrandedSurface(ThemeData theme) {
+    return theme.colorScheme.onSurface == headingTextColor;
+  }
 }

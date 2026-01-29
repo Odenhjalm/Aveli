@@ -173,7 +173,7 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '14 dagars gratis provperiod',
+                    '14 dagars provperiod',
                     style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),

@@ -24,8 +24,9 @@ class SectionHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.headlineSmall)?.copyWith(
-      color: DesignTokens.headingTextColor,
+      color: isBrandedSurface ? DesignTokens.headingTextColor : null,
       fontWeight: fontWeight,
     );
     return Text(
@@ -59,8 +60,9 @@ class NameText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.titleMedium)?.copyWith(
-      color: DesignTokens.nameTextColor,
+      color: isBrandedSurface ? DesignTokens.nameTextColor : null,
       fontWeight: fontWeight,
     );
     return Text(
@@ -92,8 +94,9 @@ class MetaText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.bodyMedium)?.copyWith(
-      color: DesignTokens.mutedTextColor,
+      color: isBrandedSurface ? DesignTokens.mutedTextColor : null,
     );
     return Text(
       text,
@@ -141,9 +144,10 @@ class _HeroHeadingState extends State<HeroHeading>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final base = theme.textTheme.displayLarge?.copyWith(
       fontWeight: FontWeight.w900,
-      color: DesignTokens.headingTextColor,
+      color: isBrandedSurface ? DesignTokens.headingTextColor : null,
       height: 1.04,
       letterSpacing: -.5,
     );
@@ -173,7 +177,9 @@ class _HeroHeadingState extends State<HeroHeading>
           child: Text(
             widget.gradientWord,
             textAlign: TextAlign.center,
-            style: base?.copyWith(color: DesignTokens.headingTextColor),
+            style: base?.copyWith(
+              color: isBrandedSurface ? DesignTokens.headingTextColor : null,
+            ),
           ),
         ),
       ],

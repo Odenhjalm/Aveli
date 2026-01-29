@@ -33,14 +33,6 @@ const _aveliPrimaryGradient = LinearGradient(
 
 const Size _backgroundImageSize = Size(1536, 1024);
 
-const List<String> _fallbackCourseImages = [
-  'images/courses/foundations_of_soulwisdom.png',
-  'images/courses/vem_tanker_cover.png',
-  'images/Day.png',
-  'images/Night.png',
-  'images/Loggo.png',
-];
-
 class LandingPage extends ConsumerStatefulWidget {
   const LandingPage({super.key});
 
@@ -486,7 +478,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                     ),
                     const SizedBox(height: 18),
                     SectionHeading(
-                      'Börja gratis idag',
+                      'Börja idag',
                       textAlign: TextAlign.center,
                       baseStyle: t.titleLarge,
                       fontWeight: FontWeight.w700,
@@ -780,7 +772,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               SectionHeading(
-                                '14 dagar gratis prövoperiod',
+                                '14 dagar prövoperiod',
                                 baseStyle: t.titleMedium,
                                 fontWeight: FontWeight.w700,
                                 maxLines: 2,
@@ -801,7 +793,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                           runSpacing: 10,
                           children: [
                             _PrimaryGradientButton(
-                              label: 'Starta 14 dagar gratis',
+                              label: 'Starta prövoperiod',
                               onTap: hasEnvIssues
                                   ? null
                                   : () => _startLandingMembershipCheckout(
@@ -1110,10 +1102,8 @@ class _CourseTileGlass extends StatelessWidget {
       slug: cover.isEmpty ? slug : null,
       coverUrl: cover,
     );
-    final fallbackImage = assets.imageProvider(
-      _fallbackCourseImages[index % _fallbackCourseImages.length],
-    );
-    final imageProvider = coverProvider ?? fallbackImage;
+    final isFallbackLogo = coverProvider == null;
+    final imageProvider = coverProvider ?? AppImages.logo;
 
     final theme = Theme.of(context);
     final baseColor = theme.brightness == Brightness.dark
@@ -1152,13 +1142,24 @@ class _CourseTileGlass extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     color: Colors.white.withValues(alpha: 0.18),
                   ),
-                  child: Image(
-                    image: imageProvider,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      color: Colors.white.withValues(alpha: 0.32),
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.image_not_supported_outlined),
+                  child: Padding(
+                    padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
+                    child: Image(
+                      image: imageProvider,
+                      fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: Colors.white.withValues(alpha: 0.32),
+                        alignment: Alignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.all(18),
+                          child: Image(
+                            image: AppImages.logo,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

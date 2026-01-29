@@ -423,7 +423,6 @@ String _normalizeThemePath(String path) {
 bool _isBrandedSurfacePath(String path) {
   return path == RoutePath.landingRoot ||
       path == RoutePath.landing ||
-      path == RoutePath.home ||
       path == RoutePath.privacy ||
       path == RoutePath.terms;
 }

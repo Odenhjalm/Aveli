@@ -263,7 +263,7 @@ class _CourseTile extends StatelessWidget {
                   if (isIntro)
                     const _Chip(
                       icon: Icons.workspace_premium_outlined,
-                      label: 'Gratis intro',
+                      label: 'Introduktion',
                     ),
                   _Chip(
                     icon: course['is_published'] == true

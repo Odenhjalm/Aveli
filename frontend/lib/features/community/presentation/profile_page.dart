@@ -706,7 +706,7 @@ class _CoursesSection extends StatelessWidget {
                               const SizedBox(height: 10),
                               const _ProfileChip(
                                 icon: Icons.auto_awesome,
-                                label: 'Gratis intro',
+                                label: 'Introduktion',
                               ),
                             ],
                           ],

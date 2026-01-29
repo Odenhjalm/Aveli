@@ -60,10 +60,7 @@ Future<LandingSectionState> _fetchLandingSection(
   final api = ref.read(apiClientProvider);
   final mediaRepository = ref.read(mediaRepositoryProvider);
   try {
-    final response = await api.get<Map<String, dynamic>>(
-      path,
-      skipAuth: true,
-    );
+    final response = await api.get<Map<String, dynamic>>(path, skipAuth: true);
     final items = _castList(response['items'])
         .map((item) {
           final map = Map<String, dynamic>.from(item);
@@ -90,7 +87,11 @@ Future<LandingSectionState> _fetchLandingSection(
 }
 
 final introCoursesProvider = FutureProvider<LandingSectionState>((ref) {
-  return _fetchLandingSection(ref, '/landing/intro-courses', 'gratiskurser');
+  return _fetchLandingSection(
+    ref,
+    '/landing/intro-courses',
+    'introduktionskurserna',
+  );
 });
 
 final popularCoursesProvider = FutureProvider<LandingSectionState>((ref) {

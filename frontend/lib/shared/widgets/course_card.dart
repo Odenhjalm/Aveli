@@ -83,9 +83,21 @@ class _CourseCardState extends State<CourseCard> {
                           ),
                           if (widget.isIntro) const SizedBox(width: 8),
                           if (widget.isIntro)
-                            const Chip(
-                              label: Text('Gratis intro'),
+                            Chip(
+                              label: Text(
+                                'Introduktion',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimary,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                              ),
                               visualDensity: VisualDensity.compact,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
                             ),
                         ],
                       ),
