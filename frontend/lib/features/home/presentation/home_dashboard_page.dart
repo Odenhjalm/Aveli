@@ -28,6 +28,7 @@ import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
+import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
@@ -916,7 +917,6 @@ class _CourseExploreCard extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.18);
     final radius = BorderRadius.circular(20);
-    final actionLabel = isIntro ? 'Introduktion' : 'Öppna';
 
     Widget cover() {
       final resolved = coverUrl?.trim() ?? '';
@@ -937,6 +937,11 @@ class _CourseExploreCard extends StatelessWidget {
         },
       );
     }
+
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      color: DesignTokens.bodyTextColor,
+      fontWeight: FontWeight.w700,
+    );
 
     return InkWell(
       onTap: onTap,
@@ -975,29 +980,22 @@ class _CourseExploreCard extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CourseTitleText(
-                        title,
-                        baseStyle: theme.textTheme.titleMedium,
-                        fontWeight: FontWeight.w700,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (description.trim().isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        CourseDescriptionText(
-                          description,
-                          baseStyle: theme.textTheme.bodySmall,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                      const Spacer(),
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: titleStyle,
+                            ),
+                          ),
+                          if (isIntro) const SizedBox(width: 8),
                           if (isIntro)
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -1016,17 +1014,17 @@ class _CourseExploreCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          const Spacer(),
-                          Text(
-                            actionLabel,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right_rounded, size: 18),
                         ],
                       ),
+                      if (description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        CourseDescriptionText(
+                          description,
+                          baseStyle: theme.textTheme.bodySmall,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1192,24 +1190,20 @@ class _NowPlayingArtwork extends StatelessWidget {
       child: SizedBox(
         height: 56,
         width: 56,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: 0.22),
-              ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surface.withValues(alpha: 0.22),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: const Image(
+              image: AppImages.logo,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
             ),
-            ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Transform.scale(
-                scale: 1.6,
-                child: const Image(image: AppImages.logo, fit: BoxFit.cover),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

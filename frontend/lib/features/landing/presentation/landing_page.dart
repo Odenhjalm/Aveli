@@ -1109,130 +1109,125 @@ class _CourseTileGlass extends StatelessWidget {
     final baseColor = theme.brightness == Brightness.dark
         ? Colors.white.withValues(alpha: 0.03)
         : Colors.white.withValues(alpha: 0.18);
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      color: DesignTokens.bodyTextColor,
+      fontWeight: FontWeight.w800,
+    );
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [baseColor, baseColor.withValues(alpha: 0.32)],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF000000).withValues(alpha: 0.06),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: Colors.white.withValues(alpha: 0.18),
+    void openCourse() {
+      if (slug.isNotEmpty) {
+        context.pushNamed(AppRoute.course, pathParameters: {'slug': slug});
+      } else {
+        context.pushNamed(AppRoute.courseIntro);
+      }
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: openCourse,
+        borderRadius: BorderRadius.circular(20),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [baseColor, baseColor.withValues(alpha: 0.32)],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF000000).withValues(alpha: 0.06),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
                   ),
-                  child: Padding(
-                    padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
-                    child: Image(
-                      image: imageProvider,
-                      fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        color: Colors.white.withValues(alpha: 0.32),
-                        alignment: Alignment.center,
-                        child: Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: Image(
-                            image: AppImages.logo,
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
-                          ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: Colors.white.withValues(alpha: 0.18),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
+                        child: Image(
+                          image: imageProvider,
+                          fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
+                                color: Colors.white.withValues(alpha: 0.32),
+                                alignment: Alignment.center,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(18),
+                                  child: Image(
+                                    image: AppImages.logo,
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.high,
+                                  ),
+                                ),
+                              ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: CourseTitleText(
-                            title,
-                            baseStyle: theme.textTheme.titleMedium,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        if (isIntro) const SizedBox(width: 8),
-                        if (isIntro)
-                          Chip(
-                            label: const Text('Intro'),
-                            visualDensity: VisualDensity.compact,
-                            backgroundColor: theme.colorScheme.primary
-                                .withValues(alpha: 0.18),
-                            labelStyle: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.onPrimary,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: titleStyle,
+                              ),
                             ),
+                            if (isIntro) const SizedBox(width: 8),
+                            if (isIntro)
+                              Chip(
+                                label: const Text('Introduktion'),
+                                visualDensity: VisualDensity.compact,
+                                backgroundColor: theme.colorScheme.primary
+                                    .withValues(alpha: 0.18),
+                                labelStyle: theme.textTheme.labelSmall
+                                    ?.copyWith(
+                                      color: theme.colorScheme.onPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                          ],
+                        ),
+                        if (desc.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          CourseDescriptionText(
+                            desc,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            baseStyle: theme.textTheme.bodyMedium,
                           ),
+                        ],
                       ],
                     ),
-                    if (desc.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      CourseDescriptionText(
-                        desc,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        baseStyle: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          if (slug.isNotEmpty) {
-                            context.pushNamed(
-                              AppRoute.course,
-                              pathParameters: {'slug': slug},
-                            );
-                          } else {
-                            context.pushNamed(AppRoute.courseIntro);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
-                          foregroundColor: theme.colorScheme.onPrimary,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('Öppna'),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
