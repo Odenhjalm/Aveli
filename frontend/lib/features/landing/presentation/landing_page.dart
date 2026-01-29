@@ -578,7 +578,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                   const mediaAspectRatio = 16 / 9;
                                   final mediaHeight =
                                       itemWidth / mediaAspectRatio;
-                                  const reservedHeight = 210.0;
+                                  const reservedHeight = 250.0;
                                   final tileHeight =
                                       mediaHeight + reservedHeight;
                                   final computedAspectRatio =
@@ -1182,47 +1182,68 @@ class _CourseTileGlass extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: titleStyle,
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: titleStyle,
+                                ),
                               ),
+                              if (isIntro) const SizedBox(width: 8),
+                              if (isIntro)
+                                Chip(
+                                  label: const Text('Introduktion'),
+                                  visualDensity: VisualDensity.compact,
+                                  backgroundColor: theme.colorScheme.primary
+                                      .withValues(alpha: 0.18),
+                                  labelStyle: theme.textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: theme.colorScheme.onPrimary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                            ],
+                          ),
+                          if (desc.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            CourseDescriptionText(
+                              desc,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              baseStyle: theme.textTheme.bodyMedium,
                             ),
-                            if (isIntro) const SizedBox(width: 8),
-                            if (isIntro)
-                              Chip(
-                                label: const Text('Introduktion'),
-                                visualDensity: VisualDensity.compact,
-                                backgroundColor: theme.colorScheme.primary
-                                    .withValues(alpha: 0.18),
-                                labelStyle: theme.textTheme.labelSmall
-                                    ?.copyWith(
-                                      color: theme.colorScheme.onPrimary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
                           ],
-                        ),
-                        if (desc.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          CourseDescriptionText(
-                            desc,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            baseStyle: theme.textTheme.bodyMedium,
+                          const Spacer(),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: ElevatedButton(
+                              onPressed: openCourse,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: theme.colorScheme.primary,
+                                foregroundColor: theme.colorScheme.onPrimary,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                minimumSize: const Size(0, 40),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text('Öppna'),
+                            ),
                           ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ],

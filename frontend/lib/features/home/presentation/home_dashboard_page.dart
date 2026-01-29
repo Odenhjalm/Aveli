@@ -126,7 +126,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 900;
-            const pagePadding = EdgeInsets.fromLTRB(16, 110, 16, 32);
+            const pagePadding = EdgeInsets.fromLTRB(20, 118, 20, 44);
             if (isWide) {
               return SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -151,7 +151,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                             );
                           },
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 26),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -162,7 +162,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                 mediaRepository: mediaRepository,
                               ),
                             ),
-                            const SizedBox(width: 18),
+                            const SizedBox(width: 24),
                             Expanded(
                               flex: 3,
                               child: _FeedSection(
@@ -170,7 +170,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                 seminarsAsync: seminarsAsync,
                               ),
                             ),
-                            const SizedBox(width: 18),
+                            const SizedBox(width: 24),
                             Expanded(
                               flex: 3,
                               child: _ServicesSection(
@@ -202,17 +202,17 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       homeAudioSection,
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 22),
                       _ExploreCoursesSection(
                         section: exploreAsync,
                         mediaRepository: mediaRepository,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 22),
                       _FeedSection(
                         feedAsync: feedAsync,
                         seminarsAsync: seminarsAsync,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 22),
                       _ServicesSection(
                         servicesAsync: servicesAsync,
                         isLoading: (id) => _loadingServiceIds.contains(id),
@@ -402,20 +402,29 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                 tooltip: 'Bibliotek',
                 onPressed: () => _openLibrary(context, items),
                 icon: const Icon(Icons.library_music_outlined),
+                color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 6),
               if (isActive)
-                IconButton.filledTonal(
+                IconButton.filled(
                   tooltip: 'Stoppa',
                   onPressed: ref
                       .read(mediaPlaybackControllerProvider.notifier)
                       .stop,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  ),
                   icon: const Icon(Icons.stop_rounded),
                 )
               else
-                IconButton.filledTonal(
+                IconButton.filled(
                   tooltip: 'Spela',
                   onPressed: canPlay ? () async => await onPlay() : null,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  ),
                   icon: const Icon(Icons.play_arrow_rounded),
                 ),
             ],
@@ -637,11 +646,14 @@ class _AudioRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final duration = (item.durationSeconds ?? 0) > 0
         ? _formatDuration(Duration(seconds: item.durationSeconds!))
         : null;
     final border = BorderSide(
-      color: Colors.white.withValues(alpha: isSelected ? 0.28 : 0.12),
+      color: isSelected
+          ? scheme.primary.withValues(alpha: 0.5)
+          : Colors.white.withValues(alpha: 0.12),
     );
     return InkWell(
       onTap: onTap,
@@ -649,7 +661,9 @@ class _AudioRow extends StatelessWidget {
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: isSelected ? 0.14 : 0.08),
+          color: isSelected
+              ? scheme.primary.withValues(alpha: 0.14)
+              : Colors.white.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
           border: Border.fromBorderSide(border),
         ),
@@ -658,6 +672,7 @@ class _AudioRow extends StatelessWidget {
             Icon(
               isSelected ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
               size: 18,
+              color: isSelected ? scheme.primary : null,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -728,7 +743,7 @@ class _ExploreCoursesSection extends ConsumerWidget {
       ),
       child: section.when(
         loading: () => const SizedBox(
-          height: 210,
+          height: 260,
           child: Center(child: CircularProgressIndicator()),
         ),
         error: (error, _) => _buildFallback(context, ref, fallbackError: error),
@@ -800,12 +815,12 @@ class _ExploreCoursesSection extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = 14.0;
+        const spacing = 18.0;
         final maxWidth = constraints.maxWidth;
         final useGrid = maxWidth >= 420;
         if (useGrid) {
           final cardWidth = (maxWidth - spacing) / 2;
-          final cardHeight = (cardWidth * 1.22).clamp(240.0, 310.0).toDouble();
+          final cardHeight = (cardWidth * 1.28).clamp(280.0, 420.0).toDouble();
 
           return GridView.builder(
             shrinkWrap: true,
@@ -842,8 +857,8 @@ class _ExploreCoursesSection extends ConsumerWidget {
         }
 
         final targetWidth = (maxWidth - spacing * 2) / 3;
-        final cardWidth = targetWidth.clamp(200.0, 260.0).toDouble();
-        final cardHeight = (cardWidth * 1.24).clamp(210.0, 280.0).toDouble();
+        final cardWidth = targetWidth.clamp(220.0, 280.0).toDouble();
+        final cardHeight = (cardWidth * 1.26).clamp(240.0, 330.0).toDouble();
 
         return SizedBox(
           height: cardHeight,
@@ -939,8 +954,11 @@ class _CourseExploreCard extends StatelessWidget {
     }
 
     final titleStyle = theme.textTheme.titleMedium?.copyWith(
-      color: DesignTokens.bodyTextColor,
-      fontWeight: FontWeight.w700,
+      color: DesignTokens.headingTextColor,
+      fontWeight: FontWeight.w800,
+      shadows: const [
+        Shadow(color: Color(0x99000000), blurRadius: 10, offset: Offset(0, 2)),
+      ],
     );
 
     return InkWell(
@@ -980,7 +998,7 @@ class _CourseExploreCard extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1662,7 +1680,7 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _GlassSection(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1680,7 +1698,7 @@ class _SectionCard extends StatelessWidget {
               if (trailing != null) trailing!,
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           child,
         ],
       ),
