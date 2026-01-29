@@ -509,7 +509,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       items: [
                         ('Över 1000+', 'nöjda elever'),
                         ('Certifierade', 'lärare'),
-                        ('30 dagars', 'garanti'),
+                        ('14 dagar', 'prövoperiod'),
                       ],
                     ),
                     const SizedBox(height: 28),
@@ -779,7 +779,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                               ),
                               const SizedBox(height: 2),
                               MetaText(
-                                'Efter provperioden får du 14 dagar att testa alla '
+                                'Under prövoperioden får du 14 dagar att testa alla '
                                 'introduktionskurser. Därefter 130 kr i månaden.',
                                 baseStyle: t.bodyMedium,
                                 maxLines: 3,
