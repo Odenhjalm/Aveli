@@ -86,6 +86,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       disableBack: true,
       showHomeAction: false,
       logoSize: 0,
+      maxContentWidth: 1320,
       contentPadding: EdgeInsets.zero,
       actions: [
         IconButton(
@@ -705,42 +706,26 @@ class _ExploreCoursesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            SectionHeading(
-              'Utforska kurser',
-              baseStyle: Theme.of(context).textTheme.titleLarge,
-              fontWeight: FontWeight.bold,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const Spacer(),
-            TextButton(
-              onPressed: () => context.goNamed(AppRoute.courseCatalog),
-              child: const Text('Visa alla'),
-            ),
-          ],
+    return _SectionCard(
+      title: 'Utforska kurser',
+      trailing: TextButton(
+        onPressed: () => context.goNamed(AppRoute.courseCatalog),
+        child: const Text('Visa alla'),
+      ),
+      child: section.when(
+        loading: () => const SizedBox(
+          height: 210,
+          child: Center(child: CircularProgressIndicator()),
         ),
-        const SizedBox(height: 10),
-        section.when(
-          loading: () => const SizedBox(
-            height: 210,
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          error: (error, _) =>
-              _buildFallback(context, ref, fallbackError: error),
-          data: (state) {
-            final items = state.items;
-            if (items.isNotEmpty) {
-              return _buildCourseList(context, items, mediaRepository);
-            }
-            return _buildFallback(context, ref);
-          },
-        ),
-      ],
+        error: (error, _) => _buildFallback(context, ref, fallbackError: error),
+        data: (state) {
+          final items = state.items;
+          if (items.isNotEmpty) {
+            return _buildCourseList(context, items, mediaRepository);
+          }
+          return _buildFallback(context, ref);
+        },
+      ),
     );
   }
 
