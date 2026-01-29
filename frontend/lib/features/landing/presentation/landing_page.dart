@@ -15,7 +15,6 @@ import 'package:aveli/features/landing/application/landing_providers.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/app_images.dart';
-import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/hero_badge.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -65,7 +64,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
   LandingSectionState _teachers = const LandingSectionState(items: []);
   LandingSectionState _services = const LandingSectionState(items: []);
   LandingSectionState _introCourses = const LandingSectionState(items: []);
-  bool _envSnackShown = false;
 
   List<Map<String, dynamic>> get _popularItems => _popularCourses.items;
   List<Map<String, dynamic>> get _teacherItems =>
@@ -108,20 +106,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
     if (!_didPrecache) {
       precacheImage(_bg, context);
       _didPrecache = true;
-    }
-    final info = ref.read(envInfoProvider);
-    if (!_envSnackShown && info.hasIssues) {
-      _envSnackShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final missing = info.missingKeys.isEmpty
-            ? 'API-konfiguration saknas.'
-            : 'Miljövariabler saknas: ${info.missingKeys.join(', ')}.';
-        showSnack(
-          context,
-          '$missing Lägg till nycklar via --dart-define eller en lokal env-fil (ej web).',
-        );
-      });
     }
   }
 
@@ -476,25 +460,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
         controller: _scroll,
         padding: EdgeInsets.zero,
         children: [
-          if (hasEnvIssues)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Card(
-                color: const Color(0xFFDC2626).withValues(alpha: .9),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    envInfo.missingKeys.isEmpty
-                        ? 'API-konfiguration saknas. Lägg till API_BASE_URL via --dart-define (web) eller en lokal env-fil för att aktivera inloggning.'
-                        : 'Saknade nycklar: ${envInfo.missingKeys.join(', ')}. Lägg till dem via --dart-define (web) eller en lokal env-fil för att aktivera inloggning.',
-                    style: t.bodyMedium?.copyWith(
-                      color: DesignTokens.headingTextColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
           // HERO
           Center(
             child: ConstrainedBox(

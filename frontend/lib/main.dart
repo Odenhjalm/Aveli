@@ -15,6 +15,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_resolver.dart';
 import 'package:aveli/core/env/env_state.dart';
+import 'package:aveli/core/guards/guard_context.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/auth_controller.dart' hide AuthState;
@@ -26,6 +27,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
 import 'shared/theme/light_theme.dart';
 import 'shared/widgets/background_layer.dart';
+import 'shared/widgets/env_banner.dart';
 import 'core/routing/app_router.dart';
 import 'shared/theme/controls.dart';
 import 'shared/utils/l10n.dart';
@@ -336,6 +338,8 @@ class AveliApp extends ConsumerWidget {
         final path = _normalizeThemePath(routeInfo.uri.path);
         final isBrandedSurface = _isBrandedSurfacePath(path);
         final themeData = isBrandedSurface ? brandedThemeData : baseThemeData;
+        final guardContext = GuardContextResolver.fromPath(path);
+        final envInfo = ref.watch(envInfoProvider);
 
         return MaterialApp.router(
           debugShowCheckedModeBanner: false,
@@ -368,7 +372,16 @@ class AveliApp extends ConsumerWidget {
           routerConfig: router,
           builder: (context, child) {
             if (child == null) return const SizedBox.shrink();
-            return AppBackground(child: child);
+            final shouldMountEnvBanner =
+                guardContext == GuardContext.appCore && envInfo.hasIssues;
+
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                AppBackground(child: child),
+                if (shouldMountEnvBanner) const EnvBanner(),
+              ],
+            );
           },
         );
       },
