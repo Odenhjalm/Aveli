@@ -509,7 +509,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       items: [
                         ('Över 1000+', 'nöjda elever'),
                         ('Certifierade', 'lärare'),
-                        ('14 dagar', 'prövoperiod'),
+                        ('14 dagar', 'pröveperiod'),
                       ],
                     ),
                     const SizedBox(height: 28),
@@ -772,14 +772,14 @@ class _LandingPageState extends ConsumerState<LandingPage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               SectionHeading(
-                                '14 dagar prövoperiod',
+                                '14 dagar pröveperiod',
                                 baseStyle: t.titleMedium,
                                 fontWeight: FontWeight.w700,
                                 maxLines: 2,
                               ),
                               const SizedBox(height: 2),
                               MetaText(
-                                'Under prövoperioden får du 14 dagar att testa alla '
+                                'Under pröveperioden får du 14 dagar att testa alla '
                                 'introduktionskurser. Därefter 130 kr i månaden.',
                                 baseStyle: t.bodyMedium,
                                 maxLines: 3,
@@ -793,7 +793,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                           runSpacing: 10,
                           children: [
                             _PrimaryGradientButton(
-                              label: 'Starta prövoperiod',
+                              label: 'Starta pröveperiod',
                               onTap: hasEnvIssues
                                   ? null
                                   : () => _startLandingMembershipCheckout(
