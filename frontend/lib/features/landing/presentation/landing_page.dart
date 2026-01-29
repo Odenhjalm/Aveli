@@ -578,13 +578,13 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                   const mediaAspectRatio = 16 / 9;
                                   final mediaHeight =
                                       itemWidth / mediaAspectRatio;
-                                  const reservedHeight = 250.0;
+                                  const reservedHeight = 220.0;
                                   final tileHeight =
                                       mediaHeight + reservedHeight;
                                   final computedAspectRatio =
                                       itemWidth / tileHeight;
                                   final childAspectRatio = computedAspectRatio
-                                      .clamp(0.72, 1.05)
+                                      .clamp(0.78, 1.05)
                                       .toDouble();
                                   return GridView.builder(
                                     shrinkWrap: true,
@@ -1214,7 +1214,7 @@ class _CourseTileGlass extends StatelessWidget {
                             ],
                           ),
                           if (desc.isNotEmpty) ...[
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             CourseDescriptionText(
                               desc,
                               maxLines: 3,

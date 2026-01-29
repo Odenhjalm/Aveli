@@ -156,31 +156,33 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              flex: 4,
+                              flex: 5,
                               child: _ExploreCoursesSection(
                                 section: exploreAsync,
                                 mediaRepository: mediaRepository,
                               ),
                             ),
-                            const SizedBox(width: 24),
+                            const SizedBox(width: 28),
                             Expanded(
-                              flex: 3,
-                              child: _FeedSection(
-                                feedAsync: feedAsync,
-                                seminarsAsync: seminarsAsync,
-                              ),
-                            ),
-                            const SizedBox(width: 24),
-                            Expanded(
-                              flex: 3,
-                              child: _ServicesSection(
-                                servicesAsync: servicesAsync,
-                                isLoading: (id) =>
-                                    _loadingServiceIds.contains(id),
-                                onCheckout: (service) =>
-                                    _handleServiceCheckout(context, service),
-                                certificatesAsync: certificatesAsync,
-                                isAuthenticated: authState.isAuthenticated,
+                              flex: 4,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _FeedSection(
+                                    feedAsync: feedAsync,
+                                    seminarsAsync: seminarsAsync,
+                                  ),
+                                  const SizedBox(height: 24),
+                                  _ServicesSection(
+                                    servicesAsync: servicesAsync,
+                                    isLoading: (id) =>
+                                        _loadingServiceIds.contains(id),
+                                    onCheckout: (service) =>
+                                        _handleServiceCheckout(context, service),
+                                    certificatesAsync: certificatesAsync,
+                                    isAuthenticated: authState.isAuthenticated,
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -737,6 +739,7 @@ class _ExploreCoursesSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return _SectionCard(
       title: 'Utforska kurser',
+      padding: const EdgeInsets.all(28),
       trailing: TextButton(
         onPressed: () => context.goNamed(AppRoute.courseCatalog),
         child: const Text('Visa alla'),
@@ -806,7 +809,6 @@ class _ExploreCoursesSection extends ConsumerWidget {
     if (items.isEmpty) {
       return const MetaText('Inga kurser publicerade ännu.');
     }
-    final visible = items.take(6).toList(growable: false);
 
     void openCourse(String slug) {
       if (slug.isEmpty) return;
@@ -815,60 +817,66 @@ class _ExploreCoursesSection extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = 18.0;
+        const spacing = 22.0;
         final maxWidth = constraints.maxWidth;
-        final useGrid = maxWidth >= 420;
+        final useGrid = maxWidth >= 560;
         if (useGrid) {
           final cardWidth = (maxWidth - spacing) / 2;
-          final cardHeight = (cardWidth * 1.28).clamp(280.0, 420.0).toDouble();
+          final cardHeight = (cardWidth * 1.32).clamp(310.0, 460.0).toDouble();
+          final gridHeight = cardHeight * 3 + spacing * 2;
 
-          return GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+          return SizedBox(
+            height: gridHeight,
+            child: GridView.builder(
+              primary: false,
+              physics: items.length > 6
+                  ? const ClampingScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: spacing,
               mainAxisSpacing: spacing,
               mainAxisExtent: cardHeight,
             ),
-            itemCount: visible.length,
-            itemBuilder: (context, index) {
-              final course = visible[index];
-              final title = (course['title'] as String?) ?? 'Kurs';
-              final description = (course['description'] as String?) ?? '';
-              final slug = (course['slug'] as String?) ?? '';
-              final isIntro = course['is_free_intro'] == true;
-              final rawCoverUrl = (course['cover_url'] as String?) ?? '';
-              final resolvedCoverUrl = _resolveCoverUrl(
-                mediaRepository,
-                rawCoverUrl,
-              );
-              final canOpen = slug.isNotEmpty;
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final course = items[index];
+                final title = (course['title'] as String?) ?? 'Kurs';
+                final description = (course['description'] as String?) ?? '';
+                final slug = (course['slug'] as String?) ?? '';
+                final isIntro = course['is_free_intro'] == true;
+                final rawCoverUrl = (course['cover_url'] as String?) ?? '';
+                final resolvedCoverUrl = _resolveCoverUrl(
+                  mediaRepository,
+                  rawCoverUrl,
+                );
+                final canOpen = slug.isNotEmpty;
 
-              return _CourseExploreCard(
-                title: title,
-                description: description,
-                isIntro: isIntro,
-                coverUrl: resolvedCoverUrl,
-                onTap: canOpen ? () => openCourse(slug) : null,
-              );
-            },
+                return _CourseExploreCard(
+                  title: title,
+                  description: description,
+                  isIntro: isIntro,
+                  coverUrl: resolvedCoverUrl,
+                  onTap: canOpen ? () => openCourse(slug) : null,
+                );
+              },
+            ),
           );
         }
 
         final targetWidth = (maxWidth - spacing * 2) / 3;
-        final cardWidth = targetWidth.clamp(220.0, 280.0).toDouble();
-        final cardHeight = (cardWidth * 1.26).clamp(240.0, 330.0).toDouble();
+        final cardWidth = targetWidth.clamp(240.0, 320.0).toDouble();
+        final cardHeight = (cardWidth * 1.30).clamp(280.0, 380.0).toDouble();
 
         return SizedBox(
           height: cardHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: visible.length,
+            itemCount: items.length,
             separatorBuilder: (context, index) =>
                 const SizedBox(width: spacing),
             itemBuilder: (context, index) {
-              final course = visible[index];
+              final course = items[index];
               final title = (course['title'] as String?) ?? 'Kurs';
               final description = (course['description'] as String?) ?? '';
               final slug = (course['slug'] as String?) ?? '';
@@ -926,12 +934,13 @@ class _CourseExploreCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surface = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.07)
-        : Colors.white.withValues(alpha: 0.30);
+        ? Colors.white.withValues(alpha: 0.09)
+        : Colors.white.withValues(alpha: 0.34);
     final border = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.18);
+        ? Colors.white.withValues(alpha: 0.18)
+        : Colors.white.withValues(alpha: 0.26);
     final radius = BorderRadius.circular(20);
+    final shadowAlpha = theme.brightness == Brightness.dark ? 0.20 : 0.08;
 
     Widget cover() {
       final resolved = coverUrl?.trim() ?? '';
@@ -968,7 +977,23 @@ class _CourseExploreCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: radius,
           border: Border.all(color: border),
-          color: surface,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              surface,
+              surface.withValues(
+                alpha: theme.brightness == Brightness.dark ? 0.05 : 0.55,
+              ),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF000000).withValues(alpha: shadowAlpha),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
         child: ClipRRect(
           borderRadius: radius,
@@ -998,7 +1023,7 @@ class _CourseExploreCard extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1035,7 +1060,7 @@ class _CourseExploreCard extends StatelessWidget {
                         ],
                       ),
                       if (description.trim().isNotEmpty) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         CourseDescriptionText(
                           description,
                           baseStyle: theme.textTheme.bodySmall,
@@ -1671,16 +1696,22 @@ class _ServicesSection extends StatelessWidget {
 enum _GateAction { checkout, login }
 
 class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child, this.trailing});
+  const _SectionCard({
+    required this.title,
+    required this.child,
+    this.trailing,
+    this.padding = const EdgeInsets.all(24),
+  });
 
   final String title;
   final Widget child;
   final Widget? trailing;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     return _GlassSection(
-      padding: const EdgeInsets.all(24),
+      padding: padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
