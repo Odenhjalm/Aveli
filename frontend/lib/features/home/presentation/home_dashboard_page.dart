@@ -136,7 +136,20 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        homeAudioSection,
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final targetWidth = (constraints.maxWidth * 0.37)
+                                .clamp(420.0, constraints.maxWidth)
+                                .toDouble();
+                            return Align(
+                              alignment: Alignment.center,
+                              child: SizedBox(
+                                width: targetWidth,
+                                child: homeAudioSection,
+                              ),
+                            );
+                          },
+                        ),
                         const SizedBox(height: 18),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -788,6 +801,45 @@ class _ExploreCoursesSection extends ConsumerWidget {
       builder: (context, constraints) {
         const spacing = 14.0;
         final maxWidth = constraints.maxWidth;
+        final useGrid = maxWidth >= 420;
+        if (useGrid) {
+          final cardWidth = (maxWidth - spacing) / 2;
+          final cardHeight = (cardWidth * 1.22).clamp(240.0, 310.0).toDouble();
+
+          return GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: spacing,
+              mainAxisSpacing: spacing,
+              mainAxisExtent: cardHeight,
+            ),
+            itemCount: visible.length,
+            itemBuilder: (context, index) {
+              final course = visible[index];
+              final title = (course['title'] as String?) ?? 'Kurs';
+              final description = (course['description'] as String?) ?? '';
+              final slug = (course['slug'] as String?) ?? '';
+              final isIntro = course['is_free_intro'] == true;
+              final rawCoverUrl = (course['cover_url'] as String?) ?? '';
+              final resolvedCoverUrl = _resolveCoverUrl(
+                mediaRepository,
+                rawCoverUrl,
+              );
+              final canOpen = slug.isNotEmpty;
+
+              return _CourseExploreCard(
+                title: title,
+                description: description,
+                isIntro: isIntro,
+                coverUrl: resolvedCoverUrl,
+                onTap: canOpen ? () => openCourse(slug) : null,
+              );
+            },
+          );
+        }
+
         final targetWidth = (maxWidth - spacing * 2) / 3;
         final cardWidth = targetWidth.clamp(200.0, 260.0).toDouble();
         final cardHeight = (cardWidth * 1.24).clamp(210.0, 280.0).toDouble();
@@ -901,7 +953,7 @@ class _CourseExploreCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AspectRatio(
-                aspectRatio: 16 / 10,
+                aspectRatio: 16 / 9,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -923,7 +975,7 @@ class _CourseExploreCard extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -939,7 +991,7 @@ class _CourseExploreCard extends StatelessWidget {
                         CourseDescriptionText(
                           description,
                           baseStyle: theme.textTheme.bodySmall,
-                          maxLines: 2,
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
@@ -1139,8 +1191,8 @@ class _NowPlayingArtwork extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        height: 44,
-        width: 44,
+        height: 56,
+        width: 56,
         child: Stack(
           fit: StackFit.expand,
           children: [
