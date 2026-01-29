@@ -132,35 +132,33 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 1200),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              homeAudioSection,
-                              const SizedBox(height: 16),
-                              _ExploreCoursesSection(
+                        homeAudioSection,
+                        const SizedBox(height: 18),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 4,
+                              child: _ExploreCoursesSection(
                                 section: exploreAsync,
                                 mediaRepository: mediaRepository,
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 18),
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _FeedSection(
+                            ),
+                            const SizedBox(width: 18),
+                            Expanded(
+                              flex: 3,
+                              child: _FeedSection(
                                 feedAsync: feedAsync,
                                 seminarsAsync: seminarsAsync,
                               ),
-                              const SizedBox(height: 16),
-                              _ServicesSection(
+                            ),
+                            const SizedBox(width: 18),
+                            Expanded(
+                              flex: 3,
+                              child: _ServicesSection(
                                 servicesAsync: servicesAsync,
                                 isLoading: (id) =>
                                     _loadingServiceIds.contains(id),
@@ -169,8 +167,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                 certificatesAsync: certificatesAsync,
                                 isAuthenticated: authState.isAuthenticated,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
