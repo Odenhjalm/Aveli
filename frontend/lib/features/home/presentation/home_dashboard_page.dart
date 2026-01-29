@@ -707,23 +707,42 @@ class _ExploreCoursesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return _SectionCard(
-      title: 'Utforska kurser',
-      trailing: TextButton(
-        onPressed: () => context.goNamed(AppRoute.courseCatalog),
-        child: const Text('Visa alla'),
-      ),
-      child: section.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _buildFallback(context, ref, fallbackError: error),
-        data: (state) {
-          final items = state.items;
-          if (items.isNotEmpty) {
-            return _buildCourseList(context, items, mediaRepository);
-          }
-          return _buildFallback(context, ref);
-        },
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SectionHeading(
+              'Utforska kurser',
+              baseStyle: Theme.of(context).textTheme.titleLarge,
+              fontWeight: FontWeight.bold,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => context.goNamed(AppRoute.courseCatalog),
+              child: const Text('Visa alla'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        section.when(
+          loading: () => const SizedBox(
+            height: 210,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (error, _) =>
+              _buildFallback(context, ref, fallbackError: error),
+          data: (state) {
+            final items = state.items;
+            if (items.isNotEmpty) {
+              return _buildCourseList(context, items, mediaRepository);
+            }
+            return _buildFallback(context, ref);
+          },
+        ),
+      ],
     );
   }
 
@@ -775,10 +794,6 @@ class _ExploreCoursesSection extends ConsumerWidget {
     if (items.isEmpty) {
       return const MetaText('Inga kurser publicerade ännu.');
     }
-    final theme = Theme.of(context);
-    final dividerColor = theme.colorScheme.onSurface.withValues(
-      alpha: theme.brightness == Brightness.dark ? 0.16 : 0.12,
-    );
     final visible = items.take(6).toList(growable: false);
 
     void openCourse(String slug) {
@@ -786,13 +801,23 @@ class _ExploreCoursesSection extends ConsumerWidget {
       context.goNamed(AppRoute.course, pathParameters: {'slug': slug});
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < visible.length; i++) ...[
-          Builder(
-            builder: (rowContext) {
-              final course = visible[i];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 14.0;
+        final maxWidth = constraints.maxWidth;
+        final targetWidth = (maxWidth - spacing * 2) / 3;
+        final cardWidth = targetWidth.clamp(200.0, 260.0).toDouble();
+        final cardHeight = (cardWidth * 1.24).clamp(210.0, 280.0).toDouble();
+
+        return SizedBox(
+          height: cardHeight,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: visible.length,
+            separatorBuilder: (context, index) =>
+                const SizedBox(width: spacing),
+            itemBuilder: (context, index) {
+              final course = visible[index];
               final title = (course['title'] as String?) ?? 'Kurs';
               final description = (course['description'] as String?) ?? '';
               final slug = (course['slug'] as String?) ?? '';
@@ -802,82 +827,22 @@ class _ExploreCoursesSection extends ConsumerWidget {
                 mediaRepository,
                 rawCoverUrl,
               );
-              final actionLabel = isIntro ? 'Introduktion' : 'Öppna';
               final canOpen = slug.isNotEmpty;
 
-              return InkWell(
-                onTap: canOpen ? () => openCourse(slug) : null,
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      if (resolvedCoverUrl != null &&
-                          resolvedCoverUrl.isNotEmpty)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.network(
-                            resolvedCoverUrl,
-                            fit: BoxFit.cover,
-                            height: 56,
-                            width: 56,
-                            errorBuilder: (_, err, stack) {
-                              ImageErrorLogger.log(
-                                source: 'Home/Explore/CoverURL',
-                                url: resolvedCoverUrl,
-                                error: err,
-                                stackTrace: stack,
-                              );
-                              return const _CourseIconFallback();
-                            },
-                          ),
-                        )
-                      else
-                        const _CourseIconFallback(),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            CourseTitleText(
-                              title,
-                              baseStyle: theme.textTheme.titleMedium,
-                              fontWeight: FontWeight.w700,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (description.trim().isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: CourseDescriptionText(
-                                  description,
-                                  baseStyle: theme.textTheme.bodySmall,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: canOpen ? () => openCourse(slug) : null,
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        child: Text(actionLabel),
-                      ),
-                    ],
-                  ),
+              return SizedBox(
+                width: cardWidth,
+                child: _CourseExploreCard(
+                  title: title,
+                  description: description,
+                  isIntro: isIntro,
+                  coverUrl: resolvedCoverUrl,
+                  onTap: canOpen ? () => openCourse(slug) : null,
                 ),
               );
             },
           ),
-          if (i != visible.length - 1)
-            Divider(height: 1, thickness: 1, color: dividerColor),
-        ],
-      ],
+        );
+      },
     );
   }
 
@@ -891,20 +856,161 @@ class _ExploreCoursesSection extends ConsumerWidget {
   }
 }
 
-class _CourseIconFallback extends StatelessWidget {
-  const _CourseIconFallback();
+class _CourseExploreCard extends StatelessWidget {
+  const _CourseExploreCard({
+    required this.title,
+    required this.description,
+    required this.isIntro,
+    required this.coverUrl,
+    this.onTap,
+  });
+
+  final String title;
+  final String description;
+  final bool isIntro;
+  final String? coverUrl;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image(
-        image: AppImages.background,
-        height: 56,
-        width: 56,
+    final theme = Theme.of(context);
+    final surface = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.07)
+        : Colors.white.withValues(alpha: 0.30);
+    final border = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.18);
+    final radius = BorderRadius.circular(20);
+    final actionLabel = isIntro ? 'Introduktion' : 'Öppna';
+
+    Widget cover() {
+      final resolved = coverUrl?.trim() ?? '';
+      if (resolved.isEmpty) {
+        return const _CourseCoverFallback();
+      }
+      return Image.network(
+        resolved,
         fit: BoxFit.cover,
+        errorBuilder: (_, err, stack) {
+          ImageErrorLogger.log(
+            source: 'Home/Explore/CardCover',
+            url: resolved,
+            error: err,
+            stackTrace: stack,
+          );
+          return const _CourseCoverFallback();
+        },
+      );
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: radius,
+      child: Ink(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          border: Border.all(color: border),
+          color: surface,
+        ),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    cover(),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            theme.colorScheme.surface.withValues(alpha: 0.18),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CourseTitleText(
+                        title,
+                        baseStyle: theme.textTheme.titleMedium,
+                        fontWeight: FontWeight.w700,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        CourseDescriptionText(
+                          description,
+                          baseStyle: theme.textTheme.bodySmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      const Spacer(),
+                      Row(
+                        children: [
+                          if (isIntro)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.14,
+                                ),
+                              ),
+                              child: Text(
+                                'Gratis',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          const Spacer(),
+                          Text(
+                            actionLabel,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.chevron_right_rounded, size: 18),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+}
+
+class _CourseCoverFallback extends StatelessWidget {
+  const _CourseCoverFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Image(image: AppImages.background, fit: BoxFit.cover);
   }
 }
 
@@ -917,22 +1023,126 @@ class _NowPlayingShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surface = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.07)
-        : Colors.white.withValues(alpha: 0.34);
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.white.withValues(alpha: 0.32);
     final border = theme.brightness == Brightness.dark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.18);
+    final wingOpacity = theme.brightness == Brightness.dark ? 0.20 : 0.14;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
+      borderRadius: BorderRadius.circular(22),
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(color: border),
-          color: surface,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              surface,
+              surface.withValues(
+                alpha: theme.brightness == Brightness.dark ? 0.04 : 0.26,
+              ),
+            ],
+          ),
         ),
-        padding: const EdgeInsets.all(16),
-        child: child,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: _NowPlayingWingsBackdrop(opacity: wingOpacity),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(0, -0.2),
+                      radius: 1.2,
+                      colors: [
+                        theme.colorScheme.primary.withValues(alpha: 0.12),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(padding: const EdgeInsets.all(18), child: child),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NowPlayingWingsBackdrop extends StatelessWidget {
+  const _NowPlayingWingsBackdrop({required this.opacity});
+
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned(
+          left: -52,
+          top: -26,
+          bottom: -28,
+          width: 220,
+          child: _LogoWing(side: _WingSide.left, opacity: opacity),
+        ),
+        Positioned(
+          right: -52,
+          top: -26,
+          bottom: -28,
+          width: 220,
+          child: _LogoWing(side: _WingSide.right, opacity: opacity),
+        ),
+      ],
+    );
+  }
+}
+
+enum _WingSide { left, right }
+
+class _LogoWing extends StatelessWidget {
+  const _LogoWing({required this.side, required this.opacity});
+
+  final _WingSide side;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    final rotation = side == _WingSide.left ? -0.08 : 0.08;
+    final alignment = side == _WingSide.left
+        ? Alignment.topLeft
+        : Alignment.topRight;
+    final scaleAlignment = side == _WingSide.left
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
+
+    return Opacity(
+      opacity: opacity,
+      child: ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Transform.rotate(
+          angle: rotation,
+          child: ClipRect(
+            child: Align(
+              alignment: alignment,
+              widthFactor: 0.56,
+              heightFactor: 0.44,
+              child: Transform.scale(
+                scale: 2.15,
+                alignment: scaleAlignment,
+                child: const Image(image: AppImages.logo, fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -945,11 +1155,28 @@ class _NowPlayingArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: const Image(
-        image: AppImages.logo,
+      child: SizedBox(
         height: 44,
         width: 44,
-        fit: BoxFit.cover,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surface.withValues(alpha: 0.22),
+              ),
+            ),
+            ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Transform.scale(
+                scale: 1.6,
+                child: const Image(image: AppImages.logo, fit: BoxFit.cover),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
