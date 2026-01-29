@@ -124,86 +124,93 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 900;
+            const pagePadding = EdgeInsets.fromLTRB(16, 110, 16, 32);
             if (isWide) {
               return SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 110, 16, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 560),
-                        child: homeAudioSection,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
+                padding: pagePadding,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: _ExploreCoursesSection(
-                            section: exploreAsync,
-                            mediaRepository: mediaRepository,
+                          flex: 3,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              homeAudioSection,
+                              const SizedBox(height: 16),
+                              _ExploreCoursesSection(
+                                section: exploreAsync,
+                                mediaRepository: mediaRepository,
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 18),
                         Expanded(
-                          child: _FeedSection(
-                            feedAsync: feedAsync,
-                            seminarsAsync: seminarsAsync,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _ServicesSection(
-                            servicesAsync: servicesAsync,
-                            isLoading: (id) => _loadingServiceIds.contains(id),
-                            onCheckout: (service) =>
-                                _handleServiceCheckout(context, service),
-                            certificatesAsync: certificatesAsync,
-                            isAuthenticated: authState.isAuthenticated,
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _FeedSection(
+                                feedAsync: feedAsync,
+                                seminarsAsync: seminarsAsync,
+                              ),
+                              const SizedBox(height: 16),
+                              _ServicesSection(
+                                servicesAsync: servicesAsync,
+                                isLoading: (id) =>
+                                    _loadingServiceIds.contains(id),
+                                onCheckout: (service) =>
+                                    _handleServiceCheckout(context, service),
+                                certificatesAsync: certificatesAsync,
+                                isAuthenticated: authState.isAuthenticated,
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               );
             }
 
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 110, 16, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 560),
-                      child: homeAudioSection,
-                    ),
+              padding: pagePadding,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      homeAudioSection,
+                      const SizedBox(height: 16),
+                      _ExploreCoursesSection(
+                        section: exploreAsync,
+                        mediaRepository: mediaRepository,
+                      ),
+                      const SizedBox(height: 16),
+                      _FeedSection(
+                        feedAsync: feedAsync,
+                        seminarsAsync: seminarsAsync,
+                      ),
+                      const SizedBox(height: 16),
+                      _ServicesSection(
+                        servicesAsync: servicesAsync,
+                        isLoading: (id) => _loadingServiceIds.contains(id),
+                        onCheckout: (service) =>
+                            _handleServiceCheckout(context, service),
+                        certificatesAsync: certificatesAsync,
+                        isAuthenticated: authState.isAuthenticated,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  _ExploreCoursesSection(
-                    section: exploreAsync,
-                    mediaRepository: mediaRepository,
-                  ),
-                  const SizedBox(height: 16),
-                  _FeedSection(
-                    feedAsync: feedAsync,
-                    seminarsAsync: seminarsAsync,
-                  ),
-                  const SizedBox(height: 16),
-                  _ServicesSection(
-                    servicesAsync: servicesAsync,
-                    isLoading: (id) => _loadingServiceIds.contains(id),
-                    onCheckout: (service) =>
-                        _handleServiceCheckout(context, service),
-                    certificatesAsync: certificatesAsync,
-                    isAuthenticated: authState.isAuthenticated,
-                  ),
-                ],
+                ),
               ),
             );
           },
@@ -251,21 +258,24 @@ class _HomeAudioSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _GlassSection(
-      padding: const EdgeInsets.all(20),
-      child: audioAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Text(
+    return audioAsync.when(
+      loading: () => const _NowPlayingShell(
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, _) => _NowPlayingShell(
+        child: Text(
           'Kunde inte hämta ljud: ${AppFailure.from(error).message}',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
-        data: (items) {
-          if (items.isEmpty) {
-            return const MetaText('Inga ljudspår tillgängliga ännu.');
-          }
-          return _HomeAudioList(items: items);
-        },
       ),
+      data: (items) {
+        if (items.isEmpty) {
+          return const _NowPlayingShell(
+            child: MetaText('Inga ljudspår tillgängliga ännu.'),
+          );
+        }
+        return _HomeAudioList(items: items);
+      },
     );
   }
 }
@@ -296,147 +306,170 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   Widget build(BuildContext context) {
     final items = widget.items;
     if (items.isEmpty) return const SizedBox.shrink();
-    final selected = _resolveSelected(items);
     final playback = ref.watch(mediaPlaybackControllerProvider);
+    final activeId = playback.currentMediaId;
+    final selected =
+        (activeId != null &&
+            items.any((item) => item.id == activeId) &&
+            playback.isPlaying)
+        ? items.firstWhere((item) => item.id == activeId)
+        : _resolveSelected(items);
+
     final durationHint = (selected.durationSeconds ?? 0) > 0
         ? Duration(seconds: selected.durationSeconds!)
         : null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          selected.displayTitle,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        if (selected.courseTitle.trim().isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            selected.courseTitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-          ),
-        ],
-        const SizedBox(height: 10),
-        if (selected.mediaAssetId != null)
-          _buildPipelineStatusOrPlay(
-            selected,
-            playback: playback,
-            durationHint: durationHint,
-          )
-        else
-          _buildLegacyStatusOrPlay(
-            selected,
-            playback: playback,
-            durationHint: durationHint,
-          ),
-        const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: () => _openLibrary(context, items),
-            icon: const Icon(Icons.library_music_outlined),
-            label: Text('Bibliotek (${items.length})'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPipelineStatusOrPlay(
-    HomeAudioItem item, {
-    required MediaPlaybackState playback,
-    Duration? durationHint,
-  }) {
-    final state = item.mediaState ?? 'uploaded';
-    if (state != 'ready') {
-      final message = state == 'failed'
-          ? 'Ljudet kunde inte bearbetas.'
-          : 'Ljudet bearbetas…';
-      return Text(message);
-    }
-    return _buildInlineControls(
-      item,
-      playback: playback,
-      durationHint: durationHint,
-      onPlay: () => _playPipelineInline(item, durationHint: durationHint),
-    );
-  }
-
-  Widget _buildLegacyStatusOrPlay(
-    HomeAudioItem item, {
-    required MediaPlaybackState playback,
-    Duration? durationHint,
-  }) {
-    final url = item.preferredUrl;
-    if (url == null || url.trim().isEmpty) {
-      return const Text('Ljudlänken saknas för detta spår.');
-    }
-    return _buildInlineControls(
-      item,
-      playback: playback,
-      durationHint: durationHint,
-      onPlay: () => _playLegacyInline(item, durationHint: durationHint),
-    );
-  }
-
-  Widget _buildInlineControls(
-    HomeAudioItem item, {
-    required MediaPlaybackState playback,
-    required Future<void> Function() onPlay,
-    Duration? durationHint,
-  }) {
-    final mediaType = item.kind == 'video'
+    final mediaType = selected.kind == 'video'
         ? MediaPlaybackType.video
         : MediaPlaybackType.audio;
     final isActive =
-        playback.currentMediaId == item.id &&
+        playback.currentMediaId == selected.id &&
         playback.isPlaying &&
         playback.mediaType == mediaType;
     final hasUrl = (playback.url ?? '').trim().isNotEmpty;
     final showLoading = isActive && playback.isLoading;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ElevatedButton.icon(
-            onPressed: isActive
-                ? () =>
-                      ref.read(mediaPlaybackControllerProvider.notifier).stop()
-                : () async => await onPlay(),
-            icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
-            label: Text(isActive ? 'Stoppa' : 'Spela'),
+    final (onPlay, statusMessage, canPlay, statusIsError) =
+        _resolvePlaybackAction(selected, durationHint: durationHint);
+
+    return _NowPlayingShell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const _NowPlayingArtwork(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selected.displayTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (selected.courseTitle.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          selected.courseTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    if (statusMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          statusMessage,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: statusIsError
+                                    ? Theme.of(context).colorScheme.error
+                                    : Theme.of(context).colorScheme.onSurface
+                                          .withValues(alpha: 0.78),
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Bibliotek',
+                onPressed: () => _openLibrary(context, items),
+                icon: const Icon(Icons.library_music_outlined),
+              ),
+              const SizedBox(width: 6),
+              if (isActive)
+                IconButton.filledTonal(
+                  tooltip: 'Stoppa',
+                  onPressed: ref
+                      .read(mediaPlaybackControllerProvider.notifier)
+                      .stop,
+                  icon: const Icon(Icons.stop_rounded),
+                )
+              else
+                IconButton.filledTonal(
+                  tooltip: 'Spela',
+                  onPressed: canPlay ? () async => await onPlay() : null,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                ),
+            ],
           ),
-        ),
-        if (showLoading)
-          const Padding(
-            padding: EdgeInsets.only(top: 10),
-            child: LinearProgressIndicator(),
-          ),
-        if (isActive && hasUrl) ...[
-          const SizedBox(height: 10),
-          if (mediaType == MediaPlaybackType.audio)
-            InlineAudioPlayer(
-              url: playback.url!,
-              title: item.displayTitle,
-              durationHint: durationHint,
-              autoPlay: true,
-            )
-          else
-            InlineVideoPlayer(
-              url: playback.url!,
-              title: item.displayTitle,
-              autoPlay: true,
+          if (showLoading)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: LinearProgressIndicator(),
             ),
+          if (isActive && hasUrl) ...[
+            const SizedBox(height: 12),
+            if (mediaType == MediaPlaybackType.audio)
+              InlineAudioPlayer(
+                url: playback.url!,
+                title: null,
+                durationHint: durationHint,
+                autoPlay: true,
+                compact: true,
+              )
+            else
+              InlineVideoPlayer(
+                url: playback.url!,
+                title: selected.displayTitle,
+                autoPlay: true,
+              ),
+          ],
         ],
-      ],
+      ),
     );
   }
+
+  (
+    Future<void> Function() onPlay,
+    String? statusMessage,
+    bool canPlay,
+    bool statusIsError,
+  )
+  _resolvePlaybackAction(HomeAudioItem item, {Duration? durationHint}) {
+    final mediaAssetId = item.mediaAssetId;
+    if (mediaAssetId != null) {
+      final state = item.mediaState ?? 'uploaded';
+      if (state != 'ready') {
+        final message = state == 'failed'
+            ? 'Ljudet kunde inte bearbetas.'
+            : 'Ljudet bearbetas…';
+        return (_noOp, message, false, state == 'failed');
+      }
+      return (
+        () => _playPipelineInline(item, durationHint: durationHint),
+        null,
+        true,
+        false,
+      );
+    }
+    final url = item.preferredUrl;
+    if (url == null || url.trim().isEmpty) {
+      return (_noOp, 'Ljudlänken saknas för detta spår.', false, true);
+    }
+    return (
+      () => _playLegacyInline(item, durationHint: durationHint),
+      null,
+      true,
+      false,
+    );
+  }
+
+  Future<void> _noOp() async {}
 
   Future<void> _playPipelineInline(
     HomeAudioItem item, {
@@ -539,7 +572,8 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                     Expanded(
                       child: ListView.separated(
                         itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        separatorBuilder: (_, index) =>
+                            const SizedBox(height: 8),
                         itemBuilder: (context, index) {
                           final item = items[index];
                           final isSelected = item.id == selectedId;
@@ -741,43 +775,53 @@ class _ExploreCoursesSection extends ConsumerWidget {
     if (items.isEmpty) {
       return const MetaText('Inga kurser publicerade ännu.');
     }
+    final theme = Theme.of(context);
+    final dividerColor = theme.colorScheme.onSurface.withValues(
+      alpha: theme.brightness == Brightness.dark ? 0.16 : 0.12,
+    );
+    final visible = items.take(6).toList(growable: false);
+
+    void openCourse(String slug) {
+      if (slug.isEmpty) return;
+      context.goNamed(AppRoute.course, pathParameters: {'slug': slug});
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: items
-          .take(6)
-          .map((course) {
-            final title = (course['title'] as String?) ?? 'Kurs';
-            final description = (course['description'] as String?) ?? '';
-            final slug = (course['slug'] as String?) ?? '';
-            final isIntro = course['is_free_intro'] == true;
-            final rawCoverUrl = (course['cover_url'] as String?) ?? '';
-            final resolvedCoverUrl = _resolveCoverUrl(
-              mediaRepository,
-              rawCoverUrl,
-            );
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: InkWell(
-                onTap: slug.isEmpty
-                    ? null
-                    : () => context.goNamed(
-                        AppRoute.course,
-                        pathParameters: {'slug': slug},
-                      ),
-                borderRadius: BorderRadius.circular(16),
-                child: _GlassTile(
+      children: [
+        for (var i = 0; i < visible.length; i++) ...[
+          Builder(
+            builder: (rowContext) {
+              final course = visible[i];
+              final title = (course['title'] as String?) ?? 'Kurs';
+              final description = (course['description'] as String?) ?? '';
+              final slug = (course['slug'] as String?) ?? '';
+              final isIntro = course['is_free_intro'] == true;
+              final rawCoverUrl = (course['cover_url'] as String?) ?? '';
+              final resolvedCoverUrl = _resolveCoverUrl(
+                mediaRepository,
+                rawCoverUrl,
+              );
+              final actionLabel = isIntro ? 'Introduktion' : 'Öppna';
+              final canOpen = slug.isNotEmpty;
+
+              return InkWell(
+                onTap: canOpen ? () => openCourse(slug) : null,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       if (resolvedCoverUrl != null &&
                           resolvedCoverUrl.isNotEmpty)
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(12),
                           child: Image.network(
                             resolvedCoverUrl,
                             fit: BoxFit.cover,
-                            height: 72,
-                            width: 96,
+                            height: 56,
+                            width: 56,
                             errorBuilder: (_, err, stack) {
                               ImageErrorLogger.log(
                                 source: 'Home/Explore/CoverURL',
@@ -795,45 +839,45 @@ class _ExploreCoursesSection extends ConsumerWidget {
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
                           children: [
                             CourseTitleText(
                               title,
-                              baseStyle: Theme.of(
-                                context,
-                              ).textTheme.titleMedium,
-                              fontWeight: FontWeight.w600,
+                              baseStyle: theme.textTheme.titleMedium,
+                              fontWeight: FontWeight.w700,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            if (description.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              CourseDescriptionText(
-                                description,
-                                baseStyle: Theme.of(
-                                  context,
-                                ).textTheme.bodyMedium,
-                              ),
-                            ],
-                            if (isIntro) ...[
-                              const SizedBox(height: 6),
-                              const Align(
-                                alignment: Alignment.centerLeft,
-                                child: Chip(
-                                  label: Text('Gratis intro'),
-                                  visualDensity: VisualDensity.compact,
+                            if (description.trim().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: CourseDescriptionText(
+                                  description,
+                                  baseStyle: theme.textTheme.bodySmall,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ],
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: canOpen ? () => openCourse(slug) : null,
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: Text(actionLabel),
+                      ),
                     ],
                   ),
                 ),
-              ),
-            );
-          })
-          .toList(growable: false),
+              );
+            },
+          ),
+          if (i != visible.length - 1)
+            Divider(height: 1, thickness: 1, color: dividerColor),
+        ],
+      ],
     );
   }
 
@@ -853,11 +897,58 @@ class _CourseIconFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: Image(
         image: AppImages.background,
-        height: 72,
-        width: 96,
+        height: 56,
+        width: 56,
+        fit: BoxFit.cover,
+      ),
+    );
+  }
+}
+
+class _NowPlayingShell extends StatelessWidget {
+  const _NowPlayingShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.07)
+        : Colors.white.withValues(alpha: 0.34);
+    final border = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.18);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: border),
+          color: surface,
+        ),
+        padding: const EdgeInsets.all(16),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _NowPlayingArtwork extends StatelessWidget {
+  const _NowPlayingArtwork();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: const Image(
+        image: AppImages.logo,
+        height: 44,
+        width: 44,
         fit: BoxFit.cover,
       ),
     );
