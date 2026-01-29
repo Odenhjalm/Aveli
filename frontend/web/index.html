@@ -14,6 +14,63 @@
     <noscript>
       This application requires JavaScript to run the Flutter client.
     </noscript>
+    <script>
+      // Hard-disable any previously-registered service worker. Old Flutter web
+      // SW caches can serve stale bundles and miscompiled ENV configs.
+      (function () {
+        var reloadKey = 'aveli_sw_cleanup_done';
+        try {
+          if (!('serviceWorker' in navigator)) return;
+          if (window.sessionStorage && sessionStorage.getItem(reloadKey) === '1')
+            return;
+
+          function clearCaches() {
+            if (!('caches' in window)) return Promise.resolve();
+            return caches
+              .keys()
+              .then(function (keys) {
+                return Promise.all(
+                  keys.map(function (key) {
+                    return caches.delete(key);
+                  })
+                );
+              })
+              .catch(function () {});
+          }
+
+          navigator.serviceWorker
+            .getRegistrations()
+            .then(function (regs) {
+              if (!regs || regs.length === 0) return false;
+              return Promise.all(
+                regs.map(function (reg) {
+                  return reg.unregister();
+                })
+              )
+                .then(function () {
+                  return true;
+                })
+                .catch(function () {
+                  return false;
+                });
+            })
+            .then(function (didUnregister) {
+              if (!didUnregister) return false;
+              return clearCaches().then(function () {
+                return true;
+              });
+            })
+            .then(function (didCleanup) {
+              if (!didCleanup) return;
+              if (window.sessionStorage) {
+                sessionStorage.setItem(reloadKey, '1');
+              }
+              window.location.reload();
+            })
+            .catch(function () {});
+        } catch (_) {}
+      })();
+    </script>
     <script src="flutter_bootstrap.js" async></script>
   </body>
 </html>

@@ -82,6 +82,8 @@ class EnvResolver {
   ];
 
   static const Map<String, String> _compileTime = {
+    // Cache-busting / deploy metadata (set in CI).
+    'BUILD_NUMBER': String.fromEnvironment('BUILD_NUMBER'),
     'API_BASE_URL': String.fromEnvironment('API_BASE_URL'),
     'FRONTEND_URL': String.fromEnvironment('FRONTEND_URL'),
     'OAUTH_REDIRECT_WEB': String.fromEnvironment('OAUTH_REDIRECT_WEB'),
@@ -199,6 +201,8 @@ class EnvResolver {
   }
 
   static String get frontendUrl => _readFirstNonEmpty(const ['FRONTEND_URL']);
+
+  static String get buildNumber => _readFirstNonEmpty(const ['BUILD_NUMBER']);
 
   static String get supabaseUrl => _readFirstNonEmpty(const ['SUPABASE_URL']);
 

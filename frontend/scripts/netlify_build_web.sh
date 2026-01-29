@@ -114,6 +114,11 @@ export FRONTEND_URL="${FLUTTER_FRONTEND_URL:-https://app.aveli.app}"
 echo "Netlify context: ${NETLIFY_CONTEXT:-unknown}" >&2
 echo "Building Flutter Web with API_BASE_URL=${API_BASE_URL}" >&2
 
+# Always force a fresh build number per deploy so no client can get stuck on a
+# stale cached bundle.
+export BUILD_NUMBER="$(date -u +%Y%m%d%H%M%S)${RANDOM}"
+echo "Flutter BUILD_NUMBER=${BUILD_NUMBER}" >&2
+
 bash scripts/build_prod.sh
 
 # Post-build integrity checks: ensure the compiled bundle contains the expected
