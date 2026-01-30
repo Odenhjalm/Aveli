@@ -305,7 +305,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
             final childAspectRatio = computedAspectRatio
                 .clamp(0.72, 1.05)
                 .toDouble();
-            return GridView.builder(
+
+            final grid = GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: items.length,
@@ -315,35 +316,20 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 mainAxisSpacing: mainAxisSpacing,
                 childAspectRatio: childAspectRatio,
               ),
-              itemBuilder: (_, i) {
-                final tile = _CourseTileGlass(
-                  course: items[i],
-                  index: i,
-                  assets: assets,
-                  ctaGradient: ctaGradient,
-                  textColor: tileTextColor,
-                );
-                if (tileScale == 1.0) return tile;
-                final col = cross == 0 ? 0 : i % cross;
-                final row = cross == 0 ? 0 : i ~/ cross;
-                final lastRow = cross == 0 ? 0 : (items.length - 1) ~/ cross;
-                final x = cross <= 1
-                    ? 0.0
-                    : (col == 0 ? 1.0 : (col == cross - 1 ? -1.0 : 0.0));
-                final y = lastRow <= 0
-                    ? 0.0
-                    : (row == 0 ? 1.0 : (row == lastRow ? -1.0 : 0.0));
-                final alignment = Alignment(x, y);
-                return Align(
-                  alignment: alignment,
-                  child: FractionallySizedBox(
-                    widthFactor: tileScale,
-                    heightFactor: tileScale,
-                    child: tile,
-                  ),
-                );
-              },
+              itemBuilder: (_, i) => _CourseTileGlass(
+                course: items[i],
+                index: i,
+                assets: assets,
+                ctaGradient: ctaGradient,
+                textColor: tileTextColor,
+              ),
             );
+
+            if (tileScale == 1.0 || cross == 0) return grid;
+
+            final scaledWidth =
+                tileScale * availableWidth + crossAxisSpacing * (cross - 1);
+            return SizedBox(width: scaledWidth, child: grid);
           },
         );
     }
