@@ -1,6 +1,5 @@
 // lib/ui/pages/landing_page.dart
 import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/material.dart';
 // ignore_for_file: use_build_context_synchronously
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +25,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/bootstrap/effects_policy.dart';
+import 'package:aveli/core/bootstrap/safe_media.dart';
 
 const _aveliPrimaryGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandAzure, kBrandLilac],
@@ -47,7 +47,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
   final _scroll = ScrollController();
   double _offset = 0.0;
   // Bakgrundsmotivet ligger inbakat i appen för att WebView inte ska kräva API-token.
-  final ImageProvider<Object> _bg = AppImages.background;
+  ImageProvider<Object> get _bg => AppImages.background;
 
   // 🔒 säkerställ att vi bara precachar en gång, och först när inherited widgets finns
   bool _didPrecache = false;
@@ -448,7 +448,8 @@ class _LandingPageState extends ConsumerState<LandingPage>
                 ? const Color(0xFFFFE2B8).withValues(alpha: 0.10)
                 : null,
           ),
-          const IgnorePointer(child: _ParticlesLayer()),
+          if (!EffectsPolicyController.isSafe)
+            const IgnorePointer(child: _ParticlesLayer()),
         ],
       ),
       body: ListView(
@@ -1167,23 +1168,65 @@ class _CourseTileGlass extends StatelessWidget {
                       ),
                       child: Padding(
                         padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
-                        child: Image(
-                          image: imageProvider,
-                          fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
-                          filterQuality: FilterQuality.high,
-                          errorBuilder: (context, error, stackTrace) =>
-                              Container(
-                                color: Colors.white.withValues(alpha: 0.32),
-                                alignment: Alignment.center,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(18),
-                                  child: Image(
-                                    image: AppImages.logo,
-                                    fit: BoxFit.contain,
-                                    filterQuality: FilterQuality.high,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            if (SafeMedia.enabled) {
+                              SafeMedia.markThumbnails();
+                            }
+                            final cacheWidth = SafeMedia.cacheDimension(
+                              context,
+                              constraints.maxWidth,
+                              max: 1200,
+                            );
+                            final cacheHeight = SafeMedia.cacheDimension(
+                              context,
+                              constraints.maxHeight,
+                              max: 900,
+                            );
+
+                            Widget fallbackLogo() => Container(
+                              color: Colors.white.withValues(alpha: 0.32),
+                              alignment: Alignment.center,
+                              child: Padding(
+                                padding: const EdgeInsets.all(18),
+                                child: Image(
+                                  image: SafeMedia.resizedProvider(
+                                    AppImages.logo,
+                                    cacheWidth: cacheWidth,
+                                    cacheHeight: cacheHeight,
                                   ),
+                                  fit: BoxFit.contain,
+                                  filterQuality: SafeMedia.filterQuality(
+                                    full: FilterQuality.high,
+                                  ),
+                                  gaplessPlayback: true,
                                 ),
                               ),
+                            );
+
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                fallbackLogo(),
+                                Image(
+                                  image: SafeMedia.resizedProvider(
+                                    imageProvider,
+                                    cacheWidth: cacheWidth,
+                                    cacheHeight: cacheHeight,
+                                  ),
+                                  fit: isFallbackLogo
+                                      ? BoxFit.contain
+                                      : BoxFit.cover,
+                                  filterQuality: SafeMedia.filterQuality(
+                                    full: FilterQuality.high,
+                                  ),
+                                  gaplessPlayback: true,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const SizedBox.shrink(),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                     ),

@@ -16,6 +16,14 @@ extension EffectsPolicyParsing on EffectsPolicy {
 
 /// RFC: SAFE/FULL policy must be *forcing* (not advisory).
 ///
+/// SAFE is intentionally conservative and targets CPU-only CanvasKit
+/// (software/SwiftShader) stability:
+/// - ✅ Allowed: background + thumbnails (downscaled, low filterQuality)
+/// - ✅ Allowed: simple opacity/borders
+/// - ❌ Forbidden: BackdropFilter / ImageFilter.blur
+/// - ❌ Forbidden: ShaderMask / shader-driven text or effects
+/// - ❌ Forbidden: particles / decorative animations
+///
 /// The policy is set during bootstrap (before first frame) and is not expected
 /// to change at runtime.
 class EffectsPolicyController {
@@ -32,4 +40,3 @@ class EffectsPolicyController {
     }
   }
 }
-

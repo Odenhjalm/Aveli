@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/widgets/safe_background.dart';
 
 class SeminarBackground extends ConsumerWidget {
   const SeminarBackground({super.key});
@@ -10,12 +11,6 @@ class SeminarBackground extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final assets = ref.watch(backendAssetResolverProvider);
     final image = assets.imageProvider('images/seminar_background.jpg');
-    return IgnorePointer(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          image: DecorationImage(image: image, fit: BoxFit.cover),
-        ),
-      ),
-    );
+    return SafeBackground(image: image);
   }
 }

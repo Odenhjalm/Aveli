@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:aveli/core/bootstrap/effects_policy.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 /// Simple helper for rendering text with the Aveli gradient palette.
@@ -21,6 +22,9 @@ class GradientText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (EffectsPolicyController.isSafe) {
+      return Text(text, style: style);
+    }
     final resolvedGradient = gradient ?? _defaultGradient;
     return ShaderMask(
       blendMode: BlendMode.srcIn,

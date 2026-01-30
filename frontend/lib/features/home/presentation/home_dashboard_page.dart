@@ -36,6 +36,7 @@ import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/core/bootstrap/effects_policy.dart';
+import 'package:aveli/core/bootstrap/safe_media.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -940,17 +941,44 @@ class _CourseExploreCard extends StatelessWidget {
       if (resolved.isEmpty) {
         return const _CourseCoverFallback();
       }
-      return Image.network(
-        resolved,
-        fit: BoxFit.cover,
-        errorBuilder: (_, err, stack) {
-          ImageErrorLogger.log(
-            source: 'Home/Explore/CardCover',
-            url: resolved,
-            error: err,
-            stackTrace: stack,
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          if (SafeMedia.enabled) {
+            SafeMedia.markThumbnails();
+          }
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              const _CourseCoverFallback(),
+              Image.network(
+                resolved,
+                fit: BoxFit.cover,
+                filterQuality: SafeMedia.filterQuality(
+                  full: FilterQuality.high,
+                ),
+                cacheWidth: SafeMedia.cacheDimension(
+                  context,
+                  constraints.maxWidth,
+                  max: 1200,
+                ),
+                cacheHeight: SafeMedia.cacheDimension(
+                  context,
+                  constraints.maxHeight,
+                  max: 900,
+                ),
+                gaplessPlayback: true,
+                errorBuilder: (_, err, stack) {
+                  ImageErrorLogger.log(
+                    source: 'Home/Explore/CardCover',
+                    url: resolved,
+                    error: err,
+                    stackTrace: stack,
+                  );
+                  return const SizedBox.shrink();
+                },
+              ),
+            ],
           );
-          return const _CourseCoverFallback();
         },
       );
     }
@@ -1062,7 +1090,37 @@ class _CourseCoverFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Image(image: AppImages.background, fit: BoxFit.cover);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+        final cacheWidth = SafeMedia.cacheDimension(
+          context,
+          maxWidth,
+          max: 640,
+        );
+        final theme = Theme.of(context);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: theme.colorScheme.surface),
+            Image(
+              image: SafeMedia.resizedProvider(
+                AppImages.background,
+                cacheWidth: cacheWidth,
+                cacheHeight: null,
+              ),
+              fit: BoxFit.cover,
+              filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+              gaplessPlayback: true,
+              errorBuilder: (context, error, stackTrace) =>
+                  const SizedBox.shrink(),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -1190,7 +1248,7 @@ class _LogoWing extends StatelessWidget {
               child: Transform.scale(
                 scale: 2.15,
                 alignment: scaleAlignment,
-                child: const Image(image: AppImages.logo, fit: BoxFit.contain),
+                child: Image(image: AppImages.logo, fit: BoxFit.contain),
               ),
             ),
           ),
@@ -1228,10 +1286,15 @@ class _NowPlayingArtwork extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: const Image(
-              image: AppImages.logo,
+            child: Image(
+              image: SafeMedia.resizedProvider(
+                AppImages.logo,
+                cacheWidth: SafeMedia.cacheDimension(context, 56, max: 200),
+                cacheHeight: SafeMedia.cacheDimension(context, 56, max: 200),
+              ),
               fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
+              filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+              gaplessPlayback: true,
             ),
           ),
         ),

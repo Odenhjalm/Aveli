@@ -22,11 +22,7 @@ class BootLog {
     event('transition', {'from': from, 'to': to, 'data': data});
   }
 
-  static void event(
-    String type,
-    Map<String, Object?> data, {
-    int level = 800,
-  }) {
+  static void event(String type, Map<String, Object?> data, {int level = 800}) {
     final payload = <String, Object?>{
       'boot_id': _bootId,
       'type': type,
@@ -35,9 +31,14 @@ class BootLog {
     };
     final text = '[BOOT] ${jsonEncode(payload)}';
     developer.log(text, name: 'boot', level: level);
+    // Developer-friendly mirror. In release builds (especially on Web),
+    // `developer.log` is not reliably visible in the browser console, so we
+    // mirror to stdout as well to keep boot events observable.
     if (kDebugMode) {
-      // Developer-friendly mirror.
       debugPrint(text);
+    } else {
+      // ignore: avoid_print
+      print(text);
     }
   }
 
@@ -47,16 +48,11 @@ class BootLog {
     required String path,
     Object? error,
   }) {
-    event(
-      'critical_asset',
-      {
-        'name': name,
-        'status': status,
-        'path': path,
-        if (error != null) 'error': error.toString(),
-      },
-      level: status == 'loaded' ? 800 : 1000,
-    );
+    event('critical_asset', {
+      'name': name,
+      'status': status,
+      'path': path,
+      if (error != null) 'error': error.toString(),
+    }, level: status == 'loaded' ? 800 : 1000);
   }
 }
-

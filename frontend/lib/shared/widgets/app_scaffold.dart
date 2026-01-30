@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/widgets/base_page.dart';
@@ -140,7 +141,7 @@ class FullBleedBackground extends StatefulWidget {
     this.pixelNudgeX = 0.0,
   });
 
-  final ImageProvider image;
+  final ImageProvider<Object> image;
   final Alignment alignment;
   final double yOffset;
   final double scale;
@@ -216,11 +217,15 @@ class _FullBleedBackgroundState extends State<FullBleedBackground> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        if (SafeMedia.enabled) {
+          SafeMedia.markBackground();
+        }
         final backgroundLayer = _buildBackgroundLayer(constraints);
 
         return Stack(
           fit: StackFit.expand,
           children: [
+            const ColoredBox(color: Colors.black),
             backgroundLayer,
             if (widget.sideVignette > 0) const _SideVignette(),
             if (widget.topOpacity > 0)
@@ -254,8 +259,28 @@ class _FullBleedBackgroundState extends State<FullBleedBackground> {
     final maxHeight = constraints.maxHeight.isFinite
         ? constraints.maxHeight
         : MediaQuery.of(context).size.height;
+    final cacheWidth = SafeMedia.cacheDimension(context, maxWidth, max: 640);
 
     if (_imageSize == null || widget.focalX == null) {
+      if (SafeMedia.enabled) {
+        return Transform.translate(
+          offset: Offset(0, widget.yOffset),
+          child: Transform.scale(
+            scale: widget.scale,
+            child: Image(
+              image: SafeMedia.resizedProvider(
+                widget.image,
+                cacheWidth: cacheWidth,
+                cacheHeight: null,
+              ),
+              fit: BoxFit.cover,
+              alignment: widget.alignment,
+              filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+              gaplessPlayback: true,
+            ),
+          ),
+        );
+      }
       return Transform.translate(
         offset: Offset(0, widget.yOffset),
         child: Transform.scale(
@@ -266,7 +291,9 @@ class _FullBleedBackgroundState extends State<FullBleedBackground> {
                 image: widget.image,
                 fit: BoxFit.cover,
                 alignment: widget.alignment,
-                filterQuality: FilterQuality.high,
+                filterQuality: SafeMedia.filterQuality(
+                  full: FilterQuality.high,
+                ),
               ),
             ),
           ),
@@ -293,12 +320,17 @@ class _FullBleedBackgroundState extends State<FullBleedBackground> {
       child: Transform.translate(
         offset: Offset(dx, widget.yOffset),
         child: Image(
-          image: widget.image,
+          image: SafeMedia.resizedProvider(
+            widget.image,
+            cacheWidth: cacheWidth,
+            cacheHeight: null,
+          ),
           width: displayedWidth,
           height: displayedHeight,
           fit: BoxFit.cover,
           alignment: Alignment.center,
-          filterQuality: FilterQuality.high,
+          filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+          gaplessPlayback: true,
         ),
       ),
     );

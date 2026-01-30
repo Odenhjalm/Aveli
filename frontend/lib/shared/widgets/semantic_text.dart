@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:aveli/core/bootstrap/effects_policy.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
@@ -124,20 +125,22 @@ class HeroHeading extends StatefulWidget {
 
 class _HeroHeadingState extends State<HeroHeading>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+  AnimationController? _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 5),
-    )..repeat(reverse: true);
+    if (EffectsPolicyController.isFull) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(seconds: 5),
+      )..repeat(reverse: true);
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -158,30 +161,39 @@ class _HeroHeadingState extends State<HeroHeading>
       runSpacing: 6,
       children: [
         Text(widget.leading, textAlign: TextAlign.center, style: base),
-        AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return ShaderMask(
-              blendMode: BlendMode.srcIn,
-              shaderCallback: (bounds) {
-                final sweep = bounds.width * 1.5;
-                final start = -bounds.width + sweep * _controller.value;
-                return const LinearGradient(
-                  colors: [kBrandTurquoise, kBrandLilac, kBrandTurquoise],
-                  stops: [0.0, 0.5, 1.0],
-                ).createShader(Rect.fromLTWH(start, 0, sweep, bounds.height));
-              },
-              child: child,
-            );
-          },
-          child: Text(
+        if (EffectsPolicyController.isSafe)
+          Text(
             widget.gradientWord,
             textAlign: TextAlign.center,
             style: base?.copyWith(
               color: isBrandedSurface ? DesignTokens.headingTextColor : null,
             ),
+          )
+        else
+          AnimatedBuilder(
+            animation: _controller!,
+            builder: (context, child) {
+              return ShaderMask(
+                blendMode: BlendMode.srcIn,
+                shaderCallback: (bounds) {
+                  final sweep = bounds.width * 1.5;
+                  final start = -bounds.width + sweep * _controller!.value;
+                  return const LinearGradient(
+                    colors: [kBrandTurquoise, kBrandLilac, kBrandTurquoise],
+                    stops: [0.0, 0.5, 1.0],
+                  ).createShader(Rect.fromLTWH(start, 0, sweep, bounds.height));
+                },
+                child: child,
+              );
+            },
+            child: Text(
+              widget.gradientWord,
+              textAlign: TextAlign.center,
+              style: base?.copyWith(
+                color: isBrandedSurface ? DesignTokens.headingTextColor : null,
+              ),
+            ),
           ),
-        ),
       ],
     );
   }

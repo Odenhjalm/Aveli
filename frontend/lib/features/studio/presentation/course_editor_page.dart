@@ -38,6 +38,7 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
@@ -130,7 +131,9 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
             (widthValue is String ? widthValue : widthValue?.toString() ?? '')
                 .trim();
         final height =
-            (heightValue is String ? heightValue : heightValue?.toString() ?? '')
+            (heightValue is String
+                    ? heightValue
+                    : heightValue?.toString() ?? '')
                 .trim();
 
         if (style.isEmpty && width.isEmpty && height.isEmpty) {
@@ -355,10 +358,9 @@ quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
           result.insert(raw, operation.attributes);
         }
       } else {
-        final mergedAttrs =
-            operation.attributes == null
-                ? <String, dynamic>{}
-                : Map<String, dynamic>.from(operation.attributes!);
+        final mergedAttrs = operation.attributes == null
+            ? <String, dynamic>{}
+            : Map<String, dynamic>.from(operation.attributes!);
 
         final style = attrs['style'];
         if (style != null && style.trim().isNotEmpty) {
@@ -1684,18 +1686,49 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: hasCover
-                      ? Image.network(
-                          _courseCoverPreviewUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Center(
-                                child: Icon(Icons.image_not_supported_outlined),
-                              ),
-                        )
-                      : const Center(
-                          child: Icon(Icons.image_outlined, size: 28),
-                        ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (SafeMedia.enabled) {
+                        SafeMedia.markThumbnails();
+                      }
+                      const placeholder = Center(
+                        child: Icon(Icons.image_outlined, size: 28),
+                      );
+                      if (!hasCover) {
+                        return placeholder;
+                      }
+
+                      final cacheWidth = SafeMedia.cacheDimension(
+                        context,
+                        constraints.maxWidth,
+                        max: 600,
+                      );
+                      final cacheHeight = SafeMedia.cacheDimension(
+                        context,
+                        constraints.maxHeight,
+                        max: 600,
+                      );
+
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          placeholder,
+                          Image.network(
+                            _courseCoverPreviewUrl!,
+                            fit: BoxFit.cover,
+                            filterQuality: SafeMedia.filterQuality(
+                              full: FilterQuality.high,
+                            ),
+                            cacheWidth: cacheWidth,
+                            cacheHeight: cacheHeight,
+                            gaplessPlayback: true,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
                 if (_updatingCourseCover)
                   Positioned.fill(

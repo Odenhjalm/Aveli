@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:aveli/core/bootstrap/boot_log.dart';
-import 'package:aveli/core/bootstrap/critical_assets.dart';
+import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 
 /// Full-viewport background image with a soft, readable overlay.
@@ -19,26 +19,47 @@ class BackgroundLayer extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         const ColoredBox(color: Colors.black),
-        if (CriticalAssets.backgroundOk)
-          IgnorePointer(
-            child: Image(
-              // Bundlad bakgrund hålls lokalt för att undvika 401 från backend.
-              image: AppImages.background,
-              alignment: Alignment.center,
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.high,
-              gaplessPlayback: true,
-              errorBuilder: (context, error, stackTrace) {
-                BootLog.criticalAsset(
-                  name: 'background',
-                  status: 'fallback',
-                  path: AppImages.backgroundPath,
-                  error: error,
-                );
-                return const SizedBox.shrink();
-              },
-            ),
+        IgnorePointer(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (SafeMedia.enabled) {
+                SafeMedia.markBackground();
+              }
+              final maxWidth = constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : MediaQuery.of(context).size.width;
+              final cacheWidth = SafeMedia.cacheDimension(
+                context,
+                maxWidth,
+                max: 640,
+              );
+
+              return Image(
+                // Bundlad bakgrund hålls lokalt för att undvika 401 från backend.
+                image: SafeMedia.resizedProvider(
+                  AppImages.background,
+                  cacheWidth: cacheWidth,
+                  cacheHeight: null,
+                ),
+                alignment: Alignment.center,
+                fit: BoxFit.cover,
+                filterQuality: SafeMedia.filterQuality(
+                  full: FilterQuality.high,
+                ),
+                gaplessPlayback: true,
+                errorBuilder: (context, error, stackTrace) {
+                  BootLog.criticalAsset(
+                    name: 'background',
+                    status: 'fallback',
+                    path: AppImages.backgroundPath,
+                    error: error,
+                  );
+                  return const SizedBox.shrink();
+                },
+              );
+            },
           ),
+        ),
         const Positioned.fill(
           child: IgnorePointer(
             child: DecoratedBox(

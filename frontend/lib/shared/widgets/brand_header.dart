@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/core/bootstrap/boot_log.dart';
-import 'package:aveli/core/bootstrap/critical_assets.dart';
+import 'package:aveli/core/bootstrap/effects_policy.dart';
+import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/app_images.dart';
@@ -17,27 +18,54 @@ class BrandLogo extends StatelessWidget {
 
   final double height;
 
+  static Widget _placeholder(double height) {
+    return ExcludeSemantics(
+      child: Center(
+        child: Text(
+          'A',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: height * 0.70,
+            color: DesignTokens.headingTextColor.withValues(alpha: 0.72),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!CriticalAssets.logoOk) {
-      return SizedBox(width: height, height: height);
-    }
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 12),
-      child: Image(
-        image: AppImages.logo,
-        height: height,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (context, error, stackTrace) {
-          BootLog.criticalAsset(
-            name: 'logo',
-            status: 'fallback',
-            path: AppImages.logoPath,
-            error: error,
-          );
-          return SizedBox(width: height, height: height);
-        },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(width: height, height: height, child: _placeholder(height)),
+          Image(
+            image: SafeMedia.resizedProvider(
+              AppImages.logo,
+              cacheWidth: SafeMedia.cacheDimension(
+                context,
+                height * 3,
+                max: 900,
+              ),
+              cacheHeight: SafeMedia.cacheDimension(context, height, max: 300),
+            ),
+            height: height,
+            fit: BoxFit.contain,
+            filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+            gaplessPlayback: true,
+            errorBuilder: (context, error, stackTrace) {
+              BootLog.criticalAsset(
+                name: 'logo',
+                status: 'fallback',
+                path: AppImages.logoPath,
+                error: error,
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
       ),
     );
   }
@@ -51,17 +79,18 @@ class BrandWordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final resolvedStyle = (style ?? theme.textTheme.titleMedium)?.copyWith(
+      color: DesignTokens.headingTextColor,
+      fontWeight: FontWeight.w900,
+      letterSpacing: .25,
+    );
+    if (EffectsPolicyController.isSafe) {
+      return Text('Aveli', style: resolvedStyle);
+    }
     return ShaderMask(
       shaderCallback: (bounds) => kAveliBrandGradient.createShader(bounds),
       blendMode: BlendMode.srcIn,
-      child: Text(
-        'Aveli',
-        style: (style ?? theme.textTheme.titleMedium)?.copyWith(
-          color: DesignTokens.headingTextColor,
-          fontWeight: FontWeight.w900,
-          letterSpacing: .25,
-        ),
-      ),
+      child: Text('Aveli', style: resolvedStyle),
     );
   }
 }
