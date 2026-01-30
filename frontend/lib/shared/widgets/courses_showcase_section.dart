@@ -106,6 +106,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
         ? items
         : items.take(desktop!.maxItems).toList(growable: false);
 
+    final sectionTextColor = tileTextColor;
+
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -118,13 +120,29 @@ class CoursesShowcaseSection extends ConsumerWidget {
           const SizedBox(height: 12),
         ],
         const SizedBox(height: 14),
-        SectionHeading(
-          title,
-          baseStyle: t.headlineSmall,
-          fontWeight: FontWeight.w800,
-        ),
+        sectionTextColor == null
+            ? SectionHeading(
+                title,
+                baseStyle: t.headlineSmall,
+                fontWeight: FontWeight.w800,
+              )
+            : Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: (t.headlineSmall ?? const TextStyle()).copyWith(
+                  color: sectionTextColor,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
         const SizedBox(height: 4),
-        MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge),
+        sectionTextColor == null
+            ? MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge)
+            : Text(
+                'Se vad andra gillar just nu.',
+                style: (t.bodyLarge ?? t.bodyMedium ?? const TextStyle())
+                    .copyWith(color: sectionTextColor),
+              ),
         const SizedBox(height: 16),
         GlassCard(
           child: loading
@@ -133,10 +151,20 @@ class CoursesShowcaseSection extends ConsumerWidget {
                   child: Center(child: CircularProgressIndicator()),
                 )
               : visible.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: MetaText('Inga kurser ännu.'),
-                )
+              ? sectionTextColor == null
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: MetaText('Inga kurser ännu.'),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          'Inga kurser ännu.',
+                          style: (t.bodyMedium ?? const TextStyle()).copyWith(
+                            color: sectionTextColor,
+                          ),
+                        ),
+                      )
               : _buildLayout(
                   context,
                   visible,
@@ -296,8 +324,18 @@ class CoursesShowcaseSection extends ConsumerWidget {
                   textColor: tileTextColor,
                 );
                 if (tileScale == 1.0) return tile;
+                final col = cross == 0 ? 0 : i % cross;
+                final row = cross == 0 ? 0 : i ~/ cross;
+                final lastRow = cross == 0 ? 0 : (items.length - 1) ~/ cross;
+                final x = cross <= 1
+                    ? 0.0
+                    : (col == 0 ? 1.0 : (col == cross - 1 ? -1.0 : 0.0));
+                final y = lastRow <= 0
+                    ? 0.0
+                    : (row == 0 ? 1.0 : (row == lastRow ? -1.0 : 0.0));
+                final alignment = Alignment(x, y);
                 return Align(
-                  alignment: Alignment.center,
+                  alignment: alignment,
                   child: FractionallySizedBox(
                     widthFactor: tileScale,
                     heightFactor: tileScale,
