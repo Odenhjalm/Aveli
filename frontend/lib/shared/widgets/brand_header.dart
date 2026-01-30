@@ -37,35 +37,32 @@ class BrandLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 12),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox(width: height, height: height, child: _placeholder(height)),
-          Image(
-            image: SafeMedia.resizedProvider(
-              AppImages.logo,
-              cacheWidth: SafeMedia.cacheDimension(
-                context,
-                height * 3,
-                max: 900,
-              ),
-              cacheHeight: SafeMedia.cacheDimension(context, height, max: 300),
+      child: SizedBox(
+        width: height,
+        height: height,
+        child: Image(
+          image: SafeMedia.resizedProvider(
+            AppImages.logo,
+            cacheWidth: SafeMedia.cacheDimension(
+              context,
+              height * 3,
+              max: 900,
             ),
-            height: height,
-            fit: BoxFit.contain,
-            filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
-            gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) {
-              BootLog.criticalAsset(
-                name: 'logo',
-                status: 'fallback',
-                path: AppImages.logoPath,
-                error: error,
-              );
-              return const SizedBox.shrink();
-            },
+            cacheHeight: SafeMedia.cacheDimension(context, height, max: 300),
           ),
-        ],
+          fit: BoxFit.contain,
+          filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) {
+            BootLog.criticalAsset(
+              name: 'logo',
+              status: 'fallback',
+              path: AppImages.logoPath,
+              error: error,
+            );
+            return _placeholder(height);
+          },
+        ),
       ),
     );
   }

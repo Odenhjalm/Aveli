@@ -29,8 +29,8 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
-import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
@@ -982,23 +982,6 @@ class _CourseExploreCard extends StatelessWidget {
       fontWeight: FontWeight.w800,
     );
 
-    Widget introBadge() {
-      final labelStyle = theme.textTheme.labelSmall?.copyWith(
-        color: Colors.white,
-        fontWeight: FontWeight.w800,
-      );
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: DecoratedBox(
-          decoration: const BoxDecoration(gradient: kBrandVibrantGradient),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Text('Introduktion', style: labelStyle),
-          ),
-        ),
-      );
-    }
-
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1026,122 +1009,117 @@ class _CourseExploreCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final fillHeight = constraints.maxHeight.isFinite;
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final fillHeight = constraints.maxHeight.isFinite;
 
-                      Widget buildCover() {
-                        return AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: radius,
-                              color: Colors.white.withValues(alpha: 0.18),
-                            ),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                cover(),
-                                DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Colors.transparent,
-                                        theme.colorScheme.surface.withValues(
-                                          alpha: 0.18,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-
-                      Widget buildBody({required bool fillHeight}) {
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: titleStyle,
-                                    ),
-                                  ),
-                                  if (isIntro) const SizedBox(width: 10),
-                                  if (isIntro) introBadge(),
-                                ],
-                              ),
-                              if (description.trim().isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                CourseDescriptionText(
-                                  description,
-                                  baseStyle: theme.textTheme.bodySmall,
-                                  maxLines: 4,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                              if (fillHeight)
-                                const Spacer()
-                              else
-                                const SizedBox(height: 12),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: GradientButton(
-                                  onPressed: onTap,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: const Text(
-                                    'Öppna',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      if (fillHeight) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  Widget buildCover() {
+                    return AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: radius,
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                        child: Stack(
+                          fit: StackFit.expand,
                           children: [
-                            buildCover(),
-                            Expanded(child: buildBody(fillHeight: true)),
+                            cover(),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    theme.colorScheme.surface.withValues(
+                                      alpha: 0.18,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ],
-                        );
-                      }
+                        ),
+                      ),
+                    );
+                  }
 
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
+                  Widget buildBody({required bool fillHeight}) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          buildCover(),
-                          buildBody(fillHeight: false),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: titleStyle,
+                                ),
+                              ),
+                              if (isIntro) const SizedBox(width: 10),
+                              if (isIntro) const CourseIntroBadge(),
+                            ],
+                          ),
+                          if (description.trim().isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            CourseDescriptionText(
+                              description,
+                              baseStyle: theme.textTheme.bodySmall,
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          if (fillHeight)
+                            const Spacer()
+                          else
+                            const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.bottomRight,
+                            child: GradientButton(
+                              onPressed: onTap,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              child: const Text(
+                                'Öppna',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
-                      );
-                    },
-                  ),
-                ],
+                      ),
+                    );
+                  }
+
+                  if (fillHeight) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        buildCover(),
+                        Expanded(child: buildBody(fillHeight: true)),
+                      ],
+                    );
+                  }
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      buildCover(),
+                      buildBody(fillHeight: false),
+                    ],
+                  );
+                },
               ),
             ),
           ),

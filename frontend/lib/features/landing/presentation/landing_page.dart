@@ -21,6 +21,7 @@ import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
@@ -1249,18 +1250,7 @@ class _CourseTileGlass extends StatelessWidget {
                                 ),
                               ),
                               if (isIntro) const SizedBox(width: 8),
-                              if (isIntro)
-                                Chip(
-                                  label: const Text('Introduktion'),
-                                  visualDensity: VisualDensity.compact,
-                                  backgroundColor: theme.colorScheme.primary
-                                      .withValues(alpha: 0.18),
-                                  labelStyle: theme.textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: theme.colorScheme.onPrimary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
+                              if (isIntro) const CourseIntroBadge(),
                             ],
                           ),
                           if (desc.isNotEmpty) ...[

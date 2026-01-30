@@ -43,40 +43,33 @@ class AppLogo extends StatelessWidget {
               child: SizedBox(
                 height: size,
                 width: size * _logoAspectRatio,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _fallbackLabel,
-                    Image(
-                      // Logotypen är bundlad i appen; AssetImage undviker 401-fel från backend.
-                      image: SafeMedia.resizedProvider(
-                        AppImages.logo,
-                        cacheWidth: SafeMedia.cacheDimension(
-                          context,
-                          size * _logoAspectRatio,
-                          max: 900,
-                        ),
-                        cacheHeight: SafeMedia.cacheDimension(
-                          context,
-                          size,
-                          max: 500,
-                        ),
-                      ),
-                      fit: BoxFit.contain,
-                      filterQuality: SafeMedia.filterQuality(
-                        full: FilterQuality.high,
-                      ),
-                      errorBuilder: (context, error, stackTrace) {
-                        BootLog.criticalAsset(
-                          name: 'logo',
-                          status: 'fallback',
-                          path: AppImages.logoPath,
-                          error: error,
-                        );
-                        return const SizedBox.shrink();
-                      },
+                child: Image(
+                  // Logotypen är bundlad i appen; AssetImage undviker 401-fel från backend.
+                  image: SafeMedia.resizedProvider(
+                    AppImages.logo,
+                    cacheWidth: SafeMedia.cacheDimension(
+                      context,
+                      size * _logoAspectRatio,
+                      max: 900,
                     ),
-                  ],
+                    cacheHeight: SafeMedia.cacheDimension(
+                      context,
+                      size,
+                      max: 500,
+                    ),
+                  ),
+                  fit: BoxFit.contain,
+                  filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+                  gaplessPlayback: true,
+                  errorBuilder: (context, error, stackTrace) {
+                    BootLog.criticalAsset(
+                      name: 'logo',
+                      status: 'fallback',
+                      path: AppImages.logoPath,
+                      error: error,
+                    );
+                    return _fallbackLabel;
+                  },
                 ),
               ),
             ),
