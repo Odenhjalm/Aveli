@@ -355,7 +355,7 @@ class AveliApp extends ConsumerWidget {
     return ValueListenableBuilder<RouteInformation>(
       valueListenable: router.routeInformationProvider,
       builder: (context, routeInfo, _) {
-        final path = _normalizeThemePath(routeInfo.uri.path);
+        final path = _normalizeThemePath(_resolveThemePath(routeInfo.uri));
         final isBrandedSurface = _isBrandedSurfacePath(path);
         final themeData = isBrandedSurface ? brandedThemeData : baseThemeData;
         final guardContext = GuardContextResolver.fromUri(routeInfo.uri);
@@ -438,6 +438,15 @@ String _normalizeThemePath(String path) {
     return path.substring(0, path.length - 1);
   }
   return path;
+}
+
+String _resolveThemePath(Uri uri) {
+  // Hash-based routing encodes the "real" location inside the fragment.
+  // Example: https://app.aveli.app/#/home
+  if (uri.fragment.startsWith('/')) {
+    return Uri.tryParse(uri.fragment)?.path ?? uri.fragment;
+  }
+  return uri.path;
 }
 
 bool _isBrandedSurfacePath(String path) {
