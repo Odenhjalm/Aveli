@@ -159,7 +159,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              flex: 4,
+                              flex: 7,
                               child: _ExploreCoursesSection(
                                 section: exploreAsync,
                                 mediaRepository: mediaRepository,
@@ -168,22 +168,27 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                             const SizedBox(width: 24),
                             Expanded(
                               flex: 3,
-                              child: _FeedSection(
-                                feedAsync: feedAsync,
-                                seminarsAsync: seminarsAsync,
-                              ),
-                            ),
-                            const SizedBox(width: 24),
-                            Expanded(
-                              flex: 3,
-                              child: _ServicesSection(
-                                servicesAsync: servicesAsync,
-                                isLoading: (id) =>
-                                    _loadingServiceIds.contains(id),
-                                onCheckout: (service) =>
-                                    _handleServiceCheckout(context, service),
-                                certificatesAsync: certificatesAsync,
-                                isAuthenticated: authState.isAuthenticated,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _FeedSection(
+                                    feedAsync: feedAsync,
+                                    seminarsAsync: seminarsAsync,
+                                  ),
+                                  const SizedBox(height: 24),
+                                  _ServicesSection(
+                                    servicesAsync: servicesAsync,
+                                    isLoading: (id) =>
+                                        _loadingServiceIds.contains(id),
+                                    onCheckout: (service) =>
+                                        _handleServiceCheckout(
+                                          context,
+                                          service,
+                                        ),
+                                    certificatesAsync: certificatesAsync,
+                                    isAuthenticated: authState.isAuthenticated,
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -818,83 +823,61 @@ class _ExploreCoursesSection extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = 18.0;
+        const spacing = 22.0;
         final maxWidth = constraints.maxWidth;
-        final useGrid = maxWidth >= 420;
-        if (useGrid) {
-          final cardWidth = (maxWidth - spacing) / 2;
-          final cardHeight = (cardWidth * 1.28).clamp(280.0, 420.0).toDouble();
+        final canUseDesktopGrid = maxWidth >= 720;
+
+        Widget buildCard(int index) {
+          final course = visible[index];
+          final title = (course['title'] as String?) ?? 'Kurs';
+          final description = (course['description'] as String?) ?? '';
+          final slug = (course['slug'] as String?) ?? '';
+          final isIntro = course['is_free_intro'] == true;
+          final rawCoverUrl = (course['cover_url'] as String?) ?? '';
+          final resolvedCoverUrl = _resolveCoverUrl(
+            mediaRepository,
+            rawCoverUrl,
+          );
+          final canOpen = slug.isNotEmpty;
+
+          return _CourseExploreCard(
+            title: title,
+            description: description,
+            isIntro: isIntro,
+            coverUrl: resolvedCoverUrl,
+            onTap: canOpen ? () => openCourse(slug) : null,
+          );
+        }
+
+        if (canUseDesktopGrid) {
+          const columns = 3;
+          final cardWidth = (maxWidth - spacing * (columns - 1)) / columns;
+          final cardHeight = (cardWidth * 9 / 16 + 178)
+              .clamp(300.0, 420.0)
+              .toDouble();
 
           return GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
+              crossAxisCount: columns,
               crossAxisSpacing: spacing,
               mainAxisSpacing: spacing,
               mainAxisExtent: cardHeight,
             ),
             itemCount: visible.length,
-            itemBuilder: (context, index) {
-              final course = visible[index];
-              final title = (course['title'] as String?) ?? 'Kurs';
-              final description = (course['description'] as String?) ?? '';
-              final slug = (course['slug'] as String?) ?? '';
-              final isIntro = course['is_free_intro'] == true;
-              final rawCoverUrl = (course['cover_url'] as String?) ?? '';
-              final resolvedCoverUrl = _resolveCoverUrl(
-                mediaRepository,
-                rawCoverUrl,
-              );
-              final canOpen = slug.isNotEmpty;
-
-              return _CourseExploreCard(
-                title: title,
-                description: description,
-                isIntro: isIntro,
-                coverUrl: resolvedCoverUrl,
-                onTap: canOpen ? () => openCourse(slug) : null,
-              );
-            },
+            itemBuilder: (context, index) => buildCard(index),
           );
         }
 
-        final targetWidth = (maxWidth - spacing * 2) / 3;
-        final cardWidth = targetWidth.clamp(220.0, 280.0).toDouble();
-        final cardHeight = (cardWidth * 1.26).clamp(240.0, 330.0).toDouble();
-
-        return SizedBox(
-          height: cardHeight,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: visible.length,
-            separatorBuilder: (context, index) =>
-                const SizedBox(width: spacing),
-            itemBuilder: (context, index) {
-              final course = visible[index];
-              final title = (course['title'] as String?) ?? 'Kurs';
-              final description = (course['description'] as String?) ?? '';
-              final slug = (course['slug'] as String?) ?? '';
-              final isIntro = course['is_free_intro'] == true;
-              final rawCoverUrl = (course['cover_url'] as String?) ?? '';
-              final resolvedCoverUrl = _resolveCoverUrl(
-                mediaRepository,
-                rawCoverUrl,
-              );
-              final canOpen = slug.isNotEmpty;
-
-              return SizedBox(
-                width: cardWidth,
-                child: _CourseExploreCard(
-                  title: title,
-                  description: description,
-                  isIntro: isIntro,
-                  coverUrl: resolvedCoverUrl,
-                  onTap: canOpen ? () => openCourse(slug) : null,
-                ),
-              );
-            },
-          ),
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var index = 0; index < visible.length; index++) ...[
+              buildCard(index),
+              if (index != visible.length - 1) const SizedBox(height: spacing),
+            ],
+          ],
         );
       },
     );
@@ -928,13 +911,10 @@ class _CourseExploreCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final surface = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.07)
-        : Colors.white.withValues(alpha: 0.30);
-    final border = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.18);
     final radius = BorderRadius.circular(20);
+    final baseColor = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.03)
+        : Colors.white.withValues(alpha: 0.18);
 
     Widget cover() {
       final resolved = coverUrl?.trim() ?? '';
@@ -984,100 +964,117 @@ class _CourseExploreCard extends StatelessWidget {
     }
 
     final titleStyle = theme.textTheme.titleMedium?.copyWith(
-      color: DesignTokens.headingTextColor,
+      color: DesignTokens.bodyTextColor,
       fontWeight: FontWeight.w800,
-      shadows: const [
-        Shadow(color: Color(0x99000000), blurRadius: 10, offset: Offset(0, 2)),
-      ],
     );
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: radius,
-      child: Ink(
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          border: Border.all(color: border),
-          color: surface,
-        ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: radius,
         child: ClipRRect(
           borderRadius: radius,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    cover(),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            theme.colorScheme.surface.withValues(alpha: 0.18),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+          child: EffectsBackdropFilter(
+            sigmaX: 18,
+            sigmaY: 18,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [baseColor, baseColor.withValues(alpha: 0.32)],
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF000000).withValues(alpha: 0.06),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: radius,
+                        color: Colors.white.withValues(alpha: 0.18),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
                         children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: titleStyle,
+                          cover(),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  theme.colorScheme.surface.withValues(
+                                    alpha: 0.18,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          if (isIntro) const SizedBox(width: 8),
-                          if (isIntro)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(999),
-                                color: theme.colorScheme.primary,
-                              ),
-                              child: Text(
-                                'Introduktion',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.onPrimary,
-                                ),
-                              ),
-                            ),
                         ],
                       ),
-                      if (description.trim().isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        CourseDescriptionText(
-                          description,
-                          baseStyle: theme.textTheme.bodySmall,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: titleStyle,
+                                ),
+                              ),
+                              if (isIntro) const SizedBox(width: 10),
+                              if (isIntro)
+                                Chip(
+                                  label: const Text('Introduktion'),
+                                  visualDensity: VisualDensity.compact,
+                                  backgroundColor: theme.colorScheme.primary
+                                      .withValues(alpha: 0.18),
+                                  labelStyle: theme.textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: theme.colorScheme.onPrimary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                            ],
+                          ),
+                          if (description.trim().isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            CourseDescriptionText(
+                              description,
+                              baseStyle: theme.textTheme.bodySmall,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
