@@ -825,7 +825,8 @@ class _ExploreCoursesSection extends ConsumerWidget {
       builder: (context, constraints) {
         const spacing = 22.0;
         final maxWidth = constraints.maxWidth;
-        final canUseDesktopGrid = maxWidth >= 720;
+        final canUseDesktopGrid =
+            MediaQuery.of(context).size.width >= 900 && maxWidth >= 520;
 
         Widget buildCard(int index) {
           final course = visible[index];
@@ -850,10 +851,10 @@ class _ExploreCoursesSection extends ConsumerWidget {
         }
 
         if (canUseDesktopGrid) {
-          const columns = 3;
+          const columns = 2;
           final cardWidth = (maxWidth - spacing * (columns - 1)) / columns;
-          final cardHeight = (cardWidth * 9 / 16 + 178)
-              .clamp(300.0, 420.0)
+          final cardHeight = (cardWidth * 9 / 16 + 300)
+              .clamp(420.0, 560.0)
               .toDouble();
 
           return GridView.builder(
@@ -1068,6 +1069,22 @@ class _CourseExploreCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ],
+                          const Spacer(),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: GradientButton(
+                              onPressed: onTap,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              child: const Text(
+                                'Öppna',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),

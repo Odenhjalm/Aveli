@@ -7,6 +7,7 @@ import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class CoursesGrid extends StatelessWidget {
   final List<CourseSummary> courses;
@@ -209,25 +210,18 @@ class CoursesGrid extends StatelessWidget {
                             const Spacer(),
                             Align(
                               alignment: Alignment.bottomRight,
-                              child: ElevatedButton(
+                              child: GradientButton(
                                 onPressed: slug.isEmpty
                                     ? null
                                     : () => context.pushNamed(
                                         AppRoute.course,
                                         pathParameters: {'slug': slug},
                                       ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: Colors.black,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
                                 ),
+                                borderRadius: BorderRadius.circular(12),
                                 child: const Text(
                                   'Öppna',
                                   style: TextStyle(fontWeight: FontWeight.w800),

@@ -21,6 +21,7 @@ import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
@@ -1274,21 +1275,17 @@ class _CourseTileGlass extends StatelessWidget {
                           const Spacer(),
                           Align(
                             alignment: Alignment.centerRight,
-                            child: ElevatedButton(
+                            child: GradientButton(
                               onPressed: openCourse,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colorScheme.primary,
-                                foregroundColor: theme.colorScheme.onPrimary,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                minimumSize: const Size(0, 40),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
                               ),
-                              child: const Text('Öppna'),
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Text(
+                                'Öppna',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
                             ),
                           ),
                         ],
