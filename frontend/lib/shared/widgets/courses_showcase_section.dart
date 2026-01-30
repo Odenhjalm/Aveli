@@ -50,8 +50,12 @@ class CoursesShowcaseSection extends ConsumerWidget {
     this.ctaGradient,
     this.tileScale = 1.0,
     this.tileTextColor,
+    this.gridCrossAxisSpacing = 12,
+    this.gridMainAxisSpacing = 12,
   }) : assert(tileScale > 0),
-       assert(tileScale <= 1.0);
+       assert(tileScale <= 1.0),
+       assert(gridCrossAxisSpacing >= 0),
+       assert(gridMainAxisSpacing >= 0);
 
   final String title;
   final CoursesShowcaseLayout layout;
@@ -62,6 +66,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final Gradient? ctaGradient;
   final double tileScale;
   final Color? tileTextColor;
+  final double gridCrossAxisSpacing;
+  final double gridMainAxisSpacing;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -140,6 +146,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
                   ctaGradient: ctaGradient,
                   tileScale: tileScale,
                   tileTextColor: tileTextColor,
+                  gridCrossAxisSpacing: gridCrossAxisSpacing,
+                  gridMainAxisSpacing: gridMainAxisSpacing,
                 ),
         ),
       ],
@@ -246,6 +254,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
     Gradient? ctaGradient,
     required double tileScale,
     Color? tileTextColor,
+    required double gridCrossAxisSpacing,
+    required double gridMainAxisSpacing,
   }) {
     switch (layout) {
       case CoursesShowcaseLayout.vertical:
@@ -255,8 +265,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
             final cross = w >= 900
                 ? (desktop?.columns ?? 3)
                 : (w >= 600 ? 2 : 1);
-            const crossAxisSpacing = 12.0;
-            const mainAxisSpacing = 12.0;
+            final crossAxisSpacing = gridCrossAxisSpacing;
+            final mainAxisSpacing = gridMainAxisSpacing;
             final availableWidth = w - crossAxisSpacing * (cross - 1);
             final itemWidth = cross == 0 ? w : availableWidth / cross;
             const mediaAspectRatio = 16 / 9;
@@ -470,10 +480,7 @@ class _CourseTileGlass extends StatelessWidget {
                                 ),
                               ),
                               if (isIntro) const SizedBox(width: 8),
-                              if (isIntro)
-                                CourseIntroBadge(
-                                  textColor: textColor ?? Colors.white,
-                                ),
+                              if (isIntro) const CourseIntroBadge(),
                             ],
                           ),
                           if (desc.isNotEmpty) ...[

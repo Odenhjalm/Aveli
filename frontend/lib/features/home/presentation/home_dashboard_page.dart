@@ -156,23 +156,28 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                             Expanded(
                               child: Align(
                                 alignment: Alignment.topLeft,
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 860,
-                                  ),
-                                  child: const CoursesShowcaseSection(
-                                    title: 'Utforska kurser',
-                                    layout: CoursesShowcaseLayout.vertical,
-                                    desktop: CoursesShowcaseDesktop(
-                                      columns: 2,
-                                      rows: 3,
+                                child: Transform.translate(
+                                  offset: const Offset(-12, -10),
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 860,
                                     ),
-                                    includeOuterChrome: false,
-                                    showHeroBadge: false,
-                                    includeStudioCourses: false,
-                                    ctaGradient: kBrandBluePurpleGradient,
-                                    tileScale: 0.85,
-                                    tileTextColor: DesignTokens.bodyTextColor,
+                                    child: const CoursesShowcaseSection(
+                                      title: 'Utforska kurser',
+                                      layout: CoursesShowcaseLayout.vertical,
+                                      desktop: CoursesShowcaseDesktop(
+                                        columns: 2,
+                                        rows: 3,
+                                      ),
+                                      includeOuterChrome: false,
+                                      showHeroBadge: false,
+                                      includeStudioCourses: false,
+                                      ctaGradient: kBrandBluePurpleGradient,
+                                      tileScale: 0.85,
+                                      tileTextColor: DesignTokens.bodyTextColor,
+                                      gridCrossAxisSpacing: 8,
+                                      gridMainAxisSpacing: 8,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -240,6 +245,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                         ctaGradient: kBrandBluePurpleGradient,
                         tileScale: 0.85,
                         tileTextColor: DesignTokens.bodyTextColor,
+                        gridCrossAxisSpacing: 8,
+                        gridMainAxisSpacing: 8,
                       ),
                       const SizedBox(height: 22),
                       _FeedSection(
