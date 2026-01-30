@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aveli/features/studio/presentation/course_editor_page.dart';
+import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
 
 String _jwtForSub(String sub) {
   final header = base64Url
@@ -38,4 +38,3 @@ void main() {
     });
   });
 }
-

@@ -3,7 +3,7 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 import 'package:markdown/markdown.dart' as md;
 
-import 'package:aveli/features/studio/presentation/course_editor_page.dart';
+import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
 
 void main() {
   group('Lesson content serialization', () {
@@ -97,6 +97,26 @@ Intro
       });
 
       expect(hasStyledImage, isTrue);
+    });
+
+    test('img HTML does not survive as raw text on markdown import', () {
+      final document = md.Document(
+        encodeHtml: false,
+        extensionSet: md.ExtensionSet.gitHubWeb,
+      );
+      const markdown =
+          '<img src="$sampleImageUrl" style="width: 111; height: 222;" />\n';
+
+      final converter = createLessonMarkdownToDelta(document);
+      final delta = convertLessonMarkdownToDelta(converter, markdown);
+
+      final hasRawHtml = delta.toList().any((operation) {
+        if (!operation.isInsert) return false;
+        final value = operation.value;
+        return value is String && value.contains('<img');
+      });
+
+      expect(hasRawHtml, isFalse);
     });
   });
 }
