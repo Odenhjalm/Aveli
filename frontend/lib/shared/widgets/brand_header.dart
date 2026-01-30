@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:aveli/core/bootstrap/boot_log.dart';
+import 'package:aveli/core/bootstrap/critical_assets.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/app_images.dart';
@@ -17,6 +19,9 @@ class BrandLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!CriticalAssets.logoOk) {
+      return SizedBox(width: height, height: height);
+    }
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 12),
       child: Image(
@@ -24,6 +29,15 @@ class BrandLogo extends StatelessWidget {
         height: height,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          BootLog.criticalAsset(
+            name: 'logo',
+            status: 'fallback',
+            path: AppImages.logoPath,
+            error: error,
+          );
+          return SizedBox(width: height, height: height);
+        },
       ),
     );
   }

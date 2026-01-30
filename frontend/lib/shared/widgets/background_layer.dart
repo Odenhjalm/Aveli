@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:aveli/core/bootstrap/boot_log.dart';
+import 'package:aveli/core/bootstrap/critical_assets.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 
 /// Full-viewport background image with a soft, readable overlay.
@@ -17,16 +19,26 @@ class BackgroundLayer extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         const ColoredBox(color: Colors.black),
-        IgnorePointer(
-          child: Image(
-            // Bundlad bakgrund hålls lokalt för att undvika 401 från backend.
-            image: AppImages.background,
-            alignment: Alignment.center,
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.high,
-            gaplessPlayback: true,
+        if (CriticalAssets.backgroundOk)
+          IgnorePointer(
+            child: Image(
+              // Bundlad bakgrund hålls lokalt för att undvika 401 från backend.
+              image: AppImages.background,
+              alignment: Alignment.center,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              gaplessPlayback: true,
+              errorBuilder: (context, error, stackTrace) {
+                BootLog.criticalAsset(
+                  name: 'background',
+                  status: 'fallback',
+                  path: AppImages.backgroundPath,
+                  error: error,
+                );
+                return const SizedBox.shrink();
+              },
+            ),
           ),
-        ),
         const Positioned.fill(
           child: IgnorePointer(
             child: DecoratedBox(

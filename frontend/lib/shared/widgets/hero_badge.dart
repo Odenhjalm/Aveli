@@ -1,6 +1,7 @@
 // lib/ui/widgets/hero_badge.dart
-import 'dart:ui';
 import 'package:flutter/material.dart';
+
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 
 class HeroBadge extends StatelessWidget {
   final String text;
@@ -10,8 +11,9 @@ class HeroBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+      child: EffectsBackdropFilter(
+        sigmaX: 8,
+        sigmaY: 8,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(

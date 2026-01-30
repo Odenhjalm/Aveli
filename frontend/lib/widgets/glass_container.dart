@@ -1,6 +1,6 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
+
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 
 /// Frosted glass container used to overlay content on top of imagery.
 class GlassContainer extends StatelessWidget {
@@ -21,8 +21,9 @@ class GlassContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+      child: EffectsBackdropFilter(
+        sigmaX: 10,
+        sigmaY: 10,
         child: Container(
           padding: padding,
           decoration: BoxDecoration(

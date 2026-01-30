@@ -1,5 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
+
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 
 class GlassCard extends StatelessWidget {
   final Widget child;
@@ -26,8 +27,9 @@ class GlassCard extends StatelessWidget {
 
     Widget card = ClipRRect(
       borderRadius: radius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+      child: EffectsBackdropFilter(
+        sigmaX: 8,
+        sigmaY: 8,
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: opacity),

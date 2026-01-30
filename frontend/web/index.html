@@ -9,68 +9,586 @@
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <title>Aveli</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        overflow: hidden;
+        background: #000;
+      }
+
+      /* BootstrapShell: visible until AppReady. */
+      #aveli-bootstrap-shell {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(
+          circle at 30% 20%,
+          rgba(255, 226, 184, 0.18),
+          rgba(0, 0, 0, 0.96) 65%
+        );
+        opacity: 1;
+        transition: opacity 240ms ease;
+      }
+      #aveli-bootstrap-shell[data-hidden='1'] {
+        pointer-events: none;
+        opacity: 0;
+      }
+      #aveli-bootstrap-shell .aveli-shell-bg {
+        position: absolute;
+        inset: 0;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: cover;
+        opacity: 0;
+        transform: scale(1.01);
+        transition: opacity 240ms ease;
+      }
+      #aveli-bootstrap-shell[data-bg='ready'] .aveli-shell-bg {
+        opacity: 1;
+      }
+      #aveli-bootstrap-shell .aveli-shell-scrim {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.30),
+          rgba(0, 0, 0, 0.00) 28%
+        );
+        pointer-events: none;
+      }
+      #aveli-bootstrap-shell .aveli-shell-center {
+        position: relative;
+        display: grid;
+        place-items: center;
+        gap: 18px;
+        padding: 24px;
+      }
+      #aveli-bootstrap-shell .aveli-shell-logo {
+        width: min(360px, 70vw);
+        height: auto;
+        filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.35));
+        opacity: 0;
+        transition: opacity 180ms ease;
+      }
+      #aveli-bootstrap-shell[data-logo='ready'] .aveli-shell-logo {
+        opacity: 1;
+      }
+      #aveli-bootstrap-shell .aveli-shell-wordmark {
+        font: 900 42px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial,
+          sans-serif;
+        letter-spacing: 0.5px;
+        color: rgba(255, 255, 255, 0.94);
+        text-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+        display: none;
+      }
+      #aveli-bootstrap-shell[data-logo='fallback'] .aveli-shell-wordmark {
+        display: block;
+      }
+      #aveli-bootstrap-shell .aveli-shell-spinner {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        border: 2px solid rgba(255, 255, 255, 0.25);
+        border-top-color: rgba(255, 255, 255, 0.85);
+        animation: aveli-spin 900ms linear infinite;
+      }
+      @keyframes aveli-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Minimal diagnostics overlay (opt-in). */
+      #aveli-boot-diag {
+        position: fixed;
+        bottom: 12px;
+        left: 12px;
+        z-index: 2147483647;
+        max-width: min(560px, calc(100vw - 24px));
+        background: rgba(0, 0, 0, 0.62);
+        color: rgba(255, 255, 255, 0.92);
+        padding: 10px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', 'Courier New', monospace;
+        backdrop-filter: blur(10px);
+        display: none;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      html.aveli-effects-safe #aveli-boot-diag {
+        backdrop-filter: none;
+      }
+    </style>
   </head>
   <body>
     <noscript>
       This application requires JavaScript to run the Flutter client.
     </noscript>
+
+    <!-- BootstrapShell: deterministic, renderer-aware, and critical-asset safe. -->
+    <div
+      id="aveli-bootstrap-shell"
+      data-hidden="0"
+      data-bg="init"
+      data-logo="fallback"
+      aria-label="Aveli loading"
+    >
+      <div class="aveli-shell-bg" id="aveli-shell-bg"></div>
+      <div class="aveli-shell-scrim" aria-hidden="true"></div>
+      <div class="aveli-shell-center">
+        <img
+          id="aveli-shell-logo"
+          class="aveli-shell-logo"
+          alt="Aveli"
+          decoding="async"
+        />
+        <div class="aveli-shell-wordmark" aria-hidden="true">Aveli</div>
+        <div class="aveli-shell-spinner" aria-hidden="true"></div>
+      </div>
+    </div>
+    <div id="aveli-boot-diag" aria-hidden="true"></div>
+
     <script>
-      // Hard-disable any previously-registered service worker. Old Flutter web
-      // SW caches can serve stale bundles and miscompiled ENV configs.
       (function () {
-        var reloadKey = 'aveli_sw_cleanup_done';
-        try {
-          if (!('serviceWorker' in navigator)) return;
-          if (window.sessionStorage && sessionStorage.getItem(reloadKey) === '1')
-            return;
+        'use strict';
 
-          function clearCaches() {
-            if (!('caches' in window)) return Promise.resolve();
-            return caches
-              .keys()
-              .then(function (keys) {
-                return Promise.all(
-                  keys.map(function (key) {
-                    return caches.delete(key);
-                  })
-                );
-              })
-              .catch(function () {});
+        var BOOT_VERSION = 'rfc-deterministic-bootstrap-v1';
+        var ASSET_BG = 'assets/assets/images/bakgrund.png';
+        var ASSET_LOGO = 'assets/assets/images/loggo_clea.png';
+        var SW_RELOAD_KEY = 'aveli_sw_cleanup_done';
+
+        var shell = document.getElementById('aveli-bootstrap-shell');
+        var bgEl = document.getElementById('aveli-shell-bg');
+        var logoEl = document.getElementById('aveli-shell-logo');
+        var diagEl = document.getElementById('aveli-boot-diag');
+
+        function bootNow() {
+          return Date.now();
+        }
+
+        function safeJson(data) {
+          try {
+            return JSON.stringify(data);
+          } catch (_) {
+            return '"<unserializable>"';
           }
+        }
 
-          navigator.serviceWorker
-            .getRegistrations()
-            .then(function (regs) {
-              if (!regs || regs.length === 0) return false;
-              return Promise.all(
-                regs.map(function (reg) {
-                  return reg.unregister();
+        function makeBootId() {
+          try {
+            if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+          } catch (_) {}
+          return (
+            'boot_' +
+            Math.random().toString(16).slice(2) +
+            '_' +
+            bootNow().toString(16)
+          );
+        }
+
+        var boot = {
+          version: BOOT_VERSION,
+          boot_id: makeBootId(),
+          state: 'init',
+          events: [],
+          renderer: { mode: 'unknown', policy: 'safe', reason: 'init' },
+          critical_assets: {
+            background: { path: ASSET_BG, status: 'init' },
+            logo: { path: ASSET_LOGO, status: 'init' },
+          },
+        };
+
+        function log(level, type, data) {
+          var evt = {
+            ts: bootNow(),
+            boot_id: boot.boot_id,
+            type: type,
+            data: data || {},
+          };
+          boot.events.push(evt);
+          try {
+            var prefix = '[BOOT]';
+            (console[level] || console.log)(
+              prefix,
+              'boot_id=' + boot.boot_id,
+              type,
+              evt.data
+            );
+          } catch (_) {}
+          renderDiag();
+        }
+
+        function transition(to, data) {
+          var from = boot.state;
+          boot.state = to;
+          log('info', 'transition', { from: from, to: to, data: data || {} });
+        }
+
+        function shouldShowDiag() {
+          try {
+            var qp = new URLSearchParams(window.location.search);
+            if (qp.get('boot_diag') === '1') return true;
+            if (window.localStorage && localStorage.getItem('aveli_boot_diag') === '1')
+              return true;
+          } catch (_) {}
+          return false;
+        }
+
+        function renderDiag() {
+          if (!diagEl) return;
+          var show = shouldShowDiag();
+          diagEl.style.display = show ? 'block' : 'none';
+          if (!show) return;
+          var last = boot.events.slice(-8);
+          var lines = [];
+          lines.push('boot_id: ' + boot.boot_id);
+          lines.push('state:   ' + boot.state);
+          lines.push(
+            'renderer: ' +
+              boot.renderer.mode +
+              ' policy=' +
+              boot.renderer.policy +
+              ' (' +
+              boot.renderer.reason +
+              ')'
+          );
+          lines.push(
+            'assets:  bg=' +
+              boot.critical_assets.background.status +
+              ' logo=' +
+              boot.critical_assets.logo.status
+          );
+          lines.push('');
+          for (var i = 0; i < last.length; i++) {
+            var e = last[i];
+            lines.push(
+              new Date(e.ts).toISOString().slice(11, 23) +
+                ' ' +
+                e.type +
+                ' ' +
+                safeJson(e.data)
+            );
+          }
+          diagEl.textContent = lines.join('\n');
+        }
+
+        function setHtmlEffectsClass(policy) {
+          try {
+            var html = document.documentElement;
+            html.classList.remove('aveli-effects-safe');
+            html.classList.remove('aveli-effects-full');
+            html.classList.add('aveli-effects-' + policy);
+          } catch (_) {}
+        }
+
+        function resolveAssetUrl(path) {
+          try {
+            return new URL(path, document.baseURI).toString();
+          } catch (_) {
+            return path;
+          }
+        }
+
+        function detectRendererPolicy() {
+          var result = {
+            mode: 'cpu',
+            policy: 'safe',
+            reason: 'no_webgl',
+            webgl: { version: 0, vendor: null, renderer: null },
+          };
+          try {
+            var canvas = document.createElement('canvas');
+            var gl =
+              canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: true }) ||
+              canvas.getContext('webgl', { failIfMajorPerformanceCaveat: true }) ||
+              canvas.getContext('experimental-webgl');
+            if (!gl) return result;
+
+            var version =
+              typeof WebGL2RenderingContext !== 'undefined' &&
+              gl instanceof WebGL2RenderingContext
+                ? 2
+                : 1;
+            var vendor = null;
+            var renderer = null;
+            try {
+              var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+              if (dbg) {
+                vendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
+                renderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+              }
+            } catch (_) {}
+
+            var rend = String(renderer || '');
+            var isSoftware =
+              /swiftshader|llvmpipe|software renderer|software/i.test(rend);
+            result.webgl.version = version;
+            result.webgl.vendor = vendor;
+            result.webgl.renderer = renderer;
+            result.mode = isSoftware ? 'cpu' : 'gpu';
+            result.policy = isSoftware ? 'safe' : 'full';
+            result.reason = isSoftware ? 'software_renderer' : 'webgl_ok';
+            return result;
+          } catch (e) {
+            result.reason = 'detect_error';
+            return result;
+          }
+        }
+
+        function settleServiceWorker() {
+          return new Promise(function (resolve) {
+            try {
+              if (!('serviceWorker' in navigator)) {
+                resolve({ supported: false, cleaned: false, reloaded: false });
+                return;
+              }
+              if (
+                window.sessionStorage &&
+                sessionStorage.getItem(SW_RELOAD_KEY) === '1'
+              ) {
+                resolve({ supported: true, cleaned: true, reloaded: false });
+                return;
+              }
+
+              function clearCaches() {
+                if (!('caches' in window)) return Promise.resolve();
+                return caches
+                  .keys()
+                  .then(function (keys) {
+                    return Promise.all(
+                      keys.map(function (key) {
+                        return caches.delete(key);
+                      })
+                    );
+                  })
+                  .catch(function () {});
+              }
+
+              navigator.serviceWorker
+                .getRegistrations()
+                .then(function (regs) {
+                  if (!regs || regs.length === 0) return false;
+                  return Promise.all(
+                    regs.map(function (reg) {
+                      return reg.unregister();
+                    })
+                  )
+                    .then(function () {
+                      return true;
+                    })
+                    .catch(function () {
+                      return false;
+                    });
                 })
-              )
-                .then(function () {
-                  return true;
+                .then(function (didUnregister) {
+                  if (!didUnregister) return false;
+                  return clearCaches().then(function () {
+                    return true;
+                  });
+                })
+                .then(function (didCleanup) {
+                  if (!didCleanup) return resolve({ supported: true, cleaned: false, reloaded: false });
+                  if (window.sessionStorage) {
+                    sessionStorage.setItem(SW_RELOAD_KEY, '1');
+                  }
+                  log('warn', 'sw_cleanup_reload', {});
+                  window.location.reload();
+                  resolve({ supported: true, cleaned: true, reloaded: true });
                 })
                 .catch(function () {
-                  return false;
+                  resolve({ supported: true, cleaned: false, reloaded: false });
                 });
-            })
-            .then(function (didUnregister) {
-              if (!didUnregister) return false;
-              return clearCaches().then(function () {
-                return true;
+            } catch (_) {
+              resolve({ supported: false, cleaned: false, reloaded: false });
+            }
+          });
+        }
+
+        function preloadImage(url, timeoutMs) {
+          return new Promise(function (resolve) {
+            var img = new Image();
+            var done = false;
+            var timer = null;
+            function finish(ok, reason) {
+              if (done) return;
+              done = true;
+              if (timer) clearTimeout(timer);
+              resolve({ ok: ok, reason: reason || '' });
+            }
+            try {
+              img.decoding = 'async';
+            } catch (_) {}
+            img.onload = function () {
+              finish(true, 'loaded');
+            };
+            img.onerror = function () {
+              finish(false, 'error');
+            };
+            timer = setTimeout(function () {
+              finish(false, 'timeout');
+            }, timeoutMs);
+            img.src = url;
+          });
+        }
+
+        function applyCriticalAssets() {
+          var bgUrl = resolveAssetUrl(ASSET_BG);
+          var logoUrl = resolveAssetUrl(ASSET_LOGO);
+
+          // Show fallback visuals immediately; swap in assets when ready.
+          if (shell) {
+            shell.dataset.bg = 'init';
+            shell.dataset.logo = 'fallback';
+          }
+          if (logoEl) {
+            logoEl.src = logoUrl;
+            logoEl.onerror = function () {
+              // Ensure no silent failures if the DOM load differs from preload.
+              boot.critical_assets.logo.status = 'fallback';
+              if (shell) shell.dataset.logo = 'fallback';
+              log('error', 'critical_asset', {
+                name: 'logo',
+                status: 'fallback',
+                reason: 'dom_error',
+                path: ASSET_LOGO,
               });
-            })
-            .then(function (didCleanup) {
-              if (!didCleanup) return;
-              if (window.sessionStorage) {
-                sessionStorage.setItem(reloadKey, '1');
-              }
-              window.location.reload();
-            })
-            .catch(function () {});
-        } catch (_) {}
+            };
+          }
+
+          var bgPromise = preloadImage(bgUrl, 4500).then(function (res) {
+            if (res.ok) {
+              boot.critical_assets.background.status = 'loaded';
+              if (bgEl) bgEl.style.backgroundImage = 'url(\"' + bgUrl + '\")';
+              if (shell) shell.dataset.bg = 'ready';
+              log('info', 'critical_asset', {
+                name: 'background',
+                status: 'loaded',
+                path: ASSET_BG,
+              });
+            } else {
+              boot.critical_assets.background.status = 'fallback';
+              if (shell) shell.dataset.bg = 'fallback';
+              log('error', 'critical_asset', {
+                name: 'background',
+                status: 'fallback',
+                reason: res.reason,
+                path: ASSET_BG,
+              });
+            }
+            return res;
+          });
+
+          var logoPromise = preloadImage(logoUrl, 4500).then(function (res) {
+            if (res.ok) {
+              boot.critical_assets.logo.status = 'loaded';
+              if (shell) shell.dataset.logo = 'ready';
+              log('info', 'critical_asset', {
+                name: 'logo',
+                status: 'loaded',
+                path: ASSET_LOGO,
+              });
+            } else {
+              boot.critical_assets.logo.status = 'fallback';
+              if (shell) shell.dataset.logo = 'fallback';
+              log('error', 'critical_asset', {
+                name: 'logo',
+                status: 'fallback',
+                reason: res.reason,
+                path: ASSET_LOGO,
+              });
+            }
+            return res;
+          });
+
+          return Promise.all([bgPromise, logoPromise]);
+        }
+
+        function injectFlutterBootstrap() {
+          return new Promise(function (resolve, reject) {
+            try {
+              var src = resolveAssetUrl('flutter_bootstrap.js');
+              var s = document.createElement('script');
+              s.src = src;
+              s.async = true;
+              s.onload = function () {
+                resolve(true);
+              };
+              s.onerror = function () {
+                reject(new Error('Failed to load flutter_bootstrap.js'));
+              };
+              document.body.appendChild(s);
+              log('info', 'flutter_bootstrap_injected', { src: src });
+            } catch (e) {
+              reject(e);
+            }
+          });
+        }
+
+        function hideShell(reason) {
+          try {
+            if (!shell) return;
+            shell.dataset.hidden = '1';
+            log('info', 'shell_hidden', { reason: reason || 'app_ready' });
+            window.setTimeout(function () {
+              try {
+                shell.remove();
+              } catch (_) {}
+            }, 500);
+          } catch (_) {}
+        }
+
+        // Public bridge for Flutter/Dart.
+        boot.appReady = function (payload) {
+          try {
+            log('info', 'app_ready', payload || {});
+          } catch (_) {}
+          transition('app_ready', payload || {});
+          hideShell('app_ready');
+        };
+
+        // Expose globally for Dart bridge + supportability.
+        window.__AVELI_BOOT = boot;
+
+        (async function () {
+          transition('shell_mounted', {});
+
+          var sw = await settleServiceWorker();
+          log('info', 'sw_settle', sw);
+          if (sw.reloaded) return;
+
+          boot.renderer = detectRendererPolicy();
+          setHtmlEffectsClass(boot.renderer.policy);
+          log('info', 'renderer_detected', boot.renderer);
+
+          await applyCriticalAssets();
+          transition('critical_assets_ready', boot.critical_assets);
+
+          await injectFlutterBootstrap();
+          transition('flutter_bootstrap_loaded', {});
+
+          // Keep the shell up until Dart signals AppReady. Still, log if stuck.
+          window.setTimeout(function () {
+            try {
+              if (boot.state === 'app_ready' || boot.state === 'fatal') return;
+              log('warn', 'app_ready_timeout', { state: boot.state });
+            } catch (_) {}
+          }, 15000);
+        })().catch(function (e) {
+          log('error', 'bootstrap_fatal', { error: String(e || '') });
+          transition('fatal', { error: String(e || '') });
+          // Keep shell visible to avoid a blank screen.
+        });
       })();
     </script>
-    <script src="flutter_bootstrap.js" async></script>
   </body>
 </html>

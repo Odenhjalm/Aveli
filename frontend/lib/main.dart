@@ -12,6 +12,9 @@ import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
 
 import 'package:media_kit/media_kit.dart';
+import 'package:aveli/core/bootstrap/boot_config.dart';
+import 'package:aveli/core/bootstrap/boot_gate.dart';
+import 'package:aveli/core/bootstrap/boot_log.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_resolver.dart';
 import 'package:aveli/core/env/env_state.dart';
@@ -36,6 +39,19 @@ void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      final bootConfig = BootConfig.load();
+      BootLog.init(bootId: bootConfig.bootId);
+      BootLog.event('boot_config', {
+        'bootstrap_version': bootConfig.bootstrapVersion,
+        'renderer_mode': bootConfig.rendererMode,
+        'effects_policy': bootConfig.effectsPolicy.name,
+      });
+
+      if (kIsWeb) {
+        WidgetsBinding.instance.deferFirstFrame();
+        BootLog.event('first_frame_deferred', {});
+      }
 
       FlutterError.onError = (details) {
         FlutterError.dumpErrorToConsole(details);
@@ -165,23 +181,27 @@ void main() {
           'WARNING: API_BASE_URL is using HTTP in release. Use HTTPS for production.',
         );
       }
+      BootLog.transition(from: 'dart_main_start', to: 'dart_run_app');
       runApp(
-        ProviderScope(
-          overrides: [
-            envInfoProvider.overrideWith((ref) => envInfo),
-            appConfigProvider.overrideWithValue(
-              AppConfig(
-                apiBaseUrl: baseUrl,
-                stripePublishableKey: publishableKey,
-                stripeMerchantDisplayName: merchantDisplayName.isNotEmpty
-                    ? merchantDisplayName
-                    : 'Aveli',
-                subscriptionsEnabled: subscriptionsEnabled,
-                imageLoggingEnabled: imageLoggingEnabled,
+        BootGate(
+          config: bootConfig,
+          child: ProviderScope(
+            overrides: [
+              envInfoProvider.overrideWith((ref) => envInfo),
+              appConfigProvider.overrideWithValue(
+                AppConfig(
+                  apiBaseUrl: baseUrl,
+                  stripePublishableKey: publishableKey,
+                  stripeMerchantDisplayName: merchantDisplayName.isNotEmpty
+                      ? merchantDisplayName
+                      : 'Aveli',
+                  subscriptionsEnabled: subscriptionsEnabled,
+                  imageLoggingEnabled: imageLoggingEnabled,
+                ),
               ),
-            ),
-          ],
-          child: const AveliApp(),
+            ],
+            child: const AveliApp(),
+          ),
         ),
       );
     },

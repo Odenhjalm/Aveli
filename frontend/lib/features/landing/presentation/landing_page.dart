@@ -18,12 +18,14 @@ import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/hero_badge.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
+import 'package:aveli/core/bootstrap/effects_policy.dart';
 
 const _aveliPrimaryGradient = LinearGradient(
   colors: [kBrandTurquoise, kBrandAzure, kBrandLilac],
@@ -248,8 +250,9 @@ class _LandingPageState extends ConsumerState<LandingPage>
         final items = _introCourses.items;
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: EffectsBackdropFilter(
+            sigmaX: 16,
+            sigmaY: 16,
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: .78),
@@ -1028,7 +1031,9 @@ class _ParticlesPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final p = Paint()
       ..color = const Color(0xFFFFFFFF).withValues(alpha: .10)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+      ..maskFilter = EffectsPolicyController.isSafe
+          ? null
+          : const MaskFilter.blur(BlurStyle.normal, 2);
 
     for (var i = 0; i < points.length; i++) {
       final o = points[i];
@@ -1129,8 +1134,9 @@ class _CourseTileGlass extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: EffectsBackdropFilter(
+            sigmaX: 18,
+            sigmaY: 18,
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
@@ -1302,8 +1308,9 @@ class _TeacherPillData extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(22),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: EffectsBackdropFilter(
+            sigmaX: 12,
+            sigmaY: 12,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(

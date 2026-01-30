@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +13,7 @@ import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/courses_grid.dart';
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/home_hero_panel.dart';
 import 'package:aveli/data/models/community_post.dart';
 
@@ -413,8 +412,9 @@ class _GlassSection extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+      child: EffectsBackdropFilter(
+        sigmaX: 20,
+        sigmaY: 20,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),

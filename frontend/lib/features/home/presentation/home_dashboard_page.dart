@@ -33,7 +33,9 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
+import 'package:aveli/core/bootstrap/effects_policy.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -1176,8 +1178,8 @@ class _LogoWing extends StatelessWidget {
 
     return Opacity(
       opacity: opacity,
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+      child: _maybeBlur(
+        sigma: 14,
         child: Transform.rotate(
           angle: rotation,
           child: ClipRect(
@@ -1196,6 +1198,16 @@ class _LogoWing extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _maybeBlur({required double sigma, required Widget child}) {
+  if (EffectsPolicyController.isSafe) {
+    return child;
+  }
+  return ImageFiltered(
+    imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+    child: child,
+  );
 }
 
 class _NowPlayingArtwork extends StatelessWidget {
@@ -1724,8 +1736,9 @@ class _GlassSection extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+      child: EffectsBackdropFilter(
+        sigmaX: 20,
+        sigmaY: 20,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
@@ -1752,8 +1765,9 @@ class _GlassTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+      child: EffectsBackdropFilter(
+        sigmaX: 16,
+        sigmaY: 16,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
