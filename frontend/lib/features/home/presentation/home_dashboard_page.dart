@@ -826,7 +826,7 @@ class _NowPlayingArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 128.0;
+    const size = 68.0;
     return SizedBox(
       height: size,
       width: size,
@@ -835,10 +835,10 @@ class _NowPlayingArtwork extends StatelessWidget {
         child: Image(
           image: SafeMedia.resizedProvider(
             AppImages.logo,
-            cacheWidth: SafeMedia.cacheDimension(context, size, max: 512),
-            cacheHeight: SafeMedia.cacheDimension(context, size, max: 512),
+            cacheWidth: SafeMedia.cacheDimension(context, size, max: 384),
+            cacheHeight: SafeMedia.cacheDimension(context, size, max: 384),
           ),
-          fit: BoxFit.contain,
+          fit: BoxFit.cover,
           filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
           gaplessPlayback: true,
         ),
