@@ -177,11 +177,7 @@ class _LessonContent extends ConsumerWidget {
     final lesson = detail.lesson;
     final mediaRepo = ref.watch(mediaRepositoryProvider);
     final screenWidth = MediaQuery.of(context).size.width;
-    final contentWidth = screenWidth >= 1100
-        ? 720.0
-        : screenWidth >= 900
-        ? 680.0
-        : 620.0;
+    final contentWidth = (screenWidth - 32).clamp(720.0, 1200.0).toDouble();
     final mediaItems = detail.media;
     final courseLessons = detail.courseLessons;
     LessonSummary? previous;
@@ -216,6 +212,7 @@ class _LessonContent extends ConsumerWidget {
       }
       return false;
     }
+
     final coreContent = ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
@@ -582,7 +579,9 @@ String? _extractMediaIdFromToken(String token) {
   final parts = token.split('.');
   if (parts.length != 3) return null;
   try {
-    final payloadRaw = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+    final payloadRaw = utf8.decode(
+      base64Url.decode(base64Url.normalize(parts[1])),
+    );
     final jsonValue = json.decode(payloadRaw);
     if (jsonValue is! Map<String, dynamic>) return null;
     final sub = jsonValue['sub'];
@@ -594,11 +593,11 @@ String? _extractMediaIdFromToken(String token) {
 
 class _HtmlAudioTagSyntax extends md.InlineSyntax {
   _HtmlAudioTagSyntax()
-      : super(
-          r'<audio\\b[^>]*?>[\\s\\S]*?<\\/audio>',
-          startCharacter: 0x3c,
-          caseSensitive: false,
-        );
+    : super(
+        r'<audio\\b[^>]*?>[\\s\\S]*?<\\/audio>',
+        startCharacter: 0x3c,
+        caseSensitive: false,
+      );
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
@@ -613,11 +612,11 @@ class _HtmlAudioTagSyntax extends md.InlineSyntax {
 
 class _HtmlVideoTagSyntax extends md.InlineSyntax {
   _HtmlVideoTagSyntax()
-      : super(
-          r'<video\\b[^>]*?>[\\s\\S]*?<\\/video>',
-          startCharacter: 0x3c,
-          caseSensitive: false,
-        );
+    : super(
+        r'<video\\b[^>]*?>[\\s\\S]*?<\\/video>',
+        startCharacter: 0x3c,
+        caseSensitive: false,
+      );
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
@@ -709,11 +708,7 @@ final MarkdownGenerator _lessonMarkdownGenerator = MarkdownGenerator(
 
 class _HtmlImageTagSyntax extends md.InlineSyntax {
   _HtmlImageTagSyntax()
-      : super(
-          r'<img\\b[^>]*?>',
-          startCharacter: 0x3c,
-          caseSensitive: false,
-        );
+    : super(r'<img\\b[^>]*?>', startCharacter: 0x3c, caseSensitive: false);
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
