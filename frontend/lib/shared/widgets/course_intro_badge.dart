@@ -16,7 +16,7 @@ class CourseIntroBadge extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: DecoratedBox(
-        decoration: const BoxDecoration(gradient: kBrandVibrantGradient),
+        decoration: const BoxDecoration(gradient: kBrandBluePurpleGradient),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Text(label, style: style),
@@ -25,4 +25,3 @@ class CourseIntroBadge extends StatelessWidget {
     );
   }
 }
-

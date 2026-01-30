@@ -35,3 +35,9 @@ const LinearGradient kBrandVibrantGradient = LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
+
+const LinearGradient kBrandBluePurpleGradient = LinearGradient(
+  colors: [kBrandAzure, kBrandLilac],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);

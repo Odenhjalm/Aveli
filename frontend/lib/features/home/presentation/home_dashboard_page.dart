@@ -13,8 +13,6 @@ import 'package:aveli/data/models/activity.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/data/models/service.dart';
-import 'package:aveli/features/courses/application/course_providers.dart';
-import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/home/data/home_audio_repository.dart';
@@ -27,13 +25,9 @@ import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
-import 'package:aveli/features/media/data/media_repository.dart';
-import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/shared/widgets/course_intro_badge.dart';
-import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
-import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/core/bootstrap/effects_policy.dart';
@@ -56,7 +50,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final entitlementsState = ref.watch(entitlementsNotifierProvider);
     final feedAsync = ref.watch(homeFeedProvider);
     final servicesAsync = ref.watch(homeServicesProvider);
-    final exploreAsync = ref.watch(landing.popularCoursesProvider);
     final seminarsAsync = ref.watch(publicSeminarsProvider);
     final certificatesAsync = ref.watch(myCertificatesProvider);
     final profile = authState.profile;
@@ -66,7 +59,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         profile?.isAdmin == true ||
         claims?.isTeacher == true ||
         claims?.isAdmin == true;
-    final mediaRepository = ref.watch(mediaRepositoryProvider);
     final homeAudioAsync = ref.watch(homeAudioProvider);
     final homeAudioSection = _HomeAudioSection(audioAsync: homeAudioAsync);
 
@@ -161,9 +153,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                           children: [
                             Expanded(
                               flex: 7,
-                              child: _ExploreCoursesSection(
-                                section: exploreAsync,
-                                mediaRepository: mediaRepository,
+                              child: const CoursesShowcaseSection(
+                                title: 'Utforska kurser',
+                                layout: CoursesShowcaseLayout.vertical,
+                                desktop: CoursesShowcaseDesktop(
+                                  columns: 2,
+                                  rows: 3,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 24),
@@ -212,9 +208,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                     children: [
                       homeAudioSection,
                       const SizedBox(height: 22),
-                      _ExploreCoursesSection(
-                        section: exploreAsync,
-                        mediaRepository: mediaRepository,
+                      const CoursesShowcaseSection(
+                        title: 'Utforska kurser',
+                        layout: CoursesShowcaseLayout.vertical,
+                        desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
                       ),
                       const SizedBox(height: 22),
                       _FeedSection(
@@ -731,441 +728,6 @@ String _formatDuration(Duration duration) {
   final mm = two(minutes);
   final ss = two(seconds);
   return hours > 0 ? '$hours:$mm:$ss' : '$mm:$ss';
-}
-
-class _ExploreCoursesSection extends ConsumerWidget {
-  const _ExploreCoursesSection({
-    required this.section,
-    required this.mediaRepository,
-  });
-
-  final AsyncValue<landing.LandingSectionState> section;
-  final MediaRepository mediaRepository;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return _SectionCard(
-      title: 'Utforska kurser',
-      trailing: TextButton(
-        onPressed: () => context.goNamed(AppRoute.courseCatalog),
-        child: const Text('Visa alla'),
-      ),
-      child: section.when(
-        loading: () => const SizedBox(
-          height: 260,
-          child: Center(child: CircularProgressIndicator()),
-        ),
-        error: (error, _) => _buildFallback(context, ref, fallbackError: error),
-        data: (state) {
-          final items = state.items;
-          if (items.isNotEmpty) {
-            return _buildCourseList(context, items, mediaRepository);
-          }
-          return _buildFallback(context, ref);
-        },
-      ),
-    );
-  }
-
-  Widget _buildFallback(
-    BuildContext context,
-    WidgetRef ref, {
-    Object? fallbackError,
-  }) {
-    final fallbackCourses = ref.watch(coursesProvider);
-    return fallbackCourses.when(
-      data: (courses) {
-        if (courses.isEmpty) {
-          return const MetaText('Inga kurser publicerade ännu.');
-        }
-        return _buildCourseList(
-          context,
-          _mapCourseSummaries(courses),
-          mediaRepository,
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) {
-        final cause = fallbackError ?? error;
-        return Text('Kunde inte hämta kurser: ${cause.toString()}');
-      },
-    );
-  }
-
-  List<Map<String, dynamic>> _mapCourseSummaries(List<CourseSummary> courses) {
-    return courses
-        .where((course) => (course.slug ?? '').isNotEmpty)
-        .map((course) {
-          return {
-            'title': course.title,
-            'description': course.description ?? '',
-            'slug': course.slug ?? '',
-            'is_free_intro': course.isFreeIntro,
-            'cover_url': course.coverUrl,
-          };
-        })
-        .toList(growable: false);
-  }
-
-  Widget _buildCourseList(
-    BuildContext context,
-    List<Map<String, dynamic>> items,
-    MediaRepository mediaRepository,
-  ) {
-    if (items.isEmpty) {
-      return const MetaText('Inga kurser publicerade ännu.');
-    }
-    final visible = items.take(6).toList(growable: false);
-
-    void openCourse(String slug) {
-      if (slug.isEmpty) return;
-      context.goNamed(AppRoute.course, pathParameters: {'slug': slug});
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const listSpacing = 22.0;
-        const gridCrossSpacing = 14.0;
-        const gridMainSpacing = 16.0;
-        final maxWidth = constraints.maxWidth;
-        final canUseDesktopGrid =
-            MediaQuery.of(context).size.width >= 900 && maxWidth >= 520;
-
-        Widget buildCard(int index) {
-          final course = visible[index];
-          final title = (course['title'] as String?) ?? 'Kurs';
-          final description = (course['description'] as String?) ?? '';
-          final slug = (course['slug'] as String?) ?? '';
-          final isIntro = course['is_free_intro'] == true;
-          final rawCoverUrl = (course['cover_url'] as String?) ?? '';
-          final resolvedCoverUrl = _resolveCoverUrl(
-            mediaRepository,
-            rawCoverUrl,
-          );
-          final canOpen = slug.isNotEmpty;
-
-          Widget card = _CourseExploreCard(
-            title: title,
-            description: description,
-            isIntro: isIntro,
-            coverUrl: resolvedCoverUrl,
-            onTap: canOpen ? () => openCourse(slug) : null,
-          );
-          if (canUseDesktopGrid) {
-            card = Transform.scale(
-              scale: 0.85,
-              alignment: Alignment.center,
-              child: card,
-            );
-          }
-          return card;
-        }
-
-        if (canUseDesktopGrid) {
-          const columns = 2;
-          final cardWidth =
-              (maxWidth - gridCrossSpacing * (columns - 1)) / columns;
-          final cardHeight = (cardWidth * 9 / 16 + 300)
-              .clamp(420.0, 560.0)
-              .toDouble();
-
-          return GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              crossAxisSpacing: gridCrossSpacing,
-              mainAxisSpacing: gridMainSpacing,
-              mainAxisExtent: cardHeight,
-            ),
-            itemCount: visible.length,
-            itemBuilder: (context, index) => buildCard(index),
-          );
-        }
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var index = 0; index < visible.length; index++) ...[
-              buildCard(index),
-              if (index != visible.length - 1)
-                const SizedBox(height: listSpacing),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  String? _resolveCoverUrl(MediaRepository repository, String? coverUrl) {
-    if (coverUrl == null || coverUrl.isEmpty) return null;
-    try {
-      return repository.resolveUrl(coverUrl);
-    } catch (_) {
-      return coverUrl;
-    }
-  }
-}
-
-class _CourseExploreCard extends StatelessWidget {
-  const _CourseExploreCard({
-    required this.title,
-    required this.description,
-    required this.isIntro,
-    required this.coverUrl,
-    this.onTap,
-  });
-
-  final String title;
-  final String description;
-  final bool isIntro;
-  final String? coverUrl;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final radius = BorderRadius.circular(20);
-    final baseColor = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.03)
-        : Colors.white.withValues(alpha: 0.18);
-
-    Widget cover() {
-      final resolved = coverUrl?.trim() ?? '';
-      if (resolved.isEmpty) {
-        return const _CourseCoverFallback();
-      }
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          if (SafeMedia.enabled) {
-            SafeMedia.markThumbnails();
-          }
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              const _CourseCoverFallback(),
-              Image.network(
-                resolved,
-                fit: BoxFit.cover,
-                filterQuality: SafeMedia.filterQuality(
-                  full: FilterQuality.high,
-                ),
-                cacheWidth: SafeMedia.cacheDimension(
-                  context,
-                  constraints.maxWidth,
-                  max: 1200,
-                ),
-                cacheHeight: SafeMedia.cacheDimension(
-                  context,
-                  constraints.maxHeight,
-                  max: 900,
-                ),
-                gaplessPlayback: true,
-                errorBuilder: (_, err, stack) {
-                  ImageErrorLogger.log(
-                    source: 'Home/Explore/CardCover',
-                    url: resolved,
-                    error: err,
-                    stackTrace: stack,
-                  );
-                  return const SizedBox.shrink();
-                },
-              ),
-            ],
-          );
-        },
-      );
-    }
-
-    final titleStyle = theme.textTheme.titleMedium?.copyWith(
-      color: DesignTokens.bodyTextColor,
-      fontWeight: FontWeight.w800,
-    );
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: radius,
-        child: ClipRRect(
-          borderRadius: radius,
-          child: EffectsBackdropFilter(
-            sigmaX: 18,
-            sigmaY: 18,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: radius,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [baseColor, baseColor.withValues(alpha: 0.32)],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF000000).withValues(alpha: 0.06),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final fillHeight = constraints.maxHeight.isFinite;
-
-                  Widget buildCover() {
-                    return AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: radius,
-                          color: Colors.white.withValues(alpha: 0.18),
-                        ),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            cover(),
-                            DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.transparent,
-                                    theme.colorScheme.surface.withValues(
-                                      alpha: 0.18,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-
-                  Widget buildBody({required bool fillHeight}) {
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: titleStyle,
-                                ),
-                              ),
-                              if (isIntro) const SizedBox(width: 10),
-                              if (isIntro) const CourseIntroBadge(),
-                            ],
-                          ),
-                          if (description.trim().isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            CourseDescriptionText(
-                              description,
-                              baseStyle: theme.textTheme.bodySmall,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                          if (fillHeight)
-                            const Spacer()
-                          else
-                            const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.bottomRight,
-                            child: GradientButton(
-                              onPressed: onTap,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              borderRadius: BorderRadius.circular(14),
-                              child: const Text(
-                                'Öppna',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  if (fillHeight) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        buildCover(),
-                        Expanded(child: buildBody(fillHeight: true)),
-                      ],
-                    );
-                  }
-
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      buildCover(),
-                      buildBody(fillHeight: false),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-	    );
-  }
-}
-
-class _CourseCoverFallback extends StatelessWidget {
-  const _CourseCoverFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : MediaQuery.of(context).size.width;
-        final cacheWidth = SafeMedia.cacheDimension(
-          context,
-          maxWidth,
-          max: 640,
-        );
-        final theme = Theme.of(context);
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            ColoredBox(color: theme.colorScheme.surface),
-            Image(
-              image: SafeMedia.resizedProvider(
-                AppImages.background,
-                cacheWidth: cacheWidth,
-                cacheHeight: null,
-              ),
-              fit: BoxFit.cover,
-              filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
-              gaplessPlayback: true,
-              errorBuilder: (context, error, stackTrace) =>
-                  const SizedBox.shrink(),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 
 class _NowPlayingShell extends StatelessWidget {
