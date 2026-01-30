@@ -824,7 +824,9 @@ class _ExploreCoursesSection extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = 22.0;
+        const listSpacing = 22.0;
+        const gridCrossSpacing = 14.0;
+        const gridMainSpacing = 16.0;
         final maxWidth = constraints.maxWidth;
         final canUseDesktopGrid =
             MediaQuery.of(context).size.width >= 900 && maxWidth >= 520;
@@ -861,7 +863,8 @@ class _ExploreCoursesSection extends ConsumerWidget {
 
         if (canUseDesktopGrid) {
           const columns = 2;
-          final cardWidth = (maxWidth - spacing * (columns - 1)) / columns;
+          final cardWidth =
+              (maxWidth - gridCrossSpacing * (columns - 1)) / columns;
           final cardHeight = (cardWidth * 9 / 16 + 300)
               .clamp(420.0, 560.0)
               .toDouble();
@@ -871,8 +874,8 @@ class _ExploreCoursesSection extends ConsumerWidget {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
-              crossAxisSpacing: spacing,
-              mainAxisSpacing: spacing,
+              crossAxisSpacing: gridCrossSpacing,
+              mainAxisSpacing: gridMainSpacing,
               mainAxisExtent: cardHeight,
             ),
             itemCount: visible.length,
@@ -885,7 +888,8 @@ class _ExploreCoursesSection extends ConsumerWidget {
           children: [
             for (var index = 0; index < visible.length; index++) ...[
               buildCard(index),
-              if (index != visible.length - 1) const SizedBox(height: spacing),
+              if (index != visible.length - 1)
+                const SizedBox(height: listSpacing),
             ],
           ],
         );
@@ -1063,7 +1067,7 @@ class _CourseExploreCard extends StatelessWidget {
 
                       Widget buildBody({required bool fillHeight}) {
                         return Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1083,7 +1087,7 @@ class _CourseExploreCard extends StatelessWidget {
                                 ],
                               ),
                               if (description.trim().isNotEmpty) ...[
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 8),
                                 CourseDescriptionText(
                                   description,
                                   baseStyle: theme.textTheme.bodySmall,
