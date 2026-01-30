@@ -29,6 +29,7 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
@@ -841,17 +842,29 @@ class _ExploreCoursesSection extends ConsumerWidget {
           );
           final canOpen = slug.isNotEmpty;
 
-          return _CourseExploreCard(
+          Widget card = _CourseExploreCard(
             title: title,
             description: description,
             isIntro: isIntro,
             coverUrl: resolvedCoverUrl,
             onTap: canOpen ? () => openCourse(slug) : null,
           );
+          if (canUseDesktopGrid) {
+            card = Transform.scale(
+              scale: 0.85,
+              alignment: Alignment.center,
+              child: card,
+            );
+          }
+          return card;
         }
 
         if (canUseDesktopGrid) {
           const columns = 2;
+          final cardWidth = (maxWidth - spacing * (columns - 1)) / columns;
+          final cardHeight = (cardWidth * 9 / 16 + 300)
+              .clamp(420.0, 560.0)
+              .toDouble();
 
           return GridView.builder(
             shrinkWrap: true,
@@ -860,7 +873,7 @@ class _ExploreCoursesSection extends ConsumerWidget {
               crossAxisCount: columns,
               crossAxisSpacing: spacing,
               mainAxisSpacing: spacing,
-              childAspectRatio: 0.9,
+              mainAxisExtent: cardHeight,
             ),
             itemCount: visible.length,
             itemBuilder: (context, index) => buildCard(index),
@@ -960,10 +973,27 @@ class _CourseExploreCard extends StatelessWidget {
       );
     }
 
-	    final titleStyle = theme.textTheme.titleMedium?.copyWith(
-	      color: DesignTokens.bodyTextColor,
-	      fontWeight: FontWeight.w800,
-	    );
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      color: DesignTokens.bodyTextColor,
+      fontWeight: FontWeight.w800,
+    );
+
+    Widget introBadge() {
+      final labelStyle = theme.textTheme.labelSmall?.copyWith(
+        color: Colors.white,
+        fontWeight: FontWeight.w800,
+      );
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: DecoratedBox(
+          decoration: const BoxDecoration(gradient: kBrandVibrantGradient),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Text('Introduktion', style: labelStyle),
+          ),
+        ),
+      );
+    }
 
     return Material(
       color: Colors.transparent,
@@ -972,151 +1002,147 @@ class _CourseExploreCard extends StatelessWidget {
         borderRadius: radius,
         child: ClipRRect(
           borderRadius: radius,
-	          child: EffectsBackdropFilter(
-	            sigmaX: 18,
-	            sigmaY: 18,
-	            child: Container(
-	              decoration: BoxDecoration(
-	                borderRadius: radius,
-	                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-	                gradient: LinearGradient(
-	                  begin: Alignment.topLeft,
-	                  end: Alignment.bottomRight,
-	                  colors: [baseColor, baseColor.withValues(alpha: 0.32)],
-	                ),
-	                boxShadow: [
-	                  BoxShadow(
-	                    color: const Color(0xFF000000).withValues(alpha: 0.06),
-	                    blurRadius: 14,
-	                    offset: const Offset(0, 6),
-	                  ),
-	                ],
-	              ),
-	              child: LayoutBuilder(
-	                builder: (context, constraints) {
-	                  final fillHeight = constraints.maxHeight.isFinite;
+          child: EffectsBackdropFilter(
+            sigmaX: 18,
+            sigmaY: 18,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [baseColor, baseColor.withValues(alpha: 0.32)],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF000000).withValues(alpha: 0.06),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final fillHeight = constraints.maxHeight.isFinite;
 
-	                  Widget buildCover() {
-	                    return AspectRatio(
-	                      aspectRatio: 2.2,
-	                      child: DecoratedBox(
-	                        decoration: BoxDecoration(
-	                          borderRadius: radius,
-	                          color: Colors.white.withValues(alpha: 0.18),
-	                        ),
-	                        child: Stack(
-	                          fit: StackFit.expand,
-	                          children: [
-	                            cover(),
-	                            DecoratedBox(
-	                              decoration: BoxDecoration(
-	                                gradient: LinearGradient(
-	                                  begin: Alignment.topCenter,
-	                                  end: Alignment.bottomCenter,
-	                                  colors: [
-	                                    Colors.transparent,
-	                                    theme.colorScheme.surface.withValues(
-	                                      alpha: 0.18,
-	                                    ),
-	                                  ],
-	                                ),
-	                              ),
-	                            ),
-	                          ],
-	                        ),
-	                      ),
-	                    );
-	                  }
+                      Widget buildCover() {
+                        return AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: radius,
+                              color: Colors.white.withValues(alpha: 0.18),
+                            ),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                cover(),
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        theme.colorScheme.surface.withValues(
+                                          alpha: 0.18,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
 
-	                  Widget buildBody({required bool fillHeight}) {
-	                    return Padding(
-	                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-	                      child: Column(
-	                        crossAxisAlignment: CrossAxisAlignment.start,
-	                        children: [
-	                          Row(
-	                            crossAxisAlignment: CrossAxisAlignment.start,
-	                            children: [
-	                              Expanded(
-	                                child: Text(
-	                                  title,
-	                                  maxLines: 2,
-	                                  overflow: TextOverflow.ellipsis,
-	                                  style: titleStyle,
-	                                ),
-	                              ),
-	                              if (isIntro) const SizedBox(width: 10),
-	                              if (isIntro)
-	                                Chip(
-	                                  label: const Text('Introduktion'),
-	                                  visualDensity: VisualDensity.compact,
-	                                  backgroundColor: theme.colorScheme.primary
-	                                      .withValues(alpha: 0.18),
-	                                  labelStyle: theme.textTheme.labelSmall
-	                                      ?.copyWith(
-	                                        color: theme.colorScheme.onPrimary,
-	                                        fontWeight: FontWeight.w700,
-	                                      ),
-	                                ),
-	                            ],
-	                          ),
-	                          if (description.trim().isNotEmpty) ...[
-	                            const SizedBox(height: 8),
-	                            CourseDescriptionText(
-	                              description,
-	                              baseStyle: theme.textTheme.bodySmall,
-	                              maxLines: 2,
-	                              overflow: TextOverflow.ellipsis,
-	                            ),
-	                          ],
-	                          if (fillHeight)
-	                            const Spacer()
-	                          else
-	                            const SizedBox(height: 12),
-	                          Align(
-	                            alignment: Alignment.centerRight,
-	                            child: GradientButton(
-	                              onPressed: onTap,
-	                              padding: const EdgeInsets.symmetric(
-	                                horizontal: 16,
-	                                vertical: 10,
-	                              ),
-	                              borderRadius: BorderRadius.circular(14),
-	                              child: const Text(
-	                                'Öppna',
-	                                style: TextStyle(fontWeight: FontWeight.w800),
-	                              ),
-	                            ),
-	                          ),
-	                        ],
-	                      ),
-	                    );
-	                  }
+                      Widget buildBody({required bool fillHeight}) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: titleStyle,
+                                    ),
+                                  ),
+                                  if (isIntro) const SizedBox(width: 10),
+                                  if (isIntro) introBadge(),
+                                ],
+                              ),
+                              if (description.trim().isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                CourseDescriptionText(
+                                  description,
+                                  baseStyle: theme.textTheme.bodySmall,
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                              if (fillHeight)
+                                const Spacer()
+                              else
+                                const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: GradientButton(
+                                  onPressed: onTap,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: const Text(
+                                    'Öppna',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
 
-	                  if (fillHeight) {
-	                    return Column(
-	                      crossAxisAlignment: CrossAxisAlignment.start,
-	                      children: [
-	                        buildCover(),
-	                        Expanded(child: buildBody(fillHeight: true)),
-	                      ],
-	                    );
-	                  }
+                      if (fillHeight) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            buildCover(),
+                            Expanded(child: buildBody(fillHeight: true)),
+                          ],
+                        );
+                      }
 
-	                  return Column(
-	                    mainAxisSize: MainAxisSize.min,
-	                    crossAxisAlignment: CrossAxisAlignment.start,
-	                    children: [
-	                      buildCover(),
-	                      buildBody(fillHeight: false),
-	                    ],
-	                  );
-	                },
-	              ),
-	            ),
-	          ),
-	        ),
-	      ),
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          buildCover(),
+                          buildBody(fillHeight: false),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
 	    );
   }
 }
