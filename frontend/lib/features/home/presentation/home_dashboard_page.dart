@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -33,7 +31,6 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
-import 'package:aveli/core/bootstrap/effects_policy.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
@@ -399,7 +396,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const _NowPlayingArtwork(),
-              const SizedBox(width: 12),
+              const SizedBox(width: 24),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -780,7 +777,6 @@ class _NowPlayingShell extends StatelessWidget {
     final border = theme.brightness == Brightness.dark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.18);
-    final wingOpacity = theme.brightness == Brightness.dark ? 0.22 : 0.16;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
@@ -801,11 +797,6 @@ class _NowPlayingShell extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: _NowPlayingWingsBackdrop(opacity: wingOpacity),
-              ),
-            ),
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(
@@ -830,115 +821,26 @@ class _NowPlayingShell extends StatelessWidget {
   }
 }
 
-class _NowPlayingWingsBackdrop extends StatelessWidget {
-  const _NowPlayingWingsBackdrop({required this.opacity});
-
-  final double opacity;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned(
-          left: -60,
-          top: -26,
-          bottom: -28,
-          width: 240,
-          child: _LogoWing(side: _WingSide.left, opacity: opacity),
-        ),
-        Positioned(
-          right: -60,
-          top: -26,
-          bottom: -28,
-          width: 240,
-          child: _LogoWing(side: _WingSide.right, opacity: opacity),
-        ),
-      ],
-    );
-  }
-}
-
-enum _WingSide { left, right }
-
-class _LogoWing extends StatelessWidget {
-  const _LogoWing({required this.side, required this.opacity});
-
-  final _WingSide side;
-  final double opacity;
-
-  @override
-  Widget build(BuildContext context) {
-    final rotation = side == _WingSide.left ? -0.08 : 0.08;
-    final alignment = side == _WingSide.left
-        ? Alignment.topLeft
-        : Alignment.topRight;
-    final scaleAlignment = side == _WingSide.left
-        ? Alignment.centerRight
-        : Alignment.centerLeft;
-
-    return Opacity(
-      opacity: opacity,
-      child: _maybeBlur(
-        sigma: 12,
-        child: Transform.rotate(
-          angle: rotation,
-          child: ClipRect(
-            child: Align(
-              alignment: alignment,
-              widthFactor: 0.60,
-              heightFactor: 0.48,
-              child: Transform.scale(
-                scale: 2.25,
-                alignment: scaleAlignment,
-                child: Image(image: AppImages.logo, fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-Widget _maybeBlur({required double sigma, required Widget child}) {
-  if (EffectsPolicyController.isSafe) {
-    return child;
-  }
-  return ImageFiltered(
-    imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-    child: child,
-  );
-}
-
 class _NowPlayingArtwork extends StatelessWidget {
   const _NowPlayingArtwork();
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        height: 68,
-        width: 68,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.surface.withValues(alpha: 0.22),
+    const size = 64.0;
+    return SizedBox(
+      height: size,
+      width: size,
+      child: Opacity(
+        opacity: 0.92,
+        child: Image(
+          image: SafeMedia.resizedProvider(
+            AppImages.logo,
+            cacheWidth: SafeMedia.cacheDimension(context, size, max: 256),
+            cacheHeight: SafeMedia.cacheDimension(context, size, max: 256),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Image(
-              image: SafeMedia.resizedProvider(
-                AppImages.logo,
-                cacheWidth: SafeMedia.cacheDimension(context, 68, max: 240),
-                cacheHeight: SafeMedia.cacheDimension(context, 68, max: 240),
-              ),
-              fit: BoxFit.contain,
-              filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
-              gaplessPlayback: true,
-            ),
-          ),
+          fit: BoxFit.contain,
+          filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
+          gaplessPlayback: true,
         ),
       ),
     );
