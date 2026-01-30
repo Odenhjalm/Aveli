@@ -972,7 +972,7 @@ class _TeacherPillData extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      TeacherNameText(name),
+                      TeacherNameText(name, color: DesignTokens.bodyTextColor),
                       if (bio.isNotEmpty)
                         Text(
                           bio,
