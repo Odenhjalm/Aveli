@@ -178,29 +178,36 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                               ),
                             ),
                             const SizedBox(width: 24),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 360),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _FeedSection(
-                                    feedAsync: feedAsync,
-                                    seminarsAsync: seminarsAsync,
-                                  ),
-                                  const SizedBox(height: 24),
-                                  _ServicesSection(
-                                    servicesAsync: servicesAsync,
-                                    isLoading: (id) =>
-                                        _loadingServiceIds.contains(id),
-                                    onCheckout: (service) =>
-                                        _handleServiceCheckout(
-                                          context,
-                                          service,
-                                        ),
-                                    certificatesAsync: certificatesAsync,
-                                    isAuthenticated: authState.isAuthenticated,
-                                  ),
-                                ],
+                            Padding(
+                              padding: const EdgeInsets.only(top: 90),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 360,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _FeedSection(
+                                      feedAsync: feedAsync,
+                                      seminarsAsync: seminarsAsync,
+                                    ),
+                                    const SizedBox(height: 24),
+                                    _ServicesSection(
+                                      servicesAsync: servicesAsync,
+                                      isLoading: (id) =>
+                                          _loadingServiceIds.contains(id),
+                                      onCheckout: (service) =>
+                                          _handleServiceCheckout(
+                                            context,
+                                            service,
+                                          ),
+                                      certificatesAsync: certificatesAsync,
+                                      isAuthenticated:
+                                          authState.isAuthenticated,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
