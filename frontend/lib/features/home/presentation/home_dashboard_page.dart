@@ -826,7 +826,7 @@ class _NowPlayingArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 68.0;
+    const size = 76.0;
     return SizedBox(
       height: size,
       width: size,
