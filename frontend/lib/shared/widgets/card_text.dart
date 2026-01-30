@@ -40,6 +40,7 @@ class CourseTitleText extends StatelessWidget {
 class CourseDescriptionText extends StatelessWidget {
   final String text;
   final TextStyle? baseStyle;
+  final Color? color;
   final int? maxLines;
   final TextOverflow? overflow;
   final TextAlign? textAlign;
@@ -48,6 +49,7 @@ class CourseDescriptionText extends StatelessWidget {
     this.text, {
     super.key,
     this.baseStyle,
+    this.color,
     this.maxLines = 2,
     this.overflow = TextOverflow.ellipsis,
     this.textAlign,
@@ -57,7 +59,7 @@ class CourseDescriptionText extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final style = (baseStyle ?? theme.textTheme.bodyMedium)?.copyWith(
-      color: DesignTokens.bodyTextColor,
+      color: color ?? DesignTokens.bodyTextColor,
     );
     return Text(
       text,

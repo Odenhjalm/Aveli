@@ -3,14 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 class CourseIntroBadge extends StatelessWidget {
-  const CourseIntroBadge({super.key, this.label = 'Introduktion'});
+  const CourseIntroBadge({
+    super.key,
+    this.label = 'Introduktion',
+    this.textColor = Colors.white,
+  });
 
   final String label;
+  final Color textColor;
 
   @override
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: Colors.white,
+      color: textColor,
       fontWeight: FontWeight.w800,
     );
     return ClipRRect(

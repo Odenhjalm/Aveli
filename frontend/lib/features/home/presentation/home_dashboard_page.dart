@@ -25,6 +25,7 @@ import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -170,6 +171,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                     showHeroBadge: false,
                                     includeStudioCourses: false,
                                     ctaGradient: kBrandBluePurpleGradient,
+                                    tileScale: 0.85,
+                                    tileTextColor: DesignTokens.bodyTextColor,
                                   ),
                                 ),
                               ),
@@ -228,6 +231,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                         showHeroBadge: false,
                         includeStudioCourses: false,
                         ctaGradient: kBrandBluePurpleGradient,
+                        tileScale: 0.85,
+                        tileTextColor: DesignTokens.bodyTextColor,
                       ),
                       const SizedBox(height: 22),
                       _FeedSection(

@@ -48,7 +48,10 @@ class CoursesShowcaseSection extends ConsumerWidget {
     this.showHeroBadge = true,
     this.includeStudioCourses = true,
     this.ctaGradient,
-  });
+    this.tileScale = 1.0,
+    this.tileTextColor,
+  }) : assert(tileScale > 0),
+       assert(tileScale <= 1.0);
 
   final String title;
   final CoursesShowcaseLayout layout;
@@ -57,6 +60,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final bool showHeroBadge;
   final bool includeStudioCourses;
   final Gradient? ctaGradient;
+  final double tileScale;
+  final Color? tileTextColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -133,6 +138,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
                   layout: layout,
                   desktop: desktop,
                   ctaGradient: ctaGradient,
+                  tileScale: tileScale,
+                  tileTextColor: tileTextColor,
                 ),
         ),
       ],
@@ -237,6 +244,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
     required CoursesShowcaseLayout layout,
     CoursesShowcaseDesktop? desktop,
     Gradient? ctaGradient,
+    required double tileScale,
+    Color? tileTextColor,
   }) {
     switch (layout) {
       case CoursesShowcaseLayout.vertical:
@@ -268,12 +277,24 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 mainAxisSpacing: mainAxisSpacing,
                 childAspectRatio: childAspectRatio,
               ),
-              itemBuilder: (_, i) => _CourseTileGlass(
-                course: items[i],
-                index: i,
-                assets: assets,
-                ctaGradient: ctaGradient,
-              ),
+              itemBuilder: (_, i) {
+                final tile = _CourseTileGlass(
+                  course: items[i],
+                  index: i,
+                  assets: assets,
+                  ctaGradient: ctaGradient,
+                  textColor: tileTextColor,
+                );
+                if (tileScale == 1.0) return tile;
+                return Align(
+                  alignment: Alignment.center,
+                  child: FractionallySizedBox(
+                    widthFactor: tileScale,
+                    heightFactor: tileScale,
+                    child: tile,
+                  ),
+                );
+              },
             );
           },
         );
@@ -288,11 +309,13 @@ class _CourseTileGlass extends StatelessWidget {
   final int index;
   final BackendAssetResolver assets;
   final Gradient? ctaGradient;
+  final Color? textColor;
   const _CourseTileGlass({
     required this.course,
     required this.index,
     required this.assets,
     this.ctaGradient,
+    this.textColor,
   });
 
   @override
@@ -315,7 +338,7 @@ class _CourseTileGlass extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.03)
         : Colors.white.withValues(alpha: 0.18);
     final titleStyle = theme.textTheme.titleMedium?.copyWith(
-      color: DesignTokens.bodyTextColor,
+      color: textColor ?? DesignTokens.bodyTextColor,
       fontWeight: FontWeight.w800,
     );
 
@@ -447,7 +470,10 @@ class _CourseTileGlass extends StatelessWidget {
                                 ),
                               ),
                               if (isIntro) const SizedBox(width: 8),
-                              if (isIntro) const CourseIntroBadge(),
+                              if (isIntro)
+                                CourseIntroBadge(
+                                  textColor: textColor ?? Colors.white,
+                                ),
                             ],
                           ),
                           if (desc.isNotEmpty) ...[
@@ -457,6 +483,7 @@ class _CourseTileGlass extends StatelessWidget {
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               baseStyle: theme.textTheme.bodyMedium,
+                              color: textColor,
                             ),
                           ],
                           const Spacer(),
