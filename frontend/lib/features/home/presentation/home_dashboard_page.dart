@@ -27,6 +27,7 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
@@ -175,6 +176,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                       ctaGradient: kBrandBluePurpleGradient,
                                       tileScale: 0.85,
                                       tileTextColor: DesignTokens.bodyTextColor,
+                                      introBadgeVariant:
+                                          CourseIntroBadgeVariant.link,
                                       gridCrossAxisSpacing: 2,
                                       gridMainAxisSpacing: 2,
                                     ),
@@ -245,6 +248,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                         ctaGradient: kBrandBluePurpleGradient,
                         tileScale: 0.85,
                         tileTextColor: DesignTokens.bodyTextColor,
+                        introBadgeVariant: CourseIntroBadgeVariant.link,
                         gridCrossAxisSpacing: 2,
                         gridMainAxisSpacing: 2,
                       ),

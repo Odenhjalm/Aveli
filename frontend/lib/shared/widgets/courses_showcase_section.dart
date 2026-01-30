@@ -50,6 +50,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
     this.ctaGradient,
     this.tileScale = 1.0,
     this.tileTextColor,
+    this.introBadgeVariant = CourseIntroBadgeVariant.badge,
     this.gridCrossAxisSpacing = 12,
     this.gridMainAxisSpacing = 12,
   }) : assert(tileScale > 0),
@@ -66,6 +67,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final Gradient? ctaGradient;
   final double tileScale;
   final Color? tileTextColor;
+  final CourseIntroBadgeVariant introBadgeVariant;
   final double gridCrossAxisSpacing;
   final double gridMainAxisSpacing;
 
@@ -174,6 +176,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
                   ctaGradient: ctaGradient,
                   tileScale: tileScale,
                   tileTextColor: tileTextColor,
+                  introBadgeVariant: introBadgeVariant,
                   gridCrossAxisSpacing: gridCrossAxisSpacing,
                   gridMainAxisSpacing: gridMainAxisSpacing,
                 ),
@@ -282,6 +285,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
     Gradient? ctaGradient,
     required double tileScale,
     Color? tileTextColor,
+    required CourseIntroBadgeVariant introBadgeVariant,
     required double gridCrossAxisSpacing,
     required double gridMainAxisSpacing,
   }) {
@@ -322,6 +326,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 assets: assets,
                 ctaGradient: ctaGradient,
                 textColor: tileTextColor,
+                introBadgeVariant: introBadgeVariant,
               ),
             );
 
@@ -344,12 +349,14 @@ class _CourseTileGlass extends StatelessWidget {
   final BackendAssetResolver assets;
   final Gradient? ctaGradient;
   final Color? textColor;
+  final CourseIntroBadgeVariant introBadgeVariant;
   const _CourseTileGlass({
     required this.course,
     required this.index,
     required this.assets,
     this.ctaGradient,
     this.textColor,
+    required this.introBadgeVariant,
   });
 
   @override
@@ -504,7 +511,8 @@ class _CourseTileGlass extends StatelessWidget {
                                 ),
                               ),
                               if (isIntro) const SizedBox(width: 8),
-                              if (isIntro) const CourseIntroBadge(),
+                              if (isIntro)
+                                CourseIntroBadge(variant: introBadgeVariant),
                             ],
                           ),
                           if (desc.isNotEmpty) ...[
