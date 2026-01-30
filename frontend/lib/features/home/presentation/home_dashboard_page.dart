@@ -25,6 +25,7 @@ import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
@@ -135,8 +136,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                       children: [
                         LayoutBuilder(
                           builder: (context, constraints) {
-                            final targetWidth = (constraints.maxWidth * 0.37)
-                                .clamp(420.0, constraints.maxWidth)
+                            final targetWidth = (constraints.maxWidth * 0.46)
+                                .clamp(520.0, constraints.maxWidth)
                                 .toDouble();
                             return Align(
                               alignment: Alignment.center,
@@ -152,19 +153,30 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              flex: 7,
-                              child: const CoursesShowcaseSection(
-                                title: 'Utforska kurser',
-                                layout: CoursesShowcaseLayout.vertical,
-                                desktop: CoursesShowcaseDesktop(
-                                  columns: 2,
-                                  rows: 3,
+                              child: Align(
+                                alignment: Alignment.topLeft,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 860,
+                                  ),
+                                  child: const CoursesShowcaseSection(
+                                    title: 'Utforska kurser',
+                                    layout: CoursesShowcaseLayout.vertical,
+                                    desktop: CoursesShowcaseDesktop(
+                                      columns: 2,
+                                      rows: 3,
+                                    ),
+                                    includeOuterChrome: false,
+                                    showHeroBadge: false,
+                                    includeStudioCourses: false,
+                                    ctaGradient: kBrandBluePurpleGradient,
+                                  ),
                                 ),
                               ),
                             ),
                             const SizedBox(width: 24),
-                            Expanded(
-                              flex: 3,
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 360),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -212,6 +224,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                         title: 'Utforska kurser',
                         layout: CoursesShowcaseLayout.vertical,
                         desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
+                        includeOuterChrome: false,
+                        showHeroBadge: false,
+                        includeStudioCourses: false,
+                        ctaGradient: kBrandBluePurpleGradient,
                       ),
                       const SizedBox(height: 22),
                       _FeedSection(
@@ -744,7 +760,7 @@ class _NowPlayingShell extends StatelessWidget {
     final border = theme.brightness == Brightness.dark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.18);
-    final wingOpacity = theme.brightness == Brightness.dark ? 0.20 : 0.14;
+    final wingOpacity = theme.brightness == Brightness.dark ? 0.22 : 0.16;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
@@ -804,17 +820,17 @@ class _NowPlayingWingsBackdrop extends StatelessWidget {
     return Stack(
       children: [
         Positioned(
-          left: -52,
+          left: -60,
           top: -26,
           bottom: -28,
-          width: 220,
+          width: 240,
           child: _LogoWing(side: _WingSide.left, opacity: opacity),
         ),
         Positioned(
-          right: -52,
+          right: -60,
           top: -26,
           bottom: -28,
-          width: 220,
+          width: 240,
           child: _LogoWing(side: _WingSide.right, opacity: opacity),
         ),
       ],
@@ -843,16 +859,16 @@ class _LogoWing extends StatelessWidget {
     return Opacity(
       opacity: opacity,
       child: _maybeBlur(
-        sigma: 14,
+        sigma: 12,
         child: Transform.rotate(
           angle: rotation,
           child: ClipRect(
             child: Align(
               alignment: alignment,
-              widthFactor: 0.56,
-              heightFactor: 0.44,
+              widthFactor: 0.60,
+              heightFactor: 0.48,
               child: Transform.scale(
-                scale: 2.15,
+                scale: 2.25,
                 alignment: scaleAlignment,
                 child: Image(image: AppImages.logo, fit: BoxFit.contain),
               ),
@@ -882,8 +898,8 @@ class _NowPlayingArtwork extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        height: 56,
-        width: 56,
+        height: 68,
+        width: 68,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: Theme.of(
@@ -891,12 +907,12 @@ class _NowPlayingArtwork extends StatelessWidget {
             ).colorScheme.surface.withValues(alpha: 0.22),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             child: Image(
               image: SafeMedia.resizedProvider(
                 AppImages.logo,
-                cacheWidth: SafeMedia.cacheDimension(context, 56, max: 200),
-                cacheHeight: SafeMedia.cacheDimension(context, 56, max: 200),
+                cacheWidth: SafeMedia.cacheDimension(context, 68, max: 240),
+                cacheHeight: SafeMedia.cacheDimension(context, 68, max: 240),
               ),
               fit: BoxFit.contain,
               filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),

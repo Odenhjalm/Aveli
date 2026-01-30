@@ -44,11 +44,19 @@ class CoursesShowcaseSection extends ConsumerWidget {
     required this.title,
     this.layout = CoursesShowcaseLayout.vertical,
     this.desktop,
+    this.includeOuterChrome = true,
+    this.showHeroBadge = true,
+    this.includeStudioCourses = true,
+    this.ctaGradient,
   });
 
   final String title;
   final CoursesShowcaseLayout layout;
   final CoursesShowcaseDesktop? desktop;
+  final bool includeOuterChrome;
+  final bool showHeroBadge;
+  final bool includeStudioCourses;
+  final Gradient? ctaGradient;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,7 +66,9 @@ class CoursesShowcaseSection extends ConsumerWidget {
     final mediaRepository = ref.watch(mediaRepositoryProvider);
 
     final popularAsync = ref.watch(landing.popularCoursesProvider);
-    final myStudioAsync = ref.watch(landing.myStudioCoursesProvider);
+    final myStudioAsync = includeStudioCourses
+        ? ref.watch(landing.myStudioCoursesProvider)
+        : const AsyncData(landing.LandingSectionState(items: []));
 
     final fallbackCoursesAsync = ref.watch(coursesProvider);
 
@@ -85,6 +95,53 @@ class CoursesShowcaseSection extends ConsumerWidget {
         ? items
         : items.take(desktop!.maxItems).toList(growable: false);
 
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showHeroBadge) ...[
+          const Center(
+            child: HeroBadge(
+              text: 'Sveriges ledande plattform för andlig utveckling',
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        const SizedBox(height: 14),
+        SectionHeading(
+          title,
+          baseStyle: t.headlineSmall,
+          fontWeight: FontWeight.w800,
+        ),
+        const SizedBox(height: 4),
+        MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge),
+        const SizedBox(height: 16),
+        GlassCard(
+          child: loading
+              ? const SizedBox(
+                  height: 180,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : visible.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: MetaText('Inga kurser ännu.'),
+                )
+              : _buildLayout(
+                  context,
+                  visible,
+                  assets,
+                  layout: layout,
+                  desktop: desktop,
+                  ctaGradient: ctaGradient,
+                ),
+        ),
+      ],
+    );
+
+    if (!includeOuterChrome) {
+      return content;
+    }
+
     return Container(
       decoration: const BoxDecoration(color: Colors.transparent),
       child: Center(
@@ -92,48 +149,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
           constraints: const BoxConstraints(maxWidth: 1100),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Center(
-                  child: HeroBadge(
-                    text: 'Sveriges ledande plattform för andlig utveckling',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const SizedBox(height: 14),
-                SectionHeading(
-                  title,
-                  baseStyle: t.headlineSmall,
-                  fontWeight: FontWeight.w800,
-                ),
-                const SizedBox(height: 4),
-                MetaText(
-                  'Se vad andra gillar just nu.',
-                  baseStyle: t.bodyLarge,
-                ),
-                const SizedBox(height: 16),
-                GlassCard(
-                  child: loading
-                      ? const SizedBox(
-                          height: 180,
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      : visible.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: MetaText('Inga kurser ännu.'),
-                        )
-                      : _buildLayout(
-                          context,
-                          visible,
-                          assets,
-                          layout: layout,
-                          desktop: desktop,
-                        ),
-                ),
-              ],
-            ),
+            child: content,
           ),
         ),
       ),
@@ -220,6 +236,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
     BackendAssetResolver assets, {
     required CoursesShowcaseLayout layout,
     CoursesShowcaseDesktop? desktop,
+    Gradient? ctaGradient,
   }) {
     switch (layout) {
       case CoursesShowcaseLayout.vertical:
@@ -251,8 +268,12 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 mainAxisSpacing: mainAxisSpacing,
                 childAspectRatio: childAspectRatio,
               ),
-              itemBuilder: (_, i) =>
-                  _CourseTileGlass(course: items[i], index: i, assets: assets),
+              itemBuilder: (_, i) => _CourseTileGlass(
+                course: items[i],
+                index: i,
+                assets: assets,
+                ctaGradient: ctaGradient,
+              ),
             );
           },
         );
@@ -266,10 +287,12 @@ class _CourseTileGlass extends StatelessWidget {
   final Map<String, dynamic> course;
   final int index;
   final BackendAssetResolver assets;
+  final Gradient? ctaGradient;
   const _CourseTileGlass({
     required this.course,
     required this.index,
     required this.assets,
+    this.ctaGradient,
   });
 
   @override
@@ -441,6 +464,7 @@ class _CourseTileGlass extends StatelessWidget {
                             alignment: Alignment.centerRight,
                             child: GradientButton(
                               onPressed: openCourse,
+                              gradient: ctaGradient,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 14,
                                 vertical: 10,
