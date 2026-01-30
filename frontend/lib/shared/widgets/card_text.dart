@@ -74,6 +74,7 @@ class CourseDescriptionText extends StatelessWidget {
 class TeacherNameText extends StatelessWidget {
   final String text;
   final TextStyle? baseStyle;
+  final Color? color;
   final FontWeight fontWeight;
   final int? maxLines;
   final TextOverflow? overflow;
@@ -83,6 +84,7 @@ class TeacherNameText extends StatelessWidget {
     this.text, {
     super.key,
     this.baseStyle,
+    this.color,
     this.fontWeight = FontWeight.w700,
     this.maxLines = 1,
     this.overflow = TextOverflow.ellipsis,
@@ -94,7 +96,7 @@ class TeacherNameText extends StatelessWidget {
     final theme = Theme.of(context);
     final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.titleMedium)?.copyWith(
-      color: isBrandedSurface ? DesignTokens.nameTextColor : null,
+      color: color ?? (isBrandedSurface ? DesignTokens.nameTextColor : null),
       fontWeight: fontWeight,
     );
     return Text(
