@@ -432,10 +432,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: statusIsError
-                                    ? Theme.of(context).colorScheme.error
-                                    : Theme.of(context).colorScheme.onSurface
-                                          .withValues(alpha: 0.78),
+                                color: DesignTokens.bodyTextColor,
                                 fontWeight: FontWeight.w600,
                               ),
                         ),
