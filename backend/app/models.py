@@ -942,6 +942,42 @@ async def next_lesson_media_position(lesson_id: str) -> int:
             return int(row.get("next_position") or 1)
 
 
+async def add_lesson_media_entry_with_position_retry(
+    *,
+    lesson_id: str,
+    kind: str,
+    storage_path: str | None,
+    storage_bucket: str,
+    media_id: str | None,
+    media_asset_id: str | None = None,
+    duration_seconds: int | None = None,
+    max_retries: int = 10,
+) -> dict | None:
+    """Insert lesson media with a concurrency-safe position allocation.
+
+    Position is derived from MAX(position)+1 and may collide under concurrent inserts.
+    Guard with UNIQUE(lesson_id, position) and retry on UniqueViolation.
+    """
+
+    max_attempts = max(1, int(max_retries))
+    for _ in range(max_attempts):
+        position = await next_lesson_media_position(lesson_id)
+        try:
+            return await add_lesson_media_entry(
+                lesson_id=lesson_id,
+                kind=kind,
+                storage_path=storage_path,
+                storage_bucket=storage_bucket,
+                position=position,
+                media_id=media_id,
+                media_asset_id=media_asset_id,
+                duration_seconds=duration_seconds,
+            )
+        except errors.UniqueViolation:
+            continue
+    return None
+
+
 async def add_lesson_media_entry(
     *,
     lesson_id: str,

@@ -226,22 +226,26 @@ async def request_upload_url(
         )
 
     if lesson_id:
-        position = await models.next_lesson_media_position(lesson_id)
-        row = await models.add_lesson_media_entry(
-            lesson_id=lesson_id,
-            kind="audio",
-            storage_path=None,
-            storage_bucket=storage_service.storage_service.bucket,
-            media_id=None,
-            media_asset_id=str(media_asset["id"]),
-            position=position,
-            duration_seconds=None,
-        )
+        try:
+            row = await models.add_lesson_media_entry_with_position_retry(
+                lesson_id=lesson_id,
+                kind="audio",
+                storage_path=None,
+                storage_bucket=storage_service.storage_service.bucket,
+                media_id=None,
+                media_asset_id=str(media_asset["id"]),
+                duration_seconds=None,
+                max_retries=10,
+            )
+        except Exception:
+            await media_assets_repo.delete_media_asset(str(media_asset["id"]))
+            raise
+
         if not row:
             await media_assets_repo.delete_media_asset(str(media_asset["id"]))
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to record lesson media",
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Could not allocate lesson media position",
             )
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)

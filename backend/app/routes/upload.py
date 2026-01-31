@@ -177,7 +177,6 @@ async def _persist_lesson_media(
     checksum: str | None,
     storage_bucket: str = _LESSON_MEDIA_BUCKET,
 ) -> dict[str, Any]:
-    position = await models.next_lesson_media_position(lesson_id)
     kind = _detect_kind(content_type)
 
     media_object = await models.create_media_object(
@@ -191,16 +190,19 @@ async def _persist_lesson_media(
     )
     media_id = media_object["id"] if media_object else None
 
-    row = await models.add_lesson_media_entry(
+    row = await models.add_lesson_media_entry_with_position_retry(
         lesson_id=lesson_id,
         kind=kind,
         storage_path=relative_path.as_posix(),
         storage_bucket=storage_bucket,
-        position=position,
         media_id=media_id,
+        max_retries=10,
     )
     if not row:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to save media")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Could not allocate lesson media position",
+        )
 
     media_signer.attach_media_links(row)
     return row
