@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/bootstrap/auth_boot_page.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/not_found_page.dart';
 import 'package:aveli/core/routing/route_access.dart';
+import 'package:aveli/core/routing/route_access_resolver.dart';
 import 'package:aveli/core/routing/route_manifest.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_session.dart';
@@ -74,25 +76,63 @@ class AppRouterNotifier extends ChangeNotifier {
   RouteSessionSnapshot get session => ref.read(routeSessionSnapshotProvider);
 
   String? handleRedirect(GoRouterState state) {
-    final session = ref.read(routeSessionSnapshotProvider);
     final meta = _resolveRouteMeta(state);
+    final session = ref.read(routeSessionSnapshotProvider);
     final isAuthed = session.isAuthenticated;
+    final hasTentativeSession = session.hasTentativeSession;
+    final isAuthLoading = session.isAuthLoading;
 
-    if (isAuthed && meta.level != RouteAccessLevel.public) {
-      try {
-        final authState = ref.read(authControllerProvider);
-        if (authState.profile == null && !authState.isLoading) {
+    final isBootRoute = state.matchedLocation == RoutePath.boot;
+    if (isBootRoute) {
+      if (isAuthLoading) return null;
+
+      final redirectTarget = _sanitizeRedirect(
+        state.uri.queryParameters['redirect'],
+      );
+      if (!isAuthed && hasTentativeSession) {
+        try {
           unawaited(ref.read(authControllerProvider.notifier).hydrateProfile());
+        } catch (_) {
+          // Auth stack might be intentionally stubbed out (tests).
         }
-      } catch (_) {
-        // Auth stack might be intentionally stubbed out (tests).
+        return null;
       }
+      if (isAuthed) {
+        return redirectTarget ?? state.namedLocation(AppRoute.home);
+      }
+
+      if (redirectTarget != null &&
+          resolveRouteAccessLevel(Uri.parse(redirectTarget).path) !=
+              RouteAccessLevel.public) {
+        return state.namedLocation(
+          AppRoute.login,
+          queryParameters: {'redirect': redirectTarget},
+        );
+      }
+
+      return state.namedLocation(AppRoute.landingRoot);
     }
 
     if (!isAuthed) {
       if (meta.level == RouteAccessLevel.public) {
         return null;
       }
+
+      // We may have a token/claims, but until the profile is hydrated we treat
+      // auth as unverified. Route to a stable boot surface and verify there.
+      if (isAuthLoading || hasTentativeSession) {
+        try {
+          unawaited(ref.read(authControllerProvider.notifier).hydrateProfile());
+        } catch (_) {
+          // Auth stack might be intentionally stubbed out (tests).
+        }
+        final redirectTarget = state.uri.toString();
+        return state.namedLocation(
+          AppRoute.boot,
+          queryParameters: {'redirect': redirectTarget},
+        );
+      }
+
       if (state.matchedLocation == RoutePath.login) {
         return null;
       }
@@ -141,6 +181,11 @@ RouteAccessMeta _resolveRouteMeta(GoRouterState state) {
   return pathMeta ?? _defaultPrivateMeta;
 }
 
+String? _sanitizeRedirect(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  return raw.startsWith('/') ? raw : null;
+}
+
 final Map<String, RouteAccessMeta> _routeAccessMeta = {
   for (final entry in routeManifest)
     entry.name: RouteAccessMeta(
@@ -168,13 +213,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final initialSession = ref.read(routeSessionSnapshotProvider);
   final initialLocation = initialSession.isAuthenticated
       ? RoutePath.home
-      : RoutePath.landingRoot;
+      : RoutePath.boot;
   return GoRouter(
     initialLocation: initialLocation,
     refreshListenable: notifier,
     redirect: (context, state) => notifier.handleRedirect(state),
     errorBuilder: (context, state) => const NotFoundPage(),
     routes: [
+      GoRoute(
+        path: RoutePath.boot,
+        name: AppRoute.boot,
+        builder: (context, state) => const AuthBootPage(),
+      ),
       GoRoute(
         path: RoutePath.login,
         name: AppRoute.login,
@@ -277,7 +327,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.profileSubscriptionPortal,
         name: AppRoute.profileSubscriptionPortal,
-      builder: (context, state) {
+        builder: (context, state) {
           final url = state.extra;
           if (url is! String || url.isEmpty) {
             return const NotFoundPage();

@@ -26,12 +26,7 @@ class PaywallGate extends ConsumerWidget {
     final notifier = ref.read(entitlementsNotifierProvider.notifier);
     final authState = ref.watch(authControllerProvider);
     final profile = authState.profile;
-    final claims = authState.claims;
-    final isTeacher =
-        profile?.isTeacher == true ||
-        profile?.isAdmin == true ||
-        claims?.isTeacher == true ||
-        claims?.isAdmin == true;
+    final isTeacher = profile?.isTeacher == true || profile?.isAdmin == true;
 
     if (state.loading && state.data == null) {
       return const Center(child: CircularProgressIndicator());

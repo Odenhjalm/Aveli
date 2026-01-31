@@ -3,6 +3,7 @@ abstract class AppRoute {
   AppRoute._();
 
   static const landingRoot = 'landing-root';
+  static const boot = 'boot';
   static const landing = 'landing';
   static const login = 'login';
   static const signup = 'signup';

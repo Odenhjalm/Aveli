@@ -27,6 +27,12 @@ const List<RouteManifestEntry> routeManifest = [
     redirectAuthed: false,
   ),
   RouteManifestEntry(
+    name: AppRoute.boot,
+    path: RoutePath.boot,
+    access: RouteAccessLevel.public,
+    redirectAuthed: false,
+  ),
+  RouteManifestEntry(
     name: AppRoute.landing,
     path: RoutePath.landing,
     access: RouteAccessLevel.public,

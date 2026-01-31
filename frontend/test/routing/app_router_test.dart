@@ -102,18 +102,24 @@ Future<GoRouter> _pumpHarness(
 void main() {
   const unauthenticated = RouteSessionSnapshot(
     isAuthenticated: false,
+    isAuthLoading: false,
+    hasTentativeSession: false,
     isTeacher: false,
     isAdmin: false,
   );
 
   const authedUser = RouteSessionSnapshot(
     isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
     isTeacher: false,
     isAdmin: false,
   );
 
   const teacher = RouteSessionSnapshot(
     isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
     isTeacher: true,
     isAdmin: false,
   );

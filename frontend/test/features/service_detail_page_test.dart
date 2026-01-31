@@ -64,6 +64,8 @@ void main() {
   ) async {
     const session = RouteSessionSnapshot(
       isAuthenticated: false,
+      isAuthLoading: false,
+      hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
     );
@@ -82,6 +84,8 @@ void main() {
   testWidgets('blocks purchase when user saknar certifiering', (tester) async {
     const session = RouteSessionSnapshot(
       isAuthenticated: true,
+      isAuthLoading: false,
+      hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
     );
@@ -106,6 +110,8 @@ void main() {
   ) async {
     const session = RouteSessionSnapshot(
       isAuthenticated: true,
+      isAuthLoading: false,
+      hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
     );

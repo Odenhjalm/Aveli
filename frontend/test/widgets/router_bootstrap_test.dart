@@ -254,6 +254,7 @@ void main() {
     );
 
     await tester.pump();
+    expect(find.byType(LandingPage), findsNothing);
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.byType(HomeDashboardPage), findsOneWidget);

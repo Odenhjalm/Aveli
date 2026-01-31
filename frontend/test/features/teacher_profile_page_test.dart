@@ -38,6 +38,8 @@ const _teacherState = TeacherProfileState(
 RouteSessionSnapshot _session({required bool isAuthenticated}) =>
     RouteSessionSnapshot(
       isAuthenticated: isAuthenticated,
+      isAuthLoading: false,
+      hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
     );

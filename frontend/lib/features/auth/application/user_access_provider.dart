@@ -7,7 +7,7 @@ final userAccessProvider = Provider<UserAccessState>((ref) {
   final authState = ref.watch(authControllerProvider);
   final profile = authState.profile;
   final claims = authState.claims;
-  if (profile == null && claims == null) {
+  if (profile == null) {
     return UserAccessState.unauthenticated;
   }
 

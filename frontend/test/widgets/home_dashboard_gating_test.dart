@@ -7,8 +7,8 @@ import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/core/auth/auth_claims.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/bootstrap/auth_boot_page.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/data/models/profile.dart';
@@ -17,6 +17,7 @@ import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
+import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
@@ -107,9 +108,11 @@ Future<void> _pumpDashboard(
         ),
         homeFeedProvider.overrideWith((ref) async => const []),
         homeServicesProvider.overrideWith((ref) async => services),
+        homeAudioProvider.overrideWith((ref) async => const []),
         landing.popularCoursesProvider.overrideWith(
           (ref) async => const landing.LandingSectionState(items: []),
         ),
+        publicSeminarsProvider.overrideWith((ref) async => const []),
         myCertificatesProvider.overrideWith((ref) async => certificates),
       ],
       child: MaterialApp.router(routerConfig: router),
@@ -134,27 +137,28 @@ Service _gatedService() => const Service(
   certifiedArea: 'Tarot',
 );
 
-void main() {
-  testWidgets(
-    'dashboard visar login-CTA för certifieringslåst tjänst när användaren är utloggad',
-    (tester) async {
-      await _pumpDashboard(
-        tester,
-        services: [_gatedService()],
-        certificates: const [],
-        authState: const AuthState(),
-      );
+final _testProfile = Profile(
+  id: 'user-1',
+  email: 'user@test.local',
+  userRole: UserRole.user,
+  isAdmin: false,
+  createdAt: DateTime(2024, 1, 1),
+  updatedAt: DateTime(2024, 1, 1),
+);
 
-      expect(
-        find.widgetWithText(FilledButton, 'Logga in för att boka'),
-        findsOneWidget,
-      );
-      final button = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Logga in för att boka'),
-      );
-      expect(button.onPressed, isNotNull);
-    },
-  );
+void main() {
+  testWidgets('dashboard väntar på verifierad auth innan den renderar', (
+    tester,
+  ) async {
+    await _pumpDashboard(
+      tester,
+      services: [_gatedService()],
+      certificates: const [],
+      authState: const AuthState(),
+    );
+
+    expect(find.byType(AuthBootPage), findsOneWidget);
+  });
 
   testWidgets(
     'dashboard låser bokningsknappen när användaren saknar verifierad certifiering',
@@ -163,9 +167,7 @@ void main() {
         tester,
         services: [_gatedService()],
         certificates: const [],
-        authState: const AuthState(
-          claims: AuthClaims(role: 'user', isTeacher: false, isAdmin: false),
-        ),
+        authState: AuthState(profile: _testProfile),
       );
 
       expect(
@@ -200,9 +202,7 @@ void main() {
           updatedAt: null,
         ),
       ],
-      authState: const AuthState(
-        claims: AuthClaims(role: 'user', isTeacher: false, isAdmin: false),
-      ),
+      authState: AuthState(profile: _testProfile),
     );
 
     final button = tester.widget<FilledButton>(
