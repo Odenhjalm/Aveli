@@ -903,7 +903,7 @@ class _SocialProofRow extends StatelessWidget {
 }
 
 const double _teacherCardWidth = 230;
-const double _teacherCardHeight = 290;
+const double _teacherCardSkeletonHeight = 180;
 
 class _TeacherCardSkeleton extends StatelessWidget {
   const _TeacherCardSkeleton();
@@ -914,7 +914,7 @@ class _TeacherCardSkeleton extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       child: Container(
         width: _teacherCardWidth,
-        height: _teacherCardHeight,
+        height: _teacherCardSkeletonHeight,
         color: Colors.white.withValues(alpha: .30),
       ),
     );
@@ -938,7 +938,6 @@ class _TeacherCardData extends StatelessWidget {
     final resolvedAvatar = _resolveUrl(avatar);
     return SizedBox(
       width: _teacherCardWidth,
-      height: _teacherCardHeight,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
