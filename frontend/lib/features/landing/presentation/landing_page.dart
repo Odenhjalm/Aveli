@@ -902,8 +902,8 @@ class _SocialProofRow extends StatelessWidget {
   }
 }
 
-const double _teacherCardWidth = 280;
-const double _teacherCardHeight = 360;
+const double _teacherCardWidth = 230;
+const double _teacherCardHeight = 290;
 
 class _TeacherCardSkeleton extends StatelessWidget {
   const _TeacherCardSkeleton();
@@ -967,12 +967,12 @@ class _TeacherCardData extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        AppAvatar(url: resolvedAvatar, size: 62),
+                        AppAvatar(url: resolvedAvatar, size: 56),
                         const SizedBox(width: 12),
                         Flexible(
                           child: TeacherNameText(
                             name,
-                            baseStyle: Theme.of(context).textTheme.titleLarge,
+                            baseStyle: Theme.of(context).textTheme.titleMedium,
                             fontWeight: FontWeight.w800,
                             color: DesignTokens.bodyTextColor,
                             maxLines: 2,
@@ -985,8 +985,8 @@ class _TeacherCardData extends StatelessWidget {
                       Text(
                         bio,
                         style:
-                            (Theme.of(context).textTheme.bodyMedium ??
-                                    const TextStyle(fontSize: 14))
+                            (Theme.of(context).textTheme.bodySmall ??
+                                    const TextStyle(fontSize: 13))
                                 .copyWith(
                                   color: const Color(0xFF2A2A2A),
                                   height: 1.25,
