@@ -150,6 +150,66 @@ final RegExp _htmlAttributePattern = RegExp(
   r'''([a-zA-Z_:][a-zA-Z0-9_\-:.]*)\s*=\s*("([^"]*)"|'([^']*)')''',
 );
 
+// This sentinel preserves empty paragraphs during Markdown → Quill Delta
+// round-trip.
+//
+// Do NOT remove unless replacing the editor or markdown conversion pipeline.
+// Removing this will reintroduce the “paragraphs not saved” bug.
+const String _blankLineSentinel = '\u200B';
+final RegExp _multiNewlinePattern = RegExp(r'\n{4,}');
+
+String _preserveExtraBlankLinesForDelta(String markdown) {
+  if (markdown.isEmpty || !markdown.contains('\n\n\n')) return markdown;
+  return markdown.replaceAllMapped(_multiNewlinePattern, (match) {
+    final run = match.group(0) ?? '';
+    if (run.length < 4) return run;
+
+    final pairs = run.length ~/ 2;
+    final extraPairs = pairs - 1;
+
+    final out = StringBuffer()..write('\n\n');
+    for (var i = 0; i < extraPairs; i++) {
+      out.write(_blankLineSentinel);
+      out.write('\n\n');
+    }
+    if (run.length.isOdd) {
+      out.write('\n');
+    }
+    return out.toString();
+  });
+}
+
+String _stripBlankLineSentinelForDisplay(String markdown) {
+  if (markdown.isEmpty || !markdown.contains(_blankLineSentinel)) return markdown;
+  // Defensive: never allow the internal blank-line sentinel to reach any
+  // user-visible output (rendering/copy/export).
+  return markdown.replaceAll(_blankLineSentinel, '');
+}
+
+quill_delta.Delta _stripBlankLineSentinel(quill_delta.Delta source) {
+  final result = quill_delta.Delta();
+  for (final operation in source.toList()) {
+    if (!operation.isInsert) {
+      result.push(operation);
+      continue;
+    }
+    final value = operation.value;
+    if (value is! String) {
+      result.push(operation);
+      continue;
+    }
+    if (!value.contains(_blankLineSentinel)) {
+      result.insert(value, operation.attributes);
+      continue;
+    }
+    final stripped = value.replaceAll(_blankLineSentinel, '');
+    if (stripped.isNotEmpty) {
+      result.insert(stripped, operation.attributes);
+    }
+  }
+  return result;
+}
+
 Map<String, String> _parseHtmlAttributes(String html) {
   final attributes = <String, String>{};
   for (final match in _htmlAttributePattern.allMatches(html)) {
@@ -288,7 +348,8 @@ quill_delta.Delta convertLessonMarkdownToDelta(
   MarkdownToDelta converter,
   String markdown,
 ) {
-  final converted = converter.convert(markdown);
+  final prepared = _preserveExtraBlankLinesForDelta(markdown);
+  final converted = _stripBlankLineSentinel(converter.convert(prepared));
   final withAudio = _replaceHtmlTagWithEmbed(
     converted,
     _audioHtmlTagPattern,
@@ -351,6 +412,7 @@ Future<String> prepareLessonMarkdownForRendering(
   MediaRepository mediaRepository,
   String markdown,
 ) async {
+  markdown = _stripBlankLineSentinelForDisplay(markdown);
   if (markdown.trim().isEmpty) return markdown;
 
   final ids = extractLessonEmbeddedMediaIds(markdown);
@@ -404,4 +466,3 @@ String normalizeLessonMarkdownForStorage(String markdown) {
   });
   return normalized;
 }
-

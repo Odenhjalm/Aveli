@@ -1,5 +1,6 @@
 import logging
 import mimetypes
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
@@ -25,6 +26,20 @@ from . import upload as upload_routes
 
 router = APIRouter(prefix="/studio", tags=["studio"])
 logger = logging.getLogger(__name__)
+_LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
+
+def _visible_lesson_text(value: str | None, *, limit: int = 1200) -> str:
+    if value is None:
+        return "<None>"
+    visible = value.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
+    if len(visible) > limit:
+        return f"{visible[:limit]}…"
+    return visible
 
 
 def _log_course_owner_denied(
@@ -949,10 +964,37 @@ async def update_lesson(
     if not existing or not module_id:
         raise HTTPException(status_code=404, detail="Lesson not found")
     patch = payload.model_dump(exclude_unset=True)
+
+    if _LESSON_EDITOR_TRACE:
+        incoming = patch.get("content_markdown")
+        stored_before = existing.get("content_markdown")
+        incoming_str = incoming if isinstance(incoming, str) else None
+        stored_str = stored_before if isinstance(stored_before, str) else None
+        logger.info(
+            "[LessonTrace] update_lesson.before lesson_id=%s incoming_len=%s stored_len=%s equal=%s incoming=%s stored=%s",
+            lesson_id,
+            0 if incoming_str is None else len(incoming_str),
+            0 if stored_str is None else len(stored_str),
+            incoming_str == stored_str,
+            _visible_lesson_text(incoming_str),
+            _visible_lesson_text(stored_str),
+        )
+
     lesson_payload = {"id": lesson_id, **patch}
     row = await courses_service.upsert_lesson(module_id, lesson_payload)
     if not row:
         raise HTTPException(status_code=400, detail="Failed to update lesson")
+
+    if _LESSON_EDITOR_TRACE:
+        stored_after = row.get("content_markdown")
+        stored_after_str = stored_after if isinstance(stored_after, str) else None
+        logger.info(
+            "[LessonTrace] update_lesson.after lesson_id=%s stored_len=%s stored=%s",
+            lesson_id,
+            0 if stored_after_str is None else len(stored_after_str),
+            _visible_lesson_text(stored_after_str),
+        )
+
     return row
 
 

@@ -849,6 +849,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return lesson_pipeline.prepareLessonMarkdownForRendering(repo, markdown);
   }
 
+  String _visibleLessonTextForLog(String value) {
+    return value
+        .replaceAll('\\', r'\\')
+        .replaceAll('\r', r'\r')
+        .replaceAll('\n', r'\n')
+        .replaceAll('\t', r'\t');
+  }
+
+  void _traceLessonString(String label, String value) {
+    if (!kDebugMode) return;
+    const maxChars = 1200;
+    final visible = _visibleLessonTextForLog(value);
+    final preview =
+        visible.length > maxChars ? '${visible.substring(0, maxChars)}…' : visible;
+    debugPrint('[LessonTrace] $label="$preview" (length=${value.length})');
+  }
+
   Future<void> _applySelectedLesson() async {
     final lesson = _lessonById(_selectedLessonId);
     final storedMarkdown = lesson?['content_markdown'] as String? ?? '';
@@ -882,6 +899,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       document = quill.Document.fromDelta(delta);
     } catch (_) {
       document = quill.Document()..insert(0, prepared);
+    }
+
+    if (kDebugMode) {
+      _traceLessonString('load.stored_markdown', storedMarkdown);
+      _traceLessonString('load.prepared_markdown', prepared);
+      _traceLessonString('load.document_plain_text', document.toPlainText());
     }
 
     _replaceLessonDocument(document);
@@ -942,12 +965,25 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final title = _lessonTitleCtrl.text.trim().isEmpty
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
+    final uiPlainText = controller.document.toPlainText();
     final rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
     final markdown = lesson_pipeline.normalizeLessonMarkdownForStorage(
       rawMarkdown,
     );
 
     if (kDebugMode) {
+      debugPrint(
+        '[LessonTrace] save.trigger=${showSuccessSnack ? 'manual' : 'auto'} '
+        'dirty=$_lessonContentDirty saving=$_lessonContentSaving',
+      );
+      _traceLessonString('ui.plain_text', uiPlainText);
+      _traceLessonString('save.payload.content_markdown', markdown);
+      _traceLessonString('save.payload.raw_markdown', rawMarkdown);
+      _traceLessonString('state.last_saved_markdown', _lastSavedLessonMarkdown);
+      debugPrint(
+        '[LessonTrace] compare.payload_vs_last_saved '
+        'equal=${markdown == _lastSavedLessonMarkdown}',
+      );
       debugPrint(
         '[LessonEditor] saving lesson=$lessonId module=$moduleId '
         'delta_ops=${controller.document.toDelta().length} '
@@ -1003,6 +1039,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<bool> _maybeSaveLessonEdits() async {
+    if (kDebugMode) {
+      debugPrint(
+        '[LessonTrace] maybeSaveLessonEdits dirty=$_lessonContentDirty '
+        'selectedLessonId=${_selectedLessonId ?? 'none'}',
+      );
+    }
     if (!_lessonContentDirty) return true;
     return _saveLessonContent(showSuccessSnack: false);
   }
