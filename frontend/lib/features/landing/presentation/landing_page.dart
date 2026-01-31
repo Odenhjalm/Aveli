@@ -464,43 +464,38 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       baseStyle: t.bodyLarge,
                     ),
                     const SizedBox(height: 10),
-                    GlassCard(
-                      padding: const EdgeInsets.all(12),
-                      child: SizedBox(
-                        height: 110,
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: GlassCard(
+                        padding: const EdgeInsets.all(12),
                         child: _loading
-                            ? ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: 6,
-                                separatorBuilder: (context, _) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, _) =>
-                                    const _TeacherPillSkeleton(),
+                            ? const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _TeacherCardSkeleton(),
+                                  SizedBox(width: 12),
+                                  _TeacherCardSkeleton(),
+                                  SizedBox(width: 12),
+                                  _TeacherCardSkeleton(),
+                                ],
                               )
                             : _teacherItems.isEmpty
                             ? const Center(child: MetaText('Inga lärare ännu.'))
-                            : ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _teacherItems.length,
-                                separatorBuilder: (context, _) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, index) {
-                                  final map = _teacherItems[index];
-                                  final rawUserId =
-                                      map['user_id'] ??
-                                      (map['profile'] is Map
-                                          ? (map['profile'] as Map)['user_id']
-                                          : null);
-                                  final userId =
-                                      rawUserId?.toString().trim() ?? '';
-                                  return _TeacherPillData(
-                                    key: userId.isEmpty
-                                        ? null
-                                        : ValueKey(userId),
-                                    map: map,
-                                    apiBaseUrl: config.apiBaseUrl,
-                                  );
-                                },
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (
+                                    var index = 0;
+                                    index < _teacherItems.length;
+                                    index++
+                                  ) ...[
+                                    if (index > 0) const SizedBox(width: 12),
+                                    _TeacherCardData(
+                                      map: _teacherItems[index],
+                                      apiBaseUrl: config.apiBaseUrl,
+                                    ),
+                                  ],
+                                ],
                               ),
                       ),
                     ),
@@ -907,29 +902,29 @@ class _SocialProofRow extends StatelessWidget {
   }
 }
 
-class _TeacherPillSkeleton extends StatelessWidget {
-  const _TeacherPillSkeleton();
+const double _teacherCardWidth = 280;
+const double _teacherCardHeight = 360;
+
+class _TeacherCardSkeleton extends StatelessWidget {
+  const _TeacherCardSkeleton();
+
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        width: 220,
-        height: 90,
-        color: Colors.white.withValues(alpha: .3),
+        width: _teacherCardWidth,
+        height: _teacherCardHeight,
+        color: Colors.white.withValues(alpha: .30),
       ),
     );
   }
 }
 
-class _TeacherPillData extends StatelessWidget {
+class _TeacherCardData extends StatelessWidget {
   final Map<String, dynamic> map;
   final String apiBaseUrl;
-  const _TeacherPillData({
-    super.key,
-    required this.map,
-    required this.apiBaseUrl,
-  });
+  const _TeacherCardData({required this.map, required this.apiBaseUrl});
   @override
   Widget build(BuildContext context) {
     final rawProfile = (map['profile'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -941,51 +936,66 @@ class _TeacherPillData extends StatelessWidget {
     final avatar = (merged['photo_url'] as String?) ?? '';
     final bio = (merged['bio'] as String?) ?? '';
     final resolvedAvatar = _resolveUrl(avatar);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: userId.isEmpty
-            ? null
-            : () => context.goNamed(
-                AppRoute.teacherProfile,
-                pathParameters: {'id': userId},
-              ),
-        borderRadius: BorderRadius.circular(22),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: EffectsBackdropFilter(
-            sigmaX: 12,
-            sigmaY: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .65),
-                border: Border.all(color: Colors.transparent),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppAvatar(url: resolvedAvatar, size: 48),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TeacherNameText(name, color: DesignTokens.bodyTextColor),
-                      if (bio.isNotEmpty)
-                        Text(
-                          bio,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: DesignTokens.mutedTextColor,
+    return SizedBox(
+      width: _teacherCardWidth,
+      height: _teacherCardHeight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: userId.isEmpty
+              ? null
+              : () => context.goNamed(
+                  AppRoute.teacherProfile,
+                  pathParameters: {'id': userId},
+                ),
+          borderRadius: BorderRadius.circular(20),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: EffectsBackdropFilter(
+              sigmaX: 12,
+              sigmaY: 12,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .86),
+                  border: Border.all(color: Colors.transparent),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppAvatar(url: resolvedAvatar, size: 62),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TeacherNameText(
+                            name,
+                            baseStyle: Theme.of(context).textTheme.titleLarge,
+                            fontWeight: FontWeight.w800,
+                            color: DesignTokens.bodyTextColor,
+                            maxLines: 2,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (bio.isNotEmpty)
+                      Text(
+                        bio,
+                        style:
+                            (Theme.of(context).textTheme.bodyMedium ??
+                                    const TextStyle(fontSize: 14))
+                                .copyWith(
+                                  color: const Color(0xFF2A2A2A),
+                                  height: 1.25,
+                                ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
