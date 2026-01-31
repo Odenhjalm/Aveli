@@ -177,8 +177,7 @@ async def _persist_lesson_media(
     checksum: str | None,
     storage_bucket: str = _LESSON_MEDIA_BUCKET,
 ) -> dict[str, Any]:
-    existing = await models.list_lesson_media(lesson_id)
-    position = len(existing) + 1
+    position = await models.next_lesson_media_position(lesson_id)
     kind = _detect_kind(content_type)
 
     media_object = await models.create_media_object(

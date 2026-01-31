@@ -427,7 +427,14 @@ Future<String> prepareLessonMarkdownForRendering(
       } catch (_) {
         signedUrls[id] = signed.signedUrl;
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint(
+          '[lesson_content_pipeline] Failed to sign embedded media id=$id error=$error',
+        );
+        debugPrint(stackTrace.toString());
+      }
+    }
   }
   if (signedUrls.isEmpty) return markdown;
 

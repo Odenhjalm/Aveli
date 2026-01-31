@@ -4,6 +4,7 @@ import pytest
 
 from psycopg import errors
 
+from app.config import settings
 from app import db, models
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
@@ -312,3 +313,131 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
         headers=auth_header(student_token),
     )
     assert sign_ok.status_code == 200, sign_ok.text
+
+
+async def test_media_sign_allows_subscription_only_access(async_client, tmp_path, monkeypatch):
+    """Regression: users with active subscription can access lesson media in published courses."""
+    password = "Passw0rd!"
+    owner_token, owner_id = await register_user(
+        async_client,
+        f"sub_media_owner_{uuid.uuid4().hex[:6]}@example.org",
+        password,
+        "Owner",
+    )
+    await promote_to_teacher(owner_id)
+    student_token, student_id = await register_user(
+        async_client,
+        f"sub_media_student_{uuid.uuid4().hex[:6]}@example.com",
+        password,
+        "Student",
+    )
+
+    course_id = await insert_course(
+        slug=f"subscription-media-{uuid.uuid4().hex[:8]}",
+        title="Subscription Media Course",
+        owner_id=owner_id,
+        is_published=False,
+        is_free_intro=False,
+    )
+    module = await courses_repo.create_module(course_id, title="Module", position=0)
+    assert module
+    lesson = await courses_repo.create_lesson(
+        str(module["id"]),
+        title="Lesson",
+        position=0,
+        is_intro=False,
+    )
+    assert lesson
+
+    # Create an image media row for the lesson.
+    media_object = await models.create_media_object(
+        owner_id=owner_id,
+        storage_path=f"unit-tests/{uuid.uuid4().hex}.png",
+        storage_bucket="lesson-media",
+        content_type="image/png",
+        byte_size=3,
+        checksum=None,
+        original_name="legacy.png",
+    )
+    assert media_object
+    legacy_media = await models.add_lesson_media_entry(
+        lesson_id=str(lesson["id"]),
+        kind="image",
+        storage_path=media_object["storage_path"],
+        storage_bucket=media_object["storage_bucket"],
+        media_id=str(media_object["id"]),
+        position=1,
+    )
+    assert legacy_media
+
+    monkeypatch.setattr(settings, "media_root", tmp_path.as_posix())
+    local_path = tmp_path / media_object["storage_bucket"] / media_object["storage_path"]
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path.write_bytes(b"png")
+
+    # Grant the student an active subscription (without enrollment).
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.subscriptions (user_id, subscription_id, status)
+                VALUES (%s, %s, %s)
+                """,
+                (student_id, f"sub_{uuid.uuid4().hex[:10]}", "active"),
+            )
+            await conn.commit()
+
+    access_resp = await async_client.get(
+        f"/courses/{course_id}/access",
+        headers=auth_header(student_token),
+    )
+    assert access_resp.status_code == 200, access_resp.text
+    access_payload = access_resp.json()
+    print("course_access_snapshot", access_payload)
+    assert access_payload["has_active_subscription"] is True
+    assert access_payload["has_access"] is True
+    assert access_payload["enrolled"] is False
+
+    # Owner can sign.
+    sign_owner = await async_client.post(
+        "/media/sign",
+        json={"media_id": str(legacy_media["id"])},
+        headers=auth_header(owner_token),
+    )
+    assert sign_owner.status_code == 200, sign_owner.text
+
+    # Unpublished courses must remain inaccessible even for subscription users.
+    sign_unpublished = await async_client.post(
+        "/media/sign",
+        json={"media_id": str(legacy_media["id"])},
+        headers=auth_header(student_token),
+    )
+    assert sign_unpublished.status_code == 403, sign_unpublished.text
+
+    studio_get_unpublished = await async_client.get(
+        f"/studio/media/{legacy_media['id']}",
+        headers=auth_header(student_token),
+    )
+    assert studio_get_unpublished.status_code == 403, studio_get_unpublished.text
+
+    publish_resp = await async_client.patch(
+        f"/studio/courses/{course_id}",
+        headers=auth_header(owner_token),
+        json={"is_published": True},
+    )
+    assert publish_resp.status_code == 200, publish_resp.text
+
+    # Student has access via subscription and can sign/fetch once the course is published.
+    sign_ok = await async_client.post(
+        "/media/sign",
+        json={"media_id": str(legacy_media["id"])},
+        headers=auth_header(student_token),
+    )
+    assert sign_ok.status_code == 200, sign_ok.text
+
+    studio_get_ok = await async_client.get(
+        f"/studio/media/{legacy_media['id']}",
+        headers=auth_header(student_token),
+    )
+    assert studio_get_ok.status_code == 200, studio_get_ok.text
+    assert studio_get_ok.content == b"png"

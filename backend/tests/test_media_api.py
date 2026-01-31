@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app import models
 from app import db
 from app.config import settings
 from app.repositories import media_assets as media_assets_repo
@@ -380,3 +381,197 @@ async def test_playback_url_rejects_non_owner(async_client, monkeypatch):
         if other_user_id:
             await cleanup_user(other_user_id)
         await cleanup_user(user_id)
+
+
+async def test_wav_upload_position_allows_upload_after_deletion(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        _, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+
+        async def issue_upload(filename: str) -> dict:
+            resp = await async_client.post(
+                "/api/media/upload-url",
+                headers=headers,
+                json={
+                    "filename": filename,
+                    "mime_type": "audio/wav",
+                    "size_bytes": 2048,
+                    "media_type": "audio",
+                    "lesson_id": lesson_id,
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            return resp.json()
+
+        await issue_upload("a.wav")
+        await issue_upload("b.wav")
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                "SELECT id, position, media_asset_id FROM app.lesson_media WHERE lesson_id = %s ORDER BY position",
+                (lesson_id,),
+            )
+            before_delete = await cur.fetchall()
+        assert len(before_delete) == 2
+        first_id = str(before_delete[0]["id"])
+        second_position = int(before_delete[1].get("position") or 0)
+        assert second_position == 2, before_delete[1]
+
+        delete_resp = await async_client.delete(
+            f"/studio/media/{first_id}",
+            headers=headers,
+        )
+        assert delete_resp.status_code == 200, delete_resp.text
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                "SELECT id, position, media_asset_id FROM app.lesson_media WHERE lesson_id = %s ORDER BY position",
+                (lesson_id,),
+            )
+            after_delete = await cur.fetchall()
+        assert len(after_delete) == 1
+        assert int(after_delete[0].get("position") or 0) == second_position, after_delete[0]
+
+        await issue_upload("c.wav")
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                "SELECT position FROM app.lesson_media WHERE lesson_id = %s ORDER BY position",
+                (lesson_id,),
+            )
+            positions = [int(row.get("position") or 0) for row in await cur.fetchall()]
+        assert positions == [2, 3]
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_playback_url_allows_subscription_only_access(async_client, monkeypatch):
+    headers, owner_id = await register_teacher(async_client)
+    student_headers, student_id, _ = await register_user(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_get_presigned_url(
+            self,
+            path,
+            ttl,
+            filename=None,
+            *,
+            download=True,
+        ):
+            return storage_module.PresignedUrl(
+                url=f"https://stream.local/{path}",
+                expires_in=300,
+                headers={},
+            )
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "get_presigned_url",
+            fake_get_presigned_url,
+            raising=True,
+        )
+
+        # Create and mark a pipeline audio asset ready.
+        source_path = (
+            f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.wav"
+        )
+        derived_path = (
+            f"media/derived/audio/courses/{course_id}/lessons/{lesson_id}/demo.mp3"
+        )
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=owner_id,
+            course_id=course_id,
+            lesson_id=lesson_id,
+            media_type="audio",
+            purpose="lesson_audio",
+            ingest_format="wav",
+            original_object_path=source_path,
+            original_content_type="audio/wav",
+            original_filename="demo.wav",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="ready",
+        )
+        assert asset
+        await media_assets_repo.mark_media_asset_ready(
+            media_id=str(asset["id"]),
+            streaming_object_path=derived_path,
+            streaming_format="mp3",
+            duration_seconds=120,
+            codec="mp3",
+            streaming_storage_bucket=storage_module.storage_service.bucket,
+        )
+
+        # Grant the student an active subscription (but do not enroll them).
+        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    """
+                    INSERT INTO app.subscriptions (user_id, subscription_id, status)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (student_id, f"sub_{uuid.uuid4().hex[:10]}", "active"),
+                )
+                await conn.commit()
+
+        # Unpublished courses must remain inaccessible even for subscription users.
+        playback_unpublished = await async_client.post(
+            "/api/media/playback-url",
+            headers=student_headers,
+            json={"media_id": str(asset["id"])},
+        )
+        assert playback_unpublished.status_code == 403, playback_unpublished.text
+
+        # Publish the course so non-owners can attempt playback access.
+        publish_resp = await async_client.patch(
+            f"/studio/courses/{course_id}",
+            headers=headers,
+            json={"is_published": True},
+        )
+        assert publish_resp.status_code == 200, publish_resp.text
+
+        access_resp = await async_client.get(
+            f"/courses/{course_id}/access",
+            headers=student_headers,
+        )
+        assert access_resp.status_code == 200, access_resp.text
+        access_payload = access_resp.json()
+        print("course_access_snapshot", access_payload)
+        assert access_payload["has_active_subscription"] is True
+        assert access_payload["has_access"] is True
+        assert access_payload["enrolled"] is False
+
+        playback_resp = await async_client.post(
+            "/api/media/playback-url",
+            headers=student_headers,
+            json={"media_id": str(asset["id"])},
+        )
+        assert playback_resp.status_code == 200, playback_resp.text
+        playback_payload = playback_resp.json()
+        assert playback_payload.get("playback_url", "").startswith("https://stream.local/")
+    finally:
+        await cleanup_user(student_id)
+        await cleanup_user(owner_id)

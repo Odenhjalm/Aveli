@@ -925,6 +925,23 @@ async def list_lesson_media(lesson_id: str) -> list[dict]:
     return await courses_service.list_lesson_media(lesson_id)
 
 
+async def next_lesson_media_position(lesson_id: str) -> int:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT COALESCE(MAX(position), 0) + 1 AS next_position
+                FROM app.lesson_media
+                WHERE lesson_id = %s
+                """,
+                (lesson_id,),
+            )
+            row = await _fetchone(cur)
+            if not row:
+                return 1
+            return int(row.get("next_position") or 1)
+
+
 async def add_lesson_media_entry(
     *,
     lesson_id: str,

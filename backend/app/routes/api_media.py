@@ -134,7 +134,10 @@ async def _authorize_lesson_playback(user_id: str, row: dict) -> None:
     if row.get("is_intro") or row.get("is_free_intro"):
         return
     course_id = row.get("course_id")
-    if course_id and await courses_repo.is_enrolled(user_id, str(course_id)):
+    if not course_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    snapshot = await models.course_access_snapshot(user_id, str(course_id))
+    if snapshot.get("has_access"):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -223,8 +226,7 @@ async def request_upload_url(
         )
 
     if lesson_id:
-        existing = await models.list_lesson_media(lesson_id)
-        position = len(existing) + 1
+        position = await models.next_lesson_media_position(lesson_id)
         row = await models.add_lesson_media_entry(
             lesson_id=lesson_id,
             kind="audio",

@@ -1205,7 +1205,10 @@ async def media_file(
             raise HTTPException(status_code=403, detail="Course not published")
         if not (access_row.get("is_intro") or access_row.get("is_free_intro")):
             course_id = access_row.get("course_id")
-            if not course_id or not await courses_repo.is_enrolled(user_id, str(course_id)):
+            if not course_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+            snapshot = await models.course_access_snapshot(user_id, str(course_id))
+            if not snapshot.get("has_access"):
                 raise HTTPException(status_code=403, detail="Access denied")
     return await _build_streaming_response(row, request)
 
