@@ -969,7 +969,7 @@ class _TeacherCardData extends StatelessWidget {
                       children: [
                         AppAvatar(url: resolvedAvatar, size: 62),
                         const SizedBox(width: 12),
-                        Expanded(
+                        Flexible(
                           child: TeacherNameText(
                             name,
                             baseStyle: Theme.of(context).textTheme.titleLarge,
