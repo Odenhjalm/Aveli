@@ -39,7 +39,8 @@ class AuthState {
     error: error,
   );
 
-  bool get isAuthenticated => profile != null || claims != null;
+  /// Verified auth: JWT claims alone are *not* sufficient.
+  bool get isAuthenticated => profile != null;
 }
 
 class AuthController extends StateNotifier<AuthState> {
@@ -52,6 +53,9 @@ class AuthController extends StateNotifier<AuthState> {
   late final StreamSubscription<AuthHttpEvent> _authSub;
 
   Future<void> loadSession({bool hydrateProfile = true}) async {
+    // Mark bootstrap as loading immediately (before any async awaits) so routing
+    // can gate private routes behind verified auth without rendering jitter.
+    state = state.copyWith(isLoading: true, error: null);
     final token = await _repo.currentToken();
     if (token == null || token.isEmpty) {
       gate.reset();

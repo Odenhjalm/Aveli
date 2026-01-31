@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/features/payments/application/billing_providers.dart';
 import 'package:aveli/features/payments/data/billing_api.dart';
@@ -78,3 +79,29 @@ final entitlementsNotifierProvider =
       final billingApi = ref.watch(billingApiProvider);
       return EntitlementsNotifier(api, billingApi);
     });
+
+/// Keeps entitlements in sync with *verified* auth.
+///
+/// This avoids optimistic JWT-based auth and prevents retry storms when the user
+/// is logged out or auth is still bootstrapping.
+final entitlementsAuthSyncProvider = Provider<void>((ref) {
+  var disposed = false;
+  ref.onDispose(() => disposed = true);
+
+  void schedule(void Function() action) {
+    Future.microtask(() {
+      if (disposed) return;
+      action();
+    });
+  }
+
+  ref.listen<AuthState>(authControllerProvider, (prev, next) {
+    final wasAuthed = prev?.profile != null;
+    final isAuthed = next.profile != null;
+    if (isAuthed && !wasAuthed) {
+      schedule(() => ref.read(entitlementsNotifierProvider.notifier).refresh());
+    } else if (!isAuthed && wasAuthed) {
+      schedule(() => ref.read(entitlementsNotifierProvider.notifier).reset());
+    }
+  }, fireImmediately: true);
+});

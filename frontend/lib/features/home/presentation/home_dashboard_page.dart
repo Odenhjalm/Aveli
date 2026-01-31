@@ -32,6 +32,7 @@ import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
+import 'package:aveli/core/bootstrap/auth_boot_page.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({super.key});
@@ -47,27 +48,22 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
+    final profile = authState.profile;
+    if (profile == null) {
+      return const AuthBootPage();
+    }
+
+    final isTeacher = profile.isTeacher || profile.isAdmin;
+
     final entitlementsState = ref.watch(entitlementsNotifierProvider);
     final feedAsync = ref.watch(homeFeedProvider);
     final servicesAsync = ref.watch(homeServicesProvider);
     final seminarsAsync = ref.watch(publicSeminarsProvider);
     final certificatesAsync = ref.watch(myCertificatesProvider);
-    final profile = authState.profile;
-    final claims = authState.claims;
-    final isTeacher =
-        profile?.isTeacher == true ||
-        profile?.isAdmin == true ||
-        claims?.isTeacher == true ||
-        claims?.isAdmin == true;
     final homeAudioAsync = ref.watch(homeAudioProvider);
     final homeAudioSection = _HomeAudioSection(audioAsync: homeAudioAsync);
 
-    if (!entitlementsState.loading && entitlementsState.data == null) {
-      // Kick off entitlements load once.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(entitlementsNotifierProvider.notifier).refresh();
-      });
-    } else if (!_redirecting &&
+    if (!_redirecting &&
         entitlementsState.data != null &&
         entitlementsState.data?.membership.isActive != true &&
         !isTeacher) {

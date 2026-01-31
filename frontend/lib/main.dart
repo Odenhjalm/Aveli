@@ -21,7 +21,6 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/guards/guard_context.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
-import 'package:aveli/core/auth/auth_controller.dart' hide AuthState;
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
@@ -331,16 +330,8 @@ class AveliApp extends ConsumerWidget {
       });
     });
 
-    ref.listen(authControllerProvider, (prev, next) {
-      final notifier = ref.read(entitlementsNotifierProvider.notifier);
-      final wasAuthed = prev?.profile != null;
-      final isAuthed = next.profile != null;
-      if (isAuthed && !wasAuthed) {
-        notifier.refresh();
-      } else if (!isAuthed && wasAuthed) {
-        notifier.reset();
-      }
-    });
+    // Keep entitlements in sync with verified auth.
+    ref.watch(entitlementsAuthSyncProvider);
 
     final router = ref.watch(appRouterProvider);
     final baseTheme = buildLightTheme();

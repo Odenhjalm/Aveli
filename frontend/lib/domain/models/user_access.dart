@@ -54,12 +54,11 @@ class UserAccessState {
   final TeacherApplication? application;
   final AuthClaims? claims;
 
-  bool get isAuthenticated => effectiveProfile != null || claims != null;
-  bool get isAdmin => effectiveProfile?.isAdmin ?? claims?.isAdmin ?? false;
-  UserRole get role =>
-      effectiveProfile?.userRole ?? claims?.userRole ?? UserRole.user;
-  bool get isTeacher =>
-      effectiveProfile?.isTeacher ?? claims?.isTeacher ?? false;
+  /// Verified access: JWT claims are tentative until the profile is hydrated.
+  bool get isAuthenticated => effectiveProfile != null;
+  bool get isAdmin => effectiveProfile?.isAdmin ?? false;
+  UserRole get role => effectiveProfile?.userRole ?? UserRole.user;
+  bool get isTeacher => effectiveProfile?.isTeacher ?? false;
   bool get isProfessional => isTeacher || role == UserRole.professional;
 
   CertificateStatus get applicationStatus =>

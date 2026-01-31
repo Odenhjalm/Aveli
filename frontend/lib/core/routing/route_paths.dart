@@ -3,6 +3,7 @@ abstract class RoutePath {
   RoutePath._();
 
   static const landingRoot = '/';
+  static const boot = '/boot';
   static const landing = '/landing';
   static const login = '/login';
   static const signup = '/signup';
