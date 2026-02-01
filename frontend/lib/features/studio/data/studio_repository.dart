@@ -39,7 +39,7 @@ class StudioRepository {
       'title': title,
       'slug': slug,
       if (description != null) 'description': description,
-      if (priceCents != null) 'price_cents': priceCents,
+      if (priceCents != null) 'price_amount_cents': priceCents,
       'is_free_intro': isFreeIntro,
       'is_published': isPublished,
       if (videoUrl != null) 'video_url': videoUrl,

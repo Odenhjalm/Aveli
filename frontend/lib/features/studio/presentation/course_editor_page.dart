@@ -407,7 +407,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _courseTitleCtrl.text = (map['title'] as String?) ?? '';
       _courseSlugCtrl.text = (map['slug'] as String?) ?? '';
       _courseDescCtrl.text = (map['description'] as String?) ?? '';
-      final priceRaw = map['price_cents'];
+      final priceRaw = map['price_amount_cents'] ?? map['price_cents'];
       _coursePriceCtrl.text = priceRaw == null
           ? ''
           : int.tryParse('$priceRaw')?.toString() ?? '$priceRaw';
@@ -3461,7 +3461,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final patch = <String, dynamic>{
       'title': title,
       'description': desc.isEmpty ? null : desc,
-      'price_cents': price,
+      'price_amount_cents': price,
       'is_free_intro': _courseIsFreeIntro,
       'is_published': _courseIsPublished,
     };
