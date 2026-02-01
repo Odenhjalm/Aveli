@@ -173,6 +173,7 @@ void main() {
       coverImageUrl: '',
       position: 0,
       isPublished: true,
+      enabledForHomePlayer: false,
       metadata: const {},
       createdAt: DateTime(2025, 1, 1),
       updatedAt: DateTime(2025, 1, 1),

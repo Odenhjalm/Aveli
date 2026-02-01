@@ -112,20 +112,24 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
             await conn.commit()
     course_id = str(row[0])
 
-    module = await courses_repo.create_module(course_id, title="Module", position=0)
-    assert module
-    lesson = await courses_repo.create_lesson(
-        str(module["id"]),
-        title="Lesson",
-        position=0,
-        is_intro=False,
-    )
-    assert lesson
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.lessons (course_id, title, position, is_intro)
+                VALUES (%s, %s, 0, false)
+                RETURNING id
+                """,
+                (course_id, "Lesson"),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    lesson_id = str(row[0])
 
     media_asset = await media_assets_repo.create_media_asset(
         owner_id=owner_id,
         course_id=course_id,
-        lesson_id=str(lesson["id"]),
+        lesson_id=lesson_id,
         media_type="audio",
         purpose="lesson_audio",
         ingest_format="wav",
@@ -138,7 +142,7 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     )
     assert media_asset
     lesson_media = await models.add_lesson_media_entry(
-        lesson_id=str(lesson["id"]),
+        lesson_id=lesson_id,
         kind="audio",
         storage_path=None,
         storage_bucket="course-media",
@@ -150,6 +154,26 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     assert lesson_media
     lesson_media_id = str(lesson_media["id"])
     media_asset_id = str(media_asset["id"])
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.teacher_profile_media (
+                  teacher_id,
+                  media_kind,
+                  media_id,
+                  enabled_for_home_player,
+                  position,
+                  is_published
+                )
+                VALUES (%s, 'lesson_media', %s, true, 0, true)
+                ON CONFLICT (teacher_id, media_kind, media_id) DO UPDATE
+                  SET enabled_for_home_player = EXCLUDED.enabled_for_home_player
+                """,
+                (owner_id, lesson_media_id),
+            )
+            await conn.commit()
 
     resp = await async_client.get(
         "/home/audio",
@@ -204,3 +228,19 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     assert resp2.status_code == 200, resp2.text
     items2 = resp2.json().get("items") or []
     assert lesson_media_id not in {it.get("id") for it in items2}
+
+    me2_resp = await async_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {tokens2['access_token']}"},
+    )
+    assert me2_resp.status_code == 200, me2_resp.text
+    other_user_id = me2_resp.json()["user_id"]
+    await courses_repo.ensure_course_enrollment(other_user_id, course_id)
+    resp2_enrolled = await async_client.get(
+        "/home/audio",
+        headers={"Authorization": f"Bearer {tokens2['access_token']}"},
+        params={"limit": 50},
+    )
+    assert resp2_enrolled.status_code == 200, resp2_enrolled.text
+    items2_enrolled = resp2_enrolled.json().get("items") or []
+    assert lesson_media_id in {it.get("id") for it in items2_enrolled}

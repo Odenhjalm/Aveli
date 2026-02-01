@@ -145,6 +145,7 @@ def profile_media_item_from_row(
         cover_image_url=data.get("cover_image_url"),
         position=data.get("position", 0),
         is_published=data.get("is_published", True),
+        enabled_for_home_player=bool(data.get("enabled_for_home_player", False)),
         metadata=metadata,
         created_at=data["created_at"],
         updated_at=data["updated_at"],

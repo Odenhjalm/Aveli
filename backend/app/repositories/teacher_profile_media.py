@@ -20,6 +20,7 @@ _BASE_SELECT = """
         tpm.cover_image_url,
         tpm.position,
         tpm.is_published,
+        tpm.enabled_for_home_player,
         tpm.metadata,
         tpm.created_at,
         tpm.updated_at,
@@ -47,7 +48,6 @@ _BASE_SELECT = """
         ma.streaming_format as lesson_media_streaming_format,
         l.title as lesson_title,
         l.position as lesson_position,
-        m.id as module_id,
         c.id as course_id,
         c.title as course_title,
         c.slug as course_slug,
@@ -69,8 +69,7 @@ _BASE_SELECT = """
     left join app.media_objects mo on mo.id = lm.media_id
     left join app.media_assets ma on ma.id = lm.media_asset_id
     left join app.lessons l on l.id = lm.lesson_id
-    left join app.modules m on m.id = l.module_id
-    left join app.courses c on c.id = m.course_id
+    left join app.courses c on c.id = l.course_id
     left join app.seminar_recordings sr
         on tpm.media_kind = 'seminar_recording' and tpm.media_id = sr.id
     left join app.seminars sem on sem.id = sr.seminar_id
@@ -254,7 +253,6 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
             lm.lesson_id,
             l.title as lesson_title,
             l.position as lesson_position,
-            m.id as module_id,
             c.id as course_id,
             c.title as course_title,
             c.slug as course_slug,
@@ -278,8 +276,7 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
             lm.created_at
         from app.lesson_media lm
         join app.lessons l on l.id = lm.lesson_id
-        join app.modules m on m.id = l.module_id
-        join app.courses c on c.id = m.course_id
+        join app.courses c on c.id = l.course_id
         left join app.media_objects mo on mo.id = lm.media_id
         left join app.media_assets ma on ma.id = lm.media_asset_id
         where c.created_by = %s

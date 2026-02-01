@@ -62,12 +62,16 @@ class _ProfileMediaBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final items = state.sortedItems;
+    final groupedItems = _groupByCourse(items);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GlassCard(
             padding: const EdgeInsets.all(24),
+            opacity: 0.10,
+            sigmaX: 3,
+            sigmaY: 3,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -75,7 +79,7 @@ class _ProfileMediaBody extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Media på din profil',
+                        'Home player',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -94,7 +98,7 @@ class _ProfileMediaBody extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Välj vilka lektioner, inspelningar eller externa länkar som ska visas på din offentliga profil. Använd pilarna för att justera ordning och växla publicering när du vill dölja ett kort.',
+                  'Välj vilka ljudspår som får visas i Home player. Inget visas förrän du slår på “Visa i Home player”. När den är på gäller Avelis befintliga rättigheter (intro, kursmedlemskap m.m.).',
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 20),
@@ -111,16 +115,25 @@ class _ProfileMediaBody extends ConsumerWidget {
                 else
                   Column(
                     children: [
-                      for (var i = 0; i < items.length; i++)
+                      for (final entry in groupedItems.entries) ...[
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          child: _ProfileMediaTile(
-                            index: i,
-                            total: items.length,
-                            item: items[i],
-                            disabled: isBusy,
+                          padding: const EdgeInsets.fromLTRB(0, 14, 0, 8),
+                          child: Text(
+                            entry.key,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
+                        for (final item in entry.value)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: _ProfileMediaTile(
+                              item: item,
+                              disabled: isBusy,
+                            ),
+                          ),
+                      ],
                     ],
                   ),
               ],
@@ -129,6 +142,9 @@ class _ProfileMediaBody extends ConsumerWidget {
           const SizedBox(height: 24),
           GlassCard(
             padding: const EdgeInsets.all(24),
+            opacity: 0.10,
+            sigmaX: 3,
+            sigmaY: 3,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -179,18 +195,41 @@ class _ProfileMediaBody extends ConsumerWidget {
       ),
     );
   }
+
+  static Map<String, List<TeacherProfileMediaItem>> _groupByCourse(
+    List<TeacherProfileMediaItem> items,
+  ) {
+    final byCourse = <String, List<TeacherProfileMediaItem>>{};
+    final other = <TeacherProfileMediaItem>[];
+
+    for (final item in items) {
+      final courseTitle = item.source.lessonMedia?.courseTitle?.trim();
+      if (courseTitle != null && courseTitle.isNotEmpty) {
+        byCourse.putIfAbsent(courseTitle, () => []).add(item);
+      } else {
+        other.add(item);
+      }
+    }
+
+    final sortedCourseTitles =
+        byCourse.keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    final grouped = <String, List<TeacherProfileMediaItem>>{
+      for (final title in sortedCourseTitles) title: byCourse[title]!,
+    };
+    if (other.isNotEmpty) {
+      grouped['Other / General'] = other;
+    }
+    return grouped;
+  }
 }
 
 class _ProfileMediaTile extends ConsumerWidget {
   const _ProfileMediaTile({
-    required this.index,
-    required this.total,
     required this.item,
     required this.disabled,
   });
 
-  final int index;
-  final int total;
   final TeacherProfileMediaItem item;
   final bool disabled;
 
@@ -199,6 +238,7 @@ class _ProfileMediaTile extends ConsumerWidget {
     final controller = ref.read(teacherProfileMediaProvider.notifier);
     final theme = Theme.of(context);
     final subtitle = _subtitleFor(item);
+    final formatLabel = _formatLabelFor(item);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.colorScheme.surface.withValues(alpha: 0.92),
@@ -233,83 +273,72 @@ class _ProfileMediaTile extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (formatLabel != null)
+                            _Badge(label: formatLabel, theme: theme),
+                          _Badge(label: _kindLabel(item.mediaKind), theme: theme),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
                       if (subtitle != null) ...[
                         Text(subtitle, style: theme.textTheme.bodySmall),
                         const SizedBox(height: 4),
                       ],
-                      Text(
-                        'Position ${index + 1} av $total · ${_kindLabel(item.mediaKind)}',
-                        style: theme.textTheme.bodySmall,
-                      ),
                     ],
                   ),
                 ),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: [
-                    IconButton(
-                      tooltip: 'Flytta upp',
-                      icon: const Icon(Icons.arrow_upward),
-                      onPressed: disabled || index == 0
-                          ? null
-                          : () => controller.reorder(index, index - 1),
-                    ),
-                    IconButton(
-                      tooltip: 'Flytta ned',
-                      icon: const Icon(Icons.arrow_downward),
-                      onPressed: disabled || index >= total - 1
-                          ? null
-                          : () => controller.reorder(index, index + 1),
-                    ),
-                  ],
+                IconButton(
+                  tooltip: 'Redigera',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: disabled
+                      ? null
+                      : () => _ProfileMediaDialogs.showEditDialog(
+                            context,
+                            ref,
+                            item,
+                          ),
+                ),
+                IconButton(
+                  tooltip: 'Ta bort',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: disabled
+                      ? null
+                      : () => _ProfileMediaDialogs.confirmDelete(
+                            context,
+                            ref,
+                            item,
+                          ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 6,
+            Opacity(
+              opacity: item.enabledForHomePlayer ? 1 : 0.72,
+              child: Row(
                 children: [
+                  Expanded(
+                    child: Text(
+                      'Visa i Home player',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                   Switch.adaptive(
-                    value: item.isPublished,
-                    onChanged: disabled
+                    value: item.enabledForHomePlayer,
+                    onChanged: disabled || item.mediaKind != TeacherProfileMediaKind.lessonMedia
                         ? null
                         : (value) async {
                             try {
-                              await controller.togglePublish(item.id, value);
+                              await controller.toggleHomePlayer(item.id, value);
                             } catch (error) {
                               if (!context.mounted) return;
                               _showErrorSnackBar(context, error);
                             }
                           },
-                  ),
-                  IconButton(
-                    tooltip: 'Redigera',
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: disabled
-                        ? null
-                        : () => _ProfileMediaDialogs.showEditDialog(
-                            context,
-                            ref,
-                            item,
-                          ),
-                  ),
-                  IconButton(
-                    tooltip: 'Ta bort',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: disabled
-                        ? null
-                        : () => _ProfileMediaDialogs.confirmDelete(
-                            context,
-                            ref,
-                            item,
-                          ),
                   ),
                 ],
               ),
@@ -335,9 +364,12 @@ class _ProfileMediaTile extends ConsumerWidget {
   static String? _subtitleFor(TeacherProfileMediaItem item) {
     switch (item.mediaKind) {
       case TeacherProfileMediaKind.lessonMedia:
-        final course = item.source.lessonMedia?.courseTitle;
-        if (course == null) return null;
-        return 'Från kursen $course';
+        final course = item.source.lessonMedia?.courseTitle?.trim();
+        final format = _formatLabelFor(item);
+        if (course == null || course.isEmpty) {
+          return format == null ? null : format;
+        }
+        return format == null ? 'Kurs: $course' : 'Kurs: $course · $format';
       case TeacherProfileMediaKind.seminarRecording:
         return 'Inspelning · ${item.source.seminarRecording?.status ?? 'okänd status'}';
       case TeacherProfileMediaKind.external:
@@ -354,6 +386,47 @@ class _ProfileMediaTile extends ConsumerWidget {
       case TeacherProfileMediaKind.external:
         return 'Extern länk';
     }
+  }
+
+  static String? _formatLabelFor(TeacherProfileMediaItem item) {
+    final lesson = item.source.lessonMedia;
+    if (lesson == null) return null;
+    final contentType = (lesson.contentType ?? '').toLowerCase();
+    if (contentType.contains('wav')) return 'WAV';
+    if (contentType.contains('mpeg') || contentType.contains('mp3')) return 'MP3';
+
+    final path = (lesson.storagePath ?? '').toLowerCase();
+    if (path.endsWith('.wav')) return 'WAV';
+    if (path.endsWith('.mp3')) return 'MP3';
+
+    return null;
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.theme});
+
+  final String label;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }
 

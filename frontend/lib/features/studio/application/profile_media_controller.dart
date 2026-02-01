@@ -131,6 +131,7 @@ class TeacherProfileMediaController
     String? title,
     String? description,
     bool? isPublished,
+    bool? enabledForHomePlayer,
     int? position,
     Map<String, dynamic>? metadata,
     String? coverMediaId,
@@ -143,6 +144,7 @@ class TeacherProfileMediaController
         title: title,
         description: description,
         isPublished: isPublished,
+        enabledForHomePlayer: enabledForHomePlayer,
         position: position,
         metadata: metadata,
         coverMediaId: coverMediaId,
@@ -170,6 +172,10 @@ class TeacherProfileMediaController
 
   Future<void> togglePublish(String itemId, bool publish) async {
     await updateItem(itemId, isPublished: publish);
+  }
+
+  Future<void> toggleHomePlayer(String itemId, bool enabled) async {
+    await updateItem(itemId, enabledForHomePlayer: enabled);
   }
 
   Future<void> reorder(int oldIndex, int newIndex) async {

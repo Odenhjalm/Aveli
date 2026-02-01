@@ -355,6 +355,8 @@ async def studio_update_profile_media(
         fields["position"] = payload.position
     if payload.is_published is not None:
         fields["is_published"] = payload.is_published
+    if payload.enabled_for_home_player is not None:
+        fields["enabled_for_home_player"] = payload.enabled_for_home_player
     if payload.metadata is not None:
         fields["metadata"] = payload.metadata
 

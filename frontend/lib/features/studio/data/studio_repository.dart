@@ -354,6 +354,7 @@ class StudioRepository {
     String? coverImageUrl,
     int? position,
     bool? isPublished,
+    bool? enabledForHomePlayer,
     Map<String, dynamic>? metadata,
   }) async {
     final body = <String, dynamic>{
@@ -363,6 +364,8 @@ class StudioRepository {
       if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
       if (position != null) 'position': position,
       if (isPublished != null) 'is_published': isPublished,
+      if (enabledForHomePlayer != null)
+        'enabled_for_home_player': enabledForHomePlayer,
       if (metadata != null) 'metadata': metadata,
     };
     final res = await _client.patch<Map<String, dynamic>>(

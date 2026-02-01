@@ -1035,6 +1035,17 @@ async def list_home_audio_media(
     params: list[Any] = []
     # Home audio access is granted only for course owners, enrolled users, and free/intro lessons.
     # (include_all_courses is intentionally ignored to avoid exposing media without enrollment.)
+    opt_in_cte = """
+        WITH opted_in AS (
+          SELECT
+            tpm.media_id AS lesson_media_id,
+            tpm.teacher_id
+          FROM app.teacher_profile_media tpm
+          WHERE tpm.enabled_for_home_player = true
+            AND tpm.media_kind = 'lesson_media'
+            AND tpm.media_id IS NOT NULL
+        )
+    """
     enrollment_join = """
         LEFT JOIN app.enrollments e
           ON e.course_id = c.id
@@ -1059,6 +1070,7 @@ async def list_home_audio_media(
     params.append(user_id)  # owner check
 
     query = f"""
+        {opt_in_cte}
         SELECT
           lm.id,
           lm.lesson_id,
@@ -1093,15 +1105,16 @@ async def list_home_audio_media(
           c.slug AS course_slug,
           c.title AS course_title,
           c.is_free_intro
-        FROM app.lesson_media lm
+        FROM opted_in oi
+        JOIN app.lesson_media lm ON lm.id = oi.lesson_media_id
         JOIN app.lessons l ON l.id = lm.lesson_id
-        JOIN app.modules m ON m.id = l.module_id
-        JOIN app.courses c ON c.id = m.course_id
+        JOIN app.courses c ON c.id = l.course_id
         JOIN app.profiles prof ON prof.user_id = c.created_by
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
         LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         {enrollment_join}
-        WHERE lm.kind = 'audio'
+        WHERE oi.teacher_id = c.created_by
+          AND lm.kind = 'audio'
           AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
           AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
           {access_clause}
