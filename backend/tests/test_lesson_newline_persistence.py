@@ -110,4 +110,3 @@ async def test_studio_lesson_newline_persists_in_storage(async_client):
         assert lesson["content_markdown"] == edited_markdown
     finally:
         await cleanup_user(user_id)
-

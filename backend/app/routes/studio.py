@@ -971,7 +971,8 @@ async def update_lesson(
         incoming_str = incoming if isinstance(incoming, str) else None
         stored_str = stored_before if isinstance(stored_before, str) else None
         logger.info(
-            "[LessonTrace] update_lesson.before lesson_id=%s incoming_len=%s stored_len=%s equal=%s incoming=%s stored=%s",
+            "[LessonTrace] update_lesson.before lesson_id=%s incoming_len=%s stored_len=%s "
+            "equal=%s incoming=%s stored=%s",
             lesson_id,
             0 if incoming_str is None else len(incoming_str),
             0 if stored_str is None else len(stored_str),
