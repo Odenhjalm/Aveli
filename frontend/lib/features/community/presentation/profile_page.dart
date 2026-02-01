@@ -132,6 +132,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       extendBodyBehindAppBar: true,
       transparentAppBar: true,
       showHomeAction: false,
+      onBack: () => context.goNamed(AppRoute.home),
       actions: const [TopNavActionButtons()],
       background: FullBleedBackground(
         image: AppImages.background,

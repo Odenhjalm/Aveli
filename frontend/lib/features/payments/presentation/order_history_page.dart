@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/order.dart';
 import 'package:aveli/features/payments/application/payments_providers.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -15,6 +17,7 @@ class OrderHistoryPage extends ConsumerWidget {
     final ordersAsync = ref.watch(orderHistoryProvider);
     return AppScaffold(
       title: 'Mina köp',
+      onBack: () => context.goNamed(AppRoute.profile),
       body: ordersAsync.when(
         data: (orders) {
           if (orders.isEmpty) {

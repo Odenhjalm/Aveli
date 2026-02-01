@@ -82,6 +82,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
     return AppScaffold(
       title: 'Paketpriser',
       showHomeAction: false,
+      onBack: () => context.goNamed(AppRoute.teacherHome),
       actions: [
         IconButton(
           tooltip: 'Hem',
@@ -141,16 +142,16 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                     const SizedBox(height: 12),
                     Text(
                       'Välj kurser',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     coursesAsync.when(
-                      loading: () =>
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: LinearProgressIndicator(minHeight: 2),
-                          ),
+                      loading: () => const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: LinearProgressIndicator(minHeight: 2),
+                      ),
                       error: (error, _) =>
                           Text('Kunde inte hämta kurser: $error'),
                       data: (courses) {
@@ -196,7 +197,9 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('Skapa paket'),
                       ),
@@ -208,8 +211,9 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
             const SizedBox(height: 20),
             Text(
               'Mina paket',
-              style:
-                  theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
             bundlesAsync.when(
@@ -248,13 +252,15 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                 ),
                               ],
                             ),
-                            if ((bundle['description'] as String?)?.isNotEmpty ??
+                            if ((bundle['description'] as String?)
+                                    ?.isNotEmpty ??
                                 false) ...[
                               const SizedBox(height: 6),
                               Text(
                                 bundle['description'] as String,
-                                style: theme.textTheme.bodyMedium
-                                    ?.copyWith(color: cs.onSurfaceVariant),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
                               ),
                             ],
                             const SizedBox(height: 8),
@@ -265,8 +271,13 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                 children: courses.map((course) {
                                   final c = course as Map<String, dynamic>;
                                   return Chip(
-                                    avatar: const Icon(Icons.menu_book, size: 16),
-                                    label: Text(c['title'] as String? ?? 'Kurs'),
+                                    avatar: const Icon(
+                                      Icons.menu_book,
+                                      size: 16,
+                                    ),
+                                    label: Text(
+                                      c['title'] as String? ?? 'Kurs',
+                                    ),
                                   );
                                 }).toList(),
                               ),
@@ -291,8 +302,9 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                             ClipboardData(text: paymentLink),
                                           );
                                           if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             const SnackBar(
                                               content: Text('Länk kopierad'),
                                             ),

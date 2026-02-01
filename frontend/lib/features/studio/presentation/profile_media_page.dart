@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/features/studio/application/profile_media_controller.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -19,6 +21,7 @@ class StudioProfilePage extends ConsumerWidget {
     return AppScaffold(
       title: 'Min profil',
       extendBodyBehindAppBar: true,
+      onBack: () => context.goNamed(AppRoute.home),
       contentPadding: const EdgeInsets.fromLTRB(16, 120, 16, 32),
       background: const HeroBackground(
         assetPath: 'images/bakgrund.png',

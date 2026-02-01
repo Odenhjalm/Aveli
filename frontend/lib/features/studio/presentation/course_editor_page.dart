@@ -861,8 +861,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!kDebugMode) return;
     const maxChars = 1200;
     final visible = _visibleLessonTextForLog(value);
-    final preview =
-        visible.length > maxChars ? '${visible.substring(0, maxChars)}…' : visible;
+    final preview = visible.length > maxChars
+        ? '${visible.substring(0, maxChars)}…'
+        : visible;
     debugPrint('[LessonTrace] $label="$preview" (length=${value.length})');
   }
 
@@ -3692,10 +3693,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   @override
   Widget build(BuildContext context) {
     if (_checking) {
-      return const AppScaffold(
+      return AppScaffold(
         title: 'Kursstudio',
         logoSize: 0,
         showHomeAction: false,
+        onBack: () => context.goNamed(AppRoute.teacherHome),
         maxContentWidth: 1920,
         contentPadding: EdgeInsets.zero,
         actions: [TopNavActionButtons()],
@@ -3707,6 +3709,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         title: 'Kursstudio',
         logoSize: 0,
         showHomeAction: false,
+        onBack: () => context.goNamed(AppRoute.teacherHome),
         maxContentWidth: 1920,
         contentPadding: EdgeInsets.zero,
         actions: const [TopNavActionButtons()],
@@ -4753,6 +4756,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       title: 'Kursstudio',
       logoSize: 0,
       showHomeAction: false,
+      onBack: () => context.goNamed(AppRoute.teacherHome),
       maxContentWidth: 1920,
       contentPadding: EdgeInsets.zero,
       useBasePage: false,

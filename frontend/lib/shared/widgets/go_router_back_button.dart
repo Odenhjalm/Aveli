@@ -19,7 +19,7 @@ class GoRouterBackButton extends ConsumerWidget {
           router.pop();
           return;
         }
-        context.goNamed(AppRoute.landing);
+        context.goNamed(AppRoute.home);
       },
     );
   }

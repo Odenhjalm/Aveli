@@ -27,6 +27,10 @@ class AppScaffold extends StatelessWidget {
   /// Sätt true där du *inte* vill visa back (t.ex. på Home).
   final bool disableBack;
 
+  /// Explicit back handler (deterministisk navigation). Om satt används den
+  /// istället för default `GoRouterBackButton`.
+  final VoidCallback? onBack;
+
   /// Maxbredd för centralt innehåll. Justera per sida vid behov.
   final double maxContentWidth;
 
@@ -62,6 +66,7 @@ class AppScaffold extends StatelessWidget {
     this.extendBody = false,
     this.useBasePage = true,
     this.disableBack = false,
+    this.onBack,
     this.maxContentWidth = 860,
     this.contentPadding = const EdgeInsets.fromLTRB(16, 12, 16, 16),
     this.neutralBackground = false,
@@ -78,6 +83,7 @@ class AppScaffold extends StatelessWidget {
     final theme = Theme.of(context);
     final showBack = !disableBack;
     final fg = appBarForegroundColor ?? theme.colorScheme.onSurface;
+    final backTooltip = MaterialLocalizations.of(context).backButtonTooltip;
     final computedActions = <Widget>[
       if (actions != null) ...actions!,
       if (showHomeAction) _HomeActionButton(color: fg),
@@ -103,7 +109,15 @@ class AppScaffold extends StatelessWidget {
                 children: [
                   BrandHeader(
                     title: title,
-                    leading: showBack ? const GoRouterBackButton() : null,
+                    leading: showBack
+                        ? (onBack == null
+                              ? const GoRouterBackButton()
+                              : IconButton(
+                                  icon: const Icon(Icons.arrow_back_rounded),
+                                  tooltip: backTooltip,
+                                  onPressed: onBack,
+                                ))
+                        : null,
                     actions: computedActions,
                     onBrandTap: () => context.goNamed(AppRoute.landing),
                   ),

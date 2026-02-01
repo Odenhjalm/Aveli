@@ -91,6 +91,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
       maxContentWidth: 980,
       logoSize: 0,
       showHomeAction: false,
+      onBack: () => context.goNamed(AppRoute.home),
       actions: const [TopNavActionButtons()],
       contentPadding: EdgeInsets.zero,
       body: SafeArea(
