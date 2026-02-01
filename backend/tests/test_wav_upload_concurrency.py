@@ -199,7 +199,12 @@ async def test_concurrent_wav_upload_url_requests_allocate_unique_positions(
             assert result[3].status_code == 200, result[3].text
 
         snapshot = await _snapshot_lesson_media(lesson_id)
-        logger.info("DB SNAPSHOT lesson_id=%s lesson_media=%s media_assets=%s", lesson_id, snapshot["lesson_media"], snapshot["media_assets"])
+        logger.info(
+            "DB SNAPSHOT lesson_id=%s lesson_media=%s media_assets=%s",
+            lesson_id,
+            snapshot["lesson_media"],
+            snapshot["media_assets"],
+        )
 
         assert len(snapshot["lesson_media"]) == 2, snapshot
         assert {row[1] for row in snapshot["lesson_media"]} == {1, 2}, snapshot
