@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app import models
 from app import db
 from app.config import settings
 from app.repositories import media_assets as media_assets_repo
