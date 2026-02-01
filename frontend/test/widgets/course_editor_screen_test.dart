@@ -74,6 +74,7 @@ class _NoopUploadQueueNotifier extends UploadQueueNotifier {
 void main() {
   setUpAll(() {
     registerFallbackValue(const Duration());
+    registerFallbackValue(<String, dynamic>{});
   });
 
   testWidgets('CourseEditorScreen renders provided course data', (
@@ -99,7 +100,7 @@ void main() {
         'title': 'Tarot Basics',
         'slug': 'tarot-basics',
         'description': 'Lär dig läsa korten',
-        'price_cents': 1200,
+        'price_amount_cents': 1200,
         'is_free_intro': true,
         'is_published': false,
       },
@@ -270,7 +271,7 @@ void main() {
           'title': 'Tarot Basics',
           'slug': 'tarot-basics',
           'description': 'Lär dig läsa korten',
-          'price_cents': 1200,
+          'price_amount_cents': 1200,
           'is_free_intro': true,
           'is_published': false,
         },
@@ -396,4 +397,139 @@ void main() {
       expect(find.byIcon(Icons.error_outline), findsOneWidget);
     },
   );
+
+  testWidgets('CourseEditorScreen saves price_amount_cents', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final studioRepo = _MockStudioRepository();
+    final coursesRepo = _MockCoursesRepository();
+
+    when(() => studioRepo.myCourses()).thenAnswer(
+      (_) async => [
+        {'id': 'course-1', 'title': 'Tarot Basics'},
+      ],
+    );
+    when(() => studioRepo.fetchStatus()).thenAnswer(
+      (_) async => const StudioStatus(
+        isTeacher: true,
+        verifiedCertificates: 1,
+        hasApplication: false,
+      ),
+    );
+    when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+      (_) async => {
+        'title': 'Tarot Basics',
+        'slug': 'tarot-basics',
+        'description': 'Lär dig läsa korten',
+        'price_amount_cents': 1200,
+        'is_free_intro': true,
+        'is_published': false,
+      },
+    );
+    when(() => studioRepo.listModules('course-1')).thenAnswer((_) async => []);
+    when(() => studioRepo.updateCourse(any(), any())).thenAnswer((invocation) async {
+      final courseId = invocation.positionalArguments[0] as String;
+      final patch =
+          Map<String, dynamic>.from(invocation.positionalArguments[1] as Map);
+      return {'id': courseId, ...patch};
+    });
+
+    final courseDetail = CourseDetailData(
+      course: const CourseSummary(
+        id: 'course-1',
+        slug: 'tarot-basics',
+        title: 'Tarot Basics',
+        description: 'Lär dig läsa korten',
+        coverUrl: null,
+        videoUrl: null,
+        isFreeIntro: true,
+        isPublished: true,
+        priceCents: 1200,
+      ),
+      modules: const [],
+      lessonsByModule: const {},
+      freeConsumed: 0,
+      freeLimit: 3,
+      isEnrolled: false,
+      latestOrder: null,
+    );
+    when(
+      () => coursesRepo.fetchCourseDetailBySlug(any()),
+    ).thenAnswer((_) async => courseDetail);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              stripePublishableKey: 'pk_test_stub',
+              stripeMerchantDisplayName: 'Test Merchant',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          backendAssetResolverProvider.overrideWith(
+            (ref) => TestBackendAssetResolver(),
+          ),
+          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          coursesRepositoryProvider.overrideWithValue(coursesRepo),
+          studioStatusProvider.overrideWith(
+            (ref) async => const StudioStatus(
+              isTeacher: true,
+              verifiedCertificates: 1,
+              hasApplication: false,
+            ),
+          ),
+          studioUploadQueueProvider.overrideWith(
+            (ref) => _NoopUploadQueueNotifier(studioRepo),
+          ),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            FlutterQuillLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('sv')],
+          home: CourseEditorScreen(
+            studioRepository: studioRepo,
+            coursesRepository: coursesRepo,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    final priceField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Pris (SEK)',
+    );
+    expect(priceField, findsOneWidget);
+
+    await tester.ensureVisible(priceField);
+    await tester.enterText(priceField, '9900');
+
+    final saveButton = find.text('Spara kurs');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+
+    await tester.pump();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    final captured =
+        verify(() => studioRepo.updateCourse('course-1', captureAny())).captured;
+    expect(captured, hasLength(1));
+    final patch = Map<String, dynamic>.from(captured.single as Map);
+    expect(patch['price_amount_cents'], 9900);
+    expect(patch.containsKey('price_cents'), isFalse);
+  });
 }
