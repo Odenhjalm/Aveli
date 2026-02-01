@@ -729,18 +729,17 @@ async def list_lessons(module_id: str) -> Sequence[LessonRow]:
 async def list_course_lessons(course_id: str) -> Sequence[LessonRow]:
     query = """
         SELECT
-            l.id,
-            l.module_id,
-            l.title,
-            l.position,
-            l.is_intro,
-            l.content_markdown,
-            l.created_at,
-            l.updated_at
-        FROM app.lessons l
-        JOIN app.modules m ON m.id = l.module_id
-        WHERE m.course_id = %s
-        ORDER BY m.position, l.position
+            id,
+            course_id,
+            title,
+            position,
+            is_intro,
+            content_markdown,
+            created_at,
+            updated_at
+        FROM app.lessons
+        WHERE course_id = %s
+        ORDER BY position
     """
     async with get_conn() as cur:
         await cur.execute(query, (course_id,))
@@ -751,7 +750,7 @@ async def get_lesson(lesson_id: str) -> LessonRow | None:
     query = """
         SELECT
             id,
-            module_id,
+            course_id,
             title,
             position,
             is_intro,
@@ -768,23 +767,17 @@ async def get_lesson(lesson_id: str) -> LessonRow | None:
 
 
 async def get_lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
-    query = """
-        SELECT l.module_id, m.course_id
-        FROM app.lessons l
-        JOIN app.modules m ON m.id = l.module_id
-        WHERE l.id = %s
-        LIMIT 1
-    """
+    query = "SELECT course_id FROM app.lessons WHERE id = %s LIMIT 1"
     async with get_conn() as cur:
         await cur.execute(query, (lesson_id,))
         row = await cur.fetchone()
     if not row:
         return None, None
-    return row.get("module_id"), row.get("course_id")
+    return None, row.get("course_id")
 
 
 async def create_lesson(
-    module_id: str,
+    course_id: str,
     *,
     title: str,
     content_markdown: str | None = None,
@@ -805,13 +798,13 @@ async def create_lesson(
 
     if lesson_id:
         query = """
-        INSERT INTO app.lessons (id, module_id, title, content_markdown, position, is_intro)
+        INSERT INTO app.lessons (id, course_id, title, content_markdown, position, is_intro)
         VALUES (%s, %s, %s, %s, %s, %s)
-        RETURNING id, module_id, title, position, is_intro, content_markdown, created_at, updated_at
+        RETURNING id, course_id, title, position, is_intro, content_markdown, created_at, updated_at
     """
         params = (
             lesson_id,
-            module_id,
+            course_id,
             title,
             content_markdown,
             resolved_position,
@@ -819,12 +812,12 @@ async def create_lesson(
         )
     else:
         query = """
-        INSERT INTO app.lessons (module_id, title, content_markdown, position, is_intro)
+        INSERT INTO app.lessons (course_id, title, content_markdown, position, is_intro)
         VALUES (%s, %s, %s, %s, %s)
-        RETURNING id, module_id, title, position, is_intro, content_markdown, created_at, updated_at
+        RETURNING id, course_id, title, position, is_intro, content_markdown, created_at, updated_at
     """
         params = (
-            module_id,
+            course_id,
             title,
             content_markdown,
             resolved_position,
@@ -840,7 +833,7 @@ async def create_lesson(
 
 
 async def upsert_lesson(
-    module_id: str,
+    course_id: str,
     data: Mapping[str, Any],
 ) -> LessonRow | None:
     lesson_id = data.get("id")
@@ -869,13 +862,13 @@ async def upsert_lesson(
 
         set_clause = ", ".join(f"{column} = %s" for column, _ in updates)
         params = [value for _, value in updates]
-        params.extend([lesson_id, module_id])
+        params.extend([lesson_id, course_id])
 
         query = f"""
             UPDATE app.lessons
             SET {set_clause}, updated_at = now()
-            WHERE id = %s AND module_id = %s
-            RETURNING id, module_id, title, position, is_intro, content_markdown, created_at, updated_at
+            WHERE id = %s AND course_id = %s
+            RETURNING id, course_id, title, position, is_intro, content_markdown, created_at, updated_at
         """
 
         async with pool.connection() as conn:  # type: ignore
@@ -892,16 +885,16 @@ async def upsert_lesson(
     resolved_intro = intro_value if intro_value is not None else False
 
     query = """
-        INSERT INTO app.lessons (module_id, title, content_markdown, position, is_intro)
+        INSERT INTO app.lessons (course_id, title, content_markdown, position, is_intro)
         VALUES (%s, %s, %s, %s, %s)
-        RETURNING id, module_id, title, position, is_intro, content_markdown, created_at, updated_at
+        RETURNING id, course_id, title, position, is_intro, content_markdown, created_at, updated_at
     """
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 query,
                 (
-                    module_id,
+                    course_id,
                     title,
                     content_markdown,
                     resolved_position,
@@ -933,7 +926,7 @@ async def is_course_owner(course_id: str, user_id: str) -> bool:
 
 
 async def reorder_lessons(
-    module_id: str,
+    course_id: str,
     lesson_ids_in_order: Sequence[str],
 ) -> None:
     if not lesson_ids_in_order:
@@ -946,9 +939,9 @@ async def reorder_lessons(
                     """
                     UPDATE app.lessons
                     SET position = %s, updated_at = now()
-                    WHERE id = %s AND module_id = %s
+                    WHERE id = %s AND course_id = %s
                     """,
-                    (index, lesson_id, module_id),
+                    (index, lesson_id, course_id),
                 )
             await conn.commit()
 

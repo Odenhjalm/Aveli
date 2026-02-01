@@ -826,6 +826,18 @@ async def delete_course(course_id: str, current: TeacherUser):
     return {"deleted": True}
 
 
+@router.get("/courses/{course_id}/lessons")
+async def course_lessons(course_id: str, current: TeacherUser):
+    if not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
+        raise HTTPException(status_code=403, detail="Not course owner")
+    lessons = await courses_service.list_course_lessons(course_id)
+    return {"items": lessons}
+
+
 @router.get("/courses/{course_id}/modules")
 async def course_modules(course_id: str, current: TeacherUser):
     if not await models.is_course_owner(current["id"], course_id):
@@ -928,8 +940,8 @@ async def create_lesson(
     payload: schemas.StudioLessonCreate,
     current: TeacherUser,
 ):
-    course_id = await courses_service.get_module_course_id(payload.module_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
+    course_id = payload.course_id
+    if not await models.is_course_owner(current["id"], course_id):
         _log_course_owner_denied(
             str(current["id"]),
             course_id=course_id,
@@ -937,7 +949,7 @@ async def create_lesson(
         raise HTTPException(status_code=403, detail="Not course owner")
     lesson_id = str(payload.id) if payload.id else None
     row = await courses_service.create_lesson(
-        payload.module_id,
+        course_id,
         title=payload.title,
         content_markdown=payload.content_markdown,
         position=payload.position,
@@ -955,7 +967,7 @@ async def update_lesson(
     payload: schemas.StudioLessonUpdate,
     current: TeacherUser,
 ):
-    module_id, course_id = await courses_service.lesson_course_ids(lesson_id)
+    _, course_id = await courses_service.lesson_course_ids(lesson_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
         _log_course_owner_denied(
             str(current["id"]),
@@ -963,7 +975,7 @@ async def update_lesson(
         )
         raise HTTPException(status_code=403, detail="Not course owner")
     existing = await courses_service.fetch_lesson(lesson_id)
-    if not existing or not module_id:
+    if not existing:
         raise HTTPException(status_code=404, detail="Lesson not found")
     patch = payload.model_dump(exclude_unset=True)
 
@@ -984,7 +996,7 @@ async def update_lesson(
         )
 
     lesson_payload = {"id": lesson_id, **patch}
-    row = await courses_service.upsert_lesson(module_id, lesson_payload)
+    row = await courses_service.upsert_lesson(str(course_id), lesson_payload)
     if not row:
         raise HTTPException(status_code=400, detail="Failed to update lesson")
 

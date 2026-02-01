@@ -183,7 +183,7 @@ async def list_lessons(module_id: str) -> Sequence[dict[str, Any]]:
 
 
 async def create_lesson(
-    module_id: str,
+    course_id: str,
     *,
     title: str,
     content_markdown: str | None = None,
@@ -196,7 +196,7 @@ async def create_lesson(
         content_value = serialize_audio_embeds(content_value)
 
     row = await courses_repo.create_lesson(
-        module_id,
+        course_id,
         title=title,
         content_markdown=content_value,
         position=position,
@@ -250,7 +250,7 @@ async def list_home_audio_media(
 
 
 async def upsert_lesson(
-    module_id: str,
+    course_id: str,
     payload: LessonPayload,
 ) -> dict[str, Any]:
     """Create or update lesson data."""
@@ -260,7 +260,7 @@ async def upsert_lesson(
         serialized = serialize_audio_embeds(content_value)
         lesson_payload["content_markdown"] = serialized
 
-    row = await courses_repo.upsert_lesson(module_id, lesson_payload)
+    row = await courses_repo.upsert_lesson(course_id, lesson_payload)
     materialized = _materialize_optional_row(row)
     return materialized or {}
 
@@ -274,11 +274,11 @@ async def delete_lesson(lesson_id: str) -> bool:
 
 
 async def reorder_lessons(
-    module_id: str,
+    course_id: str,
     lesson_ids_in_order: Sequence[str],
 ) -> None:
-    """Adjust lesson ordering for a module."""
-    await courses_repo.reorder_lessons(module_id, lesson_ids_in_order)
+    """Adjust lesson ordering for a course."""
+    await courses_repo.reorder_lessons(course_id, lesson_ids_in_order)
 
 
 async def fetch_module(module_id: str) -> dict[str, Any] | None:

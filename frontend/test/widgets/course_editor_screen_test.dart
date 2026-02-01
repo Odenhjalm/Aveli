@@ -105,23 +105,14 @@ void main() {
         'is_published': false,
       },
     );
-    when(() => studioRepo.listModules('course-1')).thenAnswer(
-      (_) async => [
-        {
-          'id': 'module-1',
-          'title': 'Intro',
-          'position': 1,
-          'course_id': 'course-1',
-        },
-      ],
-    );
-    when(() => studioRepo.listLessons('module-1')).thenAnswer(
+    when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
       (_) async => [
         {
           'id': 'lesson-1',
           'title': 'Välkommen',
           'position': 1,
           'is_intro': true,
+          'course_id': 'course-1',
         },
       ],
     );
@@ -232,7 +223,7 @@ void main() {
     }
 
     expect(find.text('Tarot Basics'), findsWidgets);
-    expect(find.text('Moduler & lektioner'), findsOneWidget);
+    expect(find.text('Lektioner i kursen'), findsOneWidget);
     expect(find.text('Välkommen'), findsWidgets);
     expect(find.text('Spara lektionsinnehåll'), findsOneWidget);
     expect(find.text('Ladda upp WAV'), findsOneWidget);
@@ -246,6 +237,115 @@ void main() {
       ),
     );
     expect(uploadButton.onPressed, isNotNull);
+  });
+
+  testWidgets('CourseEditorScreen creates lessons directly under course', (
+    tester,
+  ) async {
+    final studioRepo = _MockStudioRepository();
+
+    when(() => studioRepo.myCourses()).thenAnswer(
+      (_) async => [
+        {'id': 'course-1', 'title': 'Tarot Basics'},
+      ],
+    );
+    when(() => studioRepo.fetchStatus()).thenAnswer(
+      (_) async => const StudioStatus(
+        isTeacher: true,
+        verifiedCertificates: 1,
+        hasApplication: false,
+      ),
+    );
+    when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+      (_) async => {
+        'title': 'Tarot Basics',
+        'slug': 'tarot-basics',
+        'description': 'Lär dig läsa korten',
+        'price_amount_cents': 1200,
+        'is_free_intro': true,
+        'is_published': false,
+      },
+    );
+    when(
+      () => studioRepo.listCourseLessons('course-1'),
+    ).thenAnswer((_) async => []);
+    when(
+      () => studioRepo.upsertLesson(
+        courseId: 'course-1',
+        title: any(named: 'title'),
+        position: any(named: 'position'),
+        isIntro: any(named: 'isIntro'),
+        createId: any(named: 'createId'),
+      ),
+    ).thenAnswer((invocation) async {
+      final createId = invocation.namedArguments[#createId] as String;
+      final title = invocation.namedArguments[#title] as String;
+      final position = invocation.namedArguments[#position] as int;
+      return {
+        'id': createId,
+        'title': title,
+        'position': position,
+        'is_intro': false,
+        'course_id': 'course-1',
+      };
+    });
+    when(() => studioRepo.listLessonMedia(any())).thenAnswer((_) async => []);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              stripePublishableKey: 'pk_test_stub',
+              stripeMerchantDisplayName: 'Test Merchant',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          studioUploadQueueProvider.overrideWith(
+            (ref) => _NoopUploadQueueNotifier(studioRepo),
+          ),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            FlutterQuillLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('sv')],
+          home: CourseEditorScreen(studioRepository: studioRepo),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Inga lektioner ännu.'), findsOneWidget);
+
+    final addLesson = find.text('Lägg till lektion').first;
+    await tester.ensureVisible(addLesson);
+    await tester.tap(addLesson);
+    await tester.pump();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    verify(
+      () => studioRepo.upsertLesson(
+        courseId: 'course-1',
+        title: 'Ny lektion',
+        position: any(named: 'position'),
+        isIntro: false,
+        createId: any(named: 'createId'),
+      ),
+    ).called(1);
+    expect(find.text('Ny lektion'), findsWidgets);
   });
 
   testWidgets(
@@ -276,23 +376,14 @@ void main() {
           'is_published': false,
         },
       );
-      when(() => studioRepo.listModules('course-1')).thenAnswer(
-        (_) async => [
-          {
-            'id': 'module-1',
-            'title': 'Intro',
-            'position': 1,
-            'course_id': 'course-1',
-          },
-        ],
-      );
-      when(() => studioRepo.listLessons('module-1')).thenAnswer(
+      when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
         (_) async => [
           {
             'id': 'lesson-1',
             'title': 'Välkommen',
             'position': 1,
             'is_intro': true,
+            'course_id': 'course-1',
           },
         ],
       );
@@ -427,11 +518,16 @@ void main() {
         'is_published': false,
       },
     );
-    when(() => studioRepo.listModules('course-1')).thenAnswer((_) async => []);
-    when(() => studioRepo.updateCourse(any(), any())).thenAnswer((invocation) async {
+    when(
+      () => studioRepo.listCourseLessons('course-1'),
+    ).thenAnswer((_) async => []);
+    when(() => studioRepo.updateCourse(any(), any())).thenAnswer((
+      invocation,
+    ) async {
       final courseId = invocation.positionalArguments[0] as String;
-      final patch =
-          Map<String, dynamic>.from(invocation.positionalArguments[1] as Map);
+      final patch = Map<String, dynamic>.from(
+        invocation.positionalArguments[1] as Map,
+      );
       return {'id': courseId, ...patch};
     });
 
@@ -525,8 +621,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    final captured =
-        verify(() => studioRepo.updateCourse('course-1', captureAny())).captured;
+    final captured = verify(
+      () => studioRepo.updateCourse('course-1', captureAny()),
+    ).captured;
     expect(captured, hasLength(1));
     final patch = Map<String, dynamic>.from(captured.single as Map);
     expect(patch['price_amount_cents'], 9900);
