@@ -69,60 +69,59 @@ class _ProfileMediaBody extends ConsumerWidget {
         .toList(growable: false);
     final groupedItems = _groupByCourse(items);
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GlassCard(
-            padding: const EdgeInsets.all(24),
-            opacity: 0.10,
-            sigmaX: 3,
-            sigmaY: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+        opacity: 0.10,
+        sigmaX: 3,
+        sigmaY: 3,
+        borderColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Media i Home-spelaren',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                Expanded(
+                  child: Text(
+                    'Media i Home-spelaren',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Uppdatera',
+                  onPressed: isBusy
+                      ? null
+                      : () =>
+                            ref.read(teacherProfileMediaProvider.notifier).refresh(),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Här väljer du vilken av din media som får visas i Home-spelaren.\nEndast media du aktivt väljer här kan visas för elever.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 18),
+            if (items.isEmpty)
+              _EmptyState(
+                onAdd: isBusy
+                    ? null
+                    : () => _ProfileMediaDialogs.showCreateDialog(
+                        context,
+                        ref,
+                        state,
                       ),
-                    ),
-                    IconButton(
-                      tooltip: 'Uppdatera',
-                      onPressed: isBusy
-                          ? null
-                          : () => ref
-                                .read(teacherProfileMediaProvider.notifier)
-                                .refresh(),
-                      icon: const Icon(Icons.refresh),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Här väljer du vilken av din media som får visas i Home-spelaren.\nEndast media du aktivt väljer här kan visas för elever.',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 20),
-                if (items.isEmpty)
-                  _EmptyState(
-                    onAdd: isBusy
-                        ? null
-                        : () => _ProfileMediaDialogs.showCreateDialog(
-                            context,
-                            ref,
-                            state,
-                          ),
-                  )
-                else
-                  Column(
-                    children: [
-                      for (final entry in groupedItems.entries) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(0, 14, 0, 8),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final entry in groupedItems.entries) ...[
+                    Row(
+                      children: [
+                        Expanded(
                           child: Text(
                             entry.key,
                             style: theme.textTheme.titleMedium?.copyWith(
@@ -130,73 +129,86 @@ class _ProfileMediaBody extends ConsumerWidget {
                             ),
                           ),
                         ),
-                        for (final item in entry.value)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: _ProfileMediaTile(
-                              item: item,
-                              disabled: isBusy,
-                            ),
+                        Text(
+                          'Visa i Home-spelaren',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
                           ),
+                        ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                    ),
+                    for (var index = 0; index < entry.value.length; index++) ...[
+                      _ProfileMediaRow(
+                        item: entry.value[index],
+                        disabled: isBusy,
+                      ),
+                      if (index != entry.value.length - 1)
+                        Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+                        ),
                     ],
-                  ),
-              ],
+                    const SizedBox(height: 18),
+                  ],
+                ],
+              ),
+            const SizedBox(height: 6),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
             ),
-          ),
-          const SizedBox(height: 24),
-          GlassCard(
-            padding: const EdgeInsets.all(24),
-            opacity: 0.10,
-            sigmaX: 3,
-            sigmaY: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Tillgängligt innehåll',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _AvailableContentList(
-                  title: 'Lektionsmedia',
-                  icon: Icons.play_circle_outline,
-                  color: theme.colorScheme.primary,
-                  emptyMessage:
-                      'När du lägger till ljud, video eller bilder i dina lektioner visas de här.',
-                  entries: state.lessonSources
-                      .map(
-                        (item) => _AvailableContentEntry(
-                          id: item.id,
-                          subtitle: item.courseTitle ?? 'Okänd kurs',
-                          title: item.lessonTitle ?? 'Namnlös lektion',
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
-                const SizedBox(height: 20),
-                _AvailableContentList(
-                  title: 'Livesändningar',
-                  icon: Icons.mic_external_on_outlined,
-                  color: theme.colorScheme.secondary,
-                  emptyMessage:
-                      'När du har spelat in ett liveseminarium visas det här.',
-                  entries: state.recordingSources
-                      .map(
-                        (item) => _AvailableContentEntry(
-                          id: item.id,
-                          subtitle: item.seminarTitle ?? 'Seminarium',
-                          title: item.assetUrl,
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
-              ],
+            const SizedBox(height: 18),
+            Text(
+              'Tillgängligt innehåll',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            _AvailableContentList(
+              title: 'Lektionsmedia',
+              icon: Icons.play_circle_outline,
+              color: theme.colorScheme.primary,
+              emptyMessage:
+                  'När du lägger till ljud, video eller bilder i dina lektioner visas de här.',
+              entries: state.lessonSources
+                  .map(
+                    (item) => _AvailableContentEntry(
+                      id: item.id,
+                      subtitle: item.courseTitle ?? 'Okänd kurs',
+                      title: item.lessonTitle ?? 'Namnlös lektion',
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 18),
+            _AvailableContentList(
+              title: 'Livesändningar',
+              icon: Icons.mic_external_on_outlined,
+              color: theme.colorScheme.secondary,
+              emptyMessage:
+                  'När du har spelat in ett liveseminarium visas det här.',
+              entries: state.recordingSources
+                  .map(
+                    (item) => _AvailableContentEntry(
+                      id: item.id,
+                      subtitle: item.seminarTitle ?? 'Seminarium',
+                      title: item.assetUrl,
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -229,8 +241,8 @@ class _ProfileMediaBody extends ConsumerWidget {
   }
 }
 
-class _ProfileMediaTile extends ConsumerWidget {
-  const _ProfileMediaTile({required this.item, required this.disabled});
+class _ProfileMediaRow extends ConsumerWidget {
+  const _ProfileMediaRow({required this.item, required this.disabled});
 
   final TeacherProfileMediaItem item;
   final bool disabled;
@@ -240,68 +252,69 @@ class _ProfileMediaTile extends ConsumerWidget {
     final controller = ref.read(teacherProfileMediaProvider.notifier);
     final theme = Theme.of(context);
     final formatLabel = _formatLabelFor(item);
+    final duration = item.source.lessonMedia?.durationSeconds;
+    final durationLabel = duration != null ? _durationLabel(duration) : null;
+    final metadata = <String>[
+      if (formatLabel != null) formatLabel,
+      if (durationLabel != null) durationLabel,
+    ].join(' • ');
+    final icon = _iconFor(item);
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      opacity: item.enabledForHomePlayer ? 1 : 0.78,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: theme.colorScheme.primary.withValues(alpha: 0.18),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: theme.shadowColor.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
+      opacity: item.enabledForHomePlayer ? 1 : 0.62,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 22,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _titleFor(item),
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (formatLabel != null) ...[
-                const SizedBox(height: 6),
-                _Badge(label: formatLabel, theme: theme),
-              ],
-              const SizedBox(height: 12),
-              Row(
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: Text(
-                      'Visa i Home-spelaren',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  Text(
+                    _titleFor(item),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  Switch.adaptive(
-                    value: item.enabledForHomePlayer,
-                    onChanged: disabled
-                        ? null
-                        : (value) async {
-                            try {
-                              await controller.toggleHomePlayer(item.id, value);
-                            } catch (error) {
-                              if (!context.mounted) return;
-                              _showErrorSnackBar(context, error);
-                            }
-                          },
-                  ),
+                  if (metadata.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '($metadata)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            Switch.adaptive(
+              value: item.enabledForHomePlayer,
+              onChanged: disabled
+                  ? null
+                  : (value) async {
+                      try {
+                        await controller.toggleHomePlayer(item.id, value);
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        _showErrorSnackBar(context, error);
+                      }
+                    },
+            ),
+          ],
         ),
       ),
     );
@@ -323,43 +336,38 @@ class _ProfileMediaTile extends ConsumerWidget {
     final lesson = item.source.lessonMedia;
     if (lesson == null) return null;
     final contentType = (lesson.contentType ?? '').toLowerCase();
-    if (contentType.contains('wav')) return 'WAV';
+    if (contentType.contains('wav')) return 'wav';
     if (contentType.contains('mpeg') || contentType.contains('mp3')) {
-      return 'MP3';
+      return 'mp3';
     }
 
     final path = (lesson.storagePath ?? '').toLowerCase();
-    if (path.endsWith('.wav')) return 'WAV';
-    if (path.endsWith('.mp3')) return 'MP3';
+    if (path.endsWith('.wav')) return 'wav';
+    if (path.endsWith('.mp3')) return 'mp3';
 
     return null;
   }
-}
 
-class _Badge extends StatelessWidget {
-  const _Badge({required this.label, required this.theme});
+  static String _durationLabel(int seconds) {
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final minutes = safeSeconds ~/ 60;
+    final remaining = safeSeconds % 60;
+    return '$minutes:${remaining.toString().padLeft(2, '0')}';
+  }
 
-  final String label;
-  final ThemeData theme;
+  static IconData _iconFor(TeacherProfileMediaItem item) {
+    final lesson = item.source.lessonMedia;
+    final contentType = (lesson?.contentType ?? '').toLowerCase();
+    if (contentType.startsWith('audio/')) return Icons.headphones_rounded;
+    if (contentType.startsWith('video/')) return Icons.videocam_outlined;
+    if (contentType.startsWith('image/')) return Icons.image_outlined;
+    if (contentType.contains('pdf')) return Icons.picture_as_pdf_outlined;
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Text(
-        label,
-        style: theme.textTheme.labelMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+    final path = (lesson?.storagePath ?? '').toLowerCase();
+    if (path.endsWith('.wav') || path.endsWith('.mp3')) {
+      return Icons.headphones_rounded;
+    }
+    return Icons.insert_drive_file_outlined;
   }
 }
 
