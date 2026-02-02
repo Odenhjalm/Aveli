@@ -17,8 +17,12 @@ class CourseCoverAssets {
     String? slug,
     String? coverUrl,
   }) {
-    if (coverUrl != null && coverUrl.isNotEmpty) {
-      return NetworkImage(coverUrl);
+    final cover = coverUrl?.trim() ?? '';
+    if (cover.isNotEmpty) {
+      if (cover.startsWith('http://') || cover.startsWith('https://')) {
+        return NetworkImage(cover);
+      }
+      return assets.imageProvider(cover);
     }
     final path = pathForSlug(slug);
     if (path != null) {

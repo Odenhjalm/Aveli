@@ -33,7 +33,7 @@ class BackendAssetResolver {
 
   String _normalize(String assetPath) {
     final trimmed = assetPath.trim();
-    if (trimmed.startsWith('/assets/')) {
+    if (trimmed.startsWith('/')) {
       return trimmed;
     }
     final withoutLeadingSlashes = trimmed.replaceFirst(RegExp(r'^/+'), '');

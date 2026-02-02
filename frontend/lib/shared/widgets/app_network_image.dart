@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 
 final _webProtectedImageProvider = FutureProvider.family
@@ -69,13 +70,15 @@ class AppNetworkImage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (url.isEmpty) {
+    final trimmedUrl = url.trim();
+    if (trimmedUrl.isEmpty) {
       return error ?? const SizedBox.shrink();
     }
+    final resolvedUrl = _resolveUrl(ref, trimmedUrl);
 
     if (kIsWeb) {
       if (requiresAuth) {
-        final imageBytes = ref.watch(_webProtectedImageProvider(url));
+        final imageBytes = ref.watch(_webProtectedImageProvider(resolvedUrl));
         return imageBytes.when(
           data: (bytes) {
             if (bytes == null || bytes.isEmpty) {
@@ -88,7 +91,7 @@ class AppNetworkImage extends ConsumerWidget {
               errorBuilder: (_, err, stack) {
                 ImageErrorLogger.log(
                   source: 'AppNetworkImage(web-memory)',
-                  url: url,
+                  url: resolvedUrl,
                   error: err,
                   stackTrace: stack,
                 );
@@ -100,7 +103,7 @@ class AppNetworkImage extends ConsumerWidget {
           error: (err, stack) {
             ImageErrorLogger.log(
               source: 'AppNetworkImage(web-auth)',
-              url: url,
+              url: resolvedUrl,
               error: err,
               stackTrace: stack,
             );
@@ -109,12 +112,12 @@ class AppNetworkImage extends ConsumerWidget {
         );
       }
       return Image.network(
-        url,
+        resolvedUrl,
         fit: fit,
         errorBuilder: (_, err, stack) {
           ImageErrorLogger.log(
             source: 'AppNetworkImage',
-            url: url,
+            url: resolvedUrl,
             error: err,
             stackTrace: stack,
           );
@@ -126,12 +129,12 @@ class AppNetworkImage extends ConsumerWidget {
 
     if (!requiresAuth) {
       return Image.network(
-        url,
+        resolvedUrl,
         fit: fit,
         errorBuilder: (_, err, stack) {
           ImageErrorLogger.log(
             source: 'AppNetworkImage',
-            url: url,
+            url: resolvedUrl,
             error: err,
             stackTrace: stack,
           );
@@ -148,13 +151,13 @@ class AppNetworkImage extends ConsumerWidget {
             ? null
             : {'Authorization': 'Bearer $token'};
         return Image.network(
-          url,
+          resolvedUrl,
           headers: headers,
           fit: fit,
           errorBuilder: (_, err, stack) {
             ImageErrorLogger.log(
               source: 'AppNetworkImage(auth)',
-              url: url,
+              url: resolvedUrl,
               error: err,
               stackTrace: stack,
             );
@@ -163,5 +166,17 @@ class AppNetworkImage extends ConsumerWidget {
         );
       },
     );
+  }
+
+  String _resolveUrl(WidgetRef ref, String input) {
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+      return input;
+    }
+    try {
+      final repo = ref.read(mediaRepositoryProvider);
+      return repo.resolveUrl(input);
+    } catch (_) {
+      return input;
+    }
   }
 }
