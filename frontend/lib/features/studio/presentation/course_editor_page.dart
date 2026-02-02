@@ -1604,6 +1604,59 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  String _suggestMediaDisplayName(String filename) {
+    final trimmed = filename.trim();
+    if (trimmed.isEmpty) return '';
+    final withoutQuery = trimmed.split('?').first;
+    final segments = withoutQuery.split('/');
+    final last = segments.isNotEmpty ? segments.last : withoutQuery;
+    final parts = last.split('.');
+    final stem = parts.length > 1
+        ? parts.sublist(0, parts.length - 1).join('.')
+        : last;
+    return stem.replaceAll(RegExp(r'[_-]+'), ' ').trim();
+  }
+
+  Future<String?> _promptRequiredMediaDisplayName(String suggested) async {
+    final controller = TextEditingController(text: suggested);
+    String current = controller.text.trim();
+
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Ge ljudet/videon ett namn'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Namn',
+              hintText: 'Till exempel: Introduktion',
+            ),
+            onChanged: (_) => setDialogState(() {
+              current = controller.text.trim();
+            }),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text('Avbryt'),
+            ),
+            GradientButton(
+              onPressed: current.isEmpty
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(current),
+              child: const Text('Fortsätt'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    controller.dispose();
+    return result?.trim();
+  }
+
   Future<void> _pickAndUploadWith(
     List<String> extensions, {
     String? acceptHint,
@@ -1630,6 +1683,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
         return;
       }
+      String? displayName;
+      final lower = contentType.toLowerCase();
+      if (lower.startsWith('audio/') || lower.startsWith('video/')) {
+        displayName = await _promptRequiredMediaDisplayName(
+          _suggestMediaDisplayName(name),
+        );
+        if (displayName == null) return;
+        if (displayName.trim().isEmpty) {
+          if (!mounted) return;
+          showSnack(context, 'Namn krävs för ljud och video.');
+          return;
+        }
+      }
       ref
           .read(studioUploadQueueProvider.notifier)
           .enqueueUpload(
@@ -1637,6 +1703,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             lessonId: lessonId,
             data: bytes,
             filename: name,
+            displayName: displayName,
             contentType: contentType,
             isIntro: _lessonIntro,
           );

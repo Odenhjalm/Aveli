@@ -299,6 +299,13 @@ async def studio_create_profile_media(
         raise HTTPException(
             status_code=422, detail="external_url is required for external media"
         )
+    if media_kind in {
+        schemas.TeacherProfileMediaKind.lesson_media,
+        schemas.TeacherProfileMediaKind.seminar_recording,
+    }:
+        title = (payload.title or "").strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="title is required for selected media kind")
 
     row = await repositories.create_teacher_profile_media(
         teacher_id=str(current["id"]),
@@ -331,6 +338,9 @@ async def studio_update_profile_media(
     payload: schemas.TeacherProfileMediaUpdate,
     current: TeacherUser,
 ):
+    if payload.title is not None and not payload.title.strip():
+        raise HTTPException(status_code=422, detail="title cannot be empty")
+
     previous_cover_media_id: str | None = None
     if payload.cover_media_id is not None:
         existing = await repositories.get_teacher_profile_media(

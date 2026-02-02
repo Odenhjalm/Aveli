@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:aveli/data/models/teacher_profile_media.dart';
+
 import '../data/studio_repository.dart';
 
 enum UploadJobStatus { pending, uploading, success, failed, cancelled }
@@ -16,6 +18,7 @@ class UploadJob {
     required this.courseId,
     required this.lessonId,
     required this.filename,
+    this.displayName,
     required this.contentType,
     required this.isIntro,
     required this.data,
@@ -32,6 +35,7 @@ class UploadJob {
   final String courseId;
   final String lessonId;
   final String filename;
+  final String? displayName;
   final String contentType;
   final bool isIntro;
   final Uint8List data;
@@ -62,6 +66,7 @@ class UploadJob {
       courseId: courseId,
       lessonId: lessonId,
       filename: filename,
+      displayName: displayName,
       contentType: contentType,
       isIntro: isIntro ?? this.isIntro,
       data: clearData ? Uint8List(0) : (data ?? this.data),
@@ -91,6 +96,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     required String lessonId,
     required Uint8List data,
     required String filename,
+    String? displayName,
     required String contentType,
     required bool isIntro,
   }) {
@@ -111,6 +117,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
       courseId: courseId,
       lessonId: lessonId,
       filename: filename,
+      displayName: displayName,
       contentType: contentType,
       isIntro: isIntro,
       data: data,
@@ -225,7 +232,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     );
 
     try {
-      await _repo.uploadLessonMedia(
+      final uploaded = await _repo.uploadLessonMedia(
         courseId: job.courseId,
         lessonId: job.lessonId,
         data: job.data,
@@ -238,6 +245,33 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
           _updateJob(job.id, (current) => current.copyWith(progress: fraction));
         },
       );
+
+      final displayName = job.displayName?.trim();
+      final lower = job.contentType.toLowerCase();
+      final shouldCreateHomeControl =
+          (lower.startsWith('audio/') || lower.startsWith('video/')) &&
+          displayName != null &&
+          displayName.isNotEmpty;
+
+      if (shouldCreateHomeControl) {
+        final mediaId = uploaded['id']?.toString().trim();
+        if (mediaId != null && mediaId.isNotEmpty) {
+          try {
+            await _repo.createProfileMedia(
+              mediaKind: TeacherProfileMediaKind.lessonMedia,
+              mediaId: mediaId,
+              title: displayName,
+              isPublished: false,
+            );
+          } catch (error) {
+            if (kDebugMode) {
+              debugPrint(
+                'Failed to create profile media item for upload: mediaId=$mediaId error=$error',
+              );
+            }
+          }
+        }
+      }
 
       _updateJob(
         job.id,
@@ -284,7 +318,8 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
       401 =>
         'Sessionen har gått ut. Logga in igen för att fortsätta ladda upp.',
       403 => 'Du har inte behörighet att ladda upp till den här lektionen.',
-      422 => 'Uppladdningen kunde inte valideras. Kontrollera filen och försök igen.',
+      422 =>
+        'Uppladdningen kunde inte valideras. Kontrollera filen och försök igen.',
       _ => message,
     };
 

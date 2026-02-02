@@ -63,6 +63,7 @@ class _NoopUploadQueueNotifier extends UploadQueueNotifier {
     required String lessonId,
     required Uint8List data,
     required String filename,
+    String? displayName,
     required String contentType,
     required bool isIntro,
   }) {

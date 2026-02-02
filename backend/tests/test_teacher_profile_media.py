@@ -165,6 +165,26 @@ async def test_teacher_profile_media_flow(async_client):
             json={
                 "media_kind": "lesson_media",
                 "media_id": lesson_media_id,
+            },
+            headers=auth_header(access_token),
+        )
+        assert resp.status_code == 422, resp.text
+
+        resp = await async_client.post(
+            "/studio/profile/media",
+            json={
+                "media_kind": "seminar_recording",
+                "media_id": recording_id,
+            },
+            headers=auth_header(access_token),
+        )
+        assert resp.status_code == 422, resp.text
+
+        resp = await async_client.post(
+            "/studio/profile/media",
+            json={
+                "media_kind": "lesson_media",
+                "media_id": lesson_media_id,
                 "title": "Featured Meditation",
                 "description": "Relaxing audio clip",
                 "position": 5,
@@ -200,6 +220,14 @@ async def test_teacher_profile_media_flow(async_client):
         assert updated["position"] == 1
         assert updated["is_published"] is False
         assert updated["metadata"]["cta"] == "listen"
+
+        resp = await async_client.patch(
+            f"/studio/profile/media/{profile_media_id}",
+            json={"title": ""},
+            headers=auth_header(access_token),
+        )
+        assert resp.status_code == 422, resp.text
+
         resp = await async_client.get(
             f"/community/teachers/{teacher_id}/media"
         )

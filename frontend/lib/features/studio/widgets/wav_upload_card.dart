@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -121,6 +122,59 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     return lower.isEmpty ? 'audio/wav' : lower;
   }
 
+  String _suggestMediaDisplayName(String filename) {
+    final trimmed = filename.trim();
+    if (trimmed.isEmpty) return '';
+    final withoutQuery = trimmed.split('?').first;
+    final segments = withoutQuery.split('/');
+    final last = segments.isNotEmpty ? segments.last : withoutQuery;
+    final parts = last.split('.');
+    final stem = parts.length > 1
+        ? parts.sublist(0, parts.length - 1).join('.')
+        : last;
+    return stem.replaceAll(RegExp(r'[_-]+'), ' ').trim();
+  }
+
+  Future<String?> _promptRequiredMediaDisplayName(String suggested) async {
+    final controller = TextEditingController(text: suggested);
+    String current = controller.text.trim();
+
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Ge ljudet/videon ett namn'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Namn',
+              hintText: 'Till exempel: Introduktion',
+            ),
+            onChanged: (_) => setDialogState(() {
+              current = controller.text.trim();
+            }),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text('Avbryt'),
+            ),
+            ElevatedButton(
+              onPressed: current.isEmpty
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(current),
+              child: const Text('Fortsätt'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    controller.dispose();
+    return result?.trim();
+  }
+
   String _friendlyUploadFailure(WavUploadFailureKind kind) {
     switch (kind) {
       case WavUploadFailureKind.cancelled:
@@ -211,11 +265,25 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       return;
     }
 
+    final displayName = await _promptRequiredMediaDisplayName(
+      _suggestMediaDisplayName(picked.name),
+    );
+    if (!mounted) return;
+    if (displayName == null) {
+      setState(() => _status = 'Uppladdning avbröts.');
+      return;
+    }
+    if (displayName.trim().isEmpty) {
+      setState(() => _status = 'Namn krävs för ljud och video.');
+      showSnack(context, 'Namn krävs för ljud och video.');
+      return;
+    }
+
     final normalizedMime = _normalizeWavMimeType(picked.mimeType, picked.name);
 
     final resumeSession = await findResumableSession(
-      courseId: courseId!,
-      lessonId: lessonId!,
+      courseId: courseId,
+      lessonId: lessonId,
       file: picked,
     );
     if (!mounted) return;
@@ -324,8 +392,8 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       final uploader = widget.uploadFileOverride ?? uploadWavFile;
       await uploader(
         mediaId: mediaId,
-        courseId: courseId!,
-        lessonId: lessonId!,
+        courseId: courseId,
+        lessonId: lessonId,
         uploadUrl: uploadUrl,
         objectPath: objectPath,
         headers: uploadHeaders,
@@ -370,6 +438,29 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         },
         resumableSession: resumableSession,
       );
+
+      try {
+        final studioRepo = ref.read(studioRepositoryProvider);
+        final mediaItems = await studioRepo.listLessonMedia(lessonId);
+        String? lessonMediaId;
+        for (final item in mediaItems) {
+          final assetId = item['media_asset_id']?.toString();
+          if (assetId != null && assetId == mediaId) {
+            lessonMediaId = item['id']?.toString();
+            break;
+          }
+        }
+        if (lessonMediaId != null && lessonMediaId.trim().isNotEmpty) {
+          await studioRepo.createProfileMedia(
+            mediaKind: TeacherProfileMediaKind.lessonMedia,
+            mediaId: lessonMediaId,
+            title: displayName.trim(),
+            isPublished: false,
+          );
+        }
+      } catch (_) {
+        // Best-effort: WAV should still work even if Home-media registration fails.
+      }
 
       if (!mounted) return;
       setState(() {

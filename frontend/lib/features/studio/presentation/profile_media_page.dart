@@ -82,7 +82,7 @@ class _ProfileMediaBody extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Här väljer du vilken av din media som får visas i Home-spelaren.\nEndast media du aktivt väljer här kan visas för elever.',
+              'Här väljer du vilken media som får visas i Home-spelaren.\nEndast namngiven ljud/video som du aktivt väljer här kan visas för elever.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 20),
@@ -101,74 +101,59 @@ class _ProfileMediaBody extends ConsumerWidget {
   static List<_UnifiedMediaRow> _buildUnifiedRows(
     TeacherProfileMediaState state,
   ) {
-    final itemsBySourceKey = <String, TeacherProfileMediaItem>{};
-    for (final item in state.items) {
-      final id = item.mediaId?.trim();
-      if (id == null || id.isEmpty) continue;
-      itemsBySourceKey[_sourceKey(item.mediaKind, id)] = item;
-    }
-
-    final sourceKeys = <String>{};
     final rows = <_UnifiedMediaRow>[];
-
-    for (final lesson in state.lessonSources) {
-      final key = _sourceKey(TeacherProfileMediaKind.lessonMedia, lesson.id);
-      sourceKeys.add(key);
-      final item = itemsBySourceKey[key];
-      rows.add(
-        _UnifiedMediaRow(
-          kind: TeacherProfileMediaKind.lessonMedia,
-          mediaId: lesson.id,
-          filename:
-              _filenameForLesson(lesson, item) ?? _titleForLesson(lesson, item),
-          courseTitle: _courseTitleForLesson(lesson, item),
-          enabledForHomePlayer: item?.enabledForHomePlayer ?? false,
-          icon: _iconForLesson(lesson),
-          durationSeconds:
-              lesson.durationSeconds ??
-              item?.source.lessonMedia?.durationSeconds,
-          createdAt: item?.createdAt ?? lesson.createdAt,
-        ),
-      );
-    }
-
-    for (final recording in state.recordingSources) {
-      final key = _sourceKey(
-        TeacherProfileMediaKind.seminarRecording,
-        recording.id,
-      );
-      sourceKeys.add(key);
-      final item = itemsBySourceKey[key];
-      rows.add(
-        _UnifiedMediaRow(
-          kind: TeacherProfileMediaKind.seminarRecording,
-          mediaId: recording.id,
-          filename:
-              _filenameForRecording(recording, item) ??
-              _titleForRecording(recording, item),
-          courseTitle: _courseTitleForRecording(recording, item),
-          enabledForHomePlayer: item?.enabledForHomePlayer ?? false,
-          icon: Icons.mic_external_on_outlined,
-          durationSeconds:
-              recording.durationSeconds ??
-              item?.source.seminarRecording?.durationSeconds,
-          createdAt: item?.createdAt ?? recording.createdAt,
-        ),
-      );
-    }
 
     for (final item in state.items) {
       if (item.mediaKind == TeacherProfileMediaKind.external) continue;
-      final id = item.mediaId?.trim();
-      if (id == null || id.isEmpty) continue;
-      final key = _sourceKey(item.mediaKind, id);
-      if (sourceKeys.contains(key)) continue;
+      final title = item.title?.trim();
+      if (title == null || title.isEmpty) continue;
+      final source = item.source;
+      if (item.mediaKind == TeacherProfileMediaKind.lessonMedia) {
+        final lesson = source.lessonMedia;
+        if (lesson == null) continue;
+        final kind = lesson.kind.toLowerCase();
+        final contentType = (lesson.contentType ?? '').toLowerCase();
+        final isAudio =
+            kind.contains('audio') || contentType.startsWith('audio/');
+        final isVideo =
+            kind.contains('video') || contentType.startsWith('video/');
+        if (!isAudio && !isVideo) continue;
+        rows.add(
+          _UnifiedMediaRow(
+            itemId: item.id,
+            title: title,
+            courseTitle: _courseTitleForLessonMediaSource(lesson),
+            enabledForHomePlayer: item.enabledForHomePlayer,
+            icon: isVideo ? Icons.videocam_outlined : Icons.headphones,
+            durationSeconds: lesson.durationSeconds,
+            createdAt: item.createdAt,
+          ),
+        );
+        continue;
+      }
+      if (item.mediaKind == TeacherProfileMediaKind.seminarRecording) {
+        final recording = source.seminarRecording;
+        if (recording == null) continue;
+        rows.add(
+          _UnifiedMediaRow(
+            itemId: item.id,
+            title: title,
+            courseTitle: _courseTitleForRecordingSource(recording),
+            enabledForHomePlayer: item.enabledForHomePlayer,
+            icon: Icons.mic_external_on_outlined,
+            durationSeconds: recording.durationSeconds,
+            createdAt: item.createdAt,
+          ),
+        );
+        continue;
+      }
       rows.add(
         _UnifiedMediaRow(
-          kind: item.mediaKind,
-          mediaId: id,
-          filename: _filenameForItem(item) ?? _titleForItem(item),
-          courseTitle: _courseTitleForItem(item),
+          itemId: item.id,
+          title: title,
+          courseTitle: _courseTitleForLessonMediaSource(
+            item.source.lessonMedia,
+          ),
           enabledForHomePlayer: item.enabledForHomePlayer,
           icon: _iconForItem(item),
           durationSeconds:
@@ -183,10 +168,6 @@ class _ProfileMediaBody extends ConsumerWidget {
     return rows;
   }
 
-  static String _sourceKey(TeacherProfileMediaKind kind, String id) {
-    return '${kind.apiValue}::$id';
-  }
-
   static int _compareRows(_UnifiedMediaRow a, _UnifiedMediaRow b) {
     final aCourse = a.courseTitle.trim();
     final bCourse = b.courseTitle.trim();
@@ -198,9 +179,7 @@ class _ProfileMediaBody extends ConsumerWidget {
     final courseDiff = aCourse.toLowerCase().compareTo(bCourse.toLowerCase());
     if (courseDiff != 0) return courseDiff;
 
-    final titleDiff = a.filename.toLowerCase().compareTo(
-      b.filename.toLowerCase(),
-    );
+    final titleDiff = a.title.toLowerCase().compareTo(b.title.toLowerCase());
     if (titleDiff != 0) return titleDiff;
 
     final aDate = a.createdAt;
@@ -211,120 +190,18 @@ class _ProfileMediaBody extends ConsumerWidget {
     return bDate.compareTo(aDate);
   }
 
-  static String _titleForLesson(
-    TeacherProfileLessonSource lesson,
-    TeacherProfileMediaItem? item,
+  static String _courseTitleForLessonMediaSource(
+    TeacherProfileLessonSource? lesson,
   ) {
-    final explicit = item?.title?.trim();
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    final lessonTitle = lesson.lessonTitle?.trim();
-    if (lessonTitle != null && lessonTitle.isNotEmpty) return lessonTitle;
-    final fallback = item?.source.lessonMedia?.lessonTitle?.trim();
-    if (fallback != null && fallback.isNotEmpty) return fallback;
-    return 'Lektionsmedia';
-  }
-
-  static String _titleForRecording(
-    TeacherProfileRecordingSource recording,
-    TeacherProfileMediaItem? item,
-  ) {
-    final explicit = item?.title?.trim();
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    final seminarTitle = recording.seminarTitle?.trim();
-    if (seminarTitle != null && seminarTitle.isNotEmpty) return seminarTitle;
-    final fallback = item?.source.seminarRecording?.seminarTitle?.trim();
-    if (fallback != null && fallback.isNotEmpty) return fallback;
-    final basename = _basename(recording.assetUrl);
-    if (basename != null) return basename;
-    return 'Livesändning';
-  }
-
-  static String? _filenameForLesson(
-    TeacherProfileLessonSource lesson,
-    TeacherProfileMediaItem? item,
-  ) {
-    final storagePath =
-        (lesson.storagePath ?? item?.source.lessonMedia?.storagePath)?.trim();
-    final candidate =
-        _basename(storagePath) ??
-        _basename(lesson.signedUrl) ??
-        _basename(lesson.downloadUrl);
-    if (candidate == null) return null;
-    final stripped = candidate.replaceFirst(RegExp(r'^\\d{10,}_'), '').trim();
-    return stripped.isNotEmpty ? stripped : candidate.trim();
-  }
-
-  static String? _filenameForRecording(
-    TeacherProfileRecordingSource recording,
-    TeacherProfileMediaItem? item,
-  ) {
-    final metadataName = _stringFromMetadata(recording.metadata, const [
-      'original_name',
-      'originalName',
-      'filename',
-      'file_name',
-      'name',
-    ]);
-    if (metadataName != null) return metadataName;
-    return _basename(recording.assetUrl) ??
-        _basename(item?.source.seminarRecording?.assetUrl);
-  }
-
-  static String? _filenameForItem(TeacherProfileMediaItem item) {
-    switch (item.mediaKind) {
-      case TeacherProfileMediaKind.lessonMedia:
-        return _basename(
-          item.source.lessonMedia?.storagePath,
-        )?.replaceFirst(RegExp(r'^\\d{10,}_'), '').trim();
-      case TeacherProfileMediaKind.seminarRecording:
-        return _basename(item.source.seminarRecording?.assetUrl);
-      case TeacherProfileMediaKind.external:
-        return null;
-    }
-  }
-
-  static String _titleForItem(TeacherProfileMediaItem item) {
-    final explicit = item.title?.trim();
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    switch (item.mediaKind) {
-      case TeacherProfileMediaKind.lessonMedia:
-        return item.source.lessonMedia?.lessonTitle?.trim().isNotEmpty == true
-            ? item.source.lessonMedia!.lessonTitle!.trim()
-            : 'Lektionsmedia';
-      case TeacherProfileMediaKind.seminarRecording:
-        return item.source.seminarRecording?.seminarTitle?.trim().isNotEmpty ==
-                true
-            ? item.source.seminarRecording!.seminarTitle!.trim()
-            : 'Livesändning';
-      case TeacherProfileMediaKind.external:
-        return item.externalUrl ?? 'Extern länk';
-    }
-  }
-
-  static String _courseTitleForLesson(
-    TeacherProfileLessonSource lesson,
-    TeacherProfileMediaItem? item,
-  ) {
-    final course = (lesson.courseTitle ?? item?.source.lessonMedia?.courseTitle)
-        ?.trim();
+    final course = lesson?.courseTitle?.trim();
     if (course != null && course.isNotEmpty) return course;
     return _fallbackCourse;
   }
 
-  static String _courseTitleForRecording(
+  static String _courseTitleForRecordingSource(
     TeacherProfileRecordingSource recording,
-    TeacherProfileMediaItem? item,
   ) {
-    final course =
-        (_courseTitleFromMetadata(recording.metadata) ??
-                item?.source.lessonMedia?.courseTitle)
-            ?.trim();
-    if (course != null && course.isNotEmpty) return course;
-    return _fallbackCourse;
-  }
-
-  static String _courseTitleForItem(TeacherProfileMediaItem item) {
-    final course = item.source.lessonMedia?.courseTitle?.trim();
+    final course = _courseTitleFromMetadata(recording.metadata)?.trim();
     if (course != null && course.isNotEmpty) return course;
     return _fallbackCourse;
   }
@@ -350,18 +227,6 @@ class _ProfileMediaBody extends ConsumerWidget {
     return null;
   }
 
-  static IconData _iconForLesson(TeacherProfileLessonSource lesson) {
-    final kind = lesson.kind.toLowerCase();
-    if (kind.contains('video')) return Icons.videocam_outlined;
-    if (kind.contains('image') || kind.contains('bild')) {
-      return Icons.image_outlined;
-    }
-    if (kind.contains('audio') || kind.contains('ljud')) {
-      return Icons.headphones;
-    }
-    return Icons.play_circle_outline;
-  }
-
   static IconData _iconForItem(TeacherProfileMediaItem item) {
     switch (item.mediaKind) {
       case TeacherProfileMediaKind.lessonMedia:
@@ -372,24 +237,12 @@ class _ProfileMediaBody extends ConsumerWidget {
         return Icons.link;
     }
   }
-
-  static String? _basename(String? path) {
-    if (path == null) return null;
-    final trimmed = path.trim();
-    if (trimmed.isEmpty) return null;
-    final withoutQuery = trimmed.split('?').first;
-    final segments = withoutQuery.split('/');
-    final last = segments.isNotEmpty ? segments.last : withoutQuery;
-    if (last.isEmpty) return null;
-    return Uri.decodeComponent(last);
-  }
 }
 
 class _UnifiedMediaRow {
   const _UnifiedMediaRow({
-    required this.kind,
-    required this.mediaId,
-    required this.filename,
+    required this.itemId,
+    required this.title,
     required this.courseTitle,
     required this.enabledForHomePlayer,
     required this.icon,
@@ -397,9 +250,8 @@ class _UnifiedMediaRow {
     required this.createdAt,
   });
 
-  final TeacherProfileMediaKind kind;
-  final String mediaId;
-  final String filename;
+  final String itemId;
+  final String title;
   final String courseTitle;
   final bool enabledForHomePlayer;
   final IconData icon;
@@ -417,29 +269,13 @@ class _UnifiedMediaList extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dividerColor = theme.colorScheme.onSurface.withValues(alpha: 0.10);
-    final grouped = <String, List<_UnifiedMediaRow>>{};
-    for (final row in rows) {
-      grouped.putIfAbsent(row.courseTitle, () => []).add(row);
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final entry in grouped.entries) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 14, 0, 8),
-            child: Text(
-              entry.key,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Divider(height: 1, thickness: 1, color: dividerColor),
-          for (var index = 0; index < entry.value.length; index++) ...[
-            _UnifiedMediaTile(row: entry.value[index], disabled: disabled),
-            if (index != entry.value.length - 1)
-              Divider(height: 1, thickness: 1, color: dividerColor, indent: 34),
-          ],
+        Divider(height: 1, thickness: 1, color: dividerColor),
+        for (var index = 0; index < rows.length; index++) ...[
+          _UnifiedMediaTile(row: rows[index], disabled: disabled),
+          Divider(height: 1, thickness: 1, color: dividerColor, indent: 34),
         ],
       ],
     );
@@ -458,6 +294,10 @@ class _UnifiedMediaTile extends ConsumerWidget {
     final theme = Theme.of(context);
     final dimmed = !row.enabledForHomePlayer;
     final durationLabel = _formatDuration(row.durationSeconds);
+    final metaParts = <String>[
+      if (durationLabel != null) durationLabel,
+      'Kurs: ${row.courseTitle}',
+    ];
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
@@ -478,22 +318,22 @@ class _UnifiedMediaTile extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    row.filename,
+                    row.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (durationLabel != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      durationLabel,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                  const SizedBox(height: 4),
+                  Text(
+                    metaParts.join(' • '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -503,11 +343,7 @@ class _UnifiedMediaTile extends ConsumerWidget {
                   ? null
                   : (value) async {
                       try {
-                        await controller.setHomePlayerForSource(
-                          kind: row.kind,
-                          mediaId: row.mediaId,
-                          enabled: value,
-                        );
+                        await controller.toggleHomePlayer(row.itemId, value);
                       } catch (error) {
                         if (!context.mounted) return;
                         _showErrorSnackBar(context, error);
@@ -549,7 +385,7 @@ class _EmptyState extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'När du lägger till ljud, video eller bilder i dina lektioner (eller spelar in ett seminarium) visas de här.',
+          'När du laddar upp ljud eller video och ger filen ett namn visas den här. Seminarieinspelningar visas också här.',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
