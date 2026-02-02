@@ -260,6 +260,7 @@ class TeacherProfileMediaItem extends Equatable {
     this.coverImageUrl,
     required this.position,
     required this.isPublished,
+    required this.enabledForHomePlayer,
     this.metadata = const {},
     required this.createdAt,
     required this.updatedAt,
@@ -282,6 +283,7 @@ class TeacherProfileMediaItem extends Equatable {
       coverImageUrl: json['cover_image_url'] as String?,
       position: json['position'] as int? ?? 0,
       isPublished: json['is_published'] as bool? ?? true,
+      enabledForHomePlayer: json['enabled_for_home_player'] as bool? ?? false,
       metadata: Map<String, dynamic>.from(
         (json['metadata'] as Map?) ?? const {},
       ),
@@ -306,6 +308,7 @@ class TeacherProfileMediaItem extends Equatable {
   final String? coverImageUrl;
   final int position;
   final bool isPublished;
+  final bool enabledForHomePlayer;
   final Map<String, dynamic> metadata;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -314,6 +317,7 @@ class TeacherProfileMediaItem extends Equatable {
   TeacherProfileMediaItem copyWith({
     int? position,
     bool? isPublished,
+    bool? enabledForHomePlayer,
     String? title,
     String? description,
     String? coverMediaId,
@@ -334,6 +338,7 @@ class TeacherProfileMediaItem extends Equatable {
       coverImageUrl: coverImageUrl ?? this.coverImageUrl,
       position: position ?? this.position,
       isPublished: isPublished ?? this.isPublished,
+      enabledForHomePlayer: enabledForHomePlayer ?? this.enabledForHomePlayer,
       metadata: metadata ?? this.metadata,
       createdAt: createdAt,
       updatedAt: updatedAt,
@@ -354,6 +359,7 @@ class TeacherProfileMediaItem extends Equatable {
     coverImageUrl,
     position,
     isPublished,
+    enabledForHomePlayer,
     metadata,
     createdAt,
     updatedAt,

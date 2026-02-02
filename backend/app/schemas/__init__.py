@@ -361,6 +361,7 @@ class TeacherProfileMediaBase(BaseModel):
     cover_image_url: Optional[str] = None
     position: int = 0
     is_published: bool = True
+    enabled_for_home_player: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -397,6 +398,7 @@ class TeacherProfileMediaUpdate(BaseModel):
     cover_image_url: Optional[str] = None
     position: Optional[int] = None
     is_published: Optional[bool] = None
+    enabled_for_home_player: Optional[bool] = None
     metadata: Optional[dict[str, Any]] = None
 
 
@@ -974,7 +976,7 @@ class StudioModuleUpdate(BaseModel):
 
 class StudioLessonCreate(BaseModel):
     id: UUID | None = None
-    module_id: str
+    course_id: str
     title: str
     content_markdown: str | None = None
     position: int = 0

@@ -10,6 +10,7 @@ import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
 import 'package:aveli/features/paywall/presentation/paywall_gate.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
@@ -54,6 +55,16 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         final slug = (detail.course.slug?.isNotEmpty ?? false)
             ? detail.course.slug!
             : widget.slug;
+        final coverPath = (detail.course.coverUrl ?? '').trim();
+        final coverUrl = coverPath.isEmpty
+            ? null
+            : () {
+                try {
+                  return ref.read(mediaRepositoryProvider).resolveUrl(coverPath);
+                } catch (_) {
+                  return coverPath;
+                }
+              }();
         final pricingAsync = ref.watch(coursePricingProvider(slug));
         final buyButton = _buildBuyButton(
           courseSlug: slug,
@@ -62,6 +73,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         );
         return _CourseContent(
           detail: detail,
+          coverUrl: coverUrl,
           buyButton: buyButton,
           onEnroll: () => _handleEnroll(detail),
           onRefreshOrderStatus: () async {
@@ -224,6 +236,7 @@ class _VitMagiContent extends StatelessWidget {
 class _CourseContent extends StatelessWidget {
   const _CourseContent({
     required this.detail,
+    required this.coverUrl,
     required this.onEnroll,
     required this.onRefreshOrderStatus,
     required this.enrollState,
@@ -232,6 +245,7 @@ class _CourseContent extends StatelessWidget {
   });
 
   final CourseDetailData detail;
+  final String? coverUrl;
   final VoidCallback onEnroll;
   final Future<void> Function() onRefreshOrderStatus;
   final AsyncValue<void> enrollState;
@@ -270,6 +284,17 @@ class _CourseContent extends StatelessWidget {
       title: course.title,
       body: ListView(
         children: [
+          if (coverUrl != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Image.network(coverUrl!, fit: BoxFit.contain),
+                ),
+              ),
+            ),
+          if (coverUrl != null) const SizedBox(height: 16),
           GlassCard(
             padding: const EdgeInsets.all(20),
             opacity: 0.18,

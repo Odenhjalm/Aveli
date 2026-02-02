@@ -74,53 +74,9 @@ class StudioRepository {
     await _client.delete('/studio/courses/$courseId');
   }
 
-  Future<List<Map<String, dynamic>>> listModules(String courseId) async {
+  Future<List<Map<String, dynamic>>> listCourseLessons(String courseId) async {
     final res = await _client.get<Map<String, dynamic>>(
-      '/studio/courses/$courseId/modules',
-    );
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList(growable: false);
-  }
-
-  Future<Map<String, dynamic>> createModule({
-    required String courseId,
-    required String title,
-    int position = 0,
-    String? id,
-  }) async {
-    final body = {
-      'course_id': courseId,
-      'title': title,
-      'position': position,
-      if (id != null && id.isNotEmpty) 'id': id,
-    };
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/modules',
-      body: body,
-    );
-    return Map<String, dynamic>.from(res);
-  }
-
-  Future<Map<String, dynamic>> updateModule(
-    String moduleId,
-    Map<String, dynamic> patch,
-  ) async {
-    final res = await _client.patch<Map<String, dynamic>>(
-      '/studio/modules/$moduleId',
-      body: patch,
-    );
-    return Map<String, dynamic>.from(res!);
-  }
-
-  Future<void> deleteModule(String moduleId) async {
-    await _client.delete('/studio/modules/$moduleId');
-  }
-
-  Future<List<Map<String, dynamic>>> listLessons(String moduleId) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/modules/$moduleId/lessons',
+      '/studio/courses/$courseId/lessons',
     );
     final list = res['items'] as List? ?? const [];
     return list
@@ -131,7 +87,7 @@ class StudioRepository {
   Future<Map<String, dynamic>> upsertLesson({
     String? id,
     String? createId,
-    required String moduleId,
+    required String courseId,
     required String title,
     String? contentMarkdown,
     int position = 0,
@@ -139,7 +95,7 @@ class StudioRepository {
   }) async {
     if (id == null) {
       final body = {
-        'module_id': moduleId,
+        'course_id': courseId,
         'title': title,
         'content_markdown': contentMarkdown,
         'position': position,
@@ -354,6 +310,7 @@ class StudioRepository {
     String? coverImageUrl,
     int? position,
     bool? isPublished,
+    bool? enabledForHomePlayer,
     Map<String, dynamic>? metadata,
   }) async {
     final body = <String, dynamic>{
@@ -363,6 +320,8 @@ class StudioRepository {
       if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
       if (position != null) 'position': position,
       if (isPublished != null) 'is_published': isPublished,
+      if (enabledForHomePlayer != null)
+        'enabled_for_home_player': enabledForHomePlayer,
       if (metadata != null) 'metadata': metadata,
     };
     final res = await _client.patch<Map<String, dynamic>>(

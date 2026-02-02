@@ -76,8 +76,11 @@ void main() {
     final mediaRepo = _MockMediaPipelineRepository();
 
     when(() => studioRepo.fetchStatus()).thenAnswer(
-      (_) async =>
-          const StudioStatus(isTeacher: true, verifiedCertificates: 1, hasApplication: false),
+      (_) async => const StudioStatus(
+        isTeacher: true,
+        verifiedCertificates: 1,
+        hasApplication: false,
+      ),
     );
     when(() => studioRepo.myCourses()).thenAnswer(
       (_) async => [
@@ -94,12 +97,7 @@ void main() {
         'is_published': false,
       },
     );
-    when(() => studioRepo.listModules('course-1')).thenAnswer(
-      (_) async => [
-        {'id': 'module-1', 'title': 'Modul', 'position': 1},
-      ],
-    );
-    when(() => studioRepo.listLessons('module-1')).thenAnswer(
+    when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
       (_) async => [
         {
           'id': 'lesson-1',
@@ -130,10 +128,12 @@ void main() {
         lessonMediaId: any(named: 'lessonMediaId'),
       ),
     ).thenAnswer(
-      (_) async => const CoverMediaResponse(mediaId: 'cover-1', state: 'uploaded'),
+      (_) async =>
+          const CoverMediaResponse(mediaId: 'cover-1', state: 'uploaded'),
     );
-    when(() => mediaRepo.fetchStatus(any()))
-        .thenThrow(Exception('fetch failed'));
+    when(
+      () => mediaRepo.fetchStatus(any()),
+    ).thenThrow(Exception('fetch failed'));
 
     await tester.pumpWidget(
       ProviderScope(

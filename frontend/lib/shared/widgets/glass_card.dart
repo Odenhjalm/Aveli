@@ -6,6 +6,8 @@ class GlassCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double opacity;
+  final double sigmaX;
+  final double sigmaY;
   final BorderRadius? borderRadius;
   final VoidCallback? onTap;
   final Color? borderColor;
@@ -15,6 +17,8 @@ class GlassCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.opacity = 0.12,
+    this.sigmaX = 8,
+    this.sigmaY = 8,
     this.borderRadius,
     this.onTap,
     this.borderColor,
@@ -28,8 +32,8 @@ class GlassCard extends StatelessWidget {
     Widget card = ClipRRect(
       borderRadius: radius,
       child: EffectsBackdropFilter(
-        sigmaX: 8,
-        sigmaY: 8,
+        sigmaX: sigmaX,
+        sigmaY: sigmaY,
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: opacity),

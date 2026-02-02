@@ -19,7 +19,7 @@ class StudioProfilePage extends ConsumerWidget {
     final asyncState = ref.watch(teacherProfileMediaProvider);
     final isBusy = asyncState.isLoading;
     return AppScaffold(
-      title: 'Min profil',
+      title: 'Media i Home-spelaren',
       extendBodyBehindAppBar: true,
       onBack: () => context.goNamed(AppRoute.home),
       contentPadding: const EdgeInsets.fromLTRB(16, 120, 16, 32),
@@ -64,13 +64,19 @@ class _ProfileMediaBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final items = state.sortedItems;
+    final items = state.sortedItems
+        .where((item) => item.mediaKind == TeacherProfileMediaKind.lessonMedia)
+        .toList(growable: false);
+    final groupedItems = _groupByCourse(items);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GlassCard(
             padding: const EdgeInsets.all(24),
+            opacity: 0.10,
+            sigmaX: 3,
+            sigmaY: 3,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -78,7 +84,7 @@ class _ProfileMediaBody extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Media på din profil',
+                        'Media i Home-spelaren',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -97,7 +103,7 @@ class _ProfileMediaBody extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Välj vilka lektioner, inspelningar eller externa länkar som ska visas på din offentliga profil. Använd pilarna för att justera ordning och växla publicering när du vill dölja ett kort.',
+                  'Här väljer du vilken av din media som får visas i Home-spelaren.\nEndast media du aktivt väljer här kan visas för elever.',
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 20),
@@ -114,16 +120,25 @@ class _ProfileMediaBody extends ConsumerWidget {
                 else
                   Column(
                     children: [
-                      for (var i = 0; i < items.length; i++)
+                      for (final entry in groupedItems.entries) ...[
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          child: _ProfileMediaTile(
-                            index: i,
-                            total: items.length,
-                            item: items[i],
-                            disabled: isBusy,
+                          padding: const EdgeInsets.fromLTRB(0, 14, 0, 8),
+                          child: Text(
+                            entry.key,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
+                        for (final item in entry.value)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: _ProfileMediaTile(
+                              item: item,
+                              disabled: isBusy,
+                            ),
+                          ),
+                      ],
                     ],
                   ),
               ],
@@ -132,6 +147,9 @@ class _ProfileMediaBody extends ConsumerWidget {
           const SizedBox(height: 24),
           GlassCard(
             padding: const EdgeInsets.all(24),
+            opacity: 0.10,
+            sigmaX: 3,
+            sigmaY: 3,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -182,18 +200,38 @@ class _ProfileMediaBody extends ConsumerWidget {
       ),
     );
   }
+
+  static Map<String, List<TeacherProfileMediaItem>> _groupByCourse(
+    List<TeacherProfileMediaItem> items,
+  ) {
+    final byCourse = <String, List<TeacherProfileMediaItem>>{};
+    final other = <TeacherProfileMediaItem>[];
+
+    for (final item in items) {
+      final courseTitle = item.source.lessonMedia?.courseTitle?.trim();
+      if (courseTitle != null && courseTitle.isNotEmpty) {
+        byCourse.putIfAbsent(courseTitle, () => []).add(item);
+      } else {
+        other.add(item);
+      }
+    }
+
+    final sortedCourseTitles = byCourse.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    final grouped = <String, List<TeacherProfileMediaItem>>{
+      for (final title in sortedCourseTitles) title: byCourse[title]!,
+    };
+    if (other.isNotEmpty) {
+      grouped['Allmän media'] = other;
+    }
+    return grouped;
+  }
 }
 
 class _ProfileMediaTile extends ConsumerWidget {
-  const _ProfileMediaTile({
-    required this.index,
-    required this.total,
-    required this.item,
-    required this.disabled,
-  });
+  const _ProfileMediaTile({required this.item, required this.disabled});
 
-  final int index;
-  final int total;
   final TeacherProfileMediaItem item;
   final bool disabled;
 
@@ -201,123 +239,69 @@ class _ProfileMediaTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.read(teacherProfileMediaProvider.notifier);
     final theme = Theme.of(context);
-    final subtitle = _subtitleFor(item);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.18),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: theme.shadowColor.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+    final formatLabel = _formatLabelFor(item);
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      opacity: item.enabledForHomePlayer ? 1 : 0.78,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.18),
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _titleFor(item),
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      if (subtitle != null) ...[
-                        Text(subtitle, style: theme.textTheme.bodySmall),
-                        const SizedBox(height: 4),
-                      ],
-                      Text(
-                        'Position ${index + 1} av $total · ${_kindLabel(item.mediaKind)}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: [
-                    IconButton(
-                      tooltip: 'Flytta upp',
-                      icon: const Icon(Icons.arrow_upward),
-                      onPressed: disabled || index == 0
-                          ? null
-                          : () => controller.reorder(index, index - 1),
-                    ),
-                    IconButton(
-                      tooltip: 'Flytta ned',
-                      icon: const Icon(Icons.arrow_downward),
-                      onPressed: disabled || index >= total - 1
-                          ? null
-                          : () => controller.reorder(index, index + 1),
-                    ),
-                  ],
-                ),
-              ],
+          boxShadow: [
+            BoxShadow(
+              color: theme.shadowColor.withValues(alpha: 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 6,
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _titleFor(item),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (formatLabel != null) ...[
+                const SizedBox(height: 6),
+                _Badge(label: formatLabel, theme: theme),
+              ],
+              const SizedBox(height: 12),
+              Row(
                 children: [
+                  Expanded(
+                    child: Text(
+                      'Visa i Home-spelaren',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                   Switch.adaptive(
-                    value: item.isPublished,
+                    value: item.enabledForHomePlayer,
                     onChanged: disabled
                         ? null
                         : (value) async {
                             try {
-                              await controller.togglePublish(item.id, value);
+                              await controller.toggleHomePlayer(item.id, value);
                             } catch (error) {
                               if (!context.mounted) return;
                               _showErrorSnackBar(context, error);
                             }
                           },
                   ),
-                  IconButton(
-                    tooltip: 'Redigera',
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: disabled
-                        ? null
-                        : () => _ProfileMediaDialogs.showEditDialog(
-                            context,
-                            ref,
-                            item,
-                          ),
-                  ),
-                  IconButton(
-                    tooltip: 'Ta bort',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: disabled
-                        ? null
-                        : () => _ProfileMediaDialogs.confirmDelete(
-                            context,
-                            ref,
-                            item,
-                          ),
-                  ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -335,28 +319,47 @@ class _ProfileMediaTile extends ConsumerWidget {
     }
   }
 
-  static String? _subtitleFor(TeacherProfileMediaItem item) {
-    switch (item.mediaKind) {
-      case TeacherProfileMediaKind.lessonMedia:
-        final course = item.source.lessonMedia?.courseTitle;
-        if (course == null) return null;
-        return 'Från kursen $course';
-      case TeacherProfileMediaKind.seminarRecording:
-        return 'Inspelning · ${item.source.seminarRecording?.status ?? 'okänd status'}';
-      case TeacherProfileMediaKind.external:
-        return item.description;
+  static String? _formatLabelFor(TeacherProfileMediaItem item) {
+    final lesson = item.source.lessonMedia;
+    if (lesson == null) return null;
+    final contentType = (lesson.contentType ?? '').toLowerCase();
+    if (contentType.contains('wav')) return 'WAV';
+    if (contentType.contains('mpeg') || contentType.contains('mp3')) {
+      return 'MP3';
     }
-  }
 
-  static String _kindLabel(TeacherProfileMediaKind kind) {
-    switch (kind) {
-      case TeacherProfileMediaKind.lessonMedia:
-        return 'Lektion';
-      case TeacherProfileMediaKind.seminarRecording:
-        return 'Livesändning';
-      case TeacherProfileMediaKind.external:
-        return 'Extern länk';
-    }
+    final path = (lesson.storagePath ?? '').toLowerCase();
+    if (path.endsWith('.wav')) return 'WAV';
+    if (path.endsWith('.mp3')) return 'MP3';
+
+    return null;
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.theme});
+
+  final String label;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }
 
@@ -461,13 +464,13 @@ class _EmptyState extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          'Inga media är kopplade ännu.',
+          'Ingen media ännu.',
           style: theme.textTheme.titleMedium,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
         Text(
-          'Välj lektioner eller inspelningar för att bygga en attraktiv profil.',
+          'Lägg till media från dina lektioner så att du kan välja vad som får visas i Home-spelaren.',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
@@ -525,23 +528,30 @@ class _ProfileMediaDialogs {
     TeacherProfileMediaState state,
   ) async {
     final controller = ref.read(teacherProfileMediaProvider.notifier);
-    final lessonSources = state.lessonSources;
-    final recordingSources = state.recordingSources;
-    TeacherProfileMediaKind kind = lessonSources.isNotEmpty
-        ? TeacherProfileMediaKind.lessonMedia
-        : recordingSources.isNotEmpty
-        ? TeacherProfileMediaKind.seminarRecording
-        : TeacherProfileMediaKind.external;
-    String? selectedLessonId = lessonSources.isNotEmpty
-        ? lessonSources.first.id
-        : null;
-    String? selectedRecordingId = recordingSources.isNotEmpty
-        ? recordingSources.first.id
-        : null;
+    final lessonSources = state.lessonSources
+        .where((item) => item.kind.toLowerCase() == 'audio')
+        .toList(growable: false);
+    if (lessonSources.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Lägg till media'),
+          content: const Text(
+            'Inget ljud hittades i dina lektioner ännu. Lägg till ljud i en lektion först.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Stäng'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    String? selectedLessonId = lessonSources.first.id;
     final titleController = TextEditingController();
     final descriptionController = TextEditingController();
-    final urlController = TextEditingController();
-    bool isPublished = true;
     final formKey = GlobalKey<FormState>();
 
     try {
@@ -551,107 +561,37 @@ class _ProfileMediaDialogs {
           return StatefulBuilder(
             builder: (context, setState) {
               return AlertDialog(
-                title: const Text('Lägg till media'),
+                title: const Text('Lägg till ljud från en lektion'),
                 content: Form(
                   key: formKey,
                   child: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        DropdownButtonFormField<TeacherProfileMediaKind>(
+                        DropdownButtonFormField<String>(
                           // ignore: deprecated_member_use
-                          value: kind,
+                          value: selectedLessonId,
                           decoration: const InputDecoration(
-                            labelText: 'Typ av media',
+                            labelText: 'Välj lektion',
                           ),
-                          items: TeacherProfileMediaKind.values
+                          validator: (value) => value == null || value.isEmpty
+                              ? 'Välj en lektion'
+                              : null,
+                          items: lessonSources
                               .map(
-                                (value) => DropdownMenuItem(
-                                  value: value,
-                                  child: Text(_kindOptionLabel(value)),
+                                (lesson) => DropdownMenuItem(
+                                  value: lesson.id,
+                                  child: Text(
+                                    '${lesson.courseTitle ?? 'Kurs'} · ${lesson.lessonTitle ?? 'Lektion'}',
+                                  ),
                                 ),
                               )
                               .toList(),
                           onChanged: (value) {
                             if (value == null) return;
-                            setState(() {
-                              kind = value;
-                              if (value ==
-                                      TeacherProfileMediaKind.lessonMedia &&
-                                  lessonSources.isNotEmpty) {
-                                selectedLessonId = lessonSources.first.id;
-                              } else if (value ==
-                                      TeacherProfileMediaKind
-                                          .seminarRecording &&
-                                  recordingSources.isNotEmpty) {
-                                selectedRecordingId = recordingSources.first.id;
-                              }
-                            });
+                            setState(() => selectedLessonId = value);
                           },
                         ),
-                        const SizedBox(height: 16),
-                        if (kind == TeacherProfileMediaKind.lessonMedia)
-                          DropdownButtonFormField<String>(
-                            // ignore: deprecated_member_use
-                            value: selectedLessonId,
-                            decoration: const InputDecoration(
-                              labelText: 'Välj lektion',
-                            ),
-                            validator: (value) => value == null || value.isEmpty
-                                ? 'Välj en lektion'
-                                : null,
-                            items: lessonSources
-                                .map(
-                                  (lesson) => DropdownMenuItem(
-                                    value: lesson.id,
-                                    child: Text(
-                                      '${lesson.courseTitle ?? 'Kurs'} · ${lesson.lessonTitle ?? 'Lektion'}',
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) =>
-                                setState(() => selectedLessonId = value),
-                          )
-                        else if (kind ==
-                            TeacherProfileMediaKind.seminarRecording)
-                          DropdownButtonFormField<String>(
-                            // ignore: deprecated_member_use
-                            value: selectedRecordingId,
-                            decoration: const InputDecoration(
-                              labelText: 'Välj inspelning',
-                            ),
-                            validator: (value) => value == null || value.isEmpty
-                                ? 'Välj en inspelning'
-                                : null,
-                            items: recordingSources
-                                .map(
-                                  (recording) => DropdownMenuItem(
-                                    value: recording.id,
-                                    child: Text(
-                                      recording.seminarTitle ??
-                                          'Livesändning ${recording.id.substring(0, 8)}',
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) =>
-                                setState(() => selectedRecordingId = value),
-                          )
-                        else
-                          TextFormField(
-                            controller: urlController,
-                            decoration: const InputDecoration(
-                              labelText: 'Extern URL',
-                              hintText: 'https://...',
-                            ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Ange en URL';
-                              }
-                              return null;
-                            },
-                          ),
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: titleController,
@@ -667,13 +607,6 @@ class _ProfileMediaDialogs {
                           ),
                           maxLines: 3,
                         ),
-                        const SizedBox(height: 12),
-                        SwitchListTile(
-                          value: isPublished,
-                          title: const Text('Publicera direkt'),
-                          onChanged: (value) =>
-                              setState(() => isPublished = value),
-                        ),
                       ],
                     ),
                   ),
@@ -688,24 +621,15 @@ class _ProfileMediaDialogs {
                       if (!formKey.currentState!.validate()) return;
                       try {
                         await controller.createItem(
-                          kind: kind,
-                          mediaId: switch (kind) {
-                            TeacherProfileMediaKind.lessonMedia =>
-                              selectedLessonId,
-                            TeacherProfileMediaKind.seminarRecording =>
-                              selectedRecordingId,
-                            TeacherProfileMediaKind.external => null,
-                          },
-                          externalUrl: kind == TeacherProfileMediaKind.external
-                              ? urlController.text.trim()
-                              : null,
+                          kind: TeacherProfileMediaKind.lessonMedia,
+                          mediaId: selectedLessonId,
                           title: titleController.text.trim().isEmpty
                               ? null
                               : titleController.text.trim(),
                           description: descriptionController.text.trim().isEmpty
                               ? null
                               : descriptionController.text.trim(),
-                          isPublished: isPublished,
+                          isPublished: false,
                         );
                         if (context.mounted) Navigator.of(context).pop();
                       } catch (error) {
@@ -724,146 +648,6 @@ class _ProfileMediaDialogs {
     } finally {
       titleController.dispose();
       descriptionController.dispose();
-      urlController.dispose();
-    }
-  }
-
-  static Future<void> showEditDialog(
-    BuildContext context,
-    WidgetRef ref,
-    TeacherProfileMediaItem item,
-  ) async {
-    final controller = ref.read(teacherProfileMediaProvider.notifier);
-    final titleController = TextEditingController(text: item.title ?? '');
-    final descriptionController = TextEditingController(
-      text: item.description ?? '',
-    );
-    bool isPublished = item.isPublished;
-    final formKey = GlobalKey<FormState>();
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Redigera media'),
-              content: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: titleController,
-                      decoration: const InputDecoration(labelText: 'Titel'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Beskrivning',
-                      ),
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      value: isPublished,
-                      onChanged: (value) => setState(() {
-                        isPublished = value;
-                      }),
-                      title: const Text('Publicerad'),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Avbryt'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (!formKey.currentState!.validate()) return;
-                    try {
-                      await controller.updateItem(
-                        item.id,
-                        title: titleController.text.trim().isEmpty
-                            ? null
-                            : titleController.text.trim(),
-                        description: descriptionController.text.trim().isEmpty
-                            ? null
-                            : descriptionController.text.trim(),
-                        isPublished: isPublished,
-                      );
-                      if (context.mounted) Navigator.of(context).pop();
-                    } catch (error) {
-                      if (!context.mounted) return;
-                      _showErrorSnackBar(context, error);
-                    }
-                  },
-                  child: const Text('Spara ändringar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  static Future<void> confirmDelete(
-    BuildContext context,
-    WidgetRef ref,
-    TeacherProfileMediaItem item,
-  ) async {
-    final controller = ref.read(teacherProfileMediaProvider.notifier);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ta bort media'),
-        content: Text(
-          'Vill du ta bort "${_ProfileMediaTile._titleFor(item)}" från profilen?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Avbryt'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Ta bort'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await controller.deleteItem(item.id);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '"${_ProfileMediaTile._titleFor(item)}" borttagen från profilen.',
-            ),
-          ),
-        );
-      }
-    } catch (error) {
-      if (!context.mounted) return;
-      _showErrorSnackBar(context, error);
-    }
-  }
-
-  static String _kindOptionLabel(TeacherProfileMediaKind kind) {
-    switch (kind) {
-      case TeacherProfileMediaKind.lessonMedia:
-        return 'Lektionsmedia';
-      case TeacherProfileMediaKind.seminarRecording:
-        return 'Livesändning';
-      case TeacherProfileMediaKind.external:
-        return 'Extern länk';
     }
   }
 }

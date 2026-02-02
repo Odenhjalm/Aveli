@@ -1183,7 +1183,7 @@ async def delete_module(module_id: str) -> bool:
 async def upsert_lesson(
     *,
     lesson_id: str | None,
-    module_id: str,
+    course_id: str,
     title: str | None = None,
     content_markdown: str | None = None,
     position: int | None = None,
@@ -1204,7 +1204,7 @@ async def upsert_lesson(
     if lesson_id is not None and not payload.keys() - {"id"}:
         return await get_lesson(lesson_id)
 
-    return await courses_service.upsert_lesson(module_id, payload)
+    return await courses_service.upsert_lesson(course_id, payload)
 
 
 async def delete_lesson(lesson_id: str) -> bool:
@@ -1220,7 +1220,7 @@ async def set_lesson_intro(lesson_id: str, is_intro: bool) -> dict | None:
                     UPDATE app.lessons
                     SET is_intro = %s, updated_at = now()
                     WHERE id = %s
-                    RETURNING id, module_id, title, position, is_intro
+                    RETURNING id, course_id, title, position, is_intro
                     """,
                     (is_intro, lesson_id),
                 )
