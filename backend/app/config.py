@@ -1,9 +1,24 @@
+import os
+import sys
+
 from pydantic import AliasChoices, AnyUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .testing.db_safety import assert_safe_test_db_url, running_under_pytest
+
+
+_TEST_MODE = (
+    os.environ.get("APP_ENV", "").strip().lower() == "test"
+    or "PYTEST_CURRENT_TEST" in os.environ
+    or "pytest" in sys.modules
+)
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=() if _TEST_MODE else (".env", "../.env"),
+        extra="ignore",
+    )
 
     supabase_url: AnyUrl | None = None
     supabase_anon_key: str | None = Field(
@@ -162,6 +177,11 @@ class Settings(BaseSettings):
             if self.supabase_db_url is None:
                 raise ValueError("DATABASE_URL or SUPABASE_DB_URL is required")
             self.database_url = self.supabase_db_url
+
+        if running_under_pytest():
+            assert_safe_test_db_url(self.database_url.unicode_string(), source="DATABASE_URL")
+            if self.supabase_db_url is not None:
+                assert_safe_test_db_url(self.supabase_db_url.unicode_string(), source="SUPABASE_DB_URL")
         return self
 
     @field_validator("cors_allow_origins", mode="before")
