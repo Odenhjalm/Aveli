@@ -25,6 +25,21 @@ PORT=8080 poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 make backend.test   # pytest
 make backend.lint   # ruff
 ```
+
+Backend tests always run against a fresh, local, schema-cloned database:
+- A disposable `supabase/postgres` container is started per test run.
+- All SQL migrations in `supabase/migrations/*.sql` are applied in order.
+- Tests run with `DATABASE_URL`/`SUPABASE_DB_URL` pointing to that container.
+- The container is stopped/removed after the run (no persistent state).
+
+Safety guard:
+- If `DATABASE_URL`/`SUPABASE_DB_URL` (or QA DB vars) point to a Supabase/remote host, tests abort immediately.
+- `.env` files are ignored during tests so real Supabase credentials are never loaded.
+
+Override the image/password if needed:
+- `AVELI_TEST_POSTGRES_IMAGE` (default: `supabase/supabase/.temp/postgres-version` or CI fallback)
+- `AVELI_TEST_POSTGRES_PASSWORD` (default: `postgres`)
+
 Smoke:
 ```bash
 make qa.teacher  # requires running backend + secrets
