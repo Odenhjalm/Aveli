@@ -44,10 +44,16 @@ import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 
 String? _mediaUrl(Map<String, dynamic> media) {
-  final playback = media['playback_url'];
-  if (playback is String && playback.isNotEmpty) return playback;
-  final signed = media['signed_url'];
-  if (signed is String && signed.isNotEmpty) return signed;
+  final bucket = (media['storage_bucket'] as String?)?.trim();
+  final isIntro = media['is_intro'] == true;
+  final isPublicMedia = bucket == 'public-media' || isIntro;
+
+  if (!isPublicMedia) {
+    final playback = media['playback_url'];
+    if (playback is String && playback.isNotEmpty) return playback;
+    final signed = media['signed_url'];
+    if (signed is String && signed.isNotEmpty) return signed;
+  }
   final download = media['download_url'];
   if (download is String && download.isNotEmpty) return download;
   return null;
@@ -1931,6 +1937,31 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   String? _resolveMediaDisplayUrl(Map<String, dynamic> media) {
+    final bucket = (media['storage_bucket'] as String?)?.trim();
+    final isIntro = media['is_intro'] == true;
+    final isPublicMedia = bucket == 'public-media' || isIntro;
+    final isStreamUrl = (String value) => value.contains('/media/stream/');
+
+    if (isPublicMedia) {
+      // Public media: never embed signed stream URLs; only stable public
+      // download URLs (or an equivalent public file path).
+      final downloadCandidate =
+          media['download_url'] ?? media['downloadUrl'] ?? media['url'];
+      if (downloadCandidate is String) {
+        final trimmed = downloadCandidate.trim();
+        if (trimmed.isNotEmpty && !isStreamUrl(trimmed)) {
+          return _resolveMediaUrl(trimmed);
+        }
+      }
+
+      final publicPath = _publicDownloadPathForMedia(media);
+      if (publicPath != null && publicPath.isNotEmpty) {
+        return _resolveMediaUrl(publicPath);
+      }
+
+      return null;
+    }
+
     final direct = _mediaUrl(media);
     if (direct != null && direct.isNotEmpty) {
       return _resolveMediaUrl(direct);
