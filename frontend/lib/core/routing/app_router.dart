@@ -277,6 +277,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const CourseCatalogPage(),
       ),
       GoRoute(
+        path: RoutePath.courseCatalogLegacy,
+        name: AppRoute.courseCatalogLegacy,
+        redirect: (context, state) => RoutePath.courseCatalog,
+      ),
+      GoRoute(
         path: RoutePath.courseQuiz,
         name: AppRoute.courseQuiz,
         builder: (context, state) => const QuizTakePage(),
