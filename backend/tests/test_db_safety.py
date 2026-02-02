@@ -30,4 +30,3 @@ def test_allows_unix_socket_dsn():
         "host=/run/postgresql dbname=postgres user=postgres",
         source="psycopg.connect",
     )
-
