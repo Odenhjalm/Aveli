@@ -141,9 +141,11 @@ void main() {
     );
 
     await tester.tap(find.text('Ladda upp WAV'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('Ge ljudet/videon ett namn'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
 
     uploadCompleter.complete();
     await tester.pump();
