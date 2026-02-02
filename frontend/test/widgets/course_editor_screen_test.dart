@@ -463,6 +463,227 @@ void main() {
   );
 
   testWidgets(
+    'CourseEditorScreen reuses existing public-media images without signed_url',
+    (tester) async {
+      final originalOnError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        if (details.exception is NetworkImageLoadException) return;
+        originalOnError?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = originalOnError);
+
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+
+      when(() => studioRepo.myCourses()).thenAnswer(
+        (_) async => [
+          {'id': 'course-1', 'title': 'Tarot Basics'},
+        ],
+      );
+      when(() => studioRepo.fetchStatus()).thenAnswer(
+        (_) async => const StudioStatus(
+          isTeacher: true,
+          verifiedCertificates: 1,
+          hasApplication: false,
+        ),
+      );
+      when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+        (_) async => {
+          'title': 'Tarot Basics',
+          'slug': 'tarot-basics',
+          'description': 'Lär dig läsa korten',
+          'price_amount_cents': 1200,
+          'is_free_intro': true,
+          'is_published': false,
+        },
+      );
+      when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
+        (_) async => [
+          {
+            'id': 'lesson-1',
+            'title': 'Välkommen',
+            'position': 1,
+            'is_intro': true,
+            'course_id': 'course-1',
+            'content_markdown': '',
+          },
+        ],
+      );
+      when(() => studioRepo.listLessonMedia('lesson-1')).thenAnswer(
+        (_) async => [
+          {
+            'id': 'media-1',
+            'kind': 'image',
+            'content_type': 'image/png',
+            'storage_path': 'public-media/course-1/lesson-1/image.png',
+            'storage_bucket': 'lesson-media',
+            'signed_url': '/media/stream/header.payload.signature',
+            'download_url':
+                '/api/files/public-media/course-1/lesson-1/image.png',
+            'position': 1,
+          },
+        ],
+      );
+      when(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      ).thenAnswer((invocation) async {
+        return {
+          'id': 'lesson-1',
+          'title': invocation.namedArguments[#title] as String,
+          'content_markdown':
+              invocation.namedArguments[#contentMarkdown] as String?,
+          'position': invocation.namedArguments[#position] as int,
+          'is_intro': invocation.namedArguments[#isIntro] as bool,
+        };
+      });
+
+      final courseDetail = CourseDetailData(
+        course: const CourseSummary(
+          id: 'course-1',
+          slug: 'tarot-basics',
+          title: 'Tarot Basics',
+          description: 'Lär dig läsa korten',
+          coverUrl: null,
+          videoUrl: null,
+          isFreeIntro: true,
+          isPublished: true,
+          priceCents: 1200,
+        ),
+        modules: const [
+          CourseModule(id: 'module-1', title: 'Intro', position: 1),
+        ],
+        lessonsByModule: {
+          'module-1': const [
+            LessonSummary(
+              id: 'lesson-1',
+              title: 'Välkommen',
+              position: 1,
+              isIntro: true,
+              contentMarkdown: null,
+            ),
+          ],
+        },
+        freeConsumed: 0,
+        freeLimit: 3,
+        isEnrolled: false,
+        latestOrder: null,
+      );
+      when(
+        () => coursesRepo.fetchCourseDetailBySlug(any()),
+      ).thenAnswer((_) async => courseDetail);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost:8080',
+                stripePublishableKey: 'pk_test_stub',
+                stripeMerchantDisplayName: 'Test Merchant',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            backendAssetResolverProvider.overrideWith(
+              (ref) => TestBackendAssetResolver(),
+            ),
+            authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            coursesRepositoryProvider.overrideWithValue(coursesRepo),
+            studioStatusProvider.overrideWith(
+              (ref) async => const StudioStatus(
+                isTeacher: true,
+                verifiedCertificates: 1,
+                hasApplication: false,
+              ),
+            ),
+            studioUploadQueueProvider.overrideWith(
+              (ref) => _NoopUploadQueueNotifier(studioRepo),
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              quill.FlutterQuillLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('en'), Locale('sv')],
+            home: CourseEditorScreen(
+              studioRepository: studioRepo,
+              coursesRepository: coursesRepo,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      final insertButton = find.byIcon(Icons.add_photo_alternate_outlined).first;
+      await tester.ensureVisible(insertButton);
+      await tester.tap(insertButton);
+      await tester.pump();
+
+      final editor = tester.widget<quill.QuillEditor>(
+        find.byType(quill.QuillEditor),
+      );
+      final delta = editor.controller.document.toDelta().toJson();
+
+      String? insertedUrl;
+      for (final op in delta) {
+        if (op is! Map) continue;
+        final insert = op['insert'];
+        if (insert is! Map) continue;
+        final image = insert['image'];
+        if (image is String && image.isNotEmpty) {
+          insertedUrl = image;
+          break;
+        }
+      }
+
+      expect(
+        insertedUrl,
+        'http://localhost:8080/api/files/public-media/course-1/lesson-1/image.png',
+      );
+      expect(insertedUrl, isNot(contains('/media/stream/')));
+
+      final saveButton = find.text('Spara lektionsinnehåll');
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pump();
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      final capturedMarkdown =
+          verify(
+                () => studioRepo.upsertLesson(
+                  id: 'lesson-1',
+                  courseId: 'course-1',
+                  title: any(named: 'title'),
+                  contentMarkdown: captureAny(named: 'contentMarkdown'),
+                  position: any(named: 'position'),
+                  isIntro: any(named: 'isIntro'),
+                ),
+              ).captured.single
+              as String?;
+
+      expect(capturedMarkdown, isNotNull);
+      expect(capturedMarkdown, contains('/api/files/public-media/'));
+      expect(capturedMarkdown, isNot(contains('/media/stream/')));
+    },
+  );
+
+  testWidgets(
     'CourseEditorScreen continues inserting private media via signed_url',
     (tester) async {
       final originalOnError = FlutterError.onError;
