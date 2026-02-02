@@ -33,32 +33,32 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           python - << 'PY'
-import os, json, urllib.request, subprocess
-task = """${{ steps.parse.outputs.TASK }}"""
-prompt = """Du är en senior Flutter/Fullstack-ingenjör.
-Följ masterprompten:
----
-${{ steps.readprompt.outputs.prompt }}
----
-Uppgift: %s
+          import os, json, urllib.request, subprocess
+          task = """${{ steps.parse.outputs.TASK }}"""
+          prompt = """Du är en senior Flutter/Fullstack-ingenjör.
+          Följ masterprompten:
+          ---
+          ${{ steps.readprompt.outputs.prompt }}
+          ---
+          Uppgift: %s
 
-Returnera ENDAST en giltig unified diff som kan appliceras med `git apply --whitespace=fix`.
-""" % task
-data = {
-  "model":"gpt-4.1",
-  "messages":[{"role":"user","content":prompt}],
-  "temperature":0.2
-}
-req = urllib.request.Request(
-  "https://api.openai.com/v1/chat/completions",
-  data=json.dumps(data).encode(),
-  headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
-           "Content-Type":"application/json"}
-)
-res = urllib.request.urlopen(req).read()
-msg = json.loads(res)["choices"][0]["message"]["content"]
-open("patch.diff","w").write(msg)
-PY
+          Returnera ENDAST en giltig unified diff som kan appliceras med `git apply --whitespace=fix`.
+          """ % task
+          data = {
+            "model":"gpt-4.1",
+            "messages":[{"role":"user","content":prompt}],
+            "temperature":0.2
+          }
+          req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps(data).encode(),
+            headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+                     "Content-Type":"application/json"}
+          )
+          res = urllib.request.urlopen(req).read()
+          msg = json.loads(res)["choices"][0]["message"]["content"]
+          open("patch.diff","w").write(msg)
+          PY
 
       - name: Create PR from patch
         run: |
