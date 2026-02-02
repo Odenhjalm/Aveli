@@ -12,6 +12,7 @@ abstract class AppRoute {
   static const courseIntro = 'course-intro';
   static const courseIntroRedirect = 'course-intro-redirect';
   static const courseCatalog = 'course-catalog';
+  static const courseCatalogLegacy = 'course-catalog-legacy';
   static const courseQuiz = 'course-quiz';
   static const course = 'course';
   static const lesson = 'lesson';
