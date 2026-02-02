@@ -119,10 +119,14 @@ class _ProfileMediaBody extends ConsumerWidget {
         _UnifiedMediaRow(
           kind: TeacherProfileMediaKind.lessonMedia,
           mediaId: lesson.id,
-          title: _titleForLesson(lesson, item),
+          filename:
+              _filenameForLesson(lesson, item) ?? _titleForLesson(lesson, item),
           courseTitle: _courseTitleForLesson(lesson, item),
           enabledForHomePlayer: item?.enabledForHomePlayer ?? false,
           icon: _iconForLesson(lesson),
+          durationSeconds:
+              lesson.durationSeconds ??
+              item?.source.lessonMedia?.durationSeconds,
           createdAt: item?.createdAt ?? lesson.createdAt,
         ),
       );
@@ -139,10 +143,15 @@ class _ProfileMediaBody extends ConsumerWidget {
         _UnifiedMediaRow(
           kind: TeacherProfileMediaKind.seminarRecording,
           mediaId: recording.id,
-          title: _titleForRecording(recording, item),
+          filename:
+              _filenameForRecording(recording, item) ??
+              _titleForRecording(recording, item),
           courseTitle: _courseTitleForRecording(recording, item),
           enabledForHomePlayer: item?.enabledForHomePlayer ?? false,
           icon: Icons.mic_external_on_outlined,
+          durationSeconds:
+              recording.durationSeconds ??
+              item?.source.seminarRecording?.durationSeconds,
           createdAt: item?.createdAt ?? recording.createdAt,
         ),
       );
@@ -158,10 +167,13 @@ class _ProfileMediaBody extends ConsumerWidget {
         _UnifiedMediaRow(
           kind: item.mediaKind,
           mediaId: id,
-          title: _titleForItem(item),
+          filename: _filenameForItem(item) ?? _titleForItem(item),
           courseTitle: _courseTitleForItem(item),
           enabledForHomePlayer: item.enabledForHomePlayer,
           icon: _iconForItem(item),
+          durationSeconds:
+              item.source.lessonMedia?.durationSeconds ??
+              item.source.seminarRecording?.durationSeconds,
           createdAt: item.createdAt,
         ),
       );
@@ -186,7 +198,9 @@ class _ProfileMediaBody extends ConsumerWidget {
     final courseDiff = aCourse.toLowerCase().compareTo(bCourse.toLowerCase());
     if (courseDiff != 0) return courseDiff;
 
-    final titleDiff = a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    final titleDiff = a.filename.toLowerCase().compareTo(
+      b.filename.toLowerCase(),
+    );
     if (titleDiff != 0) return titleDiff;
 
     final aDate = a.createdAt;
@@ -223,6 +237,50 @@ class _ProfileMediaBody extends ConsumerWidget {
     final basename = _basename(recording.assetUrl);
     if (basename != null) return basename;
     return 'Livesändning';
+  }
+
+  static String? _filenameForLesson(
+    TeacherProfileLessonSource lesson,
+    TeacherProfileMediaItem? item,
+  ) {
+    final storagePath =
+        (lesson.storagePath ?? item?.source.lessonMedia?.storagePath)?.trim();
+    final candidate =
+        _basename(storagePath) ??
+        _basename(lesson.signedUrl) ??
+        _basename(lesson.downloadUrl);
+    if (candidate == null) return null;
+    final stripped = candidate.replaceFirst(RegExp(r'^\\d{10,}_'), '').trim();
+    return stripped.isNotEmpty ? stripped : candidate.trim();
+  }
+
+  static String? _filenameForRecording(
+    TeacherProfileRecordingSource recording,
+    TeacherProfileMediaItem? item,
+  ) {
+    final metadataName = _stringFromMetadata(recording.metadata, const [
+      'original_name',
+      'originalName',
+      'filename',
+      'file_name',
+      'name',
+    ]);
+    if (metadataName != null) return metadataName;
+    return _basename(recording.assetUrl) ??
+        _basename(item?.source.seminarRecording?.assetUrl);
+  }
+
+  static String? _filenameForItem(TeacherProfileMediaItem item) {
+    switch (item.mediaKind) {
+      case TeacherProfileMediaKind.lessonMedia:
+        return _basename(
+          item.source.lessonMedia?.storagePath,
+        )?.replaceFirst(RegExp(r'^\\d{10,}_'), '').trim();
+      case TeacherProfileMediaKind.seminarRecording:
+        return _basename(item.source.seminarRecording?.assetUrl);
+      case TeacherProfileMediaKind.external:
+        return null;
+    }
   }
 
   static String _titleForItem(TeacherProfileMediaItem item) {
@@ -272,13 +330,19 @@ class _ProfileMediaBody extends ConsumerWidget {
   }
 
   static String? _courseTitleFromMetadata(Map<String, dynamic> metadata) {
-    const keys = [
+    return _stringFromMetadata(metadata, const [
       'course_title',
       'courseTitle',
       'course_name',
       'courseName',
       'course',
-    ];
+    ]);
+  }
+
+  static String? _stringFromMetadata(
+    Map<String, dynamic> metadata,
+    List<String> keys,
+  ) {
     for (final key in keys) {
       final value = metadata[key];
       if (value is String && value.trim().isNotEmpty) return value.trim();
@@ -325,19 +389,21 @@ class _UnifiedMediaRow {
   const _UnifiedMediaRow({
     required this.kind,
     required this.mediaId,
-    required this.title,
+    required this.filename,
     required this.courseTitle,
     required this.enabledForHomePlayer,
     required this.icon,
+    required this.durationSeconds,
     required this.createdAt,
   });
 
   final TeacherProfileMediaKind kind;
   final String mediaId;
-  final String title;
+  final String filename;
   final String courseTitle;
   final bool enabledForHomePlayer;
   final IconData icon;
+  final int? durationSeconds;
   final DateTime? createdAt;
 }
 
@@ -351,12 +417,29 @@ class _UnifiedMediaList extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dividerColor = theme.colorScheme.onSurface.withValues(alpha: 0.10);
+    final grouped = <String, List<_UnifiedMediaRow>>{};
+    for (final row in rows) {
+      grouped.putIfAbsent(row.courseTitle, () => []).add(row);
+    }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var index = 0; index < rows.length; index++) ...[
-          _UnifiedMediaTile(row: rows[index], disabled: disabled),
-          if (index != rows.length - 1)
-            Divider(height: 1, thickness: 1, color: dividerColor, indent: 34),
+        for (final entry in grouped.entries) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 14, 0, 8),
+            child: Text(
+              entry.key,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Divider(height: 1, thickness: 1, color: dividerColor),
+          for (var index = 0; index < entry.value.length; index++) ...[
+            _UnifiedMediaTile(row: entry.value[index], disabled: disabled),
+            if (index != entry.value.length - 1)
+              Divider(height: 1, thickness: 1, color: dividerColor, indent: 34),
+          ],
         ],
       ],
     );
@@ -374,74 +457,74 @@ class _UnifiedMediaTile extends ConsumerWidget {
     final controller = ref.read(teacherProfileMediaProvider.notifier);
     final theme = Theme.of(context);
     final dimmed = !row.enabledForHomePlayer;
+    final durationLabel = _formatDuration(row.durationSeconds);
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
       opacity: dimmed ? 0.68 : 1,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Column(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  row.icon,
-                  size: 22,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    row.title,
+            Icon(
+              row.icon,
+              size: 22,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    row.filename,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.only(left: 34),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Kurs: ${row.courseTitle}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  if (durationLabel != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      durationLabel,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  ),
-                  Switch.adaptive(
-                    value: row.enabledForHomePlayer,
-                    onChanged: disabled
-                        ? null
-                        : (value) async {
-                            try {
-                              await controller.setHomePlayerForSource(
-                                kind: row.kind,
-                                mediaId: row.mediaId,
-                                enabled: value,
-                              );
-                            } catch (error) {
-                              if (!context.mounted) return;
-                              _showErrorSnackBar(context, error);
-                            }
-                          },
-                  ),
+                  ],
                 ],
               ),
+            ),
+            Switch.adaptive(
+              value: row.enabledForHomePlayer,
+              onChanged: disabled
+                  ? null
+                  : (value) async {
+                      try {
+                        await controller.setHomePlayerForSource(
+                          kind: row.kind,
+                          mediaId: row.mediaId,
+                          enabled: value,
+                        );
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        _showErrorSnackBar(context, error);
+                      }
+                    },
             ),
           ],
         ),
       ),
     );
+  }
+
+  String? _formatDuration(int? seconds) {
+    if (seconds == null || seconds <= 0) return null;
+    final minutes = seconds ~/ 60;
+    final remainder = seconds % 60;
+    return '$minutes:${remainder.toString().padLeft(2, '0')}';
   }
 }
 
