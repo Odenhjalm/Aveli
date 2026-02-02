@@ -35,6 +35,25 @@ class _BootGateState extends State<BootGate> {
   Future<void> _run() async {
     BootLog.transition(from: 'dart_run_app', to: 'dart_warmup_start');
     EffectsPolicyController.set(widget.config.effectsPolicy);
+    final isSafe = EffectsPolicyController.isSafe;
+
+    // In SAFE/CPU fallback we must not block first paint on critical assets.
+    if (kIsWeb && isSafe) {
+      BootLog.transition(from: 'dart_warmup_start', to: 'dart_allow_first_frame');
+      try {
+        WidgetsBinding.instance.allowFirstFrame();
+      } catch (_) {
+        // Best effort; avoid a permanent blank render.
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        BootLog.transition(from: 'dart_allow_first_frame', to: 'dart_app_ready');
+        BootBridge.appReady({
+          'boot_id': widget.config.bootId,
+          'renderer_mode': widget.config.rendererMode,
+          'effects_policy': widget.config.effectsPolicy.name,
+        });
+      });
+    }
 
     Future<bool> warmAsset({
       required String name,
@@ -70,9 +89,11 @@ class _BootGateState extends State<BootGate> {
     CriticalAssets.backgroundOk = bgOk;
     CriticalAssets.logoOk = logoOk;
 
-    BootLog.transition(from: 'dart_warmup_start', to: 'dart_allow_first_frame');
+    if (!kIsWeb || !isSafe) {
+      BootLog.transition(from: 'dart_warmup_start', to: 'dart_allow_first_frame');
+    }
 
-    if (kIsWeb) {
+    if (kIsWeb && !isSafe) {
       try {
         WidgetsBinding.instance.allowFirstFrame();
       } catch (_) {
@@ -92,4 +113,3 @@ class _BootGateState extends State<BootGate> {
   @override
   Widget build(BuildContext context) => widget.child;
 }
-
