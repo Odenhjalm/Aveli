@@ -176,4 +176,3 @@ async def test_public_media_lesson_image_roundtrip_uses_supabase(async_client, t
         assert fetch_resp.content == b"png-bytes"
     finally:
         await _cleanup_user(user_id)
-
