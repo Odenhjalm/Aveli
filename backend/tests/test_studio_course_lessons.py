@@ -97,4 +97,3 @@ async def test_studio_lessons_belong_directly_to_course(async_client):
     )
     assert patch.status_code == 200, patch.text
     assert patch.json()["title"] == "Lesson 1 updated"
-
