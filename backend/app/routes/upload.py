@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette import status
 
 from .. import models
@@ -63,6 +63,42 @@ class UploadWriteResult:
     destination_path: Path
     size: int
     checksum: str | None
+
+
+async def _put_public_object_to_supabase(path: str, *, payload: bytes, content_type: str) -> None:
+    try:
+        upload = await storage_service.public_storage_service.create_upload_url(
+            path,
+            content_type=content_type,
+            upsert=True,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+        timeout = httpx.Timeout(10.0, read=None)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.put(upload.url, headers=dict(upload.headers), content=payload)
+    except storage_service.StorageServiceError as exc:
+        logger.warning("Supabase public upload signing failed: path=%s error=%s", path, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage unavailable",
+        ) from exc
+    except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+        logger.warning("Supabase public upload failed: path=%s error=%s", path, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage unavailable",
+        ) from exc
+
+    if response.status_code >= 400:
+        logger.warning(
+            "Supabase public upload failed: status=%s path=%s",
+            response.status_code,
+            path,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to upload media",
+        )
 
 
 def _safe_join(base: Path, *parts: str) -> Path:
@@ -398,17 +434,52 @@ async def upload_course_media(
         if not normalized_content_type or normalized_content_type not in allowed_exact:
             raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported media type")
 
-    destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)
-    write_result = await _write_upload(
-        destination_dir,
-        file,
-        allowed_prefixes=allowed_prefixes,
-        max_bytes=settings.lesson_media_max_bytes if lesson_id else None,
-    )
+    if storage_bucket == _PUBLIC_MEDIA_BUCKET and storage_service.public_storage_service.enabled:
+        if not file.filename:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing filename")
+        suffix = Path(file.filename).suffix.lower()
+        safe_name = f"{uuid4().hex}{suffix}"
+        relative_path = relative_dir / safe_name
+
+        payload = await file.read()
+        if not payload:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty")
+
+        size = len(payload)
+        max_bytes = settings.lesson_media_max_bytes if lesson_id else None
+        if max_bytes is not None and size > max_bytes:
+            max_mb = max(1, max_bytes // (1024 * 1024))
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File too large (max {max_mb} MB)",
+            )
+
+        content_type = (
+            file.content_type
+            or mimetypes.guess_type(safe_name)[0]
+            or "application/octet-stream"
+        )
+
+        await _put_public_object_to_supabase(relative_path.as_posix(), payload=payload, content_type=content_type)
+        write_result = UploadWriteResult(
+            filename=safe_name,
+            destination_path=Path(safe_name),
+            size=size,
+            checksum=hashlib.sha256(payload).hexdigest(),
+        )
+    else:
+        destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)
+        write_result = await _write_upload(
+            destination_dir,
+            file,
+            allowed_prefixes=allowed_prefixes,
+            max_bytes=settings.lesson_media_max_bytes if lesson_id else None,
+        )
+
     relative_path = relative_dir / write_result.filename
     content_type = (
         file.content_type
-        or mimetypes.guess_type(write_result.destination_path.name)[0]
+        or mimetypes.guess_type(write_result.filename)[0]
         or "application/octet-stream"
     )
     url = _public_url(request, relative_path)
@@ -457,18 +528,46 @@ async def upload_public_media(
 ) -> dict[str, Any]:
     user_id = str(current["id"])
     relative_dir = Path("public-media") / user_id
-    destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)
-    write_result = await _write_upload(
-        destination_dir,
-        file,
-        allowed_prefixes=_LESSON_ALLOWED_PREFIXES + tuple(_LESSON_ALLOWED_EXACT_TYPES),
-    )
-    relative_path = relative_dir / write_result.filename
-    content_type = (
-        file.content_type
-        or mimetypes.guess_type(write_result.destination_path.name)[0]
-        or "application/octet-stream"
-    )
+    allowed_prefixes = _LESSON_ALLOWED_PREFIXES + tuple(_LESSON_ALLOWED_EXACT_TYPES)
+    if storage_service.public_storage_service.enabled:
+        if not file.filename:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing filename")
+        normalized_content_type = (file.content_type or "").lower()
+        if allowed_prefixes and not any(normalized_content_type.startswith(prefix) for prefix in allowed_prefixes):
+            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported media type")
+
+        suffix = Path(file.filename).suffix.lower()
+        safe_name = f"{uuid4().hex}{suffix}"
+        relative_path = relative_dir / safe_name
+
+        payload = await file.read()
+        if not payload:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty")
+        content_type = (
+            file.content_type
+            or mimetypes.guess_type(safe_name)[0]
+            or "application/octet-stream"
+        )
+        await _put_public_object_to_supabase(relative_path.as_posix(), payload=payload, content_type=content_type)
+        write_result = UploadWriteResult(
+            filename=safe_name,
+            destination_path=Path(safe_name),
+            size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+        )
+    else:
+        destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)
+        write_result = await _write_upload(
+            destination_dir,
+            file,
+            allowed_prefixes=allowed_prefixes,
+        )
+        relative_path = relative_dir / write_result.filename
+        content_type = (
+            file.content_type
+            or mimetypes.guess_type(write_result.destination_path.name)[0]
+            or "application/octet-stream"
+        )
     url = _public_url(request, relative_path)
     if url is None:
         raise HTTPException(
@@ -492,6 +591,43 @@ async def serve_uploaded_file(path: str):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
     if not _is_public_path(relative):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Media not publicly accessible")
+
+    if relative.parts and relative.parts[0] == _PUBLIC_MEDIA_BUCKET and storage_service.public_storage_service.enabled:
+        object_path = relative.as_posix()
+        public_url = storage_service.public_storage_service.public_url(object_path)
+        timeout = httpx.Timeout(10.0, read=None)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                upstream = await client.get(public_url)
+            except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                logger.warning("Supabase public fetch failed: path=%s error=%s", object_path, exc)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storage unavailable",
+                ) from exc
+
+        if upstream.status_code == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        if upstream.status_code >= 400:
+            logger.warning(
+                "Supabase public fetch failed: status=%s path=%s",
+                upstream.status_code,
+                object_path,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage unavailable",
+            )
+
+        media_type = upstream.headers.get("content-type") or mimetypes.guess_type(relative.name)[0]
+        response = Response(content=upstream.content, media_type=media_type or "application/octet-stream")
+        cache_seconds = max(0, settings.media_public_cache_seconds)
+        if cache_seconds > 0:
+            response.headers["Cache-Control"] = f"public, max-age={cache_seconds}"
+        else:
+            response.headers["Cache-Control"] = "no-store"
+        response.headers["Content-Disposition"] = build_content_disposition(relative.name, disposition="inline")
+        return response
 
     file_path = _safe_join(UPLOADS_ROOT, *relative.parts)
     if not file_path.exists() or not file_path.is_file():
