@@ -157,4 +157,3 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
     assert lesson_media_id in {
         it.get("id") for it in resp_student_enrolled.json().get("items") or []
     }
-
