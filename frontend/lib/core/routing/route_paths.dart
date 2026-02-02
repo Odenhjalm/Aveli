@@ -12,7 +12,8 @@ abstract class RoutePath {
   static const home = '/home';
   static const sfuDemo = '/sfu-demo';
   static const courseIntro = '/course-intro';
-  static const courseCatalog = '/courses/catalog';
+  static const courseCatalog = '/courses';
+  static const courseCatalogLegacy = '/courses/catalog';
   static const courseQuiz = '/course-quiz';
   static const courseIntroRedirect = '/course-intro-redirect';
   static const messages = '/messages';
