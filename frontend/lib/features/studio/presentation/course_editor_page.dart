@@ -1922,11 +1922,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (normalized.isEmpty) return null;
 
     var bucket = (media['storage_bucket'] as String?)?.trim();
-    if (bucket == null || bucket.isEmpty) {
-      final parts = normalized.split('/');
-      if (parts.isNotEmpty) {
-        bucket = parts.first;
-      }
+    final parts = normalized.split('/');
+    final pathBucket = parts.isEmpty ? null : parts.first.trim();
+    if (pathBucket != null && pathBucket.isNotEmpty && _isPublicBucket(pathBucket)) {
+      // Prefer the bucket encoded in the storage path when it is a known public
+      // bucket. This protects against legacy records where `storage_bucket`
+      // was missing or incorrectly backfilled.
+      bucket = pathBucket;
+    } else if (bucket == null || bucket.isEmpty) {
+      bucket = pathBucket;
     }
     if (!_isPublicBucket(bucket)) return null;
 
@@ -1939,14 +1943,38 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _resolveMediaDisplayUrl(Map<String, dynamic> media) {
     final bucket = (media['storage_bucket'] as String?)?.trim();
     final isIntro = media['is_intro'] == true;
-    final isPublicMedia = bucket == 'public-media' || isIntro;
     final isStreamUrl = (String value) => value.contains('/media/stream/');
+    final downloadCandidate =
+        media['download_url'] ?? media['downloadUrl'] ?? media['url'];
+
+    String? publicBucketHint;
+    if (downloadCandidate is String && downloadCandidate.trim().isNotEmpty) {
+      try {
+        final uri = Uri.parse(downloadCandidate.trim());
+        final segments = uri.pathSegments;
+        if (segments.length >= 3 &&
+            segments[0] == 'api' &&
+            segments[1] == 'files') {
+          final hinted = segments[2].trim();
+          if (hinted == 'public-media') {
+            publicBucketHint = hinted;
+          }
+        }
+      } catch (_) {
+        // Ignore malformed URLs; fall back to bucket/storage_path checks.
+      }
+    }
+
+    final publicPath = _publicDownloadPathForMedia(media);
+    final isPublicMedia =
+        bucket == 'public-media' ||
+        isIntro ||
+        publicBucketHint == 'public-media' ||
+        (publicPath != null && publicPath.startsWith('/api/files/public-media/'));
 
     if (isPublicMedia) {
       // Public media: never embed signed stream URLs; only stable public
       // download URLs (or an equivalent public file path).
-      final downloadCandidate =
-          media['download_url'] ?? media['downloadUrl'] ?? media['url'];
       if (downloadCandidate is String) {
         final trimmed = downloadCandidate.trim();
         if (trimmed.isNotEmpty && !isStreamUrl(trimmed)) {
@@ -1954,7 +1982,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         }
       }
 
-      final publicPath = _publicDownloadPathForMedia(media);
       if (publicPath != null && publicPath.isNotEmpty) {
         return _resolveMediaUrl(publicPath);
       }
@@ -1970,7 +1997,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (rawUrl is String && rawUrl.trim().isNotEmpty) {
       return _resolveMediaUrl(rawUrl.trim());
     }
-    final publicPath = _publicDownloadPathForMedia(media);
     if (publicPath != null) {
       return _resolveMediaUrl(publicPath);
     }
