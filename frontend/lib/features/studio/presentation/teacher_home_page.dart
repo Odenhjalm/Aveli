@@ -303,21 +303,21 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Min profil',
+                      'Home-spelaren',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Välj vilka meditationer och livesändningar som ska presenteras på din offentliga sida. Ladda upp omslag, redigera titlar och styr ordningen.',
+                      'Välj vilka ljud och videor som får visas i Home-spelaren.',
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
                     GradientButton.icon(
                       onPressed: () => context.goNamed(AppRoute.studioProfile),
                       icon: const Icon(Icons.person_outline),
-                      label: const Text('Öppna profilhanteringen'),
+                      label: const Text('Öppna kontrollpanelen'),
                     ),
                   ],
                 ),
