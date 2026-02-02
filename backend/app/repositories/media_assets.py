@@ -135,8 +135,7 @@ async def get_media_asset_access(media_id: str) -> dict[str, Any] | None:
               c.is_published
             FROM app.media_assets ma
             LEFT JOIN app.lessons l ON l.id = ma.lesson_id
-            LEFT JOIN app.modules m ON m.id = l.module_id
-            LEFT JOIN app.courses c ON c.id = coalesce(ma.course_id, m.course_id)
+            LEFT JOIN app.courses c ON c.id = coalesce(ma.course_id, l.course_id)
             WHERE ma.id = %s
             """,
             (media_id,),

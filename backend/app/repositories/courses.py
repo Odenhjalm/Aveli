@@ -1007,8 +1007,7 @@ async def get_lesson_media_access_by_path(
           c.is_published
         FROM app.lesson_media lm
         JOIN app.lessons l ON l.id = lm.lesson_id
-        JOIN app.modules m ON m.id = l.module_id
-        JOIN app.courses c ON c.id = m.course_id
+        JOIN app.courses c ON c.id = l.course_id
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
         WHERE coalesce(mo.storage_path, lm.storage_path) = %s
           AND coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') = %s

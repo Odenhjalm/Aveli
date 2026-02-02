@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query, status
 
 from .. import schemas
@@ -18,6 +20,22 @@ def _attach_cover_links(course: dict) -> None:
 
 def _attach_media_links(item: dict) -> None:
     media_signer.attach_media_links(item)
+
+
+def _virtual_module(course_id: str) -> dict[str, Any]:
+    """Compatibility shim: represent a flat course as a single pseudo-module.
+
+    The database no longer stores modules; lessons belong directly to a course.
+    Some clients still expect modules + lessons-by-module payloads, so we expose a
+    stable virtual module whose id equals the course id.
+    """
+
+    return {
+        "id": course_id,
+        "course_id": course_id,
+        "title": "Lektioner",
+        "position": 0,
+    }
 
 
 @router.get("", response_model=schemas.CourseListResponse)
@@ -75,13 +93,18 @@ async def bind_course_price(slug: str, payload: dict[str, str], current: AdminUs
 
 @router.get("/{course_id}/modules")
 async def modules_for_course(course_id: str):
-    modules = await courses_service.list_modules(course_id)
-    return {"items": modules}
+    course = await courses_service.fetch_course(course_id=course_id)
+    if not course or not course.get("is_published"):
+        return {"items": []}
+    return {"items": [_virtual_module(course_id)]}
 
 
 @router.get("/modules/{module_id}/lessons")
 async def lessons_for_module(module_id: str):
-    lessons = await courses_service.list_lessons(module_id)
+    course = await courses_service.fetch_course(course_id=module_id)
+    if not course or not course.get("is_published"):
+        return {"items": []}
+    lessons = await courses_service.list_course_lessons(module_id)
     return {"items": lessons}
 
 
@@ -90,41 +113,36 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     lesson = await courses_service.fetch_lesson(lesson_id)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    module = None
-    if lesson.get("module_id"):
-        module = await courses_service.fetch_module(lesson["module_id"])
-    modules = []
-    course_lessons = []
-    course: dict | None = None
-    course_id: str | None = None
-    if module and module.get("course_id"):
-        course_id = str(module["course_id"])
-        course = await courses_service.fetch_course(course_id=course_id)
-        if not course or not course.get("is_published"):
-            raise HTTPException(status_code=404, detail="Course not found")
-        modules = await courses_service.list_modules(course_id)
-        course_lessons = await courses_service.list_course_lessons(course_id)
-    module_lessons = []
-    if lesson.get("module_id"):
-        module_lessons = await courses_service.list_lessons(lesson["module_id"])
+    course_id_raw = lesson.get("course_id")
+    course_id = str(course_id_raw) if course_id_raw else None
+    if not course_id:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    course = await courses_service.fetch_course(course_id=course_id)
+    if not course or not course.get("is_published"):
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    module = _virtual_module(course_id)
+    modules = [module]
+    course_lessons = await courses_service.list_course_lessons(course_id)
+    module_lessons = course_lessons
 
     media: list[dict] = []
-    if course and course_id:
-        user_id = str(current["id"]) if current else None
+    user_id = str(current["id"]) if current else None
 
-        can_access_media = False
-        if user_id and await courses_service.is_course_owner(user_id, course_id):
-            can_access_media = True
-        elif lesson.get("is_intro") or course.get("is_free_intro"):
-            can_access_media = True
-        elif user_id and await courses_service.is_user_enrolled(user_id, course_id):
-            can_access_media = True
+    can_access_media = False
+    if user_id and await courses_service.is_course_owner(user_id, course_id):
+        can_access_media = True
+    elif lesson.get("is_intro") or course.get("is_free_intro"):
+        can_access_media = True
+    elif user_id and await courses_service.is_user_enrolled(user_id, course_id):
+        can_access_media = True
 
-        if can_access_media:
-            media_rows = await courses_service.list_lesson_media(lesson_id)
-            for item in media_rows:
-                _attach_media_links(item)
-                media.append(item)
+    if can_access_media:
+        media_rows = await courses_service.list_lesson_media(lesson_id)
+        for item in media_rows:
+            _attach_media_links(item)
+            media.append(item)
     return {
         "lesson": lesson,
         "module": module,
@@ -274,12 +292,10 @@ async def course_detail_by_slug(slug: str):
     if not row.get("is_published"):
         raise HTTPException(status_code=404, detail="Course not found")
     _attach_cover_links(row)
-    course_id = row["id"]
-    modules = await courses_service.list_modules(course_id)
-    module_ids = [m["id"] for m in modules]
-    lessons_map: dict[str, list] = {}
-    for module_id in module_ids:
-        lessons_map[module_id] = await courses_service.list_lessons(module_id)
+    course_id = str(row["id"])
+    module = _virtual_module(course_id)
+    modules = [module]
+    lessons_map: dict[str, list] = {course_id: await courses_service.list_course_lessons(course_id)}
     response = {
         "course": row,
         "modules": modules,
@@ -295,11 +311,9 @@ async def course_detail(course_id: str):
         raise HTTPException(status_code=404, detail="Course not found")
     if not row.get("is_published"):
         raise HTTPException(status_code=404, detail="Course not found")
-    modules = await courses_service.list_modules(course_id)
-    module_ids = [m["id"] for m in modules]
-    lessons_map: dict[str, list] = {}
-    for module_id in module_ids:
-        lessons_map[module_id] = await courses_service.list_lessons(module_id)
+    module = _virtual_module(course_id)
+    modules = [module]
+    lessons_map: dict[str, list] = {course_id: await courses_service.list_course_lessons(course_id)}
     return {
         "course": row,
         "modules": modules,

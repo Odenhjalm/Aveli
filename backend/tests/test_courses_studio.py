@@ -68,7 +68,6 @@ async def test_course_and_studio_endpoints(async_client):
     )
 
     course_id = None
-    module_id = None
     lesson_id = None
     quiz_id = None
     question_id = None
@@ -105,28 +104,25 @@ async def test_course_and_studio_endpoints(async_client):
         assert resp.status_code == 200
         assert any(str(item["id"]) == course_id for item in resp.json()["items"])
 
-        # Add module
+        # Student cannot create lessons for teacher-owned courses.
         resp = await async_client.post(
-            "/studio/modules",
-            json={"course_id": course_id, "title": "Module 1", "position": 1},
-            headers=auth_header(teacher_token),
-        )
-        assert resp.status_code == 200, resp.text
-        module_id = str(resp.json()["id"])
-
-        # Student cannot manage modules
-        resp = await async_client.patch(
-            f"/studio/modules/{module_id}",
-            json={"title": "Nope"},
+            "/studio/lessons",
+            json={
+                "course_id": course_id,
+                "title": "Lesson 1",
+                "content_markdown": "# Hello",
+                "position": 1,
+                "is_intro": True,
+            },
             headers=auth_header(student_token),
         )
         assert resp.status_code == 403
 
-        # Add lesson
+        # Teacher adds lesson
         resp = await async_client.post(
             "/studio/lessons",
             json={
-                "module_id": module_id,
+                "course_id": course_id,
                 "title": "Lesson 1",
                 "content_markdown": "# Hello",
                 "position": 1,
@@ -136,15 +132,6 @@ async def test_course_and_studio_endpoints(async_client):
         )
         assert resp.status_code == 200, resp.text
         lesson_id = str(resp.json()["id"])
-
-        # Update module metadata
-        resp = await async_client.patch(
-            f"/studio/modules/{module_id}",
-            json={"title": "Module 1 Updated", "position": 2},
-            headers=auth_header(teacher_token),
-        )
-        assert resp.status_code == 200
-        assert resp.json()["title"] == "Module 1 Updated"
 
         # Update lesson metadata
         resp = await async_client.patch(
@@ -294,14 +281,14 @@ async def test_course_and_studio_endpoints(async_client):
         assert resp.status_code == 200
         assert "limit" in resp.json()
 
-        # Course detail includes modules and lessons
+        # Course detail includes lessons (virtual module for backwards compatibility)
         resp = await async_client.get(
             f"/courses/{course_id}", headers=auth_header(student_token)
         )
         assert resp.status_code == 200
         detail = resp.json()
         assert str(detail["course"]["id"]) == course_id
-        assert detail["modules"], "Modules should be present"
+        assert detail["modules"], "Course lessons should be present"
 
         # Quiz info available to student
         if quiz_available and quiz_id is not None:
@@ -340,10 +327,6 @@ async def test_course_and_studio_endpoints(async_client):
         if lesson_id:
             await async_client.delete(
                 f"/studio/lessons/{lesson_id}", headers=auth_header(teacher_token)
-            )
-        if module_id:
-            await async_client.delete(
-                f"/studio/modules/{module_id}", headers=auth_header(teacher_token)
             )
         if course_id:
             await async_client.delete(

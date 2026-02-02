@@ -69,17 +69,9 @@ async def test_studio_lesson_newline_persists_in_storage(async_client):
         course_id = str(resp.json()["id"])
 
         resp = await async_client.post(
-            "/studio/modules",
-            json={"course_id": course_id, "title": "Module 1", "position": 1},
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 200, resp.text
-        module_id = str(resp.json()["id"])
-
-        resp = await async_client.post(
             "/studio/lessons",
             json={
-                "module_id": module_id,
+                "course_id": course_id,
                 "title": "Lesson 1",
                 "content_markdown": "Hello world\n\nThis is a lesson\n\n",
                 "position": 1,
@@ -99,7 +91,7 @@ async def test_studio_lesson_newline_persists_in_storage(async_client):
         assert resp.status_code == 200, resp.text
 
         resp = await async_client.get(
-            f"/studio/modules/{module_id}/lessons",
+            f"/studio/courses/{course_id}/lessons",
             headers=auth_header(token),
         )
         assert resp.status_code == 200, resp.text

@@ -80,7 +80,6 @@ async def test_teacher_profile_media_flow(async_client):
     await promote_to_teacher(teacher_id)
 
     course_id = None
-    module_id = None
     lesson_id = None
     lesson_media_id = None
     seminar_id = None
@@ -106,17 +105,9 @@ async def test_teacher_profile_media_flow(async_client):
         course_id = str(resp.json()["id"])
 
         resp = await async_client.post(
-            "/studio/modules",
-            json={"course_id": course_id, "title": "Profile Module", "position": 1},
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 200, resp.text
-        module_id = str(resp.json()["id"])
-
-        resp = await async_client.post(
             "/studio/lessons",
             json={
-                "module_id": module_id,
+                "course_id": course_id,
                 "title": "Profile Lesson",
                 "content_markdown": "# Featured lesson",
                 "position": 1,

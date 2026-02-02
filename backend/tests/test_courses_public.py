@@ -90,19 +90,13 @@ async def test_course_public_endpoints(async_client):
         assert create_resp.status_code == 200, create_resp.text
         course = create_resp.json()
         course_id = str(course["id"])
-
-        module_resp = await async_client.post(
-            "/studio/modules",
-            json={"course_id": course_id, "title": "Module 1", "position": 1},
-            headers=auth_header(teacher_token),
-        )
-        assert module_resp.status_code == 200, module_resp.text
-        module_id = str(module_resp.json()["id"])
+        # Modules are removed; public APIs expose a single virtual module per course.
+        module_id = course_id
 
         lesson_resp = await async_client.post(
             "/studio/lessons",
             json={
-                "module_id": module_id,
+                "course_id": course_id,
                 "title": "Lesson 1",
                 "content_markdown": "# Lesson",
                 "position": 1,

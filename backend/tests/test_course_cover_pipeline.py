@@ -60,19 +60,11 @@ async def create_course(async_client, headers):
 
 
 async def create_lesson(async_client, headers, course_id: str):
-    module_resp = await async_client.post(
-        "/studio/modules",
-        headers=headers,
-        json={"course_id": course_id, "title": "Module", "position": 1},
-    )
-    assert module_resp.status_code == 200, module_resp.text
-    module_id = str(module_resp.json()["id"])
-
     lesson_resp = await async_client.post(
         "/studio/lessons",
         headers=headers,
         json={
-            "module_id": module_id,
+            "course_id": course_id,
             "title": "Lesson",
             "content_markdown": "# Lesson",
             "position": 1,

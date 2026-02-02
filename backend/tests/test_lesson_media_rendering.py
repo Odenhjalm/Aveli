@@ -46,9 +46,8 @@ async def test_lesson_detail_includes_processing_pipeline_media(async_client):
         }
     )
     course_id = str(course["id"])
-    module = await courses_repo.create_module(course_id, title="Module", position=0)
     lesson = await courses_repo.create_lesson(
-        str(module["id"]),
+        course_id,
         title="Lesson",
         content_markdown="# Lesson",
         position=0,
