@@ -178,6 +178,50 @@ class TeacherProfileMediaController
     await updateItem(itemId, enabledForHomePlayer: enabled);
   }
 
+  Future<void> setHomePlayerForSource({
+    required TeacherProfileMediaKind kind,
+    required String mediaId,
+    required bool enabled,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    TeacherProfileMediaItem? existing;
+    for (final item in current.items) {
+      if (item.mediaKind == kind && item.mediaId == mediaId) {
+        existing = item;
+        break;
+      }
+    }
+
+    if (existing == null && !enabled) return;
+
+    state = const AsyncLoading();
+    try {
+      if (existing != null) {
+        await _repository.updateProfileMedia(
+          existing.id,
+          enabledForHomePlayer: enabled,
+        );
+      } else {
+        final created = await _repository.createProfileMedia(
+          mediaKind: kind,
+          mediaId: mediaId,
+          isPublished: false,
+        );
+        await _repository.updateProfileMedia(
+          created.id,
+          enabledForHomePlayer: true,
+        );
+      }
+      final snapshot = await _load();
+      state = AsyncData(snapshot);
+    } catch (error, stackTrace) {
+      state = AsyncError(AppFailure.from(error, stackTrace), stackTrace);
+      rethrow;
+    }
+  }
+
   Future<void> reorder(int oldIndex, int newIndex) async {
     final current = state.valueOrNull;
     if (current == null) {
