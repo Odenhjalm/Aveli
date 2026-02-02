@@ -11,15 +11,34 @@ permissions:
 
 jobs:
   plan-and-pr:
-    if: contains(github.event.comment.body || github.event.issue.body, '/agent ')
+    if: contains(toJson(github.event), '/agent ')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - id: parse
         run: |
-          BODY="${{ github.event.comment.body || github.event.issue.body }}"
-          echo "TASK=${BODY#*'/agent '}" >> $GITHUB_OUTPUT
+          python - << 'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event_path = os.environ.get("GITHUB_EVENT_PATH")
+          payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+
+          body = ""
+          comment = payload.get("comment")
+          issue = payload.get("issue")
+          if isinstance(comment, dict):
+            body = comment.get("body") or ""
+          elif isinstance(issue, dict):
+            body = issue.get("body") or ""
+
+          task = body.split("/agent ", 1)[1] if "/agent " in body else ""
+          task = task.replace("\r\n", "\n").replace("\n", " ").strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+            handle.write(f"TASK={task}\n")
+          PY
 
       - id: readprompt
         run: |
