@@ -156,24 +156,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                     constraints: const BoxConstraints(
                                       maxWidth: 860,
                                     ),
-                                    child: const CoursesShowcaseSection(
-                                      title: 'Utforska kurser',
-                                      layout: CoursesShowcaseLayout.vertical,
-                                      desktop: CoursesShowcaseDesktop(
-                                        columns: 2,
-                                        rows: 3,
-                                      ),
-                                      includeOuterChrome: false,
-                                      showHeroBadge: false,
-                                      includeStudioCourses: false,
-                                      ctaGradient: kBrandBluePurpleGradient,
-                                      tileScale: 0.85,
-                                      tileTextColor: DesignTokens.bodyTextColor,
-                                      introBadgeVariant:
-                                          CourseIntroBadgeVariant.link,
-                                      gridCrossAxisSpacing: 2,
-                                      gridMainAxisSpacing: 2,
-                                    ),
+                                    child:
+                                        const _CoursesShowcaseSectionWithAllLink(),
                                   ),
                                 ),
                               ),
@@ -231,20 +215,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                     children: [
                       homeAudioSection,
                       const SizedBox(height: 22),
-                      const CoursesShowcaseSection(
-                        title: 'Utforska kurser',
-                        layout: CoursesShowcaseLayout.vertical,
-                        desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
-                        includeOuterChrome: false,
-                        showHeroBadge: false,
-                        includeStudioCourses: false,
-                        ctaGradient: kBrandBluePurpleGradient,
-                        tileScale: 0.85,
-                        tileTextColor: DesignTokens.bodyTextColor,
-                        introBadgeVariant: CourseIntroBadgeVariant.link,
-                        gridCrossAxisSpacing: 2,
-                        gridMainAxisSpacing: 2,
-                      ),
+                      const _CoursesShowcaseSectionWithAllLink(),
                       const SizedBox(height: 22),
                       _FeedSection(
                         feedAsync: feedAsync,
@@ -327,6 +298,40 @@ class _HomeAudioSection extends StatelessWidget {
         }
         return _HomeAudioList(items: items);
       },
+    );
+  }
+}
+
+class _CoursesShowcaseSectionWithAllLink extends StatelessWidget {
+  const _CoursesShowcaseSectionWithAllLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        const CoursesShowcaseSection(
+          title: 'Utforska kurser',
+          layout: CoursesShowcaseLayout.vertical,
+          desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
+          includeOuterChrome: false,
+          showHeroBadge: false,
+          includeStudioCourses: false,
+          ctaGradient: kBrandBluePurpleGradient,
+          tileScale: 0.85,
+          tileTextColor: DesignTokens.bodyTextColor,
+          introBadgeVariant: CourseIntroBadgeVariant.link,
+          gridCrossAxisSpacing: 2,
+          gridMainAxisSpacing: 2,
+        ),
+        Positioned(
+          top: 10,
+          right: 0,
+          child: TextButton(
+            onPressed: () => context.push(RoutePath.courseCatalog),
+            child: const Text('Visa alla'),
+          ),
+        ),
+      ],
     );
   }
 }
