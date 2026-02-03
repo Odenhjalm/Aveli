@@ -37,6 +37,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
@@ -170,6 +171,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
   bool _courseIsFreeIntro = false;
+  CourseJourneyStep _courseJourneyStep = CourseJourneyStep.intro;
   bool _courseIsPublished = false;
   String? _courseCoverPath;
   String? _courseCoverPreviewUrl;
@@ -261,6 +263,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _courseMetaLoading = false;
     _lessonsLoading = false;
     _mediaLoading = false;
+    _courseJourneyStep = CourseJourneyStep.intro;
     _lessonsNeedingRefresh.clear();
     if (clearLists) {
       _lessons = <Map<String, dynamic>>[];
@@ -412,10 +415,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _coursePriceCtrl.text = priceRaw == null
           ? ''
           : int.tryParse('$priceRaw')?.toString() ?? '$priceRaw';
+      final journeyStepRaw = map['journey_step'];
+      final resolvedJourneyStep = CourseJourneyStep.tryParse(
+        journeyStepRaw is String ? journeyStepRaw : journeyStepRaw?.toString(),
+      );
+      if (resolvedJourneyStep == null) {
+        assert(() {
+          debugPrint(
+            'Studio: course $courseId has missing/invalid journey_step=$journeyStepRaw; defaulting to intro until saved.',
+          );
+          return true;
+        }());
+      }
       if (mounted) {
         setState(() {
           _courseIsFreeIntro = map['is_free_intro'] == true;
           _courseIsPublished = map['is_published'] == true;
+          _courseJourneyStep = resolvedJourneyStep ?? CourseJourneyStep.intro;
           final coverPath = (map['cover_url'] as String?)?.trim();
           _courseCoverPath = (coverPath == null || coverPath.isEmpty)
               ? null
@@ -3348,6 +3364,45 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  Widget _buildCourseJourneyPlacement(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Placering i resan',
+          style: (t.titleMedium ?? const TextStyle()).copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Denna inställning avgör var kursen visas på Alla kurser.',
+          style: t.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        RadioGroup<CourseJourneyStep>(
+          groupValue: _courseJourneyStep,
+          onChanged: (selected) {
+            if (selected == null) return;
+            setState(() => _courseJourneyStep = selected);
+          },
+          child: Column(
+            children: [
+              for (final step in CourseJourneyStep.values)
+                RadioListTile<CourseJourneyStep>(
+                  value: step,
+                  title: Text(step.label),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _saveCourseMeta() async {
     final courseId = _selectedCourseId;
     if (courseId == null || _savingCourseMeta) return;
@@ -3378,6 +3433,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       'description': desc.isEmpty ? null : desc,
       'price_amount_cents': price,
       'is_free_intro': _courseIsFreeIntro,
+      'journey_step': _courseJourneyStep.apiValue,
       'is_published': _courseIsPublished,
     };
     if (slug.isNotEmpty) {
@@ -3801,6 +3857,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 ),
                               ),
                               _buildPublishToggle(context),
+                              gap12,
+                              _buildCourseJourneyPlacement(context),
                               Row(
                                 children: [
                                   GradientButton.icon(

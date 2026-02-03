@@ -22,6 +22,7 @@ _FULL_COURSE_COLUMNS = """
         cover_media_id,
         video_url,
         branch,
+        journey_step,
         is_free_intro,
         price_amount_cents,
         currency,
@@ -42,6 +43,7 @@ _BASE_COURSE_UPDATE_COLUMNS = {
     "title",
     "slug",
     "description",
+    "journey_step",
     "is_free_intro",
     "price_amount_cents",
     "is_published",
@@ -67,6 +69,7 @@ def _legacy_course_columns(alias: str | None = None) -> str:
     column_lines = [f"{prefix}{column}" for column in base_columns]
     cover_index = base_columns.index("cover_url") + 1
     column_lines.insert(cover_index, "NULL::uuid AS cover_media_id")
+    column_lines.append("NULL::text AS journey_step")
     price_source = f"{prefix}price_cents"
     column_lines.extend(
         [
@@ -369,6 +372,7 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
         ("description", data.get("description")),
         ("video_url", data.get("video_url")),
         ("branch", data.get("branch")),
+        ("journey_step", data.get("journey_step")),
         ("currency", data.get("currency")),
     ]
 
@@ -416,6 +420,7 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
                     not in {
                         "video_url",
                         "branch",
+                        "journey_step",
                         "currency",
                         "price_amount_cents",
                     }
@@ -451,6 +456,7 @@ async def update_course(
         "description",
         "video_url",
         "branch",
+        "journey_step",
         "currency",
     )
     for column in text_columns:
@@ -494,7 +500,7 @@ async def update_course(
                 for column, value in updates:
                     if column == "price_amount_cents":
                         fallback_updates.append(("price_cents", value))
-                    elif column in _BASE_COURSE_UPDATE_COLUMNS - {"price_amount_cents"}:
+                    elif column in _BASE_COURSE_UPDATE_COLUMNS - {"journey_step", "price_amount_cents"}:
                         fallback_updates.append((column, value))
                 if not fallback_updates:
                     raise

@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 from uuid import UUID
@@ -636,6 +636,7 @@ class Course(BaseModel):
     cover_url: str | None = None
     cover_media_id: UUID | None = None
     video_url: str | None = None
+    journey_step: Literal["intro", "step1", "step2", "step3"] | None = None
     is_free_intro: bool
     price_amount_cents: int = 0
     currency: str = "sek"
@@ -674,6 +675,7 @@ class StudioCourseCreate(BaseModel):
     is_published: bool = False
     price_amount_cents: int | None = None
     branch: str | None = None
+    journey_step: Literal["intro", "step1", "step2", "step3"] = "intro"
 
 
 class StudioCourseUpdate(BaseModel):
@@ -685,6 +687,7 @@ class StudioCourseUpdate(BaseModel):
     is_published: bool | None = None
     price_amount_cents: int | None = None
     branch: str | None = None
+    journey_step: Literal["intro", "step1", "step2", "step3"] | None = None
 
 
 class StudioModuleCreate(BaseModel):

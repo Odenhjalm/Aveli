@@ -6,11 +6,11 @@ import 'package:intl/intl.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
-import 'package:aveli/features/landing/application/landing_providers.dart'
-    as landing;
+import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
@@ -25,39 +25,50 @@ class CourseCatalogPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final assets = ref.watch(backendAssetResolverProvider);
-    final introAsync = ref.watch(landing.introCoursesProvider);
-    final popularAsync = ref.watch(landing.popularCoursesProvider);
+    final coursesAsync = ref.watch(coursesProvider);
 
-    final intro =
-        introAsync.valueOrNull?.items ?? const <Map<String, dynamic>>[];
-    final popular =
-        popularAsync.valueOrNull?.items ?? const <Map<String, dynamic>>[];
+    final courses = coursesAsync.valueOrNull ?? const <CourseSummary>[];
+    final introCourses = <CourseSummary>[];
+    final step1Courses = <CourseSummary>[];
+    final step2Courses = <CourseSummary>[];
+    final step3Courses = <CourseSummary>[];
+    final unclassified = <CourseSummary>[];
 
-    final free = _dedupeCourses([
-      ...intro.where((course) => course['is_free_intro'] == true),
-      ...popular.where((course) => course['is_free_intro'] == true),
-    ]);
+    for (final course in courses) {
+      switch (course.journeyStep) {
+        case CourseJourneyStep.intro:
+          introCourses.add(course);
+          break;
+        case CourseJourneyStep.step1:
+          step1Courses.add(course);
+          break;
+        case CourseJourneyStep.step2:
+          step2Courses.add(course);
+          break;
+        case CourseJourneyStep.step3:
+          step3Courses.add(course);
+          break;
+        case null:
+          unclassified.add(course);
+          break;
+      }
+    }
 
-    final journey = popular
-        .where((course) => course['is_free_intro'] != true)
-        .toList(growable: false);
-
-    final steps = _splitJourneySteps(journey);
-
-    final publishedCoursesAsync = ref.watch(coursesProvider);
-    final slugToId = <String, String>{};
-    for (final course in publishedCoursesAsync.valueOrNull ?? const []) {
-      final slug = (course.slug ?? '').trim();
-      if (slug.isEmpty) continue;
-      slugToId[slug] = course.id;
+    if (unclassified.isNotEmpty) {
+      assert(() {
+        debugPrint(
+          'Alla kurser: hoppar över ${unclassified.length} publicerade kurser utan giltig journey_step.',
+        );
+        for (final course in unclassified) {
+          debugPrint(' - ${course.id} (${course.slug ?? 'saknar slug'})');
+        }
+        return true;
+      }());
     }
 
     final step3CourseIds = <String>{};
-    for (final course in steps.step3) {
-      final id = _resolveCourseId(course, slugToId: slugToId);
-      if (id != null && id.isNotEmpty) {
-        step3CourseIds.add(id);
-      }
+    for (final course in step3Courses) {
+      step3CourseIds.add(course.id);
     }
 
     final step3ProgressAsync = step3CourseIds.isEmpty
@@ -72,10 +83,14 @@ class CourseCatalogPage extends ConsumerWidget {
     const proEligibilityHint =
         'Tillgängligt när du har slutfört ett tredje steg';
 
-    final isLoading = introAsync.isLoading || popularAsync.isLoading;
-    final Object? error = introAsync.error ?? popularAsync.error;
+    final isLoading = coursesAsync.isLoading;
+    final Object? error = coursesAsync.error;
 
-    final hasAnyCourses = free.isNotEmpty || journey.isNotEmpty;
+    final hasAnyCourses =
+        introCourses.isNotEmpty ||
+        step1Courses.isNotEmpty ||
+        step2Courses.isNotEmpty ||
+        step3Courses.isNotEmpty;
 
     final content = isLoading
         ? const Center(child: CircularProgressIndicator())
@@ -84,10 +99,10 @@ class CourseCatalogPage extends ConsumerWidget {
         : !hasAnyCourses
         ? _EmptyState(theme: theme)
         : _CourseJourney(
-            freeCourses: free,
-            step1Courses: steps.step1,
-            step2Courses: steps.step2,
-            step3Courses: steps.step3,
+            introCourses: introCourses,
+            step1Courses: step1Courses,
+            step2Courses: step2Courses,
+            step3Courses: step3Courses,
             assets: assets,
             canApplyForPro: hasCompletedStep3,
             proEligibilityHint: proEligibilityHint,
@@ -105,111 +120,11 @@ class CourseCatalogPage extends ConsumerWidget {
       ),
     );
   }
-
-  static List<Map<String, dynamic>> _dedupeCourses(
-    Iterable<Map<String, dynamic>> courses,
-  ) {
-    final seen = <String>{};
-    final items = <Map<String, dynamic>>[];
-
-    for (final raw in courses) {
-      final course = Map<String, dynamic>.from(raw);
-      final slug = (course['slug'] as String?)?.trim();
-      final id = (course['id'] as String?)?.trim();
-      final key = slug?.isNotEmpty == true
-          ? slug!
-          : (id?.isNotEmpty == true ? id! : course.hashCode.toString());
-      if (seen.contains(key)) continue;
-      seen.add(key);
-      items.add(course);
-    }
-
-    return items;
-  }
-
-  static _JourneySteps _splitJourneySteps(List<Map<String, dynamic>> courses) {
-    final step1 = <Map<String, dynamic>>[];
-    final step2 = <Map<String, dynamic>>[];
-    final step3 = <Map<String, dynamic>>[];
-
-    for (final course in courses) {
-      final step = _resolveJourneyStep(course) ?? 1;
-      switch (step) {
-        case 1:
-          step1.add(course);
-          break;
-        case 2:
-          step2.add(course);
-          break;
-        case 3:
-          step3.add(course);
-          break;
-      }
-    }
-
-    return _JourneySteps(step1: step1, step2: step2, step3: step3);
-  }
-
-  static int? _resolveJourneyStep(Map<String, dynamic> course) {
-    final branch = (course['branch'] as String?)?.toLowerCase() ?? '';
-    final title = (course['title'] as String?)?.toLowerCase() ?? '';
-    final slug = (course['slug'] as String?)?.toLowerCase() ?? '';
-    final haystack = '$branch $title $slug';
-
-    int? match(RegExp exp) {
-      final m = exp.firstMatch(haystack);
-      if (m == null) return null;
-      final value = int.tryParse(m.group(1) ?? '');
-      if (value == null) return null;
-      if (value < 1 || value > 3) return null;
-      return value;
-    }
-
-    if (branch.trim() == '1') return 1;
-    if (branch.trim() == '2') return 2;
-    if (branch.trim() == '3') return 3;
-
-    return match(RegExp(r'\\bsteg\\s*([1-3])\\b')) ??
-        match(RegExp(r'\\bstep\\s*([1-3])\\b')) ??
-        match(RegExp(r'\\bnivå\\s*([1-3])\\b')) ??
-        match(RegExp(r'\\blevel\\s*([1-3])\\b'));
-  }
-
-  static String? _resolveCourseId(
-    Map<String, dynamic> course, {
-    required Map<String, String> slugToId,
-  }) {
-    String? normalize(dynamic value) {
-      if (value == null) return null;
-      final raw = value is String ? value : value.toString();
-      final trimmed = raw.trim();
-      return trimmed.isEmpty ? null : trimmed;
-    }
-
-    final id = normalize(course['id']) ?? normalize(course['course_id']);
-    if (id != null) return id;
-
-    final slug = normalize(course['slug']);
-    if (slug == null) return null;
-    return slugToId[slug];
-  }
-}
-
-class _JourneySteps {
-  const _JourneySteps({
-    required this.step1,
-    required this.step2,
-    required this.step3,
-  });
-
-  final List<Map<String, dynamic>> step1;
-  final List<Map<String, dynamic>> step2;
-  final List<Map<String, dynamic>> step3;
 }
 
 class _CourseJourney extends StatelessWidget {
   const _CourseJourney({
-    required this.freeCourses,
+    required this.introCourses,
     required this.step1Courses,
     required this.step2Courses,
     required this.step3Courses,
@@ -218,10 +133,10 @@ class _CourseJourney extends StatelessWidget {
     required this.proEligibilityHint,
   });
 
-  final List<Map<String, dynamic>> freeCourses;
-  final List<Map<String, dynamic>> step1Courses;
-  final List<Map<String, dynamic>> step2Courses;
-  final List<Map<String, dynamic>> step3Courses;
+  final List<CourseSummary> introCourses;
+  final List<CourseSummary> step1Courses;
+  final List<CourseSummary> step2Courses;
+  final List<CourseSummary> step3Courses;
   final BackendAssetResolver assets;
   final bool canApplyForPro;
   final String proEligibilityHint;
@@ -237,11 +152,11 @@ class _CourseJourney extends StatelessWidget {
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.center,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: _IntroWindow(courses: freeCourses, assets: assets),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: _IntroWindow(courses: introCourses, assets: assets),
+            ),
           ),
-        ),
         const SizedBox(height: 34),
         const _SectionHeader(title: 'Din resa'),
         const SizedBox(height: 10),
@@ -286,7 +201,7 @@ class _SectionHeader extends StatelessWidget {
 class _IntroWindow extends StatelessWidget {
   const _IntroWindow({required this.courses, required this.assets});
 
-  final List<Map<String, dynamic>> courses;
+  final List<CourseSummary> courses;
   final BackendAssetResolver assets;
 
   @override
@@ -345,14 +260,14 @@ class _IntroWindow extends StatelessWidget {
 class _IntroCourseCard extends StatelessWidget {
   const _IntroCourseCard({required this.course, required this.assets});
 
-  final Map<String, dynamic> course;
+  final CourseSummary course;
   final BackendAssetResolver assets;
 
   @override
   Widget build(BuildContext context) {
-    final title = (course['title'] as String?)?.trim();
-    final slug = (course['slug'] as String?)?.trim() ?? '';
-    final coverUrl = (course['cover_url'] as String?)?.trim();
+    final title = course.title.trim();
+    final slug = (course.slug ?? '').trim();
+    final coverUrl = course.coverUrl?.trim();
 
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
@@ -392,7 +307,7 @@ class _IntroCourseCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                title?.isNotEmpty == true ? title! : 'Introduktion',
+                title.isNotEmpty ? title : 'Introduktion',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style:
@@ -422,9 +337,9 @@ class _StepsCarousel extends StatelessWidget {
     required this.assets,
   });
 
-  final List<Map<String, dynamic>> step1Courses;
-  final List<Map<String, dynamic>> step2Courses;
-  final List<Map<String, dynamic>> step3Courses;
+  final List<CourseSummary> step1Courses;
+  final List<CourseSummary> step2Courses;
+  final List<CourseSummary> step3Courses;
   final BackendAssetResolver assets;
 
   @override
@@ -494,7 +409,7 @@ class _StepColumn extends StatelessWidget {
   final double width;
   final String stepLabel;
   final String description;
-  final List<Map<String, dynamic>> courses;
+  final List<CourseSummary> courses;
   final BackendAssetResolver assets;
 
   @override
@@ -554,7 +469,7 @@ class _JourneyCourseCard extends StatelessWidget {
     this.badgeText,
   });
 
-  final Map<String, dynamic> course;
+  final CourseSummary course;
   final bool showPrice;
   final BackendAssetResolver assets;
   final String? badgeText;
@@ -563,19 +478,17 @@ class _JourneyCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final t = theme.textTheme;
-    final title = (course['title'] as String?)?.trim();
-    final description = (course['description'] as String?)?.trim() ?? '';
-    final slug = (course['slug'] as String?)?.trim() ?? '';
+    final title = course.title.trim();
+    final description = course.description?.trim() ?? '';
+    final slug = (course.slug ?? '').trim();
 
-    final priceCents =
-        _asInt(course['price_amount_cents']) ?? _asInt(course['price_cents']);
-    final currency =
-        (course['currency'] as String?)?.trim().toLowerCase() ?? 'sek';
+    final priceCents = course.priceCents;
+    final currency = course.currency;
     final priceLabel = showPrice
         ? _formatPrice(priceCents, currency: currency)
         : null;
 
-    final coverUrl = (course['cover_url'] as String?)?.trim();
+    final coverUrl = course.coverUrl?.trim();
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
       slug: slug,
@@ -614,7 +527,7 @@ class _JourneyCourseCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                title?.isNotEmpty == true ? title! : 'Kurs',
+                title.isNotEmpty ? title : 'Kurs',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: (t.titleMedium ?? const TextStyle()).copyWith(
@@ -648,13 +561,6 @@ class _JourneyCourseCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static int? _asInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value);
-    return null;
   }
 
   static String? _formatPrice(int? cents, {required String currency}) {

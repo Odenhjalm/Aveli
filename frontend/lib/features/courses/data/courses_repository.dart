@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 
 import 'course_access_api.dart';
 
@@ -445,9 +446,11 @@ class CourseSummary {
     this.coverUrl,
     this.coverMediaId,
     this.videoUrl,
+    this.journeyStep,
     this.isFreeIntro = false,
     this.isPublished = false,
     this.priceCents,
+    this.currency = 'sek',
   });
 
   final String id;
@@ -457,9 +460,11 @@ class CourseSummary {
   final String? coverUrl;
   final String? coverMediaId;
   final String? videoUrl;
+  final CourseJourneyStep? journeyStep;
   final bool isFreeIntro;
   final bool isPublished;
   final int? priceCents;
+  final String currency;
 
   factory CourseSummary.fromJson(Map<String, dynamic> json) => CourseSummary(
     id: json['id'] as String,
@@ -469,10 +474,12 @@ class CourseSummary {
     coverUrl: json['cover_url'] as String?,
     coverMediaId: json['cover_media_id'] as String?,
     videoUrl: json['video_url'] as String?,
+    journeyStep: CourseJourneyStep.tryParse(json['journey_step'] as String?),
     isFreeIntro: json['is_free_intro'] == true,
     isPublished: json['is_published'] == true,
     // Prefer the newer price_amount_cents field when present; fallback to price_cents.
     priceCents: _asInt(json['price_cents']) ?? _asInt(json['price_amount_cents']),
+    currency: (json['currency'] as String?)?.trim().toLowerCase() ?? 'sek',
   );
 
   String? get resolvedCoverUrl => coverUrl;
