@@ -201,7 +201,7 @@ class _ActIntroSection extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640),
         child: GlassCard(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 22),
           opacity: 0.1,
           sigmaX: 10,
           sigmaY: 10,
@@ -219,15 +219,22 @@ class _ActIntroSection extends StatelessWidget {
                 'Känn efter i din egen takt',
                 baseStyle: theme.textTheme.bodyMedium,
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 156,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    const spacing = 10.0;
-                    final width = constraints.maxWidth;
-                    final tileWidth = (width - (spacing * 2)) / 3;
-                    return ListView.separated(
+              const SizedBox(height: 16),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const spacing = 10.0;
+                  final width = constraints.maxWidth;
+                  final tileWidth = (width - (spacing * 2)) / 3;
+
+                  final imageHeight = tileWidth * 9 / 16;
+                  const reservedBottom = 92.0;
+                  final listHeight = (imageHeight + reservedBottom)
+                      .clamp(156.0, 220.0)
+                      .toDouble();
+
+                  return SizedBox(
+                    height: listHeight,
+                    child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       physics: const BouncingScrollPhysics(),
                       itemCount: courses.length,
@@ -241,9 +248,9 @@ class _ActIntroSection extends StatelessWidget {
                           mediaRepository: mediaRepository,
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
