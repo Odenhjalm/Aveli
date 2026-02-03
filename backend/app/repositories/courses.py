@@ -1036,6 +1036,8 @@ async def list_home_audio_media(
     opt_in_cte = """
         WITH opted_in AS (
           SELECT
+            tpm.id AS profile_media_id,
+            tpm.title AS profile_media_title,
             tpm.media_id AS lesson_media_id,
             tpm.teacher_id
           FROM app.teacher_profile_media tpm
@@ -1071,6 +1073,8 @@ async def list_home_audio_media(
         {opt_in_cte}
         SELECT
           lm.id,
+          oi.profile_media_id,
+          oi.profile_media_title AS title,
           lm.lesson_id,
           lm.kind,
           CASE

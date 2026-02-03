@@ -178,6 +178,47 @@ class TeacherProfileMediaController
     await updateItem(itemId, enabledForHomePlayer: enabled);
   }
 
+  Future<void> renameTitle(String itemId, String title) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) {
+      throw ValidationFailure(message: 'Titeln får inte vara tom.');
+    }
+
+    final previous = state;
+
+    state = AsyncData(
+      current.copyWith(
+        items: current.items
+            .map(
+              (item) =>
+                  item.id == itemId ? item.copyWith(title: trimmed) : item,
+            )
+            .toList(growable: false),
+      ),
+    );
+
+    try {
+      final updated = await _repository.updateProfileMedia(
+        itemId,
+        title: trimmed,
+      );
+      final latest = state.valueOrNull ?? current;
+      state = AsyncData(
+        latest.copyWith(
+          items: latest.items
+              .map((item) => item.id == itemId ? updated : item)
+              .toList(growable: false),
+        ),
+      );
+    } catch (error, stackTrace) {
+      state = previous;
+      throw AppFailure.from(error, stackTrace);
+    }
+  }
+
   Future<void> setHomePlayerForSource({
     required TeacherProfileMediaKind kind,
     required String mediaId,

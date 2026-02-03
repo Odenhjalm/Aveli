@@ -473,6 +473,8 @@ class MeditationListResponse(BaseModel):
 
 class HomeAudioItem(BaseModel):
     id: UUID
+    profile_media_id: UUID | None = None
+    title: str | None = None
     lesson_id: UUID
     lesson_title: str
     course_id: UUID

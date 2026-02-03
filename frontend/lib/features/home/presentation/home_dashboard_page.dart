@@ -402,7 +402,9 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    if (selected.courseTitle.trim().isNotEmpty)
+                    if (selected.courseTitle.trim().isNotEmpty &&
+                        selected.courseTitle.trim() !=
+                            selected.displayTitle.trim())
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
@@ -719,7 +721,8 @@ class _AudioRow extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (item.courseTitle.trim().isNotEmpty)
+                  if (item.courseTitle.trim().isNotEmpty &&
+                      item.courseTitle.trim() != item.displayTitle.trim())
                     Text(
                       item.courseTitle,
                       maxLines: 1,
