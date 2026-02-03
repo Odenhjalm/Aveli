@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 
 import 'course_access_api.dart';
 
@@ -447,6 +448,7 @@ class CourseSummary {
     this.videoUrl,
     this.branch,
     this.isFreeIntro = false,
+    this.journeyStep,
     this.isPublished = false,
     this.priceCents,
   });
@@ -460,6 +462,7 @@ class CourseSummary {
   final String? videoUrl;
   final String? branch;
   final bool isFreeIntro;
+  final CourseJourneyStep? journeyStep;
   final bool isPublished;
   final int? priceCents;
 
@@ -473,6 +476,7 @@ class CourseSummary {
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
     isFreeIntro: json['is_free_intro'] == true,
+    journeyStep: courseJourneyStepFromApi(json['journey_step'] as String?),
     isPublished: json['is_published'] == true,
     // Prefer the newer price_amount_cents field when present; fallback to price_cents.
     priceCents:

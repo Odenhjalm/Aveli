@@ -23,6 +23,7 @@ _FULL_COURSE_COLUMNS = """
         video_url,
         branch,
         is_free_intro,
+        journey_step,
         price_amount_cents,
         currency,
         stripe_product_id,
@@ -370,6 +371,7 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
         ("video_url", data.get("video_url")),
         ("branch", data.get("branch")),
         ("currency", data.get("currency")),
+        ("journey_step", data.get("journey_step")),
     ]
 
     bool_fields = {
@@ -418,6 +420,7 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
                         "branch",
                         "currency",
                         "price_amount_cents",
+                        "journey_step",
                     }
                 ]
                 if "price_amount_cents" in columns:
@@ -452,6 +455,7 @@ async def update_course(
         "video_url",
         "branch",
         "currency",
+        "journey_step",
     )
     for column in text_columns:
         if column in data:

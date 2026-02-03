@@ -19,6 +19,7 @@ import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});
@@ -97,15 +98,42 @@ class _JourneyPage extends ConsumerWidget {
       );
     }
 
-    final introCourses = published
-        .where((course) => course.isFreeIntro)
-        .toList(growable: false);
-    final journeyCourses = published
-        .where((course) => !course.isFreeIntro)
-        .toList(growable: false);
+    final introCourses = <CourseSummary>[];
+    final step1Courses = <CourseSummary>[];
+    final step2Courses = <CourseSummary>[];
+    final step3Courses = <CourseSummary>[];
+    final unclassified = <CourseSummary>[];
 
-    final grouped = _groupJourneyCourses(journeyCourses);
-    final step3Ids = grouped.step3
+    for (final course in published) {
+      switch (course.journeyStep) {
+        case CourseJourneyStep.intro:
+          introCourses.add(course);
+          break;
+        case CourseJourneyStep.step1:
+          step1Courses.add(course);
+          break;
+        case CourseJourneyStep.step2:
+          step2Courses.add(course);
+          break;
+        case CourseJourneyStep.step3:
+          step3Courses.add(course);
+          break;
+        default:
+          unclassified.add(course);
+          break;
+      }
+    }
+
+    assert(() {
+      if (unclassified.isEmpty) return true;
+      debugPrint(
+        'CourseCatalogPage: ${unclassified.length} course(s) missing/invalid journey_step, omitted from rendering: '
+        '${unclassified.map((c) => c.id).join(', ')}',
+      );
+      return true;
+    }());
+
+    final step3Ids = step3Courses
         .map((course) => course.id)
         .toList(growable: false);
 
@@ -129,9 +157,9 @@ class _JourneyPage extends ConsumerWidget {
           ),
           const SizedBox(height: 22),
           _ActJourneySection(
-            step1: grouped.step1,
-            step2: grouped.step2,
-            step3: grouped.step3,
+            step1: List.unmodifiable(step1Courses),
+            step2: List.unmodifiable(step2Courses),
+            step3: List.unmodifiable(step3Courses),
             assets: assets,
             mediaRepository: mediaRepository,
           ),
@@ -807,59 +835,6 @@ class _ActAveliProSection extends StatelessWidget {
       ),
     );
   }
-}
-
-({
-  List<CourseSummary> step1,
-  List<CourseSummary> step2,
-  List<CourseSummary> step3,
-})
-_groupJourneyCourses(List<CourseSummary> courses) {
-  final step1 = <CourseSummary>[];
-  final step2 = <CourseSummary>[];
-  final step3 = <CourseSummary>[];
-
-  for (final course in courses) {
-    final step = _resolveJourneyStep(course);
-    switch (step) {
-      case 1:
-        step1.add(course);
-      case 2:
-        step2.add(course);
-      case 3:
-        step3.add(course);
-      default:
-        step1.add(course);
-    }
-  }
-
-  return (
-    step1: List.unmodifiable(step1),
-    step2: List.unmodifiable(step2),
-    step3: List.unmodifiable(step3),
-  );
-}
-
-int? _resolveJourneyStep(CourseSummary course) {
-  final branch = course.branch?.trim() ?? '';
-  final slug = course.slug?.trim() ?? '';
-  return _extractStepNumber(branch) ?? _extractStepNumber(slug);
-}
-
-int? _extractStepNumber(String value) {
-  final normalized = value.toLowerCase();
-  final stepMatch = RegExp(r'(steg|step)\\s*([1-3])').firstMatch(normalized);
-  if (stepMatch != null) {
-    return int.tryParse(stepMatch.group(2) ?? '');
-  }
-  final trimmed = normalized.trim();
-  if (trimmed == '1' || trimmed == '2' || trimmed == '3') {
-    return int.tryParse(trimmed);
-  }
-  if (trimmed == 'iii') return 3;
-  if (trimmed == 'ii') return 2;
-  if (trimmed == 'i') return 1;
-  return null;
 }
 
 String? _resolveCoverUrl(MediaRepository repository, String? path) {

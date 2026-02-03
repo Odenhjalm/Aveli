@@ -31,6 +31,8 @@ __all__ = [
     "SubscriptionSessionRequest",
 ]
 
+CourseJourneyStep = Literal["intro", "step1", "step2", "step3"]
+
 
 class Token(BaseModel):
     access_token: str
@@ -803,6 +805,7 @@ class Course(BaseModel):
     cover_media_id: UUID | None = None
     video_url: str | None = None
     is_free_intro: bool
+    journey_step: CourseJourneyStep | None = None
     price_amount_cents: int = 0
     currency: str = "sek"
     stripe_product_id: str | None = None
@@ -946,6 +949,7 @@ class StudioCourseCreate(BaseModel):
     description: str | None = None
     video_url: str | None = None
     is_free_intro: bool = False
+    journey_step: CourseJourneyStep = "intro"
     is_published: bool = False
     price_amount_cents: int | None = None
     branch: str | None = None
@@ -957,6 +961,7 @@ class StudioCourseUpdate(BaseModel):
     description: str | None = None
     video_url: str | None = None
     is_free_intro: bool | None = None
+    journey_step: CourseJourneyStep | None = None
     is_published: bool | None = None
     price_amount_cents: int | None = None
     branch: str | None = None

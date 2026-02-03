@@ -42,6 +42,7 @@ import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
+import 'package:aveli/shared/utils/course_journey_step.dart';
 
 String? _mediaUrl(Map<String, dynamic> media) {
   final playback = media['playback_url'];
@@ -165,6 +166,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _savingCourseMeta = false;
   bool _courseIsFreeIntro = false;
   bool _courseIsPublished = false;
+  CourseJourneyStep _courseJourneyStep = CourseJourneyStep.intro;
   String? _courseCoverPath;
   String? _courseCoverPreviewUrl;
   bool _updatingCourseCover = false;
@@ -253,6 +255,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _mediaStatus = null;
     _downloadStatus = null;
     _courseMetaLoading = false;
+    _courseJourneyStep = CourseJourneyStep.intro;
     _lessonsLoading = false;
     _mediaLoading = false;
     _lessonsNeedingRefresh.clear();
@@ -410,6 +413,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() {
           _courseIsFreeIntro = map['is_free_intro'] == true;
           _courseIsPublished = map['is_published'] == true;
+          _courseJourneyStep =
+              courseJourneyStepFromApi(map['journey_step'] as String?) ??
+              CourseJourneyStep.intro;
           final coverPath = (map['cover_url'] as String?)?.trim();
           _courseCoverPath = (coverPath == null || coverPath.isEmpty)
               ? null
@@ -3291,6 +3297,45 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  Widget _buildJourneyPlacementSelector(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Placering i resan',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Denna inställning avgör var kursen visas på Alla kurser.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        RadioGroup<CourseJourneyStep>(
+          groupValue: _courseJourneyStep,
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _courseJourneyStep = value);
+          },
+          child: Column(
+            children: [
+              for (final step in CourseJourneyStep.values)
+                RadioListTile<CourseJourneyStep>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(step.label),
+                  value: step,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _saveCourseMeta() async {
     final courseId = _selectedCourseId;
     if (courseId == null || _savingCourseMeta) return;
@@ -3321,6 +3366,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       'description': desc.isEmpty ? null : desc,
       'price_amount_cents': price,
       'is_free_intro': _courseIsFreeIntro,
+      'journey_step': _courseJourneyStep.apiValue,
       'is_published': _courseIsPublished,
     };
     if (slug.isNotEmpty) {
@@ -3744,6 +3790,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 ),
                               ),
                               _buildPublishToggle(context),
+                              gap12,
+                              _buildJourneyPlacementSelector(context),
                               Row(
                                 children: [
                                   GradientButton.icon(
