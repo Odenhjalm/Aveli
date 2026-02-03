@@ -244,3 +244,168 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     assert resp2_enrolled.status_code == 200, resp2_enrolled.text
     items2_enrolled = resp2_enrolled.json().get("items") or []
     assert lesson_media_id in {it.get("id") for it in items2_enrolled}
+
+
+@pytest.mark.anyio("asyncio")
+async def test_home_audio_source_survives_profile_media_rename(async_client):
+    """Regression: /home/audio must always return a playable source after rename."""
+    email = f"home_audio_rename_{uuid.uuid4().hex[:6]}@example.org"
+    password = "Passw0rd!"
+    register_resp = await async_client.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": password,
+            "display_name": "Home Audio Rename Owner",
+        },
+    )
+    assert register_resp.status_code == 201, register_resp.text
+    tokens = register_resp.json()
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    me_resp = await async_client.get("/auth/me", headers=headers)
+    assert me_resp.status_code == 200, me_resp.text
+    owner_id = me_resp.json()["user_id"]
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
+                (owner_id,),
+            )
+            await conn.commit()
+
+    slug = f"home-audio-rename-{uuid.uuid4().hex[:8]}"
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(
+                    """
+                    INSERT INTO app.courses (
+                      slug,
+                      title,
+                      is_free_intro,
+                      price_amount_cents,
+                      currency,
+                      is_published,
+                      created_by
+                    )
+                    VALUES (%s, %s, false, 1000, 'sek', true, %s)
+                    RETURNING id
+                    """,
+                    (slug, f"Course {slug}", owner_id),
+                )
+            except errors.UndefinedColumn:
+                await conn.rollback()
+                await cur.execute(
+                    """
+                    INSERT INTO app.courses (
+                      slug,
+                      title,
+                      is_free_intro,
+                      price_cents,
+                      currency,
+                      is_published,
+                      created_by
+                    )
+                    VALUES (%s, %s, false, 1000, 'sek', true, %s)
+                    RETURNING id
+                    """,
+                    (slug, f"Course {slug}", owner_id),
+                )
+            row = await cur.fetchone()
+            await conn.commit()
+    course_id = str(row[0])
+
+    lesson = await courses_repo.create_lesson(
+        course_id,
+        title="Lesson",
+        position=0,
+        is_intro=False,
+    )
+    assert lesson
+    lesson_id = str(lesson["id"])
+
+    media_asset = await media_assets_repo.create_media_asset(
+        owner_id=owner_id,
+        course_id=course_id,
+        lesson_id=lesson_id,
+        media_type="audio",
+        purpose="lesson_audio",
+        ingest_format="wav",
+        original_object_path="media/source/audio/courses/test.wav",
+        original_content_type="audio/wav",
+        original_filename="test.wav",
+        original_size_bytes=123,
+        storage_bucket="course-media",
+        state="processing",
+    )
+    assert media_asset
+    media_asset_id = str(media_asset["id"])
+    await media_assets_repo.mark_media_asset_ready(
+        media_id=media_asset_id,
+        streaming_object_path="media/derived/audio/courses/test.mp3",
+        streaming_format="mp3",
+        duration_seconds=12,
+        codec="mp3",
+        streaming_storage_bucket="course-media",
+    )
+
+    lesson_media = await models.add_lesson_media_entry(
+        lesson_id=lesson_id,
+        kind="audio",
+        storage_path=None,
+        storage_bucket="course-media",
+        media_id=None,
+        media_asset_id=media_asset_id,
+        position=1,
+        duration_seconds=None,
+    )
+    assert lesson_media
+    lesson_media_id = str(lesson_media["id"])
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.teacher_profile_media (
+                  teacher_id,
+                  media_kind,
+                  media_id,
+                  enabled_for_home_player,
+                  position,
+                  is_published,
+                  title
+                )
+                VALUES (%s, 'lesson_media', %s, true, 0, true, %s)
+                RETURNING id
+                """,
+                (owner_id, lesson_media_id, "Before rename"),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    profile_media_id = str(row[0])
+
+    resp = await async_client.get("/home/audio", headers=headers, params={"limit": 50})
+    assert resp.status_code == 200, resp.text
+    items = resp.json().get("items") or []
+    found = next((it for it in items if it.get("id") == lesson_media_id), None)
+    assert found, resp.json()
+    assert found.get("title") == "Before rename"
+    assert found.get("media_asset_id") == media_asset_id
+    assert (found.get("signed_url") or found.get("download_url")), found
+
+    rename_resp = await async_client.patch(
+        f"/studio/profile/media/{profile_media_id}",
+        headers=headers,
+        json={"title": "After rename"},
+    )
+    assert rename_resp.status_code == 200, rename_resp.text
+
+    resp2 = await async_client.get("/home/audio", headers=headers, params={"limit": 50})
+    assert resp2.status_code == 200, resp2.text
+    items2 = resp2.json().get("items") or []
+    found2 = next((it for it in items2 if it.get("id") == lesson_media_id), None)
+    assert found2, resp2.json()
+    assert found2.get("title") == "After rename"
+    assert found2.get("media_asset_id") == media_asset_id
+    assert (found2.get("signed_url") or found2.get("download_url")), found2

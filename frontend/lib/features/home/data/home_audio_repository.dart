@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/api_client.dart';
@@ -139,12 +140,41 @@ class HomeAudioRepository {
       queryParameters: {'limit': limit},
     );
     final items = response['items'] as List? ?? const [];
-    return items
+    final parsed = items
         .map(
           (item) =>
               HomeAudioItem.fromJson(Map<String, dynamic>.from(item as Map)),
         )
         .toList(growable: false);
+
+    final filtered = <HomeAudioItem>[];
+    for (final item in parsed) {
+      final hasPipelineId = (item.mediaAssetId ?? '').trim().isNotEmpty;
+      final url = (item.preferredUrl ?? '').trim();
+      final hasUrl = url.isNotEmpty;
+
+      if (!hasUrl && !hasPipelineId) {
+        if (kDebugMode) {
+          debugPrint(
+            '[home_audio] Dropping item without playable source '
+            'id=${item.id} profile_media_id=${item.profileMediaId} media_id=${item.mediaId} '
+            'title="${item.title}" storage_path=${item.storagePath} storage_bucket=${item.storageBucket}',
+          );
+        }
+        continue;
+      }
+
+      if (!hasUrl && hasPipelineId && kDebugMode) {
+        debugPrint(
+          '[home_audio] Item missing direct source URL; will rely on media_asset_id '
+          'id=${item.id} media_asset_id=${item.mediaAssetId} title="${item.title}"',
+        );
+      }
+
+      filtered.add(item);
+    }
+
+    return List<HomeAudioItem>.unmodifiable(filtered);
   }
 }
 

@@ -1133,15 +1133,31 @@ async def get_media(media_id: str) -> dict | None:
               lm.id,
               lm.lesson_id,
               lm.kind,
-              coalesce(mo.storage_path, lm.storage_path) AS storage_path,
-              coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
+              CASE
+                WHEN ma.id IS NOT NULL THEN
+                  CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
+                ELSE coalesce(mo.storage_path, lm.storage_path)
+              END AS storage_path,
+              CASE
+                WHEN ma.id IS NOT NULL THEN
+                  CASE
+                    WHEN ma.state = 'ready'
+                    THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket)
+                    ELSE NULL
+                  END
+                ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+              END AS storage_bucket,
               lm.media_id,
               lm.media_asset_id,
-              mo.content_type,
-              mo.byte_size,
-              mo.original_name
+              coalesce(
+                mo.content_type,
+                CASE WHEN ma.state = 'ready' THEN 'audio/mpeg' ELSE NULL END
+              ) AS content_type,
+              coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
+              coalesce(mo.original_name, ma.original_filename) AS original_name
             FROM app.lesson_media lm
             LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
+            LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
             WHERE lm.id = %s
             """,
             (media_id,),

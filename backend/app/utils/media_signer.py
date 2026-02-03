@@ -132,9 +132,6 @@ def _is_public_cover_url(url: str | None) -> bool:
 def attach_media_links(item: dict) -> None:
     """Mutate a lesson media dict with download and signed URLs."""
 
-    if item.get("media_asset_id"):
-        return
-
     media_id = item.get("id")
     if not media_id:
         return

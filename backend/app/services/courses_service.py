@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import stripe
@@ -7,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from psycopg.types.json import Jsonb
 
+from ..config import settings
 from ..repositories import (
     courses as courses_repo,
     get_latest_order_for_course,
@@ -14,6 +17,7 @@ from ..repositories import (
     get_profile,
 )
 from . import media_cleanup
+from . import storage_service
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
 
@@ -241,12 +245,53 @@ async def list_home_audio_media(
     items: list[dict[str, Any]] = []
     for row in rows:
         item = _materialize_mapping(row)
-        if not item.get("media_asset_id") and not item.get("storage_bucket"):
+        if not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
-        if not item.get("media_asset_id"):
-            media_signer.attach_media_links(item)
+        media_signer.attach_media_links(item)
+        await _ensure_home_audio_source(item)
         items.append(item)
     return items
+
+
+async def _ensure_home_audio_source(item: dict[str, Any]) -> None:
+    """Ensure /home/audio always contains a directly playable source URL."""
+
+    signed_url = item.get("signed_url")
+    if isinstance(signed_url, str) and signed_url.strip():
+        return
+
+    download_url = item.get("download_url")
+    if isinstance(download_url, str):
+        candidate = download_url.strip()
+        if candidate:
+            if candidate.startswith("/studio/media/") and not settings.media_allow_legacy_media:
+                # Legacy endpoint is disabled; treat as non-playable and fall back.
+                pass
+            else:
+                return
+
+    storage_path = (item.get("storage_path") or "").strip()
+    if not storage_path:
+        return
+
+    bucket = (item.get("storage_bucket") or "").strip() or None
+    storage_client = storage_service.get_storage_service(bucket)
+    if not storage_client.enabled:
+        return
+
+    try:
+        presigned = await storage_client.get_presigned_url(
+            storage_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+            filename=Path(storage_path).name,
+            download=False,
+        )
+    except storage_service.StorageServiceError:
+        return
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=presigned.expires_in)
+    item["signed_url"] = presigned.url
+    item["signed_url_expires_at"] = expires_at.isoformat()
 
 
 async def upsert_lesson(

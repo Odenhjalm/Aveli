@@ -243,13 +243,8 @@ async def sign_media(payload: schemas.MediaSignRequest, current: CurrentUser):
     if not row:
         raise HTTPException(status_code=404, detail="Media not found")
 
-    storage_path = row.get("storage_path")
-    storage_bucket = row.get("storage_bucket")
-    if not storage_path or not storage_bucket:
-        raise HTTPException(status_code=404, detail="Media not found")
-    access_row = await courses_repo.get_lesson_media_access_by_path(
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
+    access_row = await courses_repo.get_lesson_media_access_by_id(
+        media_id=payload.media_id,
     )
     if not access_row:
         raise HTTPException(status_code=404, detail="Media not found")

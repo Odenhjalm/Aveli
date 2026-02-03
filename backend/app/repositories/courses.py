@@ -965,7 +965,11 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           END AS storage_path,
           CASE
             WHEN ma.id IS NOT NULL THEN
-              CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
+              CASE
+                WHEN ma.state = 'ready'
+                THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket)
+                ELSE NULL
+              END
             ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
           END AS storage_bucket,
           lm.media_id,
@@ -1021,6 +1025,28 @@ async def get_lesson_media_access_by_path(
     """
     async with get_conn() as cur:
         await cur.execute(query, (storage_path, storage_bucket))
+        return await cur.fetchone()
+
+
+async def get_lesson_media_access_by_id(*, media_id: str) -> dict[str, Any] | None:
+    query = """
+        SELECT
+          lm.id,
+          lm.lesson_id,
+          lm.kind,
+          l.is_intro,
+          c.id AS course_id,
+          c.created_by,
+          c.is_free_intro,
+          c.is_published
+        FROM app.lesson_media lm
+        JOIN app.lessons l ON l.id = lm.lesson_id
+        JOIN app.courses c ON c.id = l.course_id
+        WHERE lm.id = %s
+        LIMIT 1
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (media_id,))
         return await cur.fetchone()
 
 
@@ -1084,7 +1110,11 @@ async def list_home_audio_media(
           END AS storage_path,
           CASE
             WHEN ma.id IS NOT NULL THEN
-              CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
+              CASE
+                WHEN ma.state = 'ready'
+                THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket)
+                ELSE NULL
+              END
             ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
           END AS storage_bucket,
           lm.media_id,
@@ -1096,7 +1126,7 @@ async def list_home_audio_media(
             mo.content_type,
             CASE WHEN ma.state = 'ready' THEN 'audio/mpeg' ELSE NULL END
           ) AS content_type,
-          mo.byte_size,
+          coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
           coalesce(mo.original_name, ma.original_filename) AS original_name,
           ma.state AS media_state,
           ma.streaming_format,
