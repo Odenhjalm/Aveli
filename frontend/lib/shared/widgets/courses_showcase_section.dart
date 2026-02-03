@@ -47,6 +47,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
     this.includeOuterChrome = true,
     this.showHeroBadge = true,
     this.includeStudioCourses = true,
+    this.showSeeAll = false,
     this.ctaGradient,
     this.tileScale = 1.0,
     this.tileTextColor,
@@ -64,6 +65,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final bool includeOuterChrome;
   final bool showHeroBadge;
   final bool includeStudioCourses;
+  final bool showSeeAll;
   final Gradient? ctaGradient;
   final double tileScale;
   final Color? tileTextColor;
@@ -110,6 +112,15 @@ class CoursesShowcaseSection extends ConsumerWidget {
 
     final sectionTextColor = tileTextColor;
 
+    final subtitle = sectionTextColor == null
+        ? MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge)
+        : Text(
+            'Se vad andra gillar just nu.',
+            style: (t.bodyLarge ?? t.bodyMedium ?? const TextStyle()).copyWith(
+              color: sectionTextColor,
+            ),
+          );
+
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -138,13 +149,23 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 ),
               ),
         const SizedBox(height: 4),
-        sectionTextColor == null
-            ? MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge)
-            : Text(
-                'Se vad andra gillar just nu.',
-                style: (t.bodyLarge ?? t.bodyMedium ?? const TextStyle())
-                    .copyWith(color: sectionTextColor),
+        if (showSeeAll)
+          Row(
+            children: [
+              Expanded(child: subtitle),
+              TextButton(
+                onPressed: () => context.pushNamed(AppRoute.courseCatalog),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Visa alla'),
               ),
+            ],
+          )
+        else
+          subtitle,
         const SizedBox(height: 16),
         GlassCard(
           child: loading

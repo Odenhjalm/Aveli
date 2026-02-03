@@ -303,7 +303,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Min profil',
+                      'Media-spelaren',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -317,7 +317,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                     GradientButton.icon(
                       onPressed: () => context.goNamed(AppRoute.studioProfile),
                       icon: const Icon(Icons.person_outline),
-                      label: const Text('Öppna profilhanteringen'),
+                      label: const Text('Öppna spelarens kontrollpanel'),
                     ),
                   ],
                 ),
