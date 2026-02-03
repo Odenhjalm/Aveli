@@ -151,15 +151,11 @@ class CoursesShowcaseSection extends ConsumerWidget {
         const SizedBox(height: 4),
         if (showSeeAll)
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: subtitle),
+              Flexible(child: subtitle),
               TextButton(
                 onPressed: () => context.pushNamed(AppRoute.courseCatalog),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
                 child: const Text('Visa alla'),
               ),
             ],
