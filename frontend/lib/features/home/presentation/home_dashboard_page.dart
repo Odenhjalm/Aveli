@@ -281,6 +281,10 @@ class _HomeAudioSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return audioAsync.when(
+      // Keep showing the previous list while reloading to avoid tearing down the
+      // active InlineAudioPlayer/InlineVideoPlayer (e.g. when a title is renamed).
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
       loading: () => const _NowPlayingShell(
         child: Center(child: CircularProgressIndicator()),
       ),
@@ -374,6 +378,10 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
         playback.currentMediaId == selected.id &&
         playback.isPlaying &&
         playback.mediaType == mediaType;
+    final playbackTitle = isActive ? (playback.title ?? '').trim() : '';
+    final nowPlayingTitle = playbackTitle.isNotEmpty
+        ? playbackTitle
+        : selected.displayTitle;
     final hasUrl = (playback.url ?? '').trim().isNotEmpty;
     final showLoading = isActive && playback.isLoading;
 
@@ -395,7 +403,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      selected.displayTitle,
+                      nowPlayingTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -403,8 +411,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                       ),
                     ),
                     if (selected.courseTitle.trim().isNotEmpty &&
-                        selected.courseTitle.trim() !=
-                            selected.displayTitle.trim())
+                        selected.courseTitle.trim() != nowPlayingTitle.trim())
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
@@ -481,7 +488,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             else
               InlineVideoPlayer(
                 url: playback.url!,
-                title: selected.displayTitle,
+                title: nowPlayingTitle,
                 autoPlay: true,
               ),
           ],

@@ -60,9 +60,22 @@ class HomeAudioItem {
   final String? streamingFormat;
   final String? codec;
 
-  String get id => (profileMediaId ?? '').trim().isNotEmpty
-      ? profileMediaId!.trim()
-      : lessonMediaId;
+  /// Stable identity for playback, caching, and selection.
+  ///
+  /// IMPORTANT: This must never be derived from [title] (titles are mutable
+  /// metadata and may be renamed at any time).
+  ///
+  /// Priority:
+  /// 1) `profile_media_id` (preferred)
+  /// 2) `media_id` (stable underlying media object)
+  /// 3) `id` (lesson_media id) as a last resort
+  String get id {
+    final profileId = (profileMediaId ?? '').trim();
+    if (profileId.isNotEmpty) return profileId;
+    final stableMediaId = (mediaId ?? '').trim();
+    if (stableMediaId.isNotEmpty) return stableMediaId;
+    return lessonMediaId.trim();
+  }
 
   String? get preferredUrl => signedUrl ?? downloadUrl;
 
@@ -74,33 +87,33 @@ class HomeAudioItem {
   }
 
   factory HomeAudioItem.fromJson(Map<String, dynamic> json) => HomeAudioItem(
-        lessonMediaId: json['id'] as String,
-        profileMediaId: json['profile_media_id'] as String?,
-        title: json['title'] as String?,
-        lessonId: json['lesson_id'] as String,
-        lessonTitle: (json['lesson_title'] ?? '') as String,
-        courseId: json['course_id'] as String,
-        courseTitle: (json['course_title'] ?? '') as String,
-        courseSlug: json['course_slug'] as String?,
-        kind: (json['kind'] ?? 'audio') as String,
-        storagePath: json['storage_path'] as String?,
-        storageBucket: json['storage_bucket'] as String?,
-        mediaId: json['media_id'] as String?,
-        mediaAssetId: json['media_asset_id'] as String?,
-        durationSeconds: _asInt(json['duration_seconds']),
-        createdAt: _parseDate(json['created_at']),
-        contentType: json['content_type'] as String?,
-        byteSize: _asInt(json['byte_size']),
-        originalName: json['original_name'] as String?,
-        downloadUrl: json['download_url'] as String?,
-        signedUrl: json['signed_url'] as String?,
-        signedUrlExpiresAt: _parseDate(json['signed_url_expires_at']),
-        isIntro: json['is_intro'] as bool?,
-        isFreeIntro: json['is_free_intro'] as bool?,
-        mediaState: json['media_state'] as String?,
-        streamingFormat: json['streaming_format'] as String?,
-        codec: json['codec'] as String?,
-      );
+    lessonMediaId: json['id'] as String,
+    profileMediaId: json['profile_media_id'] as String?,
+    title: json['title'] as String?,
+    lessonId: json['lesson_id'] as String,
+    lessonTitle: (json['lesson_title'] ?? '') as String,
+    courseId: json['course_id'] as String,
+    courseTitle: (json['course_title'] ?? '') as String,
+    courseSlug: json['course_slug'] as String?,
+    kind: (json['kind'] ?? 'audio') as String,
+    storagePath: json['storage_path'] as String?,
+    storageBucket: json['storage_bucket'] as String?,
+    mediaId: json['media_id'] as String?,
+    mediaAssetId: json['media_asset_id'] as String?,
+    durationSeconds: _asInt(json['duration_seconds']),
+    createdAt: _parseDate(json['created_at']),
+    contentType: json['content_type'] as String?,
+    byteSize: _asInt(json['byte_size']),
+    originalName: json['original_name'] as String?,
+    downloadUrl: json['download_url'] as String?,
+    signedUrl: json['signed_url'] as String?,
+    signedUrlExpiresAt: _parseDate(json['signed_url_expires_at']),
+    isIntro: json['is_intro'] as bool?,
+    isFreeIntro: json['is_free_intro'] as bool?,
+    mediaState: json['media_state'] as String?,
+    streamingFormat: json['streaming_format'] as String?,
+    codec: json['codec'] as String?,
+  );
 
   static int? _asInt(dynamic value) {
     if (value == null) return null;
@@ -128,9 +141,8 @@ class HomeAudioRepository {
     final items = response['items'] as List? ?? const [];
     return items
         .map(
-          (item) => HomeAudioItem.fromJson(
-            Map<String, dynamic>.from(item as Map),
-          ),
+          (item) =>
+              HomeAudioItem.fromJson(Map<String, dynamic>.from(item as Map)),
         )
         .toList(growable: false);
   }

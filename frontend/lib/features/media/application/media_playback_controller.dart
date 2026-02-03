@@ -79,8 +79,17 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
     final trimmedId = mediaId.trim();
     if (trimmedId.isEmpty) return;
 
+    // Safety: metadata changes (e.g. renaming a title) must never interrupt
+    // playback or force a re-init when the media identity is unchanged.
     if (state.isPlaying && state.currentMediaId == trimmedId) {
-      stop();
+      if (state.isLoading) {
+        stop();
+        return;
+      }
+      final trimmedTitle = title?.trim();
+      if ((trimmedTitle ?? '').isNotEmpty || durationHint != null) {
+        state = state.copyWith(title: trimmedTitle, durationHint: durationHint);
+      }
       return;
     }
 
@@ -91,7 +100,7 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
       isPlaying: true,
       mediaType: mediaType,
       url: url?.trim(),
-      title: title,
+      title: title?.trim(),
       durationHint: durationHint,
       isLoading: (url ?? '').trim().isEmpty,
       errorMessage: null,
