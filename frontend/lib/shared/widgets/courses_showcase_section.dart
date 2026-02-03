@@ -47,6 +47,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
     this.includeOuterChrome = true,
     this.showHeroBadge = true,
     this.includeStudioCourses = true,
+    this.subtitleAction,
     this.ctaGradient,
     this.tileScale = 1.0,
     this.tileTextColor,
@@ -64,6 +65,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final bool includeOuterChrome;
   final bool showHeroBadge;
   final bool includeStudioCourses;
+  final Widget? subtitleAction;
   final Gradient? ctaGradient;
   final double tileScale;
   final Color? tileTextColor;
@@ -110,6 +112,15 @@ class CoursesShowcaseSection extends ConsumerWidget {
 
     final sectionTextColor = tileTextColor;
 
+    final subtitle = sectionTextColor == null
+        ? MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge)
+        : Text(
+            'Se vad andra gillar just nu.',
+            style: (t.bodyLarge ?? t.bodyMedium ?? const TextStyle()).copyWith(
+              color: sectionTextColor,
+            ),
+          );
+
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -138,12 +149,13 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 ),
               ),
         const SizedBox(height: 4),
-        sectionTextColor == null
-            ? MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge)
-            : Text(
-                'Se vad andra gillar just nu.',
-                style: (t.bodyLarge ?? t.bodyMedium ?? const TextStyle())
-                    .copyWith(color: sectionTextColor),
+        subtitleAction == null
+            ? subtitle
+            : Row(
+                children: [
+                  Expanded(child: subtitle),
+                  subtitleAction!,
+                ],
               ),
         const SizedBox(height: 16),
         GlassCard(
