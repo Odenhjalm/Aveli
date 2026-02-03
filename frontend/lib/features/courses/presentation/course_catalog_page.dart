@@ -3,9 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
+import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
@@ -19,6 +24,7 @@ class CourseCatalogPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final assets = ref.watch(backendAssetResolverProvider);
     final introAsync = ref.watch(landing.introCoursesProvider);
     final popularAsync = ref.watch(landing.popularCoursesProvider);
 
@@ -38,6 +44,34 @@ class CourseCatalogPage extends ConsumerWidget {
 
     final steps = _splitJourneySteps(journey);
 
+    final publishedCoursesAsync = ref.watch(coursesProvider);
+    final slugToId = <String, String>{};
+    for (final course in publishedCoursesAsync.valueOrNull ?? const []) {
+      final slug = (course.slug ?? '').trim();
+      if (slug.isEmpty) continue;
+      slugToId[slug] = course.id;
+    }
+
+    final step3CourseIds = <String>{};
+    for (final course in steps.step3) {
+      final id = _resolveCourseId(course, slugToId: slugToId);
+      if (id != null && id.isNotEmpty) {
+        step3CourseIds.add(id);
+      }
+    }
+
+    final step3ProgressAsync = step3CourseIds.isEmpty
+        ? const AsyncData(<String, double>{})
+        : ref.watch(
+            courseProgressProvider(
+              CourseProgressRequest(step3CourseIds.toList()),
+            ),
+          );
+    final hasCompletedStep3 =
+        step3ProgressAsync.valueOrNull?.values.any((p) => p >= 0.999) == true;
+    const proEligibilityHint =
+        'Tillgängligt när du har slutfört ett tredje steg';
+
     final isLoading = introAsync.isLoading || popularAsync.isLoading;
     final Object? error = introAsync.error ?? popularAsync.error;
 
@@ -54,6 +88,9 @@ class CourseCatalogPage extends ConsumerWidget {
             step1Courses: steps.step1,
             step2Courses: steps.step2,
             step3Courses: steps.step3,
+            assets: assets,
+            canApplyForPro: hasCompletedStep3,
+            proEligibilityHint: proEligibilityHint,
           );
 
     return AppScaffold(
@@ -137,6 +174,25 @@ class CourseCatalogPage extends ConsumerWidget {
         match(RegExp(r'\\bnivå\\s*([1-3])\\b')) ??
         match(RegExp(r'\\blevel\\s*([1-3])\\b'));
   }
+
+  static String? _resolveCourseId(
+    Map<String, dynamic> course, {
+    required Map<String, String> slugToId,
+  }) {
+    String? normalize(dynamic value) {
+      if (value == null) return null;
+      final raw = value is String ? value : value.toString();
+      final trimmed = raw.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    final id = normalize(course['id']) ?? normalize(course['course_id']);
+    if (id != null) return id;
+
+    final slug = normalize(course['slug']);
+    if (slug == null) return null;
+    return slugToId[slug];
+  }
 }
 
 class _JourneySteps {
@@ -157,62 +213,48 @@ class _CourseJourney extends StatelessWidget {
     required this.step1Courses,
     required this.step2Courses,
     required this.step3Courses,
+    required this.assets,
+    required this.canApplyForPro,
+    required this.proEligibilityHint,
   });
 
   final List<Map<String, dynamic>> freeCourses;
   final List<Map<String, dynamic>> step1Courses;
   final List<Map<String, dynamic>> step2Courses;
   final List<Map<String, dynamic>> step3Courses;
+  final BackendAssetResolver assets;
+  final bool canApplyForPro;
+  final String proEligibilityHint;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final t = theme.textTheme;
-
     return ListView(
       children: [
         _SectionHeader(
           title: 'Börja här',
           subtitle: 'Känn efter i din egen takt',
         ),
-        const SizedBox(height: 14),
-        _CourseGrid(
-          courses: freeCourses,
-          childAspectRatioOnWide: 2.2,
-          itemBuilder: (context, course) => _JourneyCourseCard(
-            course: course,
-            badgeText: 'Gratis',
-            showPrice: false,
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.center,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: _IntroWindow(courses: freeCourses, assets: assets),
           ),
         ),
         const SizedBox(height: 34),
         const _SectionHeader(title: 'Din resa'),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         _StepsCarousel(
           step1Courses: step1Courses,
           step2Courses: step2Courses,
           step3Courses: step3Courses,
+          assets: assets,
         ),
         const SizedBox(height: 34),
-        GlassCard(
-          opacity: 0.12,
-          sigmaX: 10,
-          sigmaY: 10,
-          borderColor: Colors.white.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(22),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Aveli är en plats för inre arbete, närvaro och förståelse.\n'
-                'Du börjar där du är.\n'
-                'Du går vidare när det känns rätt.',
-                style: (t.bodyLarge ?? t.bodyMedium ?? const TextStyle())
-                    .copyWith(height: 1.35),
-              ),
-            ],
-          ),
+        _AveliProSeal(
+          canApply: canApplyForPro,
+          eligibilityHint: proEligibilityHint,
         ),
       ],
     );
@@ -241,51 +283,133 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _CourseGrid extends StatelessWidget {
-  const _CourseGrid({
-    required this.courses,
-    required this.itemBuilder,
-    this.childAspectRatioOnWide = 2.6,
-  });
+class _IntroWindow extends StatelessWidget {
+  const _IntroWindow({required this.courses, required this.assets});
 
   final List<Map<String, dynamic>> courses;
-  final Widget Function(BuildContext, Map<String, dynamic>) itemBuilder;
-  final double childAspectRatioOnWide;
+  final BackendAssetResolver assets;
 
   @override
   Widget build(BuildContext context) {
     if (courses.isEmpty) {
       return const GlassCard(
         opacity: 0.10,
+        sigmaX: 10,
+        sigmaY: 10,
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-          child: MetaText('Inga kurser ännu.'),
+          child: MetaText('Inga introduktionskurser ännu.'),
         ),
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final isWide = width >= 920;
-        final isMedium = width >= 640;
+    return GlassCard(
+      opacity: 0.10,
+      sigmaX: 10,
+      sigmaY: 10,
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(22),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const cardsPerView = 3;
+          const spacing = 12.0;
+          final available =
+              (constraints.maxWidth - spacing * (cardsPerView - 1)).clamp(
+                0.0,
+                constraints.maxWidth,
+              );
+          final cardWidth = available / cardsPerView;
+          const aspect = 0.92;
+          final cardHeight = cardWidth / aspect;
 
-        final crossAxisCount = isWide ? 2 : (isMedium ? 2 : 1);
-        final childAspectRatio = isWide ? childAspectRatioOnWide : 1.9;
+          return SizedBox(
+            height: cardHeight,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: courses.length,
+              separatorBuilder: (_, __) => const SizedBox(width: spacing),
+              itemBuilder: (context, index) => SizedBox(
+                width: cardWidth,
+                child: _IntroCourseCard(course: courses[index], assets: assets),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
 
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            childAspectRatio: childAspectRatio,
-            crossAxisSpacing: 14,
-            mainAxisSpacing: 14,
+class _IntroCourseCard extends StatelessWidget {
+  const _IntroCourseCard({required this.course, required this.assets});
+
+  final Map<String, dynamic> course;
+  final BackendAssetResolver assets;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (course['title'] as String?)?.trim();
+    final slug = (course['slug'] as String?)?.trim() ?? '';
+    final coverUrl = (course['cover_url'] as String?)?.trim();
+
+    final coverProvider = CourseCoverAssets.resolve(
+      assets: assets,
+      slug: slug,
+      coverUrl: coverUrl,
+    );
+    final isFallbackLogo = coverProvider == null;
+    final imageProvider = coverProvider ?? AppImages.logo;
+
+    final radius = BorderRadius.circular(18);
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: InkWell(
+        onTap: slug.isEmpty
+            ? null
+            : () => context.pushNamed(
+                AppRoute.course,
+                pathParameters: {'slug': slug},
+              ),
+        borderRadius: radius,
+        child: GlassCard(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          opacity: 0.18,
+          sigmaX: 10,
+          sigmaY: 10,
+          borderRadius: radius,
+          borderColor: Colors.white.withValues(alpha: 0.16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CourseCover(
+                imageProvider: imageProvider,
+                isFallbackLogo: isFallbackLogo,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                title?.isNotEmpty == true ? title! : 'Introduktion',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    (Theme.of(context).textTheme.titleSmall ??
+                            const TextStyle())
+                        .copyWith(
+                          color: DesignTokens.bodyTextColor,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                        ),
+              ),
+              const Spacer(),
+              const _Chip(icon: Icons.auto_awesome, label: 'Introduktion'),
+            ],
           ),
-          itemCount: courses.length,
-          itemBuilder: (context, index) => itemBuilder(context, courses[index]),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -295,11 +419,13 @@ class _StepsCarousel extends StatelessWidget {
     required this.step1Courses,
     required this.step2Courses,
     required this.step3Courses,
+    required this.assets,
   });
 
   final List<Map<String, dynamic>> step1Courses;
   final List<Map<String, dynamic>> step2Courses;
   final List<Map<String, dynamic>> step3Courses;
+  final BackendAssetResolver assets;
 
   @override
   Widget build(BuildContext context) {
@@ -317,23 +443,41 @@ class _StepsCarousel extends StatelessWidget {
             stepLabel: 'Steg 1',
             description: 'Fördjupning och grund',
             courses: step1Courses,
+            assets: assets,
           ),
-          const SizedBox(width: 14),
+          const _StepArrow(),
           _StepColumn(
             width: stepWidth,
             stepLabel: 'Steg 2',
             description: 'Integration och praktik',
             courses: step2Courses,
+            assets: assets,
           ),
-          const SizedBox(width: 14),
+          const _StepArrow(),
           _StepColumn(
             width: stepWidth,
             stepLabel: 'Steg 3',
-            description: 'Fördjupad förståelse',
+            description: 'Fördjupad förståelse och mognad',
             courses: step3Courses,
+            assets: assets,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _StepArrow extends StatelessWidget {
+  const _StepArrow();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: 0.35);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 56, 10, 0),
+      child: Icon(Icons.arrow_forward_rounded, color: color, size: 22),
     );
   }
 }
@@ -344,12 +488,14 @@ class _StepColumn extends StatelessWidget {
     required this.stepLabel,
     required this.description,
     required this.courses,
+    required this.assets,
   });
 
   final double width;
   final String stepLabel;
   final String description;
   final List<Map<String, dynamic>> courses;
+  final BackendAssetResolver assets;
 
   @override
   Widget build(BuildContext context) {
@@ -384,7 +530,11 @@ class _StepColumn extends StatelessWidget {
               Column(
                 children: [
                   for (final course in courses) ...[
-                    _JourneyCourseCard(course: course, showPrice: true),
+                    _JourneyCourseCard(
+                      course: course,
+                      showPrice: true,
+                      assets: assets,
+                    ),
                     const SizedBox(height: 12),
                   ],
                 ],
@@ -400,11 +550,13 @@ class _JourneyCourseCard extends StatelessWidget {
   const _JourneyCourseCard({
     required this.course,
     required this.showPrice,
+    required this.assets,
     this.badgeText,
   });
 
   final Map<String, dynamic> course;
   final bool showPrice;
+  final BackendAssetResolver assets;
   final String? badgeText;
 
   @override
@@ -422,6 +574,15 @@ class _JourneyCourseCard extends StatelessWidget {
     final priceLabel = showPrice
         ? _formatPrice(priceCents, currency: currency)
         : null;
+
+    final coverUrl = (course['cover_url'] as String?)?.trim();
+    final coverProvider = CourseCoverAssets.resolve(
+      assets: assets,
+      slug: slug,
+      coverUrl: coverUrl,
+    );
+    final isFallbackLogo = coverProvider == null;
+    final imageProvider = coverProvider ?? AppImages.logo;
 
     final radius = BorderRadius.circular(20);
 
@@ -447,6 +608,11 @@ class _JourneyCourseCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              _CourseCover(
+                imageProvider: imageProvider,
+                isFallbackLogo: isFallbackLogo,
+              ),
+              const SizedBox(height: 12),
               Text(
                 title?.isNotEmpty == true ? title! : 'Kurs',
                 maxLines: 2,
@@ -516,7 +682,7 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final color = DesignTokens.bodyTextColor.withValues(alpha: 0.88);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.14),
@@ -528,16 +694,201 @@ class _Chip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: theme.colorScheme.onSurface),
+            Icon(icon, size: 16, color: color),
             const SizedBox(width: 6),
             Text(
               label,
-              style: theme.textTheme.bodySmall?.copyWith(
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
+                color: color,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CourseCover extends StatelessWidget {
+  const _CourseCover({
+    required this.imageProvider,
+    required this.isFallbackLogo,
+  });
+
+  final ImageProvider<Object> imageProvider;
+  final bool isFallbackLogo;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (SafeMedia.enabled) {
+                  SafeMedia.markThumbnails();
+                }
+                final cacheWidth = SafeMedia.cacheDimension(
+                  context,
+                  constraints.maxWidth,
+                  max: 1200,
+                );
+                final cacheHeight = SafeMedia.cacheDimension(
+                  context,
+                  constraints.maxHeight,
+                  max: 900,
+                );
+
+                Widget fallbackLogo() => Container(
+                  color: Colors.white.withValues(alpha: 0.32),
+                  alignment: Alignment.center,
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Image(
+                      image: SafeMedia.resizedProvider(
+                        AppImages.logo,
+                        cacheWidth: cacheWidth,
+                        cacheHeight: cacheHeight,
+                      ),
+                      fit: BoxFit.contain,
+                      filterQuality: SafeMedia.filterQuality(
+                        full: FilterQuality.high,
+                      ),
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                );
+
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    fallbackLogo(),
+                    Image(
+                      image: SafeMedia.resizedProvider(
+                        imageProvider,
+                        cacheWidth: cacheWidth,
+                        cacheHeight: cacheHeight,
+                      ),
+                      fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
+                      filterQuality: SafeMedia.filterQuality(
+                        full: FilterQuality.high,
+                      ),
+                      gaplessPlayback: true,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox.shrink(),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AveliProSeal extends StatefulWidget {
+  const _AveliProSeal({required this.canApply, required this.eligibilityHint});
+
+  final bool canApply;
+  final String eligibilityHint;
+
+  @override
+  State<_AveliProSeal> createState() => _AveliProSealState();
+}
+
+class _AveliProSealState extends State<_AveliProSeal> {
+  bool _showReadyMessage = false;
+
+  @override
+  void didUpdateWidget(covariant _AveliProSeal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.canApply) {
+      _showReadyMessage = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    const body =
+        'För vissa stannar resan vid personlig fördjupning.\n'
+        'För andra växer en vilja att dela, guida och stötta.\n\n'
+        'När du har gått färdigt ett tredje steg i en kurs\n'
+        'kan du ansöka om att bli Aveli-Pro\n'
+        'och börja dela den kunskap du kultiverat – på dina villkor.';
+
+    const readyMessage =
+        'Ansökan öppnar snart.\nNär den är redo kan du ansöka direkt här.';
+
+    final button = ElevatedButton(
+      onPressed: widget.canApply
+          ? () => setState(() => _showReadyMessage = true)
+          : null,
+      child: const Text('Ansök om Aveli-Pro'),
+    );
+
+    return GlassCard(
+      opacity: 0.10,
+      sigmaX: 10,
+      sigmaY: 10,
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(26),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            right: 0,
+            child: Opacity(
+              opacity: 0.22,
+              child: Image(
+                image: AppImages.logo,
+                width: 48,
+                height: 48,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeading(
+                'När du är redo att bära det vidare',
+                baseStyle: t.headlineSmall,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                body,
+                style: (t.bodyLarge ?? t.bodyMedium ?? const TextStyle())
+                    .copyWith(height: 1.4),
+              ),
+              const SizedBox(height: 18),
+              if (widget.canApply)
+                button
+              else
+                Tooltip(message: widget.eligibilityHint, child: button),
+              if (!widget.canApply) ...[
+                const SizedBox(height: 10),
+                MetaText(widget.eligibilityHint, baseStyle: t.bodyMedium),
+              ],
+              if (widget.canApply && _showReadyMessage) ...[
+                const SizedBox(height: 12),
+                MetaText(readyMessage, baseStyle: t.bodyMedium),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }
