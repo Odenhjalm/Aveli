@@ -307,31 +307,23 @@ class _CoursesShowcaseSectionWithAllLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        const CoursesShowcaseSection(
-          title: 'Utforska kurser',
-          layout: CoursesShowcaseLayout.vertical,
-          desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
-          includeOuterChrome: false,
-          showHeroBadge: false,
-          includeStudioCourses: false,
-          ctaGradient: kBrandBluePurpleGradient,
-          tileScale: 0.85,
-          tileTextColor: DesignTokens.bodyTextColor,
-          introBadgeVariant: CourseIntroBadgeVariant.link,
-          gridCrossAxisSpacing: 2,
-          gridMainAxisSpacing: 2,
-        ),
-        Positioned(
-          top: 10,
-          right: 0,
-          child: TextButton(
-            onPressed: () => context.push(RoutePath.courseCatalog),
-            child: const Text('Visa alla'),
-          ),
-        ),
-      ],
+    return CoursesShowcaseSection(
+      title: 'Utforska kurser',
+      layout: CoursesShowcaseLayout.vertical,
+      desktop: const CoursesShowcaseDesktop(columns: 2, rows: 3),
+      includeOuterChrome: false,
+      showHeroBadge: false,
+      includeStudioCourses: false,
+      subtitleAction: TextButton(
+        onPressed: () => context.push(RoutePath.courseCatalog),
+        child: const Text('Visa alla'),
+      ),
+      ctaGradient: kBrandBluePurpleGradient,
+      tileScale: 0.85,
+      tileTextColor: DesignTokens.bodyTextColor,
+      introBadgeVariant: CourseIntroBadgeVariant.link,
+      gridCrossAxisSpacing: 2,
+      gridMainAxisSpacing: 2,
     );
   }
 }
