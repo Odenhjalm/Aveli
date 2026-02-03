@@ -5,7 +5,9 @@ import 'package:aveli/api/auth_repository.dart';
 
 class HomeAudioItem {
   HomeAudioItem({
-    required this.id,
+    required this.lessonMediaId,
+    this.profileMediaId,
+    this.title,
     required this.lessonId,
     required this.lessonTitle,
     required this.courseId,
@@ -31,7 +33,9 @@ class HomeAudioItem {
     this.codec,
   });
 
-  final String id;
+  final String lessonMediaId;
+  final String? profileMediaId;
+  final String? title;
   final String lessonId;
   final String lessonTitle;
   final String courseId;
@@ -56,16 +60,23 @@ class HomeAudioItem {
   final String? streamingFormat;
   final String? codec;
 
+  String get id => (profileMediaId ?? '').trim().isNotEmpty
+      ? profileMediaId!.trim()
+      : lessonMediaId;
+
   String? get preferredUrl => signedUrl ?? downloadUrl;
 
   String get displayTitle {
-    if (lessonTitle.trim().isNotEmpty) return lessonTitle.trim();
+    if ((title ?? '').trim().isNotEmpty) return title!.trim();
+    if (courseTitle.trim().isNotEmpty) return courseTitle.trim();
     if ((originalName ?? '').trim().isNotEmpty) return originalName!.trim();
     return 'Ljudspår';
   }
 
   factory HomeAudioItem.fromJson(Map<String, dynamic> json) => HomeAudioItem(
-        id: json['id'] as String,
+        lessonMediaId: json['id'] as String,
+        profileMediaId: json['profile_media_id'] as String?,
+        title: json['title'] as String?,
         lessonId: json['lesson_id'] as String,
         lessonTitle: (json['lesson_title'] ?? '') as String,
         courseId: json['course_id'] as String,

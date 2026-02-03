@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/features/home/application/home_providers.dart';
+import 'package:aveli/features/media/application/media_playback_controller.dart';
 import 'package:aveli/features/studio/application/profile_media_controller.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -121,6 +123,7 @@ class _ProfileMediaBody extends ConsumerWidget {
         rows.add(
           _UnifiedMediaRow(
             itemId: item.id,
+            sourceMediaId: item.mediaId,
             title: title,
             courseTitle: _courseTitleForLessonMediaSource(lesson),
             enabledForHomePlayer: item.enabledForHomePlayer,
@@ -137,6 +140,7 @@ class _ProfileMediaBody extends ConsumerWidget {
         rows.add(
           _UnifiedMediaRow(
             itemId: item.id,
+            sourceMediaId: item.mediaId,
             title: title,
             courseTitle: _courseTitleForRecordingSource(recording),
             enabledForHomePlayer: item.enabledForHomePlayer,
@@ -150,6 +154,7 @@ class _ProfileMediaBody extends ConsumerWidget {
       rows.add(
         _UnifiedMediaRow(
           itemId: item.id,
+          sourceMediaId: item.mediaId,
           title: title,
           courseTitle: _courseTitleForLessonMediaSource(
             item.source.lessonMedia,
@@ -242,6 +247,7 @@ class _ProfileMediaBody extends ConsumerWidget {
 class _UnifiedMediaRow {
   const _UnifiedMediaRow({
     required this.itemId,
+    required this.sourceMediaId,
     required this.title,
     required this.courseTitle,
     required this.enabledForHomePlayer,
@@ -251,6 +257,7 @@ class _UnifiedMediaRow {
   });
 
   final String itemId;
+  final String? sourceMediaId;
   final String title;
   final String courseTitle;
   final bool enabledForHomePlayer;
@@ -282,16 +289,128 @@ class _UnifiedMediaList extends StatelessWidget {
   }
 }
 
-class _UnifiedMediaTile extends ConsumerWidget {
+class _UnifiedMediaTile extends ConsumerStatefulWidget {
   const _UnifiedMediaTile({required this.row, required this.disabled});
 
   final _UnifiedMediaRow row;
   final bool disabled;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_UnifiedMediaTile> createState() => _UnifiedMediaTileState();
+}
+
+class _UnifiedMediaTileState extends ConsumerState<_UnifiedMediaTile> {
+  late final TextEditingController _titleController;
+  late final FocusNode _titleFocusNode;
+  bool _editingTitle = false;
+  bool _savingTitle = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.row.title);
+    _titleFocusNode = FocusNode();
+    _titleFocusNode.addListener(_handleTitleFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant _UnifiedMediaTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_editingTitle && oldWidget.row.title != widget.row.title) {
+      _titleController.text = widget.row.title;
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleFocusNode.removeListener(_handleTitleFocusChange);
+    _titleFocusNode.dispose();
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  void _handleTitleFocusChange() {
+    if (_editingTitle && !_titleFocusNode.hasFocus) {
+      _commitTitle(saveOnBlur: true);
+    }
+  }
+
+  void _startEditingTitle() {
+    if (widget.disabled || _savingTitle) return;
+    setState(() {
+      _editingTitle = true;
+      _titleController.text = widget.row.title;
+      _titleController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _titleController.text.length,
+      );
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _titleFocusNode.requestFocus();
+    });
+  }
+
+  Future<void> _commitTitle({bool saveOnBlur = false}) async {
+    if (!_editingTitle || _savingTitle) return;
+    final next = _titleController.text.trim();
+    final current = widget.row.title.trim();
+
+    if (next.isEmpty) {
+      if (!mounted) return;
+      _titleController.text = widget.row.title;
+      setState(() => _editingTitle = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Titeln får inte vara tom.')),
+      );
+      return;
+    }
+
+    if (next == current) {
+      if (!mounted) return;
+      setState(() => _editingTitle = false);
+      return;
+    }
+
+    setState(() => _savingTitle = true);
+
+    try {
+      await ref.read(teacherProfileMediaProvider.notifier).renameTitle(
+            widget.row.itemId,
+            next,
+          );
+
+      ref.invalidate(homeAudioProvider);
+
+      final playback = ref.read(mediaPlaybackControllerProvider);
+      if (playback.isPlaying && playback.currentMediaId != null) {
+        final notifier = ref.read(mediaPlaybackControllerProvider.notifier);
+        notifier.updateTitleIfActive(widget.row.itemId, next);
+        final sourceId = widget.row.sourceMediaId;
+        if (sourceId != null && sourceId.isNotEmpty) {
+          notifier.updateTitleIfActive(sourceId, next);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _editingTitle = false);
+    } catch (error) {
+      if (mounted) {
+        _showErrorSnackBar(context, error);
+        if (saveOnBlur) {
+          setState(() => _editingTitle = false);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _savingTitle = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final controller = ref.read(teacherProfileMediaProvider.notifier);
     final theme = Theme.of(context);
+    final row = widget.row;
     final dimmed = !row.enabledForHomePlayer;
     final durationLabel = _formatDuration(row.durationSeconds);
     final metaParts = <String>[
@@ -317,14 +436,67 @@ class _UnifiedMediaTile extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    row.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  _editingTitle
+                      ? TextField(
+                          controller: _titleController,
+                          focusNode: _titleFocusNode,
+                          enabled: !widget.disabled && !_savingTitle,
+                          maxLines: 1,
+                          textInputAction: TextInputAction.done,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                            suffixIcon: _savingTitle
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      height: 16,
+                                      width: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : IconButton(
+                                    tooltip: 'Spara',
+                                    onPressed: widget.disabled || _savingTitle
+                                        ? null
+                                        : () async {
+                                            FocusScope.of(context).unfocus();
+                                            await _commitTitle();
+                                          },
+                                    icon: const Icon(Icons.check_rounded),
+                                  ),
+                          ),
+                          onSubmitted: (_) async {
+                            FocusScope.of(context).unfocus();
+                            await _commitTitle();
+                          },
+                        )
+                      : InkWell(
+                          onTap:
+                              widget.disabled || _savingTitle
+                                  ? null
+                                  : _startEditingTitle,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              row.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
                   const SizedBox(height: 4),
                   Text(
                     metaParts.join(' • '),
@@ -339,7 +511,7 @@ class _UnifiedMediaTile extends ConsumerWidget {
             ),
             Switch.adaptive(
               value: row.enabledForHomePlayer,
-              onChanged: disabled
+              onChanged: widget.disabled
                   ? null
                   : (value) async {
                       try {

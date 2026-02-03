@@ -59,6 +59,15 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
     return const MediaPlaybackState();
   }
 
+  void updateTitleIfActive(String mediaId, String title) {
+    if (_disposed) return;
+    final trimmedId = mediaId.trim();
+    final trimmedTitle = title.trim();
+    if (trimmedId.isEmpty || trimmedTitle.isEmpty) return;
+    if (!state.isPlaying || state.currentMediaId != trimmedId) return;
+    state = state.copyWith(title: trimmedTitle);
+  }
+
   Future<void> play({
     required String mediaId,
     required MediaPlaybackType mediaType,
