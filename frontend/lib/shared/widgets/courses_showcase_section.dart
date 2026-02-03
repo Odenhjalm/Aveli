@@ -73,6 +73,34 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final double gridCrossAxisSpacing;
   final double gridMainAxisSpacing;
 
+  static const EdgeInsets _glassCardPadding = EdgeInsets.all(16);
+
+  static double _resolveCardsContainerWidth({
+    required double maxWidth,
+    required double cardPaddingHorizontal,
+    required CoursesShowcaseDesktop? desktop,
+    required double tileScale,
+    required double gridCrossAxisSpacing,
+  }) {
+    if (!maxWidth.isFinite) return maxWidth;
+    if (maxWidth <= 0) return 0;
+
+    if (tileScale == 1.0) return maxWidth;
+
+    final innerMaxWidth = (maxWidth - cardPaddingHorizontal).clamp(
+      0.0,
+      maxWidth,
+    );
+    final cross = innerMaxWidth >= 900
+        ? (desktop?.columns ?? 3)
+        : (innerMaxWidth >= 600 ? 2 : 1);
+
+    final availableWidth = innerMaxWidth - gridCrossAxisSpacing * (cross - 1);
+    final scaledWidth =
+        tileScale * availableWidth + gridCrossAxisSpacing * (cross - 1);
+    return (scaledWidth + cardPaddingHorizontal).clamp(0.0, maxWidth);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -111,6 +139,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
         : items.take(desktop!.maxItems).toList(growable: false);
 
     final sectionTextColor = tileTextColor;
+    final cardsVisible = !loading && visible.isNotEmpty;
+    final effectiveTileScale = cardsVisible ? tileScale : 1.0;
 
     final subtitle = sectionTextColor == null
         ? MetaText('Se vad andra gillar just nu.', baseStyle: t.bodyLarge)
@@ -150,20 +180,45 @@ class CoursesShowcaseSection extends ConsumerWidget {
               ),
         const SizedBox(height: 4),
         if (showSeeAll)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(child: subtitle),
-              TextButton(
-                onPressed: () => context.pushNamed(AppRoute.courseCatalog),
-                child: const Text('Visa alla'),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scaledWidth = _resolveCardsContainerWidth(
+                maxWidth: constraints.maxWidth,
+                cardPaddingHorizontal: _glassCardPadding.horizontal,
+                desktop: desktop,
+                tileScale: effectiveTileScale,
+                gridCrossAxisSpacing: gridCrossAxisSpacing,
+              );
+
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: scaledWidth,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(child: subtitle),
+                      TextButton(
+                        onPressed: () =>
+                            context.pushNamed(AppRoute.courseCatalog),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Visa alla'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           )
         else
           subtitle,
         const SizedBox(height: 16),
         GlassCard(
+          padding: _glassCardPadding,
           child: loading
               ? const SizedBox(
                   height: 180,
