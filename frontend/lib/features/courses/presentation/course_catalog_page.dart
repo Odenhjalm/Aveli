@@ -1,154 +1,74 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/features/landing/application/landing_providers.dart'
-    as landing;
+import 'package:aveli/core/bootstrap/safe_media.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
+import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/course_intro_badge.dart';
+import 'package:aveli/shared/widgets/semantic_text.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final popularAsync = ref.watch(landing.popularCoursesProvider);
-    final myAsync = ref.watch(landing.myStudioCoursesProvider);
+    final coursesAsync = ref.watch(coursesProvider);
+    final assets = ref.watch(backendAssetResolverProvider);
     final mediaRepository = ref.watch(mediaRepositoryProvider);
-
-    final combined = _combineCourses(
-      popularAsync.valueOrNull,
-      myAsync.valueOrNull,
-      mediaRepository,
-    );
-    final isLoading =
-        popularAsync.isLoading || myAsync.isLoading || combined == null;
-    final Object? error = popularAsync.error ?? myAsync.error;
-    final courses = combined ?? const <Map<String, dynamic>>[];
 
     return AppScaffold(
       title: 'Alla kurser',
       showHomeAction: false,
+      logoSize: 0,
+      maxContentWidth: 1200,
       actions: const [TopNavActionButtons()],
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
-          child: isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : error != null
-              ? _ErrorState(error: error)
-              : _CourseList(courses: courses, theme: theme),
+        child: coursesAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => _ErrorState(error: error),
+          data: (courses) => _JourneyPage(
+            courses: courses,
+            assets: assets,
+            mediaRepository: mediaRepository,
+          ),
         ),
       ),
     );
   }
-
-  List<Map<String, dynamic>>? _combineCourses(
-    landing.LandingSectionState? popular,
-    landing.LandingSectionState? myCourses,
-    MediaRepository mediaRepository,
-  ) {
-    if (popular == null && myCourses == null) return null;
-    final items = <Map<String, dynamic>>[];
-    final seen = <String>{};
-
-    void add(Map<String, dynamic> raw) {
-      final map = Map<String, dynamic>.from(raw);
-      final slug = (map['slug'] as String?)?.trim();
-      final id = (map['id'] as String?)?.trim();
-      final key = slug?.isNotEmpty == true
-          ? slug!
-          : (id ?? map.hashCode.toString());
-      if (seen.contains(key)) return;
-      seen.add(key);
-      items.add(map);
-    }
-
-    final ownPublished = <Map<String, dynamic>>[];
-    if (myCourses != null) {
-      for (final course in myCourses.items) {
-        if (course['is_published'] == true) {
-          add(course);
-          ownPublished.add(Map<String, dynamic>.from(course));
-        }
-      }
-    }
-
-    if (ownPublished.isNotEmpty) {
-      items
-        ..clear()
-        ..addAll(ownPublished);
-    } else if (popular != null) {
-      for (final course in popular.items) {
-        add(course);
-      }
-    }
-
-    DateTime parseDate(dynamic value) {
-      if (value is DateTime) return value;
-      if (value is String) {
-        final parsed = DateTime.tryParse(value);
-        if (parsed != null) return parsed;
-      }
-      if (value is int) {
-        return DateTime.fromMillisecondsSinceEpoch(value);
-      }
-      return DateTime.fromMillisecondsSinceEpoch(0);
-    }
-
-    int priorityFor(Map<String, dynamic> item) {
-      final raw = item['teacher_priority'];
-      if (raw is num) return raw.toInt();
-      if (raw is String) {
-        final parsed = int.tryParse(raw);
-        if (parsed != null) return parsed;
-      }
-      return 1000;
-    }
-
-    items.sort((a, b) {
-      final priorityCompare = priorityFor(a).compareTo(priorityFor(b));
-      if (priorityCompare != 0) return priorityCompare;
-      final aUpdated = parseDate(a['updated_at'] ?? a['created_at']);
-      final bUpdated = parseDate(b['updated_at'] ?? b['created_at']);
-      return bUpdated.compareTo(aUpdated);
-    });
-
-    for (final item in items) {
-      final cover = item['cover_url'] as String?;
-      if (cover != null && cover.isNotEmpty) {
-        final resolved = _resolveMediaUrl(mediaRepository, cover) ?? cover;
-        item['cover_url'] = resolved;
-      }
-    }
-    return items;
-  }
-
-  String? _resolveMediaUrl(MediaRepository repository, String? path) {
-    if (path == null || path.isEmpty) return path;
-    try {
-      return repository.resolveUrl(path);
-    } catch (_) {
-      return path;
-    }
-  }
 }
 
-class _CourseList extends StatelessWidget {
-  const _CourseList({required this.courses, required this.theme});
+class _JourneyPage extends ConsumerWidget {
+  const _JourneyPage({
+    required this.courses,
+    required this.assets,
+    required this.mediaRepository,
+  });
 
-  final List<Map<String, dynamic>> courses;
-  final ThemeData theme;
+  final List<CourseSummary> courses;
+  final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
 
   @override
-  Widget build(BuildContext context) {
-    if (courses.isEmpty) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final published = courses
+        .where((course) => (course.slug ?? '').trim().isNotEmpty)
+        .toList(growable: false);
+
+    if (published.isEmpty) {
+      final theme = Theme.of(context);
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -164,10 +84,11 @@ class _CourseList extends StatelessWidget {
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'Publicera en kurs i studion för att visa den här.',
+              'Kom tillbaka snart så fyller vi på med mer.',
               style: theme.textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
@@ -175,144 +96,48 @@ class _CourseList extends StatelessWidget {
         ),
       );
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth > 900;
-        final crossAxisCount = isWide ? 2 : 1;
-        return GridView.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            childAspectRatio: isWide ? 2.6 : 1.9,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-          ),
-          itemCount: courses.length,
-          itemBuilder: (context, index) {
-            final course = courses[index];
-            return _CourseTile(course: course);
-          },
-        );
-      },
+
+    final introCourses = published
+        .where((course) => course.isFreeIntro)
+        .toList(growable: false);
+    final journeyCourses = published
+        .where((course) => !course.isFreeIntro)
+        .toList(growable: false);
+
+    final grouped = _groupJourneyCourses(journeyCourses);
+    final step3Ids = grouped.step3
+        .map((course) => course.id)
+        .toList(growable: false);
+
+    final step3ProgressAsync = ref.watch(
+      courseProgressProvider(CourseProgressRequest(step3Ids)),
     );
-  }
-}
+    final hasCompletedStep3 =
+        step3ProgressAsync.valueOrNull?.values.any((value) => value >= 0.999) ??
+        false;
 
-class _CourseTile extends StatelessWidget {
-  const _CourseTile({required this.course});
-
-  final Map<String, dynamic> course;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final title = (course['title'] as String?) ?? 'Kurs';
-    final description = (course['description'] as String?) ?? '';
-    final slug = (course['slug'] as String?) ?? '';
-    final isIntro = course['is_free_intro'] == true;
-    final branch = (course['branch'] as String?) ?? '';
-
-    final radius = BorderRadius.circular(20);
-
-    return Material(
-      color: Colors.transparent,
-      borderRadius: radius,
-      child: InkWell(
-        onTap: slug.isEmpty
-            ? null
-            : () => context.pushNamed(
-                AppRoute.course,
-                pathParameters: {'slug': slug},
-              ),
-        borderRadius: radius,
-        child: GlassCard(
-          padding: const EdgeInsets.all(20),
-          opacity: 0.18,
-          borderRadius: radius,
-          borderColor: Colors.white.withValues(alpha: 0.18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CourseTitleText(
-                    title,
-                    baseStyle: theme.textTheme.titleLarge,
-                    fontWeight: FontWeight.w700,
-                    maxLines: null,
-                    overflow: null,
-                  ),
-                  if (description.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    CourseDescriptionText(
-                      description,
-                      baseStyle: theme.textTheme.bodyMedium,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-              Wrap(
-                spacing: 12,
-                runSpacing: 6,
-                children: [
-                  if (branch.isNotEmpty)
-                    _Chip(icon: Icons.sell_outlined, label: branch),
-                  if (isIntro)
-                    const _Chip(
-                      icon: Icons.workspace_premium_outlined,
-                      label: 'Introduktion',
-                    ),
-                  _Chip(
-                    icon: course['is_published'] == true
-                        ? Icons.public_outlined
-                        : Icons.drafts_outlined,
-                    label: course['is_published'] == true
-                        ? 'Publicerad'
-                        : 'Utkast',
-                  ),
-                ],
-              ),
-            ],
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ActIntroSection(
+            courses: introCourses,
+            assets: assets,
+            mediaRepository: mediaRepository,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  const _Chip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: theme.colorScheme.onSurface),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+          const SizedBox(height: 22),
+          _ActJourneySection(
+            step1: grouped.step1,
+            step2: grouped.step2,
+            step3: grouped.step3,
+            assets: assets,
+            mediaRepository: mediaRepository,
+          ),
+          const SizedBox(height: 26),
+          _ActAveliProSection(isEnabled: hasCompletedStep3),
+        ],
       ),
     );
   }
@@ -352,4 +177,700 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ActIntroSection extends StatelessWidget {
+  const _ActIntroSection({
+    required this.courses,
+    required this.assets,
+    required this.mediaRepository,
+  });
+
+  final List<CourseSummary> courses;
+  final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    if (courses.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: GlassCard(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          opacity: 0.1,
+          sigmaX: 10,
+          sigmaY: 10,
+          borderColor: Colors.white.withValues(alpha: 0.16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeading(
+                'Börja här',
+                baseStyle: theme.textTheme.titleLarge,
+                fontWeight: FontWeight.w800,
+              ),
+              const SizedBox(height: 4),
+              MetaText(
+                'Känn efter i din egen takt',
+                baseStyle: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 156,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    const spacing = 10.0;
+                    final width = constraints.maxWidth;
+                    final tileWidth = (width - (spacing * 2)) / 3;
+                    return ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: courses.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(width: spacing),
+                      itemBuilder: (context, index) => SizedBox(
+                        width: tileWidth,
+                        child: _IntroMiniCourseCard(
+                          course: courses[index],
+                          assets: assets,
+                          mediaRepository: mediaRepository,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActJourneySection extends StatelessWidget {
+  const _ActJourneySection({
+    required this.step1,
+    required this.step2,
+    required this.step3,
+    required this.assets,
+    required this.mediaRepository,
+  });
+
+  final List<CourseSummary> step1;
+  final List<CourseSummary> step2;
+  final List<CourseSummary> step3;
+  final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeading(
+          'Din resa',
+          baseStyle: theme.textTheme.headlineSmall,
+          fontWeight: FontWeight.w800,
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 980;
+            final arrowColor = theme.colorScheme.onSurface.withValues(
+              alpha: 0.55,
+            );
+
+            const minColumnWidth = 320.0;
+            final available = constraints.maxWidth;
+            final columnWidth = isWide ? (available - 96) / 3 : minColumnWidth;
+
+            Widget arrow() => Padding(
+              padding: const EdgeInsets.only(top: 42),
+              child: Icon(Icons.arrow_forward_rounded, color: arrowColor),
+            );
+
+            final row = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: columnWidth,
+                  child: _JourneyStepColumn(
+                    label: 'Steg 1',
+                    description: 'Fördjupning och grund',
+                    courses: step1,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                arrow(),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: columnWidth,
+                  child: _JourneyStepColumn(
+                    label: 'Steg 2',
+                    description: 'Integration och praktik',
+                    courses: step2,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                arrow(),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: columnWidth,
+                  child: _JourneyStepColumn(
+                    label: 'Steg 3',
+                    description: 'Fördjupad förståelse och mognad',
+                    courses: step3,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                ),
+              ],
+            );
+
+            if (isWide) return row;
+
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: row,
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _JourneyStepColumn extends StatelessWidget {
+  const _JourneyStepColumn({
+    required this.label,
+    required this.description,
+    required this.courses,
+    required this.assets,
+    required this.mediaRepository,
+  });
+
+  final String label;
+  final String description;
+  final List<CourseSummary> courses;
+  final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GlassCard(
+      opacity: 0.12,
+      sigmaX: 10,
+      sigmaY: 10,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: DesignTokens.bodyTextColor,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: DesignTokens.bodyTextColor.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (courses.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 10),
+              child: Text(
+                'Fler kurser kommer snart.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: DesignTokens.bodyTextColor.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            Column(
+              children: [
+                for (final course in courses) ...[
+                  _JourneyCourseCard(
+                    course: course,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IntroMiniCourseCard extends StatelessWidget {
+  const _IntroMiniCourseCard({
+    required this.course,
+    required this.assets,
+    required this.mediaRepository,
+  });
+
+  final CourseSummary course;
+  final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final radius = BorderRadius.circular(16);
+    final slug = (course.slug ?? '').trim();
+    final resolvedCover = _resolveCoverUrl(mediaRepository, course.coverUrl);
+    final coverProvider = CourseCoverAssets.resolve(
+      assets: assets,
+      slug: slug,
+      coverUrl: resolvedCover,
+    );
+    final imageProvider = coverProvider ?? AppImages.logo;
+    final isFallbackLogo = coverProvider == null;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: InkWell(
+        onTap: slug.isEmpty
+            ? null
+            : () => context.pushNamed(
+                AppRoute.course,
+                pathParameters: {'slug': slug},
+              ),
+        borderRadius: radius,
+        child: GlassCard(
+          padding: EdgeInsets.zero,
+          opacity: 0.18,
+          sigmaX: 12,
+          sigmaY: 12,
+          borderRadius: radius,
+          borderColor: Colors.white.withValues(alpha: 0.16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (SafeMedia.enabled) {
+                        SafeMedia.markThumbnails();
+                      }
+                      final cacheWidth = SafeMedia.cacheDimension(
+                        context,
+                        constraints.maxWidth,
+                        max: 800,
+                      );
+                      final cacheHeight = SafeMedia.cacheDimension(
+                        context,
+                        constraints.maxHeight,
+                        max: 800,
+                      );
+                      return DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(isFallbackLogo ? 14 : 0),
+                          child: Image(
+                            image: SafeMedia.resizedProvider(
+                              imageProvider,
+                              cacheWidth: cacheWidth,
+                              cacheHeight: cacheHeight,
+                            ),
+                            fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
+                            filterQuality: SafeMedia.filterQuality(
+                              full: FilterQuality.high,
+                            ),
+                            gaplessPlayback: true,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        course.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: DesignTokens.bodyTextColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      const CourseIntroBadge(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _JourneyCourseCard extends StatelessWidget {
+  const _JourneyCourseCard({
+    required this.course,
+    required this.assets,
+    required this.mediaRepository,
+  });
+
+  final CourseSummary course;
+  final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final slug = (course.slug ?? '').trim();
+    final resolvedCover = _resolveCoverUrl(mediaRepository, course.coverUrl);
+    final coverProvider = CourseCoverAssets.resolve(
+      assets: assets,
+      slug: slug,
+      coverUrl: resolvedCover,
+    );
+    final imageProvider = coverProvider ?? AppImages.logo;
+    final isFallbackLogo = coverProvider == null;
+
+    final radius = BorderRadius.circular(18);
+    final priceLabel = _formatPrice(course.priceCents);
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: InkWell(
+        onTap: slug.isEmpty
+            ? null
+            : () => context.pushNamed(
+                AppRoute.course,
+                pathParameters: {'slug': slug},
+              ),
+        borderRadius: radius,
+        child: GlassCard(
+          padding: EdgeInsets.zero,
+          opacity: 0.18,
+          sigmaX: 12,
+          sigmaY: 12,
+          borderRadius: radius,
+          borderColor: Colors.white.withValues(alpha: 0.16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (SafeMedia.enabled) {
+                        SafeMedia.markThumbnails();
+                      }
+                      final cacheWidth = SafeMedia.cacheDimension(
+                        context,
+                        constraints.maxWidth,
+                        max: 1200,
+                      );
+                      final cacheHeight = SafeMedia.cacheDimension(
+                        context,
+                        constraints.maxHeight,
+                        max: 900,
+                      );
+                      return DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
+                          child: Image(
+                            image: SafeMedia.resizedProvider(
+                              imageProvider,
+                              cacheWidth: cacheWidth,
+                              cacheHeight: cacheHeight,
+                            ),
+                            fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
+                            filterQuality: SafeMedia.filterQuality(
+                              full: FilterQuality.high,
+                            ),
+                            gaplessPlayback: true,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      course.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: DesignTokens.bodyTextColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if ((course.description ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      CourseDescriptionText(
+                        course.description!.trim(),
+                        baseStyle: theme.textTheme.bodyMedium,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (priceLabel != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        priceLabel,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: DesignTokens.bodyTextColor.withValues(
+                            alpha: 0.72,
+                          ),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActAveliProSection extends StatelessWidget {
+  const _ActAveliProSection({required this.isEnabled});
+
+  final bool isEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final disabledHint = 'Tillgängligt när du har slutfört ett tredje steg';
+
+    return GlassCard(
+      opacity: 0.1,
+      sigmaX: 10,
+      sigmaY: 10,
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Stack(
+        children: [
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Opacity(
+              opacity: 0.18,
+              child: Image(
+                image: AppImages.logo,
+                width: 64,
+                height: 64,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeading(
+                'När du är redo att bära det vidare',
+                baseStyle: theme.textTheme.titleLarge,
+                fontWeight: FontWeight.w800,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'För vissa stannar resan vid personlig fördjupning.\n'
+                'För andra växer en vilja att dela, guida och stötta.\n\n'
+                'När du har gått färdigt ett tredje steg i en kurs\n'
+                'kan du ansöka om att bli Aveli-Pro\n'
+                'och börja dela den kunskap du kultiverat – på dina villkor.',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: isEnabled
+                    ? () => _showAveliProDialog(context)
+                    : null,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  disabledBackgroundColor: const Color(0xFFB9B9B9),
+                  disabledForegroundColor: const Color(0xFF4F4F4F),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'Ansök om Aveli-Pro',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (!isEnabled) ...[
+                const SizedBox(height: 10),
+                MetaText(
+                  disabledHint,
+                  baseStyle: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAveliProDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Aveli-Pro'),
+        content: const Text(
+          'Tack.\n\n'
+          'Vi öppnar ansökningsflödet stegvis. '
+          'Du kan redan nu fortsätta din resa i kurserna, '
+          'så återkommer vi med nästa steg när det är dags.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Stäng'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+({
+  List<CourseSummary> step1,
+  List<CourseSummary> step2,
+  List<CourseSummary> step3,
+})
+_groupJourneyCourses(List<CourseSummary> courses) {
+  final step1 = <CourseSummary>[];
+  final step2 = <CourseSummary>[];
+  final step3 = <CourseSummary>[];
+
+  for (final course in courses) {
+    final step = _resolveJourneyStep(course);
+    switch (step) {
+      case 1:
+        step1.add(course);
+      case 2:
+        step2.add(course);
+      case 3:
+        step3.add(course);
+      default:
+        step1.add(course);
+    }
+  }
+
+  return (
+    step1: List.unmodifiable(step1),
+    step2: List.unmodifiable(step2),
+    step3: List.unmodifiable(step3),
+  );
+}
+
+int? _resolveJourneyStep(CourseSummary course) {
+  final branch = course.branch?.trim() ?? '';
+  final slug = course.slug?.trim() ?? '';
+  return _extractStepNumber(branch) ?? _extractStepNumber(slug);
+}
+
+int? _extractStepNumber(String value) {
+  final normalized = value.toLowerCase();
+  final stepMatch = RegExp(r'(steg|step)\\s*([1-3])').firstMatch(normalized);
+  if (stepMatch != null) {
+    return int.tryParse(stepMatch.group(2) ?? '');
+  }
+  final trimmed = normalized.trim();
+  if (trimmed == '1' || trimmed == '2' || trimmed == '3') {
+    return int.tryParse(trimmed);
+  }
+  if (trimmed == 'iii') return 3;
+  if (trimmed == 'ii') return 2;
+  if (trimmed == 'i') return 1;
+  return null;
+}
+
+String? _resolveCoverUrl(MediaRepository repository, String? path) {
+  if (path == null || path.trim().isEmpty) return null;
+  try {
+    return repository.resolveUrl(path);
+  } catch (_) {
+    return path;
+  }
+}
+
+String? _formatPrice(int? priceCents) {
+  if (priceCents == null) return null;
+  final digits = priceCents % 100 == 0 ? 0 : 2;
+  final formatter = NumberFormat.currency(
+    locale: 'sv_SE',
+    symbol: 'kr',
+    decimalDigits: digits,
+  );
+  return 'Pris: ${formatter.format(priceCents / 100)}';
 }

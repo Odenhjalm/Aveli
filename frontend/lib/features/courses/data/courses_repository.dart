@@ -445,6 +445,7 @@ class CourseSummary {
     this.coverUrl,
     this.coverMediaId,
     this.videoUrl,
+    this.branch,
     this.isFreeIntro = false,
     this.isPublished = false,
     this.priceCents,
@@ -457,6 +458,7 @@ class CourseSummary {
   final String? coverUrl;
   final String? coverMediaId;
   final String? videoUrl;
+  final String? branch;
   final bool isFreeIntro;
   final bool isPublished;
   final int? priceCents;
@@ -469,10 +471,12 @@ class CourseSummary {
     coverUrl: json['cover_url'] as String?,
     coverMediaId: json['cover_media_id'] as String?,
     videoUrl: json['video_url'] as String?,
+    branch: json['branch'] as String?,
     isFreeIntro: json['is_free_intro'] == true,
     isPublished: json['is_published'] == true,
     // Prefer the newer price_amount_cents field when present; fallback to price_cents.
-    priceCents: _asInt(json['price_cents']) ?? _asInt(json['price_amount_cents']),
+    priceCents:
+        _asInt(json['price_cents']) ?? _asInt(json['price_amount_cents']),
   );
 
   String? get resolvedCoverUrl => coverUrl;

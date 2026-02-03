@@ -9,10 +9,7 @@ void main() {
       expect(resolveRouteAccessLevel('/'), RouteAccessLevel.public);
       expect(resolveRouteAccessLevel('/boot'), RouteAccessLevel.public);
       expect(resolveRouteAccessLevel('/landing'), RouteAccessLevel.public);
-      expect(
-        resolveRouteAccessLevel('/courses/catalog'),
-        RouteAccessLevel.public,
-      );
+      expect(resolveRouteAccessLevel('/courses'), RouteAccessLevel.public);
       expect(resolveRouteAccessLevel('/privacy'), RouteAccessLevel.public);
       expect(resolveRouteAccessLevel('/terms'), RouteAccessLevel.public);
     });
