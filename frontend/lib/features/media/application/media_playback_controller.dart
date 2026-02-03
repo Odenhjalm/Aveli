@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 enum MediaPlaybackType { audio, video }
@@ -12,6 +13,7 @@ class MediaPlaybackState {
     this.durationHint,
     this.isLoading = false,
     this.errorMessage,
+    this.sourceRevision = 0,
   });
 
   final String? currentMediaId;
@@ -22,6 +24,7 @@ class MediaPlaybackState {
   final Duration? durationHint;
   final bool isLoading;
   final String? errorMessage;
+  final int sourceRevision;
 
   bool get hasActiveMedia =>
       isPlaying && (currentMediaId ?? '').trim().isNotEmpty;
@@ -35,6 +38,7 @@ class MediaPlaybackState {
     Duration? durationHint,
     bool? isLoading,
     String? errorMessage,
+    int? sourceRevision,
   }) {
     return MediaPlaybackState(
       currentMediaId: currentMediaId ?? this.currentMediaId,
@@ -45,6 +49,7 @@ class MediaPlaybackState {
       durationHint: durationHint ?? this.durationHint,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage,
+      sourceRevision: sourceRevision ?? this.sourceRevision,
     );
   }
 }
@@ -79,16 +84,80 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
     final trimmedId = mediaId.trim();
     if (trimmedId.isEmpty) return;
 
-    // Safety: metadata changes (e.g. renaming a title) must never interrupt
-    // playback or force a re-init when the media identity is unchanged.
-    if (state.isPlaying && state.currentMediaId == trimmedId) {
-      if (state.isLoading) {
-        stop();
+    final trimmedUrl = url?.trim();
+    final hasUrl = (trimmedUrl ?? '').isNotEmpty;
+    final trimmedTitle = title?.trim();
+    final nextTitle = (trimmedTitle ?? '').isNotEmpty ? trimmedTitle : null;
+    final isSameMedia = state.currentMediaId == trimmedId;
+
+    // Separate concerns:
+    // - media identity: currentMediaId
+    // - metadata: title/durationHint
+    // - playback source: url/urlLoader
+    //
+    // IMPORTANT: A feed reload may re-apply the same media id with a new URL.
+    // Never skip source binding just because the id is unchanged.
+    if (isSameMedia) {
+      if (hasUrl) {
+        state = state.copyWith(
+          currentMediaId: trimmedId,
+          isPlaying: true,
+          mediaType: mediaType,
+          url: trimmedUrl,
+          title: nextTitle,
+          durationHint: durationHint,
+          isLoading: false,
+          sourceRevision: state.sourceRevision + 1,
+        );
         return;
       }
-      final trimmedTitle = title?.trim();
-      if ((trimmedTitle ?? '').isNotEmpty || durationHint != null) {
-        state = state.copyWith(title: trimmedTitle, durationHint: durationHint);
+
+      if (urlLoader != null) {
+        final token = ++_requestToken;
+        state = state.copyWith(
+          currentMediaId: trimmedId,
+          isPlaying: true,
+          mediaType: mediaType,
+          title: nextTitle,
+          durationHint: durationHint,
+          isLoading: true,
+        );
+
+        try {
+          final loadedUrl = (await urlLoader()).trim();
+          if (_disposed || token != _requestToken) return;
+          if (loadedUrl.isEmpty) {
+            throw StateError('Empty playback URL');
+          }
+          state = state.copyWith(
+            url: loadedUrl,
+            isLoading: false,
+            sourceRevision: state.sourceRevision + 1,
+          );
+        } catch (error) {
+          if (_disposed || token != _requestToken) return;
+          if (kDebugMode) {
+            debugPrint(
+              '[media_playback] failed to refresh source for mediaId=$trimmedId: $error',
+            );
+          }
+          state = state.copyWith(
+            isLoading: false,
+            errorMessage: error.toString(),
+          );
+          return;
+        }
+        return;
+      }
+
+      if (nextTitle != null ||
+          durationHint != null ||
+          state.mediaType != mediaType) {
+        state = state.copyWith(
+          mediaType: mediaType,
+          title: nextTitle,
+          durationHint: durationHint,
+        );
       }
       return;
     }
@@ -99,16 +168,22 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
       currentMediaId: trimmedId,
       isPlaying: true,
       mediaType: mediaType,
-      url: url?.trim(),
-      title: title?.trim(),
+      url: hasUrl ? trimmedUrl : null,
+      title: trimmedTitle,
       durationHint: durationHint,
-      isLoading: (url ?? '').trim().isEmpty,
+      isLoading: !hasUrl,
       errorMessage: null,
+      sourceRevision: state.sourceRevision + 1,
     );
 
     if (!state.isLoading) return;
 
     if (urlLoader == null) {
+      if (kDebugMode) {
+        debugPrint(
+          '[media_playback] refusing to play mediaId=$trimmedId: empty url and no urlLoader',
+        );
+      }
       stop();
       return;
     }
@@ -119,7 +194,11 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
       if (loadedUrl.isEmpty) {
         throw StateError('Empty playback URL');
       }
-      state = state.copyWith(url: loadedUrl, isLoading: false);
+      state = state.copyWith(
+        url: loadedUrl,
+        isLoading: false,
+        sourceRevision: state.sourceRevision + 1,
+      );
     } catch (error) {
       if (_disposed || token != _requestToken) return;
       stop();

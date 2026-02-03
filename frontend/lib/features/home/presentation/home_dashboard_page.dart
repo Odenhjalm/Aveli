@@ -347,11 +347,58 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   @override
   void didUpdateWidget(covariant _HomeAudioList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.items, widget.items)) {
+      _rebindActiveSourceFromFeed(widget.items);
+    }
     if (_selectedId == null) return;
     final stillExists = widget.items.any((item) => item.id == _selectedId);
     if (!stillExists) {
       _selectedId = null;
     }
+  }
+
+  void _rebindActiveSourceFromFeed(List<HomeAudioItem> items) {
+    final playback = ref.read(mediaPlaybackControllerProvider);
+    final activeId = (playback.currentMediaId ?? '').trim();
+    if (activeId.isEmpty || !playback.isPlaying) return;
+
+    HomeAudioItem? activeItem;
+    for (final item in items) {
+      if (item.id == activeId) {
+        activeItem = item;
+        break;
+      }
+    }
+    if (activeItem == null) return;
+
+    final rawUrl = (activeItem.preferredUrl ?? '').trim();
+    if (rawUrl.isEmpty) return;
+
+    String resolved = rawUrl;
+    final repo = ref.read(mediaRepositoryProvider);
+    try {
+      resolved = repo.resolveUrl(rawUrl);
+    } catch (_) {
+      // Keep original URL when it's already absolute (e.g. signed storage URL).
+    }
+
+    final durationHint = (activeItem.durationSeconds ?? 0) > 0
+        ? Duration(seconds: activeItem.durationSeconds!)
+        : null;
+
+    final mediaType = activeItem.kind == 'video'
+        ? MediaPlaybackType.video
+        : MediaPlaybackType.audio;
+
+    ref
+        .read(mediaPlaybackControllerProvider.notifier)
+        .play(
+          mediaId: activeId,
+          mediaType: mediaType,
+          url: resolved,
+          title: activeItem.displayTitle,
+          durationHint: durationHint,
+        );
   }
 
   @override
@@ -479,6 +526,9 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             const SizedBox(height: 12),
             if (mediaType == MediaPlaybackType.audio)
               InlineAudioPlayer(
+                key: ValueKey(
+                  '${playback.currentMediaId}:${playback.sourceRevision}',
+                ),
                 url: playback.url!,
                 title: null,
                 durationHint: durationHint,
