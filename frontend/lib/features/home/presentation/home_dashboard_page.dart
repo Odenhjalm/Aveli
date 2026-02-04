@@ -15,6 +15,7 @@ import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -148,6 +149,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           ref.invalidate(homeFeedProvider);
           ref.invalidate(homeServicesProvider);
           ref.invalidate(landing.popularCoursesProvider);
+          ref.invalidate(coursesProvider);
           await ref.read(authControllerProvider.notifier).loadSession();
         },
         child: LayoutBuilder(

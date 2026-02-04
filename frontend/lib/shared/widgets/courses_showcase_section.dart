@@ -114,30 +114,28 @@ class CoursesShowcaseSection extends ConsumerWidget {
         ? ref.watch(landing.myStudioCoursesProvider)
         : const AsyncData(landing.LandingSectionState(items: []));
 
-    final fallbackCoursesAsync = ref.watch(coursesProvider);
-
-    final loading = popularAsync.isLoading || myStudioAsync.isLoading;
+    final allCoursesAsync = ref.watch(coursesProvider);
+    final hasAllCoursesValue = allCoursesAsync.hasValue;
+    final isInitialAllCoursesLoad =
+        allCoursesAsync.isLoading && !hasAllCoursesValue;
+    final isWaitingForPopularFallback =
+        !hasAllCoursesValue &&
+        allCoursesAsync.hasError &&
+        (popularAsync.isLoading || myStudioAsync.isLoading);
+    final loading = isInitialAllCoursesLoad || isWaitingForPopularFallback;
     final popular =
         popularAsync.valueOrNull?.items ?? const <Map<String, dynamic>>[];
     final myStudio =
         myStudioAsync.valueOrNull?.items ?? const <Map<String, dynamic>>[];
 
-    var items = _mergePopularWithMyCourses(popular, myStudio, mediaRepository);
-
-    if (items.isEmpty) {
-      final fallback =
-          fallbackCoursesAsync.valueOrNull ?? const <CourseSummary>[];
-      if (fallback.isNotEmpty) {
-        items = _normalizeCourseCovers(
-          _mapCourseSummaries(fallback),
-          mediaRepository,
-        );
-      }
-    }
-
-    final visible = desktop == null
-        ? items
-        : _ensureIntroFirstPage(items, desktop!.maxItems);
+    final allCourses = allCoursesAsync.valueOrNull ?? const <CourseSummary>[];
+    final items = hasAllCoursesValue
+        ? _normalizeCourseCovers(
+            _mapCourseSummaries(allCourses),
+            mediaRepository,
+          )
+        : _mergePopularWithMyCourses(popular, myStudio, mediaRepository);
+    final visible = items;
 
     final sectionTextColor = tileTextColor;
     final cardsVisible = !loading && visible.isNotEmpty;
@@ -313,32 +311,6 @@ class CoursesShowcaseSection extends ConsumerWidget {
     return _normalizeCourseCovers(combined, mediaRepository);
   }
 
-  static List<Map<String, dynamic>> _ensureIntroFirstPage(
-    List<Map<String, dynamic>> items,
-    int pageSize,
-  ) {
-    if (pageSize <= 0 || items.isEmpty) return items;
-
-    bool isIntro(Map<String, dynamic> map) => map['is_free_intro'] == true;
-
-    final firstPage = items.take(pageSize);
-    final firstPageIsIntroOnly = firstPage.every(isIntro);
-    if (firstPageIsIntroOnly) return items;
-
-    final intro = <Map<String, dynamic>>[];
-    final rest = <Map<String, dynamic>>[];
-    for (final item in items) {
-      if (isIntro(item)) {
-        intro.add(item);
-      } else {
-        rest.add(item);
-      }
-    }
-
-    final introFirst = intro.take(pageSize).toList(growable: false);
-    return [...introFirst, ...intro.skip(introFirst.length), ...rest];
-  }
-
   static List<Map<String, dynamic>> _normalizeCourseCovers(
     List<Map<String, dynamic>> courses,
     MediaRepository mediaRepository,
@@ -359,9 +331,9 @@ class CoursesShowcaseSection extends ConsumerWidget {
     List<CourseSummary> courses,
   ) {
     return courses
-        .where((course) => (course.slug ?? '').isNotEmpty)
         .map((course) {
           return {
+            'id': course.id,
             'title': course.title,
             'description': course.description ?? '',
             'slug': course.slug ?? '',
@@ -485,6 +457,7 @@ class _HorizontalPagedCourseGridState
     extends State<_HorizontalPagedCourseGrid> {
   late final ScrollController _scrollController;
   bool _showHint = false;
+  static const String _introFlagKey = 'is_free_intro';
 
   @override
   void initState() {
@@ -539,10 +512,49 @@ class _HorizontalPagedCourseGridState
     );
   }
 
+  List<Map<String, dynamic>?> _buildSlots() {
+    final pageSize = widget.pageSize;
+    final items = widget.items;
+    if (pageSize <= 0 || items.isEmpty) {
+      return items.cast<Map<String, dynamic>?>();
+    }
+
+    final introFirst = <Map<String, dynamic>>[];
+    for (final item in items) {
+      if (item[_introFlagKey] == true) {
+        introFirst.add(item);
+        if (introFirst.length >= pageSize) break;
+      }
+    }
+
+    if (introFirst.isEmpty) {
+      return items.cast<Map<String, dynamic>?>();
+    }
+
+    final introSet = introFirst.toSet();
+    final remaining = <Map<String, dynamic>>[];
+    for (final item in items) {
+      if (introSet.contains(item)) continue;
+      remaining.add(item);
+    }
+
+    final slots = List<Map<String, dynamic>?>.filled(
+      pageSize,
+      null,
+      growable: true,
+    );
+    for (var i = 0; i < introFirst.length; i++) {
+      slots[i] = introFirst[i];
+    }
+    slots.addAll(remaining);
+    return slots;
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = widget.items;
-    final pages = (items.length / widget.pageSize).ceil().clamp(1, 9999);
+    final slots = _buildSlots();
+    final pages = (slots.length / widget.pageSize).ceil().clamp(1, 9999);
     if (pages <= 1) {
       return GridView.builder(
         shrinkWrap: true,
@@ -593,11 +605,13 @@ class _HorizontalPagedCourseGridState
                         gridDelegate: widget.gridDelegate,
                         itemBuilder: (context, i) {
                           final globalIndex = pageIndex * widget.pageSize + i;
-                          if (globalIndex >= items.length) {
+                          if (globalIndex >= slots.length) {
                             return const SizedBox.shrink();
                           }
+                          final course = slots[globalIndex];
+                          if (course == null) return const SizedBox.shrink();
                           return _CourseTileGlass(
-                            course: items[globalIndex],
+                            course: course,
                             index: globalIndex,
                             assets: widget.assets,
                             ctaGradient: widget.ctaGradient,

@@ -118,9 +118,7 @@ final myStudioCoursesProvider = FutureProvider<LandingSectionState>((
   try {
     final repo = ref.read(studio.studioRepositoryProvider);
     final courses = await repo.myCourses();
-    return _landingSuccessState(
-      courses.length > 3 ? courses.sublist(0, 3) : courses,
-    );
+    return _landingSuccessState(courses);
   } catch (_) {
     return _landingErrorState(message: 'Kunde inte hämta dina studio-kurser.');
   }
