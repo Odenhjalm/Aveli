@@ -11,18 +11,18 @@ async def list_home_player_uploads(teacher_id: str) -> list[dict[str, Any]]:
           hpu.id,
           hpu.teacher_id,
           hpu.media_id,
+          hpu.media_asset_id,
           hpu.title,
           hpu.kind,
           hpu.active,
           hpu.created_at,
           hpu.updated_at,
-          mo.storage_path,
-          mo.storage_bucket,
-          mo.content_type,
-          mo.byte_size,
-          mo.original_name
+          coalesce(mo.content_type, ma.original_content_type) AS content_type,
+          coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
+          coalesce(mo.original_name, ma.original_filename) AS original_name
         FROM app.home_player_uploads hpu
-        JOIN app.media_objects mo ON mo.id = hpu.media_id
+        LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
+        LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
         WHERE hpu.teacher_id = %s
         ORDER BY hpu.created_at DESC
     """
@@ -38,18 +38,18 @@ async def get_home_player_upload(*, upload_id: str, teacher_id: str) -> Optional
           hpu.id,
           hpu.teacher_id,
           hpu.media_id,
+          hpu.media_asset_id,
           hpu.title,
           hpu.kind,
           hpu.active,
           hpu.created_at,
           hpu.updated_at,
-          mo.storage_path,
-          mo.storage_bucket,
-          mo.content_type,
-          mo.byte_size,
-          mo.original_name
+          coalesce(mo.content_type, ma.original_content_type) AS content_type,
+          coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
+          coalesce(mo.original_name, ma.original_filename) AS original_name
         FROM app.home_player_uploads hpu
-        JOIN app.media_objects mo ON mo.id = hpu.media_id
+        LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
+        LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
         WHERE hpu.id = %s AND hpu.teacher_id = %s
         LIMIT 1
     """
@@ -62,7 +62,8 @@ async def get_home_player_upload(*, upload_id: str, teacher_id: str) -> Optional
 async def create_home_player_upload(
     *,
     teacher_id: str,
-    media_id: str,
+    media_id: str | None,
+    media_asset_id: str | None,
     title: str,
     kind: str,
     active: bool,
@@ -71,15 +72,19 @@ async def create_home_player_upload(
         INSERT INTO app.home_player_uploads (
           teacher_id,
           media_id,
+          media_asset_id,
           title,
           kind,
           active
         )
-        VALUES (%s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING id
     """
     async with get_conn() as cur:
-        await cur.execute(query, (teacher_id, media_id, title, kind, active))
+        await cur.execute(
+            query,
+            (teacher_id, media_id, media_asset_id, title, kind, active),
+        )
         row = await cur.fetchone()
     if not row:
         return None
@@ -319,6 +324,28 @@ async def get_active_home_upload_by_media_id(media_id: str) -> Optional[dict[str
         JOIN app.media_objects mo ON mo.id = hpu.media_id
         WHERE hpu.active = true
           AND hpu.media_id = %s
+        LIMIT 1
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (media_id,))
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_active_home_upload_by_media_asset_id(media_id: str) -> Optional[dict[str, Any]]:
+    query = """
+        SELECT
+          hpu.teacher_id,
+          hpu.active,
+          ma.id AS media_asset_id,
+          ma.storage_bucket,
+          ma.streaming_object_path,
+          ma.streaming_storage_bucket,
+          ma.state
+        FROM app.home_player_uploads hpu
+        JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
+        WHERE hpu.active = true
+          AND hpu.media_asset_id = %s
         LIMIT 1
     """
     async with get_conn() as cur:

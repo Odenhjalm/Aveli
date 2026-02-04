@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -44,12 +46,44 @@ class HomeDashboardPage extends ConsumerStatefulWidget {
 class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   final Set<String> _loadingServiceIds = <String>{};
   bool _redirecting = false;
+  Timer? _homeAudioPoller;
+
+  @override
+  void dispose() {
+    _homeAudioPoller?.cancel();
+    super.dispose();
+  }
+
+  void _syncHomeAudioPolling(AsyncValue<List<HomeAudioItem>> audioAsync) {
+    final items = audioAsync.valueOrNull;
+    final shouldPoll =
+        items?.any((item) {
+          final mediaAssetId = (item.mediaAssetId ?? '').trim();
+          if (mediaAssetId.isEmpty) return false;
+          final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
+          return state != 'ready';
+        }) ??
+        false;
+
+    if (shouldPoll) {
+      _homeAudioPoller ??= Timer.periodic(const Duration(seconds: 5), (_) {
+        if (!mounted) return;
+        ref.invalidate(homeAudioProvider);
+      });
+      return;
+    }
+
+    _homeAudioPoller?.cancel();
+    _homeAudioPoller = null;
+  }
 
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final profile = authState.profile;
     if (profile == null) {
+      _homeAudioPoller?.cancel();
+      _homeAudioPoller = null;
       return const AuthBootPage();
     }
 
@@ -61,6 +95,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final seminarsAsync = ref.watch(publicSeminarsProvider);
     final certificatesAsync = ref.watch(myCertificatesProvider);
     final homeAudioAsync = ref.watch(homeAudioProvider);
+    _syncHomeAudioPolling(homeAudioAsync);
     final homeAudioSection = _HomeAudioSection(audioAsync: homeAudioAsync);
 
     if (!_redirecting &&
@@ -311,6 +346,16 @@ class _HomeAudioSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cached = audioAsync.valueOrNull;
+    if (cached != null) {
+      if (cached.isEmpty) {
+        return const _NowPlayingShell(
+          child: MetaText('Inga ljudspår tillgängliga ännu.'),
+        );
+      }
+      return _HomeAudioList(items: cached);
+    }
+
     return audioAsync.when(
       loading: () => const _NowPlayingShell(
         child: Center(child: CircularProgressIndicator()),

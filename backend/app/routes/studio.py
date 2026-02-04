@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 
 from .. import models, repositories, schemas
@@ -14,8 +15,10 @@ from ..config import settings
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..services import courses_service, livekit as livekit_service, storage_service
+from ..services import media_cleanup
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 from ..utils import media_signer
+from ..utils import media_paths
 from ..utils.profile_media import (
     lesson_media_source_from_row,
     profile_media_item_from_row,
@@ -444,12 +447,110 @@ async def studio_create_home_player_upload(
     if not normalized_title:
         raise HTTPException(status_code=422, detail="title is required")
 
-    content_type = (
-        file.content_type
-        or mimetypes.guess_type(file.filename or "")[0]
-        or "application/octet-stream"
-    )
+    filename = (file.filename or "").strip() or "media"
+    content_type = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
     normalized_type = content_type.lower()
+    normalized_ext = Path(filename).suffix.lower().lstrip(".")
+    is_wav = normalized_ext == "wav" or normalized_type in {
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
+        "audio/vnd.wave",
+    }
+
+    if is_wav:
+        if not storage_service.storage_service.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage signing unavailable",
+            )
+
+        resource_prefix = Path("home-player") / teacher_id
+        object_path = media_paths.build_audio_source_object_path(
+            resource_prefix,
+            filename,
+        )
+
+        try:
+            upload = await storage_service.storage_service.create_upload_url(
+                object_path,
+                content_type="audio/wav",
+                upsert=False,
+                cache_seconds=settings.media_public_cache_seconds,
+            )
+        except storage_service.StorageServiceError as exc:
+            logger.warning("Home WAV upload signing failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage signing unavailable",
+            ) from exc
+
+        size_bytes = 0
+
+        async def _stream_upload():
+            nonlocal size_bytes
+            max_bytes = int(settings.lesson_media_max_bytes)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size_bytes += len(chunk)
+                if size_bytes > max_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="File too large",
+                    )
+                yield chunk
+
+        timeout = httpx.Timeout(10.0, read=None)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.put(
+                upload.url,
+                headers=dict(upload.headers),
+                content=_stream_upload(),
+            )
+        if response.status_code >= 400:
+            logger.warning(
+                "Home WAV upload failed status=%s body=%s",
+                response.status_code,
+                response.text[:300],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Upload failed",
+            )
+
+        media_asset = await repositories.create_media_asset(
+            owner_id=teacher_id,
+            course_id=None,
+            lesson_id=None,
+            media_type="audio",
+            purpose="home_player_audio",
+            ingest_format="wav",
+            original_object_path=upload.path,
+            original_content_type="audio/wav",
+            original_filename=filename,
+            original_size_bytes=size_bytes,
+            storage_bucket=storage_service.storage_service.bucket,
+            state="uploaded",
+        )
+        if not media_asset:
+            await storage_service.storage_service.delete_object(upload.path)
+            raise HTTPException(status_code=500, detail="Failed to persist media")
+
+        created = await repositories.create_home_player_upload(
+            teacher_id=teacher_id,
+            media_id=None,
+            media_asset_id=str(media_asset["id"]),
+            title=normalized_title,
+            kind="audio",
+            active=bool(active),
+        )
+        if not created:
+            await media_cleanup.delete_media_asset_and_objects(media_id=str(media_asset["id"]))
+            raise HTTPException(status_code=400, detail="Failed to create upload")
+        return schemas.HomePlayerUploadItem(**created)
+
     if not (normalized_type.startswith("audio/") or normalized_type.startswith("video/")):
         raise HTTPException(status_code=415, detail="Unsupported media type")
     kind = "video" if normalized_type.startswith("video/") else "audio"
@@ -479,7 +580,7 @@ async def studio_create_home_player_upload(
         content_type=final_content_type,
         byte_size=write_result.size,
         checksum=write_result.checksum,
-        original_name=file.filename,
+        original_name=filename,
     )
     if not media_object:
         raise HTTPException(status_code=500, detail="Failed to persist media")
@@ -487,6 +588,7 @@ async def studio_create_home_player_upload(
     created = await repositories.create_home_player_upload(
         teacher_id=teacher_id,
         media_id=str(media_object["id"]),
+        media_asset_id=None,
         title=normalized_title,
         kind=kind,
         active=bool(active),
@@ -533,6 +635,9 @@ async def studio_delete_home_player_upload(upload_id: UUID, current: TeacherUser
     media_id = deleted.get("media_id")
     if media_id:
         await models.cleanup_media_object(str(media_id))
+    media_asset_id = deleted.get("media_asset_id")
+    if media_asset_id:
+        await media_cleanup.delete_media_asset_and_objects(media_id=str(media_asset_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

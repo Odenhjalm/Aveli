@@ -417,7 +417,8 @@ class TeacherProfileMediaPublicResponse(BaseModel):
 class HomePlayerUploadItem(BaseModel):
     id: UUID
     teacher_id: UUID
-    media_id: UUID
+    media_id: Optional[UUID] = None
+    media_asset_id: Optional[UUID] = None
     title: str
     kind: str
     active: bool

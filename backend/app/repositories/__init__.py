@@ -78,6 +78,7 @@ from .home_player_library import (
     update_home_player_course_link,
     delete_home_player_course_link,
     get_active_home_upload_by_media_id,
+    get_active_home_upload_by_media_asset_id,
 )
 from .subscriptions import get_latest_subscription, get_membership
 from .memberships import upsert_membership_record
@@ -190,6 +191,7 @@ __all__ = [
     "update_home_player_course_link",
     "delete_home_player_course_link",
     "get_active_home_upload_by_media_id",
+    "get_active_home_upload_by_media_asset_id",
     # Subscriptions
     "get_latest_subscription",
     "get_membership",

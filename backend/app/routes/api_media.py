@@ -7,14 +7,16 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
 
-from .. import models, schemas
+from .. import models, repositories, schemas
 from ..auth import CurrentUser
 from ..config import settings
+from ..db import get_conn
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
 from ..services import media_cleanup
 from ..services import storage_service
+from ..utils import media_paths
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +29,6 @@ _COVER_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 def _normalize_mime(value: str) -> str:
     return (value or "").strip().lower()
-
-
-def _build_audio_source_object_path(
-    resource_prefix: Path,
-    filename: str,
-) -> str:
-    safe_name = Path(filename).name.strip()
-    if not safe_name:
-        safe_name = "media"
-    token = uuid4().hex
-    path = Path("media") / "source" / "audio" / resource_prefix / f"{token}_{safe_name}"
-    return path.as_posix()
 
 
 def _build_cover_source_object_path(course_id: str, filename: str) -> str:
@@ -142,6 +132,28 @@ async def _authorize_lesson_playback(user_id: str, row: dict) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
+async def _authorize_home_player_upload_playback(user_id: str, teacher_id: str) -> None:
+    if user_id == teacher_id:
+        return
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT 1
+            FROM app.enrollments e
+            JOIN app.courses c ON c.id = e.course_id
+            WHERE e.user_id = %s
+              AND e.status = 'active'
+              AND c.is_published = true
+              AND c.created_by = %s
+            LIMIT 1
+            """,
+            (user_id, teacher_id),
+        )
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
 @router.post("/upload-url", response_model=schemas.MediaUploadUrlResponse)
 async def request_upload_url(
     payload: schemas.MediaUploadUrlRequest,
@@ -190,7 +202,7 @@ async def request_upload_url(
             detail="course_id or lesson_id is required",
         )
 
-    object_path = _build_audio_source_object_path(resource_prefix, payload.filename)
+    object_path = media_paths.build_audio_source_object_path(resource_prefix, payload.filename)
     try:
         upload = await storage_service.storage_service.create_upload_url(
             object_path,
@@ -540,12 +552,38 @@ async def request_playback_url(
     media = await media_assets_repo.get_media_asset_access(str(payload.media_id))
     if not media:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+    if (media.get("media_type") or "").lower() != "audio":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only audio playback is supported",
+        )
     if media.get("state") != "ready":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Media is not ready",
         )
-    await _authorize_lesson_playback(user_id, media)
+
+    purpose = (media.get("purpose") or "").lower()
+    if purpose == "lesson_audio":
+        await _authorize_lesson_playback(user_id, media)
+    elif purpose == "home_player_audio":
+        upload = await repositories.get_active_home_upload_by_media_asset_id(
+            str(payload.media_id)
+        )
+        if not upload:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+        teacher_id = upload.get("teacher_id")
+        if not teacher_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Media missing owner",
+            )
+        await _authorize_home_player_upload_playback(
+            user_id,
+            str(teacher_id),
+        )
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     storage_path = media.get("streaming_object_path")
     if not storage_path:

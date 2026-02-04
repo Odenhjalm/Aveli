@@ -412,3 +412,50 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
         "media_assets_course_cover_deleted": deleted_cover_assets,
         "media_objects_deleted": deleted_media_objects,
     }
+
+
+async def delete_media_asset_and_objects(*, media_id: str) -> bool:
+    """Delete a media asset and its storage objects.
+
+    No-op when the media asset is still referenced by app.lesson_media, app.courses,
+    or app.home_player_uploads.
+    """
+
+    if not media_id:
+        return False
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                DELETE FROM app.media_assets ma
+                WHERE ma.id = %s
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.lesson_media lm WHERE lm.media_asset_id = ma.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.home_player_uploads hpu WHERE hpu.media_asset_id = ma.id
+                  )
+                RETURNING
+                  ma.id,
+                  ma.media_type,
+                  ma.purpose,
+                  ma.original_object_path,
+                  ma.storage_bucket,
+                  ma.streaming_object_path,
+                  ma.streaming_storage_bucket
+                """,
+                (media_id,),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+
+    if not row:
+        return False
+
+    asset = dict(row)
+    await _delete_storage_targets(_asset_delete_targets(asset))
+    return True

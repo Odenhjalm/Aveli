@@ -1142,29 +1142,41 @@ async def list_home_audio_media(
           UNION ALL
 
           SELECT
-            mo.id AS id,
-            mo.id AS lesson_id,
+            coalesce(ma.id, mo.id) AS id,
+            coalesce(ma.id, mo.id) AS lesson_id,
             hpu.title AS lesson_title,
-            mo.id AS course_id,
+            coalesce(ma.id, mo.id) AS course_id,
             ''::text AS course_title,
             NULL::text AS course_slug,
             hpu.kind AS kind,
-            mo.storage_path,
-            mo.storage_bucket,
+            CASE
+              WHEN ma.id IS NOT NULL THEN
+                CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
+              ELSE mo.storage_path
+            END AS storage_path,
+            CASE
+              WHEN ma.id IS NOT NULL THEN
+                CASE WHEN ma.state = 'ready' THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket) ELSE NULL END
+              ELSE mo.storage_bucket
+            END AS storage_bucket,
             mo.id AS media_id,
-            NULL::uuid AS media_asset_id,
-            NULL::int AS duration_seconds,
+            ma.id AS media_asset_id,
+            ma.duration_seconds AS duration_seconds,
             hpu.created_at AS created_at,
-            mo.content_type,
-            mo.byte_size,
-            mo.original_name,
+            coalesce(
+              mo.content_type,
+              CASE WHEN (ma.state = 'ready' and hpu.kind = 'audio') THEN 'audio/mpeg' ELSE NULL END
+            ) AS content_type,
+            coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
+            coalesce(mo.original_name, ma.original_filename) AS original_name,
             NULL::boolean AS is_intro,
             NULL::boolean AS is_free_intro,
-            NULL::text AS media_state,
-            NULL::text AS streaming_format,
-            NULL::text AS codec
+            ma.state AS media_state,
+            ma.streaming_format AS streaming_format,
+            ma.codec AS codec
           FROM app.home_player_uploads hpu
-          JOIN app.media_objects mo ON mo.id = hpu.media_id
+          LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
+          LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
           JOIN app.profiles prof ON prof.user_id = hpu.teacher_id
           WHERE hpu.active = true
             AND (hpu.kind = 'audio' OR hpu.kind = 'video')
