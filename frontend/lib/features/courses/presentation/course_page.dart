@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
@@ -16,6 +15,7 @@ import 'package:aveli/features/paywall/presentation/paywall_gate.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/paywall/application/pricing_providers.dart';
 import 'package:aveli/features/paywall/data/course_pricing_api.dart';
+import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -60,7 +60,9 @@ class _CoursePageState extends ConsumerState<CoursePage> {
             ? null
             : () {
                 try {
-                  return ref.read(mediaRepositoryProvider).resolveUrl(coverPath);
+                  return ref
+                      .read(mediaRepositoryProvider)
+                      .resolveUrl(coverPath);
                 } catch (_) {
                   return coverPath;
                 }
@@ -123,7 +125,8 @@ class _CoursePageState extends ConsumerState<CoursePage> {
       orElse: () => null,
     );
     final priceCents = detail.course.priceCents ?? fallbackPrice ?? 0;
-    final canPurchase = priceCents > 0 && !hasAccess;
+    final canPurchase =
+        !detail.course.isFreeIntro && priceCents > 0 && !hasAccess;
 
     if (!canPurchase) {
       final label = hasAccess
@@ -144,12 +147,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         child: const Text('Ladda pris igen'),
       ),
       data: (pricing) {
-        final amount = (pricing.amountCents / 100).round();
-        final formatted = NumberFormat.currency(
-          locale: 'sv_SE',
-          symbol: 'kr',
-          decimalDigits: 0,
-        ).format(amount);
+        final formatted = formatSekFromOre(pricing.amountCents);
         return FilledButton(
           onPressed: _ordering ? null : () => _startCourseCheckout(courseSlug),
           child: _ordering
@@ -269,6 +267,7 @@ class _CourseContent extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final priceCents = course.priceCents ?? 0;
+    final showPurchase = !course.isFreeIntro && priceCents > 0;
     final hasAccess = detail.hasAccess;
     final isEnrolled = detail.isEnrolled;
     final hasSubscription =
@@ -329,7 +328,7 @@ class _CourseContent extends StatelessWidget {
                             : const Text('Starta introduktion'),
                       ),
                     ),
-                    if (priceCents > 0) ...[
+                    if (showPurchase) ...[
                       const SizedBox(width: 10),
                       Expanded(child: SizedBox(height: 48, child: buyButton)),
                     ],
@@ -340,7 +339,7 @@ class _CourseContent extends StatelessWidget {
                   'Använda introduktioner: ${detail.freeConsumed}/${detail.freeLimit} $enrolledText',
                   style: t.bodySmall,
                 ),
-                if (hasAccess && priceCents > 0) ...[
+                if (hasAccess && showPurchase) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Du har redan full åtkomst till kursen.',

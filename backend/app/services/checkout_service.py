@@ -47,6 +47,11 @@ async def create_course_checkout(
     course = await courses_repo.get_course_by_slug(slug)
     if not course:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="course not found")
+    if course.get("is_free_intro") is True:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="intro courses cannot be purchased",
+        )
 
     amount_cents = int(course.get("price_amount_cents") or 0)
     if amount_cents <= 0:

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
@@ -13,6 +12,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -487,6 +487,8 @@ class _IntroMiniCourseCard extends StatelessWidget {
     );
     final imageProvider = coverProvider ?? AppImages.logo;
     final isFallbackLogo = coverProvider == null;
+    final isIntro = course.isFreeIntro;
+    final priceLabel = formatSekFromOre(course.priceCents ?? 0);
 
     return Material(
       color: Colors.transparent,
@@ -562,17 +564,34 @@ class _IntroMiniCourseCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        course.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: DesignTokens.bodyTextColor,
-                          fontWeight: FontWeight.w800,
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              course.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: DesignTokens.bodyTextColor,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          isIntro
+                              ? const CourseIntroBadge()
+                              : Text(
+                                  priceLabel,
+                                  textAlign: TextAlign.right,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: DesignTokens.bodyTextColor
+                                        .withValues(alpha: 0.72),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                        ],
                       ),
-                      const Spacer(),
-                      const CourseIntroBadge(),
                     ],
                   ),
                 ),
@@ -610,7 +629,8 @@ class _JourneyCourseCard extends StatelessWidget {
     final isFallbackLogo = coverProvider == null;
 
     final radius = BorderRadius.circular(18);
-    final priceLabel = _formatPrice(course.priceCents);
+    final isIntro = course.isFreeIntro;
+    final priceLabel = formatSekFromOre(course.priceCents ?? 0);
 
     return Material(
       color: Colors.transparent,
@@ -685,14 +705,34 @@ class _JourneyCourseCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      course.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: DesignTokens.bodyTextColor,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            course.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: DesignTokens.bodyTextColor,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        isIntro
+                            ? const CourseIntroBadge()
+                            : Text(
+                                priceLabel,
+                                textAlign: TextAlign.right,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: DesignTokens.bodyTextColor.withValues(
+                                    alpha: 0.72,
+                                  ),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ],
                     ),
                     if ((course.description ?? '').trim().isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -701,18 +741,6 @@ class _JourneyCourseCard extends StatelessWidget {
                         baseStyle: theme.textTheme.bodyMedium,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (priceLabel != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        priceLabel,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: DesignTokens.bodyTextColor.withValues(
-                            alpha: 0.72,
-                          ),
-                          fontWeight: FontWeight.w700,
-                        ),
                       ),
                     ],
                   ],
@@ -844,15 +872,4 @@ String? _resolveCoverUrl(MediaRepository repository, String? path) {
   } catch (_) {
     return path;
   }
-}
-
-String? _formatPrice(int? priceCents) {
-  if (priceCents == null) return null;
-  final digits = priceCents % 100 == 0 ? 0 : 2;
-  final formatter = NumberFormat.currency(
-    locale: 'sv_SE',
-    symbol: 'kr',
-    decimalDigits: digits,
-  );
-  return 'Pris: ${formatter.format(priceCents / 100)}';
 }

@@ -19,6 +19,7 @@ import 'package:uuid/uuid.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
@@ -406,9 +407,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _courseSlugCtrl.text = (map['slug'] as String?) ?? '';
       _courseDescCtrl.text = (map['description'] as String?) ?? '';
       final priceRaw = map['price_amount_cents'] ?? map['price_cents'];
-      _coursePriceCtrl.text = priceRaw == null
+      final priceOre = priceRaw == null ? null : int.tryParse('$priceRaw');
+      _coursePriceCtrl.text = priceOre == null
           ? ''
-          : int.tryParse('$priceRaw')?.toString() ?? '$priceRaw';
+          : formatSekInputFromOre(priceOre);
       if (mounted) {
         setState(() {
           _courseIsFreeIntro = map['is_free_intro'] == true;
@@ -3242,16 +3244,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  int? _parseCoursePrice() {
+  int? _parseCoursePriceOre() {
     final text = _coursePriceCtrl.text.trim();
     if (text.isEmpty) return null;
-    return int.tryParse(text);
+    return parseSekInputToOre(text);
   }
 
-  String? _publishGuardReason({int? priceOverride}) {
-    final price = priceOverride ?? _parseCoursePrice();
+  String? _publishGuardReason({int? priceOverrideOre}) {
+    final priceOre = priceOverrideOre ?? _parseCoursePriceOre();
     final canPublishForPrice =
-        _courseIsFreeIntro || (price != null && price > 0);
+        _courseIsFreeIntro || (priceOre != null && priceOre > 0);
     if (!canPublishForPrice) {
       return 'Ange ett pris större än 0 kr för att kunna publicera kursen.';
     }
@@ -3343,18 +3345,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final slug = _courseSlugCtrl.text.trim();
     final desc = _courseDescCtrl.text.trim();
     final priceText = _coursePriceCtrl.text.trim();
-    final price = priceText.isEmpty ? 0 : int.tryParse(priceText);
+    final priceOre = priceText.isEmpty ? 0 : parseSekInputToOre(priceText);
+    final effectivePriceOre = _courseIsFreeIntro ? 0 : priceOre;
 
     if (title.isEmpty) {
       showSnack(context, 'Titel krävs.');
       return;
     }
-    if (price == null || price < 0) {
-      showSnack(context, 'Pris måste vara ett heltal ≥ 0.');
+    if (effectivePriceOre == null || effectivePriceOre < 0) {
+      showSnack(
+        context,
+        'Pris måste vara ett tal ≥ 0 (t.ex. 490 eller 490.00).',
+      );
       return;
     }
     if (_courseIsPublished) {
-      final guard = _publishGuardReason(priceOverride: price);
+      final guard = _publishGuardReason(priceOverrideOre: effectivePriceOre);
       if (guard != null) {
         showSnack(context, guard);
         return;
@@ -3364,7 +3370,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final patch = <String, dynamic>{
       'title': title,
       'description': desc.isEmpty ? null : desc,
-      'price_amount_cents': price,
+      'price_amount_cents': effectivePriceOre,
       'is_free_intro': _courseIsFreeIntro,
       'journey_step': _courseJourneyStep.apiValue,
       'is_published': _courseIsPublished,
@@ -3768,7 +3774,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               gap12,
                               TextField(
                                 controller: _coursePriceCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
                                 decoration: const InputDecoration(
                                   labelText: 'Pris (SEK)',
                                   helperText: 'Ange 0 för introduktionskurs',

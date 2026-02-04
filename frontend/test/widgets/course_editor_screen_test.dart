@@ -611,7 +611,15 @@ void main() {
     expect(priceField, findsOneWidget);
 
     await tester.ensureVisible(priceField);
-    await tester.enterText(priceField, '9900');
+    final introToggle = find.widgetWithText(
+      SwitchListTile,
+      'Introduktionskurs',
+    );
+    expect(introToggle, findsOneWidget);
+    await tester.tap(introToggle);
+    await tester.pump();
+
+    await tester.enterText(priceField, '99');
 
     final saveButton = find.text('Spara kurs');
     await tester.ensureVisible(saveButton);

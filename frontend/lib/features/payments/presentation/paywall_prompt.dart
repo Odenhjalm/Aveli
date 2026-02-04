@@ -6,6 +6,7 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class PaywallPrompt extends ConsumerWidget {
@@ -24,6 +25,7 @@ class PaywallPrompt extends ConsumerWidget {
         courseId: courseId,
         courseTitle: course?.title,
         coursePrice: course?.priceCents,
+        courseIsIntro: course?.isFreeIntro,
         courseSlug: course?.slug,
         isAuthenticated: isAuthenticated,
       ),
@@ -49,6 +51,7 @@ class _PaywallBody extends StatelessWidget {
     required this.courseId,
     this.courseTitle,
     this.coursePrice,
+    this.courseIsIntro,
     this.courseSlug,
     required this.isAuthenticated,
   });
@@ -56,14 +59,15 @@ class _PaywallBody extends StatelessWidget {
   final String courseId;
   final String? courseTitle;
   final int? coursePrice;
+  final bool? courseIsIntro;
   final String? courseSlug;
   final bool isAuthenticated;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final priceLabel = coursePrice != null
-        ? '${(coursePrice! / 100).toStringAsFixed(0)} kr'
+    final priceLabel = coursePrice != null && courseIsIntro != true
+        ? formatSekFromOre(coursePrice!)
         : null;
     final title = courseTitle ?? 'Kursen är låst';
 

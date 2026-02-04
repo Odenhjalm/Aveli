@@ -14,6 +14,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
@@ -342,6 +343,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
             'description': course.description ?? '',
             'slug': course.slug ?? '',
             'is_free_intro': course.isFreeIntro,
+            'price_amount_cents': course.priceCents,
             'cover_url': course.coverUrl,
           };
         })
@@ -438,6 +440,9 @@ class _CourseTileGlass extends StatelessWidget {
     final cover = (course['cover_url'] as String?) ?? '';
     final slug = (course['slug'] as String?) ?? '';
     final isIntro = course['is_free_intro'] == true;
+    final priceCents =
+        _asInt(course['price_amount_cents']) ?? _asInt(course['price_cents']);
+    final priceLabel = formatSekFromOre(priceCents ?? 0);
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
       slug: cover.isEmpty ? slug : null,
@@ -573,6 +578,7 @@ class _CourseTileGlass extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: Text(
@@ -582,9 +588,22 @@ class _CourseTileGlass extends StatelessWidget {
                                   style: titleStyle,
                                 ),
                               ),
-                              if (isIntro) const SizedBox(width: 8),
-                              if (isIntro)
-                                CourseIntroBadge(variant: introBadgeVariant),
+                              const SizedBox(width: 10),
+                              isIntro
+                                  ? CourseIntroBadge(variant: introBadgeVariant)
+                                  : Text(
+                                      priceLabel,
+                                      textAlign: TextAlign.right,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color:
+                                                (textColor ??
+                                                        DesignTokens
+                                                            .bodyTextColor)
+                                                    .withValues(alpha: 0.72),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
                             ],
                           ),
                           if (desc.isNotEmpty) ...[
@@ -626,4 +645,11 @@ class _CourseTileGlass extends StatelessWidget {
       ),
     );
   }
+}
+
+int? _asInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
 }

@@ -480,7 +480,7 @@ class CourseSummary {
     isPublished: json['is_published'] == true,
     // Prefer the newer price_amount_cents field when present; fallback to price_cents.
     priceCents:
-        _asInt(json['price_cents']) ?? _asInt(json['price_amount_cents']),
+        _asInt(json['price_amount_cents']) ?? _asInt(json['price_cents']),
   );
 
   String? get resolvedCoverUrl => coverUrl;
