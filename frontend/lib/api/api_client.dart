@@ -26,6 +26,13 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          final contractViolation = _mediaUploadUrlContractViolation(options);
+          if (contractViolation != null) {
+            handler.reject(
+              _contractViolationException(options, contractViolation),
+            );
+            return;
+          }
           if (options.extra['skipAuth'] == true) {
             handler.next(options);
             return;
@@ -43,9 +50,9 @@ class ApiClient {
           final skipAuth = requestOptions.extra['skipAuth'] == true;
           final isMultipartRetryUnsafe =
               requestOptions.data is FormData ||
-              requestOptions.contentType
-                      ?.toLowerCase()
-                      .contains('multipart/form-data') ==
+              requestOptions.contentType?.toLowerCase().contains(
+                    'multipart/form-data',
+                  ) ==
                   true ||
               requestOptions.headers[Headers.contentTypeHeader]
                       ?.toString()
@@ -124,6 +131,137 @@ class ApiClient {
   final AuthHttpObserver? _authObserver;
   Completer<bool>? _refreshCompleter;
 
+  static DioException _contractViolationException(
+    RequestOptions options,
+    String detail,
+  ) {
+    return DioException(
+      requestOptions: options,
+      response: Response<dynamic>(
+        requestOptions: options,
+        statusCode: 400,
+        data: {'detail': detail},
+      ),
+      type: DioExceptionType.badResponse,
+      error: StateError(detail),
+    );
+  }
+
+  static String? _mediaUploadUrlContractViolation(RequestOptions options) {
+    final path = options.path;
+    final isUploadUrl =
+        path == ApiPaths.mediaUploadUrl ||
+        path == ApiPaths.mediaUploadUrlRefresh;
+    if (!isUploadUrl) return null;
+
+    final method = options.method.toUpperCase();
+    if (method != 'POST') {
+      return 'Upload-URL contract violation: expected POST for $path (got $method).';
+    }
+
+    final headerContentType = options.headers[Headers.contentTypeHeader]
+        ?.toString();
+    final contentTypeRaw = (options.contentType ?? headerContentType ?? '')
+        .trim();
+    final contentType = contentTypeRaw.toLowerCase();
+    final isJson = contentType.startsWith('application/json');
+    if (!isJson) {
+      return 'Upload-URL contract violation: expected application/json for $path (got "$contentTypeRaw").';
+    }
+
+    final data = options.data;
+    if (data is FormData) {
+      return 'Upload-URL contract violation: FormData is not allowed for $path (expected JSON body).';
+    }
+    if (data is! Map) {
+      return 'Upload-URL contract violation: expected JSON object body for $path (got ${data.runtimeType}).';
+    }
+
+    if (path == ApiPaths.mediaUploadUrlRefresh) {
+      const allowedKeys = {'media_id'};
+      final payload = Map<String, dynamic>.from(data);
+      final extraKeys = payload.keys.where((key) => !allowedKeys.contains(key));
+      if (extraKeys.isNotEmpty) {
+        return 'Upload-URL contract violation: unexpected keys for $path: ${extraKeys.join(", ")}.';
+      }
+      final mediaId = payload['media_id'];
+      if (mediaId is! String || mediaId.trim().isEmpty) {
+        return 'Upload-URL contract violation: media_id must be a non-empty string for $path.';
+      }
+      return null;
+    }
+
+    const allowedKeys = {
+      'filename',
+      'mime_type',
+      'size_bytes',
+      'media_type',
+      'course_id',
+      'lesson_id',
+      'purpose',
+    };
+    const requiredKeys = {'filename', 'mime_type', 'size_bytes', 'media_type'};
+
+    final payload = Map<String, dynamic>.from(data);
+    final extraKeys = payload.keys.where((key) => !allowedKeys.contains(key));
+    if (extraKeys.isNotEmpty) {
+      return 'Upload-URL contract violation: unexpected keys for $path: ${extraKeys.join(", ")}.';
+    }
+
+    for (final key in requiredKeys) {
+      if (!payload.containsKey(key)) {
+        return 'Upload-URL contract violation: missing required key "$key" for $path.';
+      }
+    }
+
+    final filename = payload['filename'];
+    if (filename is! String || filename.trim().isEmpty) {
+      return 'Upload-URL contract violation: filename must be a non-empty string for $path.';
+    }
+
+    final mimeType = payload['mime_type'];
+    if (mimeType is! String || mimeType.trim().isEmpty) {
+      return 'Upload-URL contract violation: mime_type must be a non-empty string for $path.';
+    }
+
+    final sizeBytes = payload['size_bytes'];
+    if (sizeBytes is! int || sizeBytes <= 0) {
+      return 'Upload-URL contract violation: size_bytes must be an int > 0 for $path.';
+    }
+
+    final mediaType = payload['media_type'];
+    if (mediaType is! String || mediaType.trim().toLowerCase() != 'audio') {
+      return 'Upload-URL contract violation: media_type must be "audio" for $path.';
+    }
+
+    final purpose = payload['purpose'];
+    if (purpose != null) {
+      if (purpose is! String || purpose.trim().isEmpty) {
+        return 'Upload-URL contract violation: purpose must be a non-empty string when provided for $path.';
+      }
+      final normalizedPurpose = purpose.trim();
+      if (normalizedPurpose != 'lesson_audio' &&
+          normalizedPurpose != 'home_player_audio') {
+        return 'Upload-URL contract violation: unsupported purpose "$normalizedPurpose" for $path.';
+      }
+      if (normalizedPurpose == 'home_player_audio') {
+        final courseId = payload['course_id'];
+        final lessonId = payload['lesson_id'];
+        if (courseId != null || lessonId != null) {
+          return 'Upload-URL contract violation: course_id/lesson_id must be omitted for home_player_audio requests.';
+        }
+      }
+    } else {
+      final courseId = payload['course_id'];
+      final lessonId = payload['lesson_id'];
+      if (courseId == null && lessonId == null) {
+        return 'Upload-URL contract violation: course_id or lesson_id is required for lesson_audio requests.';
+      }
+    }
+
+    return null;
+  }
+
   Map<String, dynamic>? _buildExtra(
     Map<String, dynamic>? extra,
     bool skipAuth,
@@ -162,11 +300,13 @@ class ApiClient {
       final expSeconds = rawExp is int
           ? rawExp
           : rawExp is num
-              ? rawExp.toInt()
-              : int.tryParse(rawExp.toString());
+          ? rawExp.toInt()
+          : int.tryParse(rawExp.toString());
       if (expSeconds == null) return true;
-      final expiry =
-          DateTime.fromMillisecondsSinceEpoch(expSeconds * 1000, isUtc: true);
+      final expiry = DateTime.fromMillisecondsSinceEpoch(
+        expSeconds * 1000,
+        isUtc: true,
+      );
       final now = DateTime.now().toUtc();
       return now.isAfter(expiry.subtract(leeway));
     } catch (_) {
@@ -323,9 +463,7 @@ class ApiClient {
     Map<String, dynamic>? extra,
   }) async {
     if (!skipAuth) {
-      final authed = await ensureAuth(
-        leeway: const Duration(minutes: 2),
-      );
+      final authed = await ensureAuth(leeway: const Duration(minutes: 2));
       if (!authed) {
         final requestOptions = RequestOptions(
           path: path,

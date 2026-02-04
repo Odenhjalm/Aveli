@@ -7,6 +7,7 @@ import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 
 class StudioRepository {
   StudioRepository({required ApiClient client}) : _client = client;
@@ -215,33 +216,24 @@ class StudioRepository {
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final payload = <String, dynamic>{
-      'filename': filename,
-      'mime_type': contentType,
-      'size_bytes': data.length,
-      'media_type': 'audio',
-      if (courseId.isNotEmpty) 'course_id': courseId,
-      'lesson_id': lessonId,
-    };
-
-    final response = await _client.post<Map<String, dynamic>>(
-      ApiPaths.mediaUploadUrl,
-      body: payload,
+    final pipeline = MediaPipelineRepository(client: _client);
+    final upload = await pipeline.requestUploadUrl(
+      filename: filename,
+      mimeType: contentType,
+      sizeBytes: data.length,
+      mediaType: 'audio',
+      courseId: courseId.isEmpty ? null : courseId,
+      lessonId: lessonId,
     );
 
-    final uploadUrlRaw = response['upload_url'] as String?;
-    if (uploadUrlRaw == null || uploadUrlRaw.isEmpty) {
+    if (upload.uploadUrl.toString().isEmpty) {
       throw StateError('Uppladdningslänk saknas för WAV.');
     }
-    final headersRaw = response['headers'] as Map? ?? const {};
-    final uploadHeaders = <String, String>{
-      for (final entry in headersRaw.entries)
-        entry.key.toString(): entry.value.toString(),
-    };
+    final uploadHeaders = upload.headers;
 
     final dio = Dio();
     await dio.putUri<void>(
-      Uri.parse(uploadUrlRaw),
+      upload.uploadUrl,
       data: data,
       options: Options(headers: uploadHeaders),
       cancelToken: cancelToken,
@@ -253,7 +245,7 @@ class StudioRepository {
     );
 
     return {
-      'media_asset_id': response['media_id']?.toString(),
+      'media_asset_id': upload.mediaId,
       'media_state': 'uploaded',
       'ingest_format': 'wav',
       'original_name': filename,

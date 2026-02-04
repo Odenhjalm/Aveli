@@ -72,6 +72,20 @@ sealed class AppFailure implements Exception {
     final status = error.response?.statusCode ?? 0;
     final payload = error.response?.data;
     final detail = _extractDetail(payload);
+    final path = error.requestOptions.path;
+    final isMediaUploadUrl =
+        path == '/api/media/upload-url' ||
+        path == '/api/media/upload-url/refresh';
+    if (isMediaUploadUrl &&
+        (status == 405 ||
+            (detail != null &&
+                detail.toLowerCase().contains('method not allowed')))) {
+      return ValidationFailure(
+        message: 'Felaktigt uppladdningsanrop (utvecklingsfel).',
+        original: error,
+        stackTrace: stackTrace,
+      );
+    }
     if (status == 0) {
       return NetworkFailure(
         message: 'Kunde inte nå servern. Försök igen.',
