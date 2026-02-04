@@ -14,4 +14,3 @@ def build_audio_source_object_path(
     token = uuid4().hex
     path = Path("media") / "source" / "audio" / resource_prefix / f"{token}_{safe_name}"
     return path.as_posix()
-
