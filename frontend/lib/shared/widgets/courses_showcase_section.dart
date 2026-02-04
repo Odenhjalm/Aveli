@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aveli/core/bootstrap/effects_policy.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
@@ -453,19 +454,40 @@ class _HorizontalPagedCourseGrid extends StatefulWidget {
       _HorizontalPagedCourseGridState();
 }
 
-class _HorizontalPagedCourseGridState
-    extends State<_HorizontalPagedCourseGrid> {
+class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
+    with SingleTickerProviderStateMixin {
   late final ScrollController _scrollController;
+  late final AnimationController _chevronNudgeController;
+  late final Animation<double> _chevronNudgeX;
   bool _showHint = false;
+  bool _didScrollOnce = false;
   static const String _introFlagKey = 'is_free_intro';
   static const double _peekFraction = 0.07;
+  static const double _chevronNudgeDistance = 10.0;
+  static const Duration _chevronNudgeDelay = Duration(milliseconds: 1400);
+  // Full cycle (right + back) ≈ 3.5s.
+  static const Duration _chevronNudgeHalfCycle = Duration(milliseconds: 1750);
 
   @override
   void initState() {
     super.initState();
-    _scrollController = ScrollController()..addListener(_updateHint);
+    _scrollController = ScrollController()..addListener(_handleScroll);
+    _chevronNudgeController = AnimationController(
+      vsync: this,
+      duration: _chevronNudgeHalfCycle,
+    );
+    _chevronNudgeX = Tween<double>(begin: 0, end: _chevronNudgeDistance)
+        .animate(
+          CurvedAnimation(
+            parent: _chevronNudgeController,
+            curve: Curves.easeInOut,
+          ),
+        );
     _showHint = widget.items.length > widget.pageSize;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _updateHint());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleScroll();
+      _scheduleChevronNudge();
+    });
   }
 
   @override
@@ -479,10 +501,47 @@ class _HorizontalPagedCourseGridState
 
   @override
   void dispose() {
+    _chevronNudgeController.dispose();
     _scrollController
-      ..removeListener(_updateHint)
+      ..removeListener(_handleScroll)
       ..dispose();
     super.dispose();
+  }
+
+  void _handleScroll() {
+    _updateHint();
+    if (_didScrollOnce || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (!position.hasPixels) return;
+    if (position.pixels <= 0.5) return;
+    _didScrollOnce = true;
+    _stopChevronNudge();
+  }
+
+  void _scheduleChevronNudge() {
+    if (_didScrollOnce || !_showHint) return;
+    if (!EffectsPolicyController.isFull) return;
+    final mediaQuery = MediaQuery.maybeOf(context);
+    if (mediaQuery?.disableAnimations == true ||
+        mediaQuery?.accessibleNavigation == true) {
+      return;
+    }
+
+    Future<void>.delayed(_chevronNudgeDelay, () {
+      if (!mounted || _didScrollOnce || !_showHint) return;
+      if (_chevronNudgeController.isAnimating) return;
+      _chevronNudgeController.repeat(reverse: true);
+    });
+  }
+
+  void _stopChevronNudge() {
+    if (!_chevronNudgeController.isAnimating &&
+        _chevronNudgeController.value == 0) {
+      return;
+    }
+    _chevronNudgeController
+      ..stop()
+      ..value = 0;
   }
 
   void _updateHint() {
@@ -561,8 +620,9 @@ class _HorizontalPagedCourseGridState
 
     final theme = Theme.of(context);
     final fadeTo = Colors.white.withValues(
-      alpha: theme.brightness == Brightness.dark ? 0.14 : 0.24,
+      alpha: theme.brightness == Brightness.dark ? 0.17 : 0.28,
     );
+    final chevronColor = theme.colorScheme.onSurface.withValues(alpha: 0.46);
     final delegate = widget.gridDelegate;
     final crossAxisCount = delegate.crossAxisCount;
     final crossAxisSpacing = delegate.crossAxisSpacing;
@@ -631,14 +691,38 @@ class _HorizontalPagedCourseGridState
                 bottom: 0,
                 width: 44 + peekWidth,
                 child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [Colors.transparent, fadeTo],
+                  child: Stack(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [Colors.transparent, fadeTo],
+                          ),
+                        ),
                       ),
-                    ),
+                      Padding(
+                        padding: EdgeInsets.only(right: peekWidth + 16),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: AnimatedBuilder(
+                            animation: _chevronNudgeX,
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              size: 20,
+                              color: chevronColor,
+                            ),
+                            builder: (context, child) {
+                              return Transform.translate(
+                                offset: Offset(_chevronNudgeX.value, 0),
+                                child: child,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
