@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -438,29 +437,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         },
         resumableSession: resumableSession,
       );
-
-      try {
-        final studioRepo = ref.read(studioRepositoryProvider);
-        final mediaItems = await studioRepo.listLessonMedia(lessonId);
-        String? lessonMediaId;
-        for (final item in mediaItems) {
-          final assetId = item['media_asset_id']?.toString();
-          if (assetId != null && assetId == mediaId) {
-            lessonMediaId = item['id']?.toString();
-            break;
-          }
-        }
-        if (lessonMediaId != null && lessonMediaId.trim().isNotEmpty) {
-          await studioRepo.createProfileMedia(
-            mediaKind: TeacherProfileMediaKind.lessonMedia,
-            mediaId: lessonMediaId,
-            title: displayName.trim(),
-            isPublished: false,
-          );
-        }
-      } catch (_) {
-        // Best-effort: WAV should still work even if Home-media registration fails.
-      }
 
       if (!mounted) return;
       setState(() {

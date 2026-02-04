@@ -65,6 +65,20 @@ from .teacher_profile_media import (
     list_teacher_seminar_recording_sources,
     list_public_teacher_profile_media,
 )
+from .home_player_library import (
+    list_home_player_uploads,
+    get_home_player_upload,
+    create_home_player_upload,
+    update_home_player_upload,
+    delete_home_player_upload,
+    list_home_player_course_links,
+    get_home_player_course_link,
+    resolve_lesson_media_course_owner,
+    upsert_home_player_course_link,
+    update_home_player_course_link,
+    delete_home_player_course_link,
+    get_active_home_upload_by_media_id,
+)
 from .subscriptions import get_latest_subscription, get_membership
 from .memberships import upsert_membership_record
 from .course_entitlements import grant_course_entitlement, list_entitlements_for_user
@@ -163,6 +177,19 @@ __all__ = [
     "list_teacher_lesson_media_sources",
     "list_teacher_seminar_recording_sources",
     "list_public_teacher_profile_media",
+    # Home player library
+    "list_home_player_uploads",
+    "get_home_player_upload",
+    "create_home_player_upload",
+    "update_home_player_upload",
+    "delete_home_player_upload",
+    "list_home_player_course_links",
+    "get_home_player_course_link",
+    "resolve_lesson_media_course_owner",
+    "upsert_home_player_course_link",
+    "update_home_player_course_link",
+    "delete_home_player_course_link",
+    "get_active_home_upload_by_media_id",
     # Subscriptions
     "get_latest_subscription",
     "get_membership",

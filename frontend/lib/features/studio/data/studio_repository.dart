@@ -5,6 +5,7 @@ import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
+import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 
 class StudioRepository {
@@ -269,6 +270,102 @@ class StudioRepository {
       '/studio/profile/media',
     );
     return TeacherProfileMediaPayload.fromJson(res);
+  }
+
+  Future<HomePlayerLibraryPayload> fetchHomePlayerLibrary() async {
+    final res = await _client.get<Map<String, dynamic>>(
+      '/studio/home-player/library',
+    );
+    return HomePlayerLibraryPayload.fromJson(res);
+  }
+
+  Future<HomePlayerUploadItem> uploadHomePlayerUpload({
+    required Uint8List data,
+    required String filename,
+    required String contentType,
+    required String title,
+    bool active = true,
+    void Function(UploadProgress progress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final fields = <String, dynamic>{
+      'title': title,
+      'active': active,
+      'file': MultipartFile.fromBytes(
+        data,
+        filename: filename,
+        contentType: MediaType.parse(contentType),
+      ),
+    };
+    final res = await _client.postForm<Map<String, dynamic>>(
+      '/studio/home-player/uploads',
+      FormData.fromMap(fields),
+      onSendProgress: onProgress == null
+          ? null
+          : (sent, total) {
+              if (total <= 0) return;
+              onProgress(UploadProgress(sent: sent, total: total));
+            },
+      cancelToken: cancelToken,
+    );
+    return HomePlayerUploadItem.fromJson(res ?? const {});
+  }
+
+  Future<HomePlayerUploadItem> updateHomePlayerUpload(
+    String uploadId, {
+    String? title,
+    bool? active,
+  }) async {
+    final body = <String, dynamic>{
+      if (title != null) 'title': title,
+      if (active != null) 'active': active,
+    };
+    final res = await _client.patch<Map<String, dynamic>>(
+      '/studio/home-player/uploads/$uploadId',
+      body: body,
+    );
+    return HomePlayerUploadItem.fromJson(res ?? const {});
+  }
+
+  Future<void> deleteHomePlayerUpload(String uploadId) async {
+    await _client.delete('/studio/home-player/uploads/$uploadId');
+  }
+
+  Future<HomePlayerCourseLinkItem> createHomePlayerCourseLink({
+    required String lessonMediaId,
+    required String title,
+    bool enabled = true,
+  }) async {
+    final body = <String, dynamic>{
+      'lesson_media_id': lessonMediaId,
+      'title': title,
+      'enabled': enabled,
+    };
+    final res = await _client.post<Map<String, dynamic>>(
+      '/studio/home-player/course-links',
+      body: body,
+    );
+    return HomePlayerCourseLinkItem.fromJson(res);
+  }
+
+  Future<HomePlayerCourseLinkItem> updateHomePlayerCourseLink(
+    String linkId, {
+    bool? enabled,
+    String? title,
+  }) async {
+    final body = <String, dynamic>{
+      if (enabled != null) 'enabled': enabled,
+      if (title != null) 'title': title,
+    };
+    final res = await _client.patch<Map<String, dynamic>>(
+      '/studio/home-player/course-links/$linkId',
+      body: body,
+    );
+    return HomePlayerCourseLinkItem.fromJson(res ?? const {});
+  }
+
+  Future<void> deleteHomePlayerCourseLink(String linkId) async {
+    await _client.delete('/studio/home-player/course-links/$linkId');
   }
 
   Future<TeacherProfileMediaItem> createProfileMedia({

@@ -403,6 +403,223 @@ async def studio_delete_profile_media(item_id: UUID, current: TeacherUser):
     return Response(status_code=204)
 
 
+@router.get(
+    "/home-player/library",
+    response_model=schemas.HomePlayerLibraryResponse,
+)
+async def studio_home_player_library(current: TeacherUser):
+    teacher_id = str(current["id"])
+    uploads = await repositories.list_home_player_uploads(teacher_id)
+    links = await repositories.list_home_player_course_links(teacher_id)
+    sources = await repositories.list_teacher_lesson_media_sources(teacher_id)
+    course_media: list[dict[str, Any]] = []
+    for source in sources:
+        kind = str(source.get("kind") or "").lower()
+        content_type = str(source.get("content_type") or "").lower()
+        if kind.startswith("audio") or kind.startswith("video"):
+            course_media.append(source)
+        elif content_type.startswith("audio/") or content_type.startswith("video/"):
+            course_media.append(source)
+
+    return schemas.HomePlayerLibraryResponse(
+        uploads=[schemas.HomePlayerUploadItem(**row) for row in uploads],
+        course_links=[schemas.HomePlayerCourseLinkItem(**row) for row in links],
+        course_media=[schemas.TeacherProfileLessonSource(**row) for row in course_media],
+    )
+
+
+@router.post(
+    "/home-player/uploads",
+    response_model=schemas.HomePlayerUploadItem,
+    status_code=status.HTTP_201_CREATED,
+)
+async def studio_create_home_player_upload(
+    current: TeacherUser,
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    active: bool = Form(True),
+):
+    teacher_id = str(current["id"])
+    normalized_title = (title or "").strip()
+    if not normalized_title:
+        raise HTTPException(status_code=422, detail="title is required")
+
+    content_type = (
+        file.content_type
+        or mimetypes.guess_type(file.filename or "")[0]
+        or "application/octet-stream"
+    )
+    normalized_type = content_type.lower()
+    if not (normalized_type.startswith("audio/") or normalized_type.startswith("video/")):
+        raise HTTPException(status_code=415, detail="Unsupported media type")
+    kind = "video" if normalized_type.startswith("video/") else "audio"
+
+    relative_dir = Path("home-media") / teacher_id
+    destination_dir = upload_routes._safe_join(
+        upload_routes.UPLOADS_ROOT,
+        *relative_dir.parts,
+    )
+    write_result = await upload_routes._write_upload(
+        destination_dir,
+        file,
+        allowed_prefixes=("audio/", "video/"),
+        max_bytes=settings.lesson_media_max_bytes,
+    )
+    relative_path = relative_dir / write_result.filename
+    final_content_type = (
+        file.content_type
+        or mimetypes.guess_type(write_result.destination_path.name)[0]
+        or "application/octet-stream"
+    )
+
+    media_object = await models.create_media_object(
+        owner_id=teacher_id,
+        storage_path=relative_path.as_posix(),
+        storage_bucket="home-media",
+        content_type=final_content_type,
+        byte_size=write_result.size,
+        checksum=write_result.checksum,
+        original_name=file.filename,
+    )
+    if not media_object:
+        raise HTTPException(status_code=500, detail="Failed to persist media")
+
+    created = await repositories.create_home_player_upload(
+        teacher_id=teacher_id,
+        media_id=str(media_object["id"]),
+        title=normalized_title,
+        kind=kind,
+        active=bool(active),
+    )
+    if not created:
+        raise HTTPException(status_code=400, detail="Failed to create upload")
+    return schemas.HomePlayerUploadItem(**created)
+
+
+@router.patch(
+    "/home-player/uploads/{upload_id}",
+    response_model=schemas.HomePlayerUploadItem,
+)
+async def studio_update_home_player_upload(
+    upload_id: UUID,
+    payload: schemas.HomePlayerUploadUpdate,
+    current: TeacherUser,
+):
+    if payload.title is not None and not payload.title.strip():
+        raise HTTPException(status_code=422, detail="title cannot be empty")
+    fields: dict[str, Any] = {}
+    if payload.title is not None:
+        fields["title"] = payload.title
+    if payload.active is not None:
+        fields["active"] = payload.active
+    row = await repositories.update_home_player_upload(
+        upload_id=str(upload_id),
+        teacher_id=str(current["id"]),
+        fields=fields,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Home upload not found")
+    return schemas.HomePlayerUploadItem(**row)
+
+
+@router.delete("/home-player/uploads/{upload_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def studio_delete_home_player_upload(upload_id: UUID, current: TeacherUser):
+    deleted = await repositories.delete_home_player_upload(
+        upload_id=str(upload_id),
+        teacher_id=str(current["id"]),
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Home upload not found")
+    media_id = deleted.get("media_id")
+    if media_id:
+        await models.cleanup_media_object(str(media_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/home-player/course-links",
+    response_model=schemas.HomePlayerCourseLinkItem,
+    status_code=status.HTTP_201_CREATED,
+)
+async def studio_create_home_player_course_link(
+    payload: schemas.HomePlayerCourseLinkCreate,
+    current: TeacherUser,
+):
+    teacher_id = str(current["id"])
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="title is required")
+
+    resolved = await repositories.resolve_lesson_media_course_owner(
+        str(payload.lesson_media_id),
+    )
+    if not resolved:
+        raise HTTPException(status_code=404, detail="Lesson media not found")
+    if str(resolved.get("teacher_id")) != teacher_id:
+        raise HTTPException(status_code=403, detail="Not course owner")
+
+    kind = str(resolved.get("kind") or "").lower()
+    content_type = str(resolved.get("content_type") or "").lower()
+    if not (
+        kind.startswith("audio")
+        or kind.startswith("video")
+        or content_type.startswith("audio/")
+        or content_type.startswith("video/")
+    ):
+        raise HTTPException(status_code=422, detail="Only audio/video can be linked")
+
+    course_title_snapshot = str(resolved.get("course_title") or "").strip()
+    row = await repositories.upsert_home_player_course_link(
+        teacher_id=teacher_id,
+        lesson_media_id=str(payload.lesson_media_id),
+        title=title,
+        course_title_snapshot=course_title_snapshot,
+        enabled=bool(payload.enabled),
+    )
+    if not row:
+        raise HTTPException(status_code=400, detail="Failed to create course link")
+    return schemas.HomePlayerCourseLinkItem(**row)
+
+
+@router.patch(
+    "/home-player/course-links/{link_id}",
+    response_model=schemas.HomePlayerCourseLinkItem,
+)
+async def studio_update_home_player_course_link(
+    link_id: UUID,
+    payload: schemas.HomePlayerCourseLinkUpdate,
+    current: TeacherUser,
+):
+    if payload.title is not None and not payload.title.strip():
+        raise HTTPException(status_code=422, detail="title cannot be empty")
+
+    fields: dict[str, Any] = {}
+    if payload.enabled is not None:
+        fields["enabled"] = payload.enabled
+    if payload.title is not None:
+        fields["title"] = payload.title
+
+    row = await repositories.update_home_player_course_link(
+        link_id=str(link_id),
+        teacher_id=str(current["id"]),
+        fields=fields,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Course link not found")
+    return schemas.HomePlayerCourseLinkItem(**row)
+
+
+@router.delete("/home-player/course-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def studio_delete_home_player_course_link(link_id: UUID, current: TeacherUser):
+    deleted = await repositories.delete_home_player_course_link(
+        link_id=str(link_id),
+        teacher_id=str(current["id"]),
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Course link not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 def _ensure_host_access(seminar: Dict[str, Any], user_id: str) -> None:
     if str(seminar["host_id"]) != user_id:
         seminar_id = seminar.get("id")

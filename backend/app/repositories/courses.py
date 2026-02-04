@@ -1029,92 +1029,149 @@ async def list_home_audio_media(
     limit: int = 20,
 ) -> Sequence[dict[str, Any]]:
     params: list[Any] = []
-    # Home audio access is granted only for course owners, enrolled users, and free/intro lessons.
+    # Home player media is sourced from:
+    # - Home uploads (teacher-owned files)
+    # - Explicit course links (lesson_media)
+    # Access is granted for course owners, enrolled users, and free/intro lessons.
     # (include_all_courses is intentionally ignored to avoid exposing media without enrollment.)
-    opt_in_cte = """
-        WITH opted_in AS (
+    linked_cte = """
+        WITH linked AS (
           SELECT
-            tpm.media_id AS lesson_media_id,
-            tpm.teacher_id
-          FROM app.teacher_profile_media tpm
-          WHERE tpm.enabled_for_home_player = true
-            AND tpm.media_kind = 'lesson_media'
-            AND tpm.media_id IS NOT NULL
+            hpcl.lesson_media_id,
+            hpcl.teacher_id,
+            hpcl.title AS home_title,
+            hpcl.created_at
+          FROM app.home_player_course_links hpcl
+          WHERE hpcl.enabled = true
+            AND hpcl.lesson_media_id IS NOT NULL
         )
     """
+
     enrollment_join = """
         LEFT JOIN app.enrollments e
           ON e.course_id = c.id
          AND e.user_id = %s
          AND e.status = 'active'
     """
+    params.append(user_id)  # enrollment join
+
     access_clause = """
+          AND c.is_published = true
           AND (
             c.created_by = %s
-            OR (
-              c.is_published = true
-              AND (
-                l.is_intro = true
-                OR c.is_free_intro = true
-                OR e.user_id IS NOT NULL
-              )
-            )
+            OR l.is_intro = true
+            OR c.is_free_intro = true
+            OR e.user_id IS NOT NULL
           )
           AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
     """
-    params.append(user_id)  # enrollment join
     params.append(user_id)  # owner check
 
+    # Home uploads are visible to:
+    # - the teacher that uploaded it
+    # - users enrolled in any published course by that teacher
+    home_upload_access_clause = """
+          AND (
+            hpu.teacher_id = %s
+            OR EXISTS (
+              SELECT 1
+              FROM app.enrollments e2
+              JOIN app.courses c2 ON c2.id = e2.course_id
+              WHERE e2.user_id = %s
+                AND e2.status = 'active'
+                AND c2.is_published = true
+                AND c2.created_by = hpu.teacher_id
+            )
+          )
+    """
+    params.append(user_id)
+    params.append(user_id)
+
     query = f"""
-        {opt_in_cte}
-        SELECT
-          lm.id,
-          lm.lesson_id,
-          lm.kind,
-          CASE
-            WHEN ma.id IS NOT NULL THEN
-              CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
-            ELSE coalesce(mo.storage_path, lm.storage_path)
-          END AS storage_path,
-          CASE
-            WHEN ma.id IS NOT NULL THEN
-              CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
-            ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
-          END AS storage_bucket,
-          lm.media_id,
-          lm.media_asset_id,
-          lm.position,
-          coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
-          lm.created_at,
-          coalesce(
+        {linked_cte}
+        SELECT *
+        FROM (
+          SELECT
+            lm.id,
+            lm.lesson_id,
+            coalesce(linked.home_title, l.title, '') AS lesson_title,
+            c.id AS course_id,
+            c.title AS course_title,
+            c.slug AS course_slug,
+            lm.kind,
+            CASE
+              WHEN ma.id IS NOT NULL THEN
+                CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
+              ELSE coalesce(mo.storage_path, lm.storage_path)
+            END AS storage_path,
+            CASE
+              WHEN ma.id IS NOT NULL THEN
+                CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
+              ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+            END AS storage_bucket,
+            lm.media_id,
+            lm.media_asset_id,
+            coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
+            linked.created_at AS created_at,
+            coalesce(
+              mo.content_type,
+              CASE WHEN (ma.state = 'ready' and lm.kind = 'audio') THEN 'audio/mpeg' ELSE NULL END
+            ) AS content_type,
+            mo.byte_size,
+            coalesce(mo.original_name, ma.original_filename) AS original_name,
+            l.is_intro,
+            c.is_free_intro,
+            ma.state AS media_state,
+            ma.streaming_format,
+            ma.codec
+          FROM linked
+          JOIN app.lesson_media lm ON lm.id = linked.lesson_media_id
+          JOIN app.lessons l ON l.id = lm.lesson_id
+          JOIN app.courses c ON c.id = l.course_id
+          JOIN app.profiles prof ON prof.user_id = c.created_by
+          LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
+          LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
+          {enrollment_join}
+          WHERE linked.teacher_id = c.created_by
+            AND (lm.kind = 'audio' OR lm.kind = 'video')
+            AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+            AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
+            {access_clause}
+
+          UNION ALL
+
+          SELECT
+            mo.id AS id,
+            mo.id AS lesson_id,
+            hpu.title AS lesson_title,
+            mo.id AS course_id,
+            ''::text AS course_title,
+            NULL::text AS course_slug,
+            hpu.kind AS kind,
+            mo.storage_path,
+            mo.storage_bucket,
+            mo.id AS media_id,
+            NULL::uuid AS media_asset_id,
+            NULL::int AS duration_seconds,
+            hpu.created_at AS created_at,
             mo.content_type,
-            CASE WHEN ma.state = 'ready' THEN 'audio/mpeg' ELSE NULL END
-          ) AS content_type,
-          mo.byte_size,
-          coalesce(mo.original_name, ma.original_filename) AS original_name,
-          ma.state AS media_state,
-          ma.streaming_format,
-          ma.codec,
-          l.title AS lesson_title,
-          l.is_intro,
-          c.id AS course_id,
-          c.slug AS course_slug,
-          c.title AS course_title,
-          c.is_free_intro
-        FROM opted_in oi
-        JOIN app.lesson_media lm ON lm.id = oi.lesson_media_id
-        JOIN app.lessons l ON l.id = lm.lesson_id
-        JOIN app.courses c ON c.id = l.course_id
-        JOIN app.profiles prof ON prof.user_id = c.created_by
-        LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
-        LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
-        {enrollment_join}
-        WHERE oi.teacher_id = c.created_by
-          AND lm.kind = 'audio'
-          AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
-          AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
-          {access_clause}
-        ORDER BY lm.created_at DESC
+            mo.byte_size,
+            mo.original_name,
+            NULL::boolean AS is_intro,
+            NULL::boolean AS is_free_intro,
+            NULL::text AS media_state,
+            NULL::text AS streaming_format,
+            NULL::text AS codec
+          FROM app.home_player_uploads hpu
+          JOIN app.media_objects mo ON mo.id = hpu.media_id
+          JOIN app.profiles prof ON prof.user_id = hpu.teacher_id
+          WHERE hpu.active = true
+            AND (hpu.kind = 'audio' OR hpu.kind = 'video')
+            AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+            AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
+            {home_upload_access_clause}
+        ) AS items
+        ORDER BY created_at DESC
         LIMIT %s
     """
     params.append(limit)

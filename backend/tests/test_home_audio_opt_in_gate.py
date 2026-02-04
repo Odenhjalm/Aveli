@@ -106,35 +106,22 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
     assert lesson_media
     lesson_media_id = str(lesson_media["id"])
 
-    create_resp = await async_client.post(
-        "/studio/profile/media",
-        headers=auth_header(teacher_token),
-        json={
-            "media_kind": "lesson_media",
-            "media_id": lesson_media_id,
-            "title": "Home track",
-            "description": "Opt-in required",
-            "position": 0,
-            "is_published": True,
-        },
-    )
-    assert create_resp.status_code == 201, create_resp.text
-    profile_item = create_resp.json()
-    profile_media_id = str(profile_item["id"])
-    assert profile_item["enabled_for_home_player"] is False
-
     # Not opted-in => excluded even for the owner.
     resp_off = await async_client.get("/home/audio", headers=auth_header(teacher_token))
     assert resp_off.status_code == 200, resp_off.text
     assert lesson_media_id not in {it.get("id") for it in resp_off.json().get("items") or []}
 
-    patch_resp = await async_client.patch(
-        f"/studio/profile/media/{profile_media_id}",
+    create_link = await async_client.post(
+        "/studio/home-player/course-links",
         headers=auth_header(teacher_token),
-        json={"enabled_for_home_player": True},
+        json={
+            "lesson_media_id": lesson_media_id,
+            "title": "Home track",
+            "enabled": True,
+        },
     )
-    assert patch_resp.status_code == 200, patch_resp.text
-    assert patch_resp.json()["enabled_for_home_player"] is True
+    assert create_link.status_code == 201, create_link.text
+    link_id = str(create_link.json()["id"])
 
     # Opted-in => owner sees it.
     resp_on = await async_client.get("/home/audio", headers=auth_header(teacher_token))
@@ -158,3 +145,15 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
         it.get("id") for it in resp_student_enrolled.json().get("items") or []
     }
 
+    # Disable link => hidden.
+    patch_resp = await async_client.patch(
+        f"/studio/home-player/course-links/{link_id}",
+        headers=auth_header(teacher_token),
+        json={"enabled": False},
+    )
+    assert patch_resp.status_code == 200, patch_resp.text
+    assert patch_resp.json()["enabled"] is False
+
+    resp_disabled = await async_client.get("/home/audio", headers=auth_header(teacher_token))
+    assert resp_disabled.status_code == 200, resp_disabled.text
+    assert lesson_media_id not in {it.get("id") for it in resp_disabled.json().get("items") or []}

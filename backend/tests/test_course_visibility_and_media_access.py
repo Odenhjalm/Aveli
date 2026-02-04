@@ -8,9 +8,6 @@ from app.config import settings
 from app import db, models
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
-from app.repositories import teacher_profile_media as teacher_profile_media_repo
-
-
 pytestmark = pytest.mark.anyio("asyncio")
 
 
@@ -259,24 +256,24 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     )
     assert lesson_media
     lesson_media_id = str(lesson_media["id"])
-
-    profile_media = await teacher_profile_media_repo.create_teacher_profile_media(
-        teacher_id=owner_id,
-        media_kind="lesson_media",
-        media_id=lesson_media_id,
-        title="Home audio",
-        description=None,
-        position=0,
-        is_published=True,
-        metadata={},
-    )
-    assert profile_media
-    enabled = await teacher_profile_media_repo.update_teacher_profile_media(
-        item_id=str(profile_media["id"]),
-        teacher_id=owner_id,
-        fields={"enabled_for_home_player": True},
-    )
-    assert enabled and enabled.get("enabled_for_home_player") is True
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.home_player_course_links (
+                  teacher_id,
+                  lesson_media_id,
+                  title,
+                  course_title_snapshot,
+                  enabled
+                )
+                VALUES (%s, %s, %s, %s, true)
+                ON CONFLICT (teacher_id, lesson_media_id) DO UPDATE
+                  SET enabled = EXCLUDED.enabled
+                """,
+                (owner_id, lesson_media_id, "Home audio", "Premium Course"),
+            )
+            await conn.commit()
 
     # Not enrolled => not visible in home audio feed.
     resp = await async_client.get("/home/audio", headers=auth_header(student_token))

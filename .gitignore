@@ -131,4 +131,5 @@ backend/supabase/.temp/
 
 # Supabase CLI
 supabase/.temp/
+supabase/.branches/
 applied

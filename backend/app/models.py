@@ -109,6 +109,26 @@ async def cleanup_media_object(media_id: str) -> None:
                     SELECT 1 FROM app.teacher_profile_media tpm WHERE tpm.cover_media_id = mo.id
                   )
                   AND NOT EXISTS (
+                    SELECT 1 FROM app.home_player_uploads hpu WHERE hpu.media_id = mo.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.meditations m WHERE m.media_id = mo.id
+                  )
+                RETURNING mo.storage_path, mo.storage_bucket
+                """,
+                """
+                DELETE FROM app.media_objects mo
+                WHERE mo.id = %s
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.lesson_media lm WHERE lm.media_id = mo.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.profiles p WHERE p.avatar_media_id = mo.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.teacher_profile_media tpm WHERE tpm.cover_media_id = mo.id
+                  )
+                  AND NOT EXISTS (
                     SELECT 1 FROM app.meditations m WHERE m.media_id = mo.id
                   )
                 RETURNING mo.storage_path, mo.storage_bucket

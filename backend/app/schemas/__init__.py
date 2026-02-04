@@ -414,6 +414,61 @@ class TeacherProfileMediaPublicResponse(BaseModel):
     items: List[TeacherProfileMediaItem]
 
 
+class HomePlayerUploadItem(BaseModel):
+    id: UUID
+    teacher_id: UUID
+    media_id: UUID
+    title: str
+    kind: str
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+    content_type: Optional[str] = None
+    byte_size: Optional[int] = None
+    original_name: Optional[str] = None
+
+
+class HomePlayerCourseLinkStatus(str, Enum):
+    active = "active"
+    source_missing = "source_missing"
+    course_unpublished = "course_unpublished"
+
+
+class HomePlayerCourseLinkItem(BaseModel):
+    id: UUID
+    teacher_id: UUID
+    lesson_media_id: Optional[UUID] = None
+    title: str
+    course_title: str
+    enabled: bool
+    status: HomePlayerCourseLinkStatus
+    kind: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class HomePlayerLibraryResponse(BaseModel):
+    uploads: List[HomePlayerUploadItem] = Field(default_factory=list)
+    course_links: List[HomePlayerCourseLinkItem] = Field(default_factory=list)
+    course_media: List[TeacherProfileLessonSource] = Field(default_factory=list)
+
+
+class HomePlayerUploadUpdate(BaseModel):
+    title: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class HomePlayerCourseLinkCreate(BaseModel):
+    lesson_media_id: UUID
+    title: str
+    enabled: bool = True
+
+
+class HomePlayerCourseLinkUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    title: Optional[str] = None
+
+
 class SeminarDetailResponse(BaseModel):
     seminar: SeminarResponse
     sessions: List[SeminarSessionResponse] = []

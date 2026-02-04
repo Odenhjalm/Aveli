@@ -6,8 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:aveli/data/models/teacher_profile_media.dart';
-
 import '../data/studio_repository.dart';
 
 enum UploadJobStatus { pending, uploading, success, failed, cancelled }
@@ -232,7 +230,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     );
 
     try {
-      final uploaded = await _repo.uploadLessonMedia(
+      await _repo.uploadLessonMedia(
         courseId: job.courseId,
         lessonId: job.lessonId,
         data: job.data,
@@ -245,33 +243,6 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
           _updateJob(job.id, (current) => current.copyWith(progress: fraction));
         },
       );
-
-      final displayName = job.displayName?.trim();
-      final lower = job.contentType.toLowerCase();
-      final shouldCreateHomeControl =
-          (lower.startsWith('audio/') || lower.startsWith('video/')) &&
-          displayName != null &&
-          displayName.isNotEmpty;
-
-      if (shouldCreateHomeControl) {
-        final mediaId = uploaded['id']?.toString().trim();
-        if (mediaId != null && mediaId.isNotEmpty) {
-          try {
-            await _repo.createProfileMedia(
-              mediaKind: TeacherProfileMediaKind.lessonMedia,
-              mediaId: mediaId,
-              title: displayName,
-              isPublished: false,
-            );
-          } catch (error) {
-            if (kDebugMode) {
-              debugPrint(
-                'Failed to create profile media item for upload: mediaId=$mediaId error=$error',
-              );
-            }
-          }
-        }
-      }
 
       _updateJob(
         job.id,
