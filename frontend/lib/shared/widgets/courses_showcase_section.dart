@@ -137,7 +137,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
 
     final visible = desktop == null
         ? items
-        : items.take(desktop!.maxItems).toList(growable: false);
+        : _ensureIntroFirstPage(items, desktop!.maxItems);
 
     final sectionTextColor = tileTextColor;
     final cardsVisible = !loading && visible.isNotEmpty;
@@ -302,11 +302,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
         .where((course) => course['is_published'] == true)
         .toList(growable: false);
 
-    if (ownCourses.isNotEmpty) {
-      for (final course in ownCourses) {
-        addCourse(course);
-      }
-      return _normalizeCourseCovers(combined, mediaRepository);
+    for (final course in ownCourses) {
+      addCourse(course);
     }
 
     for (final course in popular) {
@@ -314,6 +311,32 @@ class CoursesShowcaseSection extends ConsumerWidget {
     }
 
     return _normalizeCourseCovers(combined, mediaRepository);
+  }
+
+  static List<Map<String, dynamic>> _ensureIntroFirstPage(
+    List<Map<String, dynamic>> items,
+    int pageSize,
+  ) {
+    if (pageSize <= 0 || items.isEmpty) return items;
+
+    bool isIntro(Map<String, dynamic> map) => map['is_free_intro'] == true;
+
+    final firstPage = items.take(pageSize);
+    final firstPageIsIntroOnly = firstPage.every(isIntro);
+    if (firstPageIsIntroOnly) return items;
+
+    final intro = <Map<String, dynamic>>[];
+    final rest = <Map<String, dynamic>>[];
+    for (final item in items) {
+      if (isIntro(item)) {
+        intro.add(item);
+      } else {
+        rest.add(item);
+      }
+    }
+
+    final introFirst = intro.take(pageSize).toList(growable: false);
+    return [...introFirst, ...intro.skip(introFirst.length), ...rest];
   }
 
   static List<Map<String, dynamic>> _normalizeCourseCovers(
@@ -384,25 +407,44 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 .clamp(0.72, 1.05)
                 .toDouble();
 
-            final grid = GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: items.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cross,
-                crossAxisSpacing: crossAxisSpacing,
-                mainAxisSpacing: mainAxisSpacing,
-                childAspectRatio: childAspectRatio,
-              ),
-              itemBuilder: (_, i) => _CourseTileGlass(
-                course: items[i],
-                index: i,
+            final pageSize = desktop?.maxItems ?? 0;
+            final shouldPageHorizontally =
+                pageSize > 0 && items.length > pageSize;
+
+            final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cross,
+              crossAxisSpacing: crossAxisSpacing,
+              mainAxisSpacing: mainAxisSpacing,
+              childAspectRatio: childAspectRatio,
+            );
+
+            Widget grid;
+            if (shouldPageHorizontally) {
+              grid = _HorizontalPagedCourseGrid(
+                items: items,
+                pageSize: pageSize,
+                gridDelegate: gridDelegate,
                 assets: assets,
                 ctaGradient: ctaGradient,
                 textColor: tileTextColor,
                 introBadgeVariant: introBadgeVariant,
-              ),
-            );
+              );
+            } else {
+              grid = GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: items.length,
+                gridDelegate: gridDelegate,
+                itemBuilder: (_, i) => _CourseTileGlass(
+                  course: items[i],
+                  index: i,
+                  assets: assets,
+                  ctaGradient: ctaGradient,
+                  textColor: tileTextColor,
+                  introBadgeVariant: introBadgeVariant,
+                ),
+              );
+            }
 
             if (tileScale == 1.0 || cross == 0) return grid;
 
@@ -412,6 +454,206 @@ class CoursesShowcaseSection extends ConsumerWidget {
           },
         );
     }
+  }
+}
+
+class _HorizontalPagedCourseGrid extends StatefulWidget {
+  const _HorizontalPagedCourseGrid({
+    required this.items,
+    required this.pageSize,
+    required this.gridDelegate,
+    required this.assets,
+    this.ctaGradient,
+    this.textColor,
+    required this.introBadgeVariant,
+  });
+
+  final List<Map<String, dynamic>> items;
+  final int pageSize;
+  final SliverGridDelegateWithFixedCrossAxisCount gridDelegate;
+  final BackendAssetResolver assets;
+  final Gradient? ctaGradient;
+  final Color? textColor;
+  final CourseIntroBadgeVariant introBadgeVariant;
+
+  @override
+  State<_HorizontalPagedCourseGrid> createState() =>
+      _HorizontalPagedCourseGridState();
+}
+
+class _HorizontalPagedCourseGridState
+    extends State<_HorizontalPagedCourseGrid> {
+  late final ScrollController _scrollController;
+  bool _showHint = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController()..addListener(_updateHint);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateHint());
+  }
+
+  @override
+  void didUpdateWidget(covariant _HorizontalPagedCourseGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.items.length != widget.items.length ||
+        oldWidget.pageSize != widget.pageSize) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _updateHint());
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_updateHint)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _updateHint() {
+    final show = _shouldShowHint();
+    if (show == _showHint || !mounted) return;
+    setState(() => _showHint = show);
+  }
+
+  bool _shouldShowHint() {
+    if (widget.items.length <= widget.pageSize) return false;
+    if (!_scrollController.hasClients) return true;
+    final position = _scrollController.position;
+    if (!position.hasPixels) return true;
+    return position.pixels < (position.maxScrollExtent - 2);
+  }
+
+  void _scrollRightBy(double amount) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (!position.hasPixels) return;
+    final target = (position.pixels + amount).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final pages = (items.length / widget.pageSize).ceil().clamp(1, 9999);
+    if (pages <= 1) {
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: items.length,
+        gridDelegate: widget.gridDelegate,
+        itemBuilder: (_, i) => _CourseTileGlass(
+          course: items[i],
+          index: i,
+          assets: widget.assets,
+          ctaGradient: widget.ctaGradient,
+          textColor: widget.textColor,
+          introBadgeVariant: widget.introBadgeVariant,
+        ),
+      );
+    }
+
+    final theme = Theme.of(context);
+    final arrowColor = (widget.textColor ?? theme.colorScheme.onSurface)
+        .withValues(alpha: 0.38);
+    final fadeTo = Colors.white.withValues(
+      alpha: theme.brightness == Brightness.dark ? 0.14 : 0.24,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pageWidth =
+            constraints.maxWidth.isFinite && constraints.maxWidth > 0
+            ? constraints.maxWidth
+            : 0.0;
+
+        return Stack(
+          children: [
+            SingleChildScrollView(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var pageIndex = 0; pageIndex < pages; pageIndex++)
+                    SizedBox(
+                      width: pageWidth,
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: widget.pageSize,
+                        gridDelegate: widget.gridDelegate,
+                        itemBuilder: (context, i) {
+                          final globalIndex = pageIndex * widget.pageSize + i;
+                          if (globalIndex >= items.length) {
+                            return const SizedBox.shrink();
+                          }
+                          return _CourseTileGlass(
+                            course: items[globalIndex],
+                            index: globalIndex,
+                            assets: widget.assets,
+                            ctaGradient: widget.ctaGradient,
+                            textColor: widget.textColor,
+                            introBadgeVariant: widget.introBadgeVariant,
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 44,
+              child: IgnorePointer(
+                ignoring: !_showHint,
+                child: AnimatedOpacity(
+                  opacity: _showHint ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: pageWidth > 0
+                          ? () => _scrollRightBy(pageWidth * 0.65)
+                          : null,
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [Colors.transparent, fadeTo],
+                          ),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: arrowColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 

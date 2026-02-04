@@ -442,7 +442,10 @@ class _LandingPageState extends ConsumerState<LandingPage>
           ),
 
           // SEKTION – Populära kurser
-          const CoursesShowcaseSection(title: 'Populära kurser'),
+          const CoursesShowcaseSection(
+            title: 'Populära kurser',
+            desktop: CoursesShowcaseDesktop(columns: 3, rows: 2),
+          ),
 
           // SEKTION – Lärare (carousel)
           Center(
