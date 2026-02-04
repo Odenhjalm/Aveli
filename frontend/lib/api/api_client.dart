@@ -41,6 +41,17 @@ class ApiClient {
           final requestOptions = error.requestOptions;
           final alreadyRetried = requestOptions.extra['retried'] == true;
           final skipAuth = requestOptions.extra['skipAuth'] == true;
+          final isMultipartRetryUnsafe =
+              requestOptions.data is FormData ||
+              requestOptions.contentType
+                      ?.toLowerCase()
+                      .contains('multipart/form-data') ==
+                  true ||
+              requestOptions.headers[Headers.contentTypeHeader]
+                      ?.toString()
+                      .toLowerCase()
+                      .contains('multipart/form-data') ==
+                  true;
           var sessionExpiredHandled = false;
 
           if (response?.statusCode == 403 && !skipAuth) {
@@ -49,7 +60,13 @@ class ApiClient {
             return;
           }
 
-          if (response?.statusCode == 401 && !alreadyRetried && !skipAuth) {
+          // Multipart `FormData` is single-use (stream-backed) and cannot be
+          // safely retried using the same RequestOptions.
+          // Strategy (Option A): never auto-retry multipart requests on 401.
+          if (response?.statusCode == 401 &&
+              !alreadyRetried &&
+              !skipAuth &&
+              !isMultipartRetryUnsafe) {
             final refreshed = await _refreshAccessToken();
             if (refreshed) {
               final newToken = await _tokenStorage.readAccessToken();
