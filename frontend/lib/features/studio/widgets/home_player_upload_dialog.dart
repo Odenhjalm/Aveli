@@ -104,6 +104,34 @@ class _HomePlayerUploadDialogState
       _processing = false;
     });
 
+    final lower = widget.contentType.trim().toLowerCase();
+    final filenameLower = widget.file.name.toLowerCase();
+    final isMp4 = lower == 'video/mp4' || filenameLower.endsWith('.mp4');
+    final isVideo = lower.startsWith('video/') || isMp4;
+    final isAudio = lower.startsWith('audio/') || _isWavUpload;
+
+    if (isAudio && !_isWavUpload) {
+      const message = 'Endast WAV stöds för ljud i Home Player.';
+      if (!mounted) return;
+      setState(() {
+        _uploading = false;
+        _error = message;
+        _status = message;
+      });
+      return;
+    }
+
+    if (isVideo && !isMp4) {
+      const message = 'Endast MP4 stöds för video i Home Player.';
+      if (!mounted) return;
+      setState(() {
+        _uploading = false;
+        _error = message;
+        _status = message;
+      });
+      return;
+    }
+
     if (_isWavUpload) {
       await _uploadViaMediaPipeline();
     } else {
@@ -182,6 +210,19 @@ class _HomePlayerUploadDialogState
             message = detail.startsWith('File too large')
                 ? detail.replaceFirst('File too large', 'Filen är för stor')
                 : detail;
+          }
+        } else if (failure is ServerFailure) {
+          message = failure.message;
+        } else if (failure is NetworkFailure ||
+            failure is TimeoutFailure ||
+            failure is UnauthorizedFailure ||
+            failure is NotFoundFailure ||
+            failure is ConfigurationFailure) {
+          message = failure.message;
+        } else {
+          final detail = failure.message.trim();
+          if (detail.isNotEmpty) {
+            message = 'Kunde inte starta uppladdningen: $detail';
           }
         }
         if (!mounted) return;

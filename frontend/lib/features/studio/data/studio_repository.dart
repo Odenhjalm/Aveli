@@ -327,7 +327,7 @@ class StudioRepository {
     required int byteSize,
     required String originalName,
     bool active = true,
-    String storageBucket = 'home-media',
+    String storageBucket = 'course-media',
   }) async {
     final body = <String, dynamic>{
       'title': title,
