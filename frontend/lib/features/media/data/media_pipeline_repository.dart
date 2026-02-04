@@ -67,14 +67,14 @@ class MediaStatus {
   final String? codec;
 
   factory MediaStatus.fromJson(Map<String, dynamic> json) => MediaStatus(
-        mediaId: json['media_id'] as String,
-        state: json['state'] as String? ?? 'uploaded',
-        errorMessage: json['error_message'] as String?,
-        ingestFormat: json['ingest_format'] as String?,
-        streamingFormat: json['streaming_format'] as String?,
-        durationSeconds: json['duration_seconds'] as int?,
-        codec: json['codec'] as String?,
-      );
+    mediaId: json['media_id'] as String,
+    state: json['state'] as String? ?? 'uploaded',
+    errorMessage: json['error_message'] as String?,
+    ingestFormat: json['ingest_format'] as String?,
+    streamingFormat: json['streaming_format'] as String?,
+    durationSeconds: json['duration_seconds'] as int?,
+    codec: json['codec'] as String?,
+  );
 }
 
 class CoverMediaResponse {
@@ -100,6 +100,7 @@ class MediaPipelineRepository {
     required String mimeType,
     required int sizeBytes,
     required String mediaType,
+    String? purpose,
     String? courseId,
     String? lessonId,
   }) async {
@@ -108,6 +109,7 @@ class MediaPipelineRepository {
       'mime_type': mimeType,
       'size_bytes': sizeBytes,
       'media_type': mediaType,
+      if (purpose != null) 'purpose': purpose,
       if (courseId != null) 'course_id': courseId,
       if (lessonId != null) 'lesson_id': lessonId,
     };
@@ -118,9 +120,7 @@ class MediaPipelineRepository {
     return MediaUploadTarget.fromJson(response);
   }
 
-  Future<MediaUploadTarget> refreshUploadUrl({
-    required String mediaId,
-  }) async {
+  Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) async {
     final response = await _client.post<Map<String, dynamic>>(
       ApiPaths.mediaUploadUrlRefresh,
       body: {'media_id': mediaId},

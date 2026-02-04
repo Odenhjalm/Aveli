@@ -299,6 +299,7 @@ async def stream_signed_media(token: str, request: Request):
         row = {
             "id": media_object["id"],
             "storage_path": media_object.get("storage_path"),
+            "storage_bucket": media_object.get("storage_bucket"),
             "content_type": media_object.get("content_type"),
         }
 

@@ -1,12 +1,10 @@
 import logging
 import mimetypes
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 from uuid import UUID, uuid4
-
-import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 
 from .. import models, repositories, schemas
@@ -18,7 +16,6 @@ from ..services import courses_service, livekit as livekit_service, storage_serv
 from ..services import media_cleanup
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 from ..utils import media_signer
-from ..utils import media_paths
 from ..utils.profile_media import (
     lesson_media_source_from_row,
     profile_media_item_from_row,
@@ -432,155 +429,224 @@ async def studio_home_player_library(current: TeacherUser):
 
 
 @router.post(
+    "/home-player/uploads/upload-url",
+    response_model=schemas.HomePlayerUploadUrlResponse,
+)
+async def studio_home_player_upload_url(
+    payload: schemas.HomePlayerUploadUrlRequest,
+    current: TeacherUser,
+):
+    teacher_id = str(current["id"])
+    mime_type = str(payload.mime_type or "").strip().lower()
+    if not mime_type:
+        raise HTTPException(status_code=422, detail="mime_type is required")
+
+    normalized_ext = Path(payload.filename).suffix.lower().lstrip(".")
+    if normalized_ext == "wav" or mime_type in {
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
+        "audio/vnd.wave",
+    }:
+        raise HTTPException(
+            status_code=422,
+            detail="WAV uploads must use media pipeline",
+        )
+
+    if not (mime_type.startswith("audio/") or mime_type.startswith("video/")):
+        raise HTTPException(status_code=415, detail="Unsupported media type")
+
+    max_bytes = int(settings.lesson_media_max_bytes)
+    if payload.size_bytes > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large",
+        )
+
+    storage_client = storage_service.get_storage_service("home-media")
+    if not storage_client.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        )
+
+    safe_name = Path(payload.filename).name.strip() or "media"
+    token = uuid4().hex
+    object_path = (Path("home-player") / teacher_id / f"{token}_{safe_name}").as_posix()
+
+    try:
+        upload = await storage_client.create_upload_url(
+            object_path,
+            content_type=mime_type,
+            upsert=False,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning("Home upload signing failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
+    return schemas.HomePlayerUploadUrlResponse(
+        upload_url=upload.url,
+        object_path=upload.path,
+        headers=dict(upload.headers),
+        expires_at=expires_at,
+    )
+
+
+@router.post(
+    "/home-player/uploads/upload-url/refresh",
+    response_model=schemas.HomePlayerUploadUrlResponse,
+)
+async def studio_refresh_home_player_upload_url(
+    payload: schemas.HomePlayerUploadUrlRefreshRequest,
+    current: TeacherUser,
+):
+    teacher_id = str(current["id"])
+    object_path = str(payload.object_path or "").strip().lstrip("/")
+    if not object_path:
+        raise HTTPException(status_code=422, detail="object_path is required")
+
+    expected_prefix = f"home-player/{teacher_id}/"
+    if not object_path.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    mime_type = str(payload.mime_type or "").strip().lower()
+    if not mime_type:
+        raise HTTPException(status_code=422, detail="mime_type is required")
+    if mime_type in {
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
+        "audio/vnd.wave",
+    }:
+        raise HTTPException(
+            status_code=422,
+            detail="WAV uploads must use media pipeline",
+        )
+    if not (mime_type.startswith("audio/") or mime_type.startswith("video/")):
+        raise HTTPException(status_code=415, detail="Unsupported media type")
+
+    storage_client = storage_service.get_storage_service("home-media")
+    if not storage_client.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        )
+
+    try:
+        upload = await storage_client.create_upload_url(
+            object_path,
+            content_type=mime_type,
+            upsert=False,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning("Home upload signing refresh failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
+    return schemas.HomePlayerUploadUrlResponse(
+        upload_url=upload.url,
+        object_path=upload.path,
+        headers=dict(upload.headers),
+        expires_at=expires_at,
+    )
+
+
+@router.post(
     "/home-player/uploads",
     response_model=schemas.HomePlayerUploadItem,
     status_code=status.HTTP_201_CREATED,
 )
 async def studio_create_home_player_upload(
+    payload: schemas.HomePlayerUploadCreate,
     current: TeacherUser,
-    file: UploadFile = File(...),
-    title: str = Form(...),
-    active: bool = Form(True),
 ):
     teacher_id = str(current["id"])
-    normalized_title = (title or "").strip()
+    normalized_title = (payload.title or "").strip()
     if not normalized_title:
         raise HTTPException(status_code=422, detail="title is required")
 
-    filename = (file.filename or "").strip() or "media"
-    content_type = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    if payload.media_asset_id is not None:
+        media_asset = await repositories.get_media_asset(str(payload.media_asset_id))
+        if not media_asset:
+            raise HTTPException(status_code=404, detail="Media not found")
+        if str(media_asset.get("owner_id") or "") != teacher_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if str(media_asset.get("purpose") or "").lower() != "home_player_audio":
+            raise HTTPException(status_code=422, detail="Invalid media purpose")
+        if str(media_asset.get("media_type") or "").lower() != "audio":
+            raise HTTPException(status_code=422, detail="Invalid media type")
+        created = await repositories.create_home_player_upload(
+            teacher_id=teacher_id,
+            media_id=None,
+            media_asset_id=str(payload.media_asset_id),
+            title=normalized_title,
+            kind="audio",
+            active=bool(payload.active),
+        )
+        if not created:
+            raise HTTPException(status_code=400, detail="Failed to create upload")
+        return schemas.HomePlayerUploadItem(**created)
+
+    storage_bucket = (payload.storage_bucket or "").strip() or "home-media"
+    if storage_bucket != "home-media":
+        raise HTTPException(status_code=422, detail="Unsupported storage bucket")
+
+    storage_path = (payload.storage_path or "").strip().lstrip("/")
+    if not storage_path:
+        raise HTTPException(status_code=422, detail="storage_path is required")
+
+    expected_prefix = f"home-player/{teacher_id}/"
+    if not storage_path.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    content_type = (
+        (payload.content_type or "").strip()
+        or mimetypes.guess_type(storage_path)[0]
+        or "application/octet-stream"
+    )
     normalized_type = content_type.lower()
-    normalized_ext = Path(filename).suffix.lower().lstrip(".")
-    is_wav = normalized_ext == "wav" or normalized_type in {
+    if normalized_type in {
         "audio/wav",
         "audio/x-wav",
         "audio/wave",
         "audio/vnd.wave",
-    }
-
-    if is_wav:
-        if not storage_service.storage_service.enabled:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storage signing unavailable",
-            )
-
-        resource_prefix = Path("home-player") / teacher_id
-        object_path = media_paths.build_audio_source_object_path(
-            resource_prefix,
-            filename,
+    } or Path(storage_path).suffix.lower() == ".wav":
+        raise HTTPException(
+            status_code=422,
+            detail="WAV uploads must use media pipeline",
         )
-
-        try:
-            upload = await storage_service.storage_service.create_upload_url(
-                object_path,
-                content_type="audio/wav",
-                upsert=False,
-                cache_seconds=settings.media_public_cache_seconds,
-            )
-        except storage_service.StorageServiceError as exc:
-            logger.warning("Home WAV upload signing failed: %s", exc)
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storage signing unavailable",
-            ) from exc
-
-        size_bytes = 0
-
-        async def _stream_upload():
-            nonlocal size_bytes
-            max_bytes = int(settings.lesson_media_max_bytes)
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                size_bytes += len(chunk)
-                if size_bytes > max_bytes:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail="File too large",
-                    )
-                yield chunk
-
-        timeout = httpx.Timeout(10.0, read=None)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.put(
-                upload.url,
-                headers=dict(upload.headers),
-                content=_stream_upload(),
-            )
-        if response.status_code >= 400:
-            logger.warning(
-                "Home WAV upload failed status=%s body=%s",
-                response.status_code,
-                response.text[:300],
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Upload failed",
-            )
-
-        media_asset = await repositories.create_media_asset(
-            owner_id=teacher_id,
-            course_id=None,
-            lesson_id=None,
-            media_type="audio",
-            purpose="home_player_audio",
-            ingest_format="wav",
-            original_object_path=upload.path,
-            original_content_type="audio/wav",
-            original_filename=filename,
-            original_size_bytes=size_bytes,
-            storage_bucket=storage_service.storage_service.bucket,
-            state="uploaded",
-        )
-        if not media_asset:
-            await storage_service.storage_service.delete_object(upload.path)
-            raise HTTPException(status_code=500, detail="Failed to persist media")
-
-        created = await repositories.create_home_player_upload(
-            teacher_id=teacher_id,
-            media_id=None,
-            media_asset_id=str(media_asset["id"]),
-            title=normalized_title,
-            kind="audio",
-            active=bool(active),
-        )
-        if not created:
-            await media_cleanup.delete_media_asset_and_objects(media_id=str(media_asset["id"]))
-            raise HTTPException(status_code=400, detail="Failed to create upload")
-        return schemas.HomePlayerUploadItem(**created)
 
     if not (normalized_type.startswith("audio/") or normalized_type.startswith("video/")):
         raise HTTPException(status_code=415, detail="Unsupported media type")
     kind = "video" if normalized_type.startswith("video/") else "audio"
 
-    relative_dir = Path("home-media") / teacher_id
-    destination_dir = upload_routes._safe_join(
-        upload_routes.UPLOADS_ROOT,
-        *relative_dir.parts,
-    )
-    write_result = await upload_routes._write_upload(
-        destination_dir,
-        file,
-        allowed_prefixes=("audio/", "video/"),
-        max_bytes=settings.lesson_media_max_bytes,
-    )
-    relative_path = relative_dir / write_result.filename
-    final_content_type = (
-        file.content_type
-        or mimetypes.guess_type(write_result.destination_path.name)[0]
-        or "application/octet-stream"
-    )
+    max_bytes = int(settings.lesson_media_max_bytes)
+    byte_size = int(payload.byte_size or 0)
+    if byte_size <= 0:
+        raise HTTPException(status_code=422, detail="byte_size is required")
+    if byte_size > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large",
+        )
 
     media_object = await models.create_media_object(
         owner_id=teacher_id,
-        storage_path=relative_path.as_posix(),
-        storage_bucket="home-media",
-        content_type=final_content_type,
-        byte_size=write_result.size,
-        checksum=write_result.checksum,
-        original_name=filename,
+        storage_path=storage_path,
+        storage_bucket=storage_bucket,
+        content_type=content_type,
+        byte_size=byte_size,
+        checksum=None,
+        original_name=(payload.original_name or "").strip() or Path(storage_path).name,
     )
     if not media_object:
         raise HTTPException(status_code=500, detail="Failed to persist media")
@@ -591,7 +657,7 @@ async def studio_create_home_player_upload(
         media_asset_id=None,
         title=normalized_title,
         kind=kind,
-        active=bool(active),
+        active=bool(payload.active),
     )
     if not created:
         raise HTTPException(status_code=400, detail="Failed to create upload")

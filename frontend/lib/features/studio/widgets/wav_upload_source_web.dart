@@ -70,6 +70,36 @@ Future<WavUploadFile?> pickWavFile() async {
   );
 }
 
+Future<WavUploadFile?> pickMediaFile() async {
+  final input = FileUploadInputElement()
+    ..accept = 'audio/*,video/*'
+    ..multiple = false;
+
+  final completer = Completer<WavUploadFile?>();
+
+  input.onChange.first.then((_) {
+    final files = input.files;
+    if (files == null || files.isEmpty) {
+      completer.complete(null);
+      input.remove();
+      return;
+    }
+    completer.complete(WavUploadFile(files.first));
+    input.remove();
+  });
+
+  document.body?.append(input);
+  input
+    ..style.display = 'none'
+    ..value = ''
+    ..click();
+
+  return completer.future.timeout(
+    const Duration(minutes: 5),
+    onTimeout: () => null,
+  );
+}
+
 Future<WavResumableSession?> findResumableSession({
   required String courseId,
   required String lessonId,
@@ -119,7 +149,7 @@ Future<void> uploadWavFile({
   void Function(bool resumed)? onResume,
   Future<bool> Function()? ensureAuth,
   Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-      refreshSigning,
+  refreshSigning,
   void Function()? onSigningRefresh,
   WavResumableSession? resumableSession,
 }) async {
@@ -130,7 +160,8 @@ Future<void> uploadWavFile({
   WavResumableSession? session;
 
   try {
-    session = resumableSession ??
+    session =
+        resumableSession ??
         await _createResumableSession(
           mediaId: mediaId,
           courseId: courseId,
@@ -145,7 +176,7 @@ Future<void> uploadWavFile({
     final resumed = resumableSession != null;
     onResume?.call(resumed);
 
-    var tusHeaders = _baseTusHeaders(session!);
+    var tusHeaders = _baseTusHeaders(session);
     var signingRefreshAttempts = 0;
 
     Future<void> refreshSigningToken() async {
@@ -176,8 +207,10 @@ Future<void> uploadWavFile({
 
       final refreshed = await refresher(session!);
       final signedInfo = _parseSignedUploadInfo(refreshed.uploadUrl);
-      final normalizedPath =
-          _normalizeObjectPath(signedInfo.bucket, refreshed.objectPath);
+      final normalizedPath = _normalizeObjectPath(
+        signedInfo.bucket,
+        refreshed.objectPath,
+      );
       if (signedInfo.bucket != session!.bucket) {
         throw const WavUploadFailure(WavUploadFailureKind.failed);
       }
@@ -307,9 +340,12 @@ WavResumableSession? _loadSession(String key) {
 
 void _storeSession(WavResumableSession session) {
   try {
-    window.localStorage[
-        _sessionKey(session.courseId, session.lessonId, session.fingerprint)] =
-      session.toStoragePayload();
+    window.localStorage[_sessionKey(
+      session.courseId,
+      session.lessonId,
+      session.fingerprint,
+    )] = session
+        .toStoragePayload();
   } catch (_) {
     // Ignore localStorage write failures.
   }
@@ -333,7 +369,9 @@ Future<ByteBuffer> _readBlobAsBuffer(Blob blob) {
 
   reader.onError.listen((_) {
     if (completer.isCompleted) return;
-    completer.completeError(const WavUploadFailure(WavUploadFailureKind.failed));
+    completer.completeError(
+      const WavUploadFailure(WavUploadFailureKind.failed),
+    );
   });
 
   reader.onLoadEnd.listen((_) {
@@ -369,7 +407,8 @@ Future<String> _hashBlob(Blob blob) async {
 }
 
 _SignedUploadInfo _parseSignedUploadInfo(Uri uploadUrl) {
-  final token = uploadUrl.queryParameters['token'] ??
+  final token =
+      uploadUrl.queryParameters['token'] ??
       uploadUrl.queryParameters['signature'];
   if (token == null || token.isEmpty) {
     throw const WavUploadFailure(WavUploadFailureKind.failed);
@@ -381,9 +420,7 @@ _SignedUploadInfo _parseSignedUploadInfo(Uri uploadUrl) {
     throw const WavUploadFailure(WavUploadFailureKind.failed);
   }
   final bucket = segments[signIndex + 1];
-  final storageBaseUrl = Uri.parse(
-    '${uploadUrl.origin}/storage/v1',
-  );
+  final storageBaseUrl = Uri.parse('${uploadUrl.origin}/storage/v1');
 
   return _SignedUploadInfo(
     storageBaseUrl: storageBaseUrl,
@@ -483,7 +520,9 @@ Future<WavResumableSession> _createResumableSession({
   }
   // Supabase returns a non-signed session URL under /upload/resumable/<id>, but
   // signed uploads must use /upload/resumable/sign/<id> for HEAD/PATCH.
-  final sessionUrl = _signedResumableSessionUrl(_resolveLocation(endpoint, location));
+  final sessionUrl = _signedResumableSessionUrl(
+    _resolveLocation(endpoint, location),
+  );
   final expiresAt = _parseUploadExpires(response.headers['upload-expires']);
 
   final session = WavResumableSession(

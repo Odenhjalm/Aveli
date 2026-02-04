@@ -19,7 +19,9 @@ async def list_home_player_uploads(teacher_id: str) -> list[dict[str, Any]]:
           hpu.updated_at,
           coalesce(mo.content_type, ma.original_content_type) AS content_type,
           coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
-          coalesce(mo.original_name, ma.original_filename) AS original_name
+          coalesce(mo.original_name, ma.original_filename) AS original_name,
+          ma.state AS media_state,
+          ma.error_message AS media_error_message
         FROM app.home_player_uploads hpu
         LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
         LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
@@ -46,7 +48,9 @@ async def get_home_player_upload(*, upload_id: str, teacher_id: str) -> Optional
           hpu.updated_at,
           coalesce(mo.content_type, ma.original_content_type) AS content_type,
           coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
-          coalesce(mo.original_name, ma.original_filename) AS original_name
+          coalesce(mo.original_name, ma.original_filename) AS original_name,
+          ma.state AS media_state,
+          ma.error_message AS media_error_message
         FROM app.home_player_uploads hpu
         LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
         LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id

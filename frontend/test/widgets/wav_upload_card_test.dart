@@ -13,7 +13,10 @@ import 'package:aveli/features/studio/widgets/wav_upload_source.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_types.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
-  _FakeMediaPipelineRepository({required this.uploadTarget, required this.status});
+  _FakeMediaPipelineRepository({
+    required this.uploadTarget,
+    required this.status,
+  });
 
   final MediaUploadTarget uploadTarget;
   final MediaStatus status;
@@ -24,6 +27,7 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
     required String mimeType,
     required int sizeBytes,
     required String mediaType,
+    String? purpose,
     String? courseId,
     String? lessonId,
   }) async {
@@ -113,7 +117,7 @@ void main() {
       void Function(bool resumed)? onResume,
       Future<bool> Function()? ensureAuth,
       Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-          refreshSigning,
+      refreshSigning,
       void Function()? onSigningRefresh,
       WavResumableSession? resumableSession,
     }) async {
@@ -123,9 +127,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          mediaPipelineRepositoryProvider.overrideWithValue(repo),
-        ],
+        overrides: [mediaPipelineRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: WavUploadCard(
@@ -156,10 +158,7 @@ void main() {
       const ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: WavUploadCard(
-              courseId: 'course-1',
-              lessonId: 'lesson-1',
-            ),
+            body: WavUploadCard(courseId: 'course-1', lessonId: 'lesson-1'),
           ),
         ),
       ),
@@ -218,10 +217,7 @@ void main() {
       const ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            body: WavUploadCard(
-              courseId: null,
-              lessonId: 'lesson-1',
-            ),
+            body: WavUploadCard(courseId: null, lessonId: 'lesson-1'),
           ),
         ),
       ),

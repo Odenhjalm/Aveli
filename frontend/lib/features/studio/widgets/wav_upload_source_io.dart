@@ -22,6 +22,27 @@ Future<WavUploadFile?> pickWavFile() async {
   return WavUploadFile(file, 'audio/wav', size);
 }
 
+Future<WavUploadFile?> pickMediaFile() async {
+  const extensions = <String>[
+    'mp3',
+    'm4a',
+    'aac',
+    'ogg',
+    'wav',
+    'mp4',
+    'mov',
+    'm4v',
+    'webm',
+    'mkv',
+  ];
+
+  final typeGroup = fs.XTypeGroup(label: 'media', extensions: extensions);
+  final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
+  if (file == null) return null;
+  final size = await file.length();
+  return WavUploadFile(file, null, size);
+}
+
 Future<WavResumableSession?> findResumableSession({
   required String courseId,
   required String lessonId,
@@ -48,7 +69,7 @@ Future<void> uploadWavFile({
   void Function(bool resumed)? onResume,
   Future<bool> Function()? ensureAuth,
   Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-      refreshSigning,
+  refreshSigning,
   void Function()? onSigningRefresh,
   WavResumableSession? resumableSession,
 }) async {
@@ -65,9 +86,7 @@ Future<void> uploadWavFile({
     await dio.putUri<void>(
       uploadUrl,
       data: stream,
-      options: Options(
-        headers: Map<String, String>.from(headers),
-      ),
+      options: Options(headers: Map<String, String>.from(headers)),
       cancelToken: dioCancel,
       onSendProgress: (sent, total) {
         final resolvedTotal = total > 0 ? total : file.size;
@@ -80,6 +99,9 @@ Future<void> uploadWavFile({
     }
     throw WavUploadFailure(WavUploadFailureKind.failed, detail: error.message);
   } catch (error) {
-    throw WavUploadFailure(WavUploadFailureKind.failed, detail: error.toString());
+    throw WavUploadFailure(
+      WavUploadFailureKind.failed,
+      detail: error.toString(),
+    );
   }
 }

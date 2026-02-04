@@ -5,7 +5,6 @@ import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
-import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 
@@ -281,35 +280,77 @@ class StudioRepository {
   }
 
   Future<HomePlayerUploadItem> uploadHomePlayerUpload({
-    required Uint8List data,
-    required String filename,
-    required String contentType,
     required String title,
+    required String mediaAssetId,
     bool active = true,
-    void Function(UploadProgress progress)? onProgress,
-    CancelToken? cancelToken,
   }) async {
-    final fields = <String, dynamic>{
+    final body = <String, dynamic>{
       'title': title,
       'active': active,
-      'file': MultipartFile.fromBytes(
-        data,
-        filename: filename,
-        contentType: MediaType.parse(contentType),
-      ),
+      'media_asset_id': mediaAssetId,
     };
-    final res = await _client.postForm<Map<String, dynamic>>(
+    final res = await _client.post<Map<String, dynamic>>(
       '/studio/home-player/uploads',
-      FormData.fromMap(fields),
-      onSendProgress: onProgress == null
-          ? null
-          : (sent, total) {
-              if (total <= 0) return;
-              onProgress(UploadProgress(sent: sent, total: total));
-            },
-      cancelToken: cancelToken,
+      body: body,
     );
-    return HomePlayerUploadItem.fromJson(res ?? const {});
+    return HomePlayerUploadItem.fromJson(res);
+  }
+
+  Future<Map<String, dynamic>> requestHomePlayerUploadUrl({
+    required String filename,
+    required String mimeType,
+    required int sizeBytes,
+  }) async {
+    final body = <String, dynamic>{
+      'filename': filename,
+      'mime_type': mimeType,
+      'size_bytes': sizeBytes,
+    };
+    final res = await _client.post<Map<String, dynamic>>(
+      '/studio/home-player/uploads/upload-url',
+      body: body,
+    );
+    return Map<String, dynamic>.from(res);
+  }
+
+  Future<Map<String, dynamic>> refreshHomePlayerUploadUrl({
+    required String objectPath,
+    required String mimeType,
+  }) async {
+    final body = <String, dynamic>{
+      'object_path': objectPath,
+      'mime_type': mimeType,
+    };
+    final res = await _client.post<Map<String, dynamic>>(
+      '/studio/home-player/uploads/upload-url/refresh',
+      body: body,
+    );
+    return Map<String, dynamic>.from(res);
+  }
+
+  Future<HomePlayerUploadItem> createHomePlayerUploadFromStorage({
+    required String title,
+    required String storagePath,
+    required String contentType,
+    required int byteSize,
+    required String originalName,
+    bool active = true,
+    String storageBucket = 'home-media',
+  }) async {
+    final body = <String, dynamic>{
+      'title': title,
+      'active': active,
+      'storage_bucket': storageBucket,
+      'storage_path': storagePath,
+      'content_type': contentType,
+      'byte_size': byteSize,
+      'original_name': originalName,
+    };
+    final res = await _client.post<Map<String, dynamic>>(
+      '/studio/home-player/uploads',
+      body: body,
+    );
+    return HomePlayerUploadItem.fromJson(res);
   }
 
   Future<HomePlayerUploadItem> updateHomePlayerUpload(

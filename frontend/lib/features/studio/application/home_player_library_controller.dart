@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -129,28 +128,6 @@ class HomePlayerLibraryController
       state = AsyncData(snapshot);
     } catch (error, stackTrace) {
       state = AsyncError(AppFailure.from(error, stackTrace), stackTrace);
-    }
-  }
-
-  Future<void> uploadHomeMedia({
-    required Uint8List data,
-    required String filename,
-    required String contentType,
-    required String title,
-  }) async {
-    state = const AsyncLoading();
-    try {
-      await _repository.uploadHomePlayerUpload(
-        data: data,
-        filename: filename,
-        contentType: contentType,
-        title: title,
-      );
-      final snapshot = await _load();
-      state = AsyncData(snapshot);
-    } catch (error, stackTrace) {
-      state = AsyncError(AppFailure.from(error, stackTrace), stackTrace);
-      rethrow;
     }
   }
 

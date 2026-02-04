@@ -23,6 +23,7 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
     required String mimeType,
     required int sizeBytes,
     required String mediaType,
+    String? purpose,
     String? courseId,
     String? lessonId,
   }) {

@@ -23,23 +23,18 @@ void main() {
       tokenStorage: tokens,
     );
 
-    final adapter = _RecordingAdapter(
-      (options) {
-        if (options.path == '/studio/home-player/uploads') {
-          return _jsonResponse(
-            statusCode: 401,
-            body: {'detail': 'unauthorized'},
-          );
-        }
-        if (options.path == ApiPaths.authRefresh) {
-          return _jsonResponse(
-            statusCode: 200,
-            body: {'access_token': 'at-2', 'refresh_token': 'rt-2'},
-          );
-        }
-        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-      },
-    );
+    final adapter = _RecordingAdapter((options) {
+      if (options.path == '/api/upload/course-media') {
+        return _jsonResponse(statusCode: 401, body: {'detail': 'unauthorized'});
+      }
+      if (options.path == ApiPaths.authRefresh) {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {'access_token': 'at-2', 'refresh_token': 'rt-2'},
+        );
+      }
+      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+    });
     client.raw.httpClientAdapter = adapter;
 
     final formData = FormData.fromMap({
@@ -52,7 +47,7 @@ void main() {
     DioException? thrown;
     try {
       await client.postForm<Map<String, dynamic>>(
-        '/studio/home-player/uploads',
+        '/api/upload/course-media',
         formData,
       );
     } catch (err) {
@@ -60,22 +55,23 @@ void main() {
     }
 
     expect(thrown?.response?.statusCode, 401);
-    expect(adapter.count('/studio/home-player/uploads'), 1);
+    expect(adapter.count('/api/upload/course-media'), 1);
     expect(adapter.count(ApiPaths.authRefresh), 0);
   });
 
-  test('ApiClient retries JSON requests on 401 after refreshing token', () async {
-    final storage = _MemoryFlutterSecureStorage();
-    final tokens = TokenStorage(storage: storage);
-    await tokens.saveTokens(accessToken: 'at-1', refreshToken: 'rt-1');
+  test(
+    'ApiClient retries JSON requests on 401 after refreshing token',
+    () async {
+      final storage = _MemoryFlutterSecureStorage();
+      final tokens = TokenStorage(storage: storage);
+      await tokens.saveTokens(accessToken: 'at-1', refreshToken: 'rt-1');
 
-    final client = ApiClient(
-      baseUrl: 'http://127.0.0.1:1',
-      tokenStorage: tokens,
-    );
+      final client = ApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        tokenStorage: tokens,
+      );
 
-    final adapter = _RecordingAdapter(
-      (options) {
+      final adapter = _RecordingAdapter((options) {
         if (options.path == ApiPaths.authRefresh) {
           return _jsonResponse(
             statusCode: 200,
@@ -95,16 +91,16 @@ void main() {
         }
 
         return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-      },
-    );
-    client.raw.httpClientAdapter = adapter;
+      });
+      client.raw.httpClientAdapter = adapter;
 
-    final res = await client.get<Map<String, dynamic>>('/api/some');
+      final res = await client.get<Map<String, dynamic>>('/api/some');
 
-    expect(res['value'], 1);
-    expect(adapter.count('/api/some'), 2);
-    expect(adapter.count(ApiPaths.authRefresh), 1);
-  });
+      expect(res['value'], 1);
+      expect(adapter.count('/api/some'), 2);
+      expect(adapter.count(ApiPaths.authRefresh), 1);
+    },
+  );
 
   test('ApiClient prechecks auth before multipart uploads', () async {
     final storage = _MemoryFlutterSecureStorage();
@@ -119,22 +115,20 @@ void main() {
       tokenStorage: tokens,
     );
 
-    final adapter = _RecordingAdapter(
-      (options) {
-        if (options.path == ApiPaths.authRefresh) {
-          return _jsonResponse(
-            statusCode: 200,
-            body: {'access_token': 'at-2', 'refresh_token': 'rt-2'},
-          );
-        }
+    final adapter = _RecordingAdapter((options) {
+      if (options.path == ApiPaths.authRefresh) {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {'access_token': 'at-2', 'refresh_token': 'rt-2'},
+        );
+      }
 
-        if (options.path == '/studio/home-player/uploads') {
-          return _jsonResponse(statusCode: 200, body: {'ok': true});
-        }
+      if (options.path == '/api/upload/course-media') {
+        return _jsonResponse(statusCode: 200, body: {'ok': true});
+      }
 
-        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-      },
-    );
+      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+    });
     client.raw.httpClientAdapter = adapter;
 
     final formData = FormData.fromMap({
@@ -145,19 +139,21 @@ void main() {
     });
 
     final res = await client.postForm<Map<String, dynamic>>(
-      '/studio/home-player/uploads',
+      '/api/upload/course-media',
       formData,
     );
 
     expect(res?['ok'], true);
     expect(adapter.count(ApiPaths.authRefresh), 1);
-    expect(adapter.count('/studio/home-player/uploads'), 1);
+    expect(adapter.count('/api/upload/course-media'), 1);
     expect(
       adapter.firstIndex(ApiPaths.authRefresh),
-      lessThan(adapter.firstIndex('/studio/home-player/uploads')),
+      lessThan(adapter.firstIndex('/api/upload/course-media')),
     );
     expect(
-      adapter.firstRequest('/studio/home-player/uploads')?.headers['Authorization']
+      adapter
+          .firstRequest('/api/upload/course-media')
+          ?.headers['Authorization']
           ?.toString(),
       'Bearer at-2',
     );

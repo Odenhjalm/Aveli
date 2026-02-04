@@ -427,6 +427,37 @@ class HomePlayerUploadItem(BaseModel):
     content_type: Optional[str] = None
     byte_size: Optional[int] = None
     original_name: Optional[str] = None
+    media_state: Optional[Literal["uploaded", "processing", "ready", "failed"]] = None
+    media_error_message: Optional[str] = None
+
+
+class HomePlayerUploadUrlRequest(BaseModel):
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+
+
+class HomePlayerUploadUrlRefreshRequest(BaseModel):
+    object_path: str
+    mime_type: str
+
+
+class HomePlayerUploadUrlResponse(BaseModel):
+    upload_url: str
+    object_path: str
+    headers: dict[str, str]
+    expires_at: datetime
+
+
+class HomePlayerUploadCreate(BaseModel):
+    title: str
+    active: bool = True
+    media_asset_id: UUID | None = None
+    storage_bucket: str | None = None
+    storage_path: str | None = None
+    content_type: str | None = None
+    byte_size: int | None = None
+    original_name: str | None = None
 
 
 class HomePlayerCourseLinkStatus(str, Enum):
@@ -893,6 +924,7 @@ class MediaUploadUrlRequest(BaseModel):
     media_type: Literal["audio"]
     course_id: UUID | None = None
     lesson_id: UUID | None = None
+    purpose: Literal["lesson_audio", "home_player_audio"] | None = None
 
 
 class MediaUploadUrlRefreshRequest(BaseModel):

@@ -180,27 +180,42 @@ async def request_upload_url(
             detail=f"File too large (max {max_gb} GB)",
         )
 
+    purpose = (payload.purpose or "lesson_audio").strip().lower()
+    if purpose not in {"lesson_audio", "home_player_audio"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported upload purpose",
+        )
+
     course_id: str | None = None
     lesson_id: str | None = None
     resource_prefix: Path | None = None
-    if payload.lesson_id is not None:
-        lesson_id = str(payload.lesson_id)
-        course_id = await _authorize_lesson_upload(
-            user_id=user_id,
-            lesson_id=lesson_id,
-            course_id=payload.course_id,
-        )
-        course_id = str(course_id)
-        resource_prefix = Path("courses") / course_id / "lessons" / lesson_id
-    elif payload.course_id is not None:
-        course_id = str(payload.course_id)
-        await _authorize_course_upload(user_id, course_id)
-        resource_prefix = Path("courses") / course_id
+    if purpose == "home_player_audio":
+        if payload.course_id is not None or payload.lesson_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="course_id/lesson_id not allowed for home player uploads",
+            )
+        resource_prefix = Path("home-player") / user_id
     else:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="course_id or lesson_id is required",
-        )
+        if payload.lesson_id is not None:
+            lesson_id = str(payload.lesson_id)
+            course_id = await _authorize_lesson_upload(
+                user_id=user_id,
+                lesson_id=lesson_id,
+                course_id=payload.course_id,
+            )
+            course_id = str(course_id)
+            resource_prefix = Path("courses") / course_id / "lessons" / lesson_id
+        elif payload.course_id is not None:
+            course_id = str(payload.course_id)
+            await _authorize_course_upload(user_id, course_id)
+            resource_prefix = Path("courses") / course_id
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="course_id or lesson_id is required",
+            )
 
     object_path = media_paths.build_audio_source_object_path(resource_prefix, payload.filename)
     try:
@@ -222,7 +237,7 @@ async def request_upload_url(
         course_id=course_id,
         lesson_id=lesson_id,
         media_type="audio",
-        purpose="lesson_audio",
+        purpose=purpose,
         ingest_format="wav",
         original_object_path=upload.path,
         original_content_type=mime_type,
@@ -262,8 +277,9 @@ async def request_upload_url(
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
     logger.info(
-        "Issued WAV upload URL user_id=%s size_bytes=%s path=%s media_id=%s",
+        "Issued WAV upload URL user_id=%s purpose=%s size_bytes=%s path=%s media_id=%s",
         user_id,
+        purpose,
         payload.size_bytes,
         upload.path,
         media_asset["id"],

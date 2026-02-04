@@ -1,5 +1,4 @@
-import 'package:file_selector/file_selector.dart' as fs;
-import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,20 +8,72 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
-import 'package:aveli/features/editor/widgets/file_picker_web.dart'
-    as web_picker;
 import 'package:aveli/features/studio/application/home_player_library_controller.dart';
+import 'package:aveli/features/studio/widgets/home_player_upload_dialog.dart';
+import 'package:aveli/features/studio/widgets/wav_upload_source.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/hero_background.dart';
 
-class StudioProfilePage extends ConsumerWidget {
+class StudioProfilePage extends ConsumerStatefulWidget {
   const StudioProfilePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<StudioProfilePage> createState() => _StudioProfilePageState();
+}
+
+class _StudioProfilePageState extends ConsumerState<StudioProfilePage> {
+  Timer? _libraryPoller;
+
+  @override
+  void dispose() {
+    _libraryPoller?.cancel();
+    super.dispose();
+  }
+
+  void _syncHomeUploadPolling(AsyncValue<HomePlayerLibraryState> libraryAsync) {
+    final uploads = libraryAsync.valueOrNull?.uploads;
+    final shouldPoll =
+        uploads?.any((upload) {
+          final mediaAssetId = (upload.mediaAssetId ?? '').trim();
+          if (mediaAssetId.isEmpty) return false;
+          final state = (upload.mediaState ?? 'uploaded').trim().toLowerCase();
+          return state != 'ready' && state != 'failed';
+        }) ??
+        false;
+
+    if (shouldPoll) {
+      _libraryPoller ??= Timer.periodic(const Duration(seconds: 5), (_) {
+        if (!mounted) return;
+        ref.invalidate(homePlayerLibraryProvider);
+      });
+      return;
+    }
+
+    _libraryPoller?.cancel();
+    _libraryPoller = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final asyncState = ref.watch(homePlayerLibraryProvider);
-    final isBusy = asyncState.isLoading;
+    _syncHomeUploadPolling(asyncState);
+
+    final cached = asyncState.valueOrNull;
+    if (cached != null) {
+      return AppScaffold(
+        title: 'Home-spelarens bibliotek',
+        extendBodyBehindAppBar: true,
+        onBack: () => context.goNamed(AppRoute.home),
+        contentPadding: const EdgeInsets.fromLTRB(16, 120, 16, 32),
+        background: const HeroBackground(
+          assetPath: 'images/bakgrund.png',
+          opacity: 0.65,
+        ),
+        body: _HomePlayerLibraryBody(state: cached, isBusy: false),
+      );
+    }
+
     return AppScaffold(
       title: 'Home-spelarens bibliotek',
       extendBodyBehindAppBar: true,
@@ -36,9 +87,9 @@ class StudioProfilePage extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorView(
           message: AppFailure.from(error).message,
-          onRetry: () => ref.read(homePlayerLibraryProvider.notifier).refresh(),
+          onRetry: () => ref.invalidate(homePlayerLibraryProvider),
         ),
-        data: (data) => _HomePlayerLibraryBody(state: data, isBusy: isBusy),
+        data: (data) => _HomePlayerLibraryBody(state: data, isBusy: false),
       ),
     );
   }
@@ -65,7 +116,7 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                 'Ladda upp ljud/video direkt för Home. Dessa filer är fristående från kurser. Tar du bort en fil här raderas den helt.',
             primary: true,
             isBusy: isBusy,
-            onRefresh: controller.refresh,
+            onRefresh: () async => ref.invalidate(homePlayerLibraryProvider),
             actions: [
               FilledButton.icon(
                 onPressed: isBusy
@@ -121,7 +172,7 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                 'Här ser du media som är länkat från kursmaterial. Du kan slå på/av länken eller ta bort länken utan att påverka originalfilen.\nInga uppladdningar görs här.',
             primary: false,
             isBusy: isBusy,
-            onRefresh: controller.refresh,
+            onRefresh: () async => ref.invalidate(homePlayerLibraryProvider),
             actions: [
               OutlinedButton.icon(
                 onPressed: isBusy
@@ -461,6 +512,15 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
     final icon = isVideo ? Icons.videocam_outlined : Icons.headphones;
     final typeLabel = isVideo ? 'Video' : 'Ljud';
     final isDisabled = widget.disabled || _saving;
+    final mediaAssetId = (widget.upload.mediaAssetId ?? '').trim();
+    final mediaState = (widget.upload.mediaState ?? 'uploaded')
+        .trim()
+        .toLowerCase();
+    final showsProcessing = mediaAssetId.isNotEmpty && mediaState != 'ready';
+    final processingError = mediaState == 'failed';
+    final processingLabel = processingError
+        ? 'Bearbetningen misslyckades.'
+        : 'Bearbetar ljud…';
 
     final titleStyle = theme.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w700,
@@ -532,6 +592,37 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  if (showsProcessing) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!processingError)
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        if (!processingError) const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            processingLabel,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: processingError
+                                  ? theme.colorScheme.error
+                                  : theme.colorScheme.onSurfaceVariant,
+                              fontWeight: processingError
+                                  ? FontWeight.w600
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -806,7 +897,7 @@ Future<bool?> _confirm(
 }
 
 Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
-  final picked = await _pickMediaFile();
+  final picked = await pickMediaFile();
   if (picked == null) return;
   if (!context.mounted) return;
 
@@ -833,21 +924,21 @@ Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
   if (title == null) return;
   if (!context.mounted) return;
 
-  final controller = ref.read(homePlayerLibraryProvider.notifier);
-  try {
-    await controller.uploadHomeMedia(
-      data: picked.bytes,
-      filename: picked.name,
-      contentType: contentType,
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => HomePlayerUploadDialog(
+      file: picked,
       title: title,
-    );
-    if (!context.mounted) return;
+      contentType: contentType,
+    ),
+  );
+
+  if (ok == true && context.mounted) {
+    ref.invalidate(homePlayerLibraryProvider);
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Uppladdning klar.')));
-  } catch (error) {
-    if (!context.mounted) return;
-    _showErrorSnackBar(context, error);
   }
 }
 
@@ -888,54 +979,6 @@ Future<void> _linkFromCourses(BuildContext context, WidgetRef ref) async {
     if (!context.mounted) return;
     _showErrorSnackBar(context, error);
   }
-}
-
-class _PickedMediaFile {
-  const _PickedMediaFile({
-    required this.name,
-    required this.bytes,
-    this.mimeType,
-  });
-
-  final String name;
-  final Uint8List bytes;
-  final String? mimeType;
-}
-
-Future<_PickedMediaFile?> _pickMediaFile() async {
-  const extensions = <String>[
-    'mp3',
-    'm4a',
-    'aac',
-    'ogg',
-    'wav',
-    'mp4',
-    'mov',
-    'm4v',
-    'webm',
-    'mkv',
-  ];
-
-  if (kIsWeb) {
-    final picked = await web_picker.pickFilesFromHtml(
-      allowedExtensions: extensions,
-      allowMultiple: false,
-      accept: 'audio/*,video/*',
-    );
-    if (picked == null || picked.isEmpty) return null;
-    final file = picked.first;
-    return _PickedMediaFile(
-      name: file.name,
-      bytes: file.bytes,
-      mimeType: file.mimeType,
-    );
-  }
-
-  final typeGroup = fs.XTypeGroup(label: 'media', extensions: extensions);
-  final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
-  if (file == null) return null;
-  final bytes = await file.readAsBytes();
-  return _PickedMediaFile(name: file.name, bytes: bytes);
 }
 
 Future<String?> _promptRequiredTitle(

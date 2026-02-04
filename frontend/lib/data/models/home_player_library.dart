@@ -22,6 +22,8 @@ enum HomePlayerCourseLinkStatus {
 class HomePlayerUploadItem extends Equatable {
   const HomePlayerUploadItem({
     required this.id,
+    this.mediaId,
+    this.mediaAssetId,
     required this.title,
     required this.kind,
     required this.active,
@@ -29,11 +31,15 @@ class HomePlayerUploadItem extends Equatable {
     this.originalName,
     this.contentType,
     this.byteSize,
+    this.mediaState,
+    this.mediaErrorMessage,
   });
 
   factory HomePlayerUploadItem.fromJson(Map<String, dynamic> json) {
     return HomePlayerUploadItem(
       id: json['id'] as String,
+      mediaId: json['media_id'] as String?,
+      mediaAssetId: json['media_asset_id'] as String?,
       title: (json['title'] as String? ?? '').trim(),
       kind: (json['kind'] as String? ?? 'audio').trim(),
       active: json['active'] as bool? ?? false,
@@ -43,10 +49,14 @@ class HomePlayerUploadItem extends Equatable {
       originalName: json['original_name'] as String?,
       contentType: json['content_type'] as String?,
       byteSize: json['byte_size'] as int?,
+      mediaState: json['media_state'] as String?,
+      mediaErrorMessage: json['media_error_message'] as String?,
     );
   }
 
   final String id;
+  final String? mediaId;
+  final String? mediaAssetId;
   final String title;
   final String kind;
   final bool active;
@@ -54,10 +64,14 @@ class HomePlayerUploadItem extends Equatable {
   final String? originalName;
   final String? contentType;
   final int? byteSize;
+  final String? mediaState;
+  final String? mediaErrorMessage;
 
   HomePlayerUploadItem copyWith({bool? active, String? title}) {
     return HomePlayerUploadItem(
       id: id,
+      mediaId: mediaId,
+      mediaAssetId: mediaAssetId,
       title: title ?? this.title,
       kind: kind,
       active: active ?? this.active,
@@ -65,12 +79,16 @@ class HomePlayerUploadItem extends Equatable {
       originalName: originalName,
       contentType: contentType,
       byteSize: byteSize,
+      mediaState: mediaState,
+      mediaErrorMessage: mediaErrorMessage,
     );
   }
 
   @override
   List<Object?> get props => [
     id,
+    mediaId,
+    mediaAssetId,
     title,
     kind,
     active,
@@ -78,6 +96,8 @@ class HomePlayerUploadItem extends Equatable {
     originalName,
     contentType,
     byteSize,
+    mediaState,
+    mediaErrorMessage,
   ];
 }
 
@@ -159,14 +179,15 @@ class HomePlayerLibraryPayload extends Equatable {
     return HomePlayerLibraryPayload(
       uploads: uploadsJson
           .whereType<Map>()
-          .map((e) => HomePlayerUploadItem.fromJson(Map<String, dynamic>.from(e)))
+          .map(
+            (e) => HomePlayerUploadItem.fromJson(Map<String, dynamic>.from(e)),
+          )
           .toList(growable: false),
       courseLinks: linksJson
           .whereType<Map>()
           .map(
-            (e) => HomePlayerCourseLinkItem.fromJson(
-              Map<String, dynamic>.from(e),
-            ),
+            (e) =>
+                HomePlayerCourseLinkItem.fromJson(Map<String, dynamic>.from(e)),
           )
           .toList(growable: false),
       courseMedia: sourcesJson
@@ -187,4 +208,3 @@ class HomePlayerLibraryPayload extends Equatable {
   @override
   List<Object?> get props => [uploads, courseLinks, courseMedia];
 }
-
