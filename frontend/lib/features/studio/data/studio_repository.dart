@@ -5,6 +5,7 @@ import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 
@@ -288,6 +289,19 @@ class StudioRepository {
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
+    // Auth precheck is required for multipart uploads: `FormData` is single-use
+    // (stream-backed) and cannot be safely retried after a 401 refresh flow.
+    // Ensure the access token is valid and not near expiry *before* building
+    // the `FormData` and starting the upload.
+    final authed = await _client.ensureAuth(
+      leeway: const Duration(minutes: 2),
+    );
+    if (!authed) {
+      throw UnauthorizedFailure(
+        message: 'Behörighet saknas. Logga in igen.',
+      );
+    }
+
     final fields = <String, dynamic>{
       'title': title,
       'active': active,
