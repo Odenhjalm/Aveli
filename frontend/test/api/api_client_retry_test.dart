@@ -13,7 +13,10 @@ void main() {
   test('ApiClient does not retry multipart FormData on 401', () async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);
-    await tokens.saveTokens(accessToken: 'at-1', refreshToken: 'rt-1');
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(4102444800),
+      refreshToken: 'rt-1',
+    );
 
     final client = ApiClient(
       baseUrl: 'http://127.0.0.1:1',
@@ -102,6 +105,63 @@ void main() {
     expect(adapter.count('/api/some'), 2);
     expect(adapter.count(ApiPaths.authRefresh), 1);
   });
+
+  test('ApiClient prechecks auth before multipart uploads', () async {
+    final storage = _MemoryFlutterSecureStorage();
+    final tokens = TokenStorage(storage: storage);
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(0),
+      refreshToken: 'rt-1',
+    );
+
+    final client = ApiClient(
+      baseUrl: 'http://127.0.0.1:1',
+      tokenStorage: tokens,
+    );
+
+    final adapter = _RecordingAdapter(
+      (options) {
+        if (options.path == ApiPaths.authRefresh) {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {'access_token': 'at-2', 'refresh_token': 'rt-2'},
+          );
+        }
+
+        if (options.path == '/studio/home-player/uploads') {
+          return _jsonResponse(statusCode: 200, body: {'ok': true});
+        }
+
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      },
+    );
+    client.raw.httpClientAdapter = adapter;
+
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(
+        Uint8List.fromList([1, 2, 3]),
+        filename: 'test.bin',
+      ),
+    });
+
+    final res = await client.postForm<Map<String, dynamic>>(
+      '/studio/home-player/uploads',
+      formData,
+    );
+
+    expect(res?['ok'], true);
+    expect(adapter.count(ApiPaths.authRefresh), 1);
+    expect(adapter.count('/studio/home-player/uploads'), 1);
+    expect(
+      adapter.firstIndex(ApiPaths.authRefresh),
+      lessThan(adapter.firstIndex('/studio/home-player/uploads')),
+    );
+    expect(
+      adapter.firstRequest('/studio/home-player/uploads')?.headers['Authorization']
+          ?.toString(),
+      'Bearer at-2',
+    );
+  });
 }
 
 ResponseBody _jsonResponse({
@@ -117,6 +177,14 @@ ResponseBody _jsonResponse({
   );
 }
 
+String _jwtWithExpSeconds(int expSeconds) {
+  final header = base64Url.encode(utf8.encode(json.encode({'alg': 'HS256'})));
+  final payload = base64Url.encode(
+    utf8.encode(json.encode({'exp': expSeconds})),
+  );
+  return '$header.$payload.signature';
+}
+
 class _RecordingAdapter implements HttpClientAdapter {
   _RecordingAdapter(this._handler);
 
@@ -125,6 +193,16 @@ class _RecordingAdapter implements HttpClientAdapter {
 
   int count(String path) =>
       _requests.where((request) => request.path == path).length;
+
+  int firstIndex(String path) =>
+      _requests.indexWhere((request) => request.path == path);
+
+  _RecordedRequest? firstRequest(String path) {
+    for (final request in _requests) {
+      if (request.path == path) return request;
+    }
+    return null;
+  }
 
   @override
   void close({bool force = false}) {}
@@ -201,4 +279,3 @@ class _MemoryFlutterSecureStorage extends FlutterSecureStorage {
     _storage.remove(key);
   }
 }
-

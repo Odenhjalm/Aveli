@@ -322,6 +322,28 @@ class ApiClient {
     bool skipAuth = false,
     Map<String, dynamic>? extra,
   }) async {
+    if (!skipAuth) {
+      final authed = await ensureAuth(
+        leeway: const Duration(minutes: 2),
+      );
+      if (!authed) {
+        final requestOptions = RequestOptions(
+          path: path,
+          baseUrl: _dio.options.baseUrl,
+          method: 'POST',
+        );
+        throw DioException(
+          requestOptions: requestOptions,
+          response: Response<dynamic>(
+            requestOptions: requestOptions,
+            statusCode: 401,
+            data: const {'detail': 'unauthorized'},
+          ),
+          type: DioExceptionType.badResponse,
+        );
+      }
+    }
+
     final response = await _dio.post<Map<String, dynamic>>(
       path,
       data: formData,
