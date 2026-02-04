@@ -97,6 +97,22 @@ class HomePlayerLibraryController
     return _load();
   }
 
+  void _setUploadInState(String uploadId, HomePlayerUploadItem item) {
+    final snapshot = state.valueOrNull;
+    if (snapshot == null) return;
+    final uploads = List<HomePlayerUploadItem>.from(snapshot.uploads);
+    final idx = uploads.indexWhere((upload) => upload.id == uploadId);
+    if (idx == -1) return;
+    uploads[idx] = item;
+    state = AsyncData(
+      HomePlayerLibraryState(
+        uploads: uploads,
+        courseLinks: snapshot.courseLinks,
+        courseMedia: snapshot.courseMedia,
+      ),
+    );
+  }
+
   Future<HomePlayerLibraryState> _load() async {
     try {
       final payload = await _repository.fetchHomePlayerLibrary();
@@ -141,15 +157,36 @@ class HomePlayerLibraryController
   Future<void> toggleUpload(String uploadId, bool active) async {
     state = const AsyncLoading();
     try {
-      await _repository.updateHomePlayerUpload(
-        uploadId,
-        active: active,
-      );
+      await _repository.updateHomePlayerUpload(uploadId, active: active);
       final snapshot = await _load();
       state = AsyncData(snapshot);
     } catch (error, stackTrace) {
       state = AsyncError(AppFailure.from(error, stackTrace), stackTrace);
       rethrow;
+    }
+  }
+
+  Future<void> renameUpload(String uploadId, String title) async {
+    final snapshot = state.valueOrNull;
+    if (snapshot == null) return;
+    final idx = snapshot.uploads.indexWhere((upload) => upload.id == uploadId);
+    if (idx == -1) return;
+
+    final previous = snapshot.uploads[idx];
+    final trimmedTitle = title.trim();
+    if (trimmedTitle.isEmpty || trimmedTitle == previous.title) return;
+
+    _setUploadInState(uploadId, previous.copyWith(title: trimmedTitle));
+
+    try {
+      final updated = await _repository.updateHomePlayerUpload(
+        uploadId,
+        title: trimmedTitle,
+      );
+      _setUploadInState(uploadId, updated);
+    } catch (error, stackTrace) {
+      _setUploadInState(uploadId, previous);
+      throw AppFailure.from(error, stackTrace);
     }
   }
 
@@ -211,7 +248,7 @@ class HomePlayerLibraryController
 }
 
 final homePlayerLibraryProvider =
-    AutoDisposeAsyncNotifierProvider<HomePlayerLibraryController, HomePlayerLibraryState>(
-      HomePlayerLibraryController.new,
-    );
-
+    AutoDisposeAsyncNotifierProvider<
+      HomePlayerLibraryController,
+      HomePlayerLibraryState
+    >(HomePlayerLibraryController.new);

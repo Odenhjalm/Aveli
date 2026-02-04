@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart' as fs;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,7 +9,8 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
-import 'package:aveli/features/editor/widgets/file_picker_web.dart' as web_picker;
+import 'package:aveli/features/editor/widgets/file_picker_web.dart'
+    as web_picker;
 import 'package:aveli/features/studio/application/home_player_library_controller.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -66,45 +68,51 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
             onRefresh: controller.refresh,
             actions: [
               FilledButton.icon(
-                onPressed: isBusy ? null : () async => await _uploadHomeMedia(
-                  context,
-                  ref,
-                ),
+                onPressed: isBusy
+                    ? null
+                    : () async => await _uploadHomeMedia(context, ref),
                 icon: const Icon(Icons.upload_file_outlined),
                 label: const Text('Ladda upp'),
               ),
             ],
-            child:
-                uploads.isEmpty
-                    ? const _HomeUploadsEmptyState()
-                    : _HomeUploadsList(
-                        uploads: uploads,
-                        disabled: isBusy,
-                        onToggle: (id, value) async {
-                          try {
-                            await controller.toggleUpload(id, value);
-                          } catch (error) {
-                            if (!context.mounted) return;
-                            _showErrorSnackBar(context, error);
-                          }
-                        },
-                        onDelete: (id, title) async {
-                          final confirmed = await _confirm(
-                            context,
-                            title: 'Ta bort uppladdad fil',
-                            message:
-                                'Vill du ta bort "$title" från Home-spelarens bibliotek?\n\nFilen raderas helt och går inte att ångra.',
-                            confirmLabel: 'Ta bort',
-                          );
-                          if (confirmed != true) return;
-                          try {
-                            await controller.deleteUpload(id);
-                          } catch (error) {
-                            if (!context.mounted) return;
-                            _showErrorSnackBar(context, error);
-                          }
-                        },
-                      ),
+            child: uploads.isEmpty
+                ? const _HomeUploadsEmptyState()
+                : _HomeUploadsList(
+                    uploads: uploads,
+                    disabled: isBusy,
+                    onToggle: (id, value) async {
+                      try {
+                        await controller.toggleUpload(id, value);
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        _showErrorSnackBar(context, error);
+                      }
+                    },
+                    onRename: (id, title) async {
+                      try {
+                        await controller.renameUpload(id, title);
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        _showErrorSnackBar(context, error);
+                      }
+                    },
+                    onDelete: (id, title) async {
+                      final confirmed = await _confirm(
+                        context,
+                        title: 'Ta bort uppladdad fil',
+                        message:
+                            'Vill du ta bort "$title" från Home-spelarens bibliotek?\n\nFilen raderas helt och går inte att ångra.',
+                        confirmLabel: 'Ta bort',
+                      );
+                      if (confirmed != true) return;
+                      try {
+                        await controller.deleteUpload(id);
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        _showErrorSnackBar(context, error);
+                      }
+                    },
+                  ),
           ),
           const SizedBox(height: 18),
           _SectionCard(
@@ -123,37 +131,36 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                 label: const Text('Länka media'),
               ),
             ],
-            child:
-                links.isEmpty
-                    ? const _CourseLinksEmptyState()
-                    : _CourseLinksList(
-                        links: links,
-                        disabled: isBusy,
-                        onToggle: (id, value) async {
-                          try {
-                            await controller.toggleCourseLink(id, value);
-                          } catch (error) {
-                            if (!context.mounted) return;
-                            _showErrorSnackBar(context, error);
-                          }
-                        },
-                        onDelete: (id, title) async {
-                          final confirmed = await _confirm(
-                            context,
-                            title: 'Ta bort länk',
-                            message:
-                                'Vill du ta bort länken "$title"?\n\nOriginalfilen i kursen påverkas inte.',
-                            confirmLabel: 'Ta bort länk',
-                          );
-                          if (confirmed != true) return;
-                          try {
-                            await controller.deleteCourseLink(id);
-                          } catch (error) {
-                            if (!context.mounted) return;
-                            _showErrorSnackBar(context, error);
-                          }
-                        },
-                      ),
+            child: links.isEmpty
+                ? const _CourseLinksEmptyState()
+                : _CourseLinksList(
+                    links: links,
+                    disabled: isBusy,
+                    onToggle: (id, value) async {
+                      try {
+                        await controller.toggleCourseLink(id, value);
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        _showErrorSnackBar(context, error);
+                      }
+                    },
+                    onDelete: (id, title) async {
+                      final confirmed = await _confirm(
+                        context,
+                        title: 'Ta bort länk',
+                        message:
+                            'Vill du ta bort länken "$title"?\n\nOriginalfilen i kursen påverkas inte.',
+                        confirmLabel: 'Ta bort länk',
+                      );
+                      if (confirmed != true) return;
+                      try {
+                        await controller.deleteCourseLink(id);
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        _showErrorSnackBar(context, error);
+                      }
+                    },
+                  ),
           ),
         ],
       ),
@@ -309,12 +316,14 @@ class _HomeUploadsList extends StatelessWidget {
     required this.uploads,
     required this.disabled,
     required this.onToggle,
+    required this.onRename,
     required this.onDelete,
   });
 
   final List<HomePlayerUploadItem> uploads;
   final bool disabled;
   final Future<void> Function(String id, bool value) onToggle;
+  final Future<void> Function(String id, String title) onRename;
   final Future<void> Function(String id, String title) onDelete;
 
   @override
@@ -326,9 +335,11 @@ class _HomeUploadsList extends StatelessWidget {
         Divider(height: 1, thickness: 1, color: dividerColor),
         for (final upload in uploads) ...[
           _HomeUploadTile(
+            key: ValueKey(upload.id),
             upload: upload,
             disabled: disabled,
             onToggle: onToggle,
+            onRename: onRename,
             onDelete: onDelete,
           ),
           Divider(height: 1, thickness: 1, color: dividerColor, indent: 34),
@@ -338,29 +349,126 @@ class _HomeUploadsList extends StatelessWidget {
   }
 }
 
-class _HomeUploadTile extends StatelessWidget {
+class _HomeUploadTile extends StatefulWidget {
   const _HomeUploadTile({
+    super.key,
     required this.upload,
     required this.disabled,
     required this.onToggle,
+    required this.onRename,
     required this.onDelete,
   });
 
   final HomePlayerUploadItem upload;
   final bool disabled;
   final Future<void> Function(String id, bool value) onToggle;
+  final Future<void> Function(String id, String title) onRename;
   final Future<void> Function(String id, String title) onDelete;
+
+  @override
+  State<_HomeUploadTile> createState() => _HomeUploadTileState();
+}
+
+class _HomeUploadTileState extends State<_HomeUploadTile> {
+  late final TextEditingController _titleController;
+  late final FocusNode _titleFocusNode;
+
+  bool _editing = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController();
+    _titleFocusNode = FocusNode();
+    _titleFocusNode.addListener(_onFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeUploadTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_editing) {
+      _titleController.text = widget.upload.title;
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleFocusNode.removeListener(_onFocusChanged);
+    _titleFocusNode.dispose();
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (!_titleFocusNode.hasFocus && _editing && !_saving) {
+      _cancelEditing();
+    }
+  }
+
+  void _startEditing() {
+    if (widget.disabled || _saving) return;
+    setState(() {
+      _editing = true;
+      _titleController.text = widget.upload.title;
+      _titleController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _titleController.text.length,
+      );
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _titleFocusNode.requestFocus();
+    });
+  }
+
+  void _cancelEditing() {
+    if (!_editing) return;
+    setState(() => _editing = false);
+  }
+
+  Future<void> _saveEditing() async {
+    final trimmed = _titleController.text.trim();
+    if (trimmed.isEmpty) {
+      _cancelEditing();
+      _showErrorSnackBar(context, 'Filnamn kan inte vara tomt.');
+      return;
+    }
+    if (trimmed == widget.upload.title) {
+      _cancelEditing();
+      return;
+    }
+
+    setState(() {
+      _editing = false;
+      _saving = true;
+    });
+
+    try {
+      await widget.onRename(widget.upload.id, trimmed);
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final kind = upload.kind.toLowerCase();
+    final kind = widget.upload.kind.toLowerCase();
     final isVideo = kind.contains('video');
     final icon = isVideo ? Icons.videocam_outlined : Icons.headphones;
     final typeLabel = isVideo ? 'Video' : 'Ljud';
+    final isDisabled = widget.disabled || _saving;
+
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w700,
+    );
+
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 160),
-      opacity: upload.active ? 1 : 0.7,
+      opacity: widget.upload.active ? 1 : 0.7,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
@@ -376,14 +484,47 @@ class _HomeUploadTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    upload.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                  if (_editing)
+                    Focus(
+                      onKeyEvent: (_, event) {
+                        if (event is KeyDownEvent &&
+                            event.logicalKey == LogicalKeyboardKey.escape) {
+                          _cancelEditing();
+                          return KeyEventResult.handled;
+                        }
+                        return KeyEventResult.ignored;
+                      },
+                      child: TextField(
+                        controller: _titleController,
+                        focusNode: _titleFocusNode,
+                        enabled: !isDisabled,
+                        maxLines: 1,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) async => await _saveEditing(),
+                        style: titleStyle,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                          border: UnderlineInputBorder(),
+                        ),
+                      ),
+                    )
+                  else
+                    MouseRegion(
+                      cursor: isDisabled
+                          ? SystemMouseCursors.basic
+                          : SystemMouseCursors.click,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: isDisabled ? null : _startEditing,
+                        child: Text(
+                          widget.upload.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: titleStyle,
+                        ),
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 4),
                   Text(
                     typeLabel,
@@ -396,18 +537,20 @@ class _HomeUploadTile extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Ta bort',
-              onPressed: disabled ? null : () async => await onDelete(
-                upload.id,
-                upload.title,
-              ),
+              onPressed: isDisabled
+                  ? null
+                  : () async => await widget.onDelete(
+                      widget.upload.id,
+                      widget.upload.title,
+                    ),
               icon: const Icon(Icons.delete_outline),
             ),
             Switch.adaptive(
-              value: upload.active,
-              onChanged: disabled ? null : (value) async => await onToggle(
-                upload.id,
-                value,
-              ),
+              value: widget.upload.active,
+              onChanged: isDisabled
+                  ? null
+                  : (value) async =>
+                        await widget.onToggle(widget.upload.id, value),
             ),
           ],
         ),
@@ -558,10 +701,9 @@ class _CourseLinkTile extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Ta bort länk',
-              onPressed: disabled ? null : () async => await onDelete(
-                link.id,
-                link.title,
-              ),
+              onPressed: disabled
+                  ? null
+                  : () async => await onDelete(link.id, link.title),
               icon: const Icon(Icons.link_off_outlined),
             ),
             Switch.adaptive(
@@ -619,10 +761,7 @@ class _StatusChip extends StatelessWidget {
         scheme.tertiary.withValues(alpha: 0.14),
         scheme.tertiary,
       ),
-      _StatusTone.error => (
-        scheme.error.withValues(alpha: 0.14),
-        scheme.error,
-      ),
+      _StatusTone.error => (scheme.error.withValues(alpha: 0.14), scheme.error),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -633,10 +772,9 @@ class _StatusChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: fg,
-          fontWeight: FontWeight.w700,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: fg, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -753,7 +891,11 @@ Future<void> _linkFromCourses(BuildContext context, WidgetRef ref) async {
 }
 
 class _PickedMediaFile {
-  const _PickedMediaFile({required this.name, required this.bytes, this.mimeType});
+  const _PickedMediaFile({
+    required this.name,
+    required this.bytes,
+    this.mimeType,
+  });
 
   final String name;
   final Uint8List bytes;
@@ -782,7 +924,11 @@ Future<_PickedMediaFile?> _pickMediaFile() async {
     );
     if (picked == null || picked.isEmpty) return null;
     final file = picked.first;
-    return _PickedMediaFile(name: file.name, bytes: file.bytes, mimeType: file.mimeType);
+    return _PickedMediaFile(
+      name: file.name,
+      bytes: file.bytes,
+      mimeType: file.mimeType,
+    );
   }
 
   final typeGroup = fs.XTypeGroup(label: 'media', extensions: extensions);
@@ -832,14 +978,16 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
   BuildContext context,
   List<TeacherProfileLessonSource> sources,
 ) async {
-  final audioVideo = sources.where((source) {
-    final kind = source.kind.toLowerCase();
-    final contentType = (source.contentType ?? '').toLowerCase();
-    return kind.contains('audio') ||
-        kind.contains('video') ||
-        contentType.startsWith('audio/') ||
-        contentType.startsWith('video/');
-  }).toList(growable: false);
+  final audioVideo = sources
+      .where((source) {
+        final kind = source.kind.toLowerCase();
+        final contentType = (source.contentType ?? '').toLowerCase();
+        return kind.contains('audio') ||
+            kind.contains('video') ||
+            contentType.startsWith('audio/') ||
+            contentType.startsWith('video/');
+      })
+      .toList(growable: false);
 
   return showModalBottomSheet<TeacherProfileLessonSource>(
     context: context,
@@ -855,11 +1003,13 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
             final query = searchController.text.trim().toLowerCase();
             final filtered = query.isEmpty
                 ? audioVideo
-                : audioVideo.where((source) {
-                    final course = (source.courseTitle ?? '').toLowerCase();
-                    final lesson = (source.lessonTitle ?? '').toLowerCase();
-                    return course.contains(query) || lesson.contains(query);
-                  }).toList(growable: false);
+                : audioVideo
+                      .where((source) {
+                        final course = (source.courseTitle ?? '').toLowerCase();
+                        final lesson = (source.lessonTitle ?? '').toLowerCase();
+                        return course.contains(query) || lesson.contains(query);
+                      })
+                      .toList(growable: false);
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Column(
@@ -891,15 +1041,18 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
                         final lessonTitle = (source.lessonTitle ?? '').trim();
                         final kind = source.kind.toLowerCase();
                         final isVideo = kind.contains('video');
-                        final icon =
-                            isVideo ? Icons.videocam_outlined : Icons.headphones;
+                        final icon = isVideo
+                            ? Icons.videocam_outlined
+                            : Icons.headphones;
                         final subtitleParts = <String>[
                           if (courseTitle.isNotEmpty) courseTitle,
                           if (lessonTitle.isNotEmpty) 'Lektion: $lessonTitle',
                         ];
                         return ListTile(
                           leading: Icon(icon),
-                          title: Text(lessonTitle.isNotEmpty ? lessonTitle : 'Media'),
+                          title: Text(
+                            lessonTitle.isNotEmpty ? lessonTitle : 'Media',
+                          ),
                           subtitle: subtitleParts.isEmpty
                               ? null
                               : Text(
