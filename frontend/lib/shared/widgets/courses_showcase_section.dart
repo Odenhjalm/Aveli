@@ -458,11 +458,13 @@ class _HorizontalPagedCourseGridState
   late final ScrollController _scrollController;
   bool _showHint = false;
   static const String _introFlagKey = 'is_free_intro';
+  static const double _peekFraction = 0.07;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController()..addListener(_updateHint);
+    _showHint = widget.items.length > widget.pageSize;
     WidgetsBinding.instance.addPostFrameCallback((_) => _updateHint());
   }
 
@@ -495,21 +497,6 @@ class _HorizontalPagedCourseGridState
     final position = _scrollController.position;
     if (!position.hasPixels) return true;
     return position.pixels < (position.maxScrollExtent - 2);
-  }
-
-  void _scrollRightBy(double amount) {
-    if (!_scrollController.hasClients) return;
-    final position = _scrollController.position;
-    if (!position.hasPixels) return;
-    final target = (position.pixels + amount).clamp(
-      0.0,
-      position.maxScrollExtent,
-    );
-    _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   List<Map<String, dynamic>?> _buildSlots() {
@@ -573,11 +560,12 @@ class _HorizontalPagedCourseGridState
     }
 
     final theme = Theme.of(context);
-    final arrowColor = (widget.textColor ?? theme.colorScheme.onSurface)
-        .withValues(alpha: 0.38);
     final fadeTo = Colors.white.withValues(
       alpha: theme.brightness == Brightness.dark ? 0.14 : 0.24,
     );
+    final delegate = widget.gridDelegate;
+    final crossAxisCount = delegate.crossAxisCount;
+    final crossAxisSpacing = delegate.crossAxisSpacing;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -585,89 +573,95 @@ class _HorizontalPagedCourseGridState
             constraints.maxWidth.isFinite && constraints.maxWidth > 0
             ? constraints.maxWidth
             : 0.0;
+        final itemWidth = crossAxisCount <= 0 || pageWidth <= 0
+            ? 0.0
+            : (pageWidth - crossAxisSpacing * (crossAxisCount - 1)) /
+                  crossAxisCount;
+        final peekWidth = (itemWidth * _peekFraction)
+            .clamp(16.0, 34.0)
+            .toDouble();
 
         return Stack(
+          clipBehavior: Clip.none,
           children: [
-            SingleChildScrollView(
-              controller: _scrollController,
-              scrollDirection: Axis.horizontal,
-              physics: const ClampingScrollPhysics(),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var pageIndex = 0; pageIndex < pages; pageIndex++)
-                    SizedBox(
-                      width: pageWidth,
-                      child: GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: widget.pageSize,
-                        gridDelegate: widget.gridDelegate,
-                        itemBuilder: (context, i) {
-                          final globalIndex = pageIndex * widget.pageSize + i;
-                          if (globalIndex >= slots.length) {
-                            return const SizedBox.shrink();
-                          }
-                          final course = slots[globalIndex];
-                          if (course == null) return const SizedBox.shrink();
-                          return _CourseTileGlass(
-                            course: course,
-                            index: globalIndex,
-                            assets: widget.assets,
-                            ctaGradient: widget.ctaGradient,
-                            textColor: widget.textColor,
-                            introBadgeVariant: widget.introBadgeVariant,
-                          );
-                        },
+            ClipRect(
+              clipper: _RightPeekClipper(overflow: _showHint ? peekWidth : 0.0),
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                clipBehavior: Clip.none,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var pageIndex = 0; pageIndex < pages; pageIndex++)
+                      SizedBox(
+                        width: pageWidth,
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: widget.pageSize,
+                          gridDelegate: widget.gridDelegate,
+                          itemBuilder: (context, i) {
+                            final globalIndex = pageIndex * widget.pageSize + i;
+                            if (globalIndex >= slots.length) {
+                              return const SizedBox.shrink();
+                            }
+                            final course = slots[globalIndex];
+                            if (course == null) return const SizedBox.shrink();
+                            return _CourseTileGlass(
+                              course: course,
+                              index: globalIndex,
+                              assets: widget.assets,
+                              ctaGradient: widget.ctaGradient,
+                              textColor: widget.textColor,
+                              introBadgeVariant: widget.introBadgeVariant,
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: 44,
-              child: IgnorePointer(
-                ignoring: !_showHint,
-                child: AnimatedOpacity(
-                  opacity: _showHint ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: pageWidth > 0
-                          ? () => _scrollRightBy(pageWidth * 0.65)
-                          : null,
-                      splashColor: Colors.transparent,
-                      highlightColor: Colors.transparent,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [Colors.transparent, fadeTo],
-                          ),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            Icons.chevron_right_rounded,
-                            size: 20,
-                            color: arrowColor,
-                          ),
-                        ),
+            if (_showHint)
+              Positioned(
+                right: -peekWidth,
+                top: 0,
+                bottom: 0,
+                width: 44 + peekWidth,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [Colors.transparent, fadeTo],
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         );
       },
     );
+  }
+}
+
+class _RightPeekClipper extends CustomClipper<Rect> {
+  const _RightPeekClipper({required this.overflow});
+
+  final double overflow;
+
+  @override
+  Rect getClip(Size size) {
+    return Rect.fromLTRB(0, 0, size.width + overflow, size.height);
+  }
+
+  @override
+  bool shouldReclip(covariant _RightPeekClipper oldClipper) {
+    return oldClipper.overflow != overflow;
   }
 }
 
