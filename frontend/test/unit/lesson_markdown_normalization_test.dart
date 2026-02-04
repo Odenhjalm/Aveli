@@ -26,15 +26,36 @@ void main() {
       expect(normalized, isNot(contains('https://api.example.com')));
     });
 
-    test('replaces /media/stream token URLs with stable /studio/media/{id}', () {
-      const id = '123e4567-e89b-12d3-a456-426614174000';
-      final token = _jwtForSub(id);
-      final markdown = '<img src="/media/stream/$token" />';
+    test(
+      'rewrites /api/files URLs to /studio/media URLs when mapping exists',
+      () {
+        const id = '123e4567-e89b-12d3-a456-426614174000';
+        const apiPath = '/api/files/public-media/course/lesson/file.png';
+        const absUrl = 'https://api.example.com$apiPath?download=1';
+        final markdown = '<audio controls src="$absUrl"></audio>';
 
-      final normalized = normalizeLessonMarkdownForStorage(markdown);
+        final rewritten = rewriteLessonMarkdownApiFilesUrls(
+          markdown: markdown,
+          apiFilesPathToStudioMediaUrl: {apiPath: '/studio/media/$id'},
+        );
 
-      expect(normalized, contains('/studio/media/$id'));
-      expect(normalized, isNot(contains('/media/stream/$token')));
-    });
+        expect(rewritten, contains('/studio/media/$id'));
+        expect(rewritten, isNot(contains(absUrl)));
+      },
+    );
+
+    test(
+      'replaces /media/stream token URLs with stable /studio/media/{id}',
+      () {
+        const id = '123e4567-e89b-12d3-a456-426614174000';
+        final token = _jwtForSub(id);
+        final markdown = '<img src="/media/stream/$token" />';
+
+        final normalized = normalizeLessonMarkdownForStorage(markdown);
+
+        expect(normalized, contains('/studio/media/$id'));
+        expect(normalized, isNot(contains('/media/stream/$token')));
+      },
+    );
   });
 }

@@ -132,6 +132,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _updatingLessonIntro = false;
 
   List<Map<String, dynamic>> _lessonMedia = <Map<String, dynamic>>[];
+  String? _lessonMediaLessonId;
   bool _mediaLoading = false;
   String? _mediaStatus;
   String? _lessonsLoadError;
@@ -265,6 +266,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _selectedLessonId = null;
       _lessonIntro = false;
       _lessonMedia = <Map<String, dynamic>>[];
+      _lessonMediaLessonId = null;
       _replaceLessonDocument(quill.Document(), resetDirty: true);
       _lessonTitleCtrl
         ..removeListener(_handleLessonTitleChanged)
@@ -458,6 +460,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _selectedLessonId = null;
           _lessonIntro = false;
           _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMediaLessonId = null;
           _lessonsLoadError = null;
           _mediaLoadError = null;
         });
@@ -507,10 +510,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       });
       _handleCoursePublishFieldsChanged();
       if (_selectedLessonId != null) {
-        await _applySelectedLesson();
         await _loadLessonMedia();
+        await _applySelectedLesson();
       } else if (mounted) {
-        setState(() => _lessonMedia = <Map<String, dynamic>>[]);
+        setState(() {
+          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMediaLessonId = null;
+        });
         _replaceLessonDocument(quill.Document(), resetDirty: true);
         _lessonTitleCtrl
           ..removeListener(_handleLessonTitleChanged)
@@ -551,6 +557,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (mounted) {
         setState(() {
           _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMediaLessonId = null;
           _mediaLoadError = null;
         });
       }
@@ -567,6 +574,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setState(() {
         _mediaLoading = true;
         _mediaLoadError = null;
+        if (_lessonMediaLessonId != lessonId) {
+          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMediaLessonId = lessonId;
+        }
       });
     }
     try {
@@ -581,6 +592,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       setState(() {
         _lessonMedia = media;
+        _lessonMediaLessonId = lessonId;
         _mediaLoadError = null;
         if (_lessonsNeedingRefresh.remove(lessonId)) {
           _mediaStatus = 'Media uppdaterad för lektionen.';
@@ -624,8 +636,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final match = _lessonById(lessonId);
       _lessonIntro = match?['is_intro'] == true;
     });
-    await _applySelectedLesson();
     await _loadLessonMedia();
+    await _applySelectedLesson();
     if (needsRefresh && mounted) {
       setState(() => _mediaStatus = 'Media uppdaterad för lektionen.');
     }
@@ -779,10 +791,80 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  String? _apiFilesPathFromUrl(String? url) {
+    if (url == null) return null;
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return null;
+    final uri = Uri.tryParse(trimmed);
+    final path = uri?.path ?? '';
+    if (path.isEmpty) return null;
+    final index = path.toLowerCase().indexOf('/api/files/');
+    if (index < 0) return null;
+    return path.substring(index);
+  }
+
+  String? _apiFilesDownloadPathForMedia(Map<String, dynamic> media) {
+    final rawPath = (media['storage_path'] as String?)?.trim();
+    if (rawPath == null || rawPath.isEmpty) return null;
+    final normalized = rawPath
+        .replaceAll('\\', '/')
+        .replaceFirst(RegExp(r'^/+'), '');
+    if (normalized.isEmpty) return null;
+
+    var bucket = (media['storage_bucket'] as String?)?.trim();
+    if (bucket == null || bucket.isEmpty) {
+      final parts = normalized.split('/');
+      if (parts.isNotEmpty) {
+        bucket = parts.first;
+      }
+    }
+    if (bucket == null || bucket.isEmpty) return null;
+
+    final pathWithBucket = normalized.startsWith('$bucket/')
+        ? normalized
+        : '$bucket/$normalized';
+    return '/api/files/$pathWithBucket';
+  }
+
+  Map<String, String> _apiFilesPathToStudioMediaUrlForSelectedLesson() {
+    final lessonId = _selectedLessonId;
+    if (lessonId == null) return const <String, String>{};
+    if (_lessonMediaLessonId != lessonId) return const <String, String>{};
+    if (_lessonMedia.isEmpty) return const <String, String>{};
+
+    final mapping = <String, String>{};
+    for (final media in _lessonMedia) {
+      final mediaId = (media['id'] as String?)?.trim();
+      if (mediaId == null || mediaId.isEmpty) continue;
+      final replacement = '/studio/media/$mediaId';
+      final candidates = <String?>[
+        _mediaUrl(media),
+        media['url'] as String?,
+        _apiFilesDownloadPathForMedia(media),
+      ];
+      for (final candidate in candidates) {
+        final apiPath = _apiFilesPathFromUrl(candidate);
+        if (apiPath == null || apiPath.isEmpty) continue;
+        mapping[apiPath.toLowerCase()] = replacement;
+      }
+    }
+    return mapping;
+  }
+
   Future<String> _prepareLessonMarkdownForEditing(String markdown) async {
     if (markdown.trim().isEmpty) return markdown;
     final repo = ref.read(mediaRepositoryProvider);
-    return lesson_pipeline.prepareLessonMarkdownForRendering(repo, markdown);
+    var prepared = markdown;
+    if (lesson_pipeline.apiFilesUrlPattern.hasMatch(prepared)) {
+      final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
+      if (mapping.isNotEmpty) {
+        prepared = lesson_pipeline.rewriteLessonMarkdownApiFilesUrls(
+          markdown: prepared,
+          apiFilesPathToStudioMediaUrl: mapping,
+        );
+      }
+    }
+    return lesson_pipeline.prepareLessonMarkdownForRendering(repo, prepared);
   }
 
   String _visibleLessonTextForLog(String value) {
@@ -1519,12 +1601,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _selectedLessonId = lesson['id'] as String?;
         _lessonIntro = lesson['is_intro'] == true;
         _lessonMedia = <Map<String, dynamic>>[];
+        _lessonMediaLessonId = null;
         _mediaLoadError = null;
         _mediaStatus = null;
         _downloadStatus = null;
       });
-      await _applySelectedLesson();
       await _loadLessonMedia();
+      await _applySelectedLesson();
       await _loadLessons(preserveSelection: true, mergeResults: true);
       if (mounted && context.mounted) {
         showSnack(context, 'Lektion skapad.');

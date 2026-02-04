@@ -180,7 +180,8 @@ String _preserveExtraBlankLinesForDelta(String markdown) {
 }
 
 String _stripBlankLineSentinelForDisplay(String markdown) {
-  if (markdown.isEmpty || !markdown.contains(_blankLineSentinel)) return markdown;
+  if (markdown.isEmpty || !markdown.contains(_blankLineSentinel))
+    return markdown;
   // Defensive: never allow the internal blank-line sentinel to reach any
   // user-visible output (rendering/copy/export).
   return markdown.replaceAll(_blankLineSentinel, '');
@@ -369,6 +370,11 @@ final RegExp studioMediaUrlPattern = RegExp(
   caseSensitive: false,
 );
 
+final RegExp apiFilesUrlPattern = RegExp(
+  r'''(?:https?:\/\/[^\s"'()]+)?\/api\/files\/[^\s"'()]+''',
+  caseSensitive: false,
+);
+
 final RegExp mediaStreamUrlPattern = RegExp(
   r'''(?:https?:\/\/[^\s"'()]+)?\/media\/stream\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)''',
 );
@@ -406,6 +412,26 @@ Set<String> extractLessonEmbeddedMediaIds(String markdown) {
     }
   }
   return ids;
+}
+
+String rewriteLessonMarkdownApiFilesUrls({
+  required String markdown,
+  required Map<String, String> apiFilesPathToStudioMediaUrl,
+}) {
+  if (markdown.isEmpty || apiFilesPathToStudioMediaUrl.isEmpty) return markdown;
+
+  return markdown.replaceAllMapped(apiFilesUrlPattern, (match) {
+    final raw = match.group(0) ?? '';
+    if (raw.isEmpty) return raw;
+    final uri = Uri.tryParse(raw);
+    final path = uri?.path ?? raw;
+    if (path.isEmpty) return raw;
+    final replacement =
+        apiFilesPathToStudioMediaUrl[path] ??
+        apiFilesPathToStudioMediaUrl[path.toLowerCase()];
+    if (replacement == null || replacement.isEmpty) return raw;
+    return replacement;
+  });
 }
 
 Future<String> prepareLessonMarkdownForRendering(
