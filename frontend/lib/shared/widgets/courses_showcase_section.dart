@@ -442,7 +442,11 @@ class _CourseTileGlass extends StatelessWidget {
     final isIntro = course['is_free_intro'] == true;
     final priceCents =
         _asInt(course['price_amount_cents']) ?? _asInt(course['price_cents']);
-    final priceLabel = formatSekFromOre(priceCents ?? 0);
+    final priceLabel = formatCoursePriceFromOre(
+      amountOre: priceCents ?? 0,
+      isFreeIntro: isIntro,
+      debugContext: slug.isEmpty ? 'CoursesShowcaseSection' : 'slug=$slug',
+    );
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
       slug: cover.isEmpty ? slug : null,

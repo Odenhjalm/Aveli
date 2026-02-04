@@ -488,7 +488,11 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final imageProvider = coverProvider ?? AppImages.logo;
     final isFallbackLogo = coverProvider == null;
     final isIntro = course.isFreeIntro;
-    final priceLabel = formatSekFromOre(course.priceCents ?? 0);
+    final priceLabel = formatCoursePriceFromOre(
+      amountOre: course.priceCents ?? 0,
+      isFreeIntro: isIntro,
+      debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
+    );
 
     return Material(
       color: Colors.transparent,
@@ -564,34 +568,47 @@ class _IntroMiniCourseCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              course.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: DesignTokens.bodyTextColor,
-                                fontWeight: FontWeight.w800,
+                      if (isIntro) ...[
+                        Text(
+                          course.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: DesignTokens.bodyTextColor,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const Spacer(),
+                        const CourseIntroBadge(),
+                      ] else ...[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                course.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: DesignTokens.bodyTextColor,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          isIntro
-                              ? const CourseIntroBadge()
-                              : Text(
-                                  priceLabel,
-                                  textAlign: TextAlign.right,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: DesignTokens.bodyTextColor
-                                        .withValues(alpha: 0.72),
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                            const SizedBox(width: 10),
+                            Text(
+                              priceLabel,
+                              textAlign: TextAlign.right,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: DesignTokens.bodyTextColor.withValues(
+                                  alpha: 0.72,
                                 ),
-                        ],
-                      ),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -630,7 +647,11 @@ class _JourneyCourseCard extends StatelessWidget {
 
     final radius = BorderRadius.circular(18);
     final isIntro = course.isFreeIntro;
-    final priceLabel = formatSekFromOre(course.priceCents ?? 0);
+    final priceLabel = formatCoursePriceFromOre(
+      amountOre: course.priceCents ?? 0,
+      isFreeIntro: isIntro,
+      debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
+    );
 
     return Material(
       color: Colors.transparent,

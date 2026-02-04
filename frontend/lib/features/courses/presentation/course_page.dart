@@ -147,7 +147,11 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         child: const Text('Ladda pris igen'),
       ),
       data: (pricing) {
-        final formatted = formatSekFromOre(pricing.amountCents);
+        final formatted = formatCoursePriceFromOre(
+          amountOre: pricing.amountCents,
+          isFreeIntro: false,
+          debugContext: courseSlug.isEmpty ? 'CoursePage' : 'slug=$courseSlug',
+        );
         return FilledButton(
           onPressed: _ordering ? null : () => _startCourseCheckout(courseSlug),
           child: _ordering

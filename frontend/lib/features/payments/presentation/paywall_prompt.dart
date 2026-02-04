@@ -67,7 +67,11 @@ class _PaywallBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final priceLabel = coursePrice != null && courseIsIntro != true
-        ? formatSekFromOre(coursePrice!)
+        ? formatCoursePriceFromOre(
+            amountOre: coursePrice!,
+            isFreeIntro: false,
+            debugContext: courseSlug == null ? 'PaywallPrompt' : 'slug=$courseSlug',
+          )
         : null;
     final title = courseTitle ?? 'Kursen är låst';
 

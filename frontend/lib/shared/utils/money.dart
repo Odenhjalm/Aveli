@@ -5,6 +5,8 @@
 //   `price_amount_cents` (backend + API + Stripe `unit_amount`).
 // - UI/Editor represent prices in **SEK (kr)** and convert explicitly.
 
+import 'package:flutter/foundation.dart';
+
 /// Formats an amount in öre (cents) to a SEK string with exactly two decimals.
 ///
 /// Example: `49000` -> `490.00 kr`
@@ -55,4 +57,21 @@ int? parseSekInputToOre(String raw) {
   final decimals = match.group(2) ?? '';
   final ore = decimals.isEmpty ? 0 : int.parse(decimals.padRight(2, '0'));
   return kronor * 100 + ore;
+}
+
+/// Formats a course price in öre (cents) to SEK and emits a dev-only warning
+/// for suspiciously low paid-course prices (likely unit mismatch).
+String formatCoursePriceFromOre({
+  required int amountOre,
+  required bool isFreeIntro,
+  String? debugContext,
+}) {
+  if (!isFreeIntro && amountOre > 0 && amountOre < 1000 && kDebugMode) {
+    final ctx = debugContext == null ? '' : ' ($debugContext)';
+    debugPrint(
+      '[pricing] Suspicious course price: $amountOre öre (< 10 kr)$ctx. '
+      'Possible /100 unit conversion bug.',
+    );
+  }
+  return formatSekFromOre(amountOre);
 }
