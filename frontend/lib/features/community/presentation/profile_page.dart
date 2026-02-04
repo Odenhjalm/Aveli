@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
@@ -209,6 +211,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
                 columnGap,
                 const _OrdersSection(),
+                columnGap,
+                _ChangePasswordSection(email: profile.email),
                 const ProfileLogoutSection(),
               ],
             ),
@@ -848,6 +852,276 @@ class _OrdersSection extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _ChangePasswordSection extends ConsumerStatefulWidget {
+  const _ChangePasswordSection({required this.email});
+
+  final String email;
+
+  @override
+  ConsumerState<_ChangePasswordSection> createState() =>
+      _ChangePasswordSectionState();
+}
+
+class _ChangePasswordSectionState extends ConsumerState<_ChangePasswordSection> {
+  final _formKey = GlobalKey<FormState>();
+  final _currentPasswordCtrl = TextEditingController();
+  final _newPasswordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
+
+  bool _submitting = false;
+  String? _feedback;
+  bool _feedbackIsError = false;
+
+  @override
+  void dispose() {
+    _currentPasswordCtrl.dispose();
+    _newPasswordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return _GlassSection(
+      title: 'Byt lösenord',
+      child: Form(
+        key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        child: AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'För att uppdatera ditt lösenord behöver du ange ditt nuvarande lösenord.',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _currentPasswordCtrl,
+                enabled: !_submitting,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Nuvarande lösenord',
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Ange ditt nuvarande lösenord.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _newPasswordCtrl,
+                enabled: !_submitting,
+                obscureText: true,
+                autofillHints: const [AutofillHints.newPassword],
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Nytt lösenord',
+                  hintText: 'Minst 8 tecken',
+                ),
+                validator: (value) {
+                  final password = value ?? '';
+                  if (password.isEmpty) {
+                    return 'Ange ett nytt lösenord.';
+                  }
+                  if (password.length < 8) {
+                    return 'Lösenordet måste vara minst 8 tecken.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _confirmPasswordCtrl,
+                enabled: !_submitting,
+                obscureText: true,
+                autofillHints: const [AutofillHints.newPassword],
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: _submitting ? null : (_) => _submit(),
+                decoration: const InputDecoration(
+                  labelText: 'Bekräfta nytt lösenord',
+                ),
+                validator: (value) {
+                  final confirm = value ?? '';
+                  if (confirm.isEmpty) {
+                    return 'Bekräfta ditt nya lösenord.';
+                  }
+                  if (confirm != _newPasswordCtrl.text) {
+                    return 'Lösenorden matchar inte.';
+                  }
+                  return null;
+                },
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _feedback == null
+                    ? const SizedBox(height: 12)
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          _feedback!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: _feedbackIsError
+                                ? theme.colorScheme.error
+                                : theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: GradientButton.icon(
+                  onPressed: _submitting ? null : _submit,
+                  icon: _submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.lock_reset_rounded),
+                  label: const Text('Uppdatera lösenord'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    final form = _formKey.currentState;
+    if (form == null || !form.validate()) return;
+
+    FocusScope.of(context).unfocus();
+
+    final email = widget.email.trim();
+    if (email.isEmpty) {
+      _setFeedback('Ett oväntat fel inträffade.', isError: true);
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+      _feedback = null;
+      _feedbackIsError = false;
+    });
+
+    try {
+      late final SupabaseClient client;
+      try {
+        client = Supabase.instance.client;
+      } catch (_) {
+        _setFeedback('Ett oväntat fel inträffade.', isError: true);
+        return;
+      }
+
+      final currentPassword = _currentPasswordCtrl.text;
+      final newPassword = _newPasswordCtrl.text;
+
+      // Step 1: Re-authenticate using email + current password.
+      try {
+        await client.auth.signInWithPassword(
+          email: email,
+          password: currentPassword,
+        );
+      } catch (error) {
+        _currentPasswordCtrl.clear();
+        _setFeedback(_mapReauthError(error), isError: true);
+        return;
+      } finally {
+        _currentPasswordCtrl.clear();
+      }
+
+      // Step 2: Update password.
+      try {
+        await client.auth.updateUser(UserAttributes(password: newPassword));
+      } catch (error) {
+        _setFeedback(_mapUpdateError(error), isError: true);
+        return;
+      }
+
+      // Step 3: Session handling.
+      if (client.auth.currentSession == null) {
+        _setFeedback(
+          'Logga in igen med ditt nya lösenord.',
+          isError: false,
+        );
+        if (!mounted) return;
+        showSnack(context, 'Logga in igen med ditt nya lösenord.');
+        await ref.read(authControllerProvider.notifier).logout();
+        if (!mounted) return;
+        context.goNamed(
+          AppRoute.login,
+          queryParameters: {'redirect': RoutePath.profile},
+        );
+        return;
+      }
+
+      _newPasswordCtrl.clear();
+      _confirmPasswordCtrl.clear();
+      _setFeedback('Lösenordet har uppdaterats.');
+      if (!mounted) return;
+      showSnack(context, 'Lösenordet har uppdaterats.');
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  void _setFeedback(String message, {bool isError = false}) {
+    if (!mounted) return;
+    setState(() {
+      _feedback = message;
+      _feedbackIsError = isError;
+    });
+  }
+
+  String _mapReauthError(Object error) {
+    if (error is AuthRetryableFetchException || error is TimeoutException) {
+      return 'Kunde inte uppdatera lösenordet. Försök igen.';
+    }
+    if (error is AuthException) {
+      final code = (error.code ?? '').toLowerCase();
+      final message = error.message.toLowerCase();
+      final isInvalidCredentials =
+          code == 'invalid_credentials' ||
+          code == 'invalid_grant' ||
+          message.contains('invalid login credentials') ||
+          message.contains('invalid credentials');
+      if (isInvalidCredentials) {
+        return 'Nuvarande lösenord är fel.';
+      }
+    }
+    return 'Ett oväntat fel inträffade.';
+  }
+
+  String _mapUpdateError(Object error) {
+    if (error is AuthWeakPasswordException) {
+      return 'Lösenordet är för svagt.';
+    }
+    if (error is AuthRetryableFetchException || error is TimeoutException) {
+      return 'Kunde inte uppdatera lösenordet. Försök igen.';
+    }
+    if (error is AuthException) {
+      final code = (error.code ?? '').toLowerCase();
+      if (code == 'weak_password') {
+        return 'Lösenordet är för svagt.';
+      }
+    }
+    return 'Ett oväntat fel inträffade.';
   }
 }
 
