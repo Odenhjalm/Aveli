@@ -463,7 +463,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
   bool _didScrollOnce = false;
   static const String _introFlagKey = 'is_free_intro';
   static const double _peekFraction = 0.07;
-  static const double _chevronNudgeDistance = 10.0;
+  static const double _chevronNudgeDistance = 7.0;
   static const Duration _chevronNudgeDelay = Duration(milliseconds: 1400);
   // Full cycle (right + back) ≈ 3.5s.
   static const Duration _chevronNudgeHalfCycle = Duration(milliseconds: 1750);
@@ -548,6 +548,11 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
     final show = _shouldShowHint();
     if (show == _showHint || !mounted) return;
     setState(() => _showHint = show);
+    if (show) {
+      _scheduleChevronNudge();
+    } else {
+      _stopChevronNudge();
+    }
   }
 
   bool _shouldShowHint() {
@@ -637,7 +642,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
             ? 0.0
             : (pageWidth - crossAxisSpacing * (crossAxisCount - 1)) /
                   crossAxisCount;
-        final peekWidth = (itemWidth * _peekFraction)
+        final hintWidth = (itemWidth * _peekFraction)
             .clamp(16.0, 34.0)
             .toDouble();
 
@@ -645,7 +650,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
           clipBehavior: Clip.none,
           children: [
             ClipRect(
-              clipper: _RightPeekClipper(overflow: _showHint ? peekWidth : 0.0),
+              clipper: const _RightPeekClipper(overflow: 0.0),
               child: SingleChildScrollView(
                 controller: _scrollController,
                 scrollDirection: Axis.horizontal,
@@ -686,10 +691,10 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
             ),
             if (_showHint)
               Positioned(
-                right: -peekWidth,
+                right: 0,
                 top: 0,
                 bottom: 0,
-                width: 44 + peekWidth,
+                width: 44 + hintWidth,
                 child: IgnorePointer(
                   child: Stack(
                     children: [
@@ -703,7 +708,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
                         ),
                       ),
                       Padding(
-                        padding: EdgeInsets.only(right: peekWidth + 16),
+                        padding: const EdgeInsets.only(right: 12),
                         child: Align(
                           alignment: Alignment.centerRight,
                           child: AnimatedBuilder(
