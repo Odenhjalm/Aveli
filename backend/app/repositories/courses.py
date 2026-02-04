@@ -60,6 +60,7 @@ def _legacy_course_columns(alias: str | None = None) -> str:
         "video_url",
         "branch",
         "is_free_intro",
+        "journey_step",
         "is_published",
         "created_by",
         "created_at",
