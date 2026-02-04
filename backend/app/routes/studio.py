@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from .. import models, repositories, schemas
 from ..auth import CurrentUser
 from ..config import settings
+from ..db import get_conn
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..services import courses_service, livekit as livekit_service, storage_service
@@ -93,6 +94,34 @@ def _detect_kind(content_type: str | None) -> str:
 
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
 _LIVE_RECORDINGS_ROOT = "live-recordings"
+_HOME_PLAYER_UPLOADS_STORAGE_BUCKET = "course-media"
+
+
+async def _assert_storage_bucket_exists(bucket_id: str) -> None:
+    normalized = (bucket_id or "").strip()
+    if not normalized:
+        raise HTTPException(status_code=500, detail="Storage bucket is not configured")
+
+    try:
+        async with get_conn() as cur:
+            await cur.execute(
+                "SELECT 1 FROM storage.buckets WHERE id = %s LIMIT 1",
+                (normalized,),
+            )
+            row = await cur.fetchone()
+    except Exception as exc:
+        logger.exception("Failed to validate storage bucket bucket=%s", normalized)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to validate storage bucket",
+        ) from exc
+
+    if not row:
+        logger.error("Required storage bucket is missing bucket=%s", normalized)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Storage bucket '{normalized}' does not exist",
+        )
 
 
 def _normalize_metadata(row: Dict[str, Any], keys: tuple[str, ...]) -> Dict[str, Any]:
@@ -442,7 +471,7 @@ async def studio_home_player_upload_url(
         raise HTTPException(status_code=422, detail="mime_type is required")
 
     normalized_ext = Path(payload.filename).suffix.lower().lstrip(".")
-    if normalized_ext == "wav" or mime_type in {
+    if normalized_ext == "wav" or mime_type.startswith("audio/") or mime_type in {
         "audio/wav",
         "audio/x-wav",
         "audio/wave",
@@ -450,10 +479,10 @@ async def studio_home_player_upload_url(
     }:
         raise HTTPException(
             status_code=422,
-            detail="WAV uploads must use media pipeline",
+            detail="Audio uploads must use the WAV media pipeline",
         )
 
-    if not (mime_type.startswith("audio/") or mime_type.startswith("video/")):
+    if not mime_type.startswith("video/"):
         raise HTTPException(status_code=415, detail="Unsupported media type")
 
     max_bytes = int(settings.lesson_media_max_bytes)
@@ -463,7 +492,8 @@ async def studio_home_player_upload_url(
             detail="File too large",
         )
 
-    storage_client = storage_service.get_storage_service("home-media")
+    await _assert_storage_bucket_exists(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
+    storage_client = storage_service.get_storage_service(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
     if not storage_client.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -517,7 +547,7 @@ async def studio_refresh_home_player_upload_url(
     mime_type = str(payload.mime_type or "").strip().lower()
     if not mime_type:
         raise HTTPException(status_code=422, detail="mime_type is required")
-    if mime_type in {
+    if mime_type.startswith("audio/") or mime_type in {
         "audio/wav",
         "audio/x-wav",
         "audio/wave",
@@ -525,12 +555,13 @@ async def studio_refresh_home_player_upload_url(
     }:
         raise HTTPException(
             status_code=422,
-            detail="WAV uploads must use media pipeline",
+            detail="Audio uploads must use the WAV media pipeline",
         )
-    if not (mime_type.startswith("audio/") or mime_type.startswith("video/")):
+    if not mime_type.startswith("video/"):
         raise HTTPException(status_code=415, detail="Unsupported media type")
 
-    storage_client = storage_service.get_storage_service("home-media")
+    await _assert_storage_bucket_exists(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
+    storage_client = storage_service.get_storage_service(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
     if not storage_client.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -596,9 +627,10 @@ async def studio_create_home_player_upload(
             raise HTTPException(status_code=400, detail="Failed to create upload")
         return schemas.HomePlayerUploadItem(**created)
 
-    storage_bucket = (payload.storage_bucket or "").strip() or "home-media"
-    if storage_bucket != "home-media":
+    storage_bucket = (payload.storage_bucket or "").strip() or _HOME_PLAYER_UPLOADS_STORAGE_BUCKET
+    if storage_bucket != _HOME_PLAYER_UPLOADS_STORAGE_BUCKET:
         raise HTTPException(status_code=422, detail="Unsupported storage bucket")
+    await _assert_storage_bucket_exists(storage_bucket)
 
     storage_path = (payload.storage_path or "").strip().lstrip("/")
     if not storage_path:
@@ -614,20 +646,12 @@ async def studio_create_home_player_upload(
         or "application/octet-stream"
     )
     normalized_type = content_type.lower()
-    if normalized_type in {
-        "audio/wav",
-        "audio/x-wav",
-        "audio/wave",
-        "audio/vnd.wave",
-    } or Path(storage_path).suffix.lower() == ".wav":
-        raise HTTPException(
-            status_code=422,
-            detail="WAV uploads must use media pipeline",
-        )
+    if normalized_type.startswith("audio/") or Path(storage_path).suffix.lower() == ".wav":
+        raise HTTPException(status_code=422, detail="Audio uploads must use the WAV media pipeline")
 
-    if not (normalized_type.startswith("audio/") or normalized_type.startswith("video/")):
+    if not normalized_type.startswith("video/"):
         raise HTTPException(status_code=415, detail="Unsupported media type")
-    kind = "video" if normalized_type.startswith("video/") else "audio"
+    kind = "video"
 
     max_bytes = int(settings.lesson_media_max_bytes)
     byte_size = int(payload.byte_size or 0)

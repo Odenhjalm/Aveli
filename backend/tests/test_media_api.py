@@ -171,6 +171,57 @@ async def test_upload_url_allows_wav(async_client, monkeypatch):
         await cleanup_user(user_id)
 
 
+async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "home.wav",
+                "mime_type": "audio/wav",
+                "size_bytes": 2048,
+                "media_type": "audio",
+                "purpose": "home_player_audio",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["upload_url"].startswith("https://storage.local/")
+        assert f"home-player/{user_id}" in body["object_path"]
+        assert body["object_path"].endswith("_home.wav")
+        assert body.get("media_id")
+
+        asset = await media_assets_repo.get_media_asset(body["media_id"])
+        assert asset is not None
+        assert asset["purpose"] == "home_player_audio"
+    finally:
+        await cleanup_user(user_id)
+
+
 async def test_upload_url_rejects_non_audio(async_client):
     headers, user_id = await register_teacher(async_client)
     try:

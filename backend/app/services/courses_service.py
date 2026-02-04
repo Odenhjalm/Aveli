@@ -243,17 +243,7 @@ async def list_home_audio_media(
         item = _materialize_mapping(row)
         if not item.get("media_asset_id") and not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
-        storage_bucket = (item.get("storage_bucket") or "").strip()
-        if storage_bucket == "home-media":
-            media_id = item.get("id")
-            if media_id:
-                item["download_url"] = f"/home/uploads/{media_id}"
-                issued = media_signer.issue_signed_url(media_id)
-                if issued:
-                    signed_url, expires_at = issued
-                    item["signed_url"] = signed_url
-                    item["signed_url_expires_at"] = expires_at.isoformat()
-        elif not item.get("media_asset_id"):
+        if not item.get("media_asset_id"):
             media_signer.attach_media_links(item)
         items.append(item)
     return items
