@@ -6,7 +6,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKEND_ENV_FILE_DEFAULT_LOCAL="${ROOT_DIR}/backend/.env.local"
 BACKEND_ENV_FILE_DEFAULT="${ROOT_DIR}/backend/.env"
+if [[ -f "$BACKEND_ENV_FILE_DEFAULT_LOCAL" ]]; then
+  BACKEND_ENV_FILE_DEFAULT="$BACKEND_ENV_FILE_DEFAULT_LOCAL"
+fi
 
 normalize_stripe_mode() {
   local raw="$1"

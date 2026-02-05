@@ -3,7 +3,7 @@
 FastAPI API backed by Supabase Postgres/Storage. Stripe powers payments/subscriptions/Connect; LiveKit handles SFU/webinars. All schema/RLS lives in `supabase/migrations`.
 
 ## Environment
-Load from `.env.backend` or `.env` (see `docs/ENV_VARS.md`):
+Load from `backend/.env.local` (recommended for local dev) or `backend/.env` (see `docs/ENV_VARS.md`):
 - Supabase: `SUPABASE_URL`, `SUPABASE_SECRET_API_KEY` (legacy: `SUPABASE_SERVICE_ROLE_KEY`), `SUPABASE_PUBLISHABLE_API_KEY` (legacy: `SUPABASE_ANON_KEY`), `SUPABASE_DB_URL`
 - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_BILLING_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `STRIPE_PRICE_SERVICE_*`
 - LiveKit: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_WS_URL`, `LIVEKIT_API_URL`, `LIVEKIT_WEBHOOK_SECRET`
@@ -19,6 +19,14 @@ PORT=8080 poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 - `/healthz` basic; `/readyz` checks DB connectivity.
 - `/metrics` available if `prometheus_client` is installed.
+
+### Local DB clone (recommended)
+Start local Postgres and clone cloud DB into it:
+```bash
+./scripts/local_db.sh up
+SUPABASE_DB_URL=postgresql://... ./scripts/clone_cloud_db_to_local.sh clone
+./scripts/start_backend.sh
+```
 
 ## Tests
 ```bash

@@ -7,6 +7,8 @@
 !.env.example.flutter
 !.env.docker.example
 !backend/.env.example
+!backend/.env.local.example
+!backend/.env.production.example
 !frontend/.env.example
 !frontend/.env.web
 backend/.env

@@ -1,9 +1,54 @@
+import os
+from urllib.parse import urlparse
+
 from pydantic import AliasChoices, AnyUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_PRODUCTION_ENVS = {"prod", "production", "live"}
+_LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db"}
+
+
+def _truthy_env(key: str) -> bool:
+    return (os.environ.get(key) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _app_env_lower() -> str:
+    raw = os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or ""
+    return raw.strip().lower()
+
+
+def _is_cloud_runtime() -> bool:
+    return bool(
+        os.environ.get("FLY_APP_NAME")
+        or os.environ.get("K_SERVICE")
+        or os.environ.get("AWS_EXECUTION_ENV")
+        or os.environ.get("DYNO")
+    )
+
+
+def _db_target(db_url: str) -> str:
+    parsed = urlparse(db_url)
+    host = parsed.hostname or "unknown"
+    port = f":{parsed.port}" if parsed.port else ""
+    dbname = (parsed.path or "").lstrip("/") or "postgres"
+    return f"{host}{port}/{dbname}"
+
+
+def _looks_like_supabase_host(hostname: str) -> bool:
+    host = hostname.strip().lower()
+    if not host:
+        return False
+    if host.endswith(".supabase.co") or host.endswith(".supabase.com"):
+        return True
+    return "supabase" in host
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env", "../.env.local", ".env.local"),
+        extra="ignore",
+    )
 
     supabase_url: AnyUrl | None = None
     supabase_anon_key: str | None = Field(
@@ -162,6 +207,23 @@ class Settings(BaseSettings):
             if self.supabase_db_url is None:
                 raise ValueError("DATABASE_URL or SUPABASE_DB_URL is required")
             self.database_url = self.supabase_db_url
+
+        db_url = self.database_url.unicode_string()
+        parsed = urlparse(db_url)
+        hostname = (parsed.hostname or "").strip().lower()
+
+        if hostname and hostname not in _LOCAL_DB_HOSTS and _looks_like_supabase_host(hostname):
+            allow_remote = _truthy_env("AVELI_ALLOW_REMOTE_DB")
+            app_env = _app_env_lower()
+            is_prod_env = app_env in _PRODUCTION_ENVS
+            if not allow_remote and not (is_prod_env and _is_cloud_runtime()):
+                target = _db_target(db_url)
+                raise ValueError(
+                    "Refusing to start with remote Supabase database outside of production runtime "
+                    f"(APP_ENV={app_env or 'unset'}, target={target}). "
+                    "Point DATABASE_URL to your local Postgres clone, or set AVELI_ALLOW_REMOTE_DB=1 to override."
+                )
+
         return self
 
     @field_validator("cors_allow_origins", mode="before")
