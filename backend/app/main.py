@@ -27,9 +27,11 @@ from .routes import (
     api_ai,
     api_context7,
     api_auth,
+    api_events,
     api_feed,
     api_media,
     api_me,
+    api_notifications,
     api_checkout,
     api_orders,
     api_profiles,
@@ -129,6 +131,8 @@ app.include_router(api_ai.router)
 app.include_router(api_context7.router)
 app.include_router(api_services.router)
 app.include_router(api_orders.router)
+app.include_router(api_events.router)
+app.include_router(api_notifications.router)
 app.include_router(api_feed.router)
 app.include_router(api_sfu.router)
 app.include_router(api_profiles.router)
