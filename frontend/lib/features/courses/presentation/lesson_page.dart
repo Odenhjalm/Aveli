@@ -391,11 +391,17 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
   @override
   Widget build(BuildContext context) {
     final imageConfig = QuillEditorImageEmbedConfig(onImageClicked: (_) {});
+    final defaultEmbedBuilders = FlutterQuillEmbeds.editorBuilders(
+      imageEmbedConfig: imageConfig,
+      videoEmbedConfig: null,
+    );
     final embedBuilders = <quill.EmbedBuilder>[
-      ...FlutterQuillEmbeds.editorBuilders(
-        imageEmbedConfig: imageConfig,
-        videoEmbedConfig: null,
-      ),
+      ...defaultEmbedBuilders.map((builder) {
+        if (builder.key == quill.BlockEmbed.imageType) {
+          return _LessonGlassImageEmbedBuilder(delegate: builder);
+        }
+        return builder;
+      }),
       const _LessonVideoEmbedBuilder(),
       const _LessonAudioEmbedBuilder(),
     ];
@@ -412,6 +418,60 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
         embedBuilders: embedBuilders,
       ),
     );
+  }
+}
+
+class _LessonGlassMediaWrapper extends StatelessWidget {
+  const _LessonGlassMediaWrapper({required this.child});
+
+  final Widget child;
+
+  static const double _maxWidth = 860;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _maxWidth),
+        child: GlassCard(
+          padding: const EdgeInsets.all(8),
+          borderRadius: BorderRadius.circular(16),
+          borderColor: Colors.white.withValues(alpha: 0.16),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _LessonGlassImageEmbedBuilder implements quill.EmbedBuilder {
+  const _LessonGlassImageEmbedBuilder({required this.delegate});
+
+  final quill.EmbedBuilder delegate;
+
+  @override
+  String get key => delegate.key;
+
+  @override
+  bool get expanded => delegate.expanded;
+
+  @override
+  WidgetSpan buildWidgetSpan(Widget widget) => delegate.buildWidgetSpan(widget);
+
+  @override
+  String toPlainText(quill.Embed node) => delegate.toPlainText(node);
+
+  @override
+  Widget build(BuildContext context, quill.EmbedContext embedContext) {
+    final widget = delegate.build(context, embedContext);
+    if (widget is SizedBox &&
+        widget.width == 0 &&
+        widget.height == 0 &&
+        widget.child == null) {
+      return widget;
+    }
+    return _LessonGlassMediaWrapper(child: widget);
   }
 }
 
@@ -442,7 +502,9 @@ class _LessonAudioEmbedBuilder implements quill.EmbedBuilder {
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: InlineAudioPlayer(url: url.trim()),
+      child: _LessonGlassMediaWrapper(
+        child: InlineAudioPlayer(url: url.trim()),
+      ),
     );
   }
 }
@@ -474,7 +536,9 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: InlineVideoPlayer(url: url.trim(), autoPlay: false),
+      child: _LessonGlassMediaWrapper(
+        child: InlineVideoPlayer(url: url.trim(), autoPlay: false),
+      ),
     );
   }
 }
@@ -541,9 +605,11 @@ class _MediaItem extends ConsumerWidget {
           }
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.memory(snapshot.data!, fit: BoxFit.cover),
+            child: _LessonGlassMediaWrapper(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(snapshot.data!, fit: BoxFit.cover),
+              ),
             ),
           );
         },
@@ -590,13 +656,15 @@ class _MediaItem extends ConsumerWidget {
           final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: InlineAudioPlayer(
-              url: url,
-              title: _fileName,
-              durationHint: durationHint,
-              onDownload: () async {
-                await launchUrlString(url);
-              },
+            child: _LessonGlassMediaWrapper(
+              child: InlineAudioPlayer(
+                url: url,
+                title: _fileName,
+                durationHint: durationHint,
+                onDownload: () async {
+                  await launchUrlString(url);
+                },
+              ),
             ),
           );
         },
@@ -612,12 +680,14 @@ class _MediaItem extends ConsumerWidget {
     if (item.kind == 'audio') {
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
-        child: InlineAudioPlayer(
-          url: url,
-          title: _fileName,
-          onDownload: () async {
-            await launchUrlString(url);
-          },
+        child: _LessonGlassMediaWrapper(
+          child: InlineAudioPlayer(
+            url: url,
+            title: _fileName,
+            onDownload: () async {
+              await launchUrlString(url);
+            },
+          ),
         ),
       );
     }
@@ -625,13 +695,15 @@ class _MediaItem extends ConsumerWidget {
     if (item.kind == 'video') {
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
-        child: InlineVideoPlayer(
-          url: url,
-          title: _fileName,
-          autoPlay: true,
-          onDownload: () async {
-            await launchUrlString(url);
-          },
+        child: _LessonGlassMediaWrapper(
+          child: InlineVideoPlayer(
+            url: url,
+            title: _fileName,
+            autoPlay: true,
+            onDownload: () async {
+              await launchUrlString(url);
+            },
+          ),
         ),
       );
     }
