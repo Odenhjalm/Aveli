@@ -16,6 +16,7 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
     this.durationHint,
     this.compact = false,
     this.autoPlay = false,
+    this.minimalUi = false,
   });
 
   final String url;
@@ -24,6 +25,7 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
   final Duration? durationHint;
   final bool compact;
   final bool autoPlay;
+  final bool minimalUi;
 
   @override
   ConsumerState<InlineAudioPlayer> createState() => _InlineAudioPlayerState();
@@ -234,7 +236,8 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final compact = widget.compact;
+    final minimalUi = widget.minimalUi;
+    final compact = widget.compact || minimalUi;
     final duration = _effectiveDuration;
     final maxMillis = max(1, duration.inMilliseconds);
     final position = _position.inMilliseconds.clamp(0, maxMillis);
@@ -259,130 +262,175 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     final timeStyle =
         (compact ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
             ?.copyWith(color: theme.colorScheme.onSurface);
-    final sliderTheme = compact
+    final baseSliderTheme = compact
         ? theme.sliderTheme.copyWith(
             trackHeight: 2,
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
           )
         : theme.sliderTheme;
+    final sliderTheme = minimalUi
+        ? baseSliderTheme.copyWith(
+            activeTrackColor: theme.colorScheme.onSurface.withValues(
+              alpha: 0.28,
+            ),
+            inactiveTrackColor: theme.colorScheme.onSurface.withValues(
+              alpha: 0.12,
+            ),
+            thumbColor: theme.colorScheme.onSurface.withValues(alpha: 0.50),
+            overlayColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+          )
+        : baseSliderTheme;
     final volumeSliderTheme = sliderTheme.copyWith(
       thumbShape: RoundSliderThumbShape(enabledThumbRadius: compact ? 5 : 6),
       overlayShape: RoundSliderOverlayShape(overlayRadius: compact ? 8 : 10),
     );
-    final padding = compact
+    final padding = minimalUi
+        ? EdgeInsets.zero
+        : compact
         ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
         : const EdgeInsets.all(16);
+
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!minimalUi && (widget.title ?? '').isNotEmpty) ...[
+          Text(widget.title!, style: titleStyle),
+          SizedBox(height: compact ? 8 : 12),
+        ],
+        if (_initializing)
+          const Center(child: CircularProgressIndicator())
+        else if (_error != null)
+          Text(
+            'Kunde inte spela upp ljudet: $_error',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          )
+        else
+          Column(
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      _isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      size: compact ? 20 : 24,
+                      color: minimalUi
+                          ? theme.colorScheme.onSurface.withValues(alpha: 0.70)
+                          : null,
+                    ),
+                    onPressed: _toggle,
+                    visualDensity: compact
+                        ? VisualDensity.compact
+                        : VisualDensity.standard,
+                    padding: compact ? EdgeInsets.zero : null,
+                    constraints: compact
+                        ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                        : null,
+                  ),
+                  Expanded(
+                    child: SliderTheme(
+                      data: sliderTheme,
+                      child: Slider(
+                        min: 0,
+                        max: maxMillis.toDouble(),
+                        value: sliderValue,
+                        onChanged: duration.inMilliseconds <= 0
+                            ? null
+                            : (value) =>
+                                  _seek(Duration(milliseconds: value.round())),
+                      ),
+                    ),
+                  ),
+                  if (minimalUi && widget.onDownload != null)
+                    IconButton(
+                      tooltip: 'Öppna externt',
+                      icon: Icon(
+                        Icons.open_in_new_rounded,
+                        size: compact ? 18 : 20,
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.55,
+                        ),
+                      ),
+                      onPressed: widget.onDownload,
+                      visualDensity: VisualDensity.compact,
+                    )
+                  else if (!minimalUi) ...[
+                    SizedBox(width: compact ? 6 : 8),
+                    Text(_formatDuration(_position), style: timeStyle),
+                    Text(' / ', style: timeStyle),
+                    Text(_formatDuration(duration), style: timeStyle),
+                  ],
+                ],
+              ),
+              SizedBox(height: compact ? 6 : 10),
+              if (minimalUi)
+                SliderTheme(
+                  data: volumeSliderTheme,
+                  child: Slider(
+                    min: 0,
+                    max: 1,
+                    value: _volume,
+                    onChanged: _setVolume,
+                  ),
+                )
+              else
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(volumeIcon, size: compact ? 18 : 20),
+                      onPressed: _toggleMute,
+                      visualDensity: compact
+                          ? VisualDensity.compact
+                          : VisualDensity.standard,
+                      padding: compact ? EdgeInsets.zero : null,
+                      constraints: compact
+                          ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                          : null,
+                    ),
+                    Expanded(
+                      child: SliderTheme(
+                        data: volumeSliderTheme,
+                        child: Slider(
+                          min: 0,
+                          max: 1,
+                          value: _volume,
+                          onChanged: _setVolume,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        if (!minimalUi && widget.onDownload != null) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: widget.onDownload,
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text('Öppna externt'),
+            ),
+          ),
+        ],
+      ],
+    );
+
+    if (minimalUi) {
+      return Padding(padding: padding, child: content);
+    }
 
     return Card(
       margin: EdgeInsets.zero,
       elevation: compact ? 0 : null,
       color: compact ? Colors.white.withValues(alpha: 0.08) : null,
       shape: cardShape,
-      child: Padding(
-        padding: padding,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if ((widget.title ?? '').isNotEmpty) ...[
-              Text(widget.title!, style: titleStyle),
-              SizedBox(height: compact ? 8 : 12),
-            ],
-            if (_initializing)
-              const Center(child: CircularProgressIndicator())
-            else if (_error != null)
-              Text(
-                'Kunde inte spela upp ljudet: $_error',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              )
-            else
-              Column(
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          _isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          size: compact ? 20 : 24,
-                        ),
-                        onPressed: _toggle,
-                        visualDensity: compact
-                            ? VisualDensity.compact
-                            : VisualDensity.standard,
-                        padding: compact ? EdgeInsets.zero : null,
-                        constraints: compact
-                            ? const BoxConstraints(minWidth: 32, minHeight: 32)
-                            : null,
-                      ),
-                      Expanded(
-                        child: SliderTheme(
-                          data: sliderTheme,
-                          child: Slider(
-                            min: 0,
-                            max: maxMillis.toDouble(),
-                            value: sliderValue,
-                            onChanged: duration.inMilliseconds <= 0
-                                ? null
-                                : (value) => _seek(
-                                    Duration(milliseconds: value.round()),
-                                  ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: compact ? 6 : 8),
-                      Text(_formatDuration(_position), style: timeStyle),
-                      Text(' / ', style: timeStyle),
-                      Text(_formatDuration(duration), style: timeStyle),
-                    ],
-                  ),
-                  SizedBox(height: compact ? 6 : 10),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(volumeIcon, size: compact ? 18 : 20),
-                        onPressed: _toggleMute,
-                        visualDensity: compact
-                            ? VisualDensity.compact
-                            : VisualDensity.standard,
-                        padding: compact ? EdgeInsets.zero : null,
-                        constraints: compact
-                            ? const BoxConstraints(minWidth: 32, minHeight: 32)
-                            : null,
-                      ),
-                      Expanded(
-                        child: SliderTheme(
-                          data: volumeSliderTheme,
-                          child: Slider(
-                            min: 0,
-                            max: 1,
-                            value: _volume,
-                            onChanged: _setVolume,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            if (widget.onDownload != null) ...[
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: widget.onDownload,
-                  icon: const Icon(Icons.open_in_new_rounded),
-                  label: const Text('Öppna externt'),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+      child: Padding(padding: padding, child: content),
     );
   }
 

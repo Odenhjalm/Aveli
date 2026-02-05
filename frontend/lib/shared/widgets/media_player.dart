@@ -67,12 +67,14 @@ class InlineVideoPlayer extends StatefulWidget {
     this.title,
     this.onDownload,
     this.autoPlay = false,
+    this.minimalUi = false,
   });
 
   final String url;
   final String? title;
   final Future<void> Function()? onDownload;
   final bool autoPlay;
+  final bool minimalUi;
 
   @override
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
@@ -325,15 +327,28 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   @override
   Widget build(BuildContext context) {
     if (!_activated) {
+      final theme = Theme.of(context);
       return _wrapWithBorder(
         AspectRatio(
           aspectRatio: 16 / 9,
           child: Center(
-            child: FilledButton.icon(
-              onPressed: _activate,
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: const Text('Spela video'),
-            ),
+            child: widget.minimalUi
+                ? IconButton(
+                    tooltip: 'Spela video',
+                    iconSize: 40,
+                    icon: Icon(
+                      Icons.play_arrow_rounded,
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.70,
+                      ),
+                    ),
+                    onPressed: _activate,
+                  )
+                : FilledButton.icon(
+                    onPressed: _activate,
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Spela video'),
+                  ),
           ),
         ),
       );

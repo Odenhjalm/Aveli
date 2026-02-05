@@ -8,12 +8,17 @@ import 'package:aveli/shared/utils/app_images.dart';
 /// - Subtle neutral scrim for readability (warm lift in light mode)
 /// - Does not capture gestures (content above remains interactive)
 class BackgroundLayer extends StatelessWidget {
-  const BackgroundLayer({super.key});
+  const BackgroundLayer({super.key, this.image, this.imagePath});
+
+  final ImageProvider<Object>? image;
+  final String? imagePath;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isLightMode = theme.brightness != Brightness.dark;
+    final provider = image ?? AppImages.background;
+    final assetPath = imagePath ?? AppImages.backgroundPath;
 
     return Stack(
       fit: StackFit.expand,
@@ -37,7 +42,7 @@ class BackgroundLayer extends StatelessWidget {
               return Image(
                 // Bundlad bakgrund hålls lokalt för att undvika 401 från backend.
                 image: SafeMedia.resizedProvider(
-                  AppImages.background,
+                  provider,
                   cacheWidth: cacheWidth,
                   cacheHeight: null,
                 ),
@@ -51,7 +56,7 @@ class BackgroundLayer extends StatelessWidget {
                   BootLog.criticalAsset(
                     name: 'background',
                     status: 'fallback',
-                    path: AppImages.backgroundPath,
+                    path: assetPath,
                     error: error,
                   );
                   return const SizedBox.shrink();

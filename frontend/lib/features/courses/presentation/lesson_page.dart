@@ -18,8 +18,10 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
 import 'package:aveli/shared/utils/lesson_media_playback_resolver.dart';
@@ -306,6 +308,10 @@ class _LessonContent extends ConsumerWidget {
     return AppScaffold(
       title: lesson.title,
       body: gatedContent,
+      background: BackgroundLayer(
+        image: AppImages.lessonBackground,
+        imagePath: AppImages.lessonBackgroundPath,
+      ),
       maxContentWidth: contentWidth,
     );
   }
@@ -503,7 +509,7 @@ class _LessonAudioEmbedBuilder implements quill.EmbedBuilder {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: _LessonGlassMediaWrapper(
-        child: InlineAudioPlayer(url: url.trim()),
+        child: InlineAudioPlayer(url: url.trim(), minimalUi: true),
       ),
     );
   }
@@ -537,7 +543,11 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: _LessonGlassMediaWrapper(
-        child: InlineVideoPlayer(url: url.trim(), autoPlay: false),
+        child: InlineVideoPlayer(
+          url: url.trim(),
+          autoPlay: false,
+          minimalUi: true,
+        ),
       ),
     );
   }
@@ -661,6 +671,7 @@ class _MediaItem extends ConsumerWidget {
                 url: url,
                 title: _fileName,
                 durationHint: durationHint,
+                minimalUi: true,
                 onDownload: () async {
                   await launchUrlString(url);
                 },
@@ -684,6 +695,7 @@ class _MediaItem extends ConsumerWidget {
           child: InlineAudioPlayer(
             url: url,
             title: _fileName,
+            minimalUi: true,
             onDownload: () async {
               await launchUrlString(url);
             },
@@ -700,6 +712,7 @@ class _MediaItem extends ConsumerWidget {
             url: url,
             title: _fileName,
             autoPlay: true,
+            minimalUi: true,
             onDownload: () async {
               await launchUrlString(url);
             },
