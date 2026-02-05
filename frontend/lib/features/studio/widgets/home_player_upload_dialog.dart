@@ -10,6 +10,7 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/studio/application/home_player_library_controller.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/widgets/home_player_upload_routing.dart';
 
 import 'wav_upload_source.dart';
 import 'wav_upload_types.dart';
@@ -65,17 +66,6 @@ class _HomePlayerUploadDialogState
     return profile?.id ?? 'library';
   }
 
-  bool get _isWavUpload {
-    final lower = widget.contentType.trim().toLowerCase();
-    if (lower == 'audio/wav' ||
-        lower == 'audio/x-wav' ||
-        lower == 'audio/wave' ||
-        lower == 'audio/vnd.wave') {
-      return true;
-    }
-    return widget.file.name.toLowerCase().endsWith('.wav');
-  }
-
   String _friendlyUploadFailure(WavUploadFailureKind kind) {
     switch (kind) {
       case WavUploadFailureKind.cancelled:
@@ -104,39 +94,29 @@ class _HomePlayerUploadDialogState
       _processing = false;
     });
 
-    final lower = widget.contentType.trim().toLowerCase();
-    final filenameLower = widget.file.name.toLowerCase();
-    final isMp4 = lower == 'video/mp4' || filenameLower.endsWith('.mp4');
-    final isVideo = lower.startsWith('video/') || isMp4;
-    final isAudio = lower.startsWith('audio/') || _isWavUpload;
-
-    if (isAudio && !_isWavUpload) {
-      const message = 'Endast WAV stöds för ljud i Home Player.';
+    final route = detectHomePlayerUploadRoute(
+      mimeType: widget.contentType,
+      filename: widget.file.name,
+    );
+    final error = homePlayerUploadUnsupportedMessage(route);
+    if (error.isNotEmpty) {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _error = message;
-        _status = message;
+        _error = error;
+        _status = error;
       });
       return;
     }
 
-    if (isVideo && !isMp4) {
-      const message = 'Endast MP4 stöds för video i Home Player.';
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _error = message;
-        _status = message;
-      });
-      return;
-    }
-
-    if (_isWavUpload) {
+    if (route == HomePlayerUploadRoute.wavPipeline) {
       await _uploadViaMediaPipeline();
-    } else {
-      await _uploadViaHomeStorage();
+      return;
     }
+
+    await _uploadViaHomeStorage(
+      normalizedMimeType: homePlayerUploadNormalizedMimeType(route),
+    );
   }
 
   Future<void> _uploadViaMediaPipeline() async {
@@ -340,8 +320,8 @@ class _HomePlayerUploadDialogState
     }
   }
 
-  Future<void> _uploadViaHomeStorage() async {
-    final mimeType = widget.contentType.trim().toLowerCase();
+  Future<void> _uploadViaHomeStorage({required String normalizedMimeType}) async {
+    final mimeType = normalizedMimeType.trim().toLowerCase();
     WavResumableSession? resumableSession;
     try {
       resumableSession = await findResumableSession(

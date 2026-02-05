@@ -95,6 +95,13 @@ def _detect_kind(content_type: str | None) -> str:
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
 _LIVE_RECORDINGS_ROOT = "live-recordings"
 _HOME_PLAYER_UPLOADS_STORAGE_BUCKET = "course-media"
+_HOME_PLAYER_WAV_MIME_TYPES = {
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/vnd.wave",
+}
+_HOME_PLAYER_MP3_MIME_TYPES = {"audio/mpeg", "audio/mp3"}
 
 
 async def _assert_storage_bucket_exists(bucket_id: str) -> None:
@@ -471,19 +478,17 @@ async def studio_home_player_upload_url(
         raise HTTPException(status_code=422, detail="mime_type is required")
 
     normalized_ext = Path(payload.filename).suffix.lower().lstrip(".")
-    if normalized_ext == "wav" or mime_type.startswith("audio/") or mime_type in {
-        "audio/wav",
-        "audio/x-wav",
-        "audio/wave",
-        "audio/vnd.wave",
-    }:
+    if normalized_ext == "wav" or mime_type in _HOME_PLAYER_WAV_MIME_TYPES:
         raise HTTPException(
             status_code=422,
-            detail="Audio uploads must use the WAV media pipeline",
+            detail="WAV uploads must use the media pipeline",
         )
 
-    if not mime_type.startswith("video/"):
+    is_mp3 = normalized_ext == "mp3" or mime_type in _HOME_PLAYER_MP3_MIME_TYPES
+    is_mp4 = normalized_ext == "mp4" or mime_type == "video/mp4"
+    if not (is_mp3 or is_mp4):
         raise HTTPException(status_code=415, detail="Unsupported media type")
+    mime_type = "audio/mpeg" if is_mp3 else "video/mp4"
 
     max_bytes = int(settings.lesson_media_max_bytes)
     if payload.size_bytes > max_bytes:
@@ -547,18 +552,18 @@ async def studio_refresh_home_player_upload_url(
     mime_type = str(payload.mime_type or "").strip().lower()
     if not mime_type:
         raise HTTPException(status_code=422, detail="mime_type is required")
-    if mime_type.startswith("audio/") or mime_type in {
-        "audio/wav",
-        "audio/x-wav",
-        "audio/wave",
-        "audio/vnd.wave",
-    }:
+    if mime_type in _HOME_PLAYER_WAV_MIME_TYPES:
         raise HTTPException(
             status_code=422,
-            detail="Audio uploads must use the WAV media pipeline",
+            detail="WAV uploads must use the media pipeline",
         )
-    if not mime_type.startswith("video/"):
+
+    normalized_ext = Path(object_path).suffix.lower().lstrip(".")
+    is_mp3 = normalized_ext == "mp3" or mime_type in _HOME_PLAYER_MP3_MIME_TYPES
+    is_mp4 = normalized_ext == "mp4" or mime_type == "video/mp4"
+    if not (is_mp3 or is_mp4):
         raise HTTPException(status_code=415, detail="Unsupported media type")
+    mime_type = "audio/mpeg" if is_mp3 else "video/mp4"
 
     await _assert_storage_bucket_exists(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
     storage_client = storage_service.get_storage_service(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
@@ -646,12 +651,16 @@ async def studio_create_home_player_upload(
         or "application/octet-stream"
     )
     normalized_type = content_type.lower()
-    if normalized_type.startswith("audio/") or Path(storage_path).suffix.lower() == ".wav":
-        raise HTTPException(status_code=422, detail="Audio uploads must use the WAV media pipeline")
+    normalized_ext = Path(storage_path).suffix.lower().lstrip(".")
+    if normalized_ext == "wav" or normalized_type in _HOME_PLAYER_WAV_MIME_TYPES:
+        raise HTTPException(status_code=422, detail="WAV uploads must use the media pipeline")
 
-    if not normalized_type.startswith("video/"):
+    is_mp3 = normalized_ext == "mp3" or normalized_type in _HOME_PLAYER_MP3_MIME_TYPES
+    is_mp4 = normalized_ext == "mp4" or normalized_type == "video/mp4"
+    if not (is_mp3 or is_mp4):
         raise HTTPException(status_code=415, detail="Unsupported media type")
-    kind = "video"
+    kind = "audio" if is_mp3 else "video"
+    content_type = "audio/mpeg" if is_mp3 else "video/mp4"
 
     max_bytes = int(settings.lesson_media_max_bytes)
     byte_size = int(payload.byte_size or 0)

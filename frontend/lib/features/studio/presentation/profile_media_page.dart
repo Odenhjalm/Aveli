@@ -10,6 +10,7 @@ import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/features/studio/application/home_player_library_controller.dart';
 import 'package:aveli/features/studio/widgets/home_player_upload_dialog.dart';
+import 'package:aveli/features/studio/widgets/home_player_upload_routing.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_source.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -904,43 +905,14 @@ Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
   final contentType = (picked.mimeType?.isNotEmpty ?? false)
       ? picked.mimeType!
       : _guessContentType(picked.name);
-  final lower = contentType.toLowerCase();
-  final filenameLower = picked.name.toLowerCase();
-  final isWav =
-      lower == 'audio/wav' ||
-      lower == 'audio/x-wav' ||
-      lower == 'audio/wave' ||
-      lower == 'audio/vnd.wave' ||
-      filenameLower.endsWith('.wav');
-  final isMp4 = lower == 'video/mp4' || filenameLower.endsWith('.mp4');
-  final isAudio = lower.startsWith('audio/') || isWav;
-  final isVideo = lower.startsWith('video/') || isMp4;
-
-  if (!(isAudio || isVideo)) {
+  final route = detectHomePlayerUploadRoute(
+    mimeType: contentType,
+    filename: picked.name,
+  );
+  final error = homePlayerUploadUnsupportedMessage(route);
+  if (error.isNotEmpty) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Välj en ljud- eller videofil.')),
-    );
-    return;
-  }
-
-  if (isAudio && !isWav) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Endast WAV stöds för ljud i Home Player.'),
-      ),
-    );
-    return;
-  }
-
-  if (isVideo && !isMp4) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Endast MP4 stöds för video i Home Player.'),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
     return;
   }
 

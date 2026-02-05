@@ -101,24 +101,77 @@ async def test_home_player_upload_url_allows_video_mp4(async_client, monkeypatch
         await cleanup_user(user_id)
 
 
-async def test_home_player_upload_url_rejects_audio(async_client, monkeypatch):
+async def test_home_player_upload_url_allows_audio_mp3(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         service = storage_module.get_storage_service("course-media")
         service._supabase_url = service._supabase_url or "https://supabase.local"
         service._service_role_key = service._service_role_key or "dev-service-role"
 
+        async def fake_create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            assert self.bucket == "course-media"
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=3600,
+            )
+
+        monkeypatch.setattr(
+            "app.services.storage_service.StorageService.create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+
         resp = await async_client.post(
             "/studio/home-player/uploads/upload-url",
             headers=headers,
             json={
                 "filename": "demo.mp3",
-                "mime_type": "audio/mpeg",
+                "mime_type": "audio/mp3",
+                "size_bytes": 1024,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        presign = resp.json()
+        assert presign["headers"]["content-type"] == "audio/mpeg"
+
+        create_resp = await async_client.post(
+            "/studio/home-player/uploads",
+            headers=headers,
+            json={
+                "title": "Demo audio",
+                "active": True,
+                "storage_bucket": "course-media",
+                "storage_path": presign["object_path"],
+                "content_type": "audio/mp3",
+                "byte_size": 1024,
+                "original_name": "demo.mp3",
+            },
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        created = create_resp.json()
+        assert created["kind"] == "audio"
+        assert created["content_type"] == "audio/mpeg"
+        assert created.get("media_id")
+        assert created.get("media_asset_id") is None
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_home_player_upload_url_rejects_audio_wav(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        resp = await async_client.post(
+            "/studio/home-player/uploads/upload-url",
+            headers=headers,
+            json={
+                "filename": "demo.wav",
+                "mime_type": "audio/wav",
                 "size_bytes": 1024,
             },
         )
         assert resp.status_code == 422, resp.text
-        assert "Audio uploads" in resp.text
+        assert "WAV uploads must use the media pipeline" in resp.text
     finally:
         await cleanup_user(user_id)
-
