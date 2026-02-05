@@ -579,14 +579,6 @@ class _MediaItem extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mediaRepo = ref.watch(mediaRepositoryProvider);
     final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
-    String? downloadUrl;
-    if (item.preferredUrl != null) {
-      try {
-        downloadUrl = mediaRepo.resolveUrl(item.preferredUrl!);
-      } catch (_) {
-        downloadUrl = item.preferredUrl;
-      }
-    }
     final extension = () {
       final name = _fileName;
       final index = name.lastIndexOf('.');
@@ -682,44 +674,107 @@ class _MediaItem extends ConsumerWidget {
       );
     }
 
+    if (item.kind == 'video') {
+      final future = resolveLessonMediaPlaybackUrl(
+        item: item,
+        mediaRepository: mediaRepo,
+        pipelineRepository: pipelineRepo,
+      );
+      return FutureBuilder<String?>(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final playbackUrl = snapshot.data;
+          if (playbackUrl == null || playbackUrl.trim().isEmpty) {
+            return ListTile(
+              leading: Icon(_iconForKind()),
+              title: Text(_fileName),
+              subtitle: const Text('Kunde inte hämta uppspelningslänk.'),
+            );
+          }
+          final url = playbackUrl.trim();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _LessonGlassMediaWrapper(
+              child: InlineVideoPlayer(
+                url: url,
+                title: _fileName,
+                autoPlay: true,
+                minimalUi: true,
+                onDownload: () async {
+                  await launchUrlString(url);
+                },
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    if (item.kind == 'audio') {
+      final durationHint = (item.durationSeconds ?? 0) > 0
+          ? Duration(seconds: item.durationSeconds!)
+          : null;
+      final future = resolveLessonMediaPlaybackUrl(
+        item: item,
+        mediaRepository: mediaRepo,
+        pipelineRepository: pipelineRepo,
+      );
+      return FutureBuilder<String?>(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final playbackUrl = snapshot.data;
+          if (playbackUrl == null || playbackUrl.trim().isEmpty) {
+            return ListTile(
+              leading: Icon(_iconForKind()),
+              title: Text(_fileName),
+              subtitle: const Text('Kunde inte hämta uppspelningslänk.'),
+            );
+          }
+          final url = playbackUrl.trim();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _LessonGlassMediaWrapper(
+              child: InlineAudioPlayer(
+                url: url,
+                title: _fileName,
+                durationHint: durationHint,
+                minimalUi: true,
+                onDownload: () async {
+                  await launchUrlString(url);
+                },
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    String? downloadUrl;
+    if (item.preferredUrl != null) {
+      try {
+        downloadUrl = mediaRepo.resolveUrl(item.preferredUrl!);
+      } catch (_) {
+        downloadUrl = item.preferredUrl;
+      }
+    }
+
     if (downloadUrl == null) {
       return ListTile(leading: Icon(_iconForKind()), title: Text(_fileName));
     }
 
     final url = downloadUrl;
-
-    if (item.kind == 'audio') {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: _LessonGlassMediaWrapper(
-          child: InlineAudioPlayer(
-            url: url,
-            title: _fileName,
-            minimalUi: true,
-            onDownload: () async {
-              await launchUrlString(url);
-            },
-          ),
-        ),
-      );
-    }
-
-    if (item.kind == 'video') {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: _LessonGlassMediaWrapper(
-          child: InlineVideoPlayer(
-            url: url,
-            title: _fileName,
-            autoPlay: true,
-            minimalUi: true,
-            onDownload: () async {
-              await launchUrlString(url);
-            },
-          ),
-        ),
-      );
-    }
 
     return ListTile(
       leading: Icon(_iconForKind()),

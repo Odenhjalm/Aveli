@@ -639,7 +639,28 @@ class LessonMediaItem {
       ? storagePath.split('/').last
       : originalName!;
 
-  String? get preferredUrl => signedUrl ?? downloadUrl;
+  String? get preferredUrl {
+    final download = downloadUrl?.trim();
+    if (download != null &&
+        download.isNotEmpty &&
+        download.toLowerCase().startsWith('/api/files/')) {
+      return download;
+    }
+
+    final signed = signedUrl?.trim();
+    if (signed != null && signed.isNotEmpty) {
+      final expiresAt = signedUrlExpiresAt;
+      if (expiresAt == null) return signed;
+      final now = DateTime.now().toUtc();
+      if (now.isBefore(expiresAt.subtract(const Duration(seconds: 30)))) {
+        return signed;
+      }
+    }
+
+    if (download != null && download.isNotEmpty) return download;
+    if (signed != null && signed.isNotEmpty) return signed;
+    return null;
+  }
 }
 
 class CourseOrderSummary {

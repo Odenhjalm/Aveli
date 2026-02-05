@@ -1,5 +1,26 @@
+from urllib.parse import urlparse
+
 from pydantic import AliasChoices, AnyUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _cors_origin_from_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "").lower().strip()
+    if scheme not in {"http", "https"}:
+        return None
+    hostname = (parsed.hostname or "").strip()
+    if not hostname:
+        return None
+    port = parsed.port
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        return f"{scheme}://{hostname}:{port}"
+    return f"{scheme}://{hostname}"
 
 
 class Settings(BaseSettings):
@@ -162,6 +183,13 @@ class Settings(BaseSettings):
             if self.supabase_db_url is None:
                 raise ValueError("DATABASE_URL or SUPABASE_DB_URL is required")
             self.database_url = self.supabase_db_url
+
+        frontend_origin = _cors_origin_from_url(self.frontend_base_url)
+        if frontend_origin:
+            existing = {origin.strip().lower() for origin in self.cors_allow_origins if origin}
+            if frontend_origin.strip().lower() not in existing:
+                self.cors_allow_origins.append(frontend_origin)
+
         return self
 
     @field_validator("cors_allow_origins", mode="before")

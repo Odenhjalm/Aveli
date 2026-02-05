@@ -23,19 +23,63 @@ Future<String?> resolveLessonMediaPlaybackUrl({
     }
   }
 
-  final preferred = item.preferredUrl?.trim();
-  if (preferred != null && preferred.isNotEmpty) {
+  final download = item.downloadUrl?.trim();
+  if (download != null &&
+      download.isNotEmpty &&
+      download.toLowerCase().startsWith('/api/files/')) {
     try {
-      return mediaRepository.resolveUrl(preferred);
+      return mediaRepository.resolveUrl(download);
     } catch (_) {
-      return preferred;
+      return download;
     }
   }
 
-  final signed = await mediaRepository.signMedia(item.id);
-  try {
-    return mediaRepository.resolveUrl(signed.signedUrl);
-  } catch (_) {
-    return signed.signedUrl;
+  final signedUrl = item.signedUrl?.trim();
+  final expiresAt = item.signedUrlExpiresAt;
+  final now = DateTime.now().toUtc();
+  final hasValidSigned =
+      signedUrl != null &&
+      signedUrl.isNotEmpty &&
+      (expiresAt == null ||
+          now.isBefore(expiresAt.subtract(const Duration(seconds: 30))));
+
+  if (hasValidSigned) {
+    try {
+      return mediaRepository.resolveUrl(signedUrl!);
+    } catch (_) {
+      return signedUrl;
+    }
   }
+
+  try {
+    final signed = await mediaRepository.signMedia(item.id);
+    final resolved = signed.signedUrl.trim();
+    if (resolved.isNotEmpty) {
+      try {
+        return mediaRepository.resolveUrl(resolved);
+      } catch (_) {
+        return resolved;
+      }
+    }
+  } catch (_) {
+    // Fall back to any download URLs below.
+  }
+
+  if (download != null && download.isNotEmpty) {
+    try {
+      return mediaRepository.resolveUrl(download);
+    } catch (_) {
+      return download;
+    }
+  }
+
+  if (signedUrl != null && signedUrl.isNotEmpty) {
+    try {
+      return mediaRepository.resolveUrl(signedUrl);
+    } catch (_) {
+      return signedUrl;
+    }
+  }
+
+  return null;
 }
