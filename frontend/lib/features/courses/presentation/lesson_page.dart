@@ -175,12 +175,13 @@ class _LessonContent extends ConsumerWidget {
       }
     }
 
-    final remainingMedia = [...mediaItems];
-
     final markdownContent = _normalizeMarkdown(lesson.contentMarkdown);
     final bundleLinks = _extractBundleLinks(markdownContent);
     final embeddedMediaIds = extractLessonEmbeddedMediaIds(markdownContent);
+
     bool isEmbedded(LessonMediaItem item) {
+      final mediaId = item.mediaId;
+      if (mediaId != null && embeddedMediaIds.contains(mediaId)) return true;
       if (embeddedMediaIds.contains(item.id)) return true;
       final candidateUrls = <String?>[item.downloadUrl, item.signedUrl];
       for (final url in candidateUrls) {
@@ -194,12 +195,20 @@ class _LessonContent extends ConsumerWidget {
       return false;
     }
 
+    final trailingMedia = mediaItems
+        .where((item) => !isEmbedded(item))
+        .toList(growable: false);
+
     final coreContent = ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         GlassCard(
           padding: const EdgeInsets.all(16),
-          borderRadius: BorderRadius.circular(16),
+          opacity: 0.16,
+          sigmaX: 10,
+          sigmaY: 10,
+          borderRadius: BorderRadius.circular(22),
+          borderColor: Colors.white.withValues(alpha: 0.16),
           child: FutureBuilder<String>(
             future: prepareLessonMarkdownForRendering(mediaRepo, markdownContent),
             builder: (context, snapshot) {
@@ -233,7 +242,7 @@ class _LessonContent extends ConsumerWidget {
             ),
           ),
         ],
-        if (remainingMedia.where((item) => !isEmbedded(item)).isNotEmpty) ...[
+        if (trailingMedia.isNotEmpty) ...[
           const SizedBox(height: 16),
           GlassCard(
             padding: const EdgeInsets.all(12),
@@ -241,9 +250,7 @@ class _LessonContent extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...remainingMedia
-                    .where((item) => !isEmbedded(item))
-                    .map((item) => _MediaItem(item: item)),
+                ...trailingMedia.map((item) => _MediaItem(item: item)),
               ],
             ),
           ),
