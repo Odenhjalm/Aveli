@@ -15,7 +15,6 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -23,6 +22,7 @@ import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
+import 'package:aveli/shared/utils/lesson_media_playback_resolver.dart';
 
 class LessonPage extends ConsumerStatefulWidget {
   const LessonPage({super.key, required this.lessonId});
@@ -157,6 +157,7 @@ class _LessonContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final lesson = detail.lesson;
     final mediaRepo = ref.watch(mediaRepositoryProvider);
+    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
     final screenWidth = MediaQuery.of(context).size.width;
     final contentWidth = (screenWidth - 32).clamp(720.0, 1200.0).toDouble();
     final mediaItems = detail.media;
@@ -210,7 +211,12 @@ class _LessonContent extends ConsumerWidget {
           borderRadius: BorderRadius.circular(22),
           borderColor: Colors.white.withValues(alpha: 0.16),
           child: FutureBuilder<String>(
-            future: prepareLessonMarkdownForRendering(mediaRepo, markdownContent),
+            future: prepareLessonMarkdownForRendering(
+              mediaRepo,
+              markdownContent,
+              lessonMedia: mediaItems,
+              pipelineRepository: pipelineRepo,
+            ),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Padding(
@@ -361,7 +367,10 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
 
   quill.QuillController _buildController(String markdown) {
     try {
-      final delta = convertLessonMarkdownToDelta(_lessonMarkdownToDelta, markdown);
+      final delta = convertLessonMarkdownToDelta(
+        _lessonMarkdownToDelta,
+        markdown,
+      );
       final document = quill.Document.fromDelta(delta);
       return quill.QuillController(
         document: document,
@@ -556,8 +565,12 @@ class _MediaItem extends ConsumerWidget {
       final durationHint = (item.durationSeconds ?? 0) > 0
           ? Duration(seconds: item.durationSeconds!)
           : null;
-      final future = pipelineRepo.fetchPlaybackUrl(item.mediaAssetId!);
-      return FutureBuilder<MediaPlaybackUrl>(
+      final future = resolveLessonMediaPlaybackUrl(
+        item: item,
+        mediaRepository: mediaRepo,
+        pipelineRepository: pipelineRepo,
+      );
+      return FutureBuilder<String?>(
         future: future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -566,22 +579,23 @@ class _MediaItem extends ConsumerWidget {
               child: LinearProgressIndicator(),
             );
           }
-          if (!snapshot.hasData) {
+          final playbackUrl = snapshot.data;
+          if (playbackUrl == null || playbackUrl.trim().isEmpty) {
             return ListTile(
               leading: Icon(_iconForKind()),
               title: Text(_fileName),
               subtitle: const Text('Kunde inte hämta uppspelningslänk.'),
             );
           }
-          final playbackUrl = snapshot.data!.playbackUrl.toString();
+          final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: InlineAudioPlayer(
-              url: playbackUrl,
+              url: url,
               title: _fileName,
               durationHint: durationHint,
               onDownload: () async {
-                await launchUrlString(playbackUrl);
+                await launchUrlString(url);
               },
             ),
           );

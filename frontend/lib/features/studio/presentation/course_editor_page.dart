@@ -854,6 +854,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<String> _prepareLessonMarkdownForEditing(String markdown) async {
     if (markdown.trim().isEmpty) return markdown;
     final repo = ref.read(mediaRepositoryProvider);
+    final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
     var prepared = markdown;
     if (lesson_pipeline.apiFilesUrlPattern.hasMatch(prepared)) {
       final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
@@ -864,7 +865,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
       }
     }
-    return lesson_pipeline.prepareLessonMarkdownForRendering(repo, prepared);
+    final lessonMediaItems = () {
+      final selectedLessonId = _selectedLessonId;
+      if (selectedLessonId == null) return const <LessonMediaItem>[];
+      if (_lessonMediaLessonId != selectedLessonId)
+        return const <LessonMediaItem>[];
+      if (_lessonMedia.isEmpty) return const <LessonMediaItem>[];
+      final items = <LessonMediaItem>[];
+      for (final raw in _lessonMedia) {
+        try {
+          items.add(LessonMediaItem.fromJson(raw));
+        } catch (_) {
+          // Skip malformed media entries.
+        }
+      }
+      return items;
+    }();
+
+    return lesson_pipeline.prepareLessonMarkdownForRendering(
+      repo,
+      prepared,
+      lessonMedia: lessonMediaItems,
+      pipelineRepository: pipelineRepo,
+    );
   }
 
   String _visibleLessonTextForLog(String value) {
@@ -985,7 +1008,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
     final uiPlainText = controller.document.toPlainText();
-    final rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
+    var rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
+    if (lesson_pipeline.apiFilesUrlPattern.hasMatch(rawMarkdown)) {
+      final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
+      if (mapping.isNotEmpty) {
+        rawMarkdown = lesson_pipeline.rewriteLessonMarkdownApiFilesUrls(
+          markdown: rawMarkdown,
+          apiFilesPathToStudioMediaUrl: mapping,
+        );
+      }
+    }
     final markdown = lesson_pipeline.normalizeLessonMarkdownForStorage(
       rawMarkdown,
     );
@@ -2341,7 +2373,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _insertAudioIntoLesson(String url, {TextSelection? targetSelection}) {
+  void _insertAudioIntoLesson(
+    lesson_pipeline.AudioBlockEmbed embed, {
+    TextSelection? targetSelection,
+  }) {
     final controller = _lessonContentController;
     if (controller == null) return;
 
@@ -2368,7 +2403,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     controller.replaceText(
       baseIndex,
       0,
-      lesson_pipeline.AudioBlockEmbed.fromUrl(url),
+      embed,
       TextSelection.collapsed(offset: baseIndex + 1),
     );
     controller.replaceText(
@@ -2403,16 +2438,25 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final kind = (media['kind'] as String?) ?? '';
-    final resolved = _resolveMediaDisplayUrl(media);
-    if (resolved == null) {
+    final lessonMediaId = (media['id'] as String?)?.trim() ?? '';
+    if (lessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
-        showSnack(context, 'Kunde inte resolveda sökvägen för media.');
+        showSnack(context, 'Media saknar ID och kan inte bäddas in.');
       }
       return;
     }
-    debugPrint('[CourseEditor] insert media kind=$kind url=$resolved');
+    final resolved = _resolveMediaDisplayUrl(media);
+    debugPrint(
+      '[CourseEditor] insert media kind=$kind lessonMediaId=$lessonMediaId url=$resolved',
+    );
     _snapshotLessonSelection();
     if (_isImageMedia(media) || kind == 'image') {
+      if (resolved == null) {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Kunde inte resolveda sökvägen för media.');
+        }
+        return;
+      }
       _insertImageIntoLesson(resolved, targetSelection: _lastLessonSelection);
       if (mounted && context.mounted) {
         showSnack(
@@ -2426,6 +2470,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     if (kind == 'video' ||
         ((media['content_type'] as String?) ?? '').startsWith('video/')) {
+      if (resolved == null) {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Kunde inte resolveda sökvägen för media.');
+        }
+        return;
+      }
       _insertVideoIntoLesson(resolved, targetSelection: _lastLessonSelection);
       if (mounted && context.mounted) {
         showSnack(
@@ -2438,7 +2488,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     // Audio: inline player embed
-    _insertAudioIntoLesson(resolved, targetSelection: _lastLessonSelection);
+    final audioEmbed = lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
+      lessonMediaId: lessonMediaId,
+      src: resolved,
+    );
+    _insertAudioIntoLesson(audioEmbed, targetSelection: _lastLessonSelection);
     if (mounted && context.mounted) {
       showSnack(
         context,
