@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
@@ -19,20 +18,18 @@ class WavUploadCard extends ConsumerStatefulWidget {
     required this.courseId,
     required this.lessonId,
     this.onMediaUpdated,
-    this.existingLessonMediaId,
-    this.existingMediaState,
-    this.existingFileName,
     this.pickFileOverride,
     this.uploadFileOverride,
     this.pollInterval = const Duration(seconds: 5),
+    this.actionLabel = 'Ladda upp WAV',
+    this.onPipelineFinalState,
   });
 
   final String? courseId;
   final String? lessonId;
   final Future<void> Function()? onMediaUpdated;
-  final String? existingLessonMediaId;
-  final String? existingMediaState;
-  final String? existingFileName;
+  final void Function(String mediaAssetId, String finalState)?
+  onPipelineFinalState;
   final Future<WavUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
     required String mediaId,
@@ -54,6 +51,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
   })?
   uploadFileOverride;
   final Duration pollInterval;
+  final String actionLabel;
 
   @override
   ConsumerState<WavUploadCard> createState() => _WavUploadCardState();
@@ -71,18 +69,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   String? _mediaState;
   Timer? _pollTimer;
   bool _uploading = false;
-  bool _deleting = false;
-  bool _deleted = false;
   WavUploadCancelToken? _cancelToken;
-
-  @override
-  void didUpdateWidget(covariant WavUploadCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final nextId = widget.existingLessonMediaId;
-    if (nextId != null && nextId.trim().isNotEmpty) {
-      _deleted = false;
-    }
-  }
 
   String? _missingContextMessage({
     required bool hasLessonId,
@@ -135,42 +122,11 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   }
 
   Future<String?> _promptRequiredMediaDisplayName(String suggested) async {
-    final controller = TextEditingController(text: suggested);
-    String current = controller.text.trim();
-
     final result = await showDialog<String?>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Ge ljudet/videon ett namn'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Namn',
-              hintText: 'Till exempel: Introduktion',
-            ),
-            onChanged: (_) => setDialogState(() {
-              current = controller.text.trim();
-            }),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text('Avbryt'),
-            ),
-            ElevatedButton(
-              onPressed: current.isEmpty
-                  ? null
-                  : () => Navigator.of(dialogContext).pop(current),
-              child: const Text('Fortsätt'),
-            ),
-          ],
-        ),
-      ),
+      builder: (dialogContext) =>
+          _RequiredMediaDisplayNameDialog(suggested: suggested),
     );
-
-    controller.dispose();
     return result?.trim();
   }
 
@@ -187,50 +143,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
   void _cancelUpload() {
     _cancelToken?.cancel();
-  }
-
-  Future<void> _deleteExisting() async {
-    final mediaId = widget.existingLessonMediaId;
-    if (mediaId == null || mediaId.trim().isEmpty) return;
-    if (_deleting) return;
-    _pollTimer?.cancel();
-    _pollTimer = null;
-    _cancelToken?.cancel();
-    setState(() {
-      _deleting = true;
-      _error = null;
-      _status = 'Tar bort…';
-    });
-    try {
-      final repo = ref.read(studioRepositoryProvider);
-      await repo.deleteLessonMedia(mediaId);
-      if (!mounted) return;
-      setState(() {
-        _deleting = false;
-        _deleted = true;
-        _selectedFile = null;
-        _progress = 0.0;
-        _status = null;
-        _error = null;
-        _mediaId = null;
-        _mediaState = null;
-        _uploading = false;
-        _cancelToken = null;
-      });
-      await widget.onMediaUpdated?.call();
-      if (!mounted) return;
-      showSnack(context, 'Ljud borttaget.');
-    } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
-      final message = 'Kunde inte ta bort ljud: ${failure.message}';
-      if (!mounted) return;
-      setState(() {
-        _deleting = false;
-        _error = message;
-        _status = message;
-      });
-      showSnack(context, message);
-    }
   }
 
   @override
@@ -496,6 +408,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         _pollTimer?.cancel();
         _pollTimer = null;
         await widget.onMediaUpdated?.call();
+        widget.onPipelineFinalState?.call(mediaId, status.state);
       }
     } catch (_) {
       if (!mounted) return;
@@ -532,62 +445,31 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     final bodyStyle = theme.textTheme.bodySmall;
     final secondaryStyle = theme.textTheme.bodySmall;
     final progressVisible = _uploading && _progress > 0;
-    final effectiveState = _deleted
-        ? null
-        : (_mediaState ?? widget.existingMediaState);
-    final isProcessingState =
-        effectiveState == 'uploaded' || effectiveState == 'processing';
-    final isReadyState = effectiveState == 'ready';
-    final isFailedState = effectiveState == 'failed';
-    final showProcessingState = _uploading || isProcessingState;
-    final showProcessingDetails = !_uploading && isProcessingState;
-    final showReadyState =
-        !showProcessingState && (isReadyState || isFailedState);
-    final showUploadAction = !showProcessingState && !showReadyState;
-    final showReplaceAction = showReadyState;
-    final displayFileName = _deleted
-        ? null
-        : (_selectedFile?.name ?? widget.existingFileName);
+    final displayFileName = _selectedFile?.name;
     final missingMessage = _missingContextMessage(
       hasLessonId: hasLessonId,
       hasCourseId: hasCourseId,
     );
 
     String? statusText;
-    if (_uploading || _deleting) {
+    if (_uploading) {
       statusText = _status;
-    } else if (effectiveState != null) {
-      statusText = _statusLabel(effectiveState);
+    } else if (_mediaState != null) {
+      statusText = _statusLabel(_mediaState!);
     } else {
       statusText = _status;
     }
-    if (statusText == null && showProcessingDetails) {
-      statusText = 'Uppladdning klar – bearbetas till MP3';
-    }
 
-    Widget? actionButton;
-    if (showUploadAction) {
-      actionButton = ElevatedButton.icon(
-        onPressed: canUpload && !_uploading && !_deleting
-            ? _pickAndUpload
-            : null,
-        icon: const Icon(Icons.upload_file),
-        label: const Text('Ladda upp WAV'),
-      );
-    } else if (showReplaceAction) {
-      actionButton = OutlinedButton.icon(
-        onPressed: canUpload && !_uploading && !_deleting
-            ? _pickAndUpload
-            : null,
-        icon: const Icon(Icons.sync),
-        label: const Text('Byt WAV'),
-      );
-    }
+    final actionButton = ElevatedButton.icon(
+      onPressed: canUpload && !_uploading ? _pickAndUpload : null,
+      icon: const Icon(Icons.upload_file),
+      label: Text(widget.actionLabel),
+    );
 
     final actionRowChildren = <Widget>[
-      if (actionButton != null) actionButton,
+      actionButton,
       if (displayFileName != null) ...[
-        if (actionButton != null) const SizedBox(width: 12),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(
             displayFileName,
@@ -599,12 +481,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       ],
     ];
 
-    final canDelete = canUpload && !_uploading && !_deleting;
-    final showDeleteButton =
-        widget.existingLessonMediaId != null &&
-        widget.existingLessonMediaId!.trim().isNotEmpty &&
-        !_deleted;
-
     return GlassCard(
       padding: const EdgeInsets.all(16),
       borderRadius: BorderRadius.circular(18),
@@ -613,10 +489,10 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Studiomaster (WAV)', style: titleStyle),
+          Text('Ljud (WAV)', style: titleStyle),
           const SizedBox(height: 8),
           Text(
-            'Studiomaster laddas upp och bearbetas till MP3 innan uppspelning.',
+            'Varje WAV laddas upp och bearbetas till MP3 innan uppspelning.',
             style: bodyStyle,
           ),
           if (actionRowChildren.isNotEmpty) ...[
@@ -635,14 +511,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
               label: const Text('Avbryt'),
             ),
           ],
-          if (showDeleteButton) ...[
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: canDelete ? _deleteExisting : null,
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Ta bort'),
-            ),
-          ],
           if (!canUpload) ...[
             const SizedBox(height: 12),
             Text(
@@ -656,13 +524,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
             const SizedBox(height: 12),
             Text(statusText, style: bodyStyle),
           ],
-          if (canUpload && showProcessingDetails) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Du kan ladda upp en ny master när bearbetningen är klar.',
-              style: secondaryStyle,
-            ),
-          ],
           if (canUpload && _error != null && _error!.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
@@ -674,6 +535,65 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _RequiredMediaDisplayNameDialog extends StatefulWidget {
+  const _RequiredMediaDisplayNameDialog({required this.suggested});
+
+  final String suggested;
+
+  @override
+  State<_RequiredMediaDisplayNameDialog> createState() =>
+      _RequiredMediaDisplayNameDialogState();
+}
+
+class _RequiredMediaDisplayNameDialogState
+    extends State<_RequiredMediaDisplayNameDialog> {
+  late final TextEditingController _controller;
+  String _current = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.suggested);
+    _current = _controller.text.trim();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Ge ljudet/videon ett namn'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: 'Namn',
+          hintText: 'Till exempel: Introduktion',
+        ),
+        onChanged: (_) => setState(() {
+          _current = _controller.text.trim();
+        }),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Avbryt'),
+        ),
+        ElevatedButton(
+          onPressed: _current.isEmpty
+              ? null
+              : () => Navigator.of(context).pop(_current),
+          child: const Text('Fortsätt'),
+        ),
+      ],
     );
   }
 }

@@ -40,6 +40,7 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
+import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
@@ -141,6 +142,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _downloadStatus;
   bool _suppressNextMediaPreview = false;
   bool _lessonActionBusy = false;
+  static const Duration _lessonMediaPollInterval = Duration(seconds: 5);
+  Timer? _lessonMediaPollTimer;
+  bool _lessonMediaPollInFlight = false;
 
   quill.QuillController? _lessonContentController;
   final FocusNode _lessonContentFocusNode = FocusNode();
@@ -338,6 +342,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _panelScrollController.dispose();
     _lessonTitleCtrl.dispose();
     _coverPollTimer?.cancel();
+    _lessonMediaPollTimer?.cancel();
     super.dispose();
   }
 
@@ -554,6 +559,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<void> _loadLessonMedia() async {
     final lessonId = _selectedLessonId;
     if (lessonId == null) {
+      _stopLessonMediaPolling();
       if (mounted) {
         setState(() {
           _lessonMedia = <Map<String, dynamic>>[];
@@ -570,6 +576,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final courseId = _selectedCourseId;
     final requestId = ++_lessonMediaRequestId;
+    if (_lessonMediaLessonId != lessonId) {
+      _stopLessonMediaPolling();
+    }
     if (mounted) {
       setState(() {
         _mediaLoading = true;
@@ -622,6 +631,100 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             lessonId: lessonId,
           )) {
         setState(() => _mediaLoading = false);
+        _updateLessonMediaPolling();
+      }
+    }
+  }
+
+  String? _pipelineStateFromDb(Map<String, dynamic> media) {
+    final raw = media['media_state'];
+    if (raw is String) {
+      final trimmed = raw.trim().toLowerCase();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+    return null;
+  }
+
+  bool _lessonMediaHasProcessingPipelineItems() {
+    for (final media in _lessonMedia) {
+      if (!_isPipelineMedia(media)) continue;
+      final state = _pipelineStateFromDb(media);
+      if (state == 'uploaded' || state == 'processing') return true;
+    }
+    return false;
+  }
+
+  void _updateLessonMediaPolling() {
+    final selectedLessonId = _selectedLessonId;
+    final shouldPoll =
+        selectedLessonId != null &&
+        _lessonMediaLessonId == selectedLessonId &&
+        _lessonMediaHasProcessingPipelineItems();
+
+    if (!shouldPoll) {
+      _stopLessonMediaPolling();
+      return;
+    }
+
+    _lessonMediaPollTimer ??= Timer.periodic(_lessonMediaPollInterval, (_) {
+      unawaited(_refreshLessonMediaSilently());
+    });
+  }
+
+  void _stopLessonMediaPolling() {
+    _lessonMediaPollTimer?.cancel();
+    _lessonMediaPollTimer = null;
+  }
+
+  Future<void> _refreshLessonMediaSilently() async {
+    if (_lessonMediaPollInFlight || _mediaLoading) return;
+    final lessonId = _selectedLessonId;
+    if (lessonId == null) return;
+
+    _lessonMediaPollInFlight = true;
+    final courseId = _selectedCourseId;
+    final requestId = ++_lessonMediaRequestId;
+    try {
+      final media = await _studioRepo.listLessonMedia(lessonId);
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _lessonMediaRequestId,
+        courseId: courseId,
+        lessonId: lessonId,
+      )) {
+        return;
+      }
+      if (!mounted) return;
+
+      setState(() {
+        final existingById = <String, Map<String, dynamic>>{};
+        for (final item in _lessonMedia) {
+          final id = item['id'];
+          if (id is String) {
+            existingById[id] = item;
+          }
+        }
+
+        final merged = <Map<String, dynamic>>[];
+        for (final item in media) {
+          final id = item['id'];
+          if (id is String && existingById.containsKey(id)) {
+            merged.add({...existingById[id]!, ...item});
+          } else {
+            merged.add(item);
+          }
+        }
+
+        _lessonMedia = merged;
+        _lessonMediaLessonId = lessonId;
+        _mediaLoadError = null;
+      });
+    } catch (_) {
+      // Silent refresh failures shouldn't block the editor.
+    } finally {
+      _lessonMediaPollInFlight = false;
+      if (mounted) {
+        _updateLessonMediaPolling();
       }
     }
   }
@@ -2098,44 +2201,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return isWavSource;
   }
 
-  Map<String, dynamic>? _latestWavSourceMedia(
-    List<Map<String, dynamic>> mediaItems,
-  ) {
-    Map<String, dynamic>? candidate;
-    DateTime? newestTime;
-    for (final media in mediaItems) {
-      final ingestFormat = (media['ingest_format'] as String?)
-          ?.toLowerCase()
-          .trim();
-      final contentType =
-          (media['content_type'] as String?)?.toLowerCase().trim() ?? '';
-      final originalName = (media['original_name'] as String?)
-          ?.toLowerCase()
-          .trim();
-      final isWavSource =
-          ingestFormat == 'wav' ||
-          contentType == 'audio/wav' ||
-          contentType == 'audio/x-wav' ||
-          (originalName != null && originalName.endsWith('.wav'));
-      if (!isWavSource) continue;
-
-      candidate ??= media;
-      final created = media['created_at'];
-      DateTime? parsed;
-      if (created is DateTime) {
-        parsed = created;
-      } else if (created is String) {
-        parsed = DateTime.tryParse(created);
-      }
-      if (parsed == null) continue;
-      if (newestTime == null || parsed.isAfter(newestTime)) {
-        newestTime = parsed;
-        candidate = media;
-      }
-    }
-    return candidate;
-  }
-
   void _patchLessonMedia(String mediaId, Map<String, dynamic> patch) {
     final index = _lessonMedia.indexWhere((item) => item['id'] == mediaId);
     if (index < 0) return;
@@ -3361,6 +3426,169 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  bool _replaceLessonMediaReferencesInEditor({
+    required String fromLessonMediaId,
+    required String toLessonMediaId,
+  }) {
+    final controller = _lessonContentController;
+    if (controller == null) return false;
+
+    final selection = controller.selection;
+    final rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
+    if (!rawMarkdown.contains(fromLessonMediaId)) return false;
+
+    final rewritten = rawMarkdown.replaceAll(
+      fromLessonMediaId,
+      toLessonMediaId,
+    );
+    if (rewritten == rawMarkdown) return false;
+
+    quill.Document document;
+    try {
+      final delta = lesson_pipeline.convertLessonMarkdownToDelta(
+        _markdownToDelta,
+        rewritten,
+      );
+      document = quill.Document.fromDelta(delta);
+    } catch (_) {
+      document = quill.Document()..insert(0, rewritten);
+    }
+
+    setState(() {
+      _replaceLessonDocument(document, resetDirty: false);
+      _lessonContentDirty = true;
+    });
+
+    final nextController = _lessonContentController;
+    if (nextController == null) return true;
+
+    final maxOffset = max(0, nextController.document.length - 1);
+    final base = selection.baseOffset.clamp(0, maxOffset);
+    final extent = selection.extentOffset.clamp(0, maxOffset);
+    nextController.updateSelection(
+      TextSelection(baseOffset: base, extentOffset: extent),
+      quill.ChangeSource.local,
+    );
+    return true;
+  }
+
+  Future<void> _replaceAudioMedia(Map<String, dynamic> media, int index) async {
+    final lessonId = _selectedLessonId;
+    final courseId = _lessonCourseId(lessonId);
+    if (lessonId == null || courseId == null || courseId.trim().isEmpty) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Spara lektionen för att kunna byta ljud.');
+      }
+      return;
+    }
+
+    final oldLessonMediaId = (media['id'] as String?)?.trim();
+    if (oldLessonMediaId == null || oldLessonMediaId.isEmpty) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Media saknar ID och kan inte bytas ut.');
+      }
+      return;
+    }
+
+    final fileName = _fileNameFromMedia(media);
+
+    final newMediaAssetId = await showDialog<String?>(
+      context: context,
+      builder: (context) => WavReplaceDialog(
+        courseId: courseId,
+        lessonId: lessonId,
+        existingFileName: fileName,
+        onMediaUpdated: _loadLessonMedia,
+      ),
+    );
+    if (!mounted) return;
+    if (newMediaAssetId == null || newMediaAssetId.trim().isEmpty) return;
+
+    setState(() => _mediaStatus = 'Ersätter ljud…');
+
+    try {
+      await _loadLessonMedia();
+      if (!mounted) return;
+
+      final newMedia = _lessonMedia.cast<Map<String, dynamic>?>().firstWhere(
+        (item) =>
+            item?['media_asset_id']?.toString().trim() ==
+            newMediaAssetId.trim(),
+        orElse: () => null,
+      );
+
+      final newLessonMediaId = (newMedia?['id'] as String?)?.trim();
+      if (newLessonMediaId == null || newLessonMediaId.isEmpty) {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Kunde inte hitta den nya ljudfilen.');
+        }
+        setState(() => _mediaStatus = null);
+        return;
+      }
+
+      final contentChanged = _replaceLessonMediaReferencesInEditor(
+        fromLessonMediaId: oldLessonMediaId,
+        toLessonMediaId: newLessonMediaId,
+      );
+      if (contentChanged) {
+        final saved = await _saveLessonContent(showSuccessSnack: false);
+        if (!saved) {
+          if (mounted && context.mounted) {
+            showSnack(
+              context,
+              'Kunde inte spara lektionen – den gamla ljudfilen är kvar.',
+            );
+          }
+          setState(() => _mediaStatus = null);
+          return;
+        }
+      }
+
+      final ids = _lessonMedia
+          .map((item) => item['id'])
+          .whereType<String>()
+          .toList();
+      final oldIndex = ids.indexOf(oldLessonMediaId);
+      final newIndex = ids.indexOf(newLessonMediaId);
+      if (newIndex < 0) {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Kunde inte hitta den nya ljudfilen i listan.');
+        }
+        setState(() => _mediaStatus = null);
+        return;
+      }
+
+      var insertIndex = oldIndex >= 0 ? oldIndex : index;
+      insertIndex = insertIndex.clamp(0, ids.length - 1);
+
+      final reordered = [...ids];
+      reordered.removeAt(newIndex);
+      final adjustedInsertIndex = newIndex < insertIndex
+          ? max(0, insertIndex - 1)
+          : insertIndex;
+      reordered.insert(
+        adjustedInsertIndex.clamp(0, reordered.length),
+        newLessonMediaId,
+      );
+
+      await _studioRepo.reorderLessonMedia(lessonId, reordered);
+      await _studioRepo.deleteLessonMedia(oldLessonMediaId);
+      await _loadLessonMedia();
+
+      if (mounted && context.mounted) {
+        showSnack(context, 'Ljud ersatt.');
+      }
+      if (mounted) {
+        setState(() => _mediaStatus = 'Ljud ersatt.');
+      }
+    } catch (e, stackTrace) {
+      if (mounted) {
+        setState(() => _mediaStatus = null);
+      }
+      _showFriendlyErrorSnack('Kunde inte byta ljud', e, stackTrace);
+    }
+  }
+
   void _onCoursePriceChanged() {
     _handleCoursePublishFieldsChanged(forceRebuild: true);
   }
@@ -3787,12 +4015,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
     final wavLessonId = _selectedLessonId;
     final wavCourseId = _lessonCourseId(_selectedLessonId);
-    final wavMedia = _latestWavSourceMedia(_lessonMedia);
-    final wavLessonMediaId = wavMedia == null
-        ? null
-        : wavMedia['id']?.toString();
-    final wavMediaState = wavMedia == null ? null : _pipelineState(wavMedia);
-    final wavFileName = wavMedia == null ? null : _fileNameFromMedia(wavMedia);
 
     final lessonVideoPreview = _buildLessonVideoPreview(context);
 
@@ -4133,9 +4355,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     // Lesson is the source of truth for course_id.
                                     courseId: wavCourseId,
                                     lessonId: wavLessonId,
-                                    existingLessonMediaId: wavLessonMediaId,
-                                    existingMediaState: wavMediaState,
-                                    existingFileName: wavFileName,
                                     onMediaUpdated: _loadLessonMedia,
                                   ),
                                 ],
@@ -4172,6 +4391,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final kind =
                                             (media['kind'] as String?) ??
                                             'other';
+                                        final contentType =
+                                            (media['content_type']
+                                                as String?) ??
+                                            '';
+                                        final isAudio =
+                                            kind == 'audio' ||
+                                            contentType.startsWith('audio/');
                                         final position =
                                             media['position'] as int? ??
                                             index + 1;
@@ -4211,11 +4437,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             isPipeline &&
                                             !hasInvalidPipelineReference &&
                                             pipelineState == 'ready' &&
-                                            (kind == 'audio' ||
-                                                ((media['content_type']
-                                                            as String?) ??
-                                                        '')
-                                                    .startsWith('audio/'));
+                                            isAudio;
                                         final canPreview =
                                             !hasInvalidPipelineReference &&
                                             !isWavMedia &&
@@ -4445,13 +4667,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                       tooltip:
                                                           'Infoga i lektionen',
                                                       icon: Icon(
-                                                        ((media['kind']
-                                                                            as String?) ??
-                                                                        '') ==
-                                                                    'video' ||
-                                                                ((media['content_type']
-                                                                            as String?) ??
-                                                                        '')
+                                                        kind == 'video' ||
+                                                                contentType
                                                                     .startsWith(
                                                                       'video/',
                                                                     )
@@ -4469,6 +4686,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                           : null,
                                                     ),
                                                   ],
+                                                  if (isAudio)
+                                                    IconButton(
+                                                      tooltip: 'Byt WAV',
+                                                      icon: const Icon(
+                                                        Icons.sync,
+                                                      ),
+                                                      onPressed: () =>
+                                                          _replaceAudioMedia(
+                                                            media,
+                                                            index,
+                                                          ),
+                                                    ),
                                                   IconButton(
                                                     tooltip: 'Ladda ner',
                                                     icon: const Icon(

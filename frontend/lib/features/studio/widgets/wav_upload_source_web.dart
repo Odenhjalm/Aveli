@@ -130,7 +130,7 @@ void clearResumableSession(WavResumableSession session) {
 // 1) Start >=500 MB WAV upload in web app.
 // 2) Let it reach ~20–40%.
 // 3) Close tab.
-// 4) Reopen app and click "Byt WAV".
+// 4) Reopen app and click "Ladda upp WAV".
 // 5) Select the same WAV.
 // 6) Confirm HEAD -> PATCH resume (no new POST).
 // 7) Let upload finish; verify storage.objects row exists.
