@@ -656,6 +656,7 @@ class CourseListResponse(BaseModel):
 
 class MediaSignRequest(BaseModel):
     media_id: str
+    mode: Literal["editor_insert", "editor_preview", "student_render"] | None = None
 
 
 class MediaSignResponse(BaseModel):

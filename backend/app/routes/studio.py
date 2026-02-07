@@ -221,7 +221,7 @@ async def presign_lesson_media_upload(
         raise HTTPException(status_code=403, detail="Not course owner")
 
     bucket = "course-media"
-    path = f"{bucket}/lessons/{lesson_id}/{payload.filename}"
+    path = f"lessons/{lesson_id}/{payload.filename}"
     upload = await storage_service.storage_service.create_upload_url(
         path,
         content_type=payload.content_type,
@@ -276,7 +276,7 @@ async def complete_lesson_media_upload(
     row["content_type"] = payload.content_type
     row["byte_size"] = payload.byte_size
     row["original_name"] = payload.original_name
-    media_signer.attach_media_links(row)
+    media_signer.attach_media_links(row, purpose="editor_preview")
     return row
 
 
@@ -287,7 +287,7 @@ async def list_lesson_media(lesson_id: UUID, current: TeacherUser):
     if not course_id or not await models.is_course_owner(current["id"], course_id):
         _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
         raise HTTPException(status_code=403, detail="Not course owner")
-    items = await models.list_lesson_media(str(lesson_id))
+    items = await models.list_lesson_media(str(lesson_id), mode="editor_preview")
     return {"items": items}
 
 
@@ -1283,7 +1283,10 @@ async def course_modules(course_id: str, current: TeacherUser):
         lessons_raw = await courses_service.list_lessons(module["id"])
         lessons = [dict(lesson) for lesson in lessons_raw]
         for lesson in lessons:
-            lesson["media"] = await models.list_lesson_media(lesson["id"])
+            lesson["media"] = await models.list_lesson_media(
+                lesson["id"],
+                mode="editor_preview",
+            )
         module["lessons"] = lessons
     return {"items": modules}
 
@@ -1300,7 +1303,10 @@ async def module_lessons(module_id: str, current: TeacherUser):
     lessons_raw = await courses_service.list_lessons(module_id)
     lessons = [dict(lesson) for lesson in lessons_raw]
     for lesson in lessons:
-        lesson["media"] = await models.list_lesson_media(lesson["id"])
+        lesson["media"] = await models.list_lesson_media(
+            lesson["id"],
+            mode="editor_preview",
+        )
     return {"items": lessons}
 
 
@@ -1626,6 +1632,7 @@ async def media_file(
     media_id: str,
     request: Request,
     current: CurrentUser,
+    mode: str | None = None,
 ):
     if not settings.media_allow_legacy_media:
         raise HTTPException(status_code=410, detail="Legacy media endpoint disabled")
@@ -1656,7 +1663,12 @@ async def media_file(
             snapshot = await models.course_access_snapshot(user_id, str(course_id))
             if not snapshot.get("has_access"):
                 raise HTTPException(status_code=403, detail="Access denied")
-    return await _build_streaming_response(row, request)
+    return await _build_streaming_response(
+        row,
+        request,
+        lesson_media_id=str(row.get("id") or media_id),
+        mode=mode,
+    )
 
 
 @router.post("/courses/{course_id}/quiz")

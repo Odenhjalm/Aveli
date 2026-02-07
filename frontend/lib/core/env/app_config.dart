@@ -8,6 +8,7 @@ class AppConfig {
     required this.stripePublishableKey,
     required this.stripeMerchantDisplayName,
     required this.subscriptionsEnabled,
+    this.supabaseUrl = '',
     this.imageLoggingEnabled = false,
   });
 
@@ -15,6 +16,7 @@ class AppConfig {
   final String stripePublishableKey;
   final String stripeMerchantDisplayName;
   final bool subscriptionsEnabled;
+  final String supabaseUrl;
   final bool imageLoggingEnabled;
 }
 

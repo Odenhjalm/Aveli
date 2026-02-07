@@ -943,8 +943,12 @@ async def get_lesson(lesson_id: str):
     return await courses_service.fetch_lesson(lesson_id)
 
 
-async def list_lesson_media(lesson_id: str) -> list[dict]:
-    return await courses_service.list_lesson_media(lesson_id)
+async def list_lesson_media(
+    lesson_id: str,
+    *,
+    mode: str | None = None,
+) -> list[dict]:
+    return list(await courses_service.list_lesson_media(lesson_id, mode=mode))
 
 
 async def next_lesson_media_position(lesson_id: str) -> int:

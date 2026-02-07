@@ -574,6 +574,7 @@ class LessonMediaItem {
     required this.kind,
     required this.storagePath,
     this.storageBucket,
+    this.playbackUrl,
     this.downloadUrl,
     this.signedUrl,
     this.signedUrlExpiresAt,
@@ -588,12 +589,18 @@ class LessonMediaItem {
     this.streamingFormat,
     this.codec,
     this.errorMessage,
+    this.robustnessCategory,
+    this.robustnessStatus,
+    this.robustnessRecommendedAction,
+    this.resolvableForEditor,
+    this.resolvableForStudent,
   });
 
   final String id;
   final String kind;
   final String storagePath;
   final String? storageBucket;
+  final String? playbackUrl;
   final String? downloadUrl;
   final String? signedUrl;
   final DateTime? signedUrlExpiresAt;
@@ -608,6 +615,11 @@ class LessonMediaItem {
   final String? streamingFormat;
   final String? codec;
   final String? errorMessage;
+  final String? robustnessCategory;
+  final String? robustnessStatus;
+  final String? robustnessRecommendedAction;
+  final bool? resolvableForEditor;
+  final bool? resolvableForStudent;
 
   factory LessonMediaItem.fromJson(Map<String, dynamic> json) =>
       LessonMediaItem(
@@ -615,6 +627,7 @@ class LessonMediaItem {
         kind: (json['kind'] ?? '') as String,
         storagePath: (json['storage_path'] ?? '') as String,
         storageBucket: json['storage_bucket'] as String?,
+        playbackUrl: json['playback_url'] as String?,
         downloadUrl: json['download_url'] as String?,
         signedUrl: json['signed_url'] as String?,
         signedUrlExpiresAt: CourseOrderSummary._parseDate(
@@ -631,6 +644,12 @@ class LessonMediaItem {
         streamingFormat: json['streaming_format'] as String?,
         codec: json['codec'] as String?,
         errorMessage: json['error_message'] as String?,
+        robustnessCategory: json['robustness_category'] as String?,
+        robustnessStatus: json['robustness_status'] as String?,
+        robustnessRecommendedAction:
+            json['robustness_recommended_action'] as String?,
+        resolvableForEditor: json['resolvable_for_editor'] as bool?,
+        resolvableForStudent: json['resolvable_for_student'] as bool?,
       );
 
   bool get isPublicBucket => (storageBucket ?? '').startsWith('public');
@@ -640,6 +659,21 @@ class LessonMediaItem {
       : originalName!;
 
   String? get preferredUrl {
+    final playback = playbackUrl?.trim();
+    if (playback != null && playback.isNotEmpty) {
+      final signed = signedUrl?.trim();
+      if (signed != null && signed.isNotEmpty && playback == signed) {
+        final expiresAt = signedUrlExpiresAt;
+        if (expiresAt == null) return playback;
+        final now = DateTime.now().toUtc();
+        if (now.isBefore(expiresAt.subtract(const Duration(seconds: 30)))) {
+          return playback;
+        }
+      } else {
+        return playback;
+      }
+    }
+
     final download = downloadUrl?.trim();
     if (download != null &&
         download.isNotEmpty &&

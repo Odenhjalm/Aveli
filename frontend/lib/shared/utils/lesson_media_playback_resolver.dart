@@ -1,6 +1,7 @@
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
+import 'package:aveli/features/media/data/media_resolution_mode.dart';
 
 /// Single source of truth for resolving lesson media playback URLs.
 ///
@@ -12,6 +13,7 @@ Future<String?> resolveLessonMediaPlaybackUrl({
   required LessonMediaItem item,
   required MediaRepository mediaRepository,
   required MediaPipelineRepository pipelineRepository,
+  MediaResolutionMode mode = MediaResolutionMode.studentRender,
 }) async {
   if (item.kind == 'audio') {
     final mediaAssetId = item.mediaAssetId?.trim();
@@ -20,6 +22,31 @@ Future<String?> resolveLessonMediaPlaybackUrl({
       if (state != 'ready') return null;
       final playback = await pipelineRepository.fetchPlaybackUrl(mediaAssetId);
       return playback.playbackUrl.toString();
+    }
+  }
+
+  final playbackUrl = item.playbackUrl?.trim();
+  if (playbackUrl != null && playbackUrl.isNotEmpty) {
+    final signedUrl = item.signedUrl?.trim();
+    if (signedUrl != null && signedUrl.isNotEmpty && playbackUrl == signedUrl) {
+      final expiresAt = item.signedUrlExpiresAt;
+      final now = DateTime.now().toUtc();
+      final hasValidSigned =
+          expiresAt == null ||
+          now.isBefore(expiresAt.subtract(const Duration(seconds: 30)));
+      if (hasValidSigned) {
+        try {
+          return mediaRepository.resolveUrl(playbackUrl);
+        } catch (_) {
+          return playbackUrl;
+        }
+      }
+    } else {
+      try {
+        return mediaRepository.resolveUrl(playbackUrl);
+      } catch (_) {
+        return playbackUrl;
+      }
     }
   }
 
@@ -52,7 +79,7 @@ Future<String?> resolveLessonMediaPlaybackUrl({
   }
 
   try {
-    final signed = await mediaRepository.signMedia(item.id);
+    final signed = await mediaRepository.signMedia(item.id, mode: mode);
     final resolved = signed.signedUrl.trim();
     if (resolved.isNotEmpty) {
       try {

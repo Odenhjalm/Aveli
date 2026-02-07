@@ -204,7 +204,7 @@ async def _persist_lesson_media(
             detail="Could not allocate lesson media position",
         )
 
-    media_signer.attach_media_links(row)
+    media_signer.attach_media_links(row, purpose="editor_preview")
     return row
 
 
@@ -441,9 +441,6 @@ async def upload_course_media(
             checksum=write_result.checksum,
             storage_bucket=storage_bucket,
         )
-        if storage_bucket == _PUBLIC_MEDIA_BUCKET and media_row.get("kind") == "image":
-            media_row.pop("signed_url", None)
-            media_row.pop("signed_url_expires_at", None)
         response["media"] = media_row
 
     return response

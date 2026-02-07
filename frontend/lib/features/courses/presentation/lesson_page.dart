@@ -18,6 +18,7 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/app_network_image.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -402,14 +403,15 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
       videoEmbedConfig: null,
     );
     final embedBuilders = <quill.EmbedBuilder>[
-      ...defaultEmbedBuilders.map((builder) {
-        if (builder.key == quill.BlockEmbed.imageType) {
-          return _LessonGlassImageEmbedBuilder(delegate: builder);
-        }
-        return builder;
-      }),
       const _LessonVideoEmbedBuilder(),
       const _LessonAudioEmbedBuilder(),
+      const _LessonImageEmbedBuilder(),
+      ...defaultEmbedBuilders.where(
+        (builder) =>
+            builder.key != quill.BlockEmbed.imageType &&
+            builder.key != quill.BlockEmbed.videoType &&
+            builder.key != AudioBlockEmbed.embedType,
+      ),
     ];
 
     return quill.QuillEditor.basic(
@@ -451,33 +453,182 @@ class _LessonGlassMediaWrapper extends StatelessWidget {
   }
 }
 
-class _LessonGlassImageEmbedBuilder implements quill.EmbedBuilder {
-  const _LessonGlassImageEmbedBuilder({required this.delegate});
-
-  final quill.EmbedBuilder delegate;
+class _MissingMediaFallback extends StatelessWidget {
+  const _MissingMediaFallback();
 
   @override
-  String get key => delegate.key;
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.report_gmailerrorred_outlined,
+            size: 18,
+            color: theme.colorScheme.error,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Media saknas eller stöds inte längre',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LessonImageEmbedBuilder implements quill.EmbedBuilder {
+  const _LessonImageEmbedBuilder();
+
+  static const BorderRadius _borderRadius = BorderRadius.all(
+    Radius.circular(12),
+  );
 
   @override
-  bool get expanded => delegate.expanded;
+  String get key => quill.BlockEmbed.imageType;
 
   @override
-  WidgetSpan buildWidgetSpan(Widget widget) => delegate.buildWidgetSpan(widget);
+  bool get expanded => false;
 
   @override
-  String toPlainText(quill.Embed node) => delegate.toPlainText(node);
+  WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
+
+  @override
+  String toPlainText(quill.Embed node) =>
+      quill.Embed.kObjectReplacementCharacter;
+
+  double? _parseDimension(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    final raw = value.toString().trim();
+    if (raw.isEmpty) return null;
+    if (raw.endsWith('%')) return null;
+    final cleaned = raw.toLowerCase().endsWith('px')
+        ? raw.substring(0, raw.length - 2).trim()
+        : raw;
+    return double.tryParse(cleaned);
+  }
 
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
-    final widget = delegate.build(context, embedContext);
-    if (widget is SizedBox &&
-        widget.width == 0 &&
-        widget.height == 0 &&
-        widget.child == null) {
-      return widget;
+    final dynamic value = embedContext.node.value.data;
+    final url =
+        lessonMediaUrlFromEmbedValue(value) ??
+        (value == null ? '' : value.toString());
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: _LessonGlassMediaWrapper(child: _MissingMediaFallback()),
+      );
     }
-    return _LessonGlassMediaWrapper(child: widget);
+
+    final widthValue =
+        embedContext.node.style.attributes[quill.Attribute.width.key]?.value;
+    final heightValue =
+        embedContext.node.style.attributes[quill.Attribute.height.key]?.value;
+    final width = _parseDimension(widthValue);
+    final height = _parseDimension(heightValue);
+
+    Widget child = ClipRRect(
+      borderRadius: _borderRadius,
+      child: _LessonResolvedImage(url: trimmed),
+    );
+    if (width != null || height != null) {
+      child = SizedBox(width: width, height: height, child: child);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _LessonGlassMediaWrapper(child: child),
+    );
+  }
+}
+
+class _LessonResolvedImage extends ConsumerWidget {
+  const _LessonResolvedImage({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(mediaRepositoryProvider);
+    var resolved = url;
+    try {
+      resolved = repo.resolveUrl(url);
+    } catch (_) {
+      // Keep the raw value when we cannot safely resolve it.
+    }
+
+    final uri = Uri.tryParse(resolved);
+    final requiresAuth = uri != null && uri.path.startsWith('/studio/media/');
+
+    return AppNetworkImage(
+      url: resolved,
+      fit: BoxFit.contain,
+      requiresAuth: requiresAuth,
+      placeholder: const Center(child: CircularProgressIndicator()),
+      error: const _MissingMediaFallback(),
+    );
+  }
+}
+
+class _LessonResolvedAudioPlayer extends ConsumerWidget {
+  const _LessonResolvedAudioPlayer({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(mediaRepositoryProvider);
+    var resolved = url;
+    try {
+      resolved = repo.resolveUrl(url);
+    } catch (_) {
+      // Keep the raw value when we cannot safely resolve it.
+    }
+
+    final uri = Uri.tryParse(resolved);
+    if (uri != null && uri.path.startsWith('/studio/media/')) {
+      return const _MissingMediaFallback();
+    }
+
+    return InlineAudioPlayer(url: resolved, minimalUi: true);
+  }
+}
+
+class _LessonResolvedVideoPlayer extends ConsumerWidget {
+  const _LessonResolvedVideoPlayer({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(mediaRepositoryProvider);
+    var resolved = url;
+    try {
+      resolved = repo.resolveUrl(url);
+    } catch (_) {
+      // Keep the raw value when we cannot safely resolve it.
+    }
+
+    final uri = Uri.tryParse(resolved);
+    if (uri != null && uri.path.startsWith('/studio/media/')) {
+      return const _MissingMediaFallback();
+    }
+
+    return InlineVideoPlayer(
+      url: resolved,
+      autoPlay: false,
+      minimalUi: true,
+    );
   }
 }
 
@@ -503,13 +654,17 @@ class _LessonAudioEmbedBuilder implements quill.EmbedBuilder {
     final url =
         lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    if (url.trim().isEmpty) {
-      return const SizedBox.shrink();
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: _LessonGlassMediaWrapper(child: _MissingMediaFallback()),
+      );
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: _LessonGlassMediaWrapper(
-        child: InlineAudioPlayer(url: url.trim(), minimalUi: true),
+        child: _LessonResolvedAudioPlayer(url: trimmed),
       ),
     );
   }
@@ -537,17 +692,17 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
     final url =
         lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    if (url.trim().isEmpty) {
-      return const SizedBox.shrink();
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: _LessonGlassMediaWrapper(child: _MissingMediaFallback()),
+      );
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: _LessonGlassMediaWrapper(
-        child: InlineVideoPlayer(
-          url: url.trim(),
-          autoPlay: false,
-          minimalUi: true,
-        ),
+        child: _LessonResolvedVideoPlayer(url: trimmed),
       ),
     );
   }
@@ -603,7 +758,11 @@ class _MediaItem extends ConsumerWidget {
             );
           }
           if (snapshot.hasError || !snapshot.hasData) {
-            return const SizedBox.shrink();
+            return ListTile(
+              leading: Icon(_iconForKind()),
+              title: Text(_fileName),
+              subtitle: const Text('Media saknas eller stöds inte längre'),
+            );
           }
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -652,7 +811,7 @@ class _MediaItem extends ConsumerWidget {
             return ListTile(
               leading: Icon(_iconForKind()),
               title: Text(_fileName),
-              subtitle: const Text('Kunde inte hämta uppspelningslänk.'),
+              subtitle: const Text('Media saknas eller stöds inte längre'),
             );
           }
           final url = playbackUrl.trim();
@@ -694,7 +853,7 @@ class _MediaItem extends ConsumerWidget {
             return ListTile(
               leading: Icon(_iconForKind()),
               title: Text(_fileName),
-              subtitle: const Text('Kunde inte hämta uppspelningslänk.'),
+              subtitle: const Text('Media saknas eller stöds inte längre'),
             );
           }
           final url = playbackUrl.trim();
@@ -739,7 +898,7 @@ class _MediaItem extends ConsumerWidget {
             return ListTile(
               leading: Icon(_iconForKind()),
               title: Text(_fileName),
-              subtitle: const Text('Kunde inte hämta uppspelningslänk.'),
+              subtitle: const Text('Media saknas eller stöds inte längre'),
             );
           }
           final url = playbackUrl.trim();

@@ -195,6 +195,7 @@ void main() {
                       ? merchantDisplayName
                       : 'Aveli',
                   subscriptionsEnabled: subscriptionsEnabled,
+                  supabaseUrl: supabaseUrl,
                   imageLoggingEnabled: imageLoggingEnabled,
                 ),
               ),

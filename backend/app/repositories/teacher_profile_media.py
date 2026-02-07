@@ -317,7 +317,7 @@ def _attach_lesson_links(data: dict[str, Any]) -> dict[str, Any]:
         "storage_bucket": data.get("storage_bucket") or "lesson-media",
         "storage_path": data.get("storage_path"),
     }
-    media_signer.attach_media_links(lesson)
+    media_signer.attach_media_links(lesson, purpose="editor_preview")
     download_url = lesson.get("download_url")
     signed_url = lesson.get("signed_url")
     signed_expires = lesson.get("signed_url_expires_at")
@@ -372,7 +372,7 @@ def _populate_media_links(row: dict[str, Any]) -> dict[str, Any]:
             "storage_path": data.get("lesson_media_storage_path"),
             "media_asset_id": data.get("lesson_media_media_asset_id"),
         }
-        media_signer.attach_media_links(lesson)
+        media_signer.attach_media_links(lesson, purpose="editor_preview")
         download_url = lesson.get("download_url")
         signed_url = lesson.get("signed_url")
         expires_at = lesson.get("signed_url_expires_at")

@@ -9,6 +9,7 @@ import 'package:markdown_quill/markdown_quill.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
+import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/shared/utils/lesson_media_playback_resolver.dart';
 
 /// Lesson content is stored as Markdown (`content_markdown`), but when media is
@@ -562,14 +563,55 @@ String rewriteLessonMarkdownApiFilesUrls({
   });
 }
 
+String? _apiFilesDownloadPathForLessonMedia(LessonMediaItem item) {
+  final rawPath = item.storagePath.trim();
+  if (rawPath.isEmpty) return null;
+  final normalized = rawPath
+      .replaceAll('\\', '/')
+      .replaceFirst(RegExp(r'^/+'), '');
+  if (normalized.isEmpty) return null;
+
+  var bucket = item.storageBucket?.trim();
+  if (bucket == null || bucket.isEmpty) {
+    final parts = normalized.split('/');
+    if (parts.isNotEmpty) {
+      bucket = parts.first;
+    }
+  }
+  if (bucket == null || bucket.isEmpty) return null;
+
+  final pathWithBucket = normalized.startsWith('$bucket/')
+      ? normalized
+      : '$bucket/$normalized';
+  return '/api/files/$pathWithBucket';
+}
+
 Future<String> prepareLessonMarkdownForRendering(
   MediaRepository mediaRepository,
   String markdown, {
   Iterable<LessonMediaItem> lessonMedia = const <LessonMediaItem>[],
   MediaPipelineRepository? pipelineRepository,
+  MediaResolutionMode mode = MediaResolutionMode.studentRender,
 }) async {
   markdown = _stripBlankLineSentinelForDisplay(markdown);
   if (markdown.trim().isEmpty) return markdown;
+
+  if (apiFilesUrlPattern.hasMatch(markdown) && lessonMedia.isNotEmpty) {
+    final mapping = <String, String>{};
+    for (final item in lessonMedia) {
+      final apiPath = _apiFilesDownloadPathForLessonMedia(item);
+      if (apiPath == null || apiPath.isEmpty) continue;
+      final replacement = '/studio/media/${item.id.trim()}';
+      mapping[apiPath] = replacement;
+      mapping[apiPath.toLowerCase()] = replacement;
+    }
+    if (mapping.isNotEmpty) {
+      markdown = rewriteLessonMarkdownApiFilesUrls(
+        markdown: markdown,
+        apiFilesPathToStudioMediaUrl: mapping,
+      );
+    }
+  }
 
   final ids = extractLessonEmbeddedMediaIds(markdown);
   if (ids.isEmpty) return markdown;
@@ -588,6 +630,7 @@ Future<String> prepareLessonMarkdownForRendering(
             item: item,
             mediaRepository: mediaRepository,
             pipelineRepository: pipelineRepository,
+            mode: mode,
           );
           if (url != null && url.trim().isNotEmpty) {
             resolvedUrls[id] = url.trim();
@@ -595,7 +638,7 @@ Future<String> prepareLessonMarkdownForRendering(
           return;
         }
 
-        final signed = await mediaRepository.signMedia(id);
+        final signed = await mediaRepository.signMedia(id, mode: mode);
         try {
           resolvedUrls[id] = mediaRepository.resolveUrl(signed.signedUrl);
         } catch (_) {

@@ -434,7 +434,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Kunde inte spela upp videon: $_error',
+                  'Media saknas eller stöds inte längre',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.error,
@@ -473,7 +473,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         aspectRatio: 16 / 9,
         child: Center(
           child: Text(
-            'Videospelaren kunde inte startas.',
+            'Media saknas eller stöds inte längre',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),

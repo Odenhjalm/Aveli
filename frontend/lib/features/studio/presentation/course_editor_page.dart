@@ -29,6 +29,7 @@ import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/features/courses/application/course_providers.dart'
@@ -997,6 +998,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       prepared,
       lessonMedia: lessonMediaItems,
       pipelineRepository: pipelineRepo,
+      mode: MediaResolutionMode.editorPreview,
     );
   }
 
@@ -2195,7 +2197,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return null;
   }
 
-  Future<String?> _resolveLessonMediaPlaybackUrl(Map<String, dynamic> media) async {
+  Future<String?> _resolveLessonMediaPlaybackUrl(
+    Map<String, dynamic> media, {
+    MediaResolutionMode mode = MediaResolutionMode.editorPreview,
+  }) async {
     if (_isWavMedia(media)) return null;
 
     final mediaRepo = ref.read(mediaRepositoryProvider);
@@ -2218,6 +2223,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         item: item,
         mediaRepository: mediaRepo,
         pipelineRepository: pipelineRepo,
+        mode: mode,
       );
       final trimmed = resolved?.trim();
       if (trimmed != null &&
@@ -2343,7 +2349,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             _lessonMedia = [..._lessonMedia, media];
           }
         });
-        final resolved = await _resolveLessonMediaPlaybackUrl(media);
+        final resolved = await _resolveLessonMediaPlaybackUrl(
+          media,
+          mode: MediaResolutionMode.editorInsert,
+        );
         if (resolved == null) {
           if (mounted) {
             setState(
@@ -2595,7 +2604,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return false;
     }
-    final resolved = await _resolveLessonMediaPlaybackUrl(media);
+    final resolved = await _resolveLessonMediaPlaybackUrl(
+      media,
+      mode: MediaResolutionMode.editorInsert,
+    );
     debugPrint(
       '[CourseEditor] insert media kind=$effectiveKind lessonMediaId=$lessonMediaId url=$resolved',
     );
@@ -4500,9 +4512,117 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             isPipeline &&
                                             (pipelineStateFromDb == null ||
                                                 pipelineStateFromDb.isEmpty);
+                                        final robustnessStatus =
+                                            (media['robustness_status']
+                                                    as String?)
+                                                ?.trim() ??
+                                            '';
+                                        final robustnessAction =
+                                            (media['robustness_recommended_action']
+                                                    as String?)
+                                                ?.trim() ??
+                                            '';
+                                        final dynamic resolvableForEditorRaw =
+                                            media['resolvable_for_editor'];
+                                        final bool? resolvableForEditor =
+                                            resolvableForEditorRaw is bool
+                                                ? resolvableForEditorRaw
+                                                : null;
+                                        final issueReason =
+                                            (media['issue_reason'] as String?)
+                                                ?.trim() ??
+                                            '';
+                                        final hasIssue = !isPipeline
+                                            ? robustnessStatus.isNotEmpty
+                                                ? robustnessStatus !=
+                                                        'ok_legacy' &&
+                                                    robustnessStatus != 'ok'
+                                                : issueReason.isNotEmpty
+                                            : false;
+                                        final isMissingBytes = !isPipeline
+                                            ? robustnessStatus ==
+                                                    'missing_bytes' ||
+                                                (robustnessStatus.isEmpty &&
+                                                    issueReason ==
+                                                        'missing_object')
+                                            : false;
+                                        final isUnsupportedLegacy = !isPipeline
+                                            ? robustnessStatus ==
+                                                    'unsupported' ||
+                                                (robustnessStatus.isEmpty &&
+                                                    issueReason ==
+                                                        'unsupported')
+                                            : false;
+                                        final isManualReviewLegacy = !isPipeline
+                                            ? robustnessStatus ==
+                                                'manual_review'
+                                            : false;
+                                        final isLegacyDrift = !isPipeline
+                                            ? robustnessStatus ==
+                                                    'needs_migration' ||
+                                                (robustnessStatus.isEmpty &&
+                                                    (issueReason ==
+                                                            'bucket_mismatch' ||
+                                                        issueReason ==
+                                                            'key_format_drift'))
+                                            : false;
+                                        final blocksInsert = !isPipeline
+                                            ? (resolvableForEditor == false) ||
+                                                (resolvableForEditor ==
+                                                        null &&
+                                                    (issueReason ==
+                                                            'missing_object' ||
+                                                        issueReason ==
+                                                            'unsupported')) ||
+                                                (resolvableForEditor ==
+                                                        true &&
+                                                    (isMissingBytes ||
+                                                        isUnsupportedLegacy ||
+                                                        isManualReviewLegacy))
+                                            : false;
+                                        final legacyIssueText = !isPipeline &&
+                                                hasIssue
+                                            ? robustnessStatus.isNotEmpty
+                                                ? '${switch (robustnessStatus) {
+                                                    'missing_bytes' =>
+                                                      'Orsak: bytes saknas.',
+                                                    'needs_migration' =>
+                                                      'Orsak: behöver migration (bucket/path-drift).',
+                                                    'unsupported' =>
+                                                      'Orsak: stöds ej längre.',
+                                                    'manual_review' =>
+                                                      'Orsak: kräver manuell granskning.',
+                                                    _ =>
+                                                      'Orsak: $robustnessStatus.',
+                                                  }}'
+                                                  '${switch (robustnessAction) {
+                                                    'auto_migrate' =>
+                                                      ' Åtgärd: kör media_doctor.',
+                                                    'reupload_required' =>
+                                                      ' Åtgärd: ladda upp på nytt.',
+                                                    'manual_review' =>
+                                                      ' Åtgärd: manuell granskning.',
+                                                    _ => '',
+                                                  }}'
+                                                : '${switch (issueReason) {
+                                                    'missing_object' =>
+                                                      'Orsak: bytes saknas. Åtgärd: ladda upp på nytt.',
+                                                    'bucket_mismatch' =>
+                                                      'Orsak: bucket mismatch. Åtgärd: kör media_doctor.',
+                                                    'key_format_drift' =>
+                                                      'Orsak: path-format drift. Åtgärd: kör media_doctor.',
+                                                    'unsupported' =>
+                                                      'Orsak: stöds ej. Åtgärd: manuell granskning.',
+                                                    _ => 'Orsak: $issueReason.',
+                                                  }}'
+                                            : '';
                                         final statusKey =
                                             hasInvalidPipelineReference
                                             ? 'failed'
+                                            : blocksInsert
+                                            ? 'broken'
+                                            : isLegacyDrift
+                                            ? 'needs_migration'
                                             : isPipeline
                                             ? pipelineState == 'ready'
                                                   ? 'ready'
@@ -4512,7 +4632,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             : 'ready';
                                         final statusColor = statusKey == 'ready'
                                             ? theme.colorScheme.primary
-                                            : statusKey == 'failed'
+                                            : statusKey == 'failed' ||
+                                                  statusKey == 'broken'
                                             ? theme.colorScheme.error
                                             : theme.colorScheme.secondary;
                                         final canPipelinePlay =
@@ -4522,6 +4643,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             isAudio;
                                         final canPreview =
                                             !hasInvalidPipelineReference &&
+                                            !blocksInsert &&
                                             !isWavMedia &&
                                             (!isPipeline || canPipelinePlay);
                                         final downloadUrl = isWavMedia
@@ -4532,11 +4654,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         );
                                         final canInsertIntoLesson =
                                             !hasInvalidPipelineReference &&
+                                            !blocksInsert &&
                                             !isWavMedia &&
                                             downloadUrl != null &&
                                             downloadUrl.isNotEmpty;
                                         final canDownload =
                                             !hasInvalidPipelineReference &&
+                                            !isMissingBytes &&
                                             !isWavMedia &&
                                             (!isPipeline || canPipelinePlay);
 
@@ -4698,6 +4822,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                       context,
                                                     ).textTheme.labelSmall,
                                                   ),
+                                                  if (legacyIssueText.isNotEmpty)
+                                                    Text(
+                                                      'Legacy media – behöver åtgärd. '
+                                                      '$legacyIssueText',
+                                                      style: theme
+                                                          .textTheme
+                                                          .labelSmall
+                                                          ?.copyWith(
+                                                            color: blocksInsert
+                                                                ? theme
+                                                                      .colorScheme
+                                                                      .error
+                                                                : theme
+                                                                      .colorScheme
+                                                                      .secondary,
+                                                          ),
+                                                    ),
                                                   if (hasInvalidPipelineReference)
                                                     Text(
                                                       'Ogiltig media_asset-referens (saknas i databasen).',
