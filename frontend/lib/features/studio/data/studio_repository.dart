@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
@@ -169,42 +168,67 @@ class StudioRepository {
         cancelToken: cancelToken,
       );
     }
-    final fields = <String, dynamic>{
-      'lesson_id': lessonId,
-      'file': MultipartFile.fromBytes(
-        data,
-        filename: filename,
-        contentType: MediaType.parse(contentType),
-      ),
-    };
-    if (courseId.isNotEmpty) {
-      fields['course_id'] = courseId;
-    }
+
     final mediaType = _detectUploadMediaType(contentType);
-    if (mediaType != null) {
-      fields['type'] = mediaType;
-    }
-    if (isIntro) {
-      fields['is_intro'] = isIntro;
+    final presign = await _client.post<Map<String, dynamic>>(
+      '/studio/lessons/$lessonId/media/presign',
+      body: {
+        'filename': filename,
+        'content_type': contentType,
+        if (mediaType != null) 'media_type': mediaType,
+        'is_intro': isIntro,
+      },
+    );
+
+    final method = (presign['method'] as String?)?.toUpperCase() ?? '';
+    if (method != 'PUT') {
+      throw StateError('Ogiltig uppladdningsmetod: $method');
     }
 
-    final res = await _client.postForm<Map<String, dynamic>>(
-      '/api/upload/course-media',
-      FormData.fromMap(fields),
-      onSendProgress: onProgress == null
-          ? null
-          : (sent, total) {
-              if (total <= 0) return;
-              onProgress(UploadProgress(sent: sent, total: total));
-            },
-      cancelToken: cancelToken,
-    );
-    final payload = res ?? const {};
-    final media = payload['media'];
-    if (media is Map<String, dynamic>) {
-      return Map<String, dynamic>.from(media);
+    final urlRaw = presign['url']?.toString() ?? '';
+    if (urlRaw.isEmpty) {
+      throw StateError('Uppladdningslänk saknas.');
     }
-    return Map<String, dynamic>.from(payload);
+    final uploadUrl = Uri.parse(urlRaw);
+
+    final rawHeaders = presign['headers'];
+    final uploadHeaders = rawHeaders is Map
+        ? rawHeaders.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          )
+        : const <String, String>{};
+
+    final dio = Dio();
+    await dio.putUri<void>(
+      uploadUrl,
+      data: data,
+      options: Options(headers: uploadHeaders),
+      cancelToken: cancelToken,
+      onSendProgress: (sent, total) {
+        if (onProgress == null) return;
+        final resolvedTotal = total > 0 ? total : data.length;
+        onProgress(UploadProgress(sent: sent, total: resolvedTotal));
+      },
+    );
+
+    final storageBucket = presign['storage_bucket']?.toString() ?? '';
+    final storagePath = presign['storage_path']?.toString() ?? '';
+    if (storageBucket.isEmpty || storagePath.isEmpty) {
+      throw StateError('Uppladdningen saknar storage-bucket eller sökväg.');
+    }
+
+    final completed = await _client.post<Map<String, dynamic>>(
+      '/studio/lessons/$lessonId/media/complete',
+      body: {
+        'storage_path': storagePath,
+        'storage_bucket': storageBucket,
+        'content_type': contentType,
+        'byte_size': data.length,
+        'original_name': filename,
+        'is_intro': isIntro,
+      },
+    );
+    return Map<String, dynamic>.from(completed);
   }
 
   Future<Map<String, dynamic>> _uploadLessonWavViaPipeline({
@@ -477,7 +501,31 @@ class StudioRepository {
   }
 
   Future<Uint8List> downloadMedia(String mediaId) {
-    return _client.getBytes('/studio/media/$mediaId');
+    return _downloadMediaViaSigner(mediaId);
+  }
+
+  Future<Uint8List> _downloadMediaViaSigner(String mediaId) async {
+    try {
+      final res = await _client.post<Map<String, dynamic>>(
+        ApiPaths.mediaSign,
+        body: {
+          'media_id': mediaId,
+          'mode': 'editor_preview',
+        },
+      );
+      final rawUrl = res['signed_url']?.toString() ?? res['url']?.toString();
+      if (rawUrl == null || rawUrl.trim().isEmpty) {
+        throw StateError('Signerad media-URL saknas.');
+      }
+      return _client.getBytes(rawUrl.trim());
+    } on DioException catch (error) {
+      // Dev fallback: if signing is disabled, the backend may expose legacy
+      // `/studio/media/{id}` for authenticated requests.
+      if (error.response?.statusCode == 503) {
+        return _client.getBytes('/studio/media/$mediaId');
+      }
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> ensureQuiz(String courseId) async {
