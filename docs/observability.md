@@ -14,7 +14,7 @@
 ## Flowexempel – Stripe → Backend → Supabase
 1. Flutter klienten initierar en betalning och skickar `POST /checkout/session` med `request_id` header.
 2. FastAPI loggar order/status i JSON med `request_id`, `user_id`, `route="/checkout/session"`, samtidigt som Sentry trace samlas in.
-3. Vid mediauppladdning begär klienten `/media/presign` → logg `{"message":"storage presign","context":{"request_id":...}}` + Sentry breadcrumb.
+3. Vid mediauppladdning begär klienten en presign (`/studio/lessons/{lesson_id}/media/presign` eller `/api/media/upload-url`) → logg `{"message":"storage presign","context":{"request_id":...}}` + Sentry breadcrumb.
 4. Klienten laddar upp direkt till Supabase med signerad URL; eventet kopplas tillbaka via `storage.objects` webhook → FastAPI loggar `user_id` för RLS-debuggning.
 5. Stripe webhooken träffar `/stripe/webhook`; med hjälp av samma `request_id` kan backend-loggarna parsas tillsammans med Flutter/Sentry eventet och Supabase Storage loggar.
 

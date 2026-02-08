@@ -91,7 +91,7 @@ A pipeline-backed lesson media item is usable today iff:
 ### Upload routes
 
 - Local-disk uploads (legacy/dev): `/api/upload/*` and `/api/files/*`.
-- Supabase direct upload (Studio): `POST /studio/lessons/{lesson_id}/media/presign` (bucket `course-media`, key `lessons/{lesson_id}/{filename}`).
+- Supabase direct upload (Studio): `POST /studio/lessons/{lesson_id}/media/presign` (bucket `course-media` or `public-media`, key `courses/{course_id}/lessons/{lesson_id}/{media_type}/{uuid}_{filename}`).
 
 ### Playback/signing routes (legacy lesson media)
 

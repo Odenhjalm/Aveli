@@ -34,7 +34,7 @@ HTTPS-policy per plattform (2025-10-15)
 - **Android:** Dev-emulatorn tillåts via `network_security_config.xml` (klartext mot `10.0.2.2`/`localhost`). Release-builds ska använda `https://` för API och media; `lib/main.dart` loggar varning om `API_BASE_URL` är HTTP i release.
 - **iOS/macOS:** ATS (App Transport Security) är oförändrat → endast HTTPS. Undantag kräver explicita `NSExceptionDomains`; undvik i prod.
 - **Web/Desktop:** Lokalt utvecklingsläge kör HTTP men prod ska serveras via HTTPS för PWA/service workers. Följ `docs/local_backend_setup.md` för lokala overrides.
-- **Backend-media:** `/studio/media/{id}` följer backend-protokoll. Sätt upp proxy (Nginx/Caddy) med TLS i prod och aktivera signerade länkar (`MEDIA_SIGNING_SECRET`) för extern leverans.
+- **Backend-media:** Extern leverans ska ske via `/media/stream/{token}` (signeras av backend). `/studio/media/{id}` är legacy och ska vara avstängt i prod (`MEDIA_ALLOW_LEGACY_MEDIA=false`).
 - **Klienter:** `AppNetworkImage` injicerar auth-header på mobil/desktop vilket kräver HTTPS (speciellt på iOS). Flutter varnar i release om HTTP används.
 - **Snabbsanity:** Kör  
   `select id, title, thumbnail_url from app.services where thumbnail_url is not null and thumbnail_url !~ '^https://';`  
