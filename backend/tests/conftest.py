@@ -55,16 +55,21 @@ def _temp_media_root(tmp_path):
     original = settings.media_root
     original_signing_secret = settings.media_signing_secret
     original_signing_ttl = settings.media_signing_ttl_seconds
+    original_legacy = settings.media_allow_legacy_media
     temp_root = tmp_path / "media"
     temp_root.mkdir(parents=True, exist_ok=True)
     settings.media_root = str(temp_root)
     # Ensure /media/sign is enabled for tests unless explicitly overridden.
     settings.media_signing_secret = "test-media-secret"
     settings.media_signing_ttl_seconds = max(60, int(original_signing_ttl or 0) or 600)
+    # Many API smoke tests still rely on legacy upload/file routes; keep them
+    # enabled in the test environment unless explicitly overridden.
+    settings.media_allow_legacy_media = True
     try:
         yield Path(settings.media_root)
     finally:
         settings.media_root = original
         settings.media_signing_secret = original_signing_secret
         settings.media_signing_ttl_seconds = original_signing_ttl
+        settings.media_allow_legacy_media = original_legacy
         shutil.rmtree(temp_root, ignore_errors=True)

@@ -111,7 +111,9 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
         presign_data = presign_resp.json()
         assert presign_data["method"] == "PUT"
         assert presign_data["storage_bucket"] == "course-media"
-        assert presign_data["storage_path"].startswith(f"lessons/{lesson_id}/")
+        assert presign_data["storage_path"].startswith(
+            f"courses/{course_id}/lessons/{lesson_id}/"
+        )
         assert not presign_data["storage_path"].startswith("course-media/")
 
         complete_resp = await async_client.post(
