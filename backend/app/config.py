@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     media_playback_url_ttl_seconds: int = 3600
     media_signing_secret: str | None = None
     media_signing_ttl_seconds: int = 600
-    media_allow_legacy_media: bool = True
+    media_allow_legacy_media: bool = False
     media_public_cache_seconds: int = 3600
     media_source_bucket: str = "course-media"
     media_public_bucket: str = "public-media"

@@ -92,6 +92,87 @@ def _detect_kind(content_type: str | None) -> str:
     return "other"
 
 
+def _normalize_content_type(value: str | None, filename: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized:
+        return normalized
+    guessed, _ = mimetypes.guess_type(Path(filename).name)
+    return (guessed or "application/octet-stream").strip().lower()
+
+
+def _validate_lesson_media_type(*, content_type: str, filename: str, media_type: str | None) -> tuple[str, str]:
+    """Return (kind, normalized_media_type) or raise HTTPException.
+
+    Notes:
+    - WAV uploads must use the ingest pipeline (`/api/media/upload-url`).
+    - `media_type` is a client hint used for routing and error messages; we still
+      validate using `content_type`.
+    """
+
+    normalized_type = (media_type or "").strip().lower() or None
+    kind = _detect_kind(content_type)
+
+    is_wav = (
+        content_type in _HOME_PLAYER_WAV_MIME_TYPES
+        or Path(filename).suffix.lower() == ".wav"
+        or filename.lower().endswith(".wav")
+    )
+    if is_wav:
+        raise HTTPException(status_code=422, detail="WAV uploads must use the media pipeline")
+
+    if normalized_type is not None and normalized_type not in {"image", "audio", "video", "document"}:
+        raise HTTPException(status_code=422, detail="Unsupported media_type")
+
+    if normalized_type == "document":
+        if content_type != "application/pdf":
+            raise HTTPException(status_code=415, detail="Only PDF documents are supported")
+        return "pdf", "document"
+
+    if normalized_type == "image":
+        if not content_type.startswith("image/"):
+            raise HTTPException(status_code=415, detail="Unsupported image type")
+        return "image", "image"
+
+    if normalized_type == "video":
+        if not content_type.startswith("video/"):
+            raise HTTPException(status_code=415, detail="Unsupported video type")
+        return "video", "video"
+
+    if normalized_type == "audio":
+        if not content_type.startswith("audio/"):
+            raise HTTPException(status_code=415, detail="Unsupported audio type")
+        return "audio", "audio"
+
+    # No explicit media_type provided; infer from content_type.
+    if kind == "pdf":
+        return "pdf", "document"
+    if kind in {"image", "video", "audio"}:
+        return kind, kind
+    raise HTTPException(status_code=415, detail="Unsupported media type")
+
+
+def _build_lesson_media_object_path(
+    *,
+    course_id: str,
+    lesson_id: str,
+    media_type: str,
+    filename: str,
+) -> str:
+    safe_name = Path(filename).name.strip()
+    if not safe_name:
+        safe_name = "media"
+    token = uuid4().hex
+    # Prefix paths with course/lesson so we can validate them on completion.
+    return (
+        Path("courses")
+        / course_id
+        / "lessons"
+        / lesson_id
+        / media_type
+        / f"{token}_{safe_name}"
+    ).as_posix()
+
+
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
 _LIVE_RECORDINGS_ROOT = "live-recordings"
 _HOME_PLAYER_UPLOADS_STORAGE_BUCKET = "course-media"
@@ -220,14 +301,54 @@ async def presign_lesson_media_upload(
         _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
         raise HTTPException(status_code=403, detail="Not course owner")
 
-    bucket = "course-media"
-    path = f"lessons/{lesson_id}/{payload.filename}"
-    upload = await storage_service.storage_service.create_upload_url(
-        path,
-        content_type=payload.content_type,
-        upsert=True,
-        cache_seconds=settings.media_public_cache_seconds,
+    filename = Path(payload.filename or "").name.strip()
+    if not filename:
+        raise HTTPException(status_code=422, detail="filename is required")
+
+    content_type = _normalize_content_type(payload.content_type, filename)
+    kind, normalized_media_type = _validate_lesson_media_type(
+        content_type=content_type,
+        filename=filename,
+        media_type=payload.media_type,
     )
+
+    lesson_is_intro = bool(lesson.get("is_intro"))
+    if payload.is_intro is not None and bool(payload.is_intro) != lesson_is_intro:
+        raise HTTPException(status_code=422, detail="is_intro must match lesson intro state")
+
+    bucket = settings.media_source_bucket
+    if lesson_is_intro:
+        course = await models.get_course(course_id=str(course_id))
+        if course and bool(course.get("is_published")):
+            bucket = settings.media_public_bucket
+
+    object_path = _build_lesson_media_object_path(
+        course_id=str(course_id),
+        lesson_id=lesson_id_str,
+        media_type=normalized_media_type,
+        filename=filename,
+    )
+    await _assert_storage_bucket_exists(bucket)
+    storage_client = storage_service.get_storage_service(bucket)
+    try:
+        upload = await storage_client.create_upload_url(
+            object_path,
+            content_type=content_type,
+            upsert=False,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning(
+            "Lesson media presign failed: lesson_id=%s bucket=%s path=%s error=%s",
+            lesson_id_str,
+            bucket,
+            object_path,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
     return {
         "method": "PUT",
         "url": upload.url,
@@ -254,28 +375,80 @@ async def complete_lesson_media_upload(
         _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
         raise HTTPException(status_code=403, detail="Not course owner")
 
-    kind = _detect_kind(payload.content_type)
-    expected_bucket = "course-media"
-    if payload.storage_bucket != expected_bucket:
+    content_type = _normalize_content_type(payload.content_type, payload.original_name or payload.storage_path)
+    kind, normalized_media_type = _validate_lesson_media_type(
+        content_type=content_type,
+        filename=payload.original_name or payload.storage_path,
+        media_type=None,
+    )
+
+    max_bytes = int(settings.lesson_media_max_bytes)
+    if payload.byte_size <= 0:
+        raise HTTPException(status_code=422, detail="byte_size must be positive")
+    if payload.byte_size > max_bytes:
         raise HTTPException(
-            status_code=400,
-            detail={"storage_bucket": "must equal course-media"},
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large",
         )
 
-    row = await models.add_lesson_media_entry(
+    lesson_is_intro = bool(lesson.get("is_intro"))
+    if payload.is_intro is not None and bool(payload.is_intro) != lesson_is_intro:
+        raise HTTPException(status_code=422, detail="is_intro must match lesson intro state")
+
+    expected_bucket = settings.media_source_bucket
+    if lesson_is_intro:
+        course = await models.get_course(course_id=str(course_id))
+        if course and bool(course.get("is_published")):
+            expected_bucket = settings.media_public_bucket
+
+    normalized_bucket = (payload.storage_bucket or "").strip()
+    if normalized_bucket != expected_bucket:
+        raise HTTPException(
+            status_code=400,
+            detail={"storage_bucket": f"must equal {expected_bucket}"},
+        )
+
+    normalized_path = str(payload.storage_path or "").strip().lstrip("/")
+    if not normalized_path:
+        raise HTTPException(status_code=422, detail="storage_path is required")
+    relative = Path(normalized_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise HTTPException(status_code=400, detail="Invalid storage_path")
+
+    # Guard against bucket-prefixed keys being stored inside the bucket.
+    if relative.parts and relative.parts[0] == expected_bucket:
+        raise HTTPException(
+            status_code=400,
+            detail="storage_path must be bucket-relative (no bucket prefix)",
+        )
+
+    expected_prefix = (Path("courses") / str(course_id) / "lessons" / lesson_id_str).as_posix() + "/"
+    if not normalized_path.startswith(expected_prefix):
+        raise HTTPException(status_code=400, detail="storage_path does not match lesson prefix")
+
+    media_object = await models.create_media_object(
+        owner_id=str(current["id"]),
+        storage_path=normalized_path,
+        storage_bucket=expected_bucket,
+        content_type=content_type,
+        byte_size=int(payload.byte_size),
+        checksum=payload.checksum,
+        original_name=payload.original_name,
+    )
+    if not media_object:
+        raise HTTPException(status_code=400, detail="Failed to record media object")
+
+    row = await models.add_lesson_media_entry_with_position_retry(
         lesson_id=str(lesson_id),
         kind=kind,
-        storage_path=payload.storage_path,
-        storage_bucket=payload.storage_bucket,
-        media_id=None,
-        position=0,
+        storage_path=normalized_path,
+        storage_bucket=expected_bucket,
+        media_id=str(media_object["id"]),
         duration_seconds=None,
+        max_retries=10,
     )
     if not row:
         raise HTTPException(status_code=400, detail="Failed to record lesson media")
-    row["content_type"] = payload.content_type
-    row["byte_size"] = payload.byte_size
-    row["original_name"] = payload.original_name
     media_signer.attach_media_links(row, purpose="editor_preview")
     return row
 
@@ -1489,6 +1662,9 @@ async def upload_media(
     file: UploadFile = File(...),
     is_intro: bool = Form(False),
 ):
+    if not settings.media_allow_legacy_media:
+        raise HTTPException(status_code=410, detail="Legacy upload endpoint disabled")
+
     owner = current["id"]
     owner_id = str(owner)
     _, course_id = await courses_service.lesson_course_ids(lesson_id)
