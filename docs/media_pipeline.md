@@ -97,3 +97,17 @@ Processing:
 - The UI only renders `cover_url` when the asset is ready; no signed URLs are
   used for cover rendering.
 
+## Lesson editor video blocks
+
+Lesson videos are rendered as standalone block content in both Studio editor
+and lesson playback views.
+
+- Quill video embeds (`BlockEmbed.video`) and legacy `<video ...></video>`
+  markdown are both supported.
+- Rendering uses `LessonVideoBlock` + `InlineVideoPlayer` (same player as
+  Home) for consistent controls, loading states, and activation behavior.
+- Video blocks are constrained by responsive layout breakpoints (not text-size
+  scaling), so they fill available editor content width while preserving media
+  aspect ratio.
+- Editor/player semantics are exposed via Flutter `Semantics` labels/hints so
+  keyboard users can activate playback with the play control.

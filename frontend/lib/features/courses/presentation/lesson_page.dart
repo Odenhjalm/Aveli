@@ -22,6 +22,7 @@ import 'package:aveli/shared/widgets/app_network_image.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/lesson_video_block.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
@@ -624,10 +625,11 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
       return const _MissingMediaFallback();
     }
 
-    return InlineVideoPlayer(
+    return LessonVideoBlock(
       url: resolved,
+      semanticLabel: 'Videoblock i lektionen',
+      semanticHint: 'Tryck på spela-knappen för att starta lektionsvideon.',
       autoPlay: false,
-      minimalUi: true,
     );
   }
 }
@@ -677,7 +679,7 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
   String get key => quill.BlockEmbed.videoType;
 
   @override
-  bool get expanded => false;
+  bool get expanded => true;
 
   @override
   WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
@@ -699,12 +701,7 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
         child: _LessonGlassMediaWrapper(child: _MissingMediaFallback()),
       );
     }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: _LessonGlassMediaWrapper(
-        child: _LessonResolvedVideoPlayer(url: trimmed),
-      ),
-    );
+    return _LessonResolvedVideoPlayer(url: trimmed);
   }
 }
 
@@ -859,16 +856,12 @@ class _MediaItem extends ConsumerWidget {
           final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: _LessonGlassMediaWrapper(
-              child: InlineVideoPlayer(
-                url: url,
-                title: _fileName,
-                autoPlay: true,
-                minimalUi: true,
-                onDownload: () async {
-                  await launchUrlString(url);
-                },
-              ),
+            child: LessonVideoBlock(
+              url: url,
+              title: _fileName,
+              autoPlay: false,
+              semanticLabel: 'Videoblock: $_fileName',
+              semanticHint: 'Tryck på spela-knappen för att starta videon.',
             ),
           );
         },
