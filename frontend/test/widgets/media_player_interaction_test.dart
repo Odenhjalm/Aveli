@@ -68,6 +68,97 @@ void main() {
     expect(handle.isPlaying, isFalse);
   });
 
+  test('controls mode resolves home and lesson/editor chrome consistently', () {
+    final home = resolveInlineVideoControls(
+      controlsMode: InlineVideoControlsMode.home,
+      minimalUi: false,
+      controlChrome: InlineVideoControlChrome.playPause,
+    );
+    expect(home.minimalUi, isTrue);
+    expect(home.controlChrome, InlineVideoControlChrome.hidden);
+
+    final lesson = resolveInlineVideoControls(
+      controlsMode: InlineVideoControlsMode.lesson,
+      minimalUi: false,
+      controlChrome: InlineVideoControlChrome.hidden,
+    );
+    expect(lesson.minimalUi, isTrue);
+    expect(lesson.controlChrome, InlineVideoControlChrome.playPauseAndStop);
+
+    final editor = resolveInlineVideoControls(
+      controlsMode: InlineVideoControlsMode.editor,
+      minimalUi: false,
+      controlChrome: InlineVideoControlChrome.hidden,
+    );
+    expect(editor.minimalUi, isTrue);
+    expect(editor.controlChrome, InlineVideoControlChrome.playPauseAndStop);
+  });
+
+  testWidgets('lesson/editor modes expose stop button and home mode hides it', (
+    tester,
+  ) async {
+    Future<bool>? stopFuture;
+
+    Future<void> pumpOverlay({
+      required InlineVideoControlsMode mode,
+      required _FakeInlinePlaybackHandle handle,
+    }) async {
+      final config = resolveInlineVideoControls(
+        controlsMode: mode,
+        minimalUi: false,
+        controlChrome: InlineVideoControlChrome.hidden,
+      );
+      stopFuture = null;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomRight,
+              child: InlineVideoControlOverlay(
+                isPlaying: true,
+                showStopButton:
+                    config.controlChrome ==
+                    InlineVideoControlChrome.playPauseAndStop,
+                onToggle: () {},
+                onStop: () {
+                  stopFuture = stopInlinePlayback(handle);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final lessonHandle = _FakeInlinePlaybackHandle(isPlaying: true);
+    await pumpOverlay(
+      mode: InlineVideoControlsMode.lesson,
+      handle: lessonHandle,
+    );
+    expect(find.byTooltip('Stoppa'), findsOneWidget);
+    await tester.tap(find.byTooltip('Stoppa'));
+    await tester.pump();
+    await stopFuture!;
+    expect(lessonHandle.pauseCalls, 1);
+    expect(lessonHandle.seekToStartCalls, 1);
+
+    final editorHandle = _FakeInlinePlaybackHandle(isPlaying: true);
+    await pumpOverlay(
+      mode: InlineVideoControlsMode.editor,
+      handle: editorHandle,
+    );
+    expect(find.byTooltip('Stoppa'), findsOneWidget);
+    await tester.tap(find.byTooltip('Stoppa'));
+    await tester.pump();
+    await stopFuture!;
+    expect(editorHandle.pauseCalls, 1);
+    expect(editorHandle.seekToStartCalls, 1);
+
+    final homeHandle = _FakeInlinePlaybackHandle(isPlaying: true);
+    await pumpOverlay(mode: InlineVideoControlsMode.home, handle: homeHandle);
+    expect(find.byTooltip('Stoppa'), findsNothing);
+  });
+
   testWidgets('surface tap toggles play pause resume state', (tester) async {
     var isPlaying = false;
 
@@ -115,6 +206,81 @@ void main() {
     await tester.pump();
     expect(find.text('Spelar'), findsOneWidget);
   });
+
+  testWidgets(
+    'surface tap keeps toggling even when overlay controls are present',
+    (tester) async {
+      var isPlaying = false;
+      var stopCalls = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return Center(
+                  child: SizedBox(
+                    width: 320,
+                    height: 180,
+                    child: VideoSurfaceTapTarget(
+                      semanticLabel: 'Testspelare',
+                      semanticHint: 'Tryck för att spela eller pausa.',
+                      onActivate: () {
+                        setState(() => isPlaying = !isPlaying);
+                      },
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ColoredBox(
+                            color: Colors.black12,
+                            child: Center(
+                              child: Text(isPlaying ? 'Spelar' : 'Pausad'),
+                            ),
+                          ),
+                          Positioned(
+                            right: 8,
+                            bottom: 8,
+                            child: InlineVideoControlOverlay(
+                              isPlaying: isPlaying,
+                              showStopButton: true,
+                              onToggle: () {
+                                setState(() => isPlaying = !isPlaying);
+                              },
+                              onStop: () {
+                                setState(() {
+                                  stopCalls++;
+                                  isPlaying = false;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Pausad'), findsOneWidget);
+
+      await tester.tapAt(tester.getCenter(find.byType(VideoSurfaceTapTarget)));
+      await tester.pump();
+      expect(find.text('Spelar'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Stoppa'));
+      await tester.pump();
+      expect(stopCalls, 1);
+      expect(find.text('Pausad'), findsOneWidget);
+
+      await tester.tapAt(tester.getCenter(find.byType(VideoSurfaceTapTarget)));
+      await tester.pump();
+      expect(find.text('Spelar'), findsOneWidget);
+    },
+  );
 
   testWidgets('keyboard space toggles playback on focused surface', (
     tester,
@@ -168,6 +334,67 @@ void main() {
     expect(find.text('Pausad'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(find.text('Spelar'), findsOneWidget);
+  });
+
+  testWidgets('keyboard S triggers stop action when surface provides it', (
+    tester,
+  ) async {
+    final focusNode = FocusNode(debugLabel: 'test_video_surface_with_stop');
+    addTearDown(focusNode.dispose);
+    var isPlaying = true;
+    var stopCalls = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return Center(
+                child: SizedBox(
+                  width: 320,
+                  height: 180,
+                  child: VideoSurfaceTapTarget(
+                    focusNode: focusNode,
+                    semanticLabel: 'Testspelare',
+                    semanticHint:
+                        'Mellanslag växlar uppspelning och S stoppar.',
+                    onActivate: () {
+                      setState(() => isPlaying = !isPlaying);
+                    },
+                    onStop: () {
+                      setState(() {
+                        stopCalls++;
+                        isPlaying = false;
+                      });
+                    },
+                    child: ColoredBox(
+                      color: Colors.black12,
+                      child: Center(
+                        child: Text(isPlaying ? 'Spelar' : 'Pausad'),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    focusNode.requestFocus();
+    await tester.pump();
+
+    expect(find.text('Spelar'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+    await tester.pump();
+    expect(stopCalls, 1);
+    expect(find.text('Pausad'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
     expect(find.text('Spelar'), findsOneWidget);
   });
