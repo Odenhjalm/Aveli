@@ -13,6 +13,7 @@ class ControllerVideoBlock extends ConsumerWidget {
     required this.mediaId,
     required this.url,
     this.title,
+    this.controlsMode = InlineVideoControlsMode.lesson,
     this.minimalUi = false,
     this.controlChrome = InlineVideoControlChrome.playPauseAndStop,
     this.semanticLabel,
@@ -25,6 +26,7 @@ class ControllerVideoBlock extends ConsumerWidget {
   final String mediaId;
   final String url;
   final String? title;
+  final InlineVideoControlsMode controlsMode;
   final bool minimalUi;
   final InlineVideoControlChrome controlChrome;
   final String? semanticLabel;
@@ -126,6 +128,12 @@ class ControllerVideoBlock extends ConsumerWidget {
     required bool isLoading,
     required String playbackUrl,
   }) {
+    final resolvedControls = resolveInlineVideoControls(
+      controlsMode: controlsMode,
+      minimalUi: minimalUi,
+      controlChrome: controlChrome,
+    );
+
     if (isActive && playbackUrl.isNotEmpty && !isLoading) {
       return InlineVideoPlayer(
         key:
@@ -136,6 +144,7 @@ class ControllerVideoBlock extends ConsumerWidget {
         autoPlay: true,
         minimalUi: minimalUi,
         controlChrome: controlChrome,
+        controlsMode: controlsMode,
         onPlaybackStateChanged: (playing) {
           playbackController.syncVideoPlaybackState(
             mediaId: normalizedMediaId,
@@ -158,7 +167,7 @@ class ControllerVideoBlock extends ConsumerWidget {
                   Text('Laddar ström...', style: theme.textTheme.bodyMedium),
                 ],
               )
-            : minimalUi
+            : resolvedControls.minimalUi
             ? Icon(
                 Icons.play_arrow_rounded,
                 size: 44,

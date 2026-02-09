@@ -29,7 +29,7 @@ void main() {
       );
 
       expect(find.byType(InlineVideoPlayer), findsNothing);
-      expect(find.text('Spela video'), findsOneWidget);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
 
       await tester.tap(find.byType(VideoSurfaceTapTarget));
       await tester.pump();
@@ -43,7 +43,39 @@ void main() {
       final player = tester.widget<InlineVideoPlayer>(
         find.byType(InlineVideoPlayer),
       );
+      expect(player.controlsMode, InlineVideoControlsMode.lesson);
       expect(player.controlChrome, InlineVideoControlChrome.playPauseAndStop);
     },
   );
+
+  testWidgets('controller block can opt into home control mode', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(
+            body: ControllerVideoBlock(
+              mediaId: 'home-video-1',
+              url: 'https://cdn.example.com/home-1.mp4',
+              title: 'Hemvideo',
+              controlsMode: InlineVideoControlsMode.home,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(VideoSurfaceTapTarget));
+    await tester.pump();
+
+    final player = tester.widget<InlineVideoPlayer>(
+      find.byType(InlineVideoPlayer),
+    );
+    expect(player.controlsMode, InlineVideoControlsMode.home);
+  });
 }

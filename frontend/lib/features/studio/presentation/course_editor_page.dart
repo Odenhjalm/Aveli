@@ -150,7 +150,7 @@ class _EditorResolvedVideoBlock extends ConsumerWidget {
       mediaId: 'editor-embed-$resolved',
       url: resolved,
       title: 'Lektionsvideo',
-      controlChrome: InlineVideoControlChrome.playPauseAndStop,
+      controlsMode: InlineVideoControlsMode.editor,
       semanticLabel: 'Videoblock i lektionseditorn',
       semanticHint:
           'Tryck på spela-knappen för att förhandsgranska videon i editorn.',
@@ -1500,6 +1500,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       ],
     );
 
+    final defaultEmbedBuilders = FlutterQuillEmbeds.editorBuilders(
+      videoEmbedConfig: null,
+    );
+
     final editorSurface = Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -1518,7 +1522,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             placeholder: 'Skriv eller klistra in lektionsinnehåll...',
             embedBuilders: [
               const _EditorVideoEmbedBuilder(),
-              ...FlutterQuillEmbeds.defaultEditorBuilders().where(
+              ...defaultEmbedBuilders.where(
                 (builder) => builder.key != quill.BlockEmbed.videoType,
               ),
               const _AudioEmbedBuilder(),
@@ -1816,7 +1820,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 mediaId: mediaId != null && mediaId.isNotEmpty ? mediaId : url,
                 url: url,
                 title: label,
-                controlChrome: InlineVideoControlChrome.playPauseAndStop,
+                controlsMode: InlineVideoControlsMode.editor,
                 semanticLabel: 'Lektionsvideo i editorn',
                 semanticHint:
                     'Tryck på spela-knappen för att starta videoförhandsvisningen.',

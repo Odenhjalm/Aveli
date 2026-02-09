@@ -11,6 +11,10 @@ import 'inline_audio_player.dart';
 
 export 'inline_audio_player.dart';
 
+class _StopInlinePlaybackIntent extends Intent {
+  const _StopInlinePlaybackIntent();
+}
+
 @visibleForTesting
 class VideoSurfaceTapTarget extends StatelessWidget {
   const VideoSurfaceTapTarget({
@@ -20,6 +24,7 @@ class VideoSurfaceTapTarget extends StatelessWidget {
     required this.semanticLabel,
     required this.semanticHint,
     this.focusNode,
+    this.onStop,
   });
 
   final Widget child;
@@ -27,23 +32,36 @@ class VideoSurfaceTapTarget extends StatelessWidget {
   final String semanticLabel;
   final String semanticHint;
   final FocusNode? focusNode;
+  final VoidCallback? onStop;
 
   @override
   Widget build(BuildContext context) {
-    return FocusableActionDetector(
-      focusNode: focusNode,
-      shortcuts: const <ShortcutActivator, Intent>{
-        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-      },
-      actions: <Type, Action<Intent>>{
-        ActivateIntent: CallbackAction<ActivateIntent>(
+    final shortcuts = <ShortcutActivator, Intent>{
+      const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
+      const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
+      if (onStop != null)
+        const SingleActivator(LogicalKeyboardKey.keyS):
+            const _StopInlinePlaybackIntent(),
+    };
+    final actions = <Type, Action<Intent>>{
+      ActivateIntent: CallbackAction<ActivateIntent>(
+        onInvoke: (_) {
+          onActivate();
+          return null;
+        },
+      ),
+      if (onStop != null)
+        _StopInlinePlaybackIntent: CallbackAction<_StopInlinePlaybackIntent>(
           onInvoke: (_) {
-            onActivate();
+            onStop!();
             return null;
           },
         ),
-      },
+    };
+    return FocusableActionDetector(
+      focusNode: focusNode,
+      shortcuts: shortcuts,
+      actions: actions,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Semantics(
@@ -88,6 +106,45 @@ Future<bool> stopInlinePlayback(InlinePlaybackHandle handle) async {
 }
 
 enum InlineVideoControlChrome { hidden, playPause, playPauseAndStop }
+
+enum InlineVideoControlsMode { custom, home, lesson, editor }
+
+@visibleForTesting
+class InlineVideoControlsConfig {
+  const InlineVideoControlsConfig({
+    required this.minimalUi,
+    required this.controlChrome,
+  });
+
+  final bool minimalUi;
+  final InlineVideoControlChrome controlChrome;
+}
+
+@visibleForTesting
+InlineVideoControlsConfig resolveInlineVideoControls({
+  required InlineVideoControlsMode controlsMode,
+  required bool minimalUi,
+  required InlineVideoControlChrome controlChrome,
+}) {
+  switch (controlsMode) {
+    case InlineVideoControlsMode.home:
+      return const InlineVideoControlsConfig(
+        minimalUi: true,
+        controlChrome: InlineVideoControlChrome.hidden,
+      );
+    case InlineVideoControlsMode.lesson:
+    case InlineVideoControlsMode.editor:
+      return const InlineVideoControlsConfig(
+        minimalUi: true,
+        controlChrome: InlineVideoControlChrome.playPauseAndStop,
+      );
+    case InlineVideoControlsMode.custom:
+      return InlineVideoControlsConfig(
+        minimalUi: minimalUi,
+        controlChrome: controlChrome,
+      );
+  }
+}
 
 class _MediaKitPlaybackHandle implements InlinePlaybackHandle {
   _MediaKitPlaybackHandle(this._player);
@@ -186,6 +243,7 @@ class InlineVideoPlayer extends StatefulWidget {
     this.autoPlay = false,
     this.minimalUi = false,
     this.controlChrome = InlineVideoControlChrome.hidden,
+    this.controlsMode = InlineVideoControlsMode.custom,
   });
 
   final String url;
@@ -195,6 +253,7 @@ class InlineVideoPlayer extends StatefulWidget {
   final bool autoPlay;
   final bool minimalUi;
   final InlineVideoControlChrome controlChrome;
+  final InlineVideoControlsMode controlsMode;
 
   @override
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
@@ -481,10 +540,17 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   }
 
   bool get _showsControlOverlay =>
-      widget.controlChrome != InlineVideoControlChrome.hidden;
+      _resolvedControls.controlChrome != InlineVideoControlChrome.hidden;
 
   bool get _showsStopButton =>
-      widget.controlChrome == InlineVideoControlChrome.playPauseAndStop;
+      _resolvedControls.controlChrome ==
+      InlineVideoControlChrome.playPauseAndStop;
+
+  InlineVideoControlsConfig get _resolvedControls => resolveInlineVideoControls(
+    controlsMode: widget.controlsMode,
+    minimalUi: widget.minimalUi,
+    controlChrome: widget.controlChrome,
+  );
 
   bool _isCurrentlyPlaying() {
     if (!_activated || _initializing || _timedOut || _error != null) {
@@ -603,6 +669,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       semanticLabel: _surfaceLabel(),
       semanticHint: _surfaceHint(),
       onActivate: _handleSurfaceToggle,
+      onStop: _showsStopButton ? _handleControlStop : null,
       child: child,
     );
   }
@@ -619,7 +686,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         Positioned(
           right: 12,
           bottom: 12,
-          child: _InlineVideoControlOverlay(
+          child: InlineVideoControlOverlay(
             isPlaying: _isCurrentlyPlaying(),
             showStopButton: _showsStopButton,
             onToggle: _handleControlToggle,
@@ -649,7 +716,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
           AspectRatio(
             aspectRatio: 16 / 9,
             child: Center(
-              child: widget.minimalUi
+              child: _resolvedControls.minimalUi
                   ? Icon(
                       Icons.play_arrow_rounded,
                       size: 44,
@@ -870,8 +937,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   }
 }
 
-class _InlineVideoControlOverlay extends StatelessWidget {
-  const _InlineVideoControlOverlay({
+@visibleForTesting
+class InlineVideoControlOverlay extends StatelessWidget {
+  const InlineVideoControlOverlay({
     required this.isPlaying,
     required this.showStopButton,
     required this.onToggle,

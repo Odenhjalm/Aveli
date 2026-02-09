@@ -637,7 +637,7 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
       key: ValueKey<String>('lesson-embed-video-$resolved'),
       mediaId: 'lesson-embed-$resolved',
       url: resolved,
-      controlChrome: InlineVideoControlChrome.playPauseAndStop,
+      controlsMode: InlineVideoControlsMode.lesson,
       semanticLabel: 'Videoblock i lektionen',
       semanticHint: 'Tryck på spela-knappen för att starta lektionsvideon.',
     );
@@ -871,7 +871,7 @@ class _MediaItem extends ConsumerWidget {
               mediaId: item.id,
               url: url,
               title: _fileName,
-              controlChrome: InlineVideoControlChrome.playPauseAndStop,
+              controlsMode: InlineVideoControlsMode.lesson,
               semanticLabel: 'Videoblock: $_fileName',
               semanticHint: 'Tryck på spela-knappen för att starta videon.',
             ),
