@@ -153,4 +153,77 @@ void main() {
     await tester.pump();
     expect(find.text('Spelar'), findsOneWidget);
   });
+
+  testWidgets('inline player keeps active state across same-url rebuild', (
+    tester,
+  ) async {
+    StateSetter? hostSetState;
+    var rebuildTick = 0;
+    var currentUrl = 'https://cdn.example.com/a.mp4';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              hostSetState = setState;
+              return Column(
+                children: [
+                  Text('tick:$rebuildTick'),
+                  InlineVideoPlayer(url: currentUrl),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Spela video'), findsOneWidget);
+
+    await tester.tap(find.byType(VideoSurfaceTapTarget));
+    await tester.pump();
+    expect(find.text('Laddar ström...'), findsOneWidget);
+
+    hostSetState!(() {
+      rebuildTick++;
+    });
+    await tester.pump();
+
+    expect(find.text('tick:1'), findsOneWidget);
+    expect(find.text('Laddar ström...'), findsOneWidget);
+    expect(find.text('Spela video'), findsNothing);
+  });
+
+  testWidgets('inline player resets when media url changes', (tester) async {
+    StateSetter? hostSetState;
+    var currentUrl = 'https://cdn.example.com/a.mp4';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              hostSetState = setState;
+              return InlineVideoPlayer(url: currentUrl);
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Spela video'), findsOneWidget);
+
+    await tester.tap(find.byType(VideoSurfaceTapTarget));
+    await tester.pump();
+    expect(find.text('Laddar ström...'), findsOneWidget);
+
+    hostSetState!(() {
+      currentUrl = 'https://cdn.example.com/b.mp4';
+    });
+    await tester.pump();
+
+    expect(find.text('Spela video'), findsOneWidget);
+    expect(find.text('Laddar ström...'), findsNothing);
+  });
 }

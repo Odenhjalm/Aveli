@@ -147,4 +147,28 @@ void main() {
     expect(find.byType(InlineVideoPlayer), findsNWidgets(2));
     expect(find.text('Spela video'), findsNWidgets(2));
   });
+
+  testWidgets('renders multiple lesson blocks without shared key collisions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              LessonVideoBlock(url: 'https://cdn.example.com/one.mp4'),
+              LessonVideoBlock(url: 'https://cdn.example.com/two.mp4'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    expect(find.byType(LessonVideoBlock), findsNWidgets(2));
+    expect(find.byType(InlineVideoPlayer), findsNWidgets(2));
+    expect(find.text('Spela video'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
 }
