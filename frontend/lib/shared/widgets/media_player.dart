@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:video_player/video_player.dart';
@@ -8,6 +9,57 @@ import '../utils/media_kit_support.dart';
 import 'inline_audio_player.dart';
 
 export 'inline_audio_player.dart';
+
+@visibleForTesting
+class VideoSurfaceTapTarget extends StatelessWidget {
+  const VideoSurfaceTapTarget({
+    super.key,
+    required this.child,
+    required this.onActivate,
+    required this.semanticLabel,
+    required this.semanticHint,
+    this.focusNode,
+  });
+
+  final Widget child;
+  final VoidCallback onActivate;
+  final String semanticLabel;
+  final String semanticHint;
+  final FocusNode? focusNode;
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusableActionDetector(
+      focusNode: focusNode,
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+      },
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            onActivate();
+            return null;
+          },
+        ),
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Semantics(
+          button: true,
+          label: semanticLabel,
+          hint: semanticHint,
+          onTap: onActivate,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onActivate,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 Future<void> showMediaPlayerSheet(
   BuildContext context, {
@@ -90,8 +142,13 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   mk.Player? _player;
   VideoController? _mediaVideoController;
   StreamSubscription<mk.VideoParams>? _videoParamsSub;
+  StreamSubscription<bool>? _mediaPlayingSub;
   Timer? _activationTimer;
+  final FocusNode _surfaceFocusNode = FocusNode(
+    debugLabel: 'inline_video_surface',
+  );
   double? _mediaAspectRatio;
+  bool _mediaKitPlaying = false;
   bool _activated = false;
   bool _initializing = false;
   bool _timedOut = false;
@@ -166,6 +223,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _error = null;
       _timedOut = false;
       _mediaAspectRatio = null;
+      _mediaKitPlaying = false;
     });
     _startActivationTimeout();
     if (_useMediaKit) {
@@ -204,6 +262,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     _videoParamsSub = null;
     if (sub != null) {
       unawaited(sub.cancel());
+    }
+    final playingSub = _mediaPlayingSub;
+    _mediaPlayingSub = null;
+    if (playingSub != null) {
+      unawaited(playingSub.cancel());
     }
     final player = _player;
     _player = null;
@@ -306,12 +369,102 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       if (!mounted) return;
       setState(() => _mediaAspectRatio = computed);
     });
+    _mediaPlayingSub = player.stream.playing.listen((playing) {
+      if (!mounted) return;
+      setState(() => _mediaKitPlaying = playing);
+    });
   }
 
   @override
   void dispose() {
     _resetControllers();
+    _surfaceFocusNode.dispose();
     super.dispose();
+  }
+
+  String _surfaceLabel() {
+    final title = widget.title?.trim();
+    if (title == null || title.isEmpty) return 'Videospelare';
+    return 'Videospelare: $title';
+  }
+
+  String _surfaceHint() {
+    if (_timedOut || _error != null) {
+      return 'Tryck för att försöka starta videon igen.';
+    }
+    if (_initializing) {
+      return 'Videon laddas just nu.';
+    }
+    final playing = _isCurrentlyPlaying();
+    return playing
+        ? 'Tryck för att pausa videon.'
+        : 'Tryck för att spela videon.';
+  }
+
+  bool _isCurrentlyPlaying() {
+    if (!_activated || _initializing || _timedOut || _error != null) {
+      return false;
+    }
+    if (_useMediaKit) {
+      return _mediaKitPlaying;
+    }
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return false;
+    return controller.value.isPlaying;
+  }
+
+  void _handleSurfaceToggle() {
+    if (!_activated) {
+      _activate();
+      return;
+    }
+    if (_timedOut || _error != null) {
+      _handleRetry();
+      return;
+    }
+    if (_initializing) return;
+    unawaited(_togglePlayback());
+  }
+
+  Future<void> _togglePlayback() async {
+    if (_useMediaKit) {
+      final player = _player;
+      if (player == null) return;
+      try {
+        if (_mediaKitPlaying) {
+          await player.pause();
+        } else {
+          await player.play();
+        }
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _error = 'Kunde inte växla uppspelning.');
+      }
+      return;
+    }
+
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      if (controller.value.isPlaying) {
+        await controller.pause();
+      } else {
+        await controller.play();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Kunde inte växla uppspelning.');
+    }
+  }
+
+  Widget _wrapSurfaceInteraction(Widget child) {
+    return VideoSurfaceTapTarget(
+      focusNode: _surfaceFocusNode,
+      semanticLabel: _surfaceLabel(),
+      semanticHint: _surfaceHint(),
+      onActivate: _handleSurfaceToggle,
+      child: child,
+    );
   }
 
   double _effectiveAspectRatio({
@@ -329,26 +482,38 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     if (!_activated) {
       final theme = Theme.of(context);
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Center(
-            child: widget.minimalUi
-                ? IconButton(
-                    tooltip: 'Spela video',
-                    iconSize: 40,
-                    icon: Icon(
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Center(
+              child: widget.minimalUi
+                  ? Icon(
                       Icons.play_arrow_rounded,
+                      size: 44,
                       color: theme.colorScheme.onSurface.withValues(
                         alpha: 0.70,
                       ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.play_arrow_rounded,
+                          size: 46,
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.72,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Spela video',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    onPressed: _activate,
-                  )
-                : FilledButton.icon(
-                    onPressed: _activate,
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('Spela video'),
-                  ),
+            ),
           ),
         ),
       );
@@ -357,16 +522,18 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     if (_initializing) {
       final theme = Theme.of(context);
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 12),
-                Text('Laddar ström...', style: theme.textTheme.bodyMedium),
-              ],
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text('Laddar ström...', style: theme.textTheme.bodyMedium),
+                ],
+              ),
             ),
           ),
         ),
@@ -377,44 +544,46 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       final theme = Theme.of(context);
       final canPop = Navigator.of(context).canPop();
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.wifi_off_rounded,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Ingen aktiv ström just nu.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Sändningen har inte startat eller är offline.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _handleRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Försök igen'),
-                ),
-                if (canPop) ...[
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    child: const Text('Tillbaka'),
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.wifi_off_rounded,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Ingen aktiv ström just nu.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Sändningen har inte startat eller är offline.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _handleRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Försök igen'),
+                  ),
+                  if (canPop) ...[
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Tillbaka'),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -425,35 +594,37 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       final theme = Theme.of(context);
       final canPop = Navigator.of(context).canPop();
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Media saknas eller stöds inte längre',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.error,
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Media saknas eller stöds inte längre',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _handleRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Försök igen'),
-                ),
-                if (canPop) ...[
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    child: const Text('Tillbaka'),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _handleRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Försök igen'),
                   ),
+                  if (canPop) ...[
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Tillbaka'),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -461,7 +632,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
 
     return _wrapWithBorder(
-      _useMediaKit ? _buildMediaKitPlayer() : _buildVideoPlayer(context),
+      _wrapSurfaceInteraction(
+        _useMediaKit ? _buildMediaKitPlayer() : _buildVideoPlayer(context),
+      ),
     );
   }
 

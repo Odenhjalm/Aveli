@@ -33,6 +33,10 @@ void main() {
     expect(find.byType(InlineVideoPlayer), findsOneWidget);
     expect(find.text('Spela video'), findsOneWidget);
 
+    await tester.tap(find.byKey(lessonVideoBlockSurfaceKey));
+    await tester.pump();
+    expect(find.text('Laddar ström...'), findsOneWidget);
+
     final size = tester.getSize(find.byKey(lessonVideoBlockContainerKey));
     expect(size.width, lessThanOrEqualTo(920));
     expect(size.width, greaterThan(880));
@@ -96,8 +100,11 @@ void main() {
       final semanticsNode = tester.getSemantics(
         find.byKey(lessonVideoBlockSurfaceKey),
       );
-      expect(semanticsNode.label, 'Videoblock i lektionseditorn');
-      expect(semanticsNode.hint, 'Aktivera med Enter eller mellanslag.');
+      expect(semanticsNode.label, contains('Videoblock i lektionseditorn'));
+      expect(
+        semanticsNode.hint,
+        contains('Aktivera med Enter eller mellanslag.'),
+      );
     } finally {
       semanticsHandle.dispose();
     }
