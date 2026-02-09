@@ -107,10 +107,15 @@ class _LessonContent extends ConsumerWidget {
     final regex = RegExp(r'https?://[^\s)]+/pay/bundle/([A-Za-z0-9-]+)');
     return regex
         .allMatches(content)
-        .map(
-          (match) =>
-              _BundleLink(url: match.group(0)!, bundleId: match.group(1) ?? ''),
-        )
+        .map((match) {
+          final matchedUrl = match.group(0);
+          final bundleId = match.group(1) ?? '';
+          if (matchedUrl == null || matchedUrl.trim().isEmpty) {
+            return null;
+          }
+          return _BundleLink(url: matchedUrl.trim(), bundleId: bundleId.trim());
+        })
+        .whereType<_BundleLink>()
         .where((item) => item.bundleId.isNotEmpty)
         .toList(growable: false);
   }
@@ -165,7 +170,10 @@ class _LessonContent extends ConsumerWidget {
     final mediaRepo = ref.watch(mediaRepositoryProvider);
     final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
     final screenWidth = MediaQuery.of(context).size.width;
-    final contentWidth = (screenWidth - 32).clamp(720.0, 1200.0).toDouble();
+    final safeScreenWidth = screenWidth.isFinite && screenWidth > 0
+        ? screenWidth
+        : 1200.0;
+    final contentWidth = (safeScreenWidth - 32).clamp(720.0, 1200.0).toDouble();
     final mediaItems = detail.media;
     final courseLessons = detail.courseLessons;
     LessonSummary? previous;
@@ -231,9 +239,16 @@ class _LessonContent extends ConsumerWidget {
                 );
               }
 
-              final prepared = snapshot.data ?? markdownContent;
+              if (snapshot.hasError) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Kunde inte rendera lektionsinnehållet.'),
+                );
+              }
+
+              final prepared = (snapshot.data ?? markdownContent).trim();
               return _LessonQuillContent(
-                markdown: prepared,
+                markdown: prepared.isEmpty ? 'Inget innehåll.' : prepared,
                 onLaunchUrl: (url) =>
                     unawaited(_handleLinkTap(context, ref, url)),
               );
@@ -310,7 +325,7 @@ class _LessonContent extends ConsumerWidget {
         : coreContent;
 
     return AppScaffold(
-      title: lesson.title,
+      title: lesson.title.trim().isEmpty ? 'Lektion' : lesson.title,
       body: gatedContent,
       background: BackgroundLayer(
         image: AppImages.lessonBackground,
@@ -417,18 +432,25 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
       ),
     ];
 
-    return quill.QuillEditor.basic(
-      controller: _controller,
-      config: quill.QuillEditorConfig(
-        scrollable: false,
-        padding: EdgeInsets.zero,
-        enableInteractiveSelection: false,
-        enableSelectionToolbar: false,
-        showCursor: false,
-        onLaunchUrl: widget.onLaunchUrl,
-        embedBuilders: embedBuilders,
-      ),
-    );
+    try {
+      return quill.QuillEditor.basic(
+        controller: _controller,
+        config: quill.QuillEditorConfig(
+          scrollable: false,
+          padding: EdgeInsets.zero,
+          enableInteractiveSelection: false,
+          enableSelectionToolbar: false,
+          showCursor: false,
+          onLaunchUrl: widget.onLaunchUrl,
+          embedBuilders: embedBuilders,
+        ),
+      );
+    } catch (_) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text('Kunde inte rendera lektionsinnehållet.'),
+      );
+    }
   }
 }
 
@@ -603,7 +625,10 @@ class _LessonResolvedAudioPlayer extends ConsumerWidget {
       return const _MissingMediaFallback();
     }
 
-    return InlineAudioPlayer(url: resolved, minimalUi: true);
+    final playbackUrl = _normalizeInlinePlaybackUrl(resolved);
+    if (playbackUrl == null) return const _MissingMediaFallback();
+
+    return InlineAudioPlayer(url: playbackUrl, minimalUi: true);
   }
 }
 
@@ -646,11 +671,13 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
             child: LinearProgressIndicator(),
           );
         }
-        final playbackUrl = snapshot.data?.trim() ?? '';
+        final playbackUrl = _normalizeInlinePlaybackUrl(snapshot.data);
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: _LessonGlassMediaWrapper(
-            child: AveliVideoPlayer(playbackUrl: playbackUrl),
+            child: playbackUrl == null
+                ? const _MissingMediaFallback()
+                : AveliVideoPlayer(playbackUrl: playbackUrl),
           ),
         );
       },
@@ -848,14 +875,14 @@ class _MediaItem extends ConsumerWidget {
             );
           }
           final playbackUrl = snapshot.data;
-          if (playbackUrl == null || playbackUrl.trim().isEmpty) {
+          final url = _normalizeInlinePlaybackUrl(playbackUrl);
+          if (url == null) {
             return ListTile(
               leading: Icon(_iconForKind()),
               title: Text(_fileName),
               subtitle: const Text('Media saknas eller stöds inte längre'),
             );
           }
-          final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _LessonGlassMediaWrapper(
@@ -890,14 +917,14 @@ class _MediaItem extends ConsumerWidget {
             );
           }
           final playbackUrl = snapshot.data;
-          if (playbackUrl == null || playbackUrl.trim().isEmpty) {
+          final url = _normalizeInlinePlaybackUrl(playbackUrl);
+          if (url == null) {
             return ListTile(
               leading: Icon(_iconForKind()),
               title: Text(_fileName),
               subtitle: const Text('Media saknas eller stöds inte längre'),
             );
           }
-          final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _LessonGlassMediaWrapper(
@@ -927,14 +954,14 @@ class _MediaItem extends ConsumerWidget {
             );
           }
           final playbackUrl = snapshot.data;
-          if (playbackUrl == null || playbackUrl.trim().isEmpty) {
+          final url = _normalizeInlinePlaybackUrl(playbackUrl);
+          if (url == null) {
             return ListTile(
               leading: Icon(_iconForKind()),
               title: Text(_fileName),
               subtitle: const Text('Media saknas eller stöds inte längre'),
             );
           }
-          final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _LessonGlassMediaWrapper(
@@ -983,4 +1010,15 @@ class _MediaItem extends ConsumerWidget {
       onTap: () => launchUrlString(url),
     );
   }
+}
+
+String? _normalizeInlinePlaybackUrl(String? rawValue) {
+  final raw = rawValue?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  final parsed = Uri.tryParse(raw);
+  if (parsed == null) return null;
+  if (!parsed.hasScheme) return null;
+  final scheme = parsed.scheme.toLowerCase();
+  if (scheme == 'http' || scheme == 'https') return raw;
+  return null;
 }
