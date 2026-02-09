@@ -106,6 +106,8 @@ and lesson playback views.
   markdown are both supported.
 - Rendering uses `LessonVideoBlock` + `InlineVideoPlayer` (same player as
   Home) for consistent controls, loading states, and activation behavior.
+- Pointer interaction is direct: click/tap on the video surface toggles
+  play/pause/resume (same behavior as Home).
 - Video blocks are constrained by responsive layout breakpoints (not text-size
   scaling), so they fill available editor content width while preserving media
   aspect ratio.
