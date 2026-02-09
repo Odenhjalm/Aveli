@@ -27,7 +27,8 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
-import 'package:aveli/shared/widgets/lesson_video_block.dart';
+import 'package:aveli/features/media/application/media_playback_controller.dart';
+import 'package:aveli/features/media/presentation/controller_video_block.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_resolution_mode.dart';
@@ -144,8 +145,9 @@ class _EditorResolvedVideoBlock extends ConsumerWidget {
       return const _EditorVideoFallback();
     }
 
-    return LessonVideoBlock(
+    return ControllerVideoBlock(
       key: ValueKey<String>('editor-inline-video-$resolved'),
+      mediaId: 'editor-embed-$resolved',
       url: resolved,
       title: 'Lektionsvideo',
       semanticLabel: 'Videoblock i lektionseditorn',
@@ -218,6 +220,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
+  late final MediaPlaybackController _playbackController;
   List<Map<String, dynamic>> _courses = <Map<String, dynamic>>[];
   String? _selectedCourseId;
 
@@ -404,6 +407,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   @override
   void initState() {
     super.initState();
+    _playbackController = ref.read(mediaPlaybackControllerProvider.notifier);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _playbackController.stop();
+    });
     _studioRepo = widget.studioRepository ?? ref.read(studioRepositoryProvider);
     _markdownDocument = md.Document(
       encodeHtml: false,
@@ -425,6 +433,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   @override
   void dispose() {
+    scheduleMicrotask(_playbackController.stop);
     _uploadSubscription?.close();
     _qPrompt.dispose();
     _qOptions.dispose();
@@ -1797,12 +1806,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              LessonVideoBlock(
+              ControllerVideoBlock(
                 key: ValueKey<String>(
                   mediaId != null && mediaId.isNotEmpty
                       ? 'editor-preview-video-$mediaId'
                       : 'editor-preview-video-$url',
                 ),
+                mediaId: mediaId != null && mediaId.isNotEmpty ? mediaId : url,
                 url: url,
                 title: label,
                 semanticLabel: 'Lektionsvideo i editorn',

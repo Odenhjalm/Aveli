@@ -165,6 +165,7 @@ class InlineVideoPlayer extends StatefulWidget {
     required this.url,
     this.title,
     this.onDownload,
+    this.onPlaybackStateChanged,
     this.autoPlay = false,
     this.minimalUi = false,
   });
@@ -172,6 +173,7 @@ class InlineVideoPlayer extends StatefulWidget {
   final String url;
   final String? title;
   final Future<void> Function()? onDownload;
+  final ValueChanged<bool>? onPlaybackStateChanged;
   final bool autoPlay;
   final bool minimalUi;
 
@@ -238,6 +240,10 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     });
   }
 
+  void _emitPlaybackState(bool isPlaying) {
+    widget.onPlaybackStateChanged?.call(isPlaying);
+  }
+
   void _startActivationTimeout() {
     _activationTimer?.cancel();
     _activationTimer = Timer(_activationTimeout, () {
@@ -300,6 +306,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   void _resetControllers() {
     _clearActivationTimeout();
+    _emitPlaybackState(false);
     final video = _videoController;
     _videoController = null;
     if (video != null) {
@@ -354,6 +361,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await controller.initialize();
       await controller.setLooping(true);
       await controller.play();
+      _emitPlaybackState(true);
       if (!mounted) return;
       _clearActivationTimeout();
       setState(() {
@@ -380,6 +388,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await player.open(mk.Media(widget.url), play: true);
       await player.setPlaylistMode(mk.PlaylistMode.loop);
       await controller.waitUntilFirstFrameRendered;
+      _emitPlaybackState(player.state.playing);
       if (!mounted) return;
       _clearActivationTimeout();
       setState(() {
@@ -420,6 +429,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     });
     _mediaPlayingSub = player.stream.playing.listen((playing) {
       if (!identical(player, _player)) return;
+      _emitPlaybackState(playing);
       if (!mounted) return;
       setState(() => _mediaKitPlaying = playing);
     });
@@ -492,6 +502,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
           _mediaKitPlaying = playing;
           _error = null;
         });
+        _emitPlaybackState(playing);
       } catch (_) {
         if (!mounted) return;
         setState(() => _error = 'Kunde inte växla uppspelning.');
@@ -504,6 +515,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     final handle = _VideoPlayerPlaybackHandle(controller);
     try {
       await toggleInlinePlayback(handle);
+      _emitPlaybackState(controller.value.isPlaying);
       if (!mounted || !identical(controller, _videoController)) return;
       setState(() => _error = null);
     } catch (_) {

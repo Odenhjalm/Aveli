@@ -6,6 +6,7 @@ class MediaPlaybackState {
   const MediaPlaybackState({
     this.currentMediaId,
     this.isPlaying = false,
+    this.isPaused = false,
     this.mediaType,
     this.url,
     this.title,
@@ -15,7 +16,10 @@ class MediaPlaybackState {
   });
 
   final String? currentMediaId;
+  // `isPlaying` tracks whether this media slot is active in the UI.
   final bool isPlaying;
+  // Explicit paused state is synchronized from the inline player surface.
+  final bool isPaused;
   final MediaPlaybackType? mediaType;
   final String? url;
   final String? title;
@@ -29,6 +33,7 @@ class MediaPlaybackState {
   MediaPlaybackState copyWith({
     String? currentMediaId,
     bool? isPlaying,
+    bool? isPaused,
     MediaPlaybackType? mediaType,
     String? url,
     String? title,
@@ -39,6 +44,7 @@ class MediaPlaybackState {
     return MediaPlaybackState(
       currentMediaId: currentMediaId ?? this.currentMediaId,
       isPlaying: isPlaying ?? this.isPlaying,
+      isPaused: isPaused ?? this.isPaused,
       mediaType: mediaType ?? this.mediaType,
       url: url ?? this.url,
       title: title ?? this.title,
@@ -80,6 +86,7 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
     state = MediaPlaybackState(
       currentMediaId: trimmedId,
       isPlaying: true,
+      isPaused: false,
       mediaType: mediaType,
       url: url?.trim(),
       title: title,
@@ -114,6 +121,25 @@ class MediaPlaybackController extends AutoDisposeNotifier<MediaPlaybackState> {
     if (_disposed) return;
     state = const MediaPlaybackState();
   }
+
+  void syncVideoPlaybackState({
+    required String mediaId,
+    required bool isPlaying,
+  }) {
+    if (_disposed) return;
+    final trimmed = mediaId.trim();
+    if (trimmed.isEmpty) return;
+    if (state.currentMediaId != trimmed) return;
+    if (state.mediaType != MediaPlaybackType.video) return;
+    // Keep active ownership while inline surface pauses/resumes.
+    state = state.copyWith(isPlaying: true, isPaused: !isPlaying);
+  }
+
+  void pause(String mediaId) =>
+      syncVideoPlaybackState(mediaId: mediaId, isPlaying: false);
+
+  void resume(String mediaId) =>
+      syncVideoPlaybackState(mediaId: mediaId, isPlaying: true);
 }
 
 final mediaPlaybackControllerProvider =
