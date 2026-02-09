@@ -872,7 +872,7 @@ extension _MediaTypeExtension on _MediaType {
       case _MediaType.audio:
         return '<audio controls src="$url"></audio>';
       case _MediaType.video:
-        return '<video controls src="$url"></video>';
+        return '<video src="$url"></video>';
     }
   }
 }

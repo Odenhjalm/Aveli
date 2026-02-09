@@ -533,6 +533,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                 url: playback.url!,
                 title: selected.displayTitle,
                 autoPlay: true,
+                controlChrome: InlineVideoControlChrome.hidden,
               ),
           ],
         ],

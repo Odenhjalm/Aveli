@@ -6,6 +6,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:video_player/video_player.dart';
 
 import '../utils/media_kit_support.dart';
+import 'glass_card.dart';
 import 'inline_audio_player.dart';
 
 export 'inline_audio_player.dart';
@@ -66,6 +67,7 @@ abstract class InlinePlaybackHandle {
   bool get isPlaying;
   Future<void> play();
   Future<void> pause();
+  Future<void> seekToStart();
 }
 
 @visibleForTesting
@@ -77,6 +79,15 @@ Future<bool> toggleInlinePlayback(InlinePlaybackHandle handle) async {
   }
   return handle.isPlaying;
 }
+
+@visibleForTesting
+Future<bool> stopInlinePlayback(InlinePlaybackHandle handle) async {
+  await handle.pause();
+  await handle.seekToStart();
+  return handle.isPlaying;
+}
+
+enum InlineVideoControlChrome { hidden, playPause, playPauseAndStop }
 
 class _MediaKitPlaybackHandle implements InlinePlaybackHandle {
   _MediaKitPlaybackHandle(this._player);
@@ -91,6 +102,9 @@ class _MediaKitPlaybackHandle implements InlinePlaybackHandle {
 
   @override
   Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> seekToStart() => _player.seek(Duration.zero);
 }
 
 class _VideoPlayerPlaybackHandle implements InlinePlaybackHandle {
@@ -106,6 +120,9 @@ class _VideoPlayerPlaybackHandle implements InlinePlaybackHandle {
 
   @override
   Future<void> pause() => _controller.pause();
+
+  @override
+  Future<void> seekToStart() => _controller.seekTo(Duration.zero);
 }
 
 Future<void> showMediaPlayerSheet(
@@ -168,6 +185,7 @@ class InlineVideoPlayer extends StatefulWidget {
     this.onPlaybackStateChanged,
     this.autoPlay = false,
     this.minimalUi = false,
+    this.controlChrome = InlineVideoControlChrome.hidden,
   });
 
   final String url;
@@ -176,6 +194,7 @@ class InlineVideoPlayer extends StatefulWidget {
   final ValueChanged<bool>? onPlaybackStateChanged;
   final bool autoPlay;
   final bool minimalUi;
+  final InlineVideoControlChrome controlChrome;
 
   @override
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
@@ -461,6 +480,12 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         : 'Tryck för att spela videon.';
   }
 
+  bool get _showsControlOverlay =>
+      widget.controlChrome != InlineVideoControlChrome.hidden;
+
+  bool get _showsStopButton =>
+      widget.controlChrome == InlineVideoControlChrome.playPauseAndStop;
+
   bool _isCurrentlyPlaying() {
     if (!_activated || _initializing || _timedOut || _error != null) {
       return false;
@@ -488,6 +513,20 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
     if (_initializing) return;
     unawaited(_togglePlayback());
+  }
+
+  void _handleControlToggle() {
+    if (_initializing || !_activated) return;
+    if (_timedOut || _error != null) {
+      _handleRetry();
+      return;
+    }
+    unawaited(_togglePlayback());
+  }
+
+  void _handleControlStop() {
+    if (_initializing || !_activated || _timedOut || _error != null) return;
+    unawaited(_stopPlayback());
   }
 
   Future<void> _togglePlayback() async {
@@ -524,6 +563,40 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
   }
 
+  Future<void> _stopPlayback() async {
+    if (_useMediaKit) {
+      final player = _player;
+      if (player == null) return;
+      final handle = _MediaKitPlaybackHandle(player);
+      try {
+        await stopInlinePlayback(handle);
+        if (!mounted || !identical(player, _player)) return;
+        setState(() {
+          _mediaKitPlaying = false;
+          _error = null;
+        });
+        _emitPlaybackState(false);
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _error = 'Kunde inte stoppa videon.');
+      }
+      return;
+    }
+
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return;
+    final handle = _VideoPlayerPlaybackHandle(controller);
+    try {
+      await stopInlinePlayback(handle);
+      _emitPlaybackState(false);
+      if (!mounted || !identical(controller, _videoController)) return;
+      setState(() => _error = null);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Kunde inte stoppa videon.');
+    }
+  }
+
   Widget _wrapSurfaceInteraction(Widget child) {
     return VideoSurfaceTapTarget(
       focusNode: _surfaceFocusNode,
@@ -531,6 +604,29 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       semanticHint: _surfaceHint(),
       onActivate: _handleSurfaceToggle,
       child: child,
+    );
+  }
+
+  Widget _buildActivePlayerSurface(BuildContext context) {
+    final playerSurface = _useMediaKit
+        ? _buildMediaKitPlayer()
+        : _buildVideoPlayer(context);
+    if (!_showsControlOverlay) return playerSurface;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        playerSurface,
+        Positioned(
+          right: 12,
+          bottom: 12,
+          child: _InlineVideoControlOverlay(
+            isPlaying: _isCurrentlyPlaying(),
+            showStopButton: _showsStopButton,
+            onToggle: _handleControlToggle,
+            onStop: _handleControlStop,
+          ),
+        ),
+      ],
     );
   }
 
@@ -699,9 +795,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
 
     return _wrapWithBorder(
-      _wrapSurfaceInteraction(
-        _useMediaKit ? _buildMediaKitPlayer() : _buildVideoPlayer(context),
-      ),
+      _wrapSurfaceInteraction(_buildActivePlayerSurface(context)),
     );
   }
 
@@ -773,5 +867,56 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   Widget _wrapWithBorder(Widget child) {
     return ClipRRect(borderRadius: _borderRadius, child: child);
+  }
+}
+
+class _InlineVideoControlOverlay extends StatelessWidget {
+  const _InlineVideoControlOverlay({
+    required this.isPlaying,
+    required this.showStopButton,
+    required this.onToggle,
+    required this.onStop,
+  });
+
+  final bool isPlaying;
+  final bool showStopButton;
+  final VoidCallback onToggle;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final iconColor = theme.colorScheme.onSurface;
+    return FocusTraversalGroup(
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        opacity: 0.2,
+        sigmaX: 10,
+        sigmaY: 10,
+        borderRadius: BorderRadius.circular(999),
+        borderColor: Colors.white.withValues(alpha: 0.24),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: isPlaying ? 'Pausa' : 'Spela',
+              visualDensity: VisualDensity.compact,
+              onPressed: onToggle,
+              icon: Icon(
+                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: iconColor,
+              ),
+            ),
+            if (showStopButton)
+              IconButton(
+                tooltip: 'Stoppa',
+                visualDensity: VisualDensity.compact,
+                onPressed: onStop,
+                icon: Icon(Icons.stop_rounded, color: iconColor),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

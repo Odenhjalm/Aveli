@@ -198,7 +198,7 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
         final url = lessonMediaUrlFromEmbedValue(embed.value.data);
         if (url == null || url.isEmpty) return;
         final escaped = _htmlAttributeEscape.convert(url);
-        out.write('<video controls src="$escaped"></video>');
+        out.write('<video src="$escaped"></video>');
       },
     },
   );

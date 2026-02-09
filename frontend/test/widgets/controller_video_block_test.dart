@@ -40,6 +40,10 @@ void main() {
       expect(playback.isPlaying, isTrue);
       expect(playback.isPaused, isFalse);
       expect(find.byType(InlineVideoPlayer), findsOneWidget);
+      final player = tester.widget<InlineVideoPlayer>(
+        find.byType(InlineVideoPlayer),
+      );
+      expect(player.controlChrome, InlineVideoControlChrome.playPauseAndStop);
     },
   );
 }

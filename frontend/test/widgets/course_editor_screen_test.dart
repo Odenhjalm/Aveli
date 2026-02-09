@@ -117,7 +117,7 @@ void main() {
           'is_intro': true,
           'course_id': 'course-1',
           'content_markdown':
-              'Introtext\n\n<video controls src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
+              'Introtext\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
         },
       ],
     );
@@ -164,7 +164,7 @@ void main() {
             position: 1,
             isIntro: true,
             contentMarkdown:
-                'Introtext\n\n<video controls src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
+                'Introtext\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
           ),
         ],
       },

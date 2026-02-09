@@ -10,6 +10,7 @@ class _FakeInlinePlaybackHandle implements InlinePlaybackHandle {
   bool _isPlaying;
   int playCalls = 0;
   int pauseCalls = 0;
+  int seekToStartCalls = 0;
 
   @override
   bool get isPlaying => _isPlaying;
@@ -24,6 +25,11 @@ class _FakeInlinePlaybackHandle implements InlinePlaybackHandle {
   Future<void> pause() async {
     pauseCalls++;
     _isPlaying = false;
+  }
+
+  @override
+  Future<void> seekToStart() async {
+    seekToStartCalls++;
   }
 }
 
@@ -48,6 +54,18 @@ void main() {
     expect(handle.playCalls, 1);
     expect(playing, isTrue);
     expect(handle.isPlaying, isTrue);
+  });
+
+  test('stopInlinePlayback pauses and seeks to the beginning', () async {
+    final handle = _FakeInlinePlaybackHandle(isPlaying: true);
+
+    final playing = await stopInlinePlayback(handle);
+
+    expect(handle.pauseCalls, 1);
+    expect(handle.seekToStartCalls, 1);
+    expect(handle.playCalls, 0);
+    expect(playing, isFalse);
+    expect(handle.isPlaying, isFalse);
   });
 
   testWidgets('surface tap toggles play pause resume state', (tester) async {

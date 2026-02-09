@@ -150,6 +150,7 @@ class _EditorResolvedVideoBlock extends ConsumerWidget {
       mediaId: 'editor-embed-$resolved',
       url: resolved,
       title: 'Lektionsvideo',
+      controlChrome: InlineVideoControlChrome.playPauseAndStop,
       semanticLabel: 'Videoblock i lektionseditorn',
       semanticHint:
           'Tryck på spela-knappen för att förhandsgranska videon i editorn.',
@@ -1815,6 +1816,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 mediaId: mediaId != null && mediaId.isNotEmpty ? mediaId : url,
                 url: url,
                 title: label,
+                controlChrome: InlineVideoControlChrome.playPauseAndStop,
                 semanticLabel: 'Lektionsvideo i editorn',
                 semanticHint:
                     'Tryck på spela-knappen för att starta videoförhandsvisningen.',
