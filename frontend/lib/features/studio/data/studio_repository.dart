@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
@@ -169,6 +168,21 @@ class StudioRepository {
         cancelToken: cancelToken,
       );
     }
+
+    final mediaType = _detectUploadMediaType(contentType);
+    if (mediaType == 'video') {
+      return _uploadLessonMediaViaDirectPipeline(
+        lessonId: lessonId,
+        data: data,
+        filename: filename,
+        contentType: contentType,
+        isIntro: isIntro,
+        mediaType: mediaType!,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+    }
+
     final fields = <String, dynamic>{
       'lesson_id': lessonId,
       'file': MultipartFile.fromBytes(
@@ -180,7 +194,6 @@ class StudioRepository {
     if (courseId.isNotEmpty) {
       fields['course_id'] = courseId;
     }
-    final mediaType = _detectUploadMediaType(contentType);
     if (mediaType != null) {
       fields['type'] = mediaType;
     }
@@ -205,6 +218,75 @@ class StudioRepository {
       return Map<String, dynamic>.from(media);
     }
     return Map<String, dynamic>.from(payload);
+  }
+
+  Future<Map<String, dynamic>> _uploadLessonMediaViaDirectPipeline({
+    required String lessonId,
+    required Uint8List data,
+    required String filename,
+    required String contentType,
+    required bool isIntro,
+    required String mediaType,
+    void Function(UploadProgress progress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final presignBody = <String, dynamic>{
+      'filename': filename,
+      'content_type': contentType,
+      'media_type': mediaType,
+      'is_intro': isIntro,
+    };
+    final presign = await _client.post<Map<String, dynamic>>(
+      '/studio/lessons/$lessonId/media/presign',
+      body: presignBody,
+    );
+    final uploadUrlRaw = (presign['url'] as String?)?.trim() ?? '';
+    final storagePath = (presign['storage_path'] as String?)?.trim() ?? '';
+    final storageBucket = (presign['storage_bucket'] as String?)?.trim() ?? '';
+    final method = ((presign['method'] as String?) ?? 'PUT').toUpperCase();
+
+    if (uploadUrlRaw.isEmpty || storagePath.isEmpty || storageBucket.isEmpty) {
+      throw StateError('Ofullständigt svar från media-pipeline (presign).');
+    }
+    if (method != 'PUT') {
+      throw StateError('Ogiltig uppladdningsmetod: $method');
+    }
+
+    final headers = <String, String>{};
+    final rawHeaders = presign['headers'];
+    if (rawHeaders is Map) {
+      rawHeaders.forEach((key, value) {
+        final normalizedKey = key.toString().trim();
+        if (normalizedKey.isEmpty) return;
+        headers[normalizedKey] = value.toString();
+      });
+    }
+
+    final dio = Dio();
+    await dio.putUri<void>(
+      Uri.parse(uploadUrlRaw),
+      data: data,
+      options: Options(headers: headers),
+      cancelToken: cancelToken,
+      onSendProgress: (sent, total) {
+        if (onProgress == null) return;
+        final resolvedTotal = total > 0 ? total : data.length;
+        onProgress(UploadProgress(sent: sent, total: resolvedTotal));
+      },
+    );
+
+    final complete = await _client.post<Map<String, dynamic>>(
+      '/studio/lessons/$lessonId/media/complete',
+      body: {
+        'storage_path': storagePath,
+        'storage_bucket': storageBucket,
+        'content_type': contentType,
+        'byte_size': data.length,
+        'original_name': filename,
+        'is_intro': isIntro,
+      },
+    );
+    return Map<String, dynamic>.from(complete);
   }
 
   Future<Map<String, dynamic>> _uploadLessonWavViaPipeline({

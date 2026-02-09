@@ -91,6 +91,34 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
   }
 }
 
+class _VideoEmbedBuilder implements quill.EmbedBuilder {
+  const _VideoEmbedBuilder();
+
+  @override
+  String get key => quill.BlockEmbed.videoType;
+
+  @override
+  bool get expanded => false;
+
+  @override
+  WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
+
+  @override
+  String toPlainText(quill.Embed node) =>
+      quill.Embed.kObjectReplacementCharacter;
+
+  @override
+  Widget build(BuildContext context, quill.EmbedContext embedContext) {
+    final node = embedContext.node;
+    final dynamic value = node.value.data;
+    final url =
+        lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
+        (value == null ? '' : value.toString());
+    if (url.trim().isEmpty) return const SizedBox.shrink();
+    return InlineVideoPlayer(url: url.trim(), autoPlay: false, minimalUi: true);
+  }
+}
+
 enum _UploadKind { image, video, audio, pdf }
 
 class CourseEditorScreen extends ConsumerStatefulWidget {
@@ -1402,7 +1430,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             padding: const EdgeInsets.all(16),
             placeholder: 'Skriv eller klistra in lektionsinnehåll...',
             embedBuilders: [
-              ...FlutterQuillEmbeds.defaultEditorBuilders(),
+              ...FlutterQuillEmbeds.defaultEditorBuilders().where(
+                (builder) => builder.key != quill.BlockEmbed.videoType,
+              ),
+              const _VideoEmbedBuilder(),
               const _AudioEmbedBuilder(),
             ],
           ),
@@ -2391,7 +2422,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _insertVideoIntoLesson(String url, {TextSelection? targetSelection}) {
+  void _insertVideoIntoLesson(
+    String embedValue, {
+    TextSelection? targetSelection,
+  }) {
     final controller = _lessonContentController;
     if (controller == null) return;
     final docLength = controller.document.length;
@@ -2417,7 +2451,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     controller.replaceText(
       baseIndex,
       0,
-      quill.BlockEmbed.video(url),
+      quill.BlockEmbed.video(embedValue),
       TextSelection.collapsed(offset: baseIndex + 1),
     );
     controller.replaceText(
@@ -2535,13 +2569,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     if (kind == 'video' ||
         ((media['content_type'] as String?) ?? '').startsWith('video/')) {
-      if (resolved == null) {
-        if (mounted && context.mounted) {
-          showSnack(context, 'Kunde inte resolveda sökvägen för media.');
-        }
-        return;
-      }
-      _insertVideoIntoLesson(resolved, targetSelection: _lastLessonSelection);
+      final videoEmbedValue = lesson_pipeline
+          .videoBlockEmbedValueFromLessonMedia(
+            lessonMediaId: lessonMediaId,
+            src: resolved,
+          );
+      _insertVideoIntoLesson(
+        videoEmbedValue,
+        targetSelection: _lastLessonSelection,
+      );
       if (mounted && context.mounted) {
         showSnack(
           context,
