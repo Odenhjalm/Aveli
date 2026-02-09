@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
+from pathlib import Path
 
 import stripe
 from starlette.concurrency import run_in_threadpool
@@ -17,6 +19,7 @@ from ..repositories import (
     storage_objects,
 )
 from . import media_cleanup
+from ..services import storage_service
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
 from ..utils import media_robustness
@@ -449,6 +452,114 @@ async def list_lesson_media(
             existence=existence,
             storage_table_available=storage_table_available,
         )
+
+    public_bucket = settings.media_public_bucket
+
+    def _looks_like_public_bucket_url(url: str) -> bool:
+        normalized = url.strip()
+        if not normalized:
+            return False
+        if normalized.startswith(f"/api/files/{public_bucket}/"):
+            return True
+        if settings.supabase_url is None:
+            return False
+        base = settings.supabase_url.unicode_string().rstrip("/")
+        return normalized.startswith(
+            f"{base}/storage/v1/object/public/{public_bucket}/"
+        )
+
+    # Ensure public bucket URLs are aligned with the actual storage object key.
+    #
+    # When legacy rows store a bucket-prefixed key inside the bucket (eg
+    # public-media/public-media/...),
+    # `attach_media_links()` will strip the bucket prefix and emit a public URL
+    # that 404s in production. We have the storage.objects existence map here,
+    # so we can select the correct candidate key and fix the URL deterministically.
+    for item in items:
+        if item.get("media_asset_id"):
+            continue
+        storage_path = item.get("storage_path")
+        if not storage_path:
+            continue
+        storage_bucket = item.get("storage_bucket")
+        resolved_bucket, resolved_key, _, bytes_exist = _best_storage_candidate(
+            storage_bucket=str(storage_bucket) if storage_bucket is not None else None,
+            storage_path=str(storage_path),
+            existence=existence,
+            storage_table_available=storage_table_available,
+        )
+        if bytes_exist is not True or not resolved_bucket or not resolved_key:
+            continue
+
+        playback_url = item.get("playback_url")
+        download_url = item.get("download_url")
+        signed_url = item.get("signed_url")
+
+        if resolved_bucket == public_bucket:
+            try:
+                public_url = storage_service.get_storage_service(
+                    resolved_bucket
+                ).public_url(resolved_key)
+            except storage_service.StorageServiceError:
+                public_url = None
+
+            if public_url:
+                item["download_url"] = public_url
+                item["playback_url"] = public_url
+            elif isinstance(signed_url, str) and signed_url.strip():
+                # Supabase URL missing/misconfigured; prefer signed streaming to avoid a broken public link.
+                item["playback_url"] = signed_url
+                if isinstance(download_url, str) and _looks_like_public_bucket_url(download_url):
+                    item["download_url"] = signed_url
+            continue
+
+        # Not a public bucket candidate. If we accidentally emitted a public-media URL due to
+        # bucket/path drift, force playback to the signed stream (which already tries candidates).
+        if isinstance(playback_url, str) and _looks_like_public_bucket_url(playback_url):
+            if isinstance(signed_url, str) and signed_url.strip():
+                item["playback_url"] = signed_url
+        if isinstance(download_url, str) and _looks_like_public_bucket_url(download_url):
+            if isinstance(signed_url, str) and signed_url.strip():
+                item["download_url"] = signed_url
+            else:
+                item.pop("download_url", None)
+
+    async def _attach_pipeline_playback_url(item: dict[str, Any]) -> None:
+        if not item.get("media_asset_id"):
+            return
+        if item.get("playback_url"):
+            return
+        if item.get("kind") != "audio":
+            return
+        if item.get("resolvable_for_editor") is not True:
+            return
+
+        bucket = (item.get("storage_bucket") or "").strip() or None
+        path = item.get("storage_path")
+        resolved_bucket, resolved_key, _, bytes_exist = _best_storage_candidate(
+            storage_bucket=bucket,
+            storage_path=str(path) if path is not None else None,
+            existence=existence,
+            storage_table_available=storage_table_available,
+        )
+        if bytes_exist is not True or not resolved_bucket or not resolved_key:
+            return
+
+        storage_client = storage_service.get_storage_service(resolved_bucket)
+        try:
+            presigned = await storage_client.get_presigned_url(
+                resolved_key,
+                ttl=settings.media_playback_url_ttl_seconds,
+                filename=Path(resolved_key).name,
+                download=False,
+            )
+        except storage_service.StorageServiceError:
+            return
+        item["playback_url"] = presigned.url
+
+    pipeline_items = [item for item in items if item.get("media_asset_id")]
+    if pipeline_items:
+        await asyncio.gather(*[_attach_pipeline_playback_url(item) for item in pipeline_items])
     return items
 
 

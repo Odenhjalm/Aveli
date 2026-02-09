@@ -14,8 +14,10 @@ from ..auth import CurrentUser
 from ..config import settings
 from ..repositories import courses as courses_repo
 from ..repositories import media_resolution_failures
+from ..repositories import storage_objects
 from ..services import storage_service
 from ..utils.http_headers import build_content_disposition
+from ..utils import media_robustness
 from ..utils.media_signer import (
     MediaTokenError,
     issue_signed_url,
@@ -115,6 +117,77 @@ def _recommended_action_for_reason(reason: str | None) -> str:
     return "manual_review"
 
 
+async def _augment_failure_details_with_invariant(
+    *,
+    row: dict,
+    mode: str | None,
+    storage_bucket: str | None,
+    storage_path: str,
+    details: dict,
+) -> dict:
+    """Attach invariant diagnostics when a resolvable media ref yields no bytes.
+
+    This is best-effort: failures must never affect the HTTP response.
+    """
+
+    try:
+        kind = row.get("kind")
+        supported_kind = (
+            media_robustness.normalize_media_kind(kind)
+            in media_robustness.SUPPORTED_MEDIA_KINDS
+        )
+        if not supported_kind:
+            return details
+
+        candidates = _storage_candidates(
+            storage_bucket=storage_bucket,
+            storage_path=str(storage_path),
+        )
+        if not candidates:
+            return details
+
+        existence, storage_table_available = (
+            await storage_objects.fetch_storage_object_existence(candidates)
+        )
+        if not storage_table_available:
+            return details
+
+        exists_pairs = [
+            {"bucket": b, "key": k}
+            for b, k in candidates
+            if existence.get((b, k), False)
+        ]
+        if not exists_pairs:
+            return details
+
+        details = dict(details or {})
+        details.setdefault("candidates", [{"bucket": b, "key": k} for b, k in candidates])
+        details["invariant_resolvable_expected"] = True
+        details["invariant_supported_kind"] = True
+        details["invariant_mode"] = media_resolution_failures.normalize_mode(mode)
+        details["invariant_existing_pairs"] = exists_pairs
+
+        logger.error(
+            "Media invariant violated: bytes expected but not retrievable "
+            "media_id=%s kind=%s storage_bucket=%s storage_path=%s mode=%s existing_pairs=%s",
+            row.get("id"),
+            kind,
+            storage_bucket,
+            storage_path,
+            details.get("invariant_mode"),
+            exists_pairs,
+        )
+        return details
+    except Exception:  # pragma: no cover - defensive logging
+        logger.exception(
+            "Failed to attach invariant diagnostics for media_id=%s storage_bucket=%s storage_path=%s",
+            row.get("id"),
+            storage_bucket,
+            storage_path,
+        )
+        return details
+
+
 async def _build_streaming_response(
     row: dict,
     request: Request,
@@ -162,16 +235,24 @@ async def _build_streaming_response(
                 storage_bucket=bucket,
                 storage_path=str(storage_path),
             )
+            details = {
+                "storage_bucket": bucket,
+                "storage_path": storage_path,
+                "storage_enabled": False,
+                "recommended_action": "manual_review",
+            }
+            details = await _augment_failure_details_with_invariant(
+                row=row,
+                mode=normalized_mode,
+                storage_bucket=bucket,
+                storage_path=str(storage_path),
+                details=details,
+            )
             await media_resolution_failures.record_media_resolution_failure(
                 lesson_media_id=lesson_media_id,
                 mode=normalized_mode,
                 reason=failure_reason,
-                details={
-                    "storage_bucket": bucket,
-                    "storage_path": storage_path,
-                    "storage_enabled": False,
-                    "recommended_action": "manual_review",
-                },
+                details=details,
             )
             raise HTTPException(status_code=404, detail="File missing")
 
@@ -222,22 +303,30 @@ async def _build_streaming_response(
                 storage_bucket=bucket,
                 storage_path=str(storage_path),
             )
+            details = {
+                "storage_bucket": bucket,
+                "storage_path": storage_path,
+                "candidates": [
+                    {"bucket": b, "key": k}
+                    for b, k in _storage_candidates(
+                        storage_bucket=bucket,
+                        storage_path=str(storage_path),
+                    )
+                ],
+                "recommended_action": _recommended_action_for_reason(failure_reason),
+            }
+            details = await _augment_failure_details_with_invariant(
+                row=row,
+                mode=normalized_mode,
+                storage_bucket=bucket,
+                storage_path=str(storage_path),
+                details=details,
+            )
             await media_resolution_failures.record_media_resolution_failure(
                 lesson_media_id=lesson_media_id,
                 mode=normalized_mode,
                 reason=failure_reason,
-                details={
-                    "storage_bucket": bucket,
-                    "storage_path": storage_path,
-                    "candidates": [
-                        {"bucket": b, "key": k}
-                        for b, k in _storage_candidates(
-                            storage_bucket=bucket,
-                            storage_path=str(storage_path),
-                        )
-                    ],
-                    "recommended_action": _recommended_action_for_reason(failure_reason),
-                },
+                details=details,
             )
             raise HTTPException(status_code=404, detail="File missing") from None
         except storage_service.StorageServiceError as exc:
@@ -308,18 +397,26 @@ async def _build_streaming_response(
                     storage_bucket=bucket,
                     storage_path=str(storage_path),
                 )
+                details = {
+                    "storage_bucket": bucket,
+                    "storage_path": storage_path,
+                    "status_code": status_code,
+                    "recommended_action": _recommended_action_for_reason(
+                        failure_reason
+                    ),
+                }
+                details = await _augment_failure_details_with_invariant(
+                    row=row,
+                    mode=normalized_mode,
+                    storage_bucket=bucket,
+                    storage_path=str(storage_path),
+                    details=details,
+                )
                 await media_resolution_failures.record_media_resolution_failure(
                     lesson_media_id=lesson_media_id,
                     mode=normalized_mode,
                     reason=failure_reason,
-                    details={
-                        "storage_bucket": bucket,
-                        "storage_path": storage_path,
-                        "status_code": status_code,
-                        "recommended_action": _recommended_action_for_reason(
-                            failure_reason
-                        ),
-                    },
+                    details=details,
                 )
                 raise HTTPException(status_code=404, detail="File missing") from None
             await media_resolution_failures.record_media_resolution_failure(
