@@ -626,6 +626,7 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
     }
 
     return LessonVideoBlock(
+      key: ValueKey<String>('lesson-embed-video-$resolved'),
       url: resolved,
       semanticLabel: 'Videoblock i lektionen',
       semanticHint: 'Tryck på spela-knappen för att starta lektionsvideon.',
@@ -857,6 +858,7 @@ class _MediaItem extends ConsumerWidget {
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: LessonVideoBlock(
+              key: ValueKey<String>('lesson-media-video-${item.id}'),
               url: url,
               title: _fileName,
               autoPlay: false,

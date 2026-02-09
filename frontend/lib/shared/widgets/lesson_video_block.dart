@@ -5,10 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 
-const Key lessonVideoBlockContainerKey = Key('lesson_video_block_container');
-const Key lessonVideoBlockSurfaceKey = Key('lesson_video_block_surface');
-const Key lessonVideoBlockPlayerKey = Key('lesson_video_block_player');
-
 class LessonVideoBlock extends StatelessWidget {
   const LessonVideoBlock({
     super.key,
@@ -18,6 +14,9 @@ class LessonVideoBlock extends StatelessWidget {
     this.minimalUi = false,
     this.semanticLabel,
     this.semanticHint,
+    this.containerKey,
+    this.surfaceKey,
+    this.playerKey,
   });
 
   final String url;
@@ -26,6 +25,9 @@ class LessonVideoBlock extends StatelessWidget {
   final bool minimalUi;
   final String? semanticLabel;
   final String? semanticHint;
+  final Key? containerKey;
+  final Key? surfaceKey;
+  final Key? playerKey;
 
   static const double _desktopBreakpoint = 960;
   static const double _desktopMaxWidth = 920;
@@ -56,7 +58,7 @@ class LessonVideoBlock extends StatelessWidget {
           return Align(
             alignment: Alignment.center,
             child: ConstrainedBox(
-              key: lessonVideoBlockContainerKey,
+              key: containerKey,
               constraints: BoxConstraints(
                 minWidth: 0,
                 maxWidth: constrainedMaxWidth,
@@ -66,7 +68,7 @@ class LessonVideoBlock extends StatelessWidget {
                 label: label,
                 hint: semanticHint ?? fallbackHint,
                 child: DecoratedBox(
-                  key: lessonVideoBlockSurfaceKey,
+                  key: surfaceKey,
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface.withValues(alpha: 0.72),
                     borderRadius: br16,
@@ -79,7 +81,7 @@ class LessonVideoBlock extends StatelessWidget {
                   child: Padding(
                     padding: p8,
                     child: InlineVideoPlayer(
-                      key: lessonVideoBlockPlayerKey,
+                      key: playerKey,
                       url: url,
                       title: title,
                       autoPlay: autoPlay,

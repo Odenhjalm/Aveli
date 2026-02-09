@@ -4,7 +4,52 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/shared/widgets/media_player.dart';
 
+class _FakeInlinePlaybackHandle implements InlinePlaybackHandle {
+  _FakeInlinePlaybackHandle({required bool isPlaying}) : _isPlaying = isPlaying;
+
+  bool _isPlaying;
+  int playCalls = 0;
+  int pauseCalls = 0;
+
+  @override
+  bool get isPlaying => _isPlaying;
+
+  @override
+  Future<void> play() async {
+    playCalls++;
+    _isPlaying = true;
+  }
+
+  @override
+  Future<void> pause() async {
+    pauseCalls++;
+    _isPlaying = false;
+  }
+}
+
 void main() {
+  test('toggleInlinePlayback pauses an active controller instance', () async {
+    final handle = _FakeInlinePlaybackHandle(isPlaying: true);
+
+    final playing = await toggleInlinePlayback(handle);
+
+    expect(handle.pauseCalls, 1);
+    expect(handle.playCalls, 0);
+    expect(playing, isFalse);
+    expect(handle.isPlaying, isFalse);
+  });
+
+  test('toggleInlinePlayback resumes from paused position/state', () async {
+    final handle = _FakeInlinePlaybackHandle(isPlaying: false);
+
+    final playing = await toggleInlinePlayback(handle);
+
+    expect(handle.pauseCalls, 0);
+    expect(handle.playCalls, 1);
+    expect(playing, isTrue);
+    expect(handle.isPlaying, isTrue);
+  });
+
   testWidgets('surface tap toggles play pause resume state', (tester) async {
     var isPlaying = false;
 

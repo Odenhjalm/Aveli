@@ -6,6 +6,9 @@ import 'package:aveli/shared/widgets/media_player.dart';
 
 void main() {
   const sampleUrl = 'https://cdn.example.com/lesson.mp4';
+  const containerKey = Key('test_lesson_video_block_container');
+  const surfaceKey = Key('test_lesson_video_block_surface');
+  const playerKey = Key('test_lesson_video_block_player');
 
   testWidgets('renders responsive block container with shared video player', (
     tester,
@@ -19,7 +22,13 @@ void main() {
           body: Center(
             child: SizedBox(
               width: 1280,
-              child: LessonVideoBlock(url: sampleUrl, title: 'Demo'),
+              child: LessonVideoBlock(
+                url: sampleUrl,
+                title: 'Demo',
+                containerKey: containerKey,
+                surfaceKey: surfaceKey,
+                playerKey: playerKey,
+              ),
             ),
           ),
         ),
@@ -28,16 +37,16 @@ void main() {
 
     await tester.pump();
 
-    expect(find.byKey(lessonVideoBlockContainerKey), findsOneWidget);
-    expect(find.byKey(lessonVideoBlockSurfaceKey), findsOneWidget);
+    expect(find.byKey(containerKey), findsOneWidget);
+    expect(find.byKey(surfaceKey), findsOneWidget);
     expect(find.byType(InlineVideoPlayer), findsOneWidget);
     expect(find.text('Spela video'), findsOneWidget);
 
-    await tester.tap(find.byKey(lessonVideoBlockSurfaceKey));
+    await tester.tap(find.byKey(surfaceKey));
     await tester.pump();
     expect(find.text('Laddar ström...'), findsOneWidget);
 
-    final size = tester.getSize(find.byKey(lessonVideoBlockContainerKey));
+    final size = tester.getSize(find.byKey(containerKey));
     expect(size.width, lessThanOrEqualTo(920));
     expect(size.width, greaterThan(880));
   });
@@ -54,7 +63,12 @@ void main() {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Ovanför'),
-                LessonVideoBlock(url: sampleUrl),
+                LessonVideoBlock(
+                  url: sampleUrl,
+                  containerKey: containerKey,
+                  surfaceKey: surfaceKey,
+                  playerKey: playerKey,
+                ),
                 Text('Nedanför'),
               ],
             ),
@@ -66,12 +80,8 @@ void main() {
     await tester.pump();
 
     final topTextBottom = tester.getBottomLeft(find.text('Ovanför')).dy;
-    final blockTop = tester
-        .getTopLeft(find.byKey(lessonVideoBlockContainerKey))
-        .dy;
-    final blockBottom = tester
-        .getBottomLeft(find.byKey(lessonVideoBlockContainerKey))
-        .dy;
+    final blockTop = tester.getTopLeft(find.byKey(containerKey)).dy;
+    final blockBottom = tester.getBottomLeft(find.byKey(containerKey)).dy;
     final bottomTextTop = tester.getTopLeft(find.text('Nedanför')).dy;
 
     expect(blockTop, greaterThan(topTextBottom));
@@ -88,6 +98,9 @@ void main() {
           home: Scaffold(
             body: LessonVideoBlock(
               url: sampleUrl,
+              containerKey: containerKey,
+              surfaceKey: surfaceKey,
+              playerKey: playerKey,
               semanticLabel: 'Videoblock i lektionseditorn',
               semanticHint: 'Aktivera med Enter eller mellanslag.',
             ),
@@ -97,9 +110,7 @@ void main() {
 
       await tester.pump();
 
-      final semanticsNode = tester.getSemantics(
-        find.byKey(lessonVideoBlockSurfaceKey),
-      );
+      final semanticsNode = tester.getSemantics(find.byKey(surfaceKey));
       expect(semanticsNode.label, contains('Videoblock i lektionseditorn'));
       expect(
         semanticsNode.hint,
@@ -119,7 +130,12 @@ void main() {
           body: ListView(
             children: [
               InlineVideoPlayer(url: sampleUrl),
-              LessonVideoBlock(url: sampleUrl),
+              LessonVideoBlock(
+                url: sampleUrl,
+                containerKey: containerKey,
+                surfaceKey: surfaceKey,
+                playerKey: playerKey,
+              ),
             ],
           ),
         ),
