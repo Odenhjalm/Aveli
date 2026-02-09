@@ -27,6 +27,7 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
+import 'package:aveli/shared/widgets/lesson_video_block.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_resolution_mode.dart';
@@ -90,6 +91,97 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
     return InlineAudioPlayer(url: url);
+  }
+}
+
+class _EditorVideoEmbedBuilder implements quill.EmbedBuilder {
+  const _EditorVideoEmbedBuilder();
+
+  @override
+  String get key => quill.BlockEmbed.videoType;
+
+  @override
+  bool get expanded => true;
+
+  @override
+  WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
+
+  @override
+  String toPlainText(quill.Embed node) =>
+      quill.Embed.kObjectReplacementCharacter;
+
+  @override
+  Widget build(BuildContext context, quill.EmbedContext embedContext) {
+    final dynamic value = embedContext.node.value.data;
+    final url =
+        lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
+        (value == null ? '' : value.toString());
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      return const _EditorVideoFallback();
+    }
+    return _EditorResolvedVideoBlock(url: trimmed);
+  }
+}
+
+class _EditorResolvedVideoBlock extends ConsumerWidget {
+  const _EditorResolvedVideoBlock({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mediaRepository = ref.watch(mediaRepositoryProvider);
+    var resolved = url;
+    try {
+      resolved = mediaRepository.resolveUrl(url);
+    } catch (_) {
+      // Keep the raw URL when the resolver cannot normalize it.
+    }
+
+    final uri = Uri.tryParse(resolved);
+    if (uri != null && uri.path.startsWith('/studio/media/')) {
+      return const _EditorVideoFallback();
+    }
+
+    return LessonVideoBlock(
+      url: resolved,
+      title: 'Lektionsvideo',
+      semanticLabel: 'Videoblock i lektionseditorn',
+      semanticHint:
+          'Tryck på spela-knappen för att förhandsgranska videon i editorn.',
+    );
+  }
+}
+
+class _EditorVideoFallback extends StatelessWidget {
+  const _EditorVideoFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.errorContainer.withValues(alpha: 0.36),
+          borderRadius: br12,
+          border: Border.all(
+            color: theme.colorScheme.error.withValues(alpha: 0.32),
+          ),
+        ),
+        child: Padding(
+          padding: p12,
+          child: Text(
+            'Videon saknas eller kan inte förhandsvisas i editorn.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onErrorContainer,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1414,7 +1506,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             padding: const EdgeInsets.all(16),
             placeholder: 'Skriv eller klistra in lektionsinnehåll...',
             embedBuilders: [
-              ...FlutterQuillEmbeds.defaultEditorBuilders(),
+              const _EditorVideoEmbedBuilder(),
+              ...FlutterQuillEmbeds.defaultEditorBuilders().where(
+                (builder) => builder.key != quill.BlockEmbed.videoType,
+              ),
               const _AudioEmbedBuilder(),
             ],
           ),
@@ -1700,11 +1795,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: br16,
-                child: InlineVideoPlayer(url: url, title: label),
+              LessonVideoBlock(
+                url: url,
+                title: label,
+                semanticLabel: 'Lektionsvideo i editorn',
+                semanticHint:
+                    'Tryck på spela-knappen för att starta videoförhandsvisningen.',
               ),
-              const SizedBox(height: 8),
+              gap8,
               Row(
                 children: [
                   Chip(

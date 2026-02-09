@@ -3,7 +3,7 @@ Aveli – Statusöversikt
 - DB-reset: Idempotenta reparationer och säkra DROP/ALTER i `scripts/reset_backend.sh` fixar bl.a. saknad `order_id`, `body`-kolumnfel, säkra view-drops (`service_reviews` m.fl.) samt skydd mot dubblett-index/constraints.
 - Alembic: Ej i bruk. SQL-fallback i migrations och reset-skript (sekventiellt, säkra guards) är införda.
 - Auth: Passlib/bcrypt-varning eliminerad – `bcrypt` är pinnad till `<4` i `backend/pyproject.toml` och uppdaterad i `poetry.lock`.
-- Editor/Media: Robust MIME-detektion via `package:mime`; auto-insert för bild/video/ljud efter upload; inline-ljudspelare (Quill custom embed + builder) och videoembed-hjälpare.
+- Editor/Media: Robust MIME-detektion via `package:mime`; auto-insert för bild/video/ljud efter upload; inline-ljudspelare (Quill custom embed + builder) samt block-renderad lektionsvideo i editor/studentvy via samma `InlineVideoPlayer`-komponent som Home (responsiv layout + semantiketiketter).
 - Android bilder: Förbättrad robusthet. `AppAvatar` (cirkulär nätbild med fallback), `CourseCard` och `ServiceCard` använder `errorBuilder` + tydlig placeholder. `CoursesGrid` hade redan gradient-fallback. Nästa steg: inventera ev. cleartext/HTTPS och auth-skyddade bild-URL:er. HTTPS-policy sammanfattad nedan.
 - Import av kursinnehåll: `scripts/import_course.py` + manifest (YAML/JSON). Stöd för `cover_path` och flaggan `--create-assets-lesson` som lägger omslag i separat modul/lektion (`_Assets`/`_Course Assets`). Studentvyn döljer moduler/lektioner vars titel börjar med `_`.
 - Filväljare (web): Chrome-racefix (fokusfördröjning) för att undvika “no file selected”.

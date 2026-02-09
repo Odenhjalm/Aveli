@@ -20,6 +20,7 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/widgets/lesson_video_block.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
@@ -115,6 +116,8 @@ void main() {
           'position': 1,
           'is_intro': true,
           'course_id': 'course-1',
+          'content_markdown':
+              'Introtext\n\n<video controls src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
         },
       ],
     );
@@ -160,7 +163,8 @@ void main() {
             title: 'Välkommen',
             position: 1,
             isIntro: true,
-            contentMarkdown: null,
+            contentMarkdown:
+                'Introtext\n\n<video controls src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
           ),
         ],
       },
@@ -231,6 +235,7 @@ void main() {
     expect(find.text('Ladda upp WAV'), findsOneWidget);
     expect(find.text('material.pdf'), findsOneWidget);
     expect(find.text('processing'), findsOneWidget);
+    expect(find.byType(LessonVideoBlock), findsWidgets);
     expect(find.byIcon(Icons.error_outline), findsNothing);
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(
@@ -654,7 +659,11 @@ void main() {
       expect(find.textContaining('Förhandsvisning blockerad'), findsOneWidget);
 
       final brokenTile = tester.widget<ListTile>(
-        find.ancestor(of: find.text('broken.mp4'), matching: find.byType(ListTile))
+        find
+            .ancestor(
+              of: find.text('broken.mp4'),
+              matching: find.byType(ListTile),
+            )
             .first,
       );
       expect(brokenTile.onTap, isNull);
@@ -662,7 +671,10 @@ void main() {
       final insertButton = tester.widget<IconButton>(
         find.descendant(
           of: find
-              .ancestor(of: find.text('ok.png'), matching: find.byType(ListTile))
+              .ancestor(
+                of: find.text('ok.png'),
+                matching: find.byType(ListTile),
+              )
               .first,
           matching: find.widgetWithIcon(
             IconButton,
