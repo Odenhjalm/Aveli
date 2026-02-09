@@ -286,6 +286,7 @@ Recommended order: **C → B**, with A only as a last resort.
 
 ## Canary checklist (before deploy)
 
+- Media changes MUST comply with `docs/MEDIA_CONTRACT_v1.md`.
 - Old image (uploaded before fixes) can be inserted into a lesson (Studio).
 - Old image renders in Studio preview.
 - Old image renders in student view.
