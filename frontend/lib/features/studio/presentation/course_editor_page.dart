@@ -2612,7 +2612,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _insertVideoIntoLesson(String url, {TextSelection? targetSelection}) {
+  void _insertVideoIntoLesson(
+    String embedValue, {
+    TextSelection? targetSelection,
+  }) {
     final controller = _lessonContentController;
     if (controller == null) return;
     final docLength = controller.document.length;
@@ -2638,7 +2641,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     controller.replaceText(
       baseIndex,
       0,
-      quill.BlockEmbed.video(url),
+      quill.BlockEmbed.video(embedValue),
       TextSelection.collapsed(offset: baseIndex + 1),
     );
     controller.replaceText(
@@ -2770,7 +2773,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         }
         return false;
       }
-      _insertVideoIntoLesson(resolved, targetSelection: _lastLessonSelection);
+      final videoEmbedValue = lesson_pipeline
+          .videoBlockEmbedValueFromLessonMedia(
+            lessonMediaId: lessonMediaId,
+            src: resolved,
+          );
+      _insertVideoIntoLesson(
+        videoEmbedValue,
+        targetSelection: _lastLessonSelection,
+      );
       if (mounted && context.mounted) {
         showSnack(
           context,
