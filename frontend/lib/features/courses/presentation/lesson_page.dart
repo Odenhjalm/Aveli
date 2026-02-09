@@ -15,14 +15,13 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
-import 'package:aveli/features/media/application/media_playback_controller.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_resolution_mode.dart';
-import 'package:aveli/features/media/presentation/controller_video_block.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/app_network_image.dart';
+import 'package:aveli/shared/widgets/aveli_video_player.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -42,16 +41,10 @@ class LessonPage extends ConsumerStatefulWidget {
 
 class _LessonPageState extends ConsumerState<LessonPage> {
   ProviderSubscription<AsyncValue<LessonDetailData>>? _lessonSub;
-  late final MediaPlaybackController _playbackController;
 
   @override
   void initState() {
     super.initState();
-    _playbackController = ref.read(mediaPlaybackControllerProvider.notifier);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _playbackController.stop();
-    });
     _lessonSub = ref.listenManual<AsyncValue<LessonDetailData>>(
       lessonDetailProvider(widget.lessonId),
       (previous, next) {
@@ -62,7 +55,6 @@ class _LessonPageState extends ConsumerState<LessonPage> {
 
   @override
   void dispose() {
-    scheduleMicrotask(_playbackController.stop);
     _lessonSub?.close();
     super.dispose();
   }
@@ -637,22 +629,31 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
       return const _MissingMediaFallback();
     }
     final mediaId = lessonMediaId?.trim();
-
-    return ControllerVideoBlock(
-      key: ValueKey<String>('lesson-embed-video-$resolved'),
-      mediaId: 'lesson-embed-$resolved',
-      url: resolved,
-      playbackUrlLoader: !isAuthenticated || mediaId == null || mediaId.isEmpty
-          ? null
-          : () => resolveLessonMediaSignedPlaybackUrl(
-              lessonMediaId: mediaId,
-              mediaRepository: repo,
-              mode: MediaResolutionMode.studentRender,
-            ),
-      controlsMode: InlineVideoControlsMode.lesson,
-      semanticLabel: 'Videoblock i lektionen',
-      semanticHint:
-          'Tryck på videoytan för att spela eller pausa lektionsvideon.',
+    final playbackFuture =
+        !isAuthenticated || mediaId == null || mediaId.isEmpty
+        ? Future<String?>.value(resolved)
+        : resolveLessonMediaSignedPlaybackUrl(
+            lessonMediaId: mediaId,
+            mediaRepository: repo,
+            mode: MediaResolutionMode.studentRender,
+          );
+    return FutureBuilder<String?>(
+      future: playbackFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+        final playbackUrl = snapshot.data?.trim() ?? '';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _LessonGlassMediaWrapper(
+            child: AveliVideoPlayer(playbackUrl: playbackUrl),
+          ),
+        );
+      },
     );
   }
 }
@@ -758,7 +759,6 @@ class _MediaItem extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mediaRepo = ref.watch(mediaRepositoryProvider);
     final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
-    final isAuthenticated = ref.watch(authControllerProvider).isAuthenticated;
     final extension = () {
       final name = _fileName;
       final index = name.lastIndexOf('.');
@@ -900,23 +900,8 @@ class _MediaItem extends ConsumerWidget {
           final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: ControllerVideoBlock(
-              key: ValueKey<String>('lesson-media-video-${item.id}'),
-              mediaId: item.id,
-              url: url,
-              playbackUrlLoader: !isAuthenticated
-                  ? null
-                  : () => resolveLessonMediaPlaybackUrl(
-                      item: item,
-                      mediaRepository: mediaRepo,
-                      pipelineRepository: pipelineRepo,
-                      mode: MediaResolutionMode.studentRender,
-                    ),
-              title: _fileName,
-              controlsMode: InlineVideoControlsMode.lesson,
-              semanticLabel: 'Videoblock: $_fileName',
-              semanticHint:
-                  'Tryck på videoytan för att spela eller pausa videon.',
+            child: _LessonGlassMediaWrapper(
+              child: AveliVideoPlayer(playbackUrl: url),
             ),
           );
         },
