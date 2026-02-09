@@ -139,10 +139,11 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
         can_access_media = True
 
     if can_access_media:
-        media_rows = await courses_service.list_lesson_media(lesson_id)
-        for item in media_rows:
-            _attach_media_links(item)
-            media.append(item)
+        media_rows = await courses_service.list_lesson_media(
+            lesson_id,
+            mode="student_render",
+        )
+        media.extend(media_rows)
     return {
         "lesson": lesson,
         "module": module,

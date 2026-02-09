@@ -114,8 +114,18 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
     final url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    if (url.trim().isEmpty) return const SizedBox.shrink();
-    return InlineVideoPlayer(url: url.trim(), autoPlay: false, minimalUi: true);
+    final trimmedUrl = url.trim();
+    if (trimmedUrl.isEmpty) return const SizedBox.shrink();
+    final playback = tryCreateVideoPlaybackState(
+      mediaId: 'editor-video-embed-${trimmedUrl.hashCode}',
+      url: trimmedUrl,
+      title: 'Lektionsvideo',
+      controlsMode: InlineVideoControlsMode.editor,
+      controlChrome: InlineVideoControlChrome.playPauseAndStop,
+      minimalUi: true,
+    );
+    if (playback == null) return const SizedBox.shrink();
+    return InlineVideoPlayer(playback: playback, autoPlay: false);
   }
 }
 
@@ -1700,15 +1710,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final isIntro =
         media['is_intro'] == true ||
         (media['storage_bucket'] as String?) == 'public-media';
+    final mediaId = (media['id'] as String?)?.trim();
+    final previewPlayback = tryCreateVideoPlaybackState(
+      mediaId: mediaId != null && mediaId.isNotEmpty
+          ? mediaId
+          : 'lesson-preview-${url.hashCode}',
+      url: url,
+      title: label,
+      controlsMode: InlineVideoControlsMode.editor,
+      controlChrome: InlineVideoControlChrome.playPauseAndStop,
+      minimalUi: true,
+    );
 
     return _SectionCard(
       title: 'Lektionsvideo',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (previewPlayback != null)
           ClipRRect(
             borderRadius: br16,
-            child: InlineVideoPlayer(url: url, title: label),
+            child: InlineVideoPlayer(playback: previewPlayback),
           ),
           const SizedBox(height: 8),
           Row(

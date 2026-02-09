@@ -11,10 +11,19 @@ def reset_settings(monkeypatch):
     original_secret = media_signer.settings.media_signing_secret
     original_ttl = media_signer.settings.media_signing_ttl_seconds
     original_legacy = media_signer.settings.media_allow_legacy_media
+    original_supabase_url = media_signer.settings.supabase_url
+    original_service_role = media_signer.settings.supabase_service_role_key
+    # Avoid env leakage: Supabase signing fallback uses service role when Supabase is configured.
+    monkeypatch.setattr(media_signer.settings, "supabase_url", None, raising=False)
+    monkeypatch.setattr(
+        media_signer.settings, "supabase_service_role_key", None, raising=False
+    )
     yield
     media_signer.settings.media_signing_secret = original_secret
     media_signer.settings.media_signing_ttl_seconds = original_ttl
     media_signer.settings.media_allow_legacy_media = original_legacy
+    media_signer.settings.supabase_url = original_supabase_url
+    media_signer.settings.supabase_service_role_key = original_service_role
 
 
 def test_attach_media_links_when_legacy_enabled(monkeypatch):
@@ -62,8 +71,37 @@ def test_attach_media_links_with_signing_secret(monkeypatch):
     assert "download_url" not in item
 
 
-def test_attach_media_links_prefers_api_files(monkeypatch):
+def test_attach_media_links_uses_supabase_public_url_when_configured(monkeypatch):
     monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
+
+    class _FakeUrl:
+        def __init__(self, value: str) -> None:
+            self._value = value
+
+        def unicode_string(self) -> str:
+            return self._value
+
+    monkeypatch.setattr(
+        media_signer.settings,
+        "supabase_url",
+        _FakeUrl("https://example.supabase.co"),
+        raising=False,
+    )
+
+    item = {
+        "id": "media42",
+        "storage_path": "public-media/courses/lesson-1/sample.png",
+        "storage_bucket": "public-media",
+    }
+    media_signer.attach_media_links(item)
+    url = item["download_url"]
+    assert url.startswith("https://example.supabase.co/storage/v1/object/public/public-media/")
+    assert "/api/files/" not in url
+
+
+def test_attach_media_links_falls_back_to_api_files_without_supabase(monkeypatch):
+    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
+    monkeypatch.setattr(media_signer.settings, "supabase_url", None, raising=False)
     item = {
         "id": "media42",
         "storage_path": "public-media/courses/lesson-1/sample.png",
@@ -99,3 +137,29 @@ def test_attach_cover_links_allows_public_media_path():
     }
     media_signer.attach_cover_links(course)
     assert course.get("cover_url") == "/api/files/public-media/courses/cover.jpg"
+
+
+def test_attach_cover_links_converts_api_files_cover_when_supabase_configured(monkeypatch):
+    class _FakeUrl:
+        def __init__(self, value: str) -> None:
+            self._value = value
+
+        def unicode_string(self) -> str:
+            return self._value
+
+    monkeypatch.setattr(
+        media_signer.settings,
+        "supabase_url",
+        _FakeUrl("https://example.supabase.co"),
+        raising=False,
+    )
+
+    course = {
+        "cover_url": "/api/files/public-media/courses/cover.jpg",
+    }
+    media_signer.attach_cover_links(course)
+    url = course.get("cover_url") or ""
+    assert url.startswith(
+        "https://example.supabase.co/storage/v1/object/public/public-media/"
+    )
+    assert "/api/files/" not in url

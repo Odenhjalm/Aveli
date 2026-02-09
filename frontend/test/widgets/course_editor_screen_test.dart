@@ -20,6 +20,8 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/features/media/presentation/controller_video_block.dart';
+import 'package:aveli/shared/widgets/media_player.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
 class _MockStudioRepository extends Mock implements StudioRepository {}
@@ -114,6 +116,8 @@ void main() {
           'position': 1,
           'is_intro': true,
           'course_id': 'course-1',
+          'content_markdown':
+              'Introtext\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
         },
       ],
     );
@@ -159,7 +163,8 @@ void main() {
             title: 'Välkommen',
             position: 1,
             isIntro: true,
-            contentMarkdown: null,
+            contentMarkdown:
+                'Introtext\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
           ),
         ],
       },
@@ -230,6 +235,7 @@ void main() {
     expect(find.text('Ladda upp WAV'), findsOneWidget);
     expect(find.text('material.pdf'), findsOneWidget);
     expect(find.text('processing'), findsOneWidget);
+    expect(find.byType(ControllerVideoBlock), findsWidgets);
     expect(find.byIcon(Icons.error_outline), findsNothing);
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(
@@ -487,6 +493,196 @@ void main() {
       expect(find.text('missing.pdf'), findsOneWidget);
       expect(find.text('failed'), findsOneWidget);
       expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen blocks preview for broken media without disabling valid inserts',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+
+      when(() => studioRepo.myCourses()).thenAnswer(
+        (_) async => [
+          {'id': 'course-1', 'title': 'Tarot Basics'},
+        ],
+      );
+      when(() => studioRepo.fetchStatus()).thenAnswer(
+        (_) async => const StudioStatus(
+          isTeacher: true,
+          verifiedCertificates: 1,
+          hasApplication: false,
+        ),
+      );
+      when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+        (_) async => {
+          'title': 'Tarot Basics',
+          'slug': 'tarot-basics',
+          'description': 'Lär dig läsa korten',
+          'price_amount_cents': 1200,
+          'is_free_intro': true,
+          'is_published': false,
+        },
+      );
+      when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
+        (_) async => [
+          {
+            'id': 'lesson-1',
+            'title': 'Välkommen',
+            'position': 1,
+            'is_intro': true,
+            'course_id': 'course-1',
+          },
+        ],
+      );
+      when(() => studioRepo.listLessonMedia('lesson-1')).thenAnswer(
+        (_) async => [
+          {
+            'id': 'media-broken',
+            'kind': 'video',
+            'storage_path': 'course-1/lesson-1/broken.mp4',
+            'storage_bucket': 'public-media',
+            'original_name': 'broken.mp4',
+            'position': 1,
+            'preview_blocked': true,
+            'resolvable_for_editor': false,
+            'issue_reason': 'missing_object',
+            'robustness_status': 'missing_bytes',
+          },
+          {
+            'id': 'media-ok',
+            'kind': 'image',
+            'storage_path': 'course-1/lesson-1/ok.png',
+            'storage_bucket': 'public-media',
+            'original_name': 'ok.png',
+            'position': 2,
+            'preview_blocked': false,
+            'resolvable_for_editor': true,
+            'download_url': 'https://cdn.test/ok.png',
+            'robustness_status': 'ok',
+          },
+        ],
+      );
+
+      final courseDetail = CourseDetailData(
+        course: const CourseSummary(
+          id: 'course-1',
+          slug: 'tarot-basics',
+          title: 'Tarot Basics',
+          description: 'Lär dig läsa korten',
+          coverUrl: null,
+          videoUrl: null,
+          isFreeIntro: true,
+          isPublished: true,
+          priceCents: 1200,
+        ),
+        modules: const [
+          CourseModule(id: 'module-1', title: 'Intro', position: 1),
+        ],
+        lessonsByModule: {
+          'module-1': const [
+            LessonSummary(
+              id: 'lesson-1',
+              title: 'Välkommen',
+              position: 1,
+              isIntro: true,
+              contentMarkdown: null,
+            ),
+          ],
+        },
+        freeConsumed: 0,
+        freeLimit: 3,
+        isEnrolled: false,
+        latestOrder: null,
+      );
+      when(
+        () => coursesRepo.fetchCourseDetailBySlug(any()),
+      ).thenAnswer((_) async => courseDetail);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost:8080',
+                stripePublishableKey: 'pk_test_stub',
+                stripeMerchantDisplayName: 'Test Merchant',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            backendAssetResolverProvider.overrideWith(
+              (ref) => TestBackendAssetResolver(),
+            ),
+            authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            coursesRepositoryProvider.overrideWithValue(coursesRepo),
+            studioStatusProvider.overrideWith(
+              (ref) async => const StudioStatus(
+                isTeacher: true,
+                verifiedCertificates: 1,
+                hasApplication: false,
+              ),
+            ),
+            studioUploadQueueProvider.overrideWith(
+              (ref) => _NoopUploadQueueNotifier(studioRepo),
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              FlutterQuillLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('en'), Locale('sv')],
+            home: CourseEditorScreen(
+              studioRepository: studioRepo,
+              coursesRepository: coursesRepo,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(find.text('broken.mp4'), findsOneWidget);
+      expect(find.text('ok.png'), findsOneWidget);
+
+      // Broken video items should never initialize an InlineVideoPlayer in the editor.
+      expect(find.byType(InlineVideoPlayer), findsNothing);
+      expect(find.textContaining('Förhandsvisning blockerad'), findsOneWidget);
+
+      final brokenTile = tester.widget<ListTile>(
+        find
+            .ancestor(
+              of: find.text('broken.mp4'),
+              matching: find.byType(ListTile),
+            )
+            .first,
+      );
+      expect(brokenTile.onTap, isNull);
+
+      final insertButton = tester.widget<IconButton>(
+        find.descendant(
+          of: find
+              .ancestor(
+                of: find.text('ok.png'),
+                matching: find.byType(ListTile),
+              )
+              .first,
+          matching: find.widgetWithIcon(
+            IconButton,
+            Icons.add_photo_alternate_outlined,
+          ),
+        ),
+      );
+      expect(insertButton.onPressed, isNotNull);
     },
   );
 

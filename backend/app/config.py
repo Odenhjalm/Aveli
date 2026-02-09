@@ -44,6 +44,25 @@ def _looks_like_supabase_host(hostname: str) -> bool:
     return "supabase" in host
 
 
+def _cors_origin_from_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "").lower().strip()
+    if scheme not in {"http", "https"}:
+        return None
+    hostname = (parsed.hostname or "").strip()
+    if not hostname:
+        return None
+    port = parsed.port
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        return f"{scheme}://{hostname}:{port}"
+    return f"{scheme}://{hostname}"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env", "../.env.local", ".env.local"),
@@ -223,6 +242,12 @@ class Settings(BaseSettings):
                     f"(APP_ENV={app_env or 'unset'}, target={target}). "
                     "Point DATABASE_URL to your local Postgres clone, or set AVELI_ALLOW_REMOTE_DB=1 to override."
                 )
+
+        frontend_origin = _cors_origin_from_url(self.frontend_base_url)
+        if frontend_origin:
+            existing = {origin.strip().lower() for origin in self.cors_allow_origins if origin}
+            if frontend_origin.strip().lower() not in existing:
+                self.cors_allow_origins.append(frontend_origin)
 
         return self
 

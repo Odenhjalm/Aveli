@@ -303,7 +303,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
           const Center(child: CircularProgressIndicator())
         else if (_error != null)
           Text(
-            'Kunde inte spela upp ljudet: $_error',
+            'Media saknas eller stöds inte längre',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),

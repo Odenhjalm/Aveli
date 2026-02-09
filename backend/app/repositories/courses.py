@@ -981,16 +981,36 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           ma.streaming_format,
           ma.codec,
           ma.error_message,
+          lmi.issue AS issue_reason,
+          lmi.details AS issue_details,
+          lmi.updated_at AS issue_updated_at,
           lm.created_at
         FROM app.lesson_media lm
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
         LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
+        LEFT JOIN app.lesson_media_issues lmi ON lmi.lesson_media_id = lm.id
         WHERE lm.lesson_id = %s
         ORDER BY lm.position
     """
-    async with get_conn() as cur:
-        await cur.execute(query, (lesson_id,))
-        return await cur.fetchall()
+    fallback_query = query.replace(
+        """
+          lmi.issue AS issue_reason,
+          lmi.details AS issue_details,
+          lmi.updated_at AS issue_updated_at,
+""",
+        "",
+    ).replace(
+        "\n        LEFT JOIN app.lesson_media_issues lmi ON lmi.lesson_media_id = lm.id",
+        "",
+    )
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(query, (lesson_id,))
+            except (errors.UndefinedTable, errors.UndefinedColumn):
+                await conn.rollback()
+                await cur.execute(fallback_query, (lesson_id,))
+            return await cur.fetchall()
 
 
 async def get_lesson_media_access_by_path(

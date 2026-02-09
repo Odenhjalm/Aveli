@@ -415,8 +415,10 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
         ? items.firstWhere((item) => item.id == activeId)
         : _resolveSelected(items);
 
-    final durationHint = (selected.durationSeconds ?? 0) > 0
-        ? Duration(seconds: selected.durationSeconds!)
+    final selectedDurationSeconds = selected.durationSeconds;
+    final durationHint =
+        selectedDurationSeconds != null && selectedDurationSeconds > 0
+        ? Duration(seconds: selectedDurationSeconds)
         : null;
 
     final mediaType = selected.kind == 'video'
@@ -426,7 +428,19 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
         playback.currentMediaId == selected.id &&
         playback.isPlaying &&
         playback.mediaType == mediaType;
-    final hasUrl = (playback.url ?? '').trim().isNotEmpty;
+    final activeUrl = playback.url?.trim();
+    final resolvedActiveUrl = activeUrl ?? '';
+    final hasUrl = resolvedActiveUrl.isNotEmpty;
+    final activeVideoPlayback = mediaType == MediaPlaybackType.video && hasUrl
+        ? tryCreateVideoPlaybackState(
+            mediaId: selected.id,
+            url: resolvedActiveUrl,
+            title: (playback.title ?? selected.displayTitle).trim(),
+            controlsMode: InlineVideoControlsMode.home,
+            controlChrome: InlineVideoControlChrome.hidden,
+            minimalUi: true,
+          )
+        : null;
     final showLoading = isActive && playback.isLoading;
 
     final (onPlay, statusMessage, canPlay, statusIsError) =
@@ -522,18 +536,14 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             const SizedBox(height: 12),
             if (mediaType == MediaPlaybackType.audio)
               InlineAudioPlayer(
-                url: playback.url!,
+                url: resolvedActiveUrl,
                 title: null,
                 durationHint: durationHint,
                 autoPlay: true,
                 compact: true,
               )
-            else
-              InlineVideoPlayer(
-                url: playback.url!,
-                title: selected.displayTitle,
-                autoPlay: true,
-              ),
+            else if (activeVideoPlayback != null)
+              InlineVideoPlayer(playback: activeVideoPlayback, autoPlay: true),
           ],
         ],
       ),
@@ -731,8 +741,9 @@ class _AudioRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final duration = (item.durationSeconds ?? 0) > 0
-        ? _formatDuration(Duration(seconds: item.durationSeconds!))
+    final durationSeconds = item.durationSeconds;
+    final duration = durationSeconds != null && durationSeconds > 0
+        ? _formatDuration(Duration(seconds: durationSeconds))
         : null;
     final border = BorderSide(
       color: isSelected

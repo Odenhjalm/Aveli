@@ -6,39 +6,17 @@
 3. Klienten laddar upp filen direkt till Supabase Storage via URL:en utan att proxas via backend (Flutter → `MediaService.uploadWithPresignedTarget`, Next.js → `uploadWithPresignedUrl`).
 4. När uppladdningen är klar anropas `POST /studio/lessons/:lesson_id/media/complete` med `storage_path`, `storage_bucket`, `content_type`, `byte_size` och `original_name` så att `app.lesson_media` uppdateras.
 
-## Storage-policy-exempel
-```sql
--- Allow teachers to upload to lesson_media using signed URLs
-create policy "lesson_media_upload" on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'lesson_media'
-    and auth.role() = 'authenticated'
-    and exists (
-      select 1 from app.profiles p
-      where p.user_id = auth.uid()
-        and p.role_v2 in ('teacher', 'admin')
-    )
-  );
-
--- Allow teachers/admins to read their own uploads
-create policy "lesson_media_read" on storage.objects
-  for select to authenticated
-  using (
-    bucket_id = 'lesson_media'
-    and (
-      owner = auth.uid()
-      or exists (
-        select 1 from app.teacher_lessons tl
-        where tl.lesson_media_path = storage.objects.name
-          and tl.teacher_id = auth.uid()
-      )
-    )
-  );
-```
+## Kontrakt (bucket + path)
+- Bucket styrs av backend:
+  - Default: `course-media` (privat).
+  - Intro-lektioner kan routas till `public-media` (publik) för CDN-servning.
+- `storage_path` är alltid bucket-relativ (ingen bucket-prefix i nyckeln).
+- Nyckelformat:
+  - `courses/<course_id>/lessons/<lesson_id>/<media_type>/<uuid>_<filename>`
+- WAV (`audio/wav`, `.wav`) stöds inte här och måste gå via WAV-ingest (`POST /api/media/upload-url`).
 
 ## Klientkrav
-- Alla PUT-anrop måste inkludera headers från `/media/presign`, särskilt `x-upsert` och `content-type`.
+- Alla PUT-anrop måste inkludera headers från `/studio/lessons/:lesson_id/media/presign`, särskilt `x-upsert` och `content-type`.
 - TTL för uppladdningar är 2 timmar; begär ny presign när popup öppnas.
 - Logga `storage_path` och associera med lektion/ägare via RPC efter lyckad uppladdning.
 

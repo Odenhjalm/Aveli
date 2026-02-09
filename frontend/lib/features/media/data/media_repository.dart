@@ -9,6 +9,8 @@ import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/env/app_config.dart';
 
+import 'media_resolution_mode.dart';
+
 class MediaSignedUrl {
   const MediaSignedUrl({
     required this.mediaId,
@@ -54,6 +56,7 @@ class MediaRepository {
 
   Future<MediaSignedUrl> signMedia(
     String mediaId, {
+    MediaResolutionMode mode = MediaResolutionMode.studentRender,
     Duration leeway = const Duration(seconds: 30),
   }) {
     final normalized = mediaId.trim();
@@ -61,27 +64,32 @@ class MediaRepository {
       throw ArgumentError('mediaId may not be empty');
     }
 
-    final cached = _signedUrlCache[normalized];
+    final cacheKey = '$normalized::${mode.apiValue}';
+    final cached = _signedUrlCache[cacheKey];
     if (cached != null && cached.isValid(leeway: leeway)) {
       return Future.value(cached);
     }
 
-    final pending = _signedUrlInflight[normalized];
+    final pending = _signedUrlInflight[cacheKey];
     if (pending != null) return pending;
 
-    final future = _signMedia(normalized);
-    _signedUrlInflight[normalized] = future;
-    future.whenComplete(() => _signedUrlInflight.remove(normalized));
+    final future = _signMedia(normalized, mode: mode);
+    _signedUrlInflight[cacheKey] = future;
+    future.whenComplete(() => _signedUrlInflight.remove(cacheKey));
     return future;
   }
 
-  Future<MediaSignedUrl> _signMedia(String mediaId) async {
+  Future<MediaSignedUrl> _signMedia(
+    String mediaId, {
+    required MediaResolutionMode mode,
+  }) async {
     final response = await _client.post<Map<String, dynamic>>(
       ApiPaths.mediaSign,
-      body: {'media_id': mediaId},
+      body: {'media_id': mediaId, 'mode': mode.apiValue},
     );
     final signed = MediaSignedUrl.fromJson(response);
-    _signedUrlCache[mediaId] = signed;
+    final cacheKey = '$mediaId::${mode.apiValue}';
+    _signedUrlCache[cacheKey] = signed;
     return signed;
   }
 
@@ -106,9 +114,10 @@ class MediaRepository {
 
   /// Resolve a relative download path to an absolute URL based on the API base.
   String resolveUrl(String downloadPath) {
-    final normalized = _normalizeDownloadPath(downloadPath);
+    final target = _normalizeDownloadTarget(downloadPath);
+    if (target.isAbsolute) return target.path;
     final base = Uri.parse(_config.apiBaseUrl);
-    return base.resolve(normalized).toString();
+    return base.resolve(target.path).toString();
   }
 
   /// Download a media asset (if needed) and return the cached file on disk.
@@ -123,14 +132,15 @@ class MediaRepository {
       );
     }
 
-    final normalizedPath = _normalizeDownloadPath(downloadPath);
-    final key = '$cacheKey::$normalizedPath';
+    final target = _normalizeDownloadTarget(downloadPath);
+    final key = '$cacheKey::${target.path}';
     final pending = _inflight[key];
     if (pending != null) return pending;
 
     final future = _cacheMedia(
       cacheKey: key,
-      relativePath: normalizedPath,
+      requestPath: target.path,
+      skipAuth: target.skipAuth,
       fileExtension: fileExtension,
     );
     _inflight[key] = future;
@@ -140,7 +150,8 @@ class MediaRepository {
 
   Future<File> _cacheMedia({
     required String cacheKey,
-    required String relativePath,
+    required String requestPath,
+    required bool skipAuth,
     String? fileExtension,
   }) async {
     final dir = await _ensureCacheDir();
@@ -153,7 +164,7 @@ class MediaRepository {
       return file;
     }
 
-    final bytes = await _client.getBytes(relativePath);
+    final bytes = await _client.getBytes(requestPath, skipAuth: skipAuth);
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }
@@ -164,11 +175,14 @@ class MediaRepository {
     String? fileExtension,
   }) async {
     if (kIsWeb) {
-      final normalizedPath = _normalizeDownloadPath(downloadPath);
-      final key = '$cacheKey::$normalizedPath';
+      final target = _normalizeDownloadTarget(downloadPath);
+      final key = '$cacheKey::${target.path}';
       final existing = _memoryCache[key];
       if (existing != null) return existing;
-      final bytes = await _client.getBytes(normalizedPath);
+      final bytes = await _client.getBytes(
+        target.path,
+        skipAuth: target.skipAuth,
+      );
       _memoryCache[key] = bytes;
       return bytes;
     }
@@ -225,7 +239,7 @@ class MediaRepository {
     }
   }
 
-  String _normalizeDownloadPath(String input) {
+  _DownloadTarget _normalizeDownloadTarget(String input) {
     if (input.isEmpty) {
       throw ArgumentError('downloadPath may not be empty');
     }
@@ -238,16 +252,41 @@ class MediaRepository {
           uri.host == base.host &&
           uri.port == base.port;
       if (!sameOrigin) {
-        throw ArgumentError(
-          'downloadPath must target the configured API host.',
-        );
+        if (_isAllowedSupabaseUri(uri)) {
+          return _DownloadTarget(
+            path: uri.toString(),
+            skipAuth: true,
+            isAbsolute: true,
+          );
+        }
+        throw ArgumentError('downloadPath must target the configured API host.');
       }
       final path = uri.path.isEmpty ? '/' : uri.path;
       final query = uri.hasQuery ? '?${uri.query}' : '';
-      return '$path$query';
+      return _DownloadTarget(path: '$path$query', skipAuth: false);
     }
 
-    return input.startsWith('/') ? input : '/$input';
+    return _DownloadTarget(
+      path: input.startsWith('/') ? input : '/$input',
+      skipAuth: false,
+    );
+  }
+
+  bool _isAllowedSupabaseUri(Uri uri) {
+    final rawBase = _config.supabaseUrl.trim();
+    if (rawBase.isEmpty) return false;
+    final base = Uri.tryParse(rawBase);
+    if (base == null || base.host.isEmpty) return false;
+
+    final sameOrigin =
+        uri.scheme == base.scheme &&
+        uri.host == base.host &&
+        uri.port == base.port;
+    if (!sameOrigin) return false;
+
+    final normalizedPath = uri.path.trim();
+    if (!normalizedPath.startsWith('/storage/v1/')) return false;
+    return true;
   }
 
   String? _sanitizeExtension(String? input) {
@@ -255,4 +294,16 @@ class MediaRepository {
     final sanitized = input.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     return sanitized.isEmpty ? null : sanitized;
   }
+}
+
+class _DownloadTarget {
+  const _DownloadTarget({
+    required this.path,
+    required this.skipAuth,
+    this.isAbsolute = false,
+  });
+
+  final String path;
+  final bool skipAuth;
+  final bool isAbsolute;
 }

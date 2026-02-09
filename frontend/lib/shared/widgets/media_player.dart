@@ -1,13 +1,236 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:video_player/video_player.dart';
 
 import '../utils/media_kit_support.dart';
+import 'glass_card.dart';
 import 'inline_audio_player.dart';
 
 export 'inline_audio_player.dart';
+
+class _StopInlinePlaybackIntent extends Intent {
+  const _StopInlinePlaybackIntent();
+}
+
+@visibleForTesting
+class VideoSurfaceTapTarget extends StatelessWidget {
+  const VideoSurfaceTapTarget({
+    super.key,
+    required this.child,
+    required this.onActivate,
+    required this.semanticLabel,
+    required this.semanticHint,
+    this.focusNode,
+    this.onStop,
+  });
+
+  final Widget child;
+  final VoidCallback onActivate;
+  final String semanticLabel;
+  final String semanticHint;
+  final FocusNode? focusNode;
+  final VoidCallback? onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    final stop = onStop;
+    final shortcuts = <ShortcutActivator, Intent>{
+      const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
+      const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
+      if (stop != null)
+        const SingleActivator(LogicalKeyboardKey.keyS):
+            const _StopInlinePlaybackIntent(),
+    };
+    final actions = <Type, Action<Intent>>{
+      ActivateIntent: CallbackAction<ActivateIntent>(
+        onInvoke: (_) {
+          onActivate();
+          return null;
+        },
+      ),
+      if (stop != null)
+        _StopInlinePlaybackIntent: CallbackAction<_StopInlinePlaybackIntent>(
+          onInvoke: (_) {
+            stop();
+            return null;
+          },
+        ),
+    };
+    return FocusableActionDetector(
+      focusNode: focusNode,
+      shortcuts: shortcuts,
+      actions: actions,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Semantics(
+          button: true,
+          label: semanticLabel,
+          hint: semanticHint,
+          onTap: onActivate,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onActivate,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+abstract class InlinePlaybackHandle {
+  bool get isPlaying;
+  Future<void> play();
+  Future<void> pause();
+  Future<void> seekToStart();
+}
+
+@visibleForTesting
+Future<bool> toggleInlinePlayback(InlinePlaybackHandle handle) async {
+  if (handle.isPlaying) {
+    await handle.pause();
+  } else {
+    await handle.play();
+  }
+  return handle.isPlaying;
+}
+
+@visibleForTesting
+Future<bool> stopInlinePlayback(InlinePlaybackHandle handle) async {
+  await handle.pause();
+  await handle.seekToStart();
+  return handle.isPlaying;
+}
+
+enum InlineVideoControlChrome { hidden, playPause, playPauseAndStop }
+
+enum InlineVideoControlsMode { custom, home, lesson, editor }
+
+@visibleForTesting
+class InlineVideoControlsConfig {
+  const InlineVideoControlsConfig({
+    required this.minimalUi,
+    required this.controlChrome,
+  });
+
+  final bool minimalUi;
+  final InlineVideoControlChrome controlChrome;
+}
+
+@visibleForTesting
+InlineVideoControlsConfig resolveInlineVideoControls({
+  required InlineVideoControlsMode controlsMode,
+  required bool minimalUi,
+  required InlineVideoControlChrome controlChrome,
+}) {
+  switch (controlsMode) {
+    case InlineVideoControlsMode.home:
+      return const InlineVideoControlsConfig(
+        minimalUi: true,
+        controlChrome: InlineVideoControlChrome.hidden,
+      );
+    case InlineVideoControlsMode.lesson:
+    case InlineVideoControlsMode.editor:
+      return const InlineVideoControlsConfig(
+        minimalUi: true,
+        controlChrome: InlineVideoControlChrome.playPauseAndStop,
+      );
+    case InlineVideoControlsMode.custom:
+      return InlineVideoControlsConfig(
+        minimalUi: minimalUi,
+        controlChrome: controlChrome,
+      );
+  }
+}
+
+@immutable
+class VideoPlaybackState {
+  VideoPlaybackState({
+    required String mediaId,
+    required String url,
+    required String title,
+    required this.controlsMode,
+    required this.controlChrome,
+    required this.minimalUi,
+  }) : mediaId = mediaId.trim(),
+       url = url.trim(),
+       title = title.trim() {
+    if (this.mediaId.isEmpty) {
+      throw ArgumentError.value(mediaId, 'mediaId', 'must not be empty');
+    }
+    if (this.url.isEmpty) {
+      throw ArgumentError.value(url, 'url', 'must not be empty');
+    }
+  }
+
+  final String mediaId;
+  final String url;
+  final String title;
+  final InlineVideoControlsMode controlsMode;
+  final InlineVideoControlChrome controlChrome;
+  final bool minimalUi;
+}
+
+VideoPlaybackState? tryCreateVideoPlaybackState({
+  required String mediaId,
+  required String url,
+  required String title,
+  required InlineVideoControlsMode controlsMode,
+  required InlineVideoControlChrome controlChrome,
+  required bool minimalUi,
+}) {
+  final normalizedMediaId = mediaId.trim();
+  final normalizedUrl = url.trim();
+  if (normalizedMediaId.isEmpty || normalizedUrl.isEmpty) return null;
+  return VideoPlaybackState(
+    mediaId: normalizedMediaId,
+    url: normalizedUrl,
+    title: title,
+    controlsMode: controlsMode,
+    controlChrome: controlChrome,
+    minimalUi: minimalUi,
+  );
+}
+
+class _MediaKitPlaybackHandle implements InlinePlaybackHandle {
+  _MediaKitPlaybackHandle(this._player);
+
+  final mk.Player _player;
+
+  @override
+  bool get isPlaying => _player.state.playing;
+
+  @override
+  Future<void> play() => _player.play();
+
+  @override
+  Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> seekToStart() => _player.seek(Duration.zero);
+}
+
+class _VideoPlayerPlaybackHandle implements InlinePlaybackHandle {
+  _VideoPlayerPlaybackHandle(this._controller);
+
+  final VideoPlayerController _controller;
+
+  @override
+  bool get isPlaying => _controller.value.isPlaying;
+
+  @override
+  Future<void> play() => _controller.play();
+
+  @override
+  Future<void> pause() => _controller.pause();
+
+  @override
+  Future<void> seekToStart() => _controller.seekTo(Duration.zero);
+}
 
 Future<void> showMediaPlayerSheet(
   BuildContext context, {
@@ -49,10 +272,26 @@ Future<void> showMediaPlayerSheet(
                   durationHint: durationHint,
                   onDownload: downloadAction,
                 )
-              : InlineVideoPlayer(
-                  url: url,
-                  title: title,
-                  onDownload: downloadAction,
+              : Builder(
+                  builder: (context) {
+                    final playback = tryCreateVideoPlaybackState(
+                      mediaId: 'sheet-video-${url.hashCode}',
+                      url: url,
+                      title: title ?? '',
+                      controlsMode: InlineVideoControlsMode.custom,
+                      controlChrome: InlineVideoControlChrome.hidden,
+                      minimalUi: false,
+                    );
+                    if (playback == null) {
+                      return const Center(
+                        child: Text('Media saknas eller stöds inte längre'),
+                      );
+                    }
+                    return InlineVideoPlayer(
+                      playback: playback,
+                      onDownload: downloadAction,
+                    );
+                  },
                 ),
         ),
       );
@@ -63,18 +302,16 @@ Future<void> showMediaPlayerSheet(
 class InlineVideoPlayer extends StatefulWidget {
   const InlineVideoPlayer({
     super.key,
-    required this.url,
-    this.title,
+    required this.playback,
     this.onDownload,
+    this.onPlaybackStateChanged,
     this.autoPlay = false,
-    this.minimalUi = false,
   });
 
-  final String url;
-  final String? title;
+  final VideoPlaybackState playback;
   final Future<void> Function()? onDownload;
+  final ValueChanged<bool>? onPlaybackStateChanged;
   final bool autoPlay;
-  final bool minimalUi;
 
   @override
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
@@ -90,8 +327,13 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   mk.Player? _player;
   VideoController? _mediaVideoController;
   StreamSubscription<mk.VideoParams>? _videoParamsSub;
+  StreamSubscription<bool>? _mediaPlayingSub;
   Timer? _activationTimer;
+  final FocusNode _surfaceFocusNode = FocusNode(
+    debugLabel: 'inline_video_surface',
+  );
   double? _mediaAspectRatio;
+  bool _mediaKitPlaying = false;
   bool _activated = false;
   bool _initializing = false;
   bool _timedOut = false;
@@ -107,7 +349,8 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   @override
   void didUpdateWidget(covariant InlineVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.url != oldWidget.url) {
+    if (widget.playback.url != oldWidget.playback.url ||
+        widget.playback.mediaId != oldWidget.playback.mediaId) {
       setState(() {
         _resetControllers();
         _activated = false;
@@ -132,6 +375,10 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         _activate();
       }
     });
+  }
+
+  void _emitPlaybackState(bool isPlaying) {
+    widget.onPlaybackStateChanged?.call(isPlaying);
   }
 
   void _startActivationTimeout() {
@@ -166,13 +413,14 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _error = null;
       _timedOut = false;
       _mediaAspectRatio = null;
+      _mediaKitPlaying = false;
     });
     _startActivationTimeout();
     if (_useMediaKit) {
       unawaited(_prepareMediaKitPlayer());
     } else {
       _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(widget.url),
+        Uri.parse(widget.playback.url),
       );
       unawaited(_initVideoPlayer());
     }
@@ -195,6 +443,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   void _resetControllers() {
     _clearActivationTimeout();
+    _emitPlaybackState(false);
     final video = _videoController;
     _videoController = null;
     if (video != null) {
@@ -204,6 +453,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     _videoParamsSub = null;
     if (sub != null) {
       unawaited(sub.cancel());
+    }
+    final playingSub = _mediaPlayingSub;
+    _mediaPlayingSub = null;
+    if (playingSub != null) {
+      unawaited(playingSub.cancel());
     }
     final player = _player;
     _player = null;
@@ -244,6 +498,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await controller.initialize();
       await controller.setLooping(true);
       await controller.play();
+      _emitPlaybackState(true);
       if (!mounted) return;
       _clearActivationTimeout();
       setState(() {
@@ -267,15 +522,17 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     final controller = _mediaVideoController;
     if (player == null || controller == null) return;
     try {
-      await player.open(mk.Media(widget.url), play: true);
+      await player.open(mk.Media(widget.playback.url), play: true);
       await player.setPlaylistMode(mk.PlaylistMode.loop);
       await controller.waitUntilFirstFrameRendered;
+      _emitPlaybackState(player.state.playing);
       if (!mounted) return;
       _clearActivationTimeout();
       setState(() {
         _initializing = false;
         _error = null;
         _timedOut = false;
+        _mediaKitPlaying = player.state.playing;
       });
     } catch (error) {
       if (!mounted) return;
@@ -292,6 +549,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     final player = _player;
     if (player == null) return;
     _videoParamsSub = player.stream.videoParams.listen((params) {
+      if (!identical(player, _player)) return;
       final aspect = params.aspect;
       final width = params.dw ?? params.w;
       final height = params.dh ?? params.h;
@@ -306,12 +564,196 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       if (!mounted) return;
       setState(() => _mediaAspectRatio = computed);
     });
+    _mediaPlayingSub = player.stream.playing.listen((playing) {
+      if (!identical(player, _player)) return;
+      _emitPlaybackState(playing);
+      if (!mounted) return;
+      setState(() => _mediaKitPlaying = playing);
+    });
   }
 
   @override
   void dispose() {
     _resetControllers();
+    _surfaceFocusNode.dispose();
     super.dispose();
+  }
+
+  String _surfaceLabel() {
+    final title = widget.playback.title.trim();
+    if (title.isEmpty) return 'Videospelare';
+    return 'Videospelare: $title';
+  }
+
+  String _surfaceHint() {
+    if (_timedOut || _error != null) {
+      return 'Tryck för att försöka starta videon igen.';
+    }
+    if (_initializing) {
+      return 'Videon laddas just nu.';
+    }
+    final playing = _isCurrentlyPlaying();
+    return playing
+        ? 'Tryck för att pausa videon.'
+        : 'Tryck för att spela videon.';
+  }
+
+  bool get _showsControlOverlay =>
+      _resolvedControls.controlChrome != InlineVideoControlChrome.hidden;
+
+  bool get _showsStopButton =>
+      _resolvedControls.controlChrome ==
+      InlineVideoControlChrome.playPauseAndStop;
+
+  InlineVideoControlsConfig get _resolvedControls => resolveInlineVideoControls(
+    controlsMode: widget.playback.controlsMode,
+    minimalUi: widget.playback.minimalUi,
+    controlChrome: widget.playback.controlChrome,
+  );
+
+  bool _isCurrentlyPlaying() {
+    if (!_activated || _initializing || _timedOut || _error != null) {
+      return false;
+    }
+    if (_useMediaKit) {
+      final player = _player;
+      if (player != null) {
+        return player.state.playing;
+      }
+      return _mediaKitPlaying;
+    }
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return false;
+    return controller.value.isPlaying;
+  }
+
+  void _handleSurfaceToggle() {
+    if (!_activated) {
+      _activate();
+      return;
+    }
+    if (_timedOut || _error != null) {
+      _handleRetry();
+      return;
+    }
+    if (_initializing) return;
+    unawaited(_togglePlayback());
+  }
+
+  void _handleControlToggle() {
+    if (_initializing || !_activated) return;
+    if (_timedOut || _error != null) {
+      _handleRetry();
+      return;
+    }
+    unawaited(_togglePlayback());
+  }
+
+  void _handleControlStop() {
+    if (_initializing || !_activated || _timedOut || _error != null) return;
+    unawaited(_stopPlayback());
+  }
+
+  Future<void> _togglePlayback() async {
+    if (_useMediaKit) {
+      final player = _player;
+      if (player == null) return;
+      final handle = _MediaKitPlaybackHandle(player);
+      try {
+        final playing = await toggleInlinePlayback(handle);
+        if (!mounted || !identical(player, _player)) return;
+        setState(() {
+          _mediaKitPlaying = playing;
+          _error = null;
+        });
+        _emitPlaybackState(playing);
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _error = 'Kunde inte växla uppspelning.');
+      }
+      return;
+    }
+
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return;
+    final handle = _VideoPlayerPlaybackHandle(controller);
+    try {
+      await toggleInlinePlayback(handle);
+      _emitPlaybackState(controller.value.isPlaying);
+      if (!mounted || !identical(controller, _videoController)) return;
+      setState(() => _error = null);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Kunde inte växla uppspelning.');
+    }
+  }
+
+  Future<void> _stopPlayback() async {
+    if (_useMediaKit) {
+      final player = _player;
+      if (player == null) return;
+      final handle = _MediaKitPlaybackHandle(player);
+      try {
+        await stopInlinePlayback(handle);
+        if (!mounted || !identical(player, _player)) return;
+        setState(() {
+          _mediaKitPlaying = false;
+          _error = null;
+        });
+        _emitPlaybackState(false);
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _error = 'Kunde inte stoppa videon.');
+      }
+      return;
+    }
+
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) return;
+    final handle = _VideoPlayerPlaybackHandle(controller);
+    try {
+      await stopInlinePlayback(handle);
+      _emitPlaybackState(false);
+      if (!mounted || !identical(controller, _videoController)) return;
+      setState(() => _error = null);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Kunde inte stoppa videon.');
+    }
+  }
+
+  Widget _wrapSurfaceInteraction(Widget child) {
+    return VideoSurfaceTapTarget(
+      focusNode: _surfaceFocusNode,
+      semanticLabel: _surfaceLabel(),
+      semanticHint: _surfaceHint(),
+      onActivate: _handleSurfaceToggle,
+      onStop: _showsStopButton ? _handleControlStop : null,
+      child: child,
+    );
+  }
+
+  Widget _buildActivePlayerSurface(BuildContext context) {
+    final playerSurface = _useMediaKit
+        ? _buildMediaKitPlayer()
+        : _buildVideoPlayer(context);
+    if (!_showsControlOverlay) return playerSurface;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        playerSurface,
+        Positioned(
+          right: 12,
+          bottom: 12,
+          child: InlineVideoControlOverlay(
+            isPlaying: _isCurrentlyPlaying(),
+            showStopButton: _showsStopButton,
+            onToggle: _handleControlToggle,
+            onStop: _handleControlStop,
+          ),
+        ),
+      ],
+    );
   }
 
   double _effectiveAspectRatio({
@@ -329,26 +771,38 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     if (!_activated) {
       final theme = Theme.of(context);
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Center(
-            child: widget.minimalUi
-                ? IconButton(
-                    tooltip: 'Spela video',
-                    iconSize: 40,
-                    icon: Icon(
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Center(
+              child: _resolvedControls.minimalUi
+                  ? Icon(
                       Icons.play_arrow_rounded,
+                      size: 44,
                       color: theme.colorScheme.onSurface.withValues(
                         alpha: 0.70,
                       ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.play_arrow_rounded,
+                          size: 46,
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.72,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Spela video',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    onPressed: _activate,
-                  )
-                : FilledButton.icon(
-                    onPressed: _activate,
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('Spela video'),
-                  ),
+            ),
           ),
         ),
       );
@@ -357,16 +811,18 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     if (_initializing) {
       final theme = Theme.of(context);
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 12),
-                Text('Laddar ström...', style: theme.textTheme.bodyMedium),
-              ],
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text('Laddar ström...', style: theme.textTheme.bodyMedium),
+                ],
+              ),
             ),
           ),
         ),
@@ -377,44 +833,46 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       final theme = Theme.of(context);
       final canPop = Navigator.of(context).canPop();
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.wifi_off_rounded,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Ingen aktiv ström just nu.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Sändningen har inte startat eller är offline.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _handleRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Försök igen'),
-                ),
-                if (canPop) ...[
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    child: const Text('Tillbaka'),
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.wifi_off_rounded,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Ingen aktiv ström just nu.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Sändningen har inte startat eller är offline.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _handleRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Försök igen'),
+                  ),
+                  if (canPop) ...[
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Tillbaka'),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -425,35 +883,37 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       final theme = Theme.of(context);
       final canPop = Navigator.of(context).canPop();
       return _wrapWithBorder(
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Kunde inte spela upp videon: $_error',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.error,
+        _wrapSurfaceInteraction(
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Media saknas eller stöds inte längre',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _handleRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Försök igen'),
-                ),
-                if (canPop) ...[
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    child: const Text('Tillbaka'),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _handleRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Försök igen'),
                   ),
+                  if (canPop) ...[
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Tillbaka'),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -461,7 +921,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
 
     return _wrapWithBorder(
-      _useMediaKit ? _buildMediaKitPlayer() : _buildVideoPlayer(context),
+      _wrapSurfaceInteraction(_buildActivePlayerSurface(context)),
     );
   }
 
@@ -473,7 +933,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         aspectRatio: 16 / 9,
         child: Center(
           child: Text(
-            'Videospelaren kunde inte startas.',
+            'Media saknas eller stöds inte längre',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),
@@ -533,5 +993,57 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   Widget _wrapWithBorder(Widget child) {
     return ClipRRect(borderRadius: _borderRadius, child: child);
+  }
+}
+
+@visibleForTesting
+class InlineVideoControlOverlay extends StatelessWidget {
+  const InlineVideoControlOverlay({
+    required this.isPlaying,
+    required this.showStopButton,
+    required this.onToggle,
+    required this.onStop,
+  });
+
+  final bool isPlaying;
+  final bool showStopButton;
+  final VoidCallback onToggle;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final iconColor = theme.colorScheme.onSurface;
+    return FocusTraversalGroup(
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        opacity: 0.2,
+        sigmaX: 10,
+        sigmaY: 10,
+        borderRadius: BorderRadius.circular(999),
+        borderColor: Colors.white.withValues(alpha: 0.24),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: isPlaying ? 'Pausa' : 'Spela',
+              visualDensity: VisualDensity.compact,
+              onPressed: onToggle,
+              icon: Icon(
+                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: iconColor,
+              ),
+            ),
+            if (showStopButton)
+              IconButton(
+                tooltip: 'Stoppa',
+                visualDensity: VisualDensity.compact,
+                onPressed: onStop,
+                icon: Icon(Icons.stop_rounded, color: iconColor),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

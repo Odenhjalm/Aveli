@@ -95,3 +95,4 @@ docker compose --env-file .env.docker up --build
 - Deployment (Fly.io + compose): `docs/DEPLOYMENT.md`
 - Backend layout/services: `docs/BACKEND_STRUCTURE.md`
 - Env reference: `docs/ENV_VARS.md`
+- Media behavior is governed by Media Contract v1: `docs/MEDIA_CONTRACT_v1.md`

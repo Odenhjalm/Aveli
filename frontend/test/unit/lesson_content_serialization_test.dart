@@ -11,6 +11,7 @@ void main() {
   group('Lesson content serialization', () {
     const sampleUrl = 'https://example.com/audio.mp3';
     const sampleImageUrl = 'https://example.com/image.png';
+    const sampleVideoUrl = 'https://example.com/video.mp4';
     const sampleLessonMediaId = '123e4567-e89b-12d3-a456-426614174000';
 
     test('audio embed converts to <audio> HTML on markdown export', () {
@@ -80,6 +81,18 @@ void main() {
       expect(markdown, contains('<img'));
       expect(markdown, contains('src="$sampleImageUrl"'));
       expect(markdown, contains('style="$style"'));
+    });
+
+    test('video embed exports without native controls attribute', () {
+      final delta = quill_delta.Delta()
+        ..insert('Intro\n')
+        ..insert(quill.BlockEmbed.video(sampleVideoUrl))
+        ..insert('\n');
+
+      final markdown = createLessonDeltaToMarkdown().convert(delta);
+
+      expect(markdown, contains('<video src="$sampleVideoUrl"></video>'));
+      expect(markdown, isNot(contains('<video controls')));
     });
 
     test('audio HTML converts back to custom embed on markdown import', () {

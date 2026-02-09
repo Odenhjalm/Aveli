@@ -3,7 +3,7 @@ Aveli – Statusöversikt
 - DB-reset: Idempotenta reparationer och säkra DROP/ALTER i `scripts/reset_backend.sh` fixar bl.a. saknad `order_id`, `body`-kolumnfel, säkra view-drops (`service_reviews` m.fl.) samt skydd mot dubblett-index/constraints.
 - Alembic: Ej i bruk. SQL-fallback i migrations och reset-skript (sekventiellt, säkra guards) är införda.
 - Auth: Passlib/bcrypt-varning eliminerad – `bcrypt` är pinnad till `<4` i `backend/pyproject.toml` och uppdaterad i `poetry.lock`.
-- Editor/Media: Robust MIME-detektion via `package:mime`; auto-insert för bild/video/ljud efter upload; inline-ljudspelare (Quill custom embed + builder) och videoembed-hjälpare.
+- Editor/Media: Robust MIME-detektion via `package:mime`; auto-insert för bild/video/ljud efter upload; inline-ljudspelare (Quill custom embed + builder) samt block-renderad lektionsvideo i editor/studentvy via samma `InlineVideoPlayer`-komponent som Home (responsiv layout + semantiketiketter). Klick/tap på videoytan växlar play/pause/resume i både Home och editor.
 - Android bilder: Förbättrad robusthet. `AppAvatar` (cirkulär nätbild med fallback), `CourseCard` och `ServiceCard` använder `errorBuilder` + tydlig placeholder. `CoursesGrid` hade redan gradient-fallback. Nästa steg: inventera ev. cleartext/HTTPS och auth-skyddade bild-URL:er. HTTPS-policy sammanfattad nedan.
 - Import av kursinnehåll: `scripts/import_course.py` + manifest (YAML/JSON). Stöd för `cover_path` och flaggan `--create-assets-lesson` som lägger omslag i separat modul/lektion (`_Assets`/`_Course Assets`). Studentvyn döljer moduler/lektioner vars titel börjar med `_`.
 - Filväljare (web): Chrome-racefix (fokusfördröjning) för att undvika “no file selected”.
@@ -34,7 +34,7 @@ HTTPS-policy per plattform (2025-10-15)
 - **Android:** Dev-emulatorn tillåts via `network_security_config.xml` (klartext mot `10.0.2.2`/`localhost`). Release-builds ska använda `https://` för API och media; `lib/main.dart` loggar varning om `API_BASE_URL` är HTTP i release.
 - **iOS/macOS:** ATS (App Transport Security) är oförändrat → endast HTTPS. Undantag kräver explicita `NSExceptionDomains`; undvik i prod.
 - **Web/Desktop:** Lokalt utvecklingsläge kör HTTP men prod ska serveras via HTTPS för PWA/service workers. Följ `docs/local_backend_setup.md` för lokala overrides.
-- **Backend-media:** `/studio/media/{id}` följer backend-protokoll. Sätt upp proxy (Nginx/Caddy) med TLS i prod och aktivera signerade länkar (`MEDIA_SIGNING_SECRET`) för extern leverans.
+- **Backend-media:** Extern leverans ska ske via `/media/stream/{token}` (signeras av backend). `/studio/media/{id}` är legacy och ska vara avstängt i prod (`MEDIA_ALLOW_LEGACY_MEDIA=false`).
 - **Klienter:** `AppNetworkImage` injicerar auth-header på mobil/desktop vilket kräver HTTPS (speciellt på iOS). Flutter varnar i release om HTTP används.
 - **Snabbsanity:** Kör  
   `select id, title, thumbnail_url from app.services where thumbnail_url is not null and thumbnail_url !~ '^https://';`  

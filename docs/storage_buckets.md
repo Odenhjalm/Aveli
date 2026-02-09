@@ -6,11 +6,11 @@ AVELI uses Supabase Storage plus the FastAPI media service to keep course files 
 
 | Bucket | Visibility | Purpose | Served via |
 | --- | --- | --- | --- |
-| `public-media` | Public | Course intros, catalog/hero images, marketing assets. | `/api/files/<path>` (no auth) + CDN caching (`MEDIA_PUBLIC_CACHE_SECONDS`). |
-| `course-media` | Private | Paid lesson media (audio, video, pdf) that requires enrollment. | Signed URLs (`POST /media/sign` → `/media/stream/<token>`). |
+| `public-media` | Public | Truly public assets (covers/hero/logos) and optionally intro lesson media. | Supabase public URL (CDN). Local dev fallback: `/api/files/<path>`. |
+| `course-media` | Private | Lesson media + WAV sources that require access control. | Signed tokens (`/media/stream/<token>`) or Supabase presigns issued server-side. |
 
-- Intro lessons always upload to `public-media/<course_id>/<lesson_id>/...` so students can preview them without a token.
-- Non-intro lessons and draft uploads land in `course-media/<course_id>/<lesson_id>/...` and never receive a public download URL.
+- Intro lessons may upload to `public-media` for CDN-servning, but draft/non-intro uploads should remain in `course-media`.
+- Private lesson media should never receive a stable public URL; clients must use signed tokens.
 - Profile/hero/logo uploads continue to use dedicated folders under `public-media/` (e.g. `public-media/avatars/<user_id>/avatar.png`).
 
 ## Upload routing
@@ -18,8 +18,8 @@ AVELI uses Supabase Storage plus the FastAPI media service to keep course files 
 | Endpoint | Bucket | Notes |
 | --- | --- | --- |
 | `POST /api/upload/profile` | `public-media` (under `users/` + user id) | Image-only; response includes a stable public URL for the uploaded image. |
-| `POST /api/upload/course-media` (intro) | `public-media` | Accepts audio/video/image/pdf; stored under course + lesson. |
-| `POST /api/upload/course-media` (non-intro) | `course-media` | Requires teacher permissions; FastAPI immediately registers the media row and issues signed URL metadata. |
+| `POST /studio/lessons/{lesson_id}/media/presign` + `POST /studio/lessons/{lesson_id}/media/complete` | `course-media` or `public-media` | Canonical lesson media upload flow (direct-to-Supabase). Backend chooses bucket + path. |
+| `POST /api/upload/course-media` | legacy/dev | Writes to backend disk and is not production-safe (disabled unless `MEDIA_ALLOW_LEGACY_MEDIA=true`). |
 
 `app.media_objects.storage_bucket` now mirrors the physical bucket (`public-media` or `course-media`). Any code that consumes media rows can rely on this column to determine whether a signed URL is required.
 

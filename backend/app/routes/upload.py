@@ -204,7 +204,7 @@ async def _persist_lesson_media(
             detail="Could not allocate lesson media position",
         )
 
-    media_signer.attach_media_links(row)
+    media_signer.attach_media_links(row, purpose="editor_preview")
     return row
 
 
@@ -323,6 +323,12 @@ async def upload_course_media(
     media_type: Annotated[UploadMediaType | None, Form(alias="type")] = None,
     is_intro: Annotated[bool | None, Form()] = None,
 ) -> dict[str, Any]:
+    if not settings.media_allow_legacy_media:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Legacy upload endpoint disabled",
+        )
+
     owner = current["id"]
     owner_id = str(owner)
     if not course_id and not lesson_id:
@@ -441,9 +447,6 @@ async def upload_course_media(
             checksum=write_result.checksum,
             storage_bucket=storage_bucket,
         )
-        if storage_bucket == _PUBLIC_MEDIA_BUCKET and media_row.get("kind") == "image":
-            media_row.pop("signed_url", None)
-            media_row.pop("signed_url_expires_at", None)
         response["media"] = media_row
 
     return response
@@ -455,6 +458,12 @@ async def upload_public_media(
     file: Annotated[UploadFile, File(description="Public media upload")],
     current: TeacherUser,
 ) -> dict[str, Any]:
+    if not settings.media_allow_legacy_media:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Legacy upload endpoint disabled",
+        )
+
     user_id = str(current["id"])
     relative_dir = Path("public-media") / user_id
     destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)

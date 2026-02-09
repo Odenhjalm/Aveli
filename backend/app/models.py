@@ -27,6 +27,7 @@ from .repositories import (
 )
 from .repositories.orders import get_order as repo_get_order
 from .services import courses_service
+from .services import storage_service
 from .config import settings
 from .utils import media_signer
 
@@ -175,6 +176,42 @@ async def cleanup_media_object(media_id: str) -> None:
     storage_bucket = row.get("storage_bucket") if isinstance(row, dict) else None
     if not storage_path:
         return
+
+    # Best-effort: delete from Supabase Storage when configured.
+    if storage_bucket:
+        normalized_bucket = str(storage_bucket).strip() or None
+    else:
+        normalized_bucket = None
+    if normalized_bucket:
+        try:
+            service = storage_service.get_storage_service(normalized_bucket)
+            if service.enabled:
+                normalized_path = str(storage_path).lstrip("/")
+                candidates: list[str] = []
+                bucket_prefix = f"{normalized_bucket}/"
+                if normalized_path.startswith(bucket_prefix):
+                    stripped = normalized_path[len(bucket_prefix) :].lstrip("/")
+                    if stripped:
+                        candidates.append(stripped)
+                candidates.append(normalized_path)
+                for key in candidates:
+                    try:
+                        await service.delete_object(key)
+                        break
+                    except storage_service.StorageServiceError as exc:
+                        logger.warning(
+                            "Failed to delete storage object bucket=%s path=%s: %s",
+                            normalized_bucket,
+                            key,
+                            exc,
+                        )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to cleanup remote media object bucket=%s path=%s: %s",
+                normalized_bucket,
+                storage_path,
+                exc,
+            )
 
     candidates: list[Path] = []
     uploads_root = Path(__file__).resolve().parents[1] / "assets" / "uploads"
@@ -943,8 +980,12 @@ async def get_lesson(lesson_id: str):
     return await courses_service.fetch_lesson(lesson_id)
 
 
-async def list_lesson_media(lesson_id: str) -> list[dict]:
-    return await courses_service.list_lesson_media(lesson_id)
+async def list_lesson_media(
+    lesson_id: str,
+    *,
+    mode: str | None = None,
+) -> list[dict]:
+    return list(await courses_service.list_lesson_media(lesson_id, mode=mode))
 
 
 async def next_lesson_media_position(lesson_id: str) -> int:

@@ -88,6 +88,45 @@ def _delete_local_media_object_file(storage_path: str, storage_bucket: str | Non
             logger.warning("Failed to delete media object file %s: %s", candidate, exc)
 
 
+async def _delete_media_object_bytes(storage_path: str, storage_bucket: str | None) -> None:
+    if not storage_path:
+        return
+
+    normalized_bucket = (storage_bucket or "").strip() or None
+    if normalized_bucket:
+        try:
+            service = storage_service.get_storage_service(normalized_bucket)
+            if service.enabled:
+                normalized_path = str(storage_path).lstrip("/")
+                candidates: list[str] = []
+                bucket_prefix = f"{normalized_bucket}/"
+                if normalized_path.startswith(bucket_prefix):
+                    stripped = normalized_path[len(bucket_prefix) :].lstrip("/")
+                    if stripped:
+                        candidates.append(stripped)
+                candidates.append(normalized_path)
+                for key in candidates:
+                    try:
+                        await service.delete_object(key)
+                        break
+                    except storage_service.StorageServiceError as exc:
+                        logger.warning(
+                            "Storage delete failed bucket=%s path=%s: %s",
+                            normalized_bucket,
+                            key,
+                            exc,
+                        )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to cleanup remote media object bucket=%s path=%s: %s",
+                normalized_bucket,
+                storage_path,
+                exc,
+            )
+
+    _delete_local_media_object_file(storage_path, normalized_bucket)
+
+
 async def _delete_unreferenced_lesson_audio_assets(*, limit: int) -> list[dict[str, Any]]:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
@@ -405,7 +444,10 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
             storage_path = row.get("storage_path")
             storage_bucket = row.get("storage_bucket")
             if storage_path:
-                _delete_local_media_object_file(str(storage_path), str(storage_bucket) if storage_bucket else None)
+                await _delete_media_object_bytes(
+                    str(storage_path),
+                    str(storage_bucket) if storage_bucket else None,
+                )
 
     return {
         "media_assets_lesson_audio_deleted": deleted_audio_assets,

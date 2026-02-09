@@ -104,12 +104,15 @@ app_env_lower = app_env_value.strip().lower()
 is_production_env = app_env_lower in {"production", "prod", "live"}
 
 cors_allow_origin_regex = None
+configured_regex = (settings.cors_allow_origin_regex or "").strip()
+explicit_regex_configured = bool(os.environ.get("CORS_ALLOW_ORIGIN_REGEX"))
+if configured_regex and (not is_production_env or explicit_regex_configured):
+    cors_allow_origin_regex = configured_regex
 if not is_production_env:
     # Dev-only CORS allowance for local Flutter Web (localhost:* / 127.0.0.1:*).
     local_origin_regex = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
-    configured_regex = (settings.cors_allow_origin_regex or "").strip()
-    if configured_regex:
-        cors_allow_origin_regex = f"(?:{configured_regex})|(?:{local_origin_regex})"
+    if cors_allow_origin_regex:
+        cors_allow_origin_regex = f"(?:{cors_allow_origin_regex})|(?:{local_origin_regex})"
     else:
         cors_allow_origin_regex = local_origin_regex
 

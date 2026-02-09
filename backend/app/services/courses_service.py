@@ -1,21 +1,28 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Mapping, Sequence
+from urllib.parse import urlparse
+from pathlib import Path
 
 import stripe
 from starlette.concurrency import run_in_threadpool
 
 from psycopg.types.json import Jsonb
 
+from ..config import settings
 from ..repositories import (
     courses as courses_repo,
     get_latest_order_for_course,
     get_latest_subscription,
     get_profile,
+    storage_objects,
 )
 from . import media_cleanup
+from ..services import storage_service
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
+from ..utils import media_robustness
 
 
 CoursePayload = Mapping[str, Any]
@@ -67,6 +74,206 @@ def _materialize_optional_row(row: Mapping[str, Any] | None) -> dict[str, Any] |
 
 def _materialize_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [_materialize_mapping(row) for row in rows]
+
+
+_KNOWN_BUCKET_PREFIXES: set[str] = {
+    "course-media",
+    "public-media",
+    "lesson-media",
+    settings.media_source_bucket,
+    settings.media_public_bucket,
+}
+
+
+def _normalize_storage_path(value: str) -> str:
+    raw = str(value or "").strip()
+    parsed = urlparse(raw)
+    if parsed.scheme in {"http", "https"} and parsed.path:
+        raw = parsed.path
+    normalized = raw.replace("\\", "/").lstrip("/")
+    for prefix in ("api/files/", "storage/v1/object/public/", "storage/v1/object/sign/"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix) :].lstrip("/")
+            break
+    return normalized
+
+
+def _storage_candidates(
+    *,
+    storage_bucket: str | None,
+    storage_path: str,
+) -> list[tuple[str, str]]:
+    normalized_bucket = (storage_bucket or "").strip() or settings.media_source_bucket
+    normalized_path = _normalize_storage_path(storage_path)
+    if not normalized_path:
+        return []
+
+    candidates: list[tuple[str, str]] = []
+
+    def _add(bucket: str, key: str) -> None:
+        if not bucket or not key:
+            return
+        pair = (bucket, key)
+        if pair not in candidates:
+            candidates.append(pair)
+
+    def _add_for_bucket(bucket: str) -> None:
+        prefix = f"{bucket}/"
+        if normalized_path.startswith(prefix):
+            stripped = normalized_path[len(prefix) :].lstrip("/")
+            if stripped:
+                _add(bucket, stripped)
+            _add(bucket, normalized_path)
+        else:
+            _add(bucket, normalized_path)
+
+    _add_for_bucket(normalized_bucket)
+
+    prefix_bucket = normalized_path.split("/", 1)[0]
+    if prefix_bucket in _KNOWN_BUCKET_PREFIXES and prefix_bucket != normalized_bucket:
+        _add_for_bucket(prefix_bucket)
+
+    return candidates
+
+
+def _failure_reason(
+    *,
+    storage_bucket: str | None,
+    storage_path: str,
+) -> str:
+    bucket = (storage_bucket or "").strip() or None
+    normalized_path = _normalize_storage_path(storage_path)
+    if not normalized_path:
+        return "unsupported"
+    prefix_bucket = normalized_path.split("/", 1)[0]
+    if bucket and prefix_bucket in _KNOWN_BUCKET_PREFIXES and prefix_bucket != bucket:
+        return "bucket_mismatch"
+    if bucket and normalized_path.startswith(f"{bucket}/"):
+        return "key_format_drift"
+    return "missing_object"
+
+
+def _best_storage_candidate(
+    *,
+    storage_bucket: str | None,
+    storage_path: str | None,
+    existence: dict[tuple[str, str], bool],
+    storage_table_available: bool,
+) -> tuple[str | None, str | None, str | None, bool | None]:
+    if not storage_path:
+        return None, None, "unsupported", None
+
+    normalized_bucket = (storage_bucket or "").strip() or None
+    normalized_path = _normalize_storage_path(str(storage_path))
+    if not normalized_path:
+        return normalized_bucket, None, "unsupported", None
+
+    if not storage_table_available:
+        return normalized_bucket, normalized_path, "manual_review", None
+
+    candidates = _storage_candidates(
+        storage_bucket=normalized_bucket,
+        storage_path=normalized_path,
+    )
+    for candidate_bucket, candidate_key in candidates:
+        if existence.get((candidate_bucket, candidate_key), False):
+            # Detect unfixable drift: bytes exist only at bucket-prefixed key.
+            if (
+                normalized_bucket
+                and normalized_path.startswith(f"{normalized_bucket}/")
+                and candidate_bucket == normalized_bucket
+                and candidate_key == normalized_path
+            ):
+                return candidate_bucket, candidate_key, "manual_review", True
+            if candidate_bucket != normalized_bucket:
+                return candidate_bucket, candidate_key, "bucket_mismatch", True
+            stripped = normalized_path[len(f"{normalized_bucket}/") :].lstrip("/") if normalized_bucket else normalized_path
+            if normalized_bucket and candidate_key == stripped and stripped != normalized_path:
+                return candidate_bucket, candidate_key, "key_format_drift", True
+            return candidate_bucket, candidate_key, None, True
+
+    return normalized_bucket, normalized_path, _failure_reason(storage_bucket=normalized_bucket, storage_path=normalized_path), False
+
+
+def _attach_media_robustness(
+    item: dict[str, Any],
+    *,
+    existence: dict[tuple[str, str], bool],
+    storage_table_available: bool,
+) -> None:
+    kind = media_robustness.normalize_media_kind(item.get("kind"))
+    supported_kind = kind in media_robustness.SUPPORTED_MEDIA_KINDS
+
+    if item.get("media_asset_id"):
+        category = media_robustness.MediaCategory.pipeline_media_asset
+        state = (item.get("media_state") or "").strip().lower()
+        bucket = (item.get("storage_bucket") or "").strip() or None
+        path = item.get("storage_path")
+        resolved_bucket, resolved_key, reason, bytes_exist = _best_storage_candidate(
+            storage_bucket=bucket,
+            storage_path=str(path) if path is not None else None,
+            existence=existence,
+            storage_table_available=storage_table_available,
+        )
+
+        if not supported_kind and kind != "audio":
+            status = media_robustness.MediaStatus.unsupported
+        elif reason == "manual_review" or not storage_table_available:
+            status = media_robustness.MediaStatus.manual_review
+        elif state == "ready" and bytes_exist is True:
+            status = media_robustness.MediaStatus.ok
+        elif state == "ready" and bytes_exist is False:
+            status = media_robustness.MediaStatus.missing_bytes
+        elif state == "failed":
+            status = media_robustness.MediaStatus.unsupported
+        else:
+            status = media_robustness.MediaStatus.ok
+
+        if state in {"uploaded", "processing"}:
+            recommended_action = media_robustness.MediaRecommendedAction.keep
+        else:
+            recommended_action = media_robustness.recommended_action_for_status(status)
+
+        resolvable = bool(bytes_exist) and state == "ready" and supported_kind
+        item["robustness_category"] = str(category)
+        item["robustness_status"] = str(status)
+        item["robustness_recommended_action"] = str(recommended_action)
+        item["resolvable_for_editor"] = resolvable
+        item["resolvable_for_student"] = resolvable
+        return
+
+    # Legacy lesson media.
+    category = media_robustness.MediaCategory.legacy_lesson_media
+    bucket = item.get("storage_bucket")
+    path = item.get("storage_path")
+    resolved_bucket, resolved_key, reason, bytes_exist = _best_storage_candidate(
+        storage_bucket=str(bucket) if bucket is not None else None,
+        storage_path=str(path) if path is not None else None,
+        existence=existence,
+        storage_table_available=storage_table_available,
+    )
+
+    if reason == "manual_review" or not storage_table_available:
+        status = media_robustness.MediaStatus.manual_review
+    elif not supported_kind:
+        status = media_robustness.MediaStatus.unsupported
+        reason = "unsupported"
+    elif bytes_exist is False or reason == "missing_object":
+        status = media_robustness.MediaStatus.missing_bytes
+        reason = "missing_object"
+    elif reason in {"bucket_mismatch", "key_format_drift"}:
+        status = media_robustness.MediaStatus.needs_migration
+    else:
+        status = media_robustness.MediaStatus.ok_legacy
+
+    recommended_action = media_robustness.recommended_action_for_status(status)
+    resolvable = bool(bytes_exist) and supported_kind
+
+    item["robustness_category"] = str(category)
+    item["robustness_status"] = str(status)
+    item["robustness_recommended_action"] = str(recommended_action)
+    item["resolvable_for_editor"] = resolvable
+    item["resolvable_for_student"] = resolvable
 
 
 async def fetch_course(
@@ -207,8 +414,14 @@ async def create_lesson(
     return materialized or {}
 
 
-async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
+async def list_lesson_media(
+    lesson_id: str,
+    *,
+    mode: str | None = None,
+) -> Sequence[dict[str, Any]]:
     """Return media entries for a lesson with download URLs."""
+    normalized_mode = (mode or "").strip().lower()
+    editor_mode = normalized_mode in {"editor_insert", "editor_preview"}
     rows = await courses_repo.list_lesson_media(lesson_id)
     items: list[dict[str, Any]] = []
     for row in rows:
@@ -216,8 +429,149 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
         if not item.get("storage_bucket") and not item.get("media_asset_id"):
             item["storage_bucket"] = "lesson-media"
         if not item.get("media_asset_id"):
-            media_signer.attach_media_links(item)
+            media_signer.attach_media_links(item, purpose=mode)
         items.append(item)
+
+    candidate_pairs: list[tuple[str, str]] = []
+    for item in items:
+        storage_path = item.get("storage_path")
+        if not storage_path:
+            continue
+        storage_bucket = item.get("storage_bucket")
+        candidate_pairs.extend(
+            _storage_candidates(
+                storage_bucket=str(storage_bucket) if storage_bucket is not None else None,
+                storage_path=str(storage_path),
+            )
+        )
+
+    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
+        candidate_pairs
+    )
+    for item in items:
+        _attach_media_robustness(
+            item,
+            existence=existence,
+            storage_table_available=storage_table_available,
+        )
+
+    public_bucket = settings.media_public_bucket
+
+    def _looks_like_public_bucket_url(url: str) -> bool:
+        normalized = url.strip()
+        if not normalized:
+            return False
+        if normalized.startswith(f"/api/files/{public_bucket}/"):
+            return True
+        if settings.supabase_url is None:
+            return False
+        base = settings.supabase_url.unicode_string().rstrip("/")
+        return normalized.startswith(
+            f"{base}/storage/v1/object/public/{public_bucket}/"
+        )
+
+    # Ensure public bucket URLs are aligned with the actual storage object key.
+    #
+    # When legacy rows store a bucket-prefixed key inside the bucket (eg
+    # public-media/public-media/...),
+    # `attach_media_links()` will strip the bucket prefix and emit a public URL
+    # that 404s in production. We have the storage.objects existence map here,
+    # so we can select the correct candidate key and fix the URL deterministically.
+    for item in items:
+        if item.get("media_asset_id"):
+            continue
+        storage_path = item.get("storage_path")
+        if not storage_path:
+            continue
+        storage_bucket = item.get("storage_bucket")
+        resolved_bucket, resolved_key, _, bytes_exist = _best_storage_candidate(
+            storage_bucket=str(storage_bucket) if storage_bucket is not None else None,
+            storage_path=str(storage_path),
+            existence=existence,
+            storage_table_available=storage_table_available,
+        )
+        if bytes_exist is not True or not resolved_bucket or not resolved_key:
+            continue
+
+        playback_url = item.get("playback_url")
+        download_url = item.get("download_url")
+        signed_url = item.get("signed_url")
+
+        if resolved_bucket == public_bucket:
+            try:
+                public_url = storage_service.get_storage_service(
+                    resolved_bucket
+                ).public_url(resolved_key)
+            except storage_service.StorageServiceError:
+                public_url = None
+
+            if public_url:
+                item["download_url"] = public_url
+                item["playback_url"] = public_url
+            elif isinstance(signed_url, str) and signed_url.strip():
+                # Supabase URL missing/misconfigured; prefer signed streaming to avoid a broken public link.
+                item["playback_url"] = signed_url
+                if isinstance(download_url, str) and _looks_like_public_bucket_url(download_url):
+                    item["download_url"] = signed_url
+            continue
+
+        # Not a public bucket candidate. If we accidentally emitted a public-media URL due to
+        # bucket/path drift, force playback to the signed stream (which already tries candidates).
+        if isinstance(playback_url, str) and _looks_like_public_bucket_url(playback_url):
+            if isinstance(signed_url, str) and signed_url.strip():
+                item["playback_url"] = signed_url
+        if isinstance(download_url, str) and _looks_like_public_bucket_url(download_url):
+            if isinstance(signed_url, str) and signed_url.strip():
+                item["download_url"] = signed_url
+            else:
+                item.pop("download_url", None)
+
+    async def _attach_pipeline_playback_url(item: dict[str, Any]) -> None:
+        if not item.get("media_asset_id"):
+            return
+        if item.get("playback_url"):
+            return
+        if item.get("kind") != "audio":
+            return
+        if item.get("resolvable_for_editor") is not True:
+            return
+
+        bucket = (item.get("storage_bucket") or "").strip() or None
+        path = item.get("storage_path")
+        resolved_bucket, resolved_key, _, bytes_exist = _best_storage_candidate(
+            storage_bucket=bucket,
+            storage_path=str(path) if path is not None else None,
+            existence=existence,
+            storage_table_available=storage_table_available,
+        )
+        if bytes_exist is not True or not resolved_bucket or not resolved_key:
+            return
+
+        storage_client = storage_service.get_storage_service(resolved_bucket)
+        try:
+            presigned = await storage_client.get_presigned_url(
+                resolved_key,
+                ttl=settings.media_playback_url_ttl_seconds,
+                filename=Path(resolved_key).name,
+                download=False,
+            )
+        except storage_service.StorageServiceError:
+            return
+        item["playback_url"] = presigned.url
+
+    pipeline_items = [item for item in items if item.get("media_asset_id")]
+    if pipeline_items:
+        await asyncio.gather(*[_attach_pipeline_playback_url(item) for item in pipeline_items])
+
+    if editor_mode:
+        for item in items:
+            # In editor mode we must never attempt to preview media that we cannot
+            # verify as resolvable. Keep the row visible for delete/diagnostics,
+            # but strip playback_url so the UI cannot accidentally auto-preview.
+            preview_blocked = item.get("resolvable_for_editor") is not True
+            item["preview_blocked"] = preview_blocked
+            if preview_blocked:
+                item.pop("playback_url", None)
     return items
 
 
@@ -244,7 +598,7 @@ async def list_home_audio_media(
         if not item.get("media_asset_id") and not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
         if not item.get("media_asset_id"):
-            media_signer.attach_media_links(item)
+            media_signer.attach_media_links(item, purpose="student_render")
         items.append(item)
     return items
 

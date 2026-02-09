@@ -13,7 +13,7 @@ describe('uploadLessonMedia', () => {
       method: 'PUT',
       headers: { 'x-upsert': 'true' },
       expires_at: new Date().toISOString(),
-      storage_path: 'course-media/course/lesson/file.mp4',
+      storage_path: 'courses/course-1/lessons/lesson-id/video/file.mp4',
       storage_bucket: 'course-media',
     };
 
@@ -43,8 +43,12 @@ describe('uploadLessonMedia', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/media/presign');
-    expect(fetchMock.mock.calls[2]?.[0]).toContain('/media/complete');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      '/studio/lessons/lesson-id/media/presign'
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toContain(
+      '/studio/lessons/lesson-id/media/complete'
+    );
     expect(result).toEqual({ id: 'media-1' });
   });
 

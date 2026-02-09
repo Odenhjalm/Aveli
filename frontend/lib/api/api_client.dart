@@ -516,10 +516,17 @@ class ApiClient {
     return response.data as T?;
   }
 
-  Future<Uint8List> getBytes(String path) async {
+  Future<Uint8List> getBytes(
+    String path, {
+    bool skipAuth = false,
+    Map<String, dynamic>? extra,
+  }) async {
     final response = await _dio.get<List<int>>(
       path,
-      options: Options(responseType: ResponseType.bytes),
+      options: Options(
+        responseType: ResponseType.bytes,
+        extra: _buildExtra(extra, skipAuth),
+      ),
     );
     final data = response.data ?? <int>[];
     return Uint8List.fromList(data);
