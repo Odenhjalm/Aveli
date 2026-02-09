@@ -10,12 +10,14 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/features/media/application/media_playback_controller.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/features/media/presentation/controller_video_block.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
@@ -614,13 +616,15 @@ class _LessonResolvedAudioPlayer extends ConsumerWidget {
 }
 
 class _LessonResolvedVideoPlayer extends ConsumerWidget {
-  const _LessonResolvedVideoPlayer({required this.url});
+  const _LessonResolvedVideoPlayer({required this.url, this.lessonMediaId});
 
   final String url;
+  final String? lessonMediaId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(mediaRepositoryProvider);
+    final isAuthenticated = ref.watch(authControllerProvider).isAuthenticated;
     var resolved = url;
     try {
       resolved = repo.resolveUrl(url);
@@ -632,11 +636,19 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
     if (uri != null && uri.path.startsWith('/studio/media/')) {
       return const _MissingMediaFallback();
     }
+    final mediaId = lessonMediaId?.trim();
 
     return ControllerVideoBlock(
       key: ValueKey<String>('lesson-embed-video-$resolved'),
       mediaId: 'lesson-embed-$resolved',
       url: resolved,
+      playbackUrlLoader: !isAuthenticated || mediaId == null || mediaId.isEmpty
+          ? null
+          : () => resolveLessonMediaSignedPlaybackUrl(
+              lessonMediaId: mediaId,
+              mediaRepository: repo,
+              mode: MediaResolutionMode.studentRender,
+            ),
       controlsMode: InlineVideoControlsMode.lesson,
       semanticLabel: 'Videoblock i lektionen',
       semanticHint: 'Tryck på spela-knappen för att starta lektionsvideon.',
@@ -701,6 +713,7 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
+    final lessonMediaId = lessonMediaIdFromEmbedValue(value);
     final url =
         lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
@@ -711,7 +724,10 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
         child: _LessonGlassMediaWrapper(child: _MissingMediaFallback()),
       );
     }
-    return _LessonResolvedVideoPlayer(url: trimmed);
+    return _LessonResolvedVideoPlayer(
+      url: trimmed,
+      lessonMediaId: lessonMediaId,
+    );
   }
 }
 
@@ -741,6 +757,7 @@ class _MediaItem extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mediaRepo = ref.watch(mediaRepositoryProvider);
     final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
+    final isAuthenticated = ref.watch(authControllerProvider).isAuthenticated;
     final extension = () {
       final name = _fileName;
       final index = name.lastIndexOf('.');
@@ -870,6 +887,14 @@ class _MediaItem extends ConsumerWidget {
               key: ValueKey<String>('lesson-media-video-${item.id}'),
               mediaId: item.id,
               url: url,
+              playbackUrlLoader: !isAuthenticated
+                  ? null
+                  : () => resolveLessonMediaPlaybackUrl(
+                      item: item,
+                      mediaRepository: mediaRepo,
+                      pipelineRepository: pipelineRepo,
+                      mode: MediaResolutionMode.studentRender,
+                    ),
               title: _fileName,
               controlsMode: InlineVideoControlsMode.lesson,
               semanticLabel: 'Videoblock: $_fileName',

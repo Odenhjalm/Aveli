@@ -78,4 +78,40 @@ void main() {
     );
     expect(player.controlsMode, InlineVideoControlsMode.home);
   });
+
+  testWidgets('controller block prefers playbackUrlLoader on play', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    var loaderCalls = 0;
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ControllerVideoBlock(
+              mediaId: 'lesson-video-loader',
+              url: '/studio/media/legacy-path',
+              playbackUrlLoader: () async {
+                loaderCalls++;
+                return 'https://cdn.example.com/lesson-loader.mp4';
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(VideoSurfaceTapTarget));
+    await tester.pump();
+    await tester.pump();
+
+    final playback = container.read(mediaPlaybackControllerProvider);
+    expect(loaderCalls, 1);
+    expect(playback.currentMediaId, 'lesson-video-loader');
+    expect(playback.url, 'https://cdn.example.com/lesson-loader.mp4');
+    expect(find.byType(InlineVideoPlayer), findsOneWidget);
+  });
 }
