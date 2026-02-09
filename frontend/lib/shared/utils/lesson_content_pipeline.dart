@@ -43,6 +43,19 @@ class AudioBlockEmbed extends quill.CustomBlockEmbed {
   );
 }
 
+/// Stable video embed marker for lesson media video.
+///
+/// The optional `src` is a render-time hint only. During persistence we always
+/// normalize to the lesson media id.
+String videoBlockEmbedValueFromLessonMedia({
+  required String lessonMediaId,
+  String? src,
+}) => jsonEncode(<String, dynamic>{
+  'lesson_media_id': lessonMediaId,
+  'kind': 'video',
+  if (src != null && src.trim().isNotEmpty) 'src': src.trim(),
+});
+
 const HtmlEscape _htmlAttributeEscape = HtmlEscape(HtmlEscapeMode.attribute);
 
 @visibleForTesting
@@ -195,6 +208,15 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
         out.write(' />');
       },
       quill.BlockEmbed.videoType: (embed, out) {
+        final lessonMediaId = _lessonMediaIdFromEmbedValue(embed.value.data);
+        if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
+          final escapedId = _htmlAttributeEscape.convert(lessonMediaId);
+          out.write('<video controls');
+          out.write(' data-lesson-media-id="$escapedId"');
+          out.write(' data-kind="video"');
+          out.write(' src="/studio/media/$escapedId"></video>');
+          return;
+        }
         final url = lessonMediaUrlFromEmbedValue(embed.value.data);
         if (url == null || url.isEmpty) return;
         final escaped = _htmlAttributeEscape.convert(url);
@@ -211,14 +233,22 @@ MarkdownToDelta createLessonMarkdownToDelta(md.Document markdownDocument) {
     customElementToEmbeddable: {
       'audio': (attrs) {
         final src = _normalizeMediaSourceAttribute(attrs);
-        final id = _lessonMediaIdFromAudioAttributes(attrs, src);
+        final id = _lessonMediaIdFromMediaAttributes(attrs, src);
         if (id != null && id.isNotEmpty) {
           return AudioBlockEmbed.fromLessonMedia(lessonMediaId: id, src: src);
         }
         return AudioBlockEmbed.fromUrl(src);
       },
-      'video': (attrs) =>
-          quill.BlockEmbed.video(_normalizeMediaSourceAttribute(attrs)),
+      'video': (attrs) {
+        final src = _normalizeMediaSourceAttribute(attrs);
+        final id = _lessonMediaIdFromMediaAttributes(attrs, src);
+        if (id != null && id.isNotEmpty) {
+          return quill.BlockEmbed.video(
+            videoBlockEmbedValueFromLessonMedia(lessonMediaId: id, src: src),
+          );
+        }
+        return quill.BlockEmbed.video(src);
+      },
     },
   );
 }
@@ -449,25 +479,38 @@ quill_delta.Delta convertLessonMarkdownToDelta(
     final raw = match.group(0) ?? '';
     final attrs = _parseHtmlAttributes(raw);
     final src = _normalizeMediaSourceAttribute(attrs);
-    final id = _lessonMediaIdFromAudioAttributes(attrs, src);
+    final id = _lessonMediaIdFromMediaAttributes(attrs, src);
     if (id != null && id.isNotEmpty) {
       return AudioBlockEmbed.fromLessonMedia(lessonMediaId: id, src: src);
     }
     return AudioBlockEmbed.fromUrl(match.group(1)!.trim());
   });
-  final withVideo = _replaceHtmlTagWithEmbed(
-    withAudio,
-    _videoHtmlTagPattern,
-    (match) => quill.BlockEmbed.video(match.group(1)!.trim()),
-  );
+  final withVideo = _replaceHtmlTagWithEmbed(withAudio, _videoHtmlTagPattern, (
+    match,
+  ) {
+    final raw = match.group(0) ?? '';
+    final attrs = _parseHtmlAttributes(raw);
+    final src = _normalizeMediaSourceAttribute(attrs);
+    final id = _lessonMediaIdFromMediaAttributes(attrs, src);
+    if (id != null && id.isNotEmpty) {
+      return quill.BlockEmbed.video(
+        videoBlockEmbedValueFromLessonMedia(lessonMediaId: id, src: src),
+      );
+    }
+    return quill.BlockEmbed.video(match.group(1)!.trim());
+  });
   final withImages = _replaceHtmlImgTagsWithEmbeds(withVideo);
   return withImages;
 }
 
-String? _lessonMediaIdFromAudioAttributes(
+String? _lessonMediaIdFromMediaAttributes(
   Map<String, String> attrs,
-  String src,
-) {
+  String src, {
+  String? explicitId,
+}) {
+  if (explicitId != null && explicitId.trim().isNotEmpty) {
+    return explicitId.trim();
+  }
   final explicit =
       attrs['data-lesson-media-id'] ?? attrs['data-lesson_media_id'];
   if (explicit != null && explicit.trim().isNotEmpty) return explicit.trim();

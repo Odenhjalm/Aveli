@@ -376,7 +376,7 @@ async def complete_lesson_media_upload(
         raise HTTPException(status_code=403, detail="Not course owner")
 
     content_type = _normalize_content_type(payload.content_type, payload.original_name or payload.storage_path)
-    kind, normalized_media_type = _validate_lesson_media_type(
+    kind, _ = _validate_lesson_media_type(
         content_type=content_type,
         filename=payload.original_name or payload.storage_path,
         media_type=None,
@@ -426,6 +426,7 @@ async def complete_lesson_media_upload(
     if not normalized_path.startswith(expected_prefix):
         raise HTTPException(status_code=400, detail="storage_path does not match lesson prefix")
 
+    original_name = (payload.original_name or "").strip() or Path(normalized_path).name
     media_object = await models.create_media_object(
         owner_id=str(current["id"]),
         storage_path=normalized_path,
@@ -433,25 +434,38 @@ async def complete_lesson_media_upload(
         content_type=content_type,
         byte_size=int(payload.byte_size),
         checksum=payload.checksum,
-        original_name=payload.original_name,
+        original_name=original_name,
     )
     if not media_object:
-        raise HTTPException(status_code=400, detail="Failed to record media object")
+        raise HTTPException(status_code=500, detail="Failed to persist media object")
 
-    row = await models.add_lesson_media_entry_with_position_retry(
-        lesson_id=str(lesson_id),
-        kind=kind,
-        storage_path=normalized_path,
-        storage_bucket=expected_bucket,
-        media_id=str(media_object["id"]),
-        duration_seconds=None,
-        max_retries=10,
-    )
+    media_object_id = str(media_object["id"])
+    try:
+        row = await models.add_lesson_media_entry_with_position_retry(
+            lesson_id=str(lesson_id),
+            kind=kind,
+            storage_path=normalized_path,
+            storage_bucket=expected_bucket,
+            media_id=media_object_id,
+            duration_seconds=None,
+            max_retries=10,
+        )
+    except Exception:
+        await models.cleanup_media_object(media_object_id)
+        raise
+
     if not row:
-        raise HTTPException(status_code=400, detail="Failed to record lesson media")
+        await models.cleanup_media_object(media_object_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Could not allocate lesson media position",
+        )
+
+    row["content_type"] = content_type
+    row["byte_size"] = payload.byte_size
+    row["original_name"] = original_name
     media_signer.attach_media_links(row, purpose="editor_preview")
     return row
-
 
 @router.get("/lessons/{lesson_id}/media")
 async def list_lesson_media(lesson_id: UUID, current: TeacherUser):

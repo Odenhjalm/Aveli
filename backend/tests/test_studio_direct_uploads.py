@@ -132,6 +132,8 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
         assert body["storage_path"] == presign_data["storage_path"]
         assert body["storage_bucket"] == presign_data["storage_bucket"]
         assert body["content_type"] == "video/mp4"
+        assert body.get("media_id")
+        assert body.get("original_name") == "demo.mp4"
 
         monkeypatch.setattr(
             media_signer.settings, "media_allow_legacy_media", False, raising=False
