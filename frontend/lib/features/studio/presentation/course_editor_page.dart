@@ -299,6 +299,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _suppressNextMediaPreview = false;
       return;
     }
+    if (_isPreviewBlocked(media)) {
+      return;
+    }
     if (_isWavMedia(media)) {
       return;
     }
@@ -1666,6 +1669,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ? kind
           : _kindForContentType(contentType);
       if (effectiveKind == 'video') {
+        if (_isPreviewBlocked(media)) continue;
         video = media;
         break;
       }
@@ -2132,6 +2136,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return media['media_asset_id'] != null;
   }
 
+  bool _isPreviewBlocked(Map<String, dynamic> media) {
+    final dynamic previewBlocked = media['preview_blocked'];
+    if (previewBlocked is bool && previewBlocked) return true;
+    final dynamic resolvableForEditor = media['resolvable_for_editor'];
+    if (resolvableForEditor is bool && resolvableForEditor == false) return true;
+    return false;
+  }
+
   String _pipelineState(Map<String, dynamic> media) {
     return (media['media_state'] as String?) ?? 'uploaded';
   }
@@ -2201,7 +2213,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     Map<String, dynamic> media, {
     MediaResolutionMode mode = MediaResolutionMode.editorPreview,
   }) async {
-    if (_isWavMedia(media)) return null;
+    if (_isWavMedia(media) || _isPreviewBlocked(media)) return null;
 
     final mediaRepo = ref.read(mediaRepositoryProvider);
     final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
@@ -2246,6 +2258,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<String?> _cachedLessonMediaPlaybackUrl(Map<String, dynamic> media) {
+    if (_isPreviewBlocked(media)) {
+      return Future.value(null);
+    }
     final id = (media['id'] as String?)?.trim();
     if (id == null || id.isEmpty) {
       return _resolveLessonMediaPlaybackUrl(media);
@@ -3436,6 +3451,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final kind = rawKind.isEmpty || rawKind == 'other'
         ? _kindForContentType(contentType)
         : rawKind;
+    if (_isPreviewBlocked(media)) {
+      return;
+    }
     if (_isWavMedia(media)) {
       return;
     }
@@ -4532,6 +4550,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             (media['issue_reason'] as String?)
                                                 ?.trim() ??
                                             '';
+                                        final previewBlocked =
+                                            _isPreviewBlocked(media);
                                         final hasIssue = !isPipeline
                                             ? robustnessStatus.isNotEmpty
                                                 ? robustnessStatus !=
@@ -4643,6 +4663,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             isAudio;
                                         final canPreview =
                                             !hasInvalidPipelineReference &&
+                                            !previewBlocked &&
                                             !blocksInsert &&
                                             !isWavMedia &&
                                             (!isPipeline || canPipelinePlay);
@@ -4672,7 +4693,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             color: theme.colorScheme.error,
                                           );
                                         } else if (kind == 'image' &&
-                                            downloadUrl != null) {
+                                            downloadUrl != null &&
+                                            !previewBlocked) {
                                           leading = GestureDetector(
                                             onTap: _updatingCourseCover
                                                 ? null
@@ -4805,13 +4827,30 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                                   FontWeight
                                                                       .w600,
                                                             ),
-                                                      ),
-                                                    ],
                                                   ),
-                                                  Text(
-                                                    bucket.isEmpty
-                                                        ? 'Intern lagring'
-                                                        : bucket,
+                                                ],
+                                              ),
+                                              if (previewBlocked)
+                                                Text(
+                                                  issueReason.isNotEmpty
+                                                      ? 'Förhandsvisning blockerad: $issueReason'
+                                                      : robustnessStatus
+                                                              .isNotEmpty
+                                                          ? 'Förhandsvisning blockerad: $robustnessStatus'
+                                                          : 'Förhandsvisning blockerad.',
+                                                  style: theme
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        color: theme
+                                                            .colorScheme
+                                                            .error,
+                                                      ),
+                                                ),
+                                              Text(
+                                                bucket.isEmpty
+                                                    ? 'Intern lagring'
+                                                    : bucket,
                                                     style: Theme.of(
                                                       context,
                                                     ).textTheme.labelSmall,

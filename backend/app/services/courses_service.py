@@ -420,6 +420,8 @@ async def list_lesson_media(
     mode: str | None = None,
 ) -> Sequence[dict[str, Any]]:
     """Return media entries for a lesson with download URLs."""
+    normalized_mode = (mode or "").strip().lower()
+    editor_mode = normalized_mode in {"editor_insert", "editor_preview"}
     rows = await courses_repo.list_lesson_media(lesson_id)
     items: list[dict[str, Any]] = []
     for row in rows:
@@ -560,6 +562,16 @@ async def list_lesson_media(
     pipeline_items = [item for item in items if item.get("media_asset_id")]
     if pipeline_items:
         await asyncio.gather(*[_attach_pipeline_playback_url(item) for item in pipeline_items])
+
+    if editor_mode:
+        for item in items:
+            # In editor mode we must never attempt to preview media that we cannot
+            # verify as resolvable. Keep the row visible for delete/diagnostics,
+            # but strip playback_url so the UI cannot accidentally auto-preview.
+            preview_blocked = item.get("resolvable_for_editor") is not True
+            item["preview_blocked"] = preview_blocked
+            if preview_blocked:
+                item.pop("playback_url", None)
     return items
 
 
