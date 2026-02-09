@@ -145,6 +145,7 @@ class _EditorResolvedVideoBlock extends ConsumerWidget {
     }
 
     return LessonVideoBlock(
+      key: ValueKey<String>('editor-inline-video-$resolved'),
       url: resolved,
       title: 'Lektionsvideo',
       semanticLabel: 'Videoblock i lektionseditorn',
@@ -1771,6 +1772,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final media = video;
     if (media == null) return null;
+    final mediaId = (media['id'] as String?)?.trim();
     final label = media['title'] as String? ?? _fileNameFromMedia(media);
     final isIntro =
         media['is_intro'] == true ||
@@ -1796,6 +1798,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               LessonVideoBlock(
+                key: ValueKey<String>(
+                  mediaId != null && mediaId.isNotEmpty
+                      ? 'editor-preview-video-$mediaId'
+                      : 'editor-preview-video-$url',
+                ),
                 url: url,
                 title: label,
                 semanticLabel: 'Lektionsvideo i editorn',
@@ -2238,7 +2245,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final dynamic previewBlocked = media['preview_blocked'];
     if (previewBlocked is bool && previewBlocked) return true;
     final dynamic resolvableForEditor = media['resolvable_for_editor'];
-    if (resolvableForEditor is bool && resolvableForEditor == false) return true;
+    if (resolvableForEditor is bool && resolvableForEditor == false)
+      return true;
     return false;
   }
 
@@ -4642,8 +4650,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             media['resolvable_for_editor'];
                                         final bool? resolvableForEditor =
                                             resolvableForEditorRaw is bool
-                                                ? resolvableForEditorRaw
-                                                : null;
+                                            ? resolvableForEditorRaw
+                                            : null;
                                         final issueReason =
                                             (media['issue_reason'] as String?)
                                                 ?.trim() ??
@@ -4652,87 +4660,75 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             _isPreviewBlocked(media);
                                         final hasIssue = !isPipeline
                                             ? robustnessStatus.isNotEmpty
-                                                ? robustnessStatus !=
-                                                        'ok_legacy' &&
-                                                    robustnessStatus != 'ok'
-                                                : issueReason.isNotEmpty
+                                                  ? robustnessStatus !=
+                                                            'ok_legacy' &&
+                                                        robustnessStatus != 'ok'
+                                                  : issueReason.isNotEmpty
                                             : false;
                                         final isMissingBytes = !isPipeline
                                             ? robustnessStatus ==
-                                                    'missing_bytes' ||
-                                                (robustnessStatus.isEmpty &&
-                                                    issueReason ==
-                                                        'missing_object')
+                                                      'missing_bytes' ||
+                                                  (robustnessStatus.isEmpty &&
+                                                      issueReason ==
+                                                          'missing_object')
                                             : false;
                                         final isUnsupportedLegacy = !isPipeline
                                             ? robustnessStatus ==
-                                                    'unsupported' ||
-                                                (robustnessStatus.isEmpty &&
-                                                    issueReason ==
-                                                        'unsupported')
+                                                      'unsupported' ||
+                                                  (robustnessStatus.isEmpty &&
+                                                      issueReason ==
+                                                          'unsupported')
                                             : false;
                                         final isManualReviewLegacy = !isPipeline
                                             ? robustnessStatus ==
-                                                'manual_review'
+                                                  'manual_review'
                                             : false;
                                         final isLegacyDrift = !isPipeline
                                             ? robustnessStatus ==
-                                                    'needs_migration' ||
-                                                (robustnessStatus.isEmpty &&
-                                                    (issueReason ==
-                                                            'bucket_mismatch' ||
-                                                        issueReason ==
-                                                            'key_format_drift'))
+                                                      'needs_migration' ||
+                                                  (robustnessStatus.isEmpty &&
+                                                      (issueReason ==
+                                                              'bucket_mismatch' ||
+                                                          issueReason ==
+                                                              'key_format_drift'))
                                             : false;
                                         final blocksInsert = !isPipeline
                                             ? (resolvableForEditor == false) ||
-                                                (resolvableForEditor ==
-                                                        null &&
-                                                    (issueReason ==
-                                                            'missing_object' ||
-                                                        issueReason ==
-                                                            'unsupported')) ||
-                                                (resolvableForEditor ==
-                                                        true &&
-                                                    (isMissingBytes ||
-                                                        isUnsupportedLegacy ||
-                                                        isManualReviewLegacy))
+                                                  (resolvableForEditor ==
+                                                          null &&
+                                                      (issueReason ==
+                                                              'missing_object' ||
+                                                          issueReason ==
+                                                              'unsupported')) ||
+                                                  (resolvableForEditor ==
+                                                          true &&
+                                                      (isMissingBytes ||
+                                                          isUnsupportedLegacy ||
+                                                          isManualReviewLegacy))
                                             : false;
-                                        final legacyIssueText = !isPipeline &&
-                                                hasIssue
+                                        final legacyIssueText =
+                                            !isPipeline && hasIssue
                                             ? robustnessStatus.isNotEmpty
-                                                ? '${switch (robustnessStatus) {
-                                                    'missing_bytes' =>
-                                                      'Orsak: bytes saknas.',
-                                                    'needs_migration' =>
-                                                      'Orsak: behöver migration (bucket/path-drift).',
-                                                    'unsupported' =>
-                                                      'Orsak: stöds ej längre.',
-                                                    'manual_review' =>
-                                                      'Orsak: kräver manuell granskning.',
-                                                    _ =>
-                                                      'Orsak: $robustnessStatus.',
-                                                  }}'
-                                                  '${switch (robustnessAction) {
-                                                    'auto_migrate' =>
-                                                      ' Åtgärd: kör media_doctor.',
-                                                    'reupload_required' =>
-                                                      ' Åtgärd: ladda upp på nytt.',
-                                                    'manual_review' =>
-                                                      ' Åtgärd: manuell granskning.',
-                                                    _ => '',
-                                                  }}'
-                                                : '${switch (issueReason) {
-                                                    'missing_object' =>
-                                                      'Orsak: bytes saknas. Åtgärd: ladda upp på nytt.',
-                                                    'bucket_mismatch' =>
-                                                      'Orsak: bucket mismatch. Åtgärd: kör media_doctor.',
-                                                    'key_format_drift' =>
-                                                      'Orsak: path-format drift. Åtgärd: kör media_doctor.',
-                                                    'unsupported' =>
-                                                      'Orsak: stöds ej. Åtgärd: manuell granskning.',
-                                                    _ => 'Orsak: $issueReason.',
-                                                  }}'
+                                                  ? '${switch (robustnessStatus) {
+                                                          'missing_bytes' => 'Orsak: bytes saknas.',
+                                                          'needs_migration' => 'Orsak: behöver migration (bucket/path-drift).',
+                                                          'unsupported' => 'Orsak: stöds ej längre.',
+                                                          'manual_review' => 'Orsak: kräver manuell granskning.',
+                                                          _ => 'Orsak: $robustnessStatus.',
+                                                        }}'
+                                                        '${switch (robustnessAction) {
+                                                          'auto_migrate' => ' Åtgärd: kör media_doctor.',
+                                                          'reupload_required' => ' Åtgärd: ladda upp på nytt.',
+                                                          'manual_review' => ' Åtgärd: manuell granskning.',
+                                                          _ => '',
+                                                        }}'
+                                                  : '${switch (issueReason) {
+                                                      'missing_object' => 'Orsak: bytes saknas. Åtgärd: ladda upp på nytt.',
+                                                      'bucket_mismatch' => 'Orsak: bucket mismatch. Åtgärd: kör media_doctor.',
+                                                      'key_format_drift' => 'Orsak: path-format drift. Åtgärd: kör media_doctor.',
+                                                      'unsupported' => 'Orsak: stöds ej. Åtgärd: manuell granskning.',
+                                                      _ => 'Orsak: $issueReason.',
+                                                    }}'
                                             : '';
                                         final statusKey =
                                             hasInvalidPipelineReference
@@ -4815,8 +4811,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                       media,
                                                     ),
                                                 builder: (context, snapshot) {
-                                                  final url =
-                                                      snapshot.data?.trim();
+                                                  final url = snapshot.data
+                                                      ?.trim();
                                                   if (url == null ||
                                                       url.isEmpty) {
                                                     return Icon(
@@ -4925,30 +4921,30 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                                   FontWeight
                                                                       .w600,
                                                             ),
+                                                      ),
+                                                    ],
                                                   ),
-                                                ],
-                                              ),
-                                              if (previewBlocked)
-                                                Text(
-                                                  issueReason.isNotEmpty
-                                                      ? 'Förhandsvisning blockerad: $issueReason'
-                                                      : robustnessStatus
-                                                              .isNotEmpty
+                                                  if (previewBlocked)
+                                                    Text(
+                                                      issueReason.isNotEmpty
+                                                          ? 'Förhandsvisning blockerad: $issueReason'
+                                                          : robustnessStatus
+                                                                .isNotEmpty
                                                           ? 'Förhandsvisning blockerad: $robustnessStatus'
                                                           : 'Förhandsvisning blockerad.',
-                                                  style: theme
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        color: theme
-                                                            .colorScheme
-                                                            .error,
-                                                      ),
-                                                ),
-                                              Text(
-                                                bucket.isEmpty
-                                                    ? 'Intern lagring'
-                                                    : bucket,
+                                                      style: theme
+                                                          .textTheme
+                                                          .labelSmall
+                                                          ?.copyWith(
+                                                            color: theme
+                                                                .colorScheme
+                                                                .error,
+                                                          ),
+                                                    ),
+                                                  Text(
+                                                    bucket.isEmpty
+                                                        ? 'Intern lagring'
+                                                        : bucket,
                                                     style: Theme.of(
                                                       context,
                                                     ).textTheme.labelSmall,
@@ -4959,7 +4955,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                       context,
                                                     ).textTheme.labelSmall,
                                                   ),
-                                                  if (legacyIssueText.isNotEmpty)
+                                                  if (legacyIssueText
+                                                      .isNotEmpty)
                                                     Text(
                                                       'Legacy media – behöver åtgärd. '
                                                       '$legacyIssueText',
