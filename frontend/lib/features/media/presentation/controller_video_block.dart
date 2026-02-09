@@ -12,6 +12,7 @@ class ControllerVideoBlock extends ConsumerWidget {
     super.key,
     required this.mediaId,
     required this.url,
+    this.playbackUrlLoader,
     this.title,
     this.controlsMode = InlineVideoControlsMode.lesson,
     this.minimalUi = false,
@@ -25,6 +26,7 @@ class ControllerVideoBlock extends ConsumerWidget {
 
   final String mediaId;
   final String url;
+  final Future<String?> Function()? playbackUrlLoader;
   final String? title;
   final InlineVideoControlsMode controlsMode;
   final bool minimalUi;
@@ -205,15 +207,38 @@ class ControllerVideoBlock extends ConsumerWidget {
     MediaPlaybackController playbackController,
     String normalizedMediaId,
   ) {
+    final loader = playbackUrlLoader;
+    if (loader != null) {
+      unawaited(
+        playbackController
+            .play(
+              mediaId: normalizedMediaId,
+              mediaType: MediaPlaybackType.video,
+              title: title,
+              urlLoader: () async {
+                final loaded = (await loader())?.trim() ?? '';
+                if (loaded.isNotEmpty) return loaded;
+                final fallback = url.trim();
+                if (fallback.isNotEmpty) return fallback;
+                throw StateError('Empty playback URL');
+              },
+            )
+            .catchError((Object _, StackTrace __) {}),
+      );
+      return;
+    }
+
     final trimmedUrl = url.trim();
     if (trimmedUrl.isEmpty) return;
     unawaited(
-      playbackController.play(
-        mediaId: normalizedMediaId,
-        mediaType: MediaPlaybackType.video,
-        url: trimmedUrl,
-        title: title,
-      ),
+      playbackController
+          .play(
+            mediaId: normalizedMediaId,
+            mediaType: MediaPlaybackType.video,
+            url: trimmedUrl,
+            title: title,
+          )
+          .catchError((Object _, StackTrace __) {}),
     );
   }
 }

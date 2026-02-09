@@ -98,7 +98,8 @@ String? lessonMediaUrlFromEmbedValue(dynamic value) {
   return null;
 }
 
-String? _lessonMediaIdFromEmbedValue(dynamic value) {
+@visibleForTesting
+String? lessonMediaIdFromEmbedValue(dynamic value) {
   if (value is Map) {
     final raw = value['lesson_media_id'] ?? value['lessonMediaId'];
     if (raw is String && raw.trim().isNotEmpty) return raw.trim();
@@ -151,7 +152,7 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
   return DeltaToMarkdown(
     customEmbedHandlers: {
       AudioBlockEmbed.embedType: (embed, out) {
-        final lessonMediaId = _lessonMediaIdFromEmbedValue(embed.value.data);
+        final lessonMediaId = lessonMediaIdFromEmbedValue(embed.value.data);
         if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
           final escapedId = _htmlAttributeEscape.convert(lessonMediaId);
           out.write('<audio controls');
@@ -208,7 +209,7 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
         out.write(' />');
       },
       quill.BlockEmbed.videoType: (embed, out) {
-        final lessonMediaId = _lessonMediaIdFromEmbedValue(embed.value.data);
+        final lessonMediaId = lessonMediaIdFromEmbedValue(embed.value.data);
         if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
           final escapedId = _htmlAttributeEscape.convert(lessonMediaId);
           out.write('<video controls');

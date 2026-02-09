@@ -114,6 +114,7 @@ class _EditorVideoEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
+    final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(value);
     final url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
@@ -121,14 +122,18 @@ class _EditorVideoEmbedBuilder implements quill.EmbedBuilder {
     if (trimmed.isEmpty) {
       return const _EditorVideoFallback();
     }
-    return _EditorResolvedVideoBlock(url: trimmed);
+    return _EditorResolvedVideoBlock(
+      url: trimmed,
+      lessonMediaId: lessonMediaId,
+    );
   }
 }
 
 class _EditorResolvedVideoBlock extends ConsumerWidget {
-  const _EditorResolvedVideoBlock({required this.url});
+  const _EditorResolvedVideoBlock({required this.url, this.lessonMediaId});
 
   final String url;
+  final String? lessonMediaId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -144,11 +149,19 @@ class _EditorResolvedVideoBlock extends ConsumerWidget {
     if (uri != null && uri.path.startsWith('/studio/media/')) {
       return const _EditorVideoFallback();
     }
+    final mediaId = lessonMediaId?.trim();
 
     return ControllerVideoBlock(
       key: ValueKey<String>('editor-inline-video-$resolved'),
       mediaId: 'editor-embed-$resolved',
       url: resolved,
+      playbackUrlLoader: mediaId == null || mediaId.isEmpty
+          ? null
+          : () => resolveLessonMediaSignedPlaybackUrl(
+              lessonMediaId: mediaId,
+              mediaRepository: mediaRepository,
+              mode: MediaResolutionMode.editorPreview,
+            ),
       title: 'Lektionsvideo',
       controlsMode: InlineVideoControlsMode.editor,
       semanticLabel: 'Videoblock i lektionseditorn',
@@ -1819,6 +1832,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 ),
                 mediaId: mediaId != null && mediaId.isNotEmpty ? mediaId : url,
                 url: url,
+                playbackUrlLoader: () => _resolveLessonMediaPlaybackUrl(
+                  media,
+                  mode: MediaResolutionMode.editorPreview,
+                ),
                 title: label,
                 controlsMode: InlineVideoControlsMode.editor,
                 semanticLabel: 'Lektionsvideo i editorn',
