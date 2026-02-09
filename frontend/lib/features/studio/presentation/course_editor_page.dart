@@ -166,7 +166,7 @@ class _EditorResolvedVideoBlock extends ConsumerWidget {
       controlsMode: InlineVideoControlsMode.editor,
       semanticLabel: 'Videoblock i lektionseditorn',
       semanticHint:
-          'Tryck på spela-knappen för att förhandsgranska videon i editorn.',
+          'Tryck på videoytan för att förhandsgranska, spela eller pausa videon i editorn.',
     );
   }
 }
@@ -1840,7 +1840,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 controlsMode: InlineVideoControlsMode.editor,
                 semanticLabel: 'Lektionsvideo i editorn',
                 semanticHint:
-                    'Tryck på spela-knappen för att starta videoförhandsvisningen.',
+                    'Tryck på videoytan för att starta eller pausa videoförhandsvisningen.',
               ),
               gap8,
               Row(

@@ -43,8 +43,11 @@ void main() {
       final player = tester.widget<InlineVideoPlayer>(
         find.byType(InlineVideoPlayer),
       );
-      expect(player.controlsMode, InlineVideoControlsMode.lesson);
-      expect(player.controlChrome, InlineVideoControlChrome.playPauseAndStop);
+      expect(player.playback.controlsMode, InlineVideoControlsMode.lesson);
+      expect(
+        player.playback.controlChrome,
+        InlineVideoControlChrome.playPauseAndStop,
+      );
     },
   );
 
@@ -76,7 +79,7 @@ void main() {
     final player = tester.widget<InlineVideoPlayer>(
       find.byType(InlineVideoPlayer),
     );
-    expect(player.controlsMode, InlineVideoControlsMode.home);
+    expect(player.playback.controlsMode, InlineVideoControlsMode.home);
   });
 
   testWidgets('controller block prefers playbackUrlLoader on play', (

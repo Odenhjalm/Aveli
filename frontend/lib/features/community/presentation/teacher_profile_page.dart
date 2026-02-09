@@ -408,7 +408,22 @@ class _ProfileMediaTile extends ConsumerWidget {
         playback.currentMediaId == item.id &&
         playback.isPlaying &&
         playback.mediaType == playable.mediaType;
-    final hasUrl = (playback.url ?? '').trim().isNotEmpty;
+    final activeUrl = playback.url?.trim();
+    final resolvedActiveUrl = activeUrl ?? '';
+    final hasUrl = resolvedActiveUrl.isNotEmpty;
+    final activeVideoPlayback =
+        playable != null &&
+            playable.mediaType == MediaPlaybackType.video &&
+            hasUrl
+        ? tryCreateVideoPlaybackState(
+            mediaId: item.id,
+            url: resolvedActiveUrl,
+            title: title,
+            controlsMode: InlineVideoControlsMode.custom,
+            controlChrome: InlineVideoControlChrome.hidden,
+            minimalUi: false,
+          )
+        : null;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: _buildLeading(),
@@ -467,19 +482,15 @@ class _ProfileMediaTile extends ConsumerWidget {
           ],
           if (isActive && hasUrl) ...[
             const SizedBox(height: 10),
-            if (playable!.mediaType == MediaPlaybackType.audio)
+            if (playable?.mediaType == MediaPlaybackType.audio)
               InlineAudioPlayer(
-                url: playback.url!,
+                url: resolvedActiveUrl,
                 title: title,
                 durationHint: playable.durationHint,
                 autoPlay: true,
               )
-            else
-              InlineVideoPlayer(
-                url: playback.url!,
-                title: title,
-                autoPlay: true,
-              ),
+            else if (activeVideoPlayback != null)
+              InlineVideoPlayer(playback: activeVideoPlayback, autoPlay: true),
           ],
         ],
       ),
@@ -525,11 +536,12 @@ class _ProfileMediaTile extends ConsumerWidget {
           _ => null,
         };
         if (mediaType == null || url == null || url.isEmpty) return null;
+        final durationSeconds = source.durationSeconds;
         return _PlayableMedia(
           mediaType: mediaType,
           url: url,
-          durationHint: source.durationSeconds != null
-              ? Duration(seconds: source.durationSeconds!)
+          durationHint: durationSeconds != null
+              ? Duration(seconds: durationSeconds)
               : null,
         );
       case TeacherProfileMediaKind.seminarRecording:

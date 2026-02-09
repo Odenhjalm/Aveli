@@ -121,13 +121,24 @@ class _LessonMediaPreviewState extends State<LessonMediaPreview> {
   Widget build(BuildContext context) {
     if (!_useMediaKit) {
       if (_isVideo) {
+        final playback = tryCreateVideoPlaybackState(
+          mediaId: 'preview-video-${widget.source.hashCode}',
+          url: widget.source,
+          title: widget.caption ?? '',
+          controlsMode: InlineVideoControlsMode.custom,
+          controlChrome: InlineVideoControlChrome.hidden,
+          minimalUi: false,
+        );
         return _PreviewContainer(
           aspectRatio: widget.aspectRatio,
-          child: InlineVideoPlayer(
-            url: widget.source,
-            title: widget.caption,
-            autoPlay: widget.autoplay,
-          ),
+          child: playback == null
+              ? const _ErrorOverlay(
+                  message: 'Media saknas eller stöds inte längre',
+                )
+              : InlineVideoPlayer(
+                  playback: playback,
+                  autoPlay: widget.autoplay,
+                ),
         );
       }
       return _PreviewContainer(

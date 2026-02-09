@@ -37,6 +37,14 @@ class LessonVideoBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final normalizedTitle = title?.trim();
+    final playback = tryCreateVideoPlaybackState(
+      mediaId: url,
+      url: url,
+      title: normalizedTitle ?? '',
+      controlsMode: InlineVideoControlsMode.custom,
+      controlChrome: InlineVideoControlChrome.hidden,
+      minimalUi: minimalUi,
+    );
     final label =
         semanticLabel ??
         (normalizedTitle == null || normalizedTitle.isEmpty
@@ -80,13 +88,21 @@ class LessonVideoBlock extends StatelessWidget {
                   ),
                   child: Padding(
                     padding: p8,
-                    child: InlineVideoPlayer(
-                      key: playerKey,
-                      url: url,
-                      title: title,
-                      autoPlay: autoPlay,
-                      minimalUi: minimalUi,
-                    ),
+                    child: playback == null
+                        ? AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Center(
+                              child: Text(
+                                'Video laddas...',
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          )
+                        : InlineVideoPlayer(
+                            key: playerKey,
+                            playback: playback,
+                            autoPlay: autoPlay,
+                          ),
                   ),
                 ),
               ),

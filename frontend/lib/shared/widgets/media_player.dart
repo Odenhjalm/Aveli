@@ -36,10 +36,11 @@ class VideoSurfaceTapTarget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stop = onStop;
     final shortcuts = <ShortcutActivator, Intent>{
       const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
       const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
-      if (onStop != null)
+      if (stop != null)
         const SingleActivator(LogicalKeyboardKey.keyS):
             const _StopInlinePlaybackIntent(),
     };
@@ -50,10 +51,10 @@ class VideoSurfaceTapTarget extends StatelessWidget {
           return null;
         },
       ),
-      if (onStop != null)
+      if (stop != null)
         _StopInlinePlaybackIntent: CallbackAction<_StopInlinePlaybackIntent>(
           onInvoke: (_) {
-            onStop!();
+            stop();
             return null;
           },
         ),
@@ -146,6 +147,55 @@ InlineVideoControlsConfig resolveInlineVideoControls({
   }
 }
 
+@immutable
+class VideoPlaybackState {
+  VideoPlaybackState({
+    required String mediaId,
+    required String url,
+    required String title,
+    required this.controlsMode,
+    required this.controlChrome,
+    required this.minimalUi,
+  }) : mediaId = mediaId.trim(),
+       url = url.trim(),
+       title = title.trim() {
+    if (this.mediaId.isEmpty) {
+      throw ArgumentError.value(mediaId, 'mediaId', 'must not be empty');
+    }
+    if (this.url.isEmpty) {
+      throw ArgumentError.value(url, 'url', 'must not be empty');
+    }
+  }
+
+  final String mediaId;
+  final String url;
+  final String title;
+  final InlineVideoControlsMode controlsMode;
+  final InlineVideoControlChrome controlChrome;
+  final bool minimalUi;
+}
+
+VideoPlaybackState? tryCreateVideoPlaybackState({
+  required String mediaId,
+  required String url,
+  required String title,
+  required InlineVideoControlsMode controlsMode,
+  required InlineVideoControlChrome controlChrome,
+  required bool minimalUi,
+}) {
+  final normalizedMediaId = mediaId.trim();
+  final normalizedUrl = url.trim();
+  if (normalizedMediaId.isEmpty || normalizedUrl.isEmpty) return null;
+  return VideoPlaybackState(
+    mediaId: normalizedMediaId,
+    url: normalizedUrl,
+    title: title,
+    controlsMode: controlsMode,
+    controlChrome: controlChrome,
+    minimalUi: minimalUi,
+  );
+}
+
 class _MediaKitPlaybackHandle implements InlinePlaybackHandle {
   _MediaKitPlaybackHandle(this._player);
 
@@ -222,10 +272,26 @@ Future<void> showMediaPlayerSheet(
                   durationHint: durationHint,
                   onDownload: downloadAction,
                 )
-              : InlineVideoPlayer(
-                  url: url,
-                  title: title,
-                  onDownload: downloadAction,
+              : Builder(
+                  builder: (context) {
+                    final playback = tryCreateVideoPlaybackState(
+                      mediaId: 'sheet-video-${url.hashCode}',
+                      url: url,
+                      title: title ?? '',
+                      controlsMode: InlineVideoControlsMode.custom,
+                      controlChrome: InlineVideoControlChrome.hidden,
+                      minimalUi: false,
+                    );
+                    if (playback == null) {
+                      return const Center(
+                        child: Text('Media saknas eller stöds inte längre'),
+                      );
+                    }
+                    return InlineVideoPlayer(
+                      playback: playback,
+                      onDownload: downloadAction,
+                    );
+                  },
                 ),
         ),
       );
@@ -236,24 +302,16 @@ Future<void> showMediaPlayerSheet(
 class InlineVideoPlayer extends StatefulWidget {
   const InlineVideoPlayer({
     super.key,
-    required this.url,
-    this.title,
+    required this.playback,
     this.onDownload,
     this.onPlaybackStateChanged,
     this.autoPlay = false,
-    this.minimalUi = false,
-    this.controlChrome = InlineVideoControlChrome.hidden,
-    this.controlsMode = InlineVideoControlsMode.custom,
   });
 
-  final String url;
-  final String? title;
+  final VideoPlaybackState playback;
   final Future<void> Function()? onDownload;
   final ValueChanged<bool>? onPlaybackStateChanged;
   final bool autoPlay;
-  final bool minimalUi;
-  final InlineVideoControlChrome controlChrome;
-  final InlineVideoControlsMode controlsMode;
 
   @override
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
@@ -291,7 +349,8 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   @override
   void didUpdateWidget(covariant InlineVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.url != oldWidget.url) {
+    if (widget.playback.url != oldWidget.playback.url ||
+        widget.playback.mediaId != oldWidget.playback.mediaId) {
       setState(() {
         _resetControllers();
         _activated = false;
@@ -361,7 +420,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       unawaited(_prepareMediaKitPlayer());
     } else {
       _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(widget.url),
+        Uri.parse(widget.playback.url),
       );
       unawaited(_initVideoPlayer());
     }
@@ -463,7 +522,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     final controller = _mediaVideoController;
     if (player == null || controller == null) return;
     try {
-      await player.open(mk.Media(widget.url), play: true);
+      await player.open(mk.Media(widget.playback.url), play: true);
       await player.setPlaylistMode(mk.PlaylistMode.loop);
       await controller.waitUntilFirstFrameRendered;
       _emitPlaybackState(player.state.playing);
@@ -521,8 +580,8 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   }
 
   String _surfaceLabel() {
-    final title = widget.title?.trim();
-    if (title == null || title.isEmpty) return 'Videospelare';
+    final title = widget.playback.title.trim();
+    if (title.isEmpty) return 'Videospelare';
     return 'Videospelare: $title';
   }
 
@@ -547,9 +606,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       InlineVideoControlChrome.playPauseAndStop;
 
   InlineVideoControlsConfig get _resolvedControls => resolveInlineVideoControls(
-    controlsMode: widget.controlsMode,
-    minimalUi: widget.minimalUi,
-    controlChrome: widget.controlChrome,
+    controlsMode: widget.playback.controlsMode,
+    minimalUi: widget.playback.minimalUi,
+    controlChrome: widget.playback.controlChrome,
   );
 
   bool _isCurrentlyPlaying() {

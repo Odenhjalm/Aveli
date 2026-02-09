@@ -52,11 +52,11 @@ class ControllerVideoBlock extends ConsumerWidget {
         playback.currentMediaId == normalizedId &&
         playback.mediaType == MediaPlaybackType.video &&
         playback.isPlaying;
-    final isLoading = isActive && playback.isLoading;
-    final activeUrl = (isActive ? playback.url : null)?.trim();
-    final playbackUrl = (activeUrl != null && activeUrl.isNotEmpty)
-        ? activeUrl
-        : url.trim();
+    final activePlayback = _resolveActivePlaybackState(
+      playback: playback,
+      normalizedMediaId: normalizedId,
+    );
+    final isLoading = isActive && activePlayback == null;
     final normalizedTitle = title?.trim();
     final label =
         semanticLabel ??
@@ -101,7 +101,7 @@ class ControllerVideoBlock extends ConsumerWidget {
                     hint: hint,
                     isActive: isActive,
                     isLoading: isLoading,
-                    playbackUrl: playbackUrl,
+                    playback: activePlayback,
                   ),
                 ),
               ),
@@ -128,7 +128,7 @@ class ControllerVideoBlock extends ConsumerWidget {
     required String hint,
     required bool isActive,
     required bool isLoading,
-    required String playbackUrl,
+    required VideoPlaybackState? playback,
   }) {
     final resolvedControls = resolveInlineVideoControls(
       controlsMode: controlsMode,
@@ -136,17 +136,13 @@ class ControllerVideoBlock extends ConsumerWidget {
       controlChrome: controlChrome,
     );
 
-    if (isActive && playbackUrl.isNotEmpty && !isLoading) {
+    if (playback != null && !isLoading) {
       return InlineVideoPlayer(
         key:
             playerKey ??
             ValueKey<String>('controller-video-$normalizedMediaId'),
-        url: playbackUrl,
-        title: title,
+        playback: playback,
         autoPlay: true,
-        minimalUi: minimalUi,
-        controlChrome: controlChrome,
-        controlsMode: controlsMode,
         onPlaybackStateChanged: (playing) {
           playbackController.syncVideoPlaybackState(
             mediaId: normalizedMediaId,
@@ -198,8 +194,30 @@ class ControllerVideoBlock extends ConsumerWidget {
     return VideoSurfaceTapTarget(
       semanticLabel: label,
       semanticHint: hint,
-      onActivate: () => _activate(playbackController, normalizedMediaId),
+      onActivate: isLoading
+          ? () {}
+          : () => _activate(playbackController, normalizedMediaId),
       child: placeholderChild,
+    );
+  }
+
+  VideoPlaybackState? _resolveActivePlaybackState({
+    required MediaPlaybackState playback,
+    required String normalizedMediaId,
+  }) {
+    if (playback.currentMediaId != normalizedMediaId) return null;
+    if (playback.mediaType != MediaPlaybackType.video) return null;
+    if (!playback.isPlaying || playback.isLoading) return null;
+    final activeUrl = (playback.url ?? '').trim();
+    if (activeUrl.isEmpty) return null;
+    final resolvedTitle = (playback.title ?? title ?? '').trim();
+    return tryCreateVideoPlaybackState(
+      mediaId: normalizedMediaId,
+      url: activeUrl,
+      title: resolvedTitle,
+      controlsMode: controlsMode,
+      controlChrome: controlChrome,
+      minimalUi: minimalUi,
     );
   }
 
@@ -207,6 +225,13 @@ class ControllerVideoBlock extends ConsumerWidget {
     MediaPlaybackController playbackController,
     String normalizedMediaId,
   ) {
+    final current = playbackController.state;
+    final alreadyLoading =
+        current.currentMediaId == normalizedMediaId &&
+        current.mediaType == MediaPlaybackType.video &&
+        current.isPlaying &&
+        current.isLoading;
+    if (alreadyLoading) return;
     final loader = playbackUrlLoader;
     if (loader != null) {
       unawaited(
