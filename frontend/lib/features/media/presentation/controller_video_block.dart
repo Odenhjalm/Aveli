@@ -14,6 +14,7 @@ class ControllerVideoBlock extends ConsumerWidget {
     required this.url,
     this.title,
     this.minimalUi = false,
+    this.controlChrome = InlineVideoControlChrome.playPauseAndStop,
     this.semanticLabel,
     this.semanticHint,
     this.containerKey,
@@ -25,6 +26,7 @@ class ControllerVideoBlock extends ConsumerWidget {
   final String url;
   final String? title;
   final bool minimalUi;
+  final InlineVideoControlChrome controlChrome;
   final String? semanticLabel;
   final String? semanticHint;
   final Key? containerKey;
@@ -133,6 +135,7 @@ class ControllerVideoBlock extends ConsumerWidget {
         title: title,
         autoPlay: true,
         minimalUi: minimalUi,
+        controlChrome: controlChrome,
         onPlaybackStateChanged: (playing) {
           playbackController.syncVideoPlaybackState(
             mediaId: normalizedMediaId,
