@@ -415,7 +415,16 @@ void main() {
               return Column(
                 children: [
                   Text('tick:$rebuildTick'),
-                  InlineVideoPlayer(url: currentUrl),
+                  InlineVideoPlayer(
+                    playback: VideoPlaybackState(
+                      mediaId: 'test-inline-player',
+                      url: currentUrl,
+                      title: 'Testvideo',
+                      controlsMode: InlineVideoControlsMode.custom,
+                      controlChrome: InlineVideoControlChrome.hidden,
+                      minimalUi: false,
+                    ),
+                  ),
                 ],
               );
             },
@@ -450,7 +459,16 @@ void main() {
           body: StatefulBuilder(
             builder: (context, setState) {
               hostSetState = setState;
-              return InlineVideoPlayer(url: currentUrl);
+              return InlineVideoPlayer(
+                playback: VideoPlaybackState(
+                  mediaId: 'test-inline-player-url-change',
+                  url: currentUrl,
+                  title: 'Testvideo',
+                  controlsMode: InlineVideoControlsMode.custom,
+                  controlChrome: InlineVideoControlChrome.hidden,
+                  minimalUi: false,
+                ),
+              );
             },
           ),
         ),

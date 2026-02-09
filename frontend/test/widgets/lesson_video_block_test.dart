@@ -129,7 +129,16 @@ void main() {
         home: Scaffold(
           body: ListView(
             children: [
-              InlineVideoPlayer(url: sampleUrl),
+              InlineVideoPlayer(
+                playback: VideoPlaybackState(
+                  mediaId: 'home-inline',
+                  url: sampleUrl,
+                  title: 'Demo',
+                  controlsMode: InlineVideoControlsMode.custom,
+                  controlChrome: InlineVideoControlChrome.hidden,
+                  minimalUi: false,
+                ),
+              ),
               LessonVideoBlock(
                 url: sampleUrl,
                 containerKey: containerKey,

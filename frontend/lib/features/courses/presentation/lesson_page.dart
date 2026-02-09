@@ -651,7 +651,8 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
             ),
       controlsMode: InlineVideoControlsMode.lesson,
       semanticLabel: 'Videoblock i lektionen',
-      semanticHint: 'Tryck på spela-knappen för att starta lektionsvideon.',
+      semanticHint:
+          'Tryck på videoytan för att spela eller pausa lektionsvideon.',
     );
   }
 }
@@ -767,9 +768,17 @@ class _MediaItem extends ConsumerWidget {
     }();
 
     if (item.kind == 'image' && item.preferredUrl != null) {
+      final preferredUrl = item.preferredUrl;
+      if (preferredUrl == null || preferredUrl.trim().isEmpty) {
+        return ListTile(
+          leading: Icon(_iconForKind()),
+          title: Text(_fileName),
+          subtitle: const Text('Media saknas eller stöds inte längre'),
+        );
+      }
       final future = mediaRepo.cacheMediaBytes(
         cacheKey: item.mediaId ?? item.id,
-        downloadPath: item.preferredUrl!,
+        downloadPath: preferredUrl,
         fileExtension: extension,
       );
       return FutureBuilder<Uint8List>(
@@ -788,12 +797,20 @@ class _MediaItem extends ConsumerWidget {
               subtitle: const Text('Media saknas eller stöds inte längre'),
             );
           }
+          final bytes = snapshot.data;
+          if (bytes == null) {
+            return ListTile(
+              leading: Icon(_iconForKind()),
+              title: Text(_fileName),
+              subtitle: const Text('Media saknas eller stöds inte längre'),
+            );
+          }
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: _LessonGlassMediaWrapper(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.memory(snapshot.data!, fit: BoxFit.cover),
+                child: Image.memory(bytes, fit: BoxFit.cover),
               ),
             ),
           );
@@ -814,7 +831,7 @@ class _MediaItem extends ConsumerWidget {
         );
       }
       final durationHint = (item.durationSeconds ?? 0) > 0
-          ? Duration(seconds: item.durationSeconds!)
+          ? Duration(seconds: item.durationSeconds ?? 0)
           : null;
       final future = resolveLessonMediaPlaybackUrl(
         item: item,
@@ -898,7 +915,8 @@ class _MediaItem extends ConsumerWidget {
               title: _fileName,
               controlsMode: InlineVideoControlsMode.lesson,
               semanticLabel: 'Videoblock: $_fileName',
-              semanticHint: 'Tryck på spela-knappen för att starta videon.',
+              semanticHint:
+                  'Tryck på videoytan för att spela eller pausa videon.',
             ),
           );
         },
@@ -907,7 +925,7 @@ class _MediaItem extends ConsumerWidget {
 
     if (item.kind == 'audio') {
       final durationHint = (item.durationSeconds ?? 0) > 0
-          ? Duration(seconds: item.durationSeconds!)
+          ? Duration(seconds: item.durationSeconds ?? 0)
           : null;
       final future = resolveLessonMediaPlaybackUrl(
         item: item,
@@ -952,10 +970,14 @@ class _MediaItem extends ConsumerWidget {
 
     String? downloadUrl;
     if (item.preferredUrl != null) {
+      final preferredUrl = item.preferredUrl;
+      if (preferredUrl == null || preferredUrl.trim().isEmpty) {
+        return ListTile(leading: Icon(_iconForKind()), title: Text(_fileName));
+      }
       try {
-        downloadUrl = mediaRepo.resolveUrl(item.preferredUrl!);
+        downloadUrl = mediaRepo.resolveUrl(preferredUrl);
       } catch (_) {
-        downloadUrl = item.preferredUrl;
+        downloadUrl = preferredUrl;
       }
     }
 
