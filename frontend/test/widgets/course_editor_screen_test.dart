@@ -20,7 +20,7 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/widgets/lesson_video_block.dart';
+import 'package:aveli/features/media/presentation/controller_video_block.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
@@ -235,7 +235,7 @@ void main() {
     expect(find.text('Ladda upp WAV'), findsOneWidget);
     expect(find.text('material.pdf'), findsOneWidget);
     expect(find.text('processing'), findsOneWidget);
-    expect(find.byType(LessonVideoBlock), findsWidgets);
+    expect(find.byType(ControllerVideoBlock), findsWidgets);
     expect(find.byIcon(Icons.error_outline), findsNothing);
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(

@@ -14,7 +14,9 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
+import 'package:aveli/features/media/application/media_playback_controller.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/presentation/controller_video_block.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -22,7 +24,6 @@ import 'package:aveli/shared/widgets/app_network_image.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
-import 'package:aveli/shared/widgets/lesson_video_block.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
@@ -39,10 +40,16 @@ class LessonPage extends ConsumerStatefulWidget {
 
 class _LessonPageState extends ConsumerState<LessonPage> {
   ProviderSubscription<AsyncValue<LessonDetailData>>? _lessonSub;
+  late final MediaPlaybackController _playbackController;
 
   @override
   void initState() {
     super.initState();
+    _playbackController = ref.read(mediaPlaybackControllerProvider.notifier);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _playbackController.stop();
+    });
     _lessonSub = ref.listenManual<AsyncValue<LessonDetailData>>(
       lessonDetailProvider(widget.lessonId),
       (previous, next) {
@@ -53,6 +60,7 @@ class _LessonPageState extends ConsumerState<LessonPage> {
 
   @override
   void dispose() {
+    scheduleMicrotask(_playbackController.stop);
     _lessonSub?.close();
     super.dispose();
   }
@@ -625,12 +633,12 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
       return const _MissingMediaFallback();
     }
 
-    return LessonVideoBlock(
+    return ControllerVideoBlock(
       key: ValueKey<String>('lesson-embed-video-$resolved'),
+      mediaId: 'lesson-embed-$resolved',
       url: resolved,
       semanticLabel: 'Videoblock i lektionen',
       semanticHint: 'Tryck på spela-knappen för att starta lektionsvideon.',
-      autoPlay: false,
     );
   }
 }
@@ -857,11 +865,11 @@ class _MediaItem extends ConsumerWidget {
           final url = playbackUrl.trim();
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: LessonVideoBlock(
+            child: ControllerVideoBlock(
               key: ValueKey<String>('lesson-media-video-${item.id}'),
+              mediaId: item.id,
               url: url,
               title: _fileName,
-              autoPlay: false,
               semanticLabel: 'Videoblock: $_fileName',
               semanticHint: 'Tryck på spela-knappen för att starta videon.',
             ),
