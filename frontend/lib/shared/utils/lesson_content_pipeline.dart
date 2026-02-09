@@ -130,6 +130,9 @@ String? _lessonMediaIdFromEmbedValue(dynamic value) {
   return null;
 }
 
+String? lessonMediaIdFromEmbedValue(dynamic value) =>
+    _lessonMediaIdFromEmbedValue(value);
+
 String _normalizeMediaSourceAttribute(Map<String, String> attrs) {
   for (final key in const [
     'src',
