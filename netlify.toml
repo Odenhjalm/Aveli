@@ -1,5 +1,6 @@
 [build]
   base = "frontend"
+  # Publish is relative to `base`, so this resolves to `frontend/build/web`.
   # Flutter Web production builds MUST be configured via Netlify env vars and
   # injected at build time using --dart-define (compiled into the app).
   #

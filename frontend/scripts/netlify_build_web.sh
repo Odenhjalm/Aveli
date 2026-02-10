@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FRONTEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$FRONTEND_ROOT/.." && pwd)"
+EXPECTED_BUILD_DIR="$FRONTEND_ROOT/build/web"
+LEGACY_ROOT_BUILD_DIR="$REPO_ROOT/build/web"
+
+cd "$FRONTEND_ROOT"
+
 # Netlify CI entrypoint for Flutter Web builds.
 #
 # IMPORTANT:
@@ -119,12 +127,21 @@ echo "Building Flutter Web with API_BASE_URL=${API_BASE_URL}" >&2
 export BUILD_NUMBER="$(date -u +%Y%m%d%H%M%S)${RANDOM}"
 echo "Flutter BUILD_NUMBER=${BUILD_NUMBER}" >&2
 
-bash scripts/build_prod.sh
+"$SCRIPT_DIR/build_prod.sh"
+
+if [[ ! -d "$EXPECTED_BUILD_DIR" ]]; then
+  echo "Build integrity check failed: missing expected output dir $EXPECTED_BUILD_DIR" >&2
+  exit 1
+fi
+if [[ -d "$LEGACY_ROOT_BUILD_DIR" && "$LEGACY_ROOT_BUILD_DIR" != "$EXPECTED_BUILD_DIR" ]]; then
+  echo "Build integrity check failed: stale root artifact exists at $LEGACY_ROOT_BUILD_DIR" >&2
+  exit 1
+fi
 
 # Post-build integrity checks: ensure the compiled bundle contains the expected
 # API base URL (compile-time constant) and doesn't contain legacy endpoints.
 if [[ "$NETLIFY_CONTEXT" == "production" ]]; then
-  main_js="build/web/main.dart.js"
+  main_js="$EXPECTED_BUILD_DIR/main.dart.js"
   if [[ ! -f "$main_js" ]]; then
     echo "Build output missing: $main_js" >&2
     exit 1
