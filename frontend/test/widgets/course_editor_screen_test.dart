@@ -407,6 +407,138 @@ void main() {
     expect(find.text('Video saknas eller stöds inte längre'), findsOneWidget);
   });
 
+  testWidgets('CourseEditorScreen opens with no courses without crashing', (
+    tester,
+  ) async {
+    final studioRepo = _MockStudioRepository();
+
+    when(() => studioRepo.fetchStatus()).thenAnswer(
+      (_) async => const StudioStatus(
+        isTeacher: true,
+        verifiedCertificates: 1,
+        hasApplication: false,
+      ),
+    );
+    when(() => studioRepo.myCourses()).thenAnswer((_) async => []);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              stripePublishableKey: 'pk_test_stub',
+              stripeMerchantDisplayName: 'Test Merchant',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          studioUploadQueueProvider.overrideWith(
+            (ref) => _NoopUploadQueueNotifier(studioRepo),
+          ),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            FlutterQuillLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('sv')],
+          home: CourseEditorScreen(studioRepository: studioRepo),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(
+      find.text('Inga kurser ännu. Skapa en kurs för att komma igång.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Välj en kurs för att hantera lektioner.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'CourseEditorScreen opens with course but no lessons without crashing',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+
+      when(() => studioRepo.fetchStatus()).thenAnswer(
+        (_) async => const StudioStatus(
+          isTeacher: true,
+          verifiedCertificates: 1,
+          hasApplication: false,
+        ),
+      );
+      when(() => studioRepo.myCourses()).thenAnswer(
+        (_) async => [
+          {'id': 'course-1', 'title': 'Tarot Basics'},
+        ],
+      );
+      when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+        (_) async => {
+          'title': 'Tarot Basics',
+          'slug': 'tarot-basics',
+          'description': 'Lär dig läsa korten',
+          'price_amount_cents': 1200,
+          'is_free_intro': true,
+          'is_published': false,
+        },
+      );
+      when(
+        () => studioRepo.listCourseLessons('course-1'),
+      ).thenAnswer((_) async => []);
+      when(() => studioRepo.listLessonMedia(any())).thenAnswer((_) async => []);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost:8080',
+                stripePublishableKey: 'pk_test_stub',
+                stripeMerchantDisplayName: 'Test Merchant',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            studioUploadQueueProvider.overrideWith(
+              (ref) => _NoopUploadQueueNotifier(studioRepo),
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              FlutterQuillLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('en'), Locale('sv')],
+            home: CourseEditorScreen(studioRepository: studioRepo),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(find.text('Inga lektioner ännu.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('CourseEditorScreen opens selected lesson with no media', (
     tester,
   ) async {
