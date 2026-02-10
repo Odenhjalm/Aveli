@@ -2313,6 +2313,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return 'image/gif';
       case 'webp':
         return 'image/webp';
+      case 'svg':
+        return 'image/svg+xml';
       case 'heic':
         return 'image/heic';
       case 'mp4':
@@ -2544,21 +2546,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     _snapshotLessonSelection();
     final selectionBeforePicker = _lastLessonSelection;
-    const extensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic'];
+    const extensions = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
 
     Future<Map<String, dynamic>> uploadImageAndResolvePublicUrl(
       Uint8List bytes,
       String filename,
       String contentType,
     ) async {
-      // Image uploads must use the simple legacy upload endpoint and return a
-      // public URL directly usable by Quill image embeds.
+      // Image uploads must return a stable public URL directly usable by Quill.
       final api = ref.read(apiClientProvider);
       final form = FormData.fromMap({
-        'course_id': courseId,
         'lesson_id': lessonId,
-        'type': 'image',
-        if (_lessonIntro) 'is_intro': true,
+        if (courseId.isNotEmpty) 'course_id': courseId,
         'file': MultipartFile.fromBytes(
           bytes,
           filename: filename,
@@ -2567,7 +2566,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       });
       final payload =
           await api.postForm<Map<String, dynamic>>(
-            '/upload/course-media',
+            '/upload/lesson-image',
             form,
           ) ??
           const <String, dynamic>{};
@@ -2579,12 +2578,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
       String? resolvedPublicUrl;
       final urlCandidates = <String?>[
+        payload['preferredUrl'] as String?,
         payload['url'] as String?,
-        payload['download_url'] as String?,
-        payload['signed_url'] as String?,
+        media['preferredUrl'] as String?,
+        media['preferred_url'] as String?,
         media['url'] as String?,
         media['download_url'] as String?,
-        media['signed_url'] as String?,
         _publicDownloadPathForMedia(media),
       ];
       for (final candidate in urlCandidates) {

@@ -185,6 +185,10 @@ def _public_download_path(
         key = _strip_bucket_prefix(normalized, bucket_for_public_url)
         return f"{public_prefix}{key}"
 
+    if is_public_asset:
+        key = _strip_bucket_prefix(normalized, bucket_for_public_url)
+        return f"/api/files/{bucket_for_public_url}/{key}"
+
     if normalized.startswith(_PUBLIC_DOWNLOAD_PREFIXES):
         return f"/api/files/{normalized}"
     return None
@@ -237,6 +241,23 @@ def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
         item.get("storage_path"),
         storage_bucket=item.get("storage_bucket"),
     )
+    kind = str(item.get("kind") or "").strip().lower()
+    content_type = str(item.get("content_type") or "").strip().lower()
+    is_image = kind == "image" or content_type.startswith("image/")
+
+    if is_image:
+        if public_url:
+            item["download_url"] = public_url
+            item["playback_url"] = public_url
+        elif legacy_enabled:
+            item["download_url"] = legacy_url
+            item["playback_url"] = legacy_url
+        else:
+            item.pop("download_url", None)
+            item.pop("playback_url", None)
+        item.pop("signed_url", None)
+        item.pop("signed_url_expires_at", None)
+        return
 
     if public_url:
         item["download_url"] = public_url

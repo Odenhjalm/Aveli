@@ -35,6 +35,25 @@ _LESSON_ALLOWED_PREFIXES = ("image/", "video/", "audio/")
 _LESSON_ALLOWED_EXACT_TYPES = {"application/pdf"}
 _PUBLIC_UPLOAD_BUCKETS = {"public-media", "users", "avatars", "hero", "logos"}
 _PROFILE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB avatars
+_LESSON_IMAGE_ALLOWED_CONTENT_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/svg+xml",
+}
+_LESSON_IMAGE_CONTENT_TYPE_BY_EXTENSION = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+_LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+}
 
 
 class UploadMediaType(str, Enum):
@@ -103,6 +122,30 @@ def _detect_kind(content_type: str | None) -> str:
     if lower == "application/pdf":
         return "pdf"
     return "other"
+
+
+def _normalize_lesson_image_upload(file: UploadFile) -> tuple[str, str]:
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if content_type == "image/jpg":
+        content_type = "image/jpeg"
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if content_type and content_type in _LESSON_IMAGE_ALLOWED_CONTENT_TYPES:
+        extension = (
+            suffix[1:]
+            if suffix in _LESSON_IMAGE_CONTENT_TYPE_BY_EXTENSION
+            else _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE[content_type]
+        )
+        return content_type, extension
+
+    if suffix in _LESSON_IMAGE_CONTENT_TYPE_BY_EXTENSION:
+        normalized_type = _LESSON_IMAGE_CONTENT_TYPE_BY_EXTENSION[suffix]
+        return normalized_type, suffix[1:]
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid image type. Allowed: png, jpg, jpeg, webp, svg",
+    )
 
 
 async def _write_upload(
@@ -452,6 +495,138 @@ async def upload_course_media(
     return response
 
 
+@router.post("/lesson-image")
+async def upload_lesson_image(
+    request: Request,
+    file: Annotated[UploadFile, File(description="Lesson image file")],
+    current: TeacherUser,
+    lesson_id: Annotated[str, Form()],
+    course_id: Annotated[str | None, Form()] = None,
+) -> dict[str, Any]:
+    owner = current["id"]
+    owner_id = str(owner)
+    lesson_id_str = str(lesson_id).strip()
+    if not lesson_id_str:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lesson_id is required")
+
+    _, lesson_course_id = await courses_service.lesson_course_ids(lesson_id_str)
+    if not lesson_course_id or not await models.is_course_owner(owner, lesson_course_id):
+        logger.warning(
+            "Permission denied: lesson image upload user_id=%s lesson_id=%s course_id=%s",
+            owner_id,
+            lesson_id_str,
+            lesson_course_id,
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
+
+    if course_id and str(course_id).strip() and str(course_id).strip() != str(lesson_course_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="course_id does not match lesson ownership",
+        )
+
+    content_type, extension = _normalize_lesson_image_upload(file)
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty")
+
+    max_bytes = max(1, int(settings.media_upload_max_image_bytes))
+    size = len(payload)
+    if size > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large",
+        )
+
+    storage_key = f"lessons/{lesson_id_str}/images/{uuid4()}.{extension}"
+    if storage_service.public_storage_service.enabled:
+        try:
+            upload = await storage_service.public_storage_service.create_upload_url(
+                storage_key,
+                content_type=content_type,
+                upsert=True,
+                cache_seconds=settings.media_public_cache_seconds,
+            )
+            timeout = httpx.Timeout(15.0, read=None)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.put(
+                    upload.url,
+                    headers=dict(upload.headers),
+                    content=payload,
+                )
+            if response.status_code >= 400:
+                logger.warning(
+                    "Supabase lesson image upload failed: lesson_id=%s status=%s key=%s",
+                    lesson_id_str,
+                    response.status_code,
+                    upload.path,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Failed to upload lesson image",
+                )
+            persisted_storage_path = upload.path
+            public_url = storage_service.public_storage_service.public_url(upload.path)
+        except storage_service.StorageServiceError as exc:
+            logger.warning(
+                "Supabase lesson image upload signing failed: lesson_id=%s error=%s",
+                lesson_id_str,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage unavailable",
+            ) from exc
+    else:
+        relative_public_path = Path(_PUBLIC_MEDIA_BUCKET) / storage_key
+        destination_path = _safe_join(UPLOADS_ROOT, *relative_public_path.parts)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        destination_path.write_bytes(payload)
+        public_url = _public_url(request, relative_public_path)
+        if public_url is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Public upload storage misconfigured",
+            )
+        persisted_storage_path = storage_key
+
+    checksum = hashlib.sha256(payload).hexdigest()
+    media_object = await models.create_media_object(
+        owner_id=owner_id,
+        storage_path=persisted_storage_path,
+        storage_bucket=_PUBLIC_MEDIA_BUCKET,
+        content_type=content_type,
+        byte_size=size,
+        checksum=checksum,
+        original_name=file.filename,
+    )
+    media_object_id = media_object["id"] if media_object else None
+    row = await models.add_lesson_media_entry_with_position_retry(
+        lesson_id=lesson_id_str,
+        kind="image",
+        storage_path=persisted_storage_path,
+        storage_bucket=_PUBLIC_MEDIA_BUCKET,
+        media_id=media_object_id,
+        max_retries=10,
+    )
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Could not allocate lesson media position",
+        )
+
+    media_payload = dict(row)
+    media_payload["kind"] = "image"
+    media_payload["url"] = public_url
+    media_payload["preferredUrl"] = public_url
+    media_payload["original_name"] = file.filename or media_payload.get("original_name")
+    media_payload.pop("signed_url", None)
+    media_payload.pop("signed_url_expires_at", None)
+    media_payload.pop("download_url", None)
+
+    return {"media": media_payload}
+
+
 @legacy_router.post("/public-media")
 async def upload_public_media(
     request: Request,
@@ -520,6 +695,7 @@ async def serve_uploaded_file(path: str):
 # Backwards-compatible aliases for older Flutter Web routes.
 legacy_router.add_api_route("/profile", upload_profile_media, methods=["POST"])
 legacy_router.add_api_route("/course-media", upload_course_media, methods=["POST"])
+legacy_router.add_api_route("/lesson-image", upload_lesson_image, methods=["POST"])
 
 
 __all__ = ["router", "files_router", "legacy_router"]

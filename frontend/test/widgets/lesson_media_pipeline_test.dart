@@ -10,6 +10,7 @@ import 'package:aveli/features/courses/presentation/lesson_page.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
@@ -251,5 +252,60 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(AveliLessonMediaPlayer), findsNothing);
+  });
+
+  testWidgets('lesson renders image embed via AveliLessonImage', (
+    tester,
+  ) async {
+    final repo = _FakeMediaPipelineRepository(
+      Future.value(
+        MediaPlaybackUrl(
+          playbackUrl: Uri.parse('https://cdn.test/audio.mp3'),
+          expiresAt: DateTime.now().toUtc(),
+          format: 'mp3',
+        ),
+      ),
+    );
+    const imageUrl = 'https://cdn.test/lesson-image.webp';
+    final data = LessonDetailData(
+      lesson: const LessonDetail(
+        id: 'lesson-image',
+        title: 'Image lesson',
+        contentMarkdown: 'Intro\n\n![](https://cdn.test/lesson-image.webp)\n',
+        isIntro: false,
+        moduleId: null,
+        position: 1,
+      ),
+      media: const [],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: '',
+              stripeMerchantDisplayName: 'Test',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          lessonDetailProvider.overrideWith((ref, lessonId) async => data),
+          mediaPipelineRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: LessonPage(lessonId: 'lesson-image')),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AveliLessonImage && widget.src == imageUrl,
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 }

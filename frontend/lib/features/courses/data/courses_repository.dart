@@ -542,6 +542,7 @@ class LessonMediaItem {
     required this.kind,
     required this.storagePath,
     this.storageBucket,
+    this.preferredUrlValue,
     this.playbackUrl,
     this.downloadUrl,
     this.signedUrl,
@@ -568,6 +569,7 @@ class LessonMediaItem {
   final String kind;
   final String storagePath;
   final String? storageBucket;
+  final String? preferredUrlValue;
   final String? playbackUrl;
   final String? downloadUrl;
   final String? signedUrl;
@@ -595,6 +597,8 @@ class LessonMediaItem {
         kind: (json['kind'] ?? '') as String,
         storagePath: (json['storage_path'] ?? '') as String,
         storageBucket: json['storage_bucket'] as String?,
+        preferredUrlValue:
+            json['preferredUrl'] as String? ?? json['preferred_url'] as String?,
         playbackUrl: json['playback_url'] as String?,
         downloadUrl: json['download_url'] as String?,
         signedUrl: json['signed_url'] as String?,
@@ -627,6 +631,11 @@ class LessonMediaItem {
       : originalName!;
 
   String? get preferredUrl {
+    final explicit = preferredUrlValue?.trim();
+    if (explicit != null && explicit.isNotEmpty) {
+      return explicit;
+    }
+
     final playback = playbackUrl?.trim();
     if (playback != null && playback.isNotEmpty) {
       final signed = signedUrl?.trim();

@@ -110,6 +110,42 @@ def test_attach_media_links_falls_back_to_api_files_without_supabase(monkeypatch
     assert item["download_url"] == "/api/files/public-media/courses/lesson-1/sample.png"
 
 
+def test_attach_media_links_builds_api_files_for_bucket_relative_public_path(monkeypatch):
+    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
+    monkeypatch.setattr(media_signer.settings, "supabase_url", None, raising=False)
+    item = {
+        "id": "media43",
+        "storage_path": "lessons/lesson-1/images/sample.webp",
+        "storage_bucket": "public-media",
+        "kind": "image",
+    }
+    media_signer.attach_media_links(item)
+    assert item["download_url"] == "/api/files/public-media/lessons/lesson-1/images/sample.webp"
+    assert item["playback_url"] == "/api/files/public-media/lessons/lesson-1/images/sample.webp"
+
+
+def test_attach_media_links_does_not_sign_images(monkeypatch):
+    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", False, raising=False)
+    monkeypatch.setattr(
+        media_signer.settings, "media_signing_secret", "dev-secret", raising=False
+    )
+    monkeypatch.setattr(
+        media_signer.settings, "media_signing_ttl_seconds", 60, raising=False
+    )
+    monkeypatch.setattr(media_signer.settings, "supabase_url", None, raising=False)
+
+    item = {
+        "id": "media44",
+        "kind": "image",
+        "storage_bucket": "public-media",
+        "storage_path": "public-media/lessons/lesson-1/images/sample.png",
+    }
+    media_signer.attach_media_links(item)
+    assert item["download_url"] == "/api/files/public-media/lessons/lesson-1/images/sample.png"
+    assert "signed_url" not in item
+    assert "signed_url_expires_at" not in item
+
+
 def test_attach_media_links_excludes_private_bucket(monkeypatch):
     monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
     item = {

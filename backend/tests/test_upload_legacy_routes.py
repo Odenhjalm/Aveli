@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import urlparse
 
 import pytest
 
@@ -125,3 +126,76 @@ async def test_upload_preflight_includes_cors_headers(async_client):
     assert resp.status_code == 200
     assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
     assert "access-control-allow-headers" in resp.headers
+
+
+async def test_upload_lesson_image_returns_public_preferred_url(async_client, tmp_path, monkeypatch):
+    headers, _ = await register_teacher(async_client)
+    course_id, lesson_id = await create_lesson(async_client, headers)
+
+    from app.routes import upload as upload_routes
+
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(upload_routes, "UPLOADS_ROOT", upload_root, raising=True)
+
+    resp = await async_client.post(
+        "/upload/lesson-image",
+        headers=headers,
+        data={"course_id": course_id, "lesson_id": lesson_id},
+        files={"file": ("diagram.png", b"png-bytes", "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    media = payload.get("media") or {}
+    assert isinstance(media, dict)
+    assert media.get("kind") == "image"
+    assert media.get("original_name") == "diagram.png"
+    assert media.get("storage_bucket") == "public-media"
+    assert str(media.get("storage_path", "")).startswith(f"lessons/{lesson_id}/images/")
+
+    url = media.get("url") or ""
+    preferred_url = media.get("preferredUrl") or ""
+    assert isinstance(url, str) and url
+    assert preferred_url == url
+
+    parsed = urlparse(url)
+    assert parsed.scheme in {"http", "https"}
+    assert parsed.netloc
+    assert parsed.path.startswith("/api/files/public-media/lessons/")
+    public_get = await async_client.get(parsed.path)
+    assert public_get.status_code == 200, public_get.text
+
+
+async def test_upload_lesson_image_rejects_invalid_type(async_client):
+    headers, _ = await register_teacher(async_client)
+    course_id, lesson_id = await create_lesson(async_client, headers)
+
+    resp = await async_client.post(
+        "/upload/lesson-image",
+        headers=headers,
+        data={"course_id": course_id, "lesson_id": lesson_id},
+        files={"file": ("notes.txt", b"text", "text/plain")},
+    )
+    assert resp.status_code == 400, resp.text
+
+
+async def test_upload_lesson_image_rejects_too_large(async_client, monkeypatch):
+    headers, _ = await register_teacher(async_client)
+    course_id, lesson_id = await create_lesson(async_client, headers)
+
+    from app.routes import upload as upload_routes
+
+    monkeypatch.setattr(
+        upload_routes.settings,
+        "media_upload_max_image_bytes",
+        4,
+        raising=False,
+    )
+
+    resp = await async_client.post(
+        "/upload/lesson-image",
+        headers=headers,
+        data={"course_id": course_id, "lesson_id": lesson_id},
+        files={"file": ("photo.webp", b"12345", "image/webp")},
+    )
+    assert resp.status_code == 413, resp.text

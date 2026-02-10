@@ -20,6 +20,7 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
+import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
@@ -106,6 +107,16 @@ Finder _lessonMediaPlayerFinder({String? kind}) {
   );
 }
 
+Finder _networkImageFinder(String url) {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is Image &&
+        widget.image is NetworkImage &&
+        (widget.image as NetworkImage).url == url,
+    description: 'Image.network($url)',
+  );
+}
+
 void main() {
   setUpAll(() {
     registerFallbackValue(const Duration());
@@ -149,12 +160,20 @@ void main() {
           'is_intro': true,
           'course_id': 'course-1',
           'content_markdown':
-              'Introtext\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
+              'Introtext\n\n![](https://cdn.test/editor-image.webp)\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
         },
       ],
     );
     when(() => studioRepo.listLessonMedia('lesson-1')).thenAnswer(
       (_) async => [
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'storage_path': 'lessons/lesson-1/images/media-image-1.webp',
+          'storage_bucket': 'public-media',
+          'preferredUrl': 'https://cdn.test/editor-image-thumb.webp',
+          'position': 1,
+        },
         {
           'id': 'media-1',
           'kind': 'video',
@@ -196,7 +215,7 @@ void main() {
             position: 1,
             isIntro: true,
             contentMarkdown:
-                'Introtext\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
+                'Introtext\n\n![](https://cdn.test/editor-image.webp)\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
           ),
         ],
       },
@@ -273,6 +292,18 @@ void main() {
     expect(_legacyInlineAudioPlayerFinder(), findsNothing);
     expect(_lessonMediaPlayerFinder(kind: 'video'), findsWidgets);
     expect(_lessonMediaPlayerFinder(kind: 'audio'), findsWidgets);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AveliLessonImage &&
+            widget.src == 'https://cdn.test/editor-image.webp',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      _networkImageFinder('https://cdn.test/editor-image-thumb.webp'),
+      findsOneWidget,
+    );
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(
         of: find.text('Ladda upp WAV'),
