@@ -2438,6 +2438,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return null;
   }
 
+  String? _asAbsoluteHttpUrl(String? candidate) {
+    if (candidate == null) return null;
+    final trimmed = candidate.trim();
+    if (trimmed.isEmpty) return null;
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null || !uri.isAbsolute || uri.host.isEmpty) return null;
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') return null;
+    return uri.toString();
+  }
+
+  String? _resolveImageEmbedSrc(Map<String, dynamic> media) {
+    return _asAbsoluteHttpUrl(_resolveMediaDisplayUrl(media));
+  }
+
   bool _isWavMedia(Map<String, dynamic> media) {
     final ingestFormat = (media['ingest_format'] as String?)
         ?.toLowerCase()
@@ -2530,20 +2545,47 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             _lessonMedia = [..._lessonMedia, media];
           }
         });
-        final resolved = _resolveMediaDisplayUrl(media);
-        if (resolved == null) {
+        final mediaId = safeString(media, 'id');
+        if (mediaId == null) {
           if (mounted) {
-            setState(
-              () => _mediaStatus = 'Uppladdad men saknar länk: $filename',
-            );
+            setState(() => _mediaStatus = 'Uppladdad men saknar media-id.');
           }
           if (mounted && context.mounted) {
-            showSnack(context, 'Uppladdningen lyckades men länken saknas.');
+            showSnack(
+              context,
+              'Uppladdningen lyckades men media-id saknas i svaret.',
+            );
           }
           return;
         }
+
+        await _loadLessonMedia();
+        if (!mounted) return;
+
+        final uploadedMedia = _itemById(_lessonMedia, mediaId) ?? media;
+        final resolved = _resolveImageEmbedSrc(uploadedMedia);
+        if (resolved == null) {
+          if (mounted) {
+            setState(
+              () => _mediaStatus =
+                  'Uppladdad men saknar publik bildlänk: $filename',
+            );
+          }
+          if (mounted && context.mounted) {
+            showSnack(
+              context,
+              'Uppladdningen lyckades men kunde inte hitta en publik bildlänk.',
+            );
+          }
+          return;
+        }
+        final imageAlt =
+            safeString(uploadedMedia, 'original_name') ??
+            safeString(media, 'original_name') ??
+            filename;
         _insertImageIntoLesson(
-          resolved,
+          src: resolved,
+          alt: imageAlt,
           targetSelection: selectionBeforePicker,
         );
         final saved = await _saveLessonContent(showSuccessSnack: false);
@@ -2641,7 +2683,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _insertImageIntoLesson(String url, {TextSelection? targetSelection}) {
+  void _insertImageIntoLesson({
+    required String src,
+    String? alt,
+    TextSelection? targetSelection,
+  }) {
+    final normalizedSrc = _asAbsoluteHttpUrl(src);
+    if (normalizedSrc == null) return;
+    final normalizedAlt = alt?.trim();
+    final imageEmbedData = <String, String>{
+      'src': normalizedSrc,
+      if (normalizedAlt != null && normalizedAlt.isNotEmpty)
+        'alt': normalizedAlt,
+    };
     final controller = _lessonContentController;
     if (controller == null) return;
     final docLength = controller.document.length;
@@ -2667,7 +2721,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     controller.replaceText(
       baseIndex,
       0,
-      quill.BlockEmbed.image(url),
+      quill.Embeddable(quill.BlockEmbed.imageType, imageEmbedData),
       TextSelection.collapsed(offset: baseIndex + 1),
     );
     controller.replaceText(
@@ -2816,13 +2870,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     _snapshotLessonSelection();
     if (_isImageMedia(media) || kind == 'image') {
-      if (resolved == null) {
+      final imageSrc = _resolveImageEmbedSrc(media);
+      if (imageSrc == null) {
         if (mounted && context.mounted) {
-          showSnack(context, 'Kunde inte resolveda sökvägen för media.');
+          showSnack(context, 'Kunde inte resolveda en publik bildlänk.');
         }
         return;
       }
-      _insertImageIntoLesson(resolved, targetSelection: _lastLessonSelection);
+      final imageAlt =
+          safeString(media, 'original_name') ?? _fileNameFromMedia(media);
+      _insertImageIntoLesson(
+        src: imageSrc,
+        alt: imageAlt,
+        targetSelection: _lastLessonSelection,
+      );
       if (mounted && context.mounted) {
         showSnack(
           context,
