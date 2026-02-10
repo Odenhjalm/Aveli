@@ -509,6 +509,37 @@ class _MissingMediaFallback extends StatelessWidget {
   }
 }
 
+class _LegacyLessonVideoFallback extends StatelessWidget {
+  const _LegacyLessonVideoFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.history_toggle_off_rounded,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Den här lektionen innehåller äldre videoformat.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LessonImageEmbedBuilder implements quill.EmbedBuilder {
   const _LessonImageEmbedBuilder();
 
@@ -742,6 +773,12 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
+    if (isLegacyVideoEmbed(value)) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: _LessonGlassMediaWrapper(child: _LegacyLessonVideoFallback()),
+      );
+    }
     final lessonMediaId = lessonMediaIdFromEmbedValue(value);
     final url =
         lessonMediaUrlFromEmbedValue(value) ??
@@ -1013,12 +1050,5 @@ class _MediaItem extends ConsumerWidget {
 }
 
 String? _normalizeInlinePlaybackUrl(String? rawValue) {
-  final trimmed = rawValue?.trim();
-  if (trimmed == null || trimmed.isEmpty) return null;
-  final uri = Uri.tryParse(trimmed);
-  if (uri == null) return null;
-  final scheme = uri.scheme.toLowerCase();
-  if (scheme != 'http' && scheme != 'https') return null;
-  if (uri.host.isEmpty) return null;
-  return uri.toString();
+  return normalizeVideoPlaybackUrl(rawValue);
 }

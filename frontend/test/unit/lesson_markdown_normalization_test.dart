@@ -57,5 +57,37 @@ void main() {
         expect(normalized, isNot(contains('/media/stream/$token')));
       },
     );
+
+    test('legacy video detection: empty and invalid URLs are legacy', () {
+      expect(isLegacyVideoEmbed(''), isTrue);
+      expect(isLegacyVideoEmbed('ftp://cdn.test/legacy.mp4'), isTrue);
+      expect(isLegacyVideoEmbed('/studio/media/legacy-path'), isTrue);
+    });
+
+    test('legacy video detection: valid HTTPS embed is not legacy', () {
+      expect(isLegacyVideoEmbed('https://cdn.test/video.mp4'), isFalse);
+    });
+
+    test(
+      'legacy video detection: lesson media marker without playback URL is legacy',
+      () {
+        const id = '123e4567-e89b-12d3-a456-426614174000';
+        final payload = jsonEncode({'lesson_media_id': id, 'kind': 'video'});
+        expect(isLegacyVideoEmbed(payload), isTrue);
+      },
+    );
+
+    test(
+      'legacy video detection: structured payload with valid playback URL is not legacy',
+      () {
+        const id = '123e4567-e89b-12d3-a456-426614174000';
+        final payload = jsonEncode({
+          'lesson_media_id': id,
+          'kind': 'video',
+          'src': 'https://cdn.test/video.mp4',
+        });
+        expect(isLegacyVideoEmbed(payload), isFalse);
+      },
+    );
   });
 }

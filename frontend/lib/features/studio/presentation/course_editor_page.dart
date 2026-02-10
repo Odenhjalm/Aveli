@@ -59,14 +59,7 @@ String? _mediaUrl(Map<String, dynamic> media) {
 }
 
 String? _normalizeVideoPlaybackUrl(String? raw) {
-  final trimmed = raw?.trim();
-  if (trimmed == null || trimmed.isEmpty) return null;
-  final uri = Uri.tryParse(trimmed);
-  if (uri == null) return null;
-  final scheme = uri.scheme.toLowerCase();
-  if (scheme != 'http' && scheme != 'https') return null;
-  if (uri.host.isEmpty) return null;
-  return uri.toString();
+  return lesson_pipeline.normalizeVideoPlaybackUrl(raw);
 }
 
 String? safeString(Map<dynamic, dynamic>? source, Object key) {
@@ -119,6 +112,9 @@ const Map<String, String> _editorFontOptions = <String, String>{
   'Lora (serif)': 'Lora',
   'Playfair Display (rubrik)': 'PlayfairDisplay',
 };
+const _legacyVideoRemoveButtonKey = ValueKey<String>(
+  'legacy_video_remove_button',
+);
 
 class _AudioEmbedBuilder implements quill.EmbedBuilder {
   const _AudioEmbedBuilder();
@@ -148,7 +144,9 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
 }
 
 class _VideoEmbedBuilder implements quill.EmbedBuilder {
-  const _VideoEmbedBuilder();
+  const _VideoEmbedBuilder({this.onRemoveLegacyVideoAt});
+
+  final void Function(int documentOffset)? onRemoveLegacyVideoAt;
 
   @override
   String get key => quill.BlockEmbed.videoType;
@@ -170,9 +168,79 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
     final url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
+    if (lesson_pipeline.isLegacyVideoEmbed(value)) {
+      return _LegacyVideoEmbedPlaceholder(
+        onRemove: onRemoveLegacyVideoAt == null
+            ? null
+            : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
+      );
+    }
     final normalizedUrl = _normalizeVideoPlaybackUrl(url);
-    if (normalizedUrl == null) return const SizedBox.shrink();
+    if (normalizedUrl == null) {
+      return _LegacyVideoEmbedPlaceholder(
+        onRemove: onRemoveLegacyVideoAt == null
+            ? null
+            : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
+      );
+    }
     return AveliVideoPlayer(playbackUrl: normalizedUrl);
+  }
+}
+
+class _LegacyVideoEmbedPlaceholder extends StatelessWidget {
+  const _LegacyVideoEmbedPlaceholder({this.onRemove});
+
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: br16,
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.history_toggle_off_rounded,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Det här videoblocket använder ett äldre videoformat.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Ta bort videon och lägg till en ny.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                key: _legacyVideoRemoveButtonKey,
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Ta bort video'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1499,7 +1567,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               ...FlutterQuillEmbeds.defaultEditorBuilders().where(
                 (builder) => builder.key != quill.BlockEmbed.videoType,
               ),
-              const _VideoEmbedBuilder(),
+              _VideoEmbedBuilder(
+                onRemoveLegacyVideoAt: _removeLegacyVideoEmbedAt,
+              ),
               const _AudioEmbedBuilder(),
             ],
           ),
@@ -2487,6 +2557,37 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() => _mediaStatus = 'Fel vid uppladdning: $message');
       }
       _showFriendlyErrorSnack('Kunde inte ladda upp bild', error, stackTrace);
+    }
+  }
+
+  void _removeLegacyVideoEmbedAt(int documentOffset) {
+    final controller = _lessonContentController;
+    if (controller == null) return;
+    final plainText = controller.document.toPlainText();
+    if (documentOffset < 0 || documentOffset >= plainText.length) return;
+
+    var deleteLength = 1;
+    final nextOffset = documentOffset + 1;
+    if (nextOffset < plainText.length && plainText[nextOffset] == '\n') {
+      deleteLength = 2;
+    }
+
+    controller.replaceText(
+      documentOffset,
+      deleteLength,
+      '',
+      TextSelection.collapsed(offset: documentOffset),
+    );
+    final collapsed = TextSelection.collapsed(
+      offset: min(documentOffset, controller.document.length),
+    );
+    controller.updateSelection(collapsed, quill.ChangeSource.local);
+    _lastLessonSelection = collapsed;
+    if (!_lessonContentFocusNode.hasFocus) {
+      _lessonContentFocusNode.requestFocus();
+    }
+    if (!_lessonContentDirty) {
+      setState(() => _lessonContentDirty = true);
     }
   }
 
