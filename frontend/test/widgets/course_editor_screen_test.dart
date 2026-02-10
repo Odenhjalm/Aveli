@@ -21,6 +21,7 @@ import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/features/media/presentation/controller_video_block.dart';
+import 'package:aveli/shared/widgets/aveli_video_player.dart';
 import 'package:aveli/shared/widgets/media_player.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
@@ -235,8 +236,9 @@ void main() {
     expect(find.text('Ladda upp WAV'), findsOneWidget);
     expect(find.text('material.pdf'), findsOneWidget);
     expect(find.text('processing'), findsOneWidget);
-    expect(find.byType(ControllerVideoBlock), findsWidgets);
-    expect(find.byIcon(Icons.error_outline), findsNothing);
+    expect(find.byType(ControllerVideoBlock), findsNothing);
+    expect(find.byType(InlineVideoPlayer), findsNothing);
+    expect(find.byType(AveliVideoPlayer), findsWidgets);
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(
         of: find.text('Ladda upp WAV'),
@@ -244,6 +246,149 @@ void main() {
       ),
     );
     expect(uploadButton.onPressed, isNotNull);
+  });
+
+  testWidgets('CourseEditorScreen ignores invalid video urls without crashing', (
+    tester,
+  ) async {
+    final studioRepo = _MockStudioRepository();
+    final coursesRepo = _MockCoursesRepository();
+
+    when(() => studioRepo.myCourses()).thenAnswer(
+      (_) async => [
+        {'id': 'course-1', 'title': 'Tarot Basics'},
+      ],
+    );
+    when(() => studioRepo.fetchStatus()).thenAnswer(
+      (_) async => const StudioStatus(
+        isTeacher: true,
+        verifiedCertificates: 1,
+        hasApplication: false,
+      ),
+    );
+    when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+      (_) async => {
+        'title': 'Tarot Basics',
+        'slug': 'tarot-basics',
+        'description': 'Lär dig läsa korten',
+        'price_amount_cents': 1200,
+        'is_free_intro': true,
+        'is_published': false,
+      },
+    );
+    when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
+      (_) async => [
+        {
+          'id': 'lesson-1',
+          'title': 'Välkommen',
+          'position': 1,
+          'is_intro': true,
+          'course_id': 'course-1',
+          'content_markdown':
+              'Introtext\n\n<video src=\"ftp://cdn.test/editor.mp4\"></video>\n\nEftertext',
+        },
+      ],
+    );
+    when(() => studioRepo.listLessonMedia('lesson-1')).thenAnswer(
+      (_) async => [
+        {
+          'id': 'media-1',
+          'kind': 'video',
+          'position': 1,
+          'original_name': 'broken.mp4',
+        },
+      ],
+    );
+
+    final courseDetail = CourseDetailData(
+      course: const CourseSummary(
+        id: 'course-1',
+        slug: 'tarot-basics',
+        title: 'Tarot Basics',
+        description: 'Lär dig läsa korten',
+        coverUrl: null,
+        videoUrl: null,
+        isFreeIntro: true,
+        isPublished: true,
+        priceCents: 1200,
+      ),
+      modules: const [
+        CourseModule(id: 'module-1', title: 'Intro', position: 1),
+      ],
+      lessonsByModule: {
+        'module-1': const [
+          LessonSummary(
+            id: 'lesson-1',
+            title: 'Välkommen',
+            position: 1,
+            isIntro: true,
+            contentMarkdown:
+                'Introtext\n\n<video src=\"ftp://cdn.test/editor.mp4\"></video>\n\nEftertext',
+          ),
+        ],
+      },
+      freeConsumed: 0,
+      freeLimit: 3,
+      isEnrolled: false,
+      latestOrder: null,
+    );
+    when(
+      () => coursesRepo.fetchCourseDetailBySlug(any()),
+    ).thenAnswer((_) async => courseDetail);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              stripePublishableKey: 'pk_test_stub',
+              stripeMerchantDisplayName: 'Test Merchant',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          backendAssetResolverProvider.overrideWith(
+            (ref) => TestBackendAssetResolver(),
+          ),
+          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          coursesRepositoryProvider.overrideWithValue(coursesRepo),
+          studioStatusProvider.overrideWith(
+            (ref) async => const StudioStatus(
+              isTeacher: true,
+              verifiedCertificates: 1,
+              hasApplication: false,
+            ),
+          ),
+          studioUploadQueueProvider.overrideWith(
+            (ref) => _NoopUploadQueueNotifier(studioRepo),
+          ),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            FlutterQuillLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('sv')],
+          home: CourseEditorScreen(
+            studioRepository: studioRepo,
+            coursesRepository: coursesRepo,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(InlineVideoPlayer), findsNothing);
+    expect(find.byType(AveliVideoPlayer), findsNothing);
+    expect(find.text('Video saknas eller stöds inte längre'), findsOneWidget);
   });
 
   testWidgets('CourseEditorScreen creates lessons directly under course', (
@@ -651,12 +796,12 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
 
-      expect(find.text('broken.mp4'), findsOneWidget);
-      expect(find.text('ok.png'), findsOneWidget);
+      expect(find.text('broken.mp4'), findsWidgets);
+      expect(find.text('ok.png'), findsWidgets);
 
       // Broken video items should never initialize an InlineVideoPlayer in the editor.
       expect(find.byType(InlineVideoPlayer), findsNothing);
-      expect(find.textContaining('Förhandsvisning blockerad'), findsOneWidget);
+      expect(find.byType(AveliVideoPlayer), findsNothing);
 
       final brokenTile = tester.widget<ListTile>(
         find
