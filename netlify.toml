@@ -1,6 +1,11 @@
 [build]
+  # Deployment invariants (machine-enforced by scripts + CI):
+  # - Base directory: frontend
+  # - Build command: bash scripts/netlify_build_web.sh
+  # - Publish directory: frontend/build/web (publish is relative to base)
+  # - Production deploys only from main
+  # - Branch deploys are previews only and must never ship production artifacts
   base = "frontend"
-  # Publish is relative to `base`, so this resolves to `frontend/build/web`.
   # Flutter Web production builds MUST be configured via Netlify env vars and
   # injected at build time using --dart-define (compiled into the app).
   #

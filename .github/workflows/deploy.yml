@@ -5,21 +5,28 @@ on:
     branches:
       - main
   pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
-  flutter-web-build-verify:
+  flutter-web-deploy-guard:
+    name: Flutter Web Deploy Guard
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Verify Netlify directories are pinned
+      - name: Verify Netlify invariants are pinned
         run: |
           set -euo pipefail
           grep -Fq 'base = "frontend"' netlify.toml
+          grep -Fq 'command = "bash scripts/netlify_build_web.sh"' netlify.toml
           grep -Fq 'publish = "build/web"' netlify.toml
 
       - name: Set up Flutter
@@ -29,50 +36,95 @@ jobs:
           flutter-version: 3.35.7
           cache: true
 
-      - name: Build Flutter Web with production scripts
+      - name: Build using Netlify guard script
         env:
-          API_BASE_URL: https://ci.api.aveli.test
-          SUPABASE_URL: https://ci.supabase.aveli.test
-          SUPABASE_PUBLIC_API_KEY: ci-public-key
-          STRIPE_PUBLISHABLE_KEY: pk_test_ci
-          OAUTH_REDIRECT_WEB: https://app.aveli.app/auth/callback
-          STRIPE_MERCHANT_DISPLAY_NAME: Aveli CI
-          FRONTEND_URL: https://app.aveli.app
-          BUILD_NUMBER: ci-${{ github.run_number }}-${{ github.run_attempt }}
+          FLUTTER_SUPABASE_URL: https://ci.supabase.aveli.test
+          FLUTTER_SUPABASE_PUBLIC_API_KEY: ci-public-key
+          FLUTTER_STRIPE_PUBLISHABLE_KEY: pk_test_ci
+          FLUTTER_OAUTH_REDIRECT_WEB: https://app.aveli.app/auth/callback
+          FLUTTER_STRIPE_MERCHANT_DISPLAY_NAME: Aveli CI
+          FLUTTER_FRONTEND_URL: https://app.aveli.app
+          FLUTTER_SUBSCRIPTIONS_ENABLED: "true"
         run: |
           set -euo pipefail
-          bash frontend/scripts/build_prod.sh
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            export CONTEXT="production"
+            export DEPLOY_CONTEXT="production"
+            export BRANCH="main"
+            export HEAD="main"
+            export PULL_REQUEST="false"
+            export FLUTTER_API_BASE_URL="https://aveli.fly.dev"
+          else
+            export CONTEXT="deploy-preview"
+            export DEPLOY_CONTEXT="deploy-preview"
+            export BRANCH="${GITHUB_HEAD_REF}"
+            export HEAD="${GITHUB_HEAD_REF}"
+            export PULL_REQUEST="${{ github.event.pull_request.number }}"
+            export FLUTTER_API_BASE_URL="https://ci.api.aveli.test"
+          fi
+          export COMMIT_REF="${GITHUB_SHA}"
+          bash frontend/scripts/netlify_build_web.sh
 
-      - name: Verify bundle content and output location
-        env:
-          API_BASE_URL: https://ci.api.aveli.test
+      - name: Verify built artifact and commit provenance
         run: |
           set -euo pipefail
+
           BUNDLE="frontend/build/web/main.dart.js"
+          COMMIT_FILE="frontend/build/web/.build_commit"
+
           if [[ ! -f "$BUNDLE" ]]; then
             echo "Missing bundle: $BUNDLE" >&2
             exit 1
           fi
 
-          # Ensure this build actually contains current compile-time values.
-          if ! grep -Fq "$API_BASE_URL" "$BUNDLE"; then
-            echo "Expected API_BASE_URL not found in bundle." >&2
+          if [[ ! -f "$COMMIT_FILE" ]]; then
+            echo "Missing commit stamp: $COMMIT_FILE" >&2
             exit 1
           fi
 
-          # Legacy-video compatibility text proves the current frontend code was built.
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            EXPECTED_API_BASE_URL="https://aveli.fly.dev"
+            git fetch --no-tags --depth=1 origin main
+            MAIN_COMMIT="$(git rev-parse FETCH_HEAD)"
+            HEAD_COMMIT="$(git rev-parse HEAD)"
+            if [[ "$HEAD_COMMIT" != "$MAIN_COMMIT" ]]; then
+              echo "Guard failed: HEAD ($HEAD_COMMIT) is not origin/main ($MAIN_COMMIT)." >&2
+              exit 1
+            fi
+          else
+            EXPECTED_API_BASE_URL="https://ci.api.aveli.test"
+            HEAD_COMMIT="$(git rev-parse HEAD)"
+          fi
+
+          if ! grep -Fq "$EXPECTED_API_BASE_URL" "$BUNDLE"; then
+            echo "Expected API_BASE_URL not found in $BUNDLE" >&2
+            exit 1
+          fi
+
           if ! grep -Fq "Ta bort video" "$BUNDLE"; then
-            echo "Expected legacy-video placeholder string not found in bundle." >&2
+            echo "Expected stable marker from main code not found in $BUNDLE" >&2
             exit 1
           fi
 
-          if grep -Fq "api.aveli.app" "$BUNDLE"; then
-            echo "Unexpected legacy API endpoint found in bundle." >&2
+          ARTIFACT_COMMIT="$(tr -d '\r\n' < "$COMMIT_FILE")"
+          if [[ "$ARTIFACT_COMMIT" != "$HEAD_COMMIT" ]]; then
+            echo "Artifact commit mismatch: expected $HEAD_COMMIT, got $ARTIFACT_COMMIT" >&2
             exit 1
           fi
 
-          # Guard against publishing from an old root-level build directory.
-          if [[ -d "build/web" ]]; then
-            echo "Unexpected root build/web artifact exists; only frontend/build/web is allowed." >&2
+          mapfile -t BUILD_DIRS < <(find . -type d -path '*/build/web' -print | sort)
+          if [[ "${#BUILD_DIRS[@]}" -ne 1 ]]; then
+            echo "Expected exactly one build/web directory, found ${#BUILD_DIRS[@]}" >&2
+            printf '%s\n' "${BUILD_DIRS[@]}" >&2
             exit 1
           fi
+
+          ONLY_BUILD_DIR="$(cd "${BUILD_DIRS[0]}" && pwd -P)"
+          EXPECTED_BUILD_DIR="$(cd frontend/build/web && pwd -P)"
+          if [[ "$ONLY_BUILD_DIR" != "$EXPECTED_BUILD_DIR" ]]; then
+            echo "Non-canonical build output directory detected: $ONLY_BUILD_DIR" >&2
+            exit 1
+          fi
+
+      # Configure this job as a required status check for main.
+      # Netlify production must track main only; branch deploys are previews only.
