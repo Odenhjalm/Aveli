@@ -27,10 +27,9 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
+import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
 import 'package:aveli/shared/widgets/aveli_video_player.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
-import 'package:aveli/shared/widgets/media_player.dart'
-    show showMediaPlayerSheet;
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -1375,6 +1374,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
       );
     }
+    final canInsertLessonMedia =
+        _selectedCourseId != null && _selectedLessonId != null;
 
     final toolbarConfig = quill.QuillSimpleToolbarConfig(
       multiRowsDisplay: false,
@@ -1404,16 +1405,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           icon: const Icon(Icons.image_outlined),
           tooltip: 'Ladda upp bild',
           onPressed: () => _handleMediaToolbarUpload(_UploadKind.image),
-        ),
-        quill.QuillToolbarCustomButtonOptions(
-          icon: const Icon(Icons.movie_creation_outlined),
-          tooltip: 'Ladda upp video',
-          onPressed: () => _handleMediaToolbarUpload(_UploadKind.video),
-        ),
-        quill.QuillToolbarCustomButtonOptions(
-          icon: const Icon(Icons.audiotrack_outlined),
-          tooltip: 'Ladda upp ljud',
-          onPressed: () => _handleMediaToolbarUpload(_UploadKind.audio),
         ),
         quill.QuillToolbarCustomButtonOptions(
           icon: const Icon(Icons.picture_as_pdf_outlined),
@@ -1472,6 +1463,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ],
         gap12,
         quill.QuillSimpleToolbar(controller: controller, config: toolbarConfig),
+        gap12,
+        EditorMediaControls(
+          onInsertVideo: canInsertLessonMedia
+              ? () => _handleMediaToolbarUpload(_UploadKind.video)
+              : null,
+          onInsertAudio: canInsertLessonMedia
+              ? () => _handleMediaToolbarUpload(_UploadKind.audio)
+              : null,
+        ),
         gap12,
         if (expandEditor)
           Expanded(child: editorSurface)
@@ -3471,6 +3471,64 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  Future<void> _showAudioPreviewSheet(
+    Map<String, dynamic> media, {
+    required String playbackUrl,
+    Duration? durationHint,
+  }) async {
+    if (!mounted || !context.mounted) return;
+    final fileName = _fileNameFromMedia(media);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final padding = EdgeInsets.fromLTRB(
+          16,
+          20,
+          16,
+          16 + MediaQuery.of(sheetContext).viewPadding.bottom,
+        );
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: padding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InlineAudioPlayer(
+                  url: playbackUrl,
+                  title: fileName,
+                  durationHint: durationHint,
+                  onDownload: _downloadingMedia
+                      ? null
+                      : () => _downloadMedia(media),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _downloadingMedia
+                        ? null
+                        : () => _downloadMedia(media),
+                    icon: Icon(
+                      _downloadingMedia
+                          ? Icons.downloading_outlined
+                          : Icons.download_outlined,
+                    ),
+                    label: Text(
+                      _downloadingMedia ? 'Hämtar...' : 'Ladda ner original',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _previewMedia(Map<String, dynamic> media) async {
     final kind = media['kind'] as String? ?? 'other';
     if (_isWavMedia(media)) {
@@ -3507,13 +3565,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (isVideo) {
         await _showVideoPreviewSheet(media, playbackUrl: normalizedVideoUrl);
       } else {
-        await showMediaPlayerSheet(
-          context,
-          kind: 'audio',
-          url: playbackUrl,
-          title: _fileNameFromMedia(media),
+        await _showAudioPreviewSheet(
+          media,
+          playbackUrl: playbackUrl,
           durationHint: durationHint,
-          onDownload: () => _downloadMedia(media),
         );
       }
       return;
@@ -3538,13 +3593,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       } else if (durationValue is double) {
         durationHint = Duration(milliseconds: (durationValue * 1000).round());
       }
-      await showMediaPlayerSheet(
-        context,
-        kind: kind,
-        url: url,
-        title: _fileNameFromMedia(media),
+      await _showAudioPreviewSheet(
+        media,
+        playbackUrl: url,
         durationHint: durationHint,
-        onDownload: () => _downloadMedia(media),
       );
     } else if (url != null && kind == 'video') {
       await _showVideoPreviewSheet(
