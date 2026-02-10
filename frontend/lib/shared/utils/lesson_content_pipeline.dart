@@ -432,9 +432,10 @@ quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
           result.insert(raw, operation.attributes);
         }
       } else {
-        final mergedAttrs = operation.attributes == null
+        final attributes = operation.attributes;
+        final mergedAttrs = attributes == null
             ? <String, dynamic>{}
-            : Map<String, dynamic>.from(operation.attributes!);
+            : Map<String, dynamic>.from(attributes);
 
         final style = attrs['style'];
         if (style != null && style.trim().isNotEmpty) {
@@ -485,7 +486,14 @@ quill_delta.Delta convertLessonMarkdownToDelta(
     if (id != null && id.isNotEmpty) {
       return AudioBlockEmbed.fromLessonMedia(lessonMediaId: id, src: src);
     }
-    return AudioBlockEmbed.fromUrl(match.group(1)!.trim());
+    final extractedSrc = match.group(1)?.trim() ?? '';
+    if (extractedSrc.isNotEmpty) {
+      return AudioBlockEmbed.fromUrl(extractedSrc);
+    }
+    if (src.isNotEmpty) {
+      return AudioBlockEmbed.fromUrl(src);
+    }
+    return raw;
   });
   final withVideo = _replaceHtmlTagWithEmbed(withAudio, _videoHtmlTagPattern, (
     match,
@@ -499,7 +507,14 @@ quill_delta.Delta convertLessonMarkdownToDelta(
         videoBlockEmbedValueFromLessonMedia(lessonMediaId: id, src: src),
       );
     }
-    return quill.BlockEmbed.video(match.group(1)!.trim());
+    final extractedSrc = match.group(1)?.trim() ?? '';
+    if (extractedSrc.isNotEmpty) {
+      return quill.BlockEmbed.video(extractedSrc);
+    }
+    if (src.isNotEmpty) {
+      return quill.BlockEmbed.video(src);
+    }
+    return raw;
   });
   final withImages = _replaceHtmlImgTagsWithEmbeds(withVideo);
   return withImages;

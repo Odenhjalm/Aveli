@@ -407,6 +407,22 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     if (hasRecoverableError) {
       _resetControllers();
     }
+    final parsedUrl = Uri.tryParse(widget.playback.url);
+    final scheme = parsedUrl?.scheme.toLowerCase();
+    final hasSupportedScheme = scheme == 'http' || scheme == 'https';
+    final hasHost = (parsedUrl?.host ?? '').isNotEmpty;
+    if (parsedUrl == null || !hasSupportedScheme || !hasHost) {
+      setState(() {
+        _activated = true;
+        _initializing = false;
+        _error = 'Media saknas eller stöds inte längre';
+        _timedOut = false;
+        _mediaAspectRatio = null;
+        _mediaKitPlaying = false;
+      });
+      _emitPlaybackState(false);
+      return;
+    }
     setState(() {
       _activated = true;
       _initializing = true;
@@ -417,11 +433,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     });
     _startActivationTimeout();
     if (_useMediaKit) {
-      unawaited(_prepareMediaKitPlayer());
+      unawaited(_prepareMediaKitPlayer(parsedUrl));
     } else {
-      _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(widget.playback.url),
-      );
+      _videoController = VideoPlayerController.networkUrl(parsedUrl);
       unawaited(_initVideoPlayer());
     }
   }
@@ -467,7 +481,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
   }
 
-  Future<void> _prepareMediaKitPlayer() async {
+  Future<void> _prepareMediaKitPlayer(Uri playbackUri) async {
     try {
       mk.MediaKit.ensureInitialized();
       if (!mounted) return;
@@ -479,7 +493,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _player = player;
       _mediaVideoController = controller;
       _listenToMediaKitStreams();
-      await _initMediaKit();
+      await _initMediaKit(playbackUri);
     } catch (error) {
       if (!mounted) return;
       _clearActivationTimeout();
@@ -517,12 +531,12 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
   }
 
-  Future<void> _initMediaKit() async {
+  Future<void> _initMediaKit(Uri playbackUri) async {
     final player = _player;
     final controller = _mediaVideoController;
     if (player == null || controller == null) return;
     try {
-      await player.open(mk.Media(widget.playback.url), play: true);
+      await player.open(mk.Media(playbackUri.toString()), play: true);
       await player.setPlaylistMode(mk.PlaylistMode.loop);
       await controller.waitUntilFirstFrameRendered;
       _emitPlaybackState(player.state.playing);
