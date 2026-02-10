@@ -2443,6 +2443,32 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return null;
   }
 
+  String? _resolveMediaListThumbnailUrl(Map<String, dynamic> media) {
+    String? preferredFromItem;
+    try {
+      preferredFromItem = LessonMediaItem.fromJson(media).preferredUrl;
+    } catch (_) {
+      preferredFromItem = null;
+    }
+
+    final candidates = <String?>[
+      preferredFromItem,
+      safeString(media, 'preferredUrl'),
+      safeString(media, 'preferred_url'),
+      _resolveMediaDisplayUrl(media),
+    ];
+    for (final candidate in candidates) {
+      if (candidate == null || candidate.trim().isEmpty) {
+        continue;
+      }
+      final resolved = _resolveMediaUrl(candidate);
+      if (resolved != null && resolved.trim().isNotEmpty) {
+        return resolved;
+      }
+    }
+    return null;
+  }
+
   String? _asAbsoluteHttpUrl(String? candidate) {
     if (candidate == null) return null;
     final trimmed = candidate.trim();
@@ -2584,6 +2610,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if ((media['content_type'] as String?)?.trim().isEmpty ?? true) {
         media['content_type'] = contentType;
       }
+      media['preferredUrl'] = resolvedPublicUrl;
 
       return <String, dynamic>{'media': media, 'public_url': resolvedPublicUrl};
     }
@@ -5006,7 +5033,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             (!isPipeline || canPipelinePlay);
                                         final downloadUrl = isWavMedia
                                             ? null
-                                            : _resolveMediaDisplayUrl(media);
+                                            : _resolveMediaListThumbnailUrl(
+                                                media,
+                                              );
                                         final mediaId = safeString(media, 'id');
                                         final fileName = _fileNameFromMedia(
                                           media,
