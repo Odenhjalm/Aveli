@@ -258,8 +258,6 @@ async def test_course_and_studio_endpoints(async_client):
         payload = resp.json()
         assert payload["enrolled"] is True
         assert payload["status"] in {"enrolled", "already_enrolled"}
-        assert payload["consumed"] >= 1
-        assert payload["limit"] >= payload["consumed"]
 
         resp = await async_client.get(
             f"/courses/{course_id}/enrollment",
@@ -268,18 +266,15 @@ async def test_course_and_studio_endpoints(async_client):
         assert resp.status_code == 200
         assert resp.json()["enrolled"] is True
 
-        # Free limit endpoints
         resp = await async_client.get(
-            "/courses/free-consumed", headers=auth_header(student_token)
+            f"/courses/{course_id}/access",
+            headers=auth_header(student_token),
         )
         assert resp.status_code == 200
-        free_counts = resp.json()
-        assert free_counts["consumed"] >= 1
-        assert free_counts["limit"] >= free_counts["consumed"]
-
-        resp = await async_client.get("/courses/config/free-limit")
-        assert resp.status_code == 200
-        assert "limit" in resp.json()
+        access_snapshot = resp.json()
+        assert access_snapshot["can_access"] is True
+        assert access_snapshot["has_access"] is True
+        assert access_snapshot["access_reason"] == "enrolled"
 
         # Course detail includes lessons (virtual module for backwards compatibility)
         resp = await async_client.get(

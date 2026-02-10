@@ -10,7 +10,6 @@ from ..services import courses_service
 from ..utils import media_signer
 
 router = APIRouter(prefix="/courses", tags=["courses"])
-config_router = APIRouter(prefix="/config", tags=["config"])
 api_router = APIRouter(prefix="/api/courses", tags=["courses"])
 
 
@@ -92,17 +91,29 @@ async def bind_course_price(slug: str, payload: dict[str, str], current: AdminUs
 
 
 @router.get("/{course_id}/modules")
-async def modules_for_course(course_id: str):
+async def modules_for_course(course_id: str, current: OptionalCurrentUser = None):
     course = await courses_service.fetch_course(course_id=course_id)
-    if not course or not course.get("is_published"):
+    user_id = str(current["id"]) if current else None
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
+        if user_id
+        else False
+    )
+    if not course or (not course.get("is_published") and not teacher_access):
         return {"items": []}
     return {"items": [_virtual_module(course_id)]}
 
 
 @router.get("/modules/{module_id}/lessons")
-async def lessons_for_module(module_id: str):
+async def lessons_for_module(module_id: str, current: OptionalCurrentUser = None):
     course = await courses_service.fetch_course(course_id=module_id)
-    if not course or not course.get("is_published"):
+    user_id = str(current["id"]) if current else None
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, module_id)
+        if user_id
+        else False
+    )
+    if not course or (not course.get("is_published") and not teacher_access):
         return {"items": []}
     lessons = await courses_service.list_course_lessons(module_id)
     return {"items": lessons}
@@ -118,8 +129,14 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     if not course_id:
         raise HTTPException(status_code=404, detail="Course not found")
 
+    user_id = str(current["id"]) if current else None
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
+        if user_id
+        else False
+    )
     course = await courses_service.fetch_course(course_id=course_id)
-    if not course or not course.get("is_published"):
+    if not course or (not course.get("is_published") and not teacher_access):
         raise HTTPException(status_code=404, detail="Course not found")
 
     module = _virtual_module(course_id)
@@ -128,15 +145,14 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     module_lessons = course_lessons
 
     media: list[dict] = []
-    user_id = str(current["id"]) if current else None
-
     can_access_media = False
-    if user_id and await courses_service.is_course_owner(user_id, course_id):
+    if teacher_access:
         can_access_media = True
     elif lesson.get("is_intro") or course.get("is_free_intro"):
         can_access_media = True
-    elif user_id and await courses_service.is_user_enrolled(user_id, course_id):
-        can_access_media = True
+    elif user_id:
+        snapshot = await courses_service.course_access_snapshot(user_id, course_id)
+        can_access_media = snapshot.get("can_access") is True
 
     if can_access_media:
         media_rows = await courses_service.list_lesson_media(
@@ -183,63 +199,22 @@ async def enroll_course(course_id: str, current: CurrentUser):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Course is not marked as free intro",
         )
-    if status_code == "limit_reached":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "message": "Free intro limit reached",
-                "code": "limit_reached",
-                "consumed": result.get("consumed"),
-                "limit": result.get("limit"),
-            },
-        )
 
     if not result.get("ok"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to enroll in course"
         )
 
-    payload = {
+    return {
         "enrolled": True,
         "status": status_code,
     }
-    if "consumed" in result:
-        payload["consumed"] = result["consumed"]
-    if "limit" in result:
-        payload["limit"] = result["limit"]
-    return payload
 
 
 @router.get("/{course_id}/latest-order")
 async def latest_order(course_id: str, current: CurrentUser):
     row = await courses_service.latest_order_for_course(current["id"], course_id)
     return {"order": row}
-
-
-@router.get("/free-consumed")
-async def free_consumed(current: CurrentUser):
-    count = await courses_service.free_consumed_count(current["id"])
-    limit = await courses_service.get_free_course_limit()
-    return {"consumed": count, "limit": limit}
-
-
-@router.get("/config/free-limit")
-async def free_limit():
-    limit = await courses_service.get_free_course_limit()
-    return {"limit": limit}
-
-
-router.add_api_route(
-    "/config/free-course-limit",
-    free_limit,
-    methods=["GET"],
-    include_in_schema=False,
-)
-
-
-@config_router.get("/free-course-limit")
-async def global_free_course_limit():
-    return await free_limit()
 
 
 @router.get("/intro-first")
@@ -286,17 +261,25 @@ async def quiz_submit(
 
 
 @router.get("/by-slug/{slug}")
-async def course_detail_by_slug(slug: str):
+async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     row = await courses_service.fetch_course(slug=slug)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    if not row.get("is_published"):
+    course_id = str(row["id"])
+    user_id = str(current["id"]) if current else None
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
+        if user_id
+        else False
+    )
+    if not row.get("is_published") and not teacher_access:
         raise HTTPException(status_code=404, detail="Course not found")
     _attach_cover_links(row)
-    course_id = str(row["id"])
     module = _virtual_module(course_id)
     modules = [module]
-    lessons_map: dict[str, list] = {course_id: await courses_service.list_course_lessons(course_id)}
+    lessons_map: dict[str, list] = {
+        course_id: await courses_service.list_course_lessons(course_id)
+    }
     response = {
         "course": row,
         "modules": modules,
@@ -306,15 +289,23 @@ async def course_detail_by_slug(slug: str):
 
 
 @router.get("/{course_id}")
-async def course_detail(course_id: str):
+async def course_detail(course_id: str, current: OptionalCurrentUser = None):
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    if not row.get("is_published"):
+    user_id = str(current["id"]) if current else None
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
+        if user_id
+        else False
+    )
+    if not row.get("is_published") and not teacher_access:
         raise HTTPException(status_code=404, detail="Course not found")
     module = _virtual_module(course_id)
     modules = [module]
-    lessons_map: dict[str, list] = {course_id: await courses_service.list_course_lessons(course_id)}
+    lessons_map: dict[str, list] = {
+        course_id: await courses_service.list_course_lessons(course_id)
+    }
     return {
         "course": row,
         "modules": modules,

@@ -1212,6 +1212,10 @@ async def is_course_owner(user_id: str, course_id: str) -> bool:
     return await courses_service.is_course_owner(user_id, course_id)
 
 
+async def is_course_teacher_or_instructor(user_id: str, course_id: str) -> bool:
+    return await courses_service.is_course_teacher_or_instructor(user_id, course_id)
+
+
 async def module_course_id(module_id: str) -> str | None:
     return await courses_service.get_module_course_id(module_id)
 
@@ -1322,14 +1326,6 @@ async def update_profile(
         photo_url=photo_url,
         avatar_media_id=avatar_media_id,
     )
-
-
-async def free_course_limit() -> int:
-    return await courses_service.get_free_course_limit()
-
-
-async def free_consumed_count(user_id: str) -> int:
-    return await courses_service.free_consumed_count(user_id)
 
 
 async def is_enrolled(user_id: str, course_id: str) -> bool:

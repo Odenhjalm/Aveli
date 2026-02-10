@@ -274,12 +274,17 @@ class _CourseContent extends StatelessWidget {
     final showPurchase = !course.isFreeIntro && priceCents > 0;
     final hasAccess = detail.hasAccess;
     final isEnrolled = detail.isEnrolled;
+    final accessReason = detail.accessReason;
     final hasSubscription =
         subscriptionsEnabled && detail.hasActiveSubscription;
     final enrolledText = hasAccess
-        ? (hasSubscription && !isEnrolled
+        ? (accessReason == 'teacher'
+              ? '• Läraråtkomst'
+              : hasSubscription && !isEnrolled
               ? '• Prenumeration aktiv'
-              : '• Du är anmäld')
+              : isEnrolled
+              ? '• Du är anmäld'
+              : '• Full åtkomst')
         : '';
     final isEnrolling = enrollState.isLoading;
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
@@ -339,10 +344,8 @@ class _CourseContent extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Använda introduktioner: ${detail.freeConsumed}/${detail.freeLimit} $enrolledText',
-                  style: t.bodySmall,
-                ),
+                if (enrolledText.isNotEmpty)
+                  Text(enrolledText, style: t.bodySmall),
                 if (hasAccess && showPurchase) ...[
                   const SizedBox(height: 8),
                   Text(

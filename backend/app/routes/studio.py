@@ -1677,15 +1677,20 @@ async def media_file(
         raise HTTPException(status_code=404, detail="Media not found")
 
     user_id = str(current["id"])
-    if str(access_row.get("created_by")) != user_id:
+    course_id = access_row.get("course_id")
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, str(course_id))
+        if course_id
+        else False
+    )
+    if not teacher_access:
         if not access_row.get("is_published"):
             raise HTTPException(status_code=403, detail="Course not published")
         if not (access_row.get("is_intro") or access_row.get("is_free_intro")):
-            course_id = access_row.get("course_id")
             if not course_id:
                 raise HTTPException(status_code=403, detail="Access denied")
             snapshot = await models.course_access_snapshot(user_id, str(course_id))
-            if not snapshot.get("has_access"):
+            if snapshot.get("can_access") is not True:
                 raise HTTPException(status_code=403, detail="Access denied")
     return await _build_streaming_response(row, request)
 
