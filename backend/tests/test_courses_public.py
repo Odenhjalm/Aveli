@@ -138,6 +138,8 @@ async def test_course_public_endpoints(async_client):
         assert access_before_resp.status_code == 200
         access_before = access_before_resp.json()
         assert access_before["has_access"] is False
+        assert access_before["can_access"] is False
+        assert access_before["access_reason"] == "none"
         assert access_before["enrolled"] is False
 
         enroll_status_resp = await async_client.get(
@@ -155,8 +157,6 @@ async def test_course_public_endpoints(async_client):
         payload = enroll_resp.json()
         assert payload["enrolled"] is True
         assert payload["status"] in {"enrolled", "already_enrolled"}
-        assert payload["consumed"] >= 1
-        assert payload["limit"] >= payload["consumed"]
 
         enroll_status_resp = await async_client.get(
             f"/courses/{course_id}/enrollment",
@@ -171,26 +171,9 @@ async def test_course_public_endpoints(async_client):
         assert access_after_resp.status_code == 200
         access_after = access_after_resp.json()
         assert access_after["has_access"] is True
+        assert access_after["can_access"] is True
+        assert access_after["access_reason"] == "enrolled"
         assert access_after["enrolled"] is True
-        assert access_after["free_consumed"] >= 1
-
-        quota_resp = await async_client.get(
-            "/courses/free-consumed",
-            headers=auth_header(student_token),
-        )
-        assert quota_resp.status_code == 200
-        assert quota_resp.json()["consumed"] >= 1
-
-        limit_resp = await async_client.get("/config/free-course-limit")
-        assert limit_resp.status_code == 200
-        assert "limit" in limit_resp.json()
-
-        async with db.pool.connection() as conn:  # type: ignore
-            async with conn.cursor() as cur:  # type: ignore[attr-defined]
-                await cur.execute(
-                    "UPDATE app.app_config SET free_course_limit = 1 WHERE id = 1"
-                )
-                await conn.commit()
 
         second_course_resp = await async_client.post(
             "/studio/courses",
@@ -207,22 +190,34 @@ async def test_course_public_endpoints(async_client):
         assert second_course_resp.status_code == 200, second_course_resp.text
         second_course_id = str(second_course_resp.json()["id"])
 
-        limit_fail = await async_client.post(
+        second_enroll = await async_client.post(
             f"/courses/{second_course_id}/enroll",
             headers=auth_header(student_token),
         )
-        assert limit_fail.status_code == 403, limit_fail.text
-        limit_detail = limit_fail.json()["detail"]
-        assert limit_detail["code"] == "limit_reached"
-        assert limit_detail["consumed"] >= 1
-        assert limit_detail["limit"] == 1
+        assert second_enroll.status_code == 200, second_enroll.text
+        assert second_enroll.json()["status"] in {"enrolled", "already_enrolled"}
 
-        async with db.pool.connection() as conn:  # type: ignore
-            async with conn.cursor() as cur:  # type: ignore[attr-defined]
-                await cur.execute(
-                    "UPDATE app.app_config SET free_course_limit = 5 WHERE id = 1"
-                )
-                await conn.commit()
+        third_course_resp = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Free Intro Course 3",
+                "slug": f"{slug}-3",
+                "description": "Unlimited intro",
+                "is_free_intro": True,
+                "is_published": True,
+                "price_amount_cents": 0,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert third_course_resp.status_code == 200, third_course_resp.text
+        third_course_id = str(third_course_resp.json()["id"])
+
+        third_enroll = await async_client.post(
+            f"/courses/{third_course_id}/enroll",
+            headers=auth_header(student_token),
+        )
+        assert third_enroll.status_code == 200, third_enroll.text
+        assert third_enroll.json()["status"] in {"enrolled", "already_enrolled"}
 
         unauthorized_enroll = await async_client.post(f"/courses/{course_id}/enroll")
         assert unauthorized_enroll.status_code == 401
@@ -232,3 +227,88 @@ async def test_course_public_endpoints(async_client):
             await cleanup_user(teacher_id)
         if student_id:
             await cleanup_user(student_id)
+
+
+async def test_teacher_has_full_access_to_own_paid_course(async_client):
+    teacher_email = f"teacher_paid_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+
+    teacher_token, _, teacher_id = await register_user(
+        async_client, teacher_email, password, "Teacher"
+    )
+    await promote_to_teacher(teacher_id)
+
+    try:
+        slug = f"paid-course-{uuid.uuid4().hex[:8]}"
+        create_resp = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Paid Teacher Course",
+                "slug": slug,
+                "description": "Private paid course",
+                "is_free_intro": False,
+                "is_published": False,
+                "price_amount_cents": 12900,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert create_resp.status_code == 200, create_resp.text
+        course_id = str(create_resp.json()["id"])
+
+        lesson_resp = await async_client.post(
+            "/studio/lessons",
+            json={
+                "course_id": course_id,
+                "title": "Paid Lesson",
+                "content_markdown": "# Private",
+                "position": 1,
+                "is_intro": False,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert lesson_resp.status_code == 200, lesson_resp.text
+        lesson_id = str(lesson_resp.json()["id"])
+
+        access_resp = await async_client.get(
+            f"/courses/{course_id}/access",
+            headers=auth_header(teacher_token),
+        )
+        assert access_resp.status_code == 200, access_resp.text
+        access = access_resp.json()
+        assert access["can_access"] is True
+        assert access["has_access"] is True
+        assert access["access_reason"] == "teacher"
+
+        detail_resp = await async_client.get(
+            f"/courses/{course_id}",
+            headers=auth_header(teacher_token),
+        )
+        assert detail_resp.status_code == 200, detail_resp.text
+        assert str(detail_resp.json()["course"]["id"]) == course_id
+
+        lesson_detail_resp = await async_client.get(
+            f"/courses/lessons/{lesson_id}",
+            headers=auth_header(teacher_token),
+        )
+        assert lesson_detail_resp.status_code == 200, lesson_detail_resp.text
+        assert lesson_detail_resp.json()["lesson"]["id"] == lesson_id
+
+        media_upload_resp = await async_client.post(
+            f"/studio/lessons/{lesson_id}/media",
+            headers=auth_header(teacher_token),
+            files={"file": ("teacher-paid.mp3", b"ID3", "audio/mpeg")},
+            data={"is_intro": "false"},
+        )
+        assert media_upload_resp.status_code == 200, media_upload_resp.text
+        media_id = str(media_upload_resp.json()["id"])
+
+        media_sign_resp = await async_client.post(
+            "/media/sign",
+            headers=auth_header(teacher_token),
+            json={"media_id": media_id, "mode": "student_render"},
+        )
+        assert media_sign_resp.status_code == 200, media_sign_resp.text
+        assert media_sign_resp.json()["media_id"] == media_id
+    finally:
+        if teacher_id:
+            await cleanup_user(teacher_id)

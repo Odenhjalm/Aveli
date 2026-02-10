@@ -200,8 +200,6 @@ void main() {
           ),
         ],
       },
-      freeConsumed: 0,
-      freeLimit: 3,
       isEnrolled: false,
       latestOrder: null,
     );
@@ -363,8 +361,6 @@ void main() {
             ),
           ],
         },
-        freeConsumed: 0,
-        freeLimit: 3,
         isEnrolled: false,
         latestOrder: null,
       );
@@ -519,8 +515,6 @@ void main() {
           ),
         ],
       },
-      freeConsumed: 0,
-      freeLimit: 3,
       isEnrolled: false,
       latestOrder: null,
     );
@@ -820,8 +814,6 @@ void main() {
           ),
         ],
       },
-      freeConsumed: 0,
-      freeLimit: 3,
       isEnrolled: false,
       latestOrder: null,
     );
@@ -1069,8 +1061,6 @@ void main() {
             ),
           ],
         },
-        freeConsumed: 0,
-        freeLimit: 3,
         isEnrolled: false,
         latestOrder: null,
       );
@@ -1230,8 +1220,6 @@ void main() {
             ),
           ],
         },
-        freeConsumed: 0,
-        freeLimit: 3,
         isEnrolled: false,
         latestOrder: null,
       );
@@ -1397,8 +1385,6 @@ void main() {
       ),
       modules: const [],
       lessonsByModule: const {},
-      freeConsumed: 0,
-      freeLimit: 3,
       isEnrolled: false,
       latestOrder: null,
     );

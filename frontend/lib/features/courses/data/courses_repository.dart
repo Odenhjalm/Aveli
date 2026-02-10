@@ -122,10 +122,9 @@ class CoursesRepository {
       final snapshot = await _fetchCourseAccess(courseId);
       return detail.copyWith(
         hasAccess: snapshot.hasAccess,
+        accessReason: snapshot.accessReason,
         isEnrolled: snapshot.enrolled,
         hasActiveSubscription: snapshot.hasActiveSubscription,
-        freeConsumed: snapshot.freeConsumed,
-        freeLimit: snapshot.freeLimit,
         latestOrder: snapshot.latestOrder,
       );
     } catch (error, stackTrace) {
@@ -231,11 +230,6 @@ class CoursesRepository {
     }
   }
 
-  Future<int> freeConsumedCount() async {
-    final quota = await fetchFreeQuota();
-    return quota.consumed;
-  }
-
   Future<bool> hasAccess(String courseId) async {
     try {
       final snapshot = await _fetchCourseAccess(courseId);
@@ -267,17 +261,6 @@ class CoursesRepository {
         return null;
       }
       throw failure;
-    }
-  }
-
-  Future<FreeQuota> fetchFreeQuota() async {
-    try {
-      final res = await _client.get<Map<String, dynamic>>(
-        '/courses/free-consumed',
-      );
-      return FreeQuota.fromJson(res);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
     }
   }
 
@@ -336,10 +319,9 @@ class CourseDetailData {
     required this.modules,
     required this.lessonsByModule,
     this.hasAccess = false,
+    this.accessReason = 'none',
     this.isEnrolled = false,
     this.hasActiveSubscription = false,
-    this.freeConsumed = 0,
-    this.freeLimit = 0,
     this.latestOrder,
   });
 
@@ -347,18 +329,16 @@ class CourseDetailData {
   final List<CourseModule> modules;
   final Map<String, List<LessonSummary>> lessonsByModule;
   final bool hasAccess;
+  final String accessReason;
   final bool isEnrolled;
   final bool hasActiveSubscription;
-  final int freeConsumed;
-  final int freeLimit;
   final CourseOrderSummary? latestOrder;
 
   CourseDetailData copyWith({
     bool? hasAccess,
+    String? accessReason,
     bool? isEnrolled,
     bool? hasActiveSubscription,
-    int? freeConsumed,
-    int? freeLimit,
     CourseOrderSummary? latestOrder,
   }) {
     return CourseDetailData(
@@ -366,54 +346,42 @@ class CourseDetailData {
       modules: modules,
       lessonsByModule: lessonsByModule,
       hasAccess: hasAccess ?? this.hasAccess,
+      accessReason: accessReason ?? this.accessReason,
       isEnrolled: isEnrolled ?? this.isEnrolled,
       hasActiveSubscription:
           hasActiveSubscription ?? this.hasActiveSubscription,
-      freeConsumed: freeConsumed ?? this.freeConsumed,
-      freeLimit: freeLimit ?? this.freeLimit,
       latestOrder: latestOrder ?? this.latestOrder,
     );
   }
 }
 
-class FreeQuota {
-  const FreeQuota({required this.consumed, required this.limit});
-
-  final int consumed;
-  final int limit;
-
-  factory FreeQuota.fromJson(Map<String, dynamic> json) => FreeQuota(
-    consumed: (json['consumed'] as num?)?.toInt() ?? 0,
-    limit: (json['limit'] as num?)?.toInt() ?? 0,
-  );
-}
-
 class CourseAccessData {
   const CourseAccessData({
     required this.hasAccess,
+    required this.accessReason,
     required this.enrolled,
     required this.hasActiveSubscription,
-    required this.freeConsumed,
-    required this.freeLimit,
     this.latestOrder,
   });
 
   final bool hasAccess;
+  final String accessReason;
   final bool enrolled;
   final bool hasActiveSubscription;
-  final int freeConsumed;
-  final int freeLimit;
   final CourseOrderSummary? latestOrder;
 
   factory CourseAccessData.fromJson(Map<String, dynamic> json) {
     final order = json['latest_order'];
     final orderMap = order is Map ? Map<String, dynamic>.from(order) : null;
+    final canAccess = json['can_access'] == true || json['has_access'] == true;
     return CourseAccessData(
-      hasAccess: json['has_access'] == true,
+      hasAccess: canAccess,
+      accessReason:
+          (json['access_reason'] as String?)?.trim().isNotEmpty == true
+          ? (json['access_reason'] as String).trim()
+          : 'none',
       enrolled: json['enrolled'] == true,
       hasActiveSubscription: json['has_active_subscription'] == true,
-      freeConsumed: CourseSummary._asInt(json['free_consumed']) ?? 0,
-      freeLimit: CourseSummary._asInt(json['free_limit']) ?? 0,
       latestOrder: orderMap != null
           ? CourseOrderSummary.fromJson(orderMap)
           : null,

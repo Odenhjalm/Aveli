@@ -674,14 +674,9 @@ async def is_course_owner(user_id: str, course_id: str) -> bool:
     return await courses_repo.is_course_owner(course_id, user_id)
 
 
-async def get_free_course_limit() -> int:
-    """Return the configured free intro course limit."""
-    return await courses_repo.get_free_course_limit()
-
-
-async def free_consumed_count(user_id: str) -> int:
-    """Return how many free intro courses the user has consumed."""
-    return await courses_repo.count_free_intro_enrollments(user_id)
+async def is_course_teacher_or_instructor(user_id: str, course_id: str) -> bool:
+    """Check if the user is the course creator or an assigned instructor."""
+    return await courses_repo.is_course_teacher_or_instructor(course_id, user_id)
 
 
 async def is_user_enrolled(user_id: str, course_id: str) -> bool:
@@ -690,25 +685,8 @@ async def is_user_enrolled(user_id: str, course_id: str) -> bool:
 
 
 async def enroll_free_intro(user_id: str, course_id: str) -> dict[str, Any]:
-    """Enroll a user in a free intro course respecting subscription limits."""
-    profile = await get_profile(user_id)
-    subscription = await get_latest_subscription(user_id)
-    has_subscription = _has_active_subscription(profile, subscription)
-    free_limit = await get_free_course_limit()
-
-    result = await courses_repo.enroll_free_intro(
-        user_id,
-        course_id,
-        free_limit=free_limit,
-        has_active_subscription=has_subscription,
-    )
-    if "limit" not in result:
-        result["limit"] = free_limit
-    if result.get("status") == "enrolled":
-        return result
-    if "consumed" not in result:
-        result["consumed"] = await free_consumed_count(user_id)
-    return result
+    """Enroll a user in a free intro course."""
+    return await courses_repo.enroll_free_intro(user_id, course_id)
 
 
 async def latest_order_for_course(user_id: str, course_id: str) -> dict[str, Any] | None:
@@ -718,21 +696,41 @@ async def latest_order_for_course(user_id: str, course_id: str) -> dict[str, Any
 
 async def course_access_snapshot(user_id: str, course_id: str) -> dict[str, Any]:
     """Return an access snapshot for course gating logic."""
+    # Intro course limits were intentionally removed.
+    # Access is no longer restricted by intro quotas.
+    if await is_course_teacher_or_instructor(user_id, course_id):
+        return {
+            "can_access": True,
+            "has_access": True,
+            "access_reason": "teacher",
+            "enrolled": False,
+            "has_active_subscription": False,
+            "latest_order": await latest_order_for_course(user_id, course_id),
+        }
+
     enrolled = await is_user_enrolled(user_id, course_id)
     latest_order = await latest_order_for_course(user_id, course_id)
-    free_consumed = await free_consumed_count(user_id)
-    free_limit = await get_free_course_limit()
     profile = await get_profile(user_id)
     subscription = await get_latest_subscription(user_id)
     is_admin = _is_admin_profile(profile)
-    has_active_subscription = _has_active_subscription(profile, subscription)
+    has_active_subscription = (
+        _has_active_subscription(profile, subscription) and not is_admin
+    )
     has_access = enrolled or has_active_subscription or is_admin
+    access_reason = "none"
+    if enrolled:
+        access_reason = "enrolled"
+    elif has_active_subscription:
+        access_reason = "subscription"
+    elif is_admin:
+        access_reason = "admin"
+
     return {
+        "can_access": has_access,
+        "access_reason": access_reason,
         "enrolled": enrolled,
         "has_active_subscription": has_active_subscription,
         "has_access": has_access,
-        "free_consumed": free_consumed,
-        "free_limit": free_limit,
         "latest_order": latest_order,
     }
 
@@ -859,8 +857,7 @@ __all__ = [
     "fetch_lesson",
     "lesson_course_ids",
     "is_course_owner",
-    "get_free_course_limit",
-    "free_consumed_count",
+    "is_course_teacher_or_instructor",
     "is_user_enrolled",
     "enroll_free_intro",
     "latest_order_for_course",

@@ -578,7 +578,6 @@ create table if not exists app.follows (
 
 create table if not exists app.app_config (
   id integer primary key default 1,
-  free_course_limit integer not null default 5,
   platform_fee_pct numeric not null default 10
 );
 

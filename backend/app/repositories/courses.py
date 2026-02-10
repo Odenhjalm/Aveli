@@ -930,6 +930,60 @@ async def is_course_owner(course_id: str, user_id: str) -> bool:
         return bool(await cur.fetchone())
 
 
+async def is_course_teacher_or_instructor(course_id: str, user_id: str) -> bool:
+    """Return true when the user is the course owner or an assigned instructor.
+
+    Owner checks are explicit and always supported. Instructor assignment checks are
+    best-effort against known assignment table variants to support deployments that
+    use different naming conventions.
+    """
+
+    if await is_course_owner(course_id, user_id):
+        return True
+
+    assignment_queries: list[tuple[str, tuple[str, str]]] = [
+        (
+            """
+            SELECT 1
+            FROM app.course_instructors
+            WHERE course_id = %s AND instructor_id = %s
+            LIMIT 1
+            """,
+            (course_id, user_id),
+        ),
+        (
+            """
+            SELECT 1
+            FROM app.course_teachers
+            WHERE course_id = %s AND teacher_id = %s
+            LIMIT 1
+            """,
+            (course_id, user_id),
+        ),
+        (
+            """
+            SELECT 1
+            FROM app.course_teacher_assignments
+            WHERE course_id = %s AND teacher_id = %s
+            LIMIT 1
+            """,
+            (course_id, user_id),
+        ),
+    ]
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            for query, params in assignment_queries:
+                try:
+                    await cur.execute(query, params)
+                except (errors.UndefinedTable, errors.UndefinedColumn):
+                    await conn.rollback()
+                    continue
+                if await cur.fetchone():
+                    return True
+    return False
+
+
 async def reorder_lessons(
     course_id: str,
     lesson_ids_in_order: Sequence[str],
@@ -1265,27 +1319,9 @@ async def ensure_course_enrollment(user_id: str, course_id: str, *, source: str 
             await conn.commit()
 
 
-async def count_free_intro_enrollments(user_id: str) -> int:
-    query = """
-        SELECT COUNT(*)::int AS count
-        FROM app.enrollments e
-        JOIN app.courses c ON c.id = e.course_id
-        WHERE e.user_id = %s
-          AND e.source = 'free_intro'
-          AND c.is_free_intro = true
-    """
-    async with get_conn() as cur:
-        await cur.execute(query, (user_id,))
-        row = await cur.fetchone()
-    return int((row or {}).get("count") or 0)
-
-
 async def enroll_free_intro(
     user_id: str,
     course_id: str,
-    *,
-    free_limit: int,
-    has_active_subscription: bool,
 ) -> dict[str, Any]:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
@@ -1314,20 +1350,6 @@ async def enroll_free_intro(
 
             await cur.execute(
                 """
-                SELECT COUNT(*)::int AS count
-                  FROM app.enrollments e
-                  JOIN app.courses c ON c.id = e.course_id
-                 WHERE e.user_id = %s
-                   AND e.source = 'free_intro'
-                   AND c.is_free_intro = true
-                """,
-                (user_id,),
-            )
-            consumed_row = await cur.fetchone()
-            consumed = int((consumed_row or {}).get("count") or 0)
-
-            await cur.execute(
-                """
                 SELECT EXISTS(
                   SELECT 1
                   FROM app.enrollments
@@ -1343,17 +1365,6 @@ async def enroll_free_intro(
                 return {
                     "ok": True,
                     "status": "already_enrolled",
-                    "consumed": consumed,
-                    "limit": free_limit,
-                }
-
-            if not has_active_subscription and consumed >= free_limit:
-                await conn.rollback()
-                return {
-                    "ok": False,
-                    "status": "limit_reached",
-                    "consumed": consumed,
-                    "limit": free_limit,
                 }
 
             await cur.execute(
@@ -1369,8 +1380,6 @@ async def enroll_free_intro(
     return {
         "ok": True,
         "status": "enrolled",
-        "consumed": consumed + 1,
-        "limit": free_limit,
     }
 
 
@@ -1385,25 +1394,6 @@ async def get_course_intro_state(course_id: str) -> dict[str, Any] | None:
         await cur.execute(query, (course_id,))
         row = await cur.fetchone()
     return dict(row) if row else None
-
-
-async def get_free_course_limit() -> int:
-    async with get_conn() as cur:
-        await cur.execute("SELECT free_course_limit FROM app.app_config WHERE id = 1")
-        row = await cur.fetchone()
-    if not row or row.get("free_course_limit") is None:
-        return 5
-    value = row["free_course_limit"]
-    if isinstance(value, int):
-        return value
-    if isinstance(value, (float, complex)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return 5
-    return 5
 
 
 async def get_course_quiz(course_id: str) -> dict[str, Any] | None:
@@ -1483,14 +1473,13 @@ __all__ = [
     "delete_lesson",
     "reorder_lessons",
     "is_course_owner",
+    "is_course_teacher_or_instructor",
     "list_my_courses",
     "is_enrolled",
     "enforce_free_intro_enrollment",
     "ensure_course_enrollment",
-    "count_free_intro_enrollments",
     "enroll_free_intro",
     "get_course_intro_state",
-    "get_free_course_limit",
     "get_course_quiz",
     "is_user_certified_for_course",
     "list_quiz_questions",

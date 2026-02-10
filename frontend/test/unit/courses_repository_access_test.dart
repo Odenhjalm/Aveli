@@ -47,11 +47,11 @@ void main() {
         () => client.get<Map<String, dynamic>>('/courses/course-1/access'),
       ).thenAnswer(
         (_) async => {
+          'can_access': true,
           'has_access': true,
+          'access_reason': 'enrolled',
           'enrolled': true,
           'has_active_subscription': false,
-          'free_consumed': 1,
-          'free_limit': 3,
         },
       );
 
@@ -106,7 +106,7 @@ void main() {
     const slug = 'aveli-course';
     const courseId = 'course-1';
 
-    test('enriches detail with enrollment, quota and order info', () async {
+    test('enriches detail with enrollment and order info', () async {
       final client = _MockApiClient();
       final repo = CoursesRepository(
         client: client,
@@ -161,11 +161,11 @@ void main() {
         ),
       ).thenAnswer(
         (_) async => {
+          'can_access': true,
           'has_access': true,
+          'access_reason': 'enrolled',
           'enrolled': true,
           'has_active_subscription': false,
-          'free_consumed': 2,
-          'free_limit': 5,
           'latest_order': {
             'id': 'order-7',
             'status': 'paid',
@@ -178,59 +178,60 @@ void main() {
       final detail = await repo.fetchCourseDetailBySlug(slug);
 
       expect(detail.hasAccess, isTrue);
+      expect(detail.accessReason, 'enrolled');
       expect(detail.isEnrolled, isTrue);
-      expect(detail.freeConsumed, 2);
-      expect(detail.freeLimit, 5);
       expect(detail.latestOrder, isNotNull);
       expect(detail.latestOrder!.id, 'order-7');
       expect(detail.modules, isNotEmpty);
       expect(detail.lessonsByModule['module-1'], isNotEmpty);
     });
 
-    test('handles unauthorized quota and missing order gracefully', () async {
-      final client = _MockApiClient();
-      final repo = CoursesRepository(
-        client: client,
-        accessApi: const _FakeAccessApi(primary: false),
-      );
+    test(
+      'handles unauthorized access metadata and missing order gracefully',
+      () async {
+        final client = _MockApiClient();
+        final repo = CoursesRepository(
+          client: client,
+          accessApi: const _FakeAccessApi(primary: false),
+        );
 
-      when(
-        () => client.get<Map<String, dynamic>>(
-          '/courses/by-slug/$slug',
-          queryParameters: null,
-        ),
-      ).thenAnswer(
-        (_) async => {
-          'course': {
-            'id': courseId,
-            'slug': slug,
-            'title': 'Aveli 101',
-            'description': null,
-            'cover_url': null,
-            'video_url': null,
-            'is_free_intro': false,
-            'is_published': true,
-            'price_cents': 1500,
+        when(
+          () => client.get<Map<String, dynamic>>(
+            '/courses/by-slug/$slug',
+            queryParameters: null,
+          ),
+        ).thenAnswer(
+          (_) async => {
+            'course': {
+              'id': courseId,
+              'slug': slug,
+              'title': 'Aveli 101',
+              'description': null,
+              'cover_url': null,
+              'video_url': null,
+              'is_free_intro': false,
+              'is_published': true,
+              'price_cents': 1500,
+            },
+            'modules': [],
+            'lessons': {},
           },
-          'modules': [],
-          'lessons': {},
-        },
-      );
+        );
 
-      when(
-        () => client.get<Map<String, dynamic>>(
-          '/courses/$courseId/access',
-          queryParameters: null,
-        ),
-      ).thenThrow(UnauthorizedFailure(message: 'not allowed'));
+        when(
+          () => client.get<Map<String, dynamic>>(
+            '/courses/$courseId/access',
+            queryParameters: null,
+          ),
+        ).thenThrow(UnauthorizedFailure(message: 'not allowed'));
 
-      final detail = await repo.fetchCourseDetailBySlug(slug);
+        final detail = await repo.fetchCourseDetailBySlug(slug);
 
-      expect(detail.hasAccess, isFalse);
-      expect(detail.isEnrolled, isFalse);
-      expect(detail.freeConsumed, 0);
-      expect(detail.freeLimit, 0);
-      expect(detail.latestOrder, isNull);
-    });
+        expect(detail.hasAccess, isFalse);
+        expect(detail.accessReason, 'none');
+        expect(detail.isEnrolled, isFalse);
+        expect(detail.latestOrder, isNull);
+      },
+    );
   });
 }

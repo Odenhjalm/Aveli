@@ -14,7 +14,7 @@ from ..db import get_conn
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
-from ..services import media_cleanup
+from ..services import courses_service, media_cleanup
 from ..services import storage_service
 from ..utils import media_paths
 
@@ -117,17 +117,19 @@ async def _authorize_course_upload(user_id: str, course_id: str) -> None:
 
 
 async def _authorize_lesson_playback(user_id: str, row: dict) -> None:
-    if str(row.get("created_by")) == user_id:
+    course_id = row.get("course_id")
+    if course_id and await courses_service.is_course_teacher_or_instructor(
+        user_id, str(course_id)
+    ):
         return
     if not row.get("is_published"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course not published")
     if row.get("is_intro") or row.get("is_free_intro"):
         return
-    course_id = row.get("course_id")
     if not course_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     snapshot = await models.course_access_snapshot(user_id, str(course_id))
-    if snapshot.get("has_access"):
+    if snapshot.get("can_access") is True:
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
