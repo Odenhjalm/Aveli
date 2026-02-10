@@ -10,12 +10,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_quill/markdown_quill.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:uuid/uuid.dart';
 
+import 'package:aveli/api/auth_repository.dart' show apiClientProvider;
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -2518,20 +2520,89 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final selectionBeforePicker = _lastLessonSelection;
     const extensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic'];
 
+    Future<Map<String, dynamic>> uploadImageAndResolvePublicUrl(
+      Uint8List bytes,
+      String filename,
+      String contentType,
+    ) async {
+      // Image uploads must use the simple legacy upload endpoint and return a
+      // public URL directly usable by Quill image embeds.
+      final api = ref.read(apiClientProvider);
+      final form = FormData.fromMap({
+        'course_id': courseId,
+        'lesson_id': lessonId,
+        'type': 'image',
+        if (_lessonIntro) 'is_intro': true,
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: MediaType.parse(contentType),
+        ),
+      });
+      final payload =
+          await api.postForm<Map<String, dynamic>>(
+            '/upload/course-media',
+            form,
+          ) ??
+          const <String, dynamic>{};
+
+      final dynamic nestedMedia = payload['media'];
+      final media = nestedMedia is Map
+          ? Map<String, dynamic>.from(nestedMedia)
+          : Map<String, dynamic>.from(payload);
+
+      String? resolvedPublicUrl;
+      final urlCandidates = <String?>[
+        payload['url'] as String?,
+        payload['download_url'] as String?,
+        payload['signed_url'] as String?,
+        media['url'] as String?,
+        media['download_url'] as String?,
+        media['signed_url'] as String?,
+        _publicDownloadPathForMedia(media),
+      ];
+      for (final candidate in urlCandidates) {
+        final absolute = _asAbsoluteHttpUrl(_resolveMediaUrl(candidate));
+        if (absolute != null) {
+          resolvedPublicUrl = absolute;
+          break;
+        }
+      }
+      if (resolvedPublicUrl == null) {
+        throw StateError('Uppladdningen returnerade ingen publik bildlänk.');
+      }
+
+      if ((media['url'] as String?)?.trim().isEmpty ?? true) {
+        media['url'] = resolvedPublicUrl;
+      }
+      if ((media['kind'] as String?)?.trim().isEmpty ?? true) {
+        media['kind'] = 'image';
+      }
+      if ((media['original_name'] as String?)?.trim().isEmpty ?? true) {
+        media['original_name'] = filename;
+      }
+      if ((media['content_type'] as String?)?.trim().isEmpty ?? true) {
+        media['content_type'] = contentType;
+      }
+
+      return <String, dynamic>{'media': media, 'public_url': resolvedPublicUrl};
+    }
+
     Future<void> uploadBytes(Uint8List bytes, String filename) async {
       final contentType = _guessContentType(filename);
       if (mounted) {
         setState(() => _mediaStatus = 'Laddar upp $filename…');
       }
       try {
-        final media = await _studioRepo.uploadLessonMedia(
-          courseId: courseId,
-          lessonId: lessonId,
-          data: bytes,
-          filename: filename,
-          contentType: contentType,
-          isIntro: _lessonIntro,
+        final uploadResult = await uploadImageAndResolvePublicUrl(
+          bytes,
+          filename,
+          contentType,
         );
+        final media = Map<String, dynamic>.from(
+          uploadResult['media'] as Map<String, dynamic>,
+        );
+        final resolved = uploadResult['public_url'] as String;
         if (!mounted) return;
         setState(() {
           final id = media['id'];
@@ -2548,44 +2619,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             _lessonMedia = [..._lessonMedia, media];
           }
         });
-        final mediaId = safeString(media, 'id');
-        if (mediaId == null) {
-          if (mounted) {
-            setState(() => _mediaStatus = 'Uppladdad men saknar media-id.');
-          }
-          if (mounted && context.mounted) {
-            showSnack(
-              context,
-              'Uppladdningen lyckades men media-id saknas i svaret.',
-            );
-          }
-          return;
-        }
-
-        await _loadLessonMedia();
-        if (!mounted) return;
-
-        final uploadedMedia = _itemById(_lessonMedia, mediaId) ?? media;
-        final resolved = _resolveImageEmbedSrc(uploadedMedia);
-        if (resolved == null) {
-          if (mounted) {
-            setState(
-              () => _mediaStatus =
-                  'Uppladdad men saknar publik bildlänk: $filename',
-            );
-          }
-          if (mounted && context.mounted) {
-            showSnack(
-              context,
-              'Uppladdningen lyckades men kunde inte hitta en publik bildlänk.',
-            );
-          }
-          return;
-        }
         _insertImageIntoLesson(
           publicUrl: resolved,
           targetSelection: selectionBeforePicker,
         );
+        unawaited(_refreshLessonMediaSilently());
         final saved = await _saveLessonContent(showSuccessSnack: false);
         if (mounted) {
           setState(
