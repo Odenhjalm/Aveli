@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:aveli/core/routing/app_routes.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:video_player/video_player.dart';
@@ -358,19 +359,16 @@ class _AudioRendererState extends State<_AudioRenderer> {
         : 1;
     final sliderValue = _position.inMilliseconds.clamp(0, safeDurationMillis);
     final title = widget.title.isEmpty ? 'Ljud' : widget.title;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: _borderRadius,
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
+    final isLessonView = _isLessonViewContext(context);
+    final hideTitle =
+        isLessonView && (widget.title.isEmpty || widget.title == 'Ljud');
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!hideTitle)
             Text(
               title,
               maxLines: 1,
@@ -379,46 +377,65 @@ class _AudioRendererState extends State<_AudioRenderer> {
                 context,
               ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
-            Row(
-              children: [
-                IconButton(
-                  onPressed: _togglePlayback,
-                  icon: Icon(
-                    _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  ),
+          Row(
+            children: [
+              IconButton(
+                onPressed: _togglePlayback,
+                icon: Icon(
+                  _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 ),
-                Expanded(
-                  child: Slider(
-                    min: 0,
-                    max: safeDurationMillis.toDouble(),
-                    value: sliderValue.toDouble(),
-                    onChanged: _duration.inMilliseconds <= 0
-                        ? null
-                        : (value) => _player.seek(
-                            Duration(milliseconds: value.round()),
-                          ),
-                  ),
+              ),
+              Expanded(
+                child: Slider(
+                  min: 0,
+                  max: safeDurationMillis.toDouble(),
+                  value: sliderValue.toDouble(),
+                  onChanged: _duration.inMilliseconds <= 0
+                      ? null
+                      : (value) =>
+                            _player.seek(Duration(milliseconds: value.round())),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
+    );
+
+    if (isLessonView) {
+      return content;
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: _borderRadius,
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: content,
     );
   }
 
   Widget _loading(BuildContext context) {
+    final loadingContent = const SizedBox(
+      height: 84,
+      child: Center(child: CircularProgressIndicator()),
+    );
+    if (_isLessonViewContext(context)) {
+      return loadingContent;
+    }
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: _borderRadius,
         border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
-      child: const SizedBox(
-        height: 84,
-        child: Center(child: CircularProgressIndicator()),
-      ),
+      child: loadingContent,
     );
+  }
+
+  bool _isLessonViewContext(BuildContext context) {
+    return ModalRoute.of(context)?.settings.name == AppRoute.lesson;
   }
 }
 
