@@ -214,19 +214,8 @@ class _ImageEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
-    final src =
-        lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
-        (value == null ? '' : value.toString());
-
-    String? alt;
-    if (value is Map) {
-      final dynamic rawAlt = value['alt'];
-      if (rawAlt is String && rawAlt.trim().isNotEmpty) {
-        alt = rawAlt.trim();
-      }
-    }
-
-    return AveliLessonImage(src: src, alt: alt);
+    final src = value == null ? '' : value.toString().trim();
+    return AveliLessonImage(src: src);
   }
 }
 
@@ -1573,11 +1562,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       ),
       customButtons: [
         quill.QuillToolbarCustomButtonOptions(
-          icon: const Icon(Icons.image_outlined),
-          tooltip: 'Ladda upp bild',
-          onPressed: () => _handleMediaToolbarUpload(_UploadKind.image),
-        ),
-        quill.QuillToolbarCustomButtonOptions(
           icon: const Icon(Icons.picture_as_pdf_outlined),
           tooltip: 'Ladda upp dokument (PDF)',
           onPressed: () => _handleMediaToolbarUpload(_UploadKind.pdf),
@@ -1640,13 +1624,32 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         gap12,
         quill.QuillSimpleToolbar(controller: controller, config: toolbarConfig),
         gap12,
-        EditorMediaControls(
-          onInsertVideo: canInsertLessonMedia
-              ? () => _handleMediaToolbarUpload(_UploadKind.video)
-              : null,
-          onInsertAudio: canInsertLessonMedia
-              ? () => _handleMediaToolbarUpload(_UploadKind.audio)
-              : null,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            EditorMediaControls(
+              onInsertVideo: canInsertLessonMedia
+                  ? () => _handleMediaToolbarUpload(_UploadKind.video)
+                  : null,
+              onInsertAudio: canInsertLessonMedia
+                  ? () => _handleMediaToolbarUpload(_UploadKind.audio)
+                  : null,
+            ),
+            FilledButton.icon(
+              key: const Key('editor_media_controls_insert_image'),
+              onPressed: canInsertLessonMedia
+                  ? () => _handleMediaToolbarUpload(_UploadKind.image)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
+              icon: const Icon(Icons.image_outlined),
+              label: const Text('Infoga bild'),
+            ),
+          ],
         ),
         gap12,
         if (expandEditor)
@@ -2579,13 +2582,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           }
           return;
         }
-        final imageAlt =
-            safeString(uploadedMedia, 'original_name') ??
-            safeString(media, 'original_name') ??
-            filename;
         _insertImageIntoLesson(
-          src: resolved,
-          alt: imageAlt,
+          publicUrl: resolved,
           targetSelection: selectionBeforePicker,
         );
         final saved = await _saveLessonContent(showSuccessSnack: false);
@@ -2684,18 +2682,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _insertImageIntoLesson({
-    required String src,
-    String? alt,
+    required String publicUrl,
     TextSelection? targetSelection,
   }) {
-    final normalizedSrc = _asAbsoluteHttpUrl(src);
+    final normalizedSrc = _asAbsoluteHttpUrl(publicUrl);
     if (normalizedSrc == null) return;
-    final normalizedAlt = alt?.trim();
-    final imageEmbedData = <String, String>{
-      'src': normalizedSrc,
-      if (normalizedAlt != null && normalizedAlt.isNotEmpty)
-        'alt': normalizedAlt,
-    };
     final controller = _lessonContentController;
     if (controller == null) return;
     final docLength = controller.document.length;
@@ -2721,7 +2712,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     controller.replaceText(
       baseIndex,
       0,
-      quill.Embeddable(quill.BlockEmbed.imageType, imageEmbedData),
+      quill.BlockEmbed.image(normalizedSrc),
       TextSelection.collapsed(offset: baseIndex + 1),
     );
     controller.replaceText(
@@ -2877,11 +2868,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         }
         return;
       }
-      final imageAlt =
-          safeString(media, 'original_name') ?? _fileNameFromMedia(media);
       _insertImageIntoLesson(
-        src: imageSrc,
-        alt: imageAlt,
+        publicUrl: imageSrc,
         targetSelection: _lastLessonSelection,
       );
       if (mounted && context.mounted) {
