@@ -20,8 +20,8 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
+import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/widgets/aveli_video_player.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
 class _MockStudioRepository extends Mock implements StudioRepository {}
@@ -81,10 +81,28 @@ Finder _legacyInlineVideoPlayerFinder() {
   );
 }
 
+Finder _legacyInlineAudioPlayerFinder() {
+  return find.byWidgetPredicate(
+    (widget) => widget.runtimeType.toString() == 'InlineAudioPlayer',
+    description: 'InlineAudioPlayer',
+  );
+}
+
 Finder _legacyControllerVideoBlockFinder() {
   return find.byWidgetPredicate(
     (widget) => widget.runtimeType.toString() == 'ControllerVideoBlock',
     description: 'ControllerVideoBlock',
+  );
+}
+
+Finder _lessonMediaPlayerFinder({String? kind}) {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is AveliLessonMediaPlayer &&
+        (kind == null || widget.kind.trim().toLowerCase() == kind),
+    description: kind == null
+        ? 'AveliLessonMediaPlayer'
+        : 'AveliLessonMediaPlayer(kind: $kind)',
   );
 }
 
@@ -131,7 +149,7 @@ void main() {
           'is_intro': true,
           'course_id': 'course-1',
           'content_markdown':
-              'Introtext\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
+              'Introtext\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
         },
       ],
     );
@@ -178,7 +196,7 @@ void main() {
             position: 1,
             isIntro: true,
             contentMarkdown:
-                'Introtext\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
+                'Introtext\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
           ),
         ],
       },
@@ -254,7 +272,9 @@ void main() {
     expect(find.text('Infoga ljud'), findsOneWidget);
     expect(_legacyControllerVideoBlockFinder(), findsNothing);
     expect(_legacyInlineVideoPlayerFinder(), findsNothing);
-    expect(find.byType(AveliVideoPlayer), findsWidgets);
+    expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+    expect(_lessonMediaPlayerFinder(kind: 'video'), findsWidgets);
+    expect(_lessonMediaPlayerFinder(kind: 'audio'), findsWidgets);
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(
         of: find.text('Ladda upp WAV'),
@@ -403,7 +423,8 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(_legacyInlineVideoPlayerFinder(), findsNothing);
-      expect(find.byType(AveliVideoPlayer), findsNothing);
+      expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+      expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
       expect(find.byType(EditorMediaControls), findsOneWidget);
       expect(
         find.text('Det här videoblocket använder ett äldre videoformat.'),
@@ -556,7 +577,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    expect(find.byType(AveliVideoPlayer), findsNothing);
+    expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+    expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
     expect(
       find.text('Det här videoblocket använder ett äldre videoformat.'),
       findsOneWidget,
@@ -573,7 +595,7 @@ void main() {
       find.text('Det här videoblocket använder ett äldre videoformat.'),
       findsNothing,
     );
-    expect(find.byType(AveliVideoPlayer), findsNothing);
+    expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
 
     final insertButtonFinder = find.descendant(
       of: find
@@ -588,7 +610,7 @@ void main() {
     await tester.tap(insertButtonFinder);
     await tester.pump();
 
-    expect(find.byType(AveliVideoPlayer), findsOneWidget);
+    expect(_lessonMediaPlayerFinder(kind: 'video'), findsOneWidget);
     expect(
       find.text('Det här videoblocket använder ett äldre videoformat.'),
       findsNothing,
@@ -1271,7 +1293,8 @@ void main() {
 
       // Broken video items should never initialize legacy inline players in the editor.
       expect(_legacyInlineVideoPlayerFinder(), findsNothing);
-      expect(find.byType(AveliVideoPlayer), findsNothing);
+      expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+      expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
 
       final brokenTile = tester.widget<ListTile>(
         find

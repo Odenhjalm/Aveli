@@ -83,7 +83,7 @@ void main() {
       expect(markdown, contains('style="$style"'));
     });
 
-    test('video embed exports without native controls attribute', () {
+    test('video embed exports with native controls attribute', () {
       final delta = quill_delta.Delta()
         ..insert('Intro\n')
         ..insert(quill.BlockEmbed.video(sampleVideoUrl))
@@ -91,8 +91,10 @@ void main() {
 
       final markdown = createLessonDeltaToMarkdown().convert(delta);
 
-      expect(markdown, contains('<video src="$sampleVideoUrl"></video>'));
-      expect(markdown, isNot(contains('<video controls')));
+      expect(
+        markdown,
+        contains('<video controls src="$sampleVideoUrl"></video>'),
+      );
     });
 
     test('audio HTML converts back to custom embed on markdown import', () {

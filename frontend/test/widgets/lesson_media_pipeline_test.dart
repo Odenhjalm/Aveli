@@ -10,7 +10,7 @@ import 'package:aveli/features/courses/presentation/lesson_page.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/core/env/app_config.dart';
-import 'package:aveli/shared/widgets/aveli_video_player.dart';
+import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   _FakeMediaPipelineRepository(this._future);
@@ -84,13 +84,30 @@ LessonDetailData _buildLessonData({required String mediaState}) {
     LessonMediaItem(
       id: 'media-1',
       kind: 'audio',
-      storagePath: '',
+      storagePath: 'lesson-1/audio.mp3',
       mediaAssetId: 'asset-1',
       mediaState: mediaState,
+      originalName: 'lesson-audio.mp3',
       position: 1,
     ),
   ];
   return LessonDetailData(lesson: lesson, media: media);
+}
+
+Finder _legacyInlineAudioPlayerFinder() {
+  return find.byWidgetPredicate(
+    (widget) => widget.runtimeType.toString() == 'InlineAudioPlayer',
+    description: 'InlineAudioPlayer',
+  );
+}
+
+Finder _lessonAudioMediaPlayerFinder() {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is AveliLessonMediaPlayer &&
+        widget.kind.trim().toLowerCase() == 'audio',
+    description: 'AveliLessonMediaPlayer(kind: audio)',
+  );
 }
 
 void main() {
@@ -129,7 +146,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Ljudet bearbetas…'), findsOneWidget);
+    expect(_legacyInlineAudioPlayerFinder(), findsNothing);
     expect(repo.playbackCalls, 0);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('requests playback only when ready', (tester) async {
@@ -160,6 +179,22 @@ void main() {
 
     expect(repo.playbackCalls, 1);
     expect(find.byType(LinearProgressIndicator), findsWidgets);
+
+    pending.complete(
+      MediaPlaybackUrl(
+        playbackUrl: Uri.parse('https://cdn.test/audio.mp3'),
+        expiresAt: DateTime.now().toUtc(),
+        format: 'mp3',
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(_lessonAudioMediaPlayerFinder(), findsOneWidget);
+    expect(find.text('Ljud'), findsNothing);
+    expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('legacy lesson video renders placeholder without crash', (
@@ -215,6 +250,6 @@ void main() {
       find.text('Den här lektionen innehåller äldre videoformat.'),
       findsOneWidget,
     );
-    expect(find.byType(AveliVideoPlayer), findsNothing);
+    expect(find.byType(AveliLessonMediaPlayer), findsNothing);
   });
 }
