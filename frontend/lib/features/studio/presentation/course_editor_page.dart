@@ -28,8 +28,7 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
-import 'package:aveli/shared/widgets/aveli_video_player.dart';
-import 'package:aveli/shared/widgets/inline_audio_player.dart';
+import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -139,7 +138,11 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
     final String url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    return InlineAudioPlayer(url: url);
+    return AveliLessonMediaPlayer(
+      playbackUrl: url,
+      title: 'Ljud',
+      kind: 'audio',
+    );
   }
 }
 
@@ -183,7 +186,11 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
             : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
       );
     }
-    return AveliVideoPlayer(playbackUrl: normalizedUrl);
+    return AveliLessonMediaPlayer(
+      playbackUrl: normalizedUrl,
+      title: 'Video',
+      kind: 'video',
+    );
   }
 }
 
@@ -1890,7 +1897,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             borderRadius: br16,
             child: normalizedUrl == null
                 ? _buildInvalidVideoPlaceholder(context)
-                : AveliVideoPlayer(playbackUrl: normalizedUrl),
+                : AveliLessonMediaPlayer(
+                    playbackUrl: normalizedUrl,
+                    title: label,
+                    kind: 'video',
+                  ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -3616,7 +3627,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 if (playbackUrl == null)
                   _buildInvalidVideoPlaceholder(sheetContext)
                 else
-                  AveliVideoPlayer(playbackUrl: playbackUrl),
+                  AveliLessonMediaPlayer(
+                    playbackUrl: playbackUrl,
+                    title: fileName,
+                    kind: 'video',
+                  ),
                 const SizedBox(height: 8),
                 Text(
                   fileName,
@@ -3651,7 +3666,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<void> _showAudioPreviewSheet(
     Map<String, dynamic> media, {
     required String playbackUrl,
-    Duration? durationHint,
   }) async {
     if (!mounted || !context.mounted) return;
     final fileName = _fileNameFromMedia(media);
@@ -3673,13 +3687,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                InlineAudioPlayer(
-                  url: playbackUrl,
+                AveliLessonMediaPlayer(
+                  playbackUrl: playbackUrl,
                   title: fileName,
-                  durationHint: durationHint,
-                  onDownload: _downloadingMedia
-                      ? null
-                      : () => _downloadMedia(media),
+                  kind: 'audio',
                 ),
                 const SizedBox(height: 8),
                 Align(
@@ -3726,13 +3737,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         }
         return;
       }
-      Duration? durationHint;
-      final durationValue = media['duration_seconds'];
-      if (durationValue is int) {
-        durationHint = Duration(seconds: durationValue);
-      } else if (durationValue is double) {
-        durationHint = Duration(milliseconds: (durationValue * 1000).round());
-      }
       final normalizedVideoUrl = _normalizeVideoPlaybackUrl(playbackUrl);
       final isVideo =
           kind == 'video' ||
@@ -3742,11 +3746,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (isVideo) {
         await _showVideoPreviewSheet(media, playbackUrl: normalizedVideoUrl);
       } else {
-        await _showAudioPreviewSheet(
-          media,
-          playbackUrl: playbackUrl,
-          durationHint: durationHint,
-        );
+        await _showAudioPreviewSheet(media, playbackUrl: playbackUrl);
       }
       return;
     }
@@ -3763,18 +3763,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
       );
     } else if (url != null && kind == 'audio') {
-      Duration? durationHint;
-      final durationValue = media['duration_seconds'];
-      if (durationValue is int) {
-        durationHint = Duration(seconds: durationValue);
-      } else if (durationValue is double) {
-        durationHint = Duration(milliseconds: (durationValue * 1000).round());
-      }
-      await _showAudioPreviewSheet(
-        media,
-        playbackUrl: url,
-        durationHint: durationHint,
-      );
+      await _showAudioPreviewSheet(media, playbackUrl: url);
     } else if (url != null && kind == 'video') {
       await _showVideoPreviewSheet(
         media,

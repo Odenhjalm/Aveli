@@ -19,12 +19,11 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/app_network_image.dart';
-import 'package:aveli/shared/widgets/aveli_video_player.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
-import 'package:aveli/shared/widgets/inline_audio_player.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
@@ -659,7 +658,11 @@ class _LessonResolvedAudioPlayer extends ConsumerWidget {
     final playbackUrl = _normalizeInlinePlaybackUrl(resolved);
     if (playbackUrl == null) return const _MissingMediaFallback();
 
-    return InlineAudioPlayer(url: playbackUrl, minimalUi: true);
+    return AveliLessonMediaPlayer(
+      playbackUrl: playbackUrl,
+      title: 'Ljud',
+      kind: 'audio',
+    );
   }
 }
 
@@ -708,7 +711,11 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
           child: _LessonGlassMediaWrapper(
             child: normalizedUrl == null
                 ? const _MissingMediaFallback()
-                : AveliVideoPlayer(playbackUrl: normalizedUrl),
+                : AveliLessonMediaPlayer(
+                    playbackUrl: normalizedUrl,
+                    title: 'Video',
+                    kind: 'video',
+                  ),
           ),
         );
       },
@@ -894,9 +901,6 @@ class _MediaItem extends ConsumerWidget {
           subtitle: Text(label),
         );
       }
-      final durationHint = (item.durationSeconds ?? 0) > 0
-          ? Duration(seconds: item.durationSeconds ?? 0)
-          : null;
       final future = resolveLessonMediaPlaybackUrl(
         item: item,
         mediaRepository: mediaRepo,
@@ -923,14 +927,10 @@ class _MediaItem extends ConsumerWidget {
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _LessonGlassMediaWrapper(
-              child: InlineAudioPlayer(
-                url: url,
+              child: AveliLessonMediaPlayer(
+                playbackUrl: url,
                 title: _fileName,
-                durationHint: durationHint,
-                minimalUi: true,
-                onDownload: () async {
-                  await launchUrlString(url);
-                },
+                kind: 'audio',
               ),
             ),
           );
@@ -965,7 +965,11 @@ class _MediaItem extends ConsumerWidget {
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _LessonGlassMediaWrapper(
-              child: AveliVideoPlayer(playbackUrl: url),
+              child: AveliLessonMediaPlayer(
+                playbackUrl: url,
+                title: _fileName,
+                kind: 'video',
+              ),
             ),
           );
         },
@@ -973,9 +977,6 @@ class _MediaItem extends ConsumerWidget {
     }
 
     if (item.kind == 'audio') {
-      final durationHint = (item.durationSeconds ?? 0) > 0
-          ? Duration(seconds: item.durationSeconds ?? 0)
-          : null;
       final future = resolveLessonMediaPlaybackUrl(
         item: item,
         mediaRepository: mediaRepo,
@@ -1002,14 +1003,10 @@ class _MediaItem extends ConsumerWidget {
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _LessonGlassMediaWrapper(
-              child: InlineAudioPlayer(
-                url: url,
+              child: AveliLessonMediaPlayer(
+                playbackUrl: url,
                 title: _fileName,
-                durationHint: durationHint,
-                minimalUi: true,
-                onDownload: () async {
-                  await launchUrlString(url);
-                },
+                kind: 'audio',
               ),
             ),
           );
