@@ -2566,7 +2566,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       });
       final payload =
           await api.postForm<Map<String, dynamic>>(
-            '/upload/lesson-image',
+            '/api/upload/lesson-image',
             form,
           ) ??
           const <String, dynamic>{};
