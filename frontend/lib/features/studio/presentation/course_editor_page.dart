@@ -27,7 +27,10 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
-import 'package:aveli/shared/widgets/media_player.dart';
+import 'package:aveli/shared/widgets/aveli_video_player.dart';
+import 'package:aveli/shared/widgets/inline_audio_player.dart';
+import 'package:aveli/shared/widgets/media_player.dart'
+    show showMediaPlayerSheet;
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -54,6 +57,17 @@ String? _mediaUrl(Map<String, dynamic> media) {
   final download = media['download_url'];
   if (download is String && download.isNotEmpty) return download;
   return null;
+}
+
+String? _normalizeVideoPlaybackUrl(String? raw) {
+  final trimmed = raw?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) return null;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') return null;
+  if (uri.host.isEmpty) return null;
+  return uri.toString();
 }
 
 const Map<String, String> _editorFontOptions = <String, String>{
@@ -114,18 +128,9 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
     final url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    final trimmedUrl = url.trim();
-    if (trimmedUrl.isEmpty) return const SizedBox.shrink();
-    final playback = tryCreateVideoPlaybackState(
-      mediaId: 'editor-video-embed-${trimmedUrl.hashCode}',
-      url: trimmedUrl,
-      title: 'Lektionsvideo',
-      controlsMode: InlineVideoControlsMode.editor,
-      controlChrome: InlineVideoControlChrome.playPauseAndStop,
-      minimalUi: true,
-    );
-    if (playback == null) return const SizedBox.shrink();
-    return InlineVideoPlayer(playback: playback, autoPlay: false);
+    final normalizedUrl = _normalizeVideoPlaybackUrl(url);
+    if (normalizedUrl == null) return const SizedBox.shrink();
+    return AveliVideoPlayer(playbackUrl: normalizedUrl);
   }
 }
 
@@ -1688,6 +1693,37 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  Widget _buildInvalidVideoPlaceholder(BuildContext context) {
+    final theme = Theme.of(context);
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: br16,
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.ondemand_video_outlined,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Video saknas eller stöds inte längre',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget? _buildLessonVideoPreview(BuildContext context) {
     if (_selectedLessonId == null || _lessonMedia.isEmpty) return null;
     Map<String, dynamic>? video;
@@ -1704,33 +1740,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final media = video;
     if (media == null) return null;
-    final url = _resolveMediaDisplayUrl(media);
-    if (url == null) return null;
+    final previewBlocked =
+        media['preview_blocked'] == true ||
+        media['resolvable_for_editor'] == false;
+    final url = previewBlocked ? null : _resolveMediaDisplayUrl(media);
+    final normalizedUrl = _normalizeVideoPlaybackUrl(url);
     final label = media['title'] as String? ?? _fileNameFromMedia(media);
     final isIntro =
         media['is_intro'] == true ||
         (media['storage_bucket'] as String?) == 'public-media';
-    final mediaId = (media['id'] as String?)?.trim();
-    final previewPlayback = tryCreateVideoPlaybackState(
-      mediaId: mediaId != null && mediaId.isNotEmpty
-          ? mediaId
-          : 'lesson-preview-${url.hashCode}',
-      url: url,
-      title: label,
-      controlsMode: InlineVideoControlsMode.editor,
-      controlChrome: InlineVideoControlChrome.playPauseAndStop,
-      minimalUi: true,
-    );
 
     return _SectionCard(
       title: 'Lektionsvideo',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (previewPlayback != null)
           ClipRRect(
             borderRadius: br16,
-            child: InlineVideoPlayer(playback: previewPlayback),
+            child: normalizedUrl == null
+                ? _buildInvalidVideoPlaceholder(context)
+                : AveliVideoPlayer(playbackUrl: normalizedUrl),
           ),
           const SizedBox(height: 8),
           Row(
@@ -3383,6 +3412,65 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  Future<void> _showVideoPreviewSheet(
+    Map<String, dynamic> media, {
+    required String? playbackUrl,
+  }) async {
+    if (!mounted || !context.mounted) return;
+    final fileName = _fileNameFromMedia(media);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final padding = EdgeInsets.fromLTRB(
+          16,
+          20,
+          16,
+          16 + MediaQuery.of(sheetContext).viewPadding.bottom,
+        );
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: padding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (playbackUrl == null)
+                  _buildInvalidVideoPlaceholder(sheetContext)
+                else
+                  AveliVideoPlayer(playbackUrl: playbackUrl),
+                const SizedBox(height: 8),
+                Text(
+                  fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _downloadingMedia
+                        ? null
+                        : () => _downloadMedia(media),
+                    icon: Icon(
+                      _downloadingMedia
+                          ? Icons.downloading_outlined
+                          : Icons.download_outlined,
+                    ),
+                    label: Text(
+                      _downloadingMedia ? 'Hämtar...' : 'Ladda ner original',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _previewMedia(Map<String, dynamic> media) async {
     final kind = media['kind'] as String? ?? 'other';
     if (_isWavMedia(media)) {
@@ -3392,7 +3480,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final state = _pipelineState(media);
       if (state != 'ready') {
         if (mounted && context.mounted) {
-          showSnack(context, 'Ljudet bearbetas fortfarande.');
+          showSnack(context, 'Mediet bearbetas fortfarande.');
         }
         return;
       }
@@ -3410,14 +3498,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       } else if (durationValue is double) {
         durationHint = Duration(milliseconds: (durationValue * 1000).round());
       }
-      await showMediaPlayerSheet(
-        context,
-        kind: 'audio',
-        url: playbackUrl,
-        title: _fileNameFromMedia(media),
-        durationHint: durationHint,
-        onDownload: () => _downloadMedia(media),
-      );
+      final normalizedVideoUrl = _normalizeVideoPlaybackUrl(playbackUrl);
+      final isVideo =
+          kind == 'video' ||
+          ((media['content_type'] as String?) ?? '').toLowerCase().startsWith(
+            'video/',
+          );
+      if (isVideo) {
+        await _showVideoPreviewSheet(media, playbackUrl: normalizedVideoUrl);
+      } else {
+        await showMediaPlayerSheet(
+          context,
+          kind: 'audio',
+          url: playbackUrl,
+          title: _fileNameFromMedia(media),
+          durationHint: durationHint,
+          onDownload: () => _downloadMedia(media),
+        );
+      }
       return;
     }
     final url = _resolveMediaDisplayUrl(media);
@@ -3432,7 +3530,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ),
         ),
       );
-    } else if (url != null && (kind == 'audio' || kind == 'video')) {
+    } else if (url != null && kind == 'audio') {
       Duration? durationHint;
       final durationValue = media['duration_seconds'];
       if (durationValue is int) {
@@ -3447,6 +3545,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         title: _fileNameFromMedia(media),
         durationHint: durationHint,
         onDownload: () => _downloadMedia(media),
+      );
+    } else if (url != null && kind == 'video') {
+      await _showVideoPreviewSheet(
+        media,
+        playbackUrl: _normalizeVideoPlaybackUrl(url),
       );
     } else {
       await _downloadMedia(media);
@@ -4496,7 +4599,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             !hasInvalidPipelineReference &&
                                             pipelineState == 'ready' &&
                                             isAudio;
+                                        final previewBlocked =
+                                            media['preview_blocked'] == true ||
+                                            media['resolvable_for_editor'] ==
+                                                false;
                                         final canPreview =
+                                            !previewBlocked &&
                                             !hasInvalidPipelineReference &&
                                             !isWavMedia &&
                                             (!isPipeline || canPipelinePlay);
