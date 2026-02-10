@@ -1,0 +1,78 @@
+name: Deploy Guard (Flutter Web)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-web-build-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Netlify directories are pinned
+        run: |
+          set -euo pipefail
+          grep -Fq 'base = "frontend"' netlify.toml
+          grep -Fq 'publish = "build/web"' netlify.toml
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.35.7
+          cache: true
+
+      - name: Build Flutter Web with production scripts
+        env:
+          API_BASE_URL: https://ci.api.aveli.test
+          SUPABASE_URL: https://ci.supabase.aveli.test
+          SUPABASE_PUBLIC_API_KEY: ci-public-key
+          STRIPE_PUBLISHABLE_KEY: pk_test_ci
+          OAUTH_REDIRECT_WEB: https://app.aveli.app/auth/callback
+          STRIPE_MERCHANT_DISPLAY_NAME: Aveli CI
+          FRONTEND_URL: https://app.aveli.app
+          BUILD_NUMBER: ci-${{ github.run_number }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          bash frontend/scripts/build_prod.sh
+
+      - name: Verify bundle content and output location
+        env:
+          API_BASE_URL: https://ci.api.aveli.test
+        run: |
+          set -euo pipefail
+          BUNDLE="frontend/build/web/main.dart.js"
+          if [[ ! -f "$BUNDLE" ]]; then
+            echo "Missing bundle: $BUNDLE" >&2
+            exit 1
+          fi
+
+          # Ensure this build actually contains current compile-time values.
+          if ! grep -Fq "$API_BASE_URL" "$BUNDLE"; then
+            echo "Expected API_BASE_URL not found in bundle." >&2
+            exit 1
+          fi
+
+          # Legacy-video compatibility text proves the current frontend code was built.
+          if ! grep -Fq "Ta bort video" "$BUNDLE"; then
+            echo "Expected legacy-video placeholder string not found in bundle." >&2
+            exit 1
+          fi
+
+          if grep -Fq "api.aveli.app" "$BUNDLE"; then
+            echo "Unexpected legacy API endpoint found in bundle." >&2
+            exit 1
+          fi
+
+          # Guard against publishing from an old root-level build directory.
+          if [[ -d "build/web" ]]; then
+            echo "Unexpected root build/web artifact exists; only frontend/build/web is allowed." >&2
+            exit 1
+          fi

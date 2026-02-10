@@ -1,11 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$PROJECT_ROOT/build/web"
+FRONTEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$FRONTEND_ROOT/.." && pwd)"
+BUILD_DIR="$FRONTEND_ROOT/build/web"
+LEGACY_ROOT_BUILD_DIR="$REPO_ROOT/build/web"
 
-cd "$PROJECT_ROOT"
+cd "$FRONTEND_ROOT"
 export BUILD_DIR
 
 WEB_DEFINE_FILE="${WEB_DEFINE_FILE:-}"
@@ -57,17 +59,23 @@ fi
 # Always inject a per-deploy build number for cache busting / diagnostics.
 DEFINE_ARGS+=(--dart-define=BUILD_NUMBER="$BUILD_NUMBER")
 
-if [[ ! -f "pubspec.yaml" ]]; then
-  echo "pubspec.yaml not found next to scripts/build_prod.sh" >&2
+if [[ ! -f "$FRONTEND_ROOT/pubspec.yaml" ]]; then
+  echo "pubspec.yaml not found at $FRONTEND_ROOT/pubspec.yaml" >&2
   exit 1
 fi
 
 flutter clean
 flutter pub get
 
+# Prevent deploy surprises: remove both the canonical output and any stale
+# root-level build dir from older scripts so only frontend/build/web can exist.
 rm -rf "$BUILD_DIR"
+if [[ "$LEGACY_ROOT_BUILD_DIR" != "$BUILD_DIR" && -d "$LEGACY_ROOT_BUILD_DIR" ]]; then
+  rm -rf "$LEGACY_ROOT_BUILD_DIR"
+fi
 
 flutter build web --release --no-wasm-dry-run \
+  --output="$BUILD_DIR" \
   --pwa-strategy=none \
   --build-number="$BUILD_NUMBER" \
   "${DEFINE_ARGS[@]}"
@@ -75,7 +83,7 @@ flutter build web --release --no-wasm-dry-run \
 # Flutter may emit an empty placeholder `flutter_service_worker.js` even when
 # PWA support is disabled. Overwrite it with our "kill" SW so older client
 # registrations can update and uninstall themselves.
-cp "$PROJECT_ROOT/web/flutter_service_worker.js" "$BUILD_DIR/flutter_service_worker.js"
+cp "$FRONTEND_ROOT/web/flutter_service_worker.js" "$BUILD_DIR/flutter_service_worker.js"
 
 # NOTE: We intentionally KEEP /flutter_service_worker.js, but ship a "kill"
 # service worker that unregisters itself and clears caches. This is required to
@@ -144,4 +152,9 @@ PY
 # Ensure SPA routing works on static hosting.
 printf '/*  /index.html  200\n' > "$BUILD_DIR/_redirects"
 
-echo "PROD WEB BUILD DONE (frontend/build/web)"
+if [[ ! -f "$BUILD_DIR/main.dart.js" ]]; then
+  echo "Build output missing expected bundle: $BUILD_DIR/main.dart.js" >&2
+  exit 1
+fi
+
+echo "PROD WEB BUILD DONE ($BUILD_DIR)"

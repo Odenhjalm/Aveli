@@ -59,14 +59,50 @@ String? _mediaUrl(Map<String, dynamic> media) {
 }
 
 String? _normalizeVideoPlaybackUrl(String? raw) {
-  final trimmed = raw?.trim();
-  if (trimmed == null || trimmed.isEmpty) return null;
-  final uri = Uri.tryParse(trimmed);
-  if (uri == null) return null;
-  final scheme = uri.scheme.toLowerCase();
-  if (scheme != 'http' && scheme != 'https') return null;
-  if (uri.host.isEmpty) return null;
-  return uri.toString();
+  return lesson_pipeline.normalizeVideoPlaybackUrl(raw);
+}
+
+String? safeString(Map<dynamic, dynamic>? source, Object key) {
+  if (source == null) return null;
+  final value = source[key];
+  if (value is String) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+  if (value == null) return null;
+  final normalized = value.toString().trim();
+  return normalized.isEmpty ? null : normalized;
+}
+
+bool? safeBool(Map<dynamic, dynamic>? source, Object key) {
+  if (source == null) return null;
+  final value = source[key];
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized == 'true' ||
+        normalized == '1' ||
+        normalized == 'yes' ||
+        normalized == 'ja') {
+      return true;
+    }
+    if (normalized == 'false' ||
+        normalized == '0' ||
+        normalized == 'no' ||
+        normalized == 'nej') {
+      return false;
+    }
+  }
+  return null;
+}
+
+String? firstValidId(List<Map<String, dynamic>> items) {
+  for (final item in items) {
+    final id = safeString(item, 'id');
+    if (id != null) return id;
+  }
+  return null;
 }
 
 const Map<String, String> _editorFontOptions = <String, String>{
@@ -76,6 +112,9 @@ const Map<String, String> _editorFontOptions = <String, String>{
   'Lora (serif)': 'Lora',
   'Playfair Display (rubrik)': 'PlayfairDisplay',
 };
+const _legacyVideoRemoveButtonKey = ValueKey<String>(
+  'legacy_video_remove_button',
+);
 
 class _AudioEmbedBuilder implements quill.EmbedBuilder {
   const _AudioEmbedBuilder();
@@ -105,7 +144,9 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
 }
 
 class _VideoEmbedBuilder implements quill.EmbedBuilder {
-  const _VideoEmbedBuilder();
+  const _VideoEmbedBuilder({this.onRemoveLegacyVideoAt});
+
+  final void Function(int documentOffset)? onRemoveLegacyVideoAt;
 
   @override
   String get key => quill.BlockEmbed.videoType;
@@ -127,9 +168,79 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
     final url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
+    if (lesson_pipeline.isLegacyVideoEmbed(value)) {
+      return _LegacyVideoEmbedPlaceholder(
+        onRemove: onRemoveLegacyVideoAt == null
+            ? null
+            : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
+      );
+    }
     final normalizedUrl = _normalizeVideoPlaybackUrl(url);
-    if (normalizedUrl == null) return const SizedBox.shrink();
+    if (normalizedUrl == null) {
+      return _LegacyVideoEmbedPlaceholder(
+        onRemove: onRemoveLegacyVideoAt == null
+            ? null
+            : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
+      );
+    }
     return AveliVideoPlayer(playbackUrl: normalizedUrl);
+  }
+}
+
+class _LegacyVideoEmbedPlaceholder extends StatelessWidget {
+  const _LegacyVideoEmbedPlaceholder({this.onRemove});
+
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: br16,
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.history_toggle_off_rounded,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Det här videoblocket använder ett äldre videoformat.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Ta bort videon och lägg till en ny.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                key: _legacyVideoRemoveButtonKey,
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Ta bort video'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -413,12 +524,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         myCourses = await _studioRepo.myCourses();
       }
       if (!mounted) return;
-      final initialId = widget.courseId;
-      final String? selected =
+      final initialId = widget.courseId?.trim();
+      final selected =
           (initialId != null &&
-              myCourses.any((element) => element['id'] == initialId))
+              initialId.isNotEmpty &&
+              _itemById(myCourses, initialId) != null)
           ? initialId
-          : (myCourses.isNotEmpty ? myCourses.first['id'] as String : null);
+          : firstValidId(myCourses);
       setState(() {
         _allowed = allowed;
         _courses = myCourses;
@@ -452,9 +564,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
-      _courseTitleCtrl.text = (map['title'] as String?) ?? '';
-      _courseSlugCtrl.text = (map['slug'] as String?) ?? '';
-      _courseDescCtrl.text = (map['description'] as String?) ?? '';
+      _courseTitleCtrl.text = safeString(map, 'title') ?? '';
+      _courseSlugCtrl.text = safeString(map, 'slug') ?? '';
+      _courseDescCtrl.text = safeString(map, 'description') ?? '';
       final priceRaw = map['price_amount_cents'] ?? map['price_cents'];
       final priceOre = priceRaw == null ? null : int.tryParse('$priceRaw');
       _coursePriceCtrl.text = priceOre == null
@@ -462,15 +574,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           : formatSekInputFromOre(priceOre);
       if (mounted) {
         setState(() {
-          _courseIsFreeIntro = map['is_free_intro'] == true;
-          _courseIsPublished = map['is_published'] == true;
+          _courseIsFreeIntro = safeBool(map, 'is_free_intro') ?? false;
+          _courseIsPublished = safeBool(map, 'is_published') ?? false;
           _courseJourneyStep =
-              courseJourneyStepFromApi(map['journey_step'] as String?) ??
+              courseJourneyStepFromApi(safeString(map, 'journey_step')) ??
               CourseJourneyStep.intro;
-          final coverPath = (map['cover_url'] as String?)?.trim();
-          _courseCoverPath = (coverPath == null || coverPath.isEmpty)
-              ? null
-              : coverPath;
+          final coverPath = safeString(map, 'cover_url');
+          _courseCoverPath = coverPath;
           _courseCoverPreviewUrl = _resolveMediaUrl(_courseCoverPath);
         });
       }
@@ -542,13 +652,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final selected =
           preserveSelection &&
               _selectedLessonId != null &&
-              lessons.any((lesson) => lesson['id'] == _selectedLessonId)
+              _itemById(lessons, _selectedLessonId) != null
           ? _selectedLessonId
-          : (lessons.isNotEmpty ? lessons.first['id'] as String : null);
-      final intro = selected == null
-          ? false
-          : (lessons.firstWhere((item) => item['id'] == selected)['is_intro'] ==
-                true);
+          : firstValidId(lessons);
+      final selectedLesson = _itemById(lessons, selected);
+      final intro = safeBool(selectedLesson, 'is_intro') ?? false;
       setState(() {
         _lessons = lessons;
         _selectedLessonId = selected;
@@ -750,8 +858,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         final merged = <Map<String, dynamic>>[];
         for (final item in media) {
           final id = item['id'];
-          if (id is String && existingById.containsKey(id)) {
-            merged.add({...existingById[id]!, ...item});
+          final existing = id is String ? existingById[id] : null;
+          if (existing != null) {
+            merged.add({...existing, ...item});
           } else {
             merged.add(item);
           }
@@ -793,10 +902,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     Map<String, dynamic> lesson,
   ) {
     final theme = Theme.of(context);
-    final lessonId = lesson['id'] as String?;
-    final titleRaw = (lesson['title'] as String?)?.trim();
-    final title = (titleRaw == null || titleRaw.isEmpty) ? 'Lektion' : titleRaw;
-    final isIntro = lesson['is_intro'] == true;
+    final lessonId = safeString(lesson, 'id');
+    final title = safeString(lesson, 'title') ?? 'Lektion';
+    final isIntro = safeBool(lesson, 'is_intro') ?? false;
     final position = _positionValue(lesson);
     final isSelected = lessonId != null && lessonId == _selectedLessonId;
 
@@ -834,10 +942,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Map<String, dynamic>? _lessonById(String? id) {
     if (id == null) return null;
-    for (final lesson in _lessons) {
-      if (lesson['id'] == id) return lesson;
+    return _itemById(_lessons, id);
+  }
+
+  Map<String, dynamic>? _itemById(
+    List<Map<String, dynamic>> items,
+    String? id,
+  ) {
+    if (id == null || id.isEmpty) return null;
+    for (final item in items) {
+      if (safeString(item, 'id') == id) return item;
     }
     return null;
+  }
+
+  List<DropdownMenuItem<String>> _courseDropdownItems() {
+    final items = <DropdownMenuItem<String>>[];
+    for (final course in _courses) {
+      final id = safeString(course, 'id');
+      if (id == null) continue;
+      final title = safeString(course, 'title') ?? 'Namnlös kurs';
+      items.add(DropdownMenuItem<String>(value: id, child: Text(title)));
+    }
+    return items;
   }
 
   String? _lessonCourseId(String? lessonId) {
@@ -876,8 +1003,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final merged = <Map<String, dynamic>>[];
     for (final item in incoming) {
       final id = item['id'];
-      if (id is String && existingById.containsKey(id)) {
-        merged.add({...existingById[id]!, ...item});
+      final existing = id is String ? existingById[id] : null;
+      if (existing != null && id is String) {
+        merged.add({...existing, ...item});
         existingById.remove(id);
       } else {
         merged.add(item);
@@ -960,7 +1088,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (bucket == null || bucket.isEmpty) {
       final parts = normalized.split('/');
       if (parts.isNotEmpty) {
-        bucket = parts.first;
+        bucket = parts[0];
       }
     }
     if (bucket == null || bucket.isEmpty) return null;
@@ -1439,7 +1567,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               ...FlutterQuillEmbeds.defaultEditorBuilders().where(
                 (builder) => builder.key != quill.BlockEmbed.videoType,
               ),
-              const _VideoEmbedBuilder(),
+              _VideoEmbedBuilder(
+                onRemoveLegacyVideoAt: _removeLegacyVideoEmbedAt,
+              ),
               const _AudioEmbedBuilder(),
             ],
           ),
@@ -1524,7 +1654,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           Text('Texteditor', style: titleStyle),
           gap12,
           Expanded(
-            child: _lessonContentController == null
+            child: _selectedLessonId == null
                 ? Center(
                     child: Text(
                       'Välj en lektion för att redigera innehållet.',
@@ -1545,10 +1675,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       fontWeight: FontWeight.w700,
     );
     final bodyStyle = theme.textTheme.bodySmall;
-    final hasCover =
-        _courseCoverPreviewUrl != null && _courseCoverPreviewUrl!.isNotEmpty;
+    final coverPreviewUrl = _courseCoverPreviewUrl?.trim();
+    final hasCover = coverPreviewUrl != null && coverPreviewUrl.isNotEmpty;
     final status = _coverPipelineState;
     final statusText = status == null ? null : _coverStatusLabel(status);
+    final coverPipelineError = _coverPipelineError?.trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1574,7 +1705,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       const placeholder = Center(
                         child: Icon(Icons.image_outlined, size: 28),
                       );
-                      if (!hasCover) {
+                      if (!hasCover || coverPreviewUrl == null) {
                         return placeholder;
                       }
 
@@ -1594,7 +1725,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         children: [
                           placeholder,
                           Image.network(
-                            _courseCoverPreviewUrl!,
+                            coverPreviewUrl,
                             fit: BoxFit.cover,
                             filterQuality: SafeMedia.filterQuality(
                               full: FilterQuality.high,
@@ -1666,10 +1797,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           const SizedBox(height: 6),
           Text(statusText, style: bodyStyle),
         ],
-        if (_coverPipelineError != null && _coverPipelineError!.isNotEmpty) ...[
+        if (coverPipelineError != null && coverPipelineError.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
-            _coverPipelineError!,
+            coverPipelineError,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),
@@ -1745,7 +1876,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         media['resolvable_for_editor'] == false;
     final url = previewBlocked ? null : _resolveMediaDisplayUrl(media);
     final normalizedUrl = _normalizeVideoPlaybackUrl(url);
-    final label = media['title'] as String? ?? _fileNameFromMedia(media);
+    final label = safeString(media, 'title') ?? _fileNameFromMedia(media);
     final isIntro =
         media['is_intro'] == true ||
         (media['storage_bucket'] as String?) == 'public-media';
@@ -1815,8 +1946,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) return;
       setState(() {
         _lessons = _sortByPosition(_mergeById(_lessons, [lesson]));
-        _selectedLessonId = lesson['id'] as String?;
-        _lessonIntro = lesson['is_intro'] == true;
+        _selectedLessonId = safeString(lesson, 'id');
+        _lessonIntro = safeBool(lesson, 'is_intro') ?? false;
         _lessonMedia = <Map<String, dynamic>>[];
         _lessonMediaLessonId = null;
         _mediaLoadError = null;
@@ -1915,7 +2046,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String _suggestMediaDisplayName(String filename) {
     final trimmed = filename.trim();
     if (trimmed.isEmpty) return '';
-    final withoutQuery = trimmed.split('?').first;
+    final questionIndex = trimmed.indexOf('?');
+    final withoutQuery = questionIndex >= 0
+        ? trimmed.substring(0, questionIndex)
+        : trimmed;
     final segments = withoutQuery.split('/');
     final last = segments.isNotEmpty ? segments.last : withoutQuery;
     final parts = last.split('.');
@@ -2038,7 +2172,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return;
       }
 
-      final file = picked.first;
+      final file = picked[0];
       debugPrint(
         'Picked file name=${file.name} bytes=${file.bytes.length} mime=${file.mimeType}',
       );
@@ -2227,7 +2361,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (bucket == null || bucket.isEmpty) {
       final parts = normalized.split('/');
       if (parts.isNotEmpty) {
-        bucket = parts.first;
+        bucket = parts[0];
       }
     }
     if (!_isPublicBucket(bucket)) return null;
@@ -2400,7 +2534,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() => _mediaStatus = 'Ingen bild vald.');
         return;
       }
-      final file = picked.first;
+      final file = picked[0];
       await uploadBytes(file.bytes, file.name);
       return;
     }
@@ -2423,6 +2557,37 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() => _mediaStatus = 'Fel vid uppladdning: $message');
       }
       _showFriendlyErrorSnack('Kunde inte ladda upp bild', error, stackTrace);
+    }
+  }
+
+  void _removeLegacyVideoEmbedAt(int documentOffset) {
+    final controller = _lessonContentController;
+    if (controller == null) return;
+    final plainText = controller.document.toPlainText();
+    if (documentOffset < 0 || documentOffset >= plainText.length) return;
+
+    var deleteLength = 1;
+    final nextOffset = documentOffset + 1;
+    if (nextOffset < plainText.length && plainText[nextOffset] == '\n') {
+      deleteLength = 2;
+    }
+
+    controller.replaceText(
+      documentOffset,
+      deleteLength,
+      '',
+      TextSelection.collapsed(offset: documentOffset),
+    );
+    final collapsed = TextSelection.collapsed(
+      offset: min(documentOffset, controller.document.length),
+    );
+    controller.updateSelection(collapsed, quill.ChangeSource.local);
+    _lastLessonSelection = collapsed;
+    if (!_lessonContentFocusNode.hasFocus) {
+      _lessonContentFocusNode.requestFocus();
+    }
+    if (!_lessonContentDirty) {
+      setState(() => _lessonContentDirty = true);
     }
   }
 
@@ -2811,6 +2976,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Bilden saknar media-id och kan inte användas.');
+      }
+      return;
+    }
 
     final requestId = _beginCoverAction(courseId: courseId);
     final previousPath = _courseCoverPath;
@@ -2840,7 +3012,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final repo = ref.read(mediaPipelineRepositoryProvider);
       final response = await repo.requestCoverFromLessonMedia(
         courseId: courseId,
-        lessonMediaId: media['id'] as String,
+        lessonMediaId: lessonMediaId,
       );
       if (!mounted ||
           _coverActionRequestId != requestId ||
@@ -3109,8 +3281,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
         break;
       case UploadJobStatus.pending:
-        if (job.scheduledAt != null && job.scheduledAt!.isAfter(now)) {
-          final rawRemaining = job.scheduledAt!.difference(now).inSeconds;
+        final scheduledAt = job.scheduledAt;
+        if (scheduledAt != null && scheduledAt.isAfter(now)) {
+          final rawRemaining = scheduledAt.difference(now).inSeconds;
           final remaining = rawRemaining <= 0 ? 1 : rawRemaining;
           statusText = 'Försök igen om ${remaining}s';
         } else {
@@ -3284,6 +3457,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _downloadingMedia = true;
       _downloadStatus = 'Hämtar $name…';
     });
+    final mediaId = safeString(media, 'id');
     try {
       Uint8List bytes;
       final downloadPath = _mediaUrl(media);
@@ -3298,7 +3472,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               fileExtension: extension,
             );
       } else {
-        bytes = await _studioRepo.downloadMedia(media['id'] as String);
+        if (mediaId == null) {
+          throw StateError('Media saknar id.');
+        }
+        bytes = await _studioRepo.downloadMedia(mediaId);
       }
       final location = await fs.getSaveLocation(suggestedName: name);
       if (location == null) {
@@ -3609,17 +3786,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _handleMediaReorder(int oldIndex, int newIndex) async {
-    if (_selectedLessonId == null) return;
+    final lessonId = _selectedLessonId;
+    if (lessonId == null) return;
     setState(() {
       if (newIndex > oldIndex) newIndex -= 1;
       final item = _lessonMedia.removeAt(oldIndex);
       _lessonMedia.insert(newIndex, item);
     });
     try {
-      await _studioRepo.reorderLessonMedia(
-        _selectedLessonId!,
-        _lessonMedia.map((media) => media['id'] as String).toList(),
-      );
+      final mediaIds = _lessonMedia
+          .map((media) => safeString(media, 'id'))
+          .whereType<String>()
+          .toList();
+      if (mediaIds.length != _lessonMedia.length) {
+        throw StateError('Ett eller flera media saknar id.');
+      }
+      await _studioRepo.reorderLessonMedia(lessonId, mediaIds);
     } catch (e, stackTrace) {
       if (!mounted) return;
       _showFriendlyErrorSnack('Kunde inte spara ordning', e, stackTrace);
@@ -3723,12 +3905,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       await _loadLessonMedia();
       if (!mounted) return;
 
-      final newMedia = _lessonMedia.cast<Map<String, dynamic>?>().firstWhere(
-        (item) =>
-            item?['media_asset_id']?.toString().trim() ==
-            newMediaAssetId.trim(),
-        orElse: () => null,
-      );
+      Map<String, dynamic>? newMedia;
+      for (final item in _lessonMedia.cast<Map<String, dynamic>?>()) {
+        if (item?['media_asset_id']?.toString().trim() ==
+            newMediaAssetId.trim()) {
+          newMedia = item;
+          break;
+        }
+      }
 
       final newLessonMediaId = (newMedia?['id'] as String?)?.trim();
       if (newLessonMediaId == null || newLessonMediaId.isEmpty) {
@@ -4033,23 +4217,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
       if (!mounted) return;
       final row = Map<String, dynamic>.from(inserted);
+      final createdCourseId = safeString(row, 'id');
+      final coverPath = safeString(row, 'cover_url');
       setState(() {
         _resetCourseContext(clearLists: true);
         _courses = <Map<String, dynamic>>[row, ..._courses];
-        _selectedCourseId = row['id'] as String;
-        final coverPath = (row['cover_url'] as String?)?.trim();
-        _courseCoverPath = (coverPath == null || coverPath.isEmpty)
-            ? null
-            : coverPath;
+        _selectedCourseId = createdCourseId;
+        _courseCoverPath = coverPath;
         _courseCoverPreviewUrl = _resolveMediaUrl(_courseCoverPath);
       });
       ref.invalidate(myCoursesProvider);
       _newCourseTitle.clear();
       _newCourseDesc.clear();
-      await _loadCourseMeta();
-      await _loadLessons(preserveSelection: false);
+      if (createdCourseId != null) {
+        await _loadCourseMeta();
+        await _loadLessons(preserveSelection: false);
+      }
       if (!mounted || !context.mounted) return;
-      showSnack(context, 'Kurs skapad.');
+      showSnack(
+        context,
+        createdCourseId == null
+            ? 'Kurs skapad, men kunde inte väljas automatiskt.'
+            : 'Kurs skapad.',
+      );
     } on AppFailure catch (e) {
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Kunde inte skapa: ${e.message}');
@@ -4063,7 +4253,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (cid == null) return;
     try {
       final quiz = await _studioRepo.ensureQuiz(cid);
-      final qs = await _studioRepo.quizQuestions(quiz['id'] as String);
+      final quizId = safeString(quiz, 'id');
+      if (quizId == null) {
+        throw StateError('Quiz saknar ID.');
+      }
+      final qs = await _studioRepo.quizQuestions(quizId);
       if (!mounted) return;
       setState(() {
         _quiz = quiz;
@@ -4083,7 +4277,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (_quiz == null) return;
     }
     if (!mounted) return;
-    final quizId = _quiz!['id'] as String;
+    final quizId = safeString(_quiz, 'id');
+    if (quizId == null) {
+      if (context.mounted) {
+        showSnack(context, 'Quiz saknar id och kan inte uppdateras.');
+      }
+      return;
+    }
     final prompt = _qPrompt.text.trim();
     if (prompt.isEmpty) {
       showSnack(context, 'Frågetext krävs.');
@@ -4161,10 +4361,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _deleteQuestion(String id) async {
+    final quizId = safeString(_quiz, 'id');
+    if (quizId == null) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Quiz saknar id och kan inte uppdateras.');
+      }
+      return;
+    }
     try {
-      await _studioRepo.deleteQuestion(_quiz!['id'] as String, id);
+      await _studioRepo.deleteQuestion(quizId, id);
       if (_quiz != null) {
-        final qs = await _studioRepo.quizQuestions(_quiz!['id'] as String);
+        final qs = await _studioRepo.quizQuestions(quizId);
         if (!mounted) return;
         setState(() => _questions = qs);
       }
@@ -4230,6 +4437,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final wavCourseId = _lessonCourseId(_selectedLessonId);
 
     final lessonVideoPreview = _buildLessonVideoPreview(context);
+    final courseItems = _courseDropdownItems();
+    final selectedCourseInItems =
+        _selectedCourseId != null &&
+        courseItems.any((item) => item.value == _selectedCourseId);
+    final selectedCourseValue = selectedCourseInItems
+        ? _selectedCourseId
+        : null;
+    final lessonsLoadError = _lessonsLoadError;
+    final mediaStatus = _mediaStatus;
+    final downloadStatus = _downloadStatus;
+    final mediaLoadError = _mediaLoadError;
+    final quiz = _quiz;
+    final quizTitle = safeString(quiz, 'title') ?? 'Quiz';
+    final quizPassScore = safeString(quiz, 'pass_score') ?? '-';
 
     final editorContent = LayoutBuilder(
       builder: (context, constraints) {
@@ -4285,34 +4506,42 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 gap16,
                 _SectionCard(
                   title: 'Välj kurs',
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('course-${_selectedCourseId ?? 'none'}'),
-                    initialValue: _selectedCourseId,
-                    items: _courses
-                        .map(
-                          (c) => DropdownMenuItem<String>(
-                            value: c['id'] as String,
-                            child: Text('${c['title']}'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) async {
-                      if (value == _selectedCourseId) return;
-                      final canSwitch = await _maybeSaveLessonEdits();
-                      if (!canSwitch || !mounted) return;
-                      setState(() {
-                        _resetCourseContext(clearLists: true);
-                        _selectedCourseId = value;
-                      });
-                      await _loadCourseMeta();
-                      await _loadLessons(preserveSelection: false);
-                      if (!mounted) return;
-                      setState(() {
-                        _quiz = null;
-                        _questions = <Map<String, dynamic>>[];
-                      });
-                    },
-                    decoration: const InputDecoration(hintText: 'Välj kurs'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(
+                          'course-${selectedCourseValue ?? 'none'}',
+                        ),
+                        initialValue: selectedCourseValue,
+                        items: courseItems,
+                        onChanged: (value) async {
+                          if (value == _selectedCourseId) return;
+                          final canSwitch = await _maybeSaveLessonEdits();
+                          if (!canSwitch || !mounted) return;
+                          setState(() {
+                            _resetCourseContext(clearLists: true);
+                            _selectedCourseId = value;
+                          });
+                          await _loadCourseMeta();
+                          await _loadLessons(preserveSelection: false);
+                          if (!mounted) return;
+                          setState(() {
+                            _quiz = null;
+                            _questions = <Map<String, dynamic>>[];
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          hintText: 'Välj kurs',
+                        ),
+                      ),
+                      if (courseItems.isEmpty) ...[
+                        gap8,
+                        const Text(
+                          'Inga kurser ännu. Skapa en kurs för att komma igång.',
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (_selectedCourseId != null) ...[
@@ -4419,9 +4648,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (_lessonsLoadError != null) ...[
+                            if (lessonsLoadError != null) ...[
                               Text(
-                                _lessonsLoadError!,
+                                lessonsLoadError,
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: Theme.of(
@@ -4525,14 +4754,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     ],
                                   ),
                                 ],
-                                if (_mediaStatus != null) ...[
+                                if (mediaStatus != null) ...[
                                   gap8,
-                                  Text(_mediaStatus!),
+                                  Text(mediaStatus),
                                 ],
-                                if (_downloadStatus != null) ...[
+                                if (downloadStatus != null) ...[
                                   gap4,
                                   Text(
-                                    _downloadStatus!,
+                                    downloadStatus,
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
                                           color: Theme.of(
@@ -4541,10 +4770,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         ),
                                   ),
                                 ],
-                                if (_mediaLoadError != null) ...[
+                                if (mediaLoadError != null) ...[
                                   gap8,
                                   Text(
-                                    _mediaLoadError!,
+                                    mediaLoadError,
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
                                           color: Theme.of(
@@ -4663,6 +4892,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final downloadUrl = isWavMedia
                                             ? null
                                             : _resolveMediaDisplayUrl(media);
+                                        final mediaId = safeString(media, 'id');
                                         final fileName = _fileNameFromMedia(
                                           media,
                                         );
@@ -4724,7 +4954,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         }
 
                                         return Padding(
-                                          key: ValueKey(media['id']),
+                                          key: ValueKey(
+                                            mediaId ?? 'media-$index',
+                                          ),
                                           padding: const EdgeInsets.only(
                                             bottom: 8,
                                           ),
@@ -4932,10 +5164,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                     icon: const Icon(
                                                       Icons.delete_outline,
                                                     ),
-                                                    onPressed: () =>
-                                                        _deleteMedia(
-                                                          media['id'] as String,
-                                                        ),
+                                                    onPressed: mediaId == null
+                                                        ? null
+                                                        : () => _deleteMedia(
+                                                            mediaId,
+                                                          ),
                                                   ),
                                                   ReorderableDragStartListener(
                                                     index: index,
@@ -4969,11 +5202,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (_quiz == null) const Text('Inget quiz laddat.'),
-                      if (_quiz != null) ...[
-                        Text(
-                          'Quiz: ${_quiz!['title']} (gräns: ${_quiz!['pass_score']}%)',
-                        ),
+                      if (quiz == null) const Text('Inget quiz laddat.'),
+                      if (quiz != null) ...[
+                        Text('Quiz: $quizTitle (gräns: $quizPassScore%)'),
                         gap12,
                         Wrap(
                           spacing: 8,
@@ -5044,6 +5275,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             separatorBuilder: (context, _) => gap6,
                             itemBuilder: (context, index) {
                               final q = _questions[index];
+                              final questionId = safeString(q, 'id');
                               return ListTile(
                                 leading: const Icon(Icons.help_outline),
                                 title: Text('${q['prompt']}'),
@@ -5052,8 +5284,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 ),
                                 trailing: IconButton(
                                   icon: const Icon(Icons.delete_outline),
-                                  onPressed: () =>
-                                      _deleteQuestion(q['id'] as String),
+                                  onPressed: questionId == null
+                                      ? null
+                                      : () => _deleteQuestion(questionId),
                                 ),
                               );
                             },
@@ -5107,6 +5340,7 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sectionActions = actions;
     return GlassCard(
       padding: p16,
       borderRadius: BorderRadius.circular(20),
@@ -5124,7 +5358,7 @@ class _SectionCard extends StatelessWidget {
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
               const Spacer(),
-              if (actions != null) ...actions!,
+              if (sectionActions != null) ...sectionActions,
             ],
           ),
           gap12,
