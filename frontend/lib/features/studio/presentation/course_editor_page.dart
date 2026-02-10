@@ -28,6 +28,7 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
+import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
@@ -191,6 +192,41 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
       title: 'Video',
       kind: 'video',
     );
+  }
+}
+
+class _ImageEmbedBuilder implements quill.EmbedBuilder {
+  const _ImageEmbedBuilder();
+
+  @override
+  String get key => quill.BlockEmbed.imageType;
+
+  @override
+  bool get expanded => false;
+
+  @override
+  WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
+
+  @override
+  String toPlainText(quill.Embed node) =>
+      quill.Embed.kObjectReplacementCharacter;
+
+  @override
+  Widget build(BuildContext context, quill.EmbedContext embedContext) {
+    final dynamic value = embedContext.node.value.data;
+    final src =
+        lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
+        (value == null ? '' : value.toString());
+
+    String? alt;
+    if (value is Map) {
+      final dynamic rawAlt = value['alt'];
+      if (rawAlt is String && rawAlt.trim().isNotEmpty) {
+        alt = rawAlt.trim();
+      }
+    }
+
+    return AveliLessonImage(src: src, alt: alt);
   }
 }
 
@@ -1572,8 +1608,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             placeholder: 'Skriv eller klistra in lektionsinnehåll...',
             embedBuilders: [
               ...FlutterQuillEmbeds.defaultEditorBuilders().where(
-                (builder) => builder.key != quill.BlockEmbed.videoType,
+                (builder) =>
+                    builder.key != quill.BlockEmbed.videoType &&
+                    builder.key != quill.BlockEmbed.imageType,
               ),
+              const _ImageEmbedBuilder(),
               _VideoEmbedBuilder(
                 onRemoveLegacyVideoAt: _removeLegacyVideoEmbedAt,
               ),
