@@ -10,6 +10,7 @@ import 'package:aveli/features/courses/presentation/lesson_page.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/shared/widgets/aveli_video_player.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   _FakeMediaPipelineRepository(this._future);
@@ -89,10 +90,7 @@ LessonDetailData _buildLessonData({required String mediaState}) {
       position: 1,
     ),
   ];
-  return LessonDetailData(
-    lesson: lesson,
-    media: media,
-  );
+  return LessonDetailData(lesson: lesson, media: media);
 }
 
 void main() {
@@ -124,9 +122,7 @@ void main() {
           lessonDetailProvider.overrideWith((ref, lessonId) async => data),
           mediaPipelineRepositoryProvider.overrideWithValue(repo),
         ],
-        child: const MaterialApp(
-          home: LessonPage(lessonId: 'lesson-1'),
-        ),
+        child: const MaterialApp(home: LessonPage(lessonId: 'lesson-1')),
       ),
     );
 
@@ -155,9 +151,7 @@ void main() {
           lessonDetailProvider.overrideWith((ref, lessonId) async => data),
           mediaPipelineRepositoryProvider.overrideWithValue(repo),
         ],
-        child: const MaterialApp(
-          home: LessonPage(lessonId: 'lesson-1'),
-        ),
+        child: const MaterialApp(home: LessonPage(lessonId: 'lesson-1')),
       ),
     );
 
@@ -166,5 +160,61 @@ void main() {
 
     expect(repo.playbackCalls, 1);
     expect(find.byType(LinearProgressIndicator), findsWidgets);
+  });
+
+  testWidgets('legacy lesson video renders placeholder without crash', (
+    tester,
+  ) async {
+    final repo = _FakeMediaPipelineRepository(
+      Future.value(
+        MediaPlaybackUrl(
+          playbackUrl: Uri.parse('https://cdn.test/video.mp4'),
+          expiresAt: DateTime.now().toUtc(),
+          format: 'mp4',
+        ),
+      ),
+    );
+    final data = LessonDetailData(
+      lesson: const LessonDetail(
+        id: 'lesson-legacy',
+        title: 'Legacy',
+        contentMarkdown:
+            'Introtext\n\n<video src="/studio/media/legacy-path"></video>\n\nEftertext',
+        isIntro: false,
+        moduleId: null,
+        position: 1,
+      ),
+      media: const [],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: '',
+              stripeMerchantDisplayName: 'Test',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          lessonDetailProvider.overrideWith((ref, lessonId) async => data),
+          mediaPipelineRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: LessonPage(lessonId: 'lesson-legacy')),
+      ),
+    );
+
+    await tester.pump();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text('Den här lektionen innehåller äldre videoformat.'),
+      findsOneWidget,
+    );
+    expect(find.byType(AveliVideoPlayer), findsNothing);
   });
 }

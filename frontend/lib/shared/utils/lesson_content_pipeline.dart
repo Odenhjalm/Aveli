@@ -133,6 +133,44 @@ String? _lessonMediaIdFromEmbedValue(dynamic value) {
 String? lessonMediaIdFromEmbedValue(dynamic value) =>
     _lessonMediaIdFromEmbedValue(value);
 
+String? normalizeVideoPlaybackUrl(String? rawValue) {
+  final trimmed = rawValue?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) return null;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') return null;
+  if (uri.host.isEmpty) return null;
+  return uri.toString();
+}
+
+bool _isStudioMediaUrl(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) {
+    return false;
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri != null && uri.path.startsWith('/studio/media/')) {
+    return true;
+  }
+  return trimmed.toLowerCase().contains('/studio/media/');
+}
+
+/// Legacy video embeds cannot be rendered safely by the current player.
+///
+/// Detection is intentionally conservative and does not migrate/rewrite the
+/// source content. Callers can use this to render placeholders and allow
+/// manual replacement in the editor.
+bool isLegacyVideoEmbed(dynamic value) {
+  final url =
+      lessonMediaUrlFromEmbedValue(value) ??
+      (value == null ? '' : value.toString());
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) return true;
+  if (_isStudioMediaUrl(trimmed)) return true;
+  return normalizeVideoPlaybackUrl(trimmed) == null;
+}
+
 String _normalizeMediaSourceAttribute(Map<String, String> attrs) {
   for (final key in const [
     'src',
