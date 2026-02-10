@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/widgets/media_player.dart';
+import 'package:aveli/shared/widgets/aveli_video_player.dart';
 
 class LessonVideoBlock extends StatelessWidget {
   const LessonVideoBlock({
@@ -37,14 +37,7 @@ class LessonVideoBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final normalizedTitle = title?.trim();
-    final playback = tryCreateVideoPlaybackState(
-      mediaId: url,
-      url: url,
-      title: normalizedTitle ?? '',
-      controlsMode: InlineVideoControlsMode.custom,
-      controlChrome: InlineVideoControlChrome.hidden,
-      minimalUi: minimalUi,
-    );
+    final normalizedUrl = _normalizeVideoPlaybackUrl(url);
     final label =
         semanticLabel ??
         (normalizedTitle == null || normalizedTitle.isEmpty
@@ -52,6 +45,14 @@ class LessonVideoBlock extends StatelessWidget {
             : 'Lektionsvideo: $normalizedTitle');
     const fallbackHint =
         'Aktivera spelknappen med Enter eller mellanslag för att starta videon.';
+    final hint =
+        semanticHint ??
+        (autoPlay
+            ? '$fallbackHint Videon startar automatiskt om miljön tillåter det.'
+            : fallbackHint);
+    final placeholderStyle = minimalUi
+        ? theme.textTheme.bodySmall
+        : theme.textTheme.bodyMedium;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -74,7 +75,7 @@ class LessonVideoBlock extends StatelessWidget {
               child: Semantics(
                 container: true,
                 label: label,
-                hint: semanticHint ?? fallbackHint,
+                hint: hint,
                 child: DecoratedBox(
                   key: surfaceKey,
                   decoration: BoxDecoration(
@@ -88,20 +89,22 @@ class LessonVideoBlock extends StatelessWidget {
                   ),
                   child: Padding(
                     padding: p8,
-                    child: playback == null
+                    child: normalizedUrl == null
                         ? AspectRatio(
                             aspectRatio: 16 / 9,
                             child: Center(
                               child: Text(
-                                'Video laddas...',
-                                style: theme.textTheme.bodyMedium,
+                                'Video saknas eller stöds inte längre',
+                                style: placeholderStyle,
                               ),
                             ),
                           )
-                        : InlineVideoPlayer(
-                            key: playerKey,
-                            playback: playback,
-                            autoPlay: autoPlay,
+                        : AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: AveliVideoPlayer(
+                              key: playerKey,
+                              playbackUrl: normalizedUrl,
+                            ),
                           ),
                   ),
                 ),
@@ -112,4 +115,15 @@ class LessonVideoBlock extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _normalizeVideoPlaybackUrl(String? raw) {
+  final trimmed = raw?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) return null;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') return null;
+  if (uri.host.isEmpty) return null;
+  return uri.toString();
 }

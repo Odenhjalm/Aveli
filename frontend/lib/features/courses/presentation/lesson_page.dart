@@ -23,8 +23,8 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/app_network_image.dart';
 import 'package:aveli/shared/widgets/aveli_video_player.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
-import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/inline_audio_player.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
@@ -671,13 +671,13 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
             child: LinearProgressIndicator(),
           );
         }
-        final playbackUrl = _normalizeInlinePlaybackUrl(snapshot.data);
+        final normalizedUrl = _normalizeInlinePlaybackUrl(snapshot.data);
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: _LessonGlassMediaWrapper(
-            child: playbackUrl == null
+            child: normalizedUrl == null
                 ? const _MissingMediaFallback()
-                : AveliVideoPlayer(playbackUrl: playbackUrl),
+                : AveliVideoPlayer(playbackUrl: normalizedUrl),
           ),
         );
       },
@@ -1013,12 +1013,12 @@ class _MediaItem extends ConsumerWidget {
 }
 
 String? _normalizeInlinePlaybackUrl(String? rawValue) {
-  final raw = rawValue?.trim();
-  if (raw == null || raw.isEmpty) return null;
-  final parsed = Uri.tryParse(raw);
-  if (parsed == null) return null;
-  if (!parsed.hasScheme) return null;
-  final scheme = parsed.scheme.toLowerCase();
-  if (scheme == 'http' || scheme == 'https') return raw;
-  return null;
+  final trimmed = rawValue?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) return null;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') return null;
+  if (uri.host.isEmpty) return null;
+  return uri.toString();
 }
