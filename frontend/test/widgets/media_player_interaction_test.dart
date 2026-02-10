@@ -489,4 +489,34 @@ void main() {
     expect(find.text('Spela video'), findsOneWidget);
     expect(find.text('Laddar ström...'), findsNothing);
   });
+
+  testWidgets('inline player handles malformed or unsupported urls safely', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InlineVideoPlayer(
+            playback: VideoPlaybackState(
+              mediaId: 'test-inline-player-invalid-url',
+              url: 'ftp://cdn.example.com/video.mp4',
+              title: 'Testvideo',
+              controlsMode: InlineVideoControlsMode.custom,
+              controlChrome: InlineVideoControlChrome.hidden,
+              minimalUi: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Spela video'), findsOneWidget);
+
+    await tester.tap(find.byType(VideoSurfaceTapTarget));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Media saknas eller stöds inte längre'), findsOneWidget);
+    expect(find.text('Laddar ström...'), findsNothing);
+  });
 }

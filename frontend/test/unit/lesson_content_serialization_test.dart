@@ -271,5 +271,33 @@ Intro
 
       expect(hasRawHtml, isFalse);
     });
+
+    test('empty audio/video embed src values do not crash markdown import', () {
+      final document = md.Document(
+        encodeHtml: false,
+        extensionSet: md.ExtensionSet.gitHubWeb,
+      );
+      const markdown = '''
+<audio controls src=""></audio>
+<video controls src=""></video>
+<audio controls></audio>
+<video controls></video>
+''';
+
+      final converter = createLessonMarkdownToDelta(document);
+      late final quill_delta.Delta delta;
+      expect(() {
+        delta = convertLessonMarkdownToDelta(converter, markdown);
+      }, returnsNormally);
+
+      final rawText = delta
+          .toList()
+          .where((operation) => operation.isInsert && operation.value is String)
+          .map((operation) => operation.value as String)
+          .join('\n');
+
+      expect(rawText, contains('<audio'));
+      expect(rawText, contains('<video'));
+    });
   });
 }
