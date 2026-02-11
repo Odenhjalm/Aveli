@@ -212,109 +212,112 @@ class _LessonContent extends ConsumerWidget {
         .where((item) => !isEmbedded(item))
         .toList(growable: false);
 
-    final coreContent = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      children: [
-        GlassCard(
-          padding: const EdgeInsets.all(16),
-          opacity: 0.16,
-          sigmaX: 10,
-          sigmaY: 10,
-          borderRadius: BorderRadius.circular(22),
-          borderColor: Colors.white.withValues(alpha: 0.16),
-          child: FutureBuilder<String>(
-            future: prepareLessonMarkdownForRendering(
-              mediaRepo,
-              markdownContent,
-              lessonMedia: mediaItems,
-              pipelineRepository: pipelineRepo,
-            ),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: LinearProgressIndicator(),
-                );
-              }
-
-              if (snapshot.hasError) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('Kunde inte rendera lektionsinnehållet.'),
-                );
-              }
-
-              final prepared = (snapshot.data ?? markdownContent).trim();
-              return _LessonQuillContent(
-                markdown: prepared.isEmpty ? 'Inget innehåll.' : prepared,
-                onLaunchUrl: (url) =>
-                    unawaited(_handleLinkTap(context, ref, url)),
-              );
-            },
-          ),
-        ),
-        if (bundleLinks.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          ...bundleLinks.map(
-            (link) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: FilledButton.icon(
-                icon: const Icon(Icons.shopping_bag_outlined),
-                label: const Text('Köp paketet'),
-                onPressed: () =>
-                    _startBundleCheckout(context, ref, link.bundleId),
-              ),
-            ),
-          ),
-        ],
-        if (trailingMedia.isNotEmpty) ...[
-          const SizedBox(height: 16),
+    final coreContent = MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
           GlassCard(
-            padding: const EdgeInsets.all(12),
-            borderRadius: BorderRadius.circular(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ...trailingMedia.map((item) => _MediaItem(item: item)),
-              ],
+            padding: const EdgeInsets.all(16),
+            opacity: 0.16,
+            sigmaX: 10,
+            sigmaY: 10,
+            borderRadius: BorderRadius.circular(22),
+            borderColor: Colors.white.withValues(alpha: 0.16),
+            child: FutureBuilder<String>(
+              future: prepareLessonMarkdownForRendering(
+                mediaRepo,
+                markdownContent,
+                lessonMedia: mediaItems,
+                pipelineRepository: pipelineRepo,
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: LinearProgressIndicator(),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('Kunde inte rendera lektionsinnehållet.'),
+                  );
+                }
+
+                final prepared = (snapshot.data ?? markdownContent).trim();
+                return _LessonQuillContent(
+                  markdown: prepared.isEmpty ? 'Inget innehåll.' : prepared,
+                  onLaunchUrl: (url) =>
+                      unawaited(_handleLinkTap(context, ref, url)),
+                );
+              },
             ),
           ),
-        ],
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  final prev = previous;
-                  if (prev == null) return;
-                  context.goNamed(
-                    AppRoute.lesson,
-                    pathParameters: {'id': prev.id},
-                  );
-                },
-                icon: const Icon(Icons.chevron_left_rounded),
-                label: const Text('Föregående'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  final nxt = next;
-                  if (nxt == null) return;
-                  context.goNamed(
-                    AppRoute.lesson,
-                    pathParameters: {'id': nxt.id},
-                  );
-                },
-                icon: const Icon(Icons.chevron_right_rounded),
-                label: const Text('Nästa'),
+          if (bundleLinks.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...bundleLinks.map(
+              (link) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.shopping_bag_outlined),
+                  label: const Text('Köp paketet'),
+                  onPressed: () =>
+                      _startBundleCheckout(context, ref, link.bundleId),
+                ),
               ),
             ),
           ],
-        ),
-      ],
+          if (trailingMedia.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            GlassCard(
+              padding: const EdgeInsets.all(12),
+              borderRadius: BorderRadius.circular(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...trailingMedia.map((item) => _MediaItem(item: item)),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final prev = previous;
+                    if (prev == null) return;
+                    context.goNamed(
+                      AppRoute.lesson,
+                      pathParameters: {'id': prev.id},
+                    );
+                  },
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  label: const Text('Föregående'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final nxt = next;
+                    if (nxt == null) return;
+                    context.goNamed(
+                      AppRoute.lesson,
+                      pathParameters: {'id': nxt.id},
+                    );
+                  },
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  label: const Text('Nästa'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
 
     final courseId = detail.module?.courseId;
@@ -437,6 +440,7 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
           enableInteractiveSelection: false,
           enableSelectionToolbar: false,
           showCursor: false,
+          readOnlyMouseCursor: SystemMouseCursors.basic,
           onLaunchUrl: widget.onLaunchUrl,
           embedBuilders: embedBuilders,
         ),
