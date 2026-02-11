@@ -55,6 +55,13 @@ bool _isValidPlaybackUrl(String url) {
   return uri.host.isNotEmpty;
 }
 
+String _format(Duration d) {
+  final safe = d.isNegative ? Duration.zero : d;
+  final minutes = safe.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = safe.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return '$minutes:$seconds';
+}
+
 class _VideoRenderer extends StatefulWidget {
   const _VideoRenderer({required this.playbackUrl, required this.title});
 
@@ -166,7 +173,6 @@ class _VideoRendererState extends State<_VideoRenderer> {
       return _loading(context, aspectRatio: 16 / 9);
     }
 
-    final isPlaying = controller.value.isPlaying;
     final aspectRatio = controller.value.aspectRatio > 0
         ? controller.value.aspectRatio
         : 16 / 9;
@@ -174,42 +180,106 @@ class _VideoRendererState extends State<_VideoRenderer> {
 
     return ClipRRect(
       borderRadius: _borderRadius,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          AspectRatio(aspectRatio: aspectRatio, child: VideoPlayer(controller)),
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _togglePlayback,
+      child: AspectRatio(
+        aspectRatio: aspectRatio,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            VideoPlayer(controller),
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _togglePlayback,
+              ),
             ),
-          ),
-          Positioned(
-            right: 10,
-            bottom: 10,
-            child: Semantics(
-              button: true,
-              label: semanticTitle,
-              hint: isPlaying
-                  ? 'Tryck för att pausa videon.'
-                  : 'Tryck för att spela videon.',
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.52),
-                  borderRadius: BorderRadius.circular(999),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.58),
+                    ],
+                  ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    size: 18,
-                    color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(10, 18, 10, 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      VideoProgressIndicator(
+                        controller,
+                        allowScrubbing: true,
+                        colors: const VideoProgressColors(
+                          playedColor: Colors.white,
+                          bufferedColor: Colors.white38,
+                          backgroundColor: Colors.white24,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      ValueListenableBuilder<VideoPlayerValue>(
+                        valueListenable: controller,
+                        builder: (_, value, __) {
+                          final duration = value.duration;
+                          final position = duration > Duration.zero
+                              ? value.position > duration
+                                    ? duration
+                                    : value.position
+                              : value.position;
+                          return Text(
+                            '${_format(position)} / ${_format(duration)}',
+                            textAlign: TextAlign.right,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: Colors.white),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+            Positioned(
+              right: 10,
+              bottom: 44,
+              child: ValueListenableBuilder<VideoPlayerValue>(
+                valueListenable: controller,
+                builder: (_, value, __) {
+                  final isPlaying = value.isPlaying;
+                  return Semantics(
+                    button: true,
+                    label: semanticTitle,
+                    hint: isPlaying
+                        ? 'Tryck för att pausa videon.'
+                        : 'Tryck för att spela videon.',
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.52),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(
+                          isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
