@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/widgets/media/smooth_video_seekbar.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:video_player/video_player.dart';
@@ -53,13 +54,6 @@ bool _isValidPlaybackUrl(String url) {
   final scheme = uri.scheme.toLowerCase();
   if (scheme != 'http' && scheme != 'https') return false;
   return uri.host.isNotEmpty;
-}
-
-String _format(Duration d) {
-  final safe = d.isNegative ? Duration.zero : d;
-  final minutes = safe.inMinutes.remainder(60).toString().padLeft(2, '0');
-  final seconds = safe.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return '$minutes:$seconds';
 }
 
 class _VideoRenderer extends StatefulWidget {
@@ -209,39 +203,7 @@ class _VideoRendererState extends State<_VideoRenderer> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(10, 18, 10, 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      VideoProgressIndicator(
-                        controller,
-                        allowScrubbing: true,
-                        colors: const VideoProgressColors(
-                          playedColor: Colors.white,
-                          bufferedColor: Colors.white38,
-                          backgroundColor: Colors.white24,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      ValueListenableBuilder<VideoPlayerValue>(
-                        valueListenable: controller,
-                        builder: (_, value, __) {
-                          final duration = value.duration;
-                          final position = duration > Duration.zero
-                              ? value.position > duration
-                                    ? duration
-                                    : value.position
-                              : value.position;
-                          return Text(
-                            '${_format(position)} / ${_format(duration)}',
-                            textAlign: TextAlign.right,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(color: Colors.white),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+                  child: SmoothVideoSeekBar(controller: controller),
                 ),
               ),
             ),
