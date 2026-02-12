@@ -216,4 +216,3 @@ async def test_notifications_require_teacher(async_client):
         assert resp.status_code == 403, resp.text
     finally:
         await cleanup_user(user_id)
-

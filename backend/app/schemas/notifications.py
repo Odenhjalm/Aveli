@@ -103,4 +103,3 @@ class NotificationCreateResponse(BaseModel):
 
 class NotificationListResponse(BaseModel):
     items: list[NotificationRecord]
-

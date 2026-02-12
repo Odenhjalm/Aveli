@@ -11,7 +11,9 @@ def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def register_user(client, email: str, password: str, display_name: str) -> tuple[str, str]:
+async def register_user(
+    client, email: str, password: str, display_name: str
+) -> tuple[str, str]:
     register_resp = await client.post(
         "/auth/register",
         json={
@@ -97,3 +99,66 @@ async def test_studio_lessons_belong_directly_to_course(async_client):
     )
     assert patch.status_code == 200, patch.text
     assert patch.json()["title"] == "Lesson 1 updated"
+
+
+async def test_studio_reorder_lessons_updates_positions(async_client):
+    password = "Passw0rd!"
+    teacher_token, teacher_id = await register_user(
+        async_client,
+        f"studio_reorder_teacher_{uuid.uuid4().hex[:6]}@example.org",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    slug = f"studio-reorder-{uuid.uuid4().hex[:8]}"
+    create_course = await async_client.post(
+        "/studio/courses",
+        headers=auth_header(teacher_token),
+        json={"title": f"Course {slug}", "slug": slug},
+    )
+    assert create_course.status_code == 200, create_course.text
+    course_id = create_course.json()["id"]
+
+    lesson_ids: list[str] = []
+    for index, title in enumerate(("Lesson A", "Lesson B", "Lesson C"), start=1):
+        create_lesson = await async_client.post(
+            "/studio/lessons",
+            headers=auth_header(teacher_token),
+            json={
+                "course_id": course_id,
+                "title": title,
+                "position": index,
+                "is_intro": False,
+                "content_markdown": f"Content {title}",
+            },
+        )
+        assert create_lesson.status_code == 200, create_lesson.text
+        lesson_ids.append(create_lesson.json()["id"])
+
+    reorder = await async_client.patch(
+        f"/studio/courses/{course_id}/lessons/reorder",
+        headers=auth_header(teacher_token),
+        json={
+            "lessons": [
+                {"id": lesson_ids[0], "position": 2},
+                {"id": lesson_ids[1], "position": 3},
+                {"id": lesson_ids[2], "position": 1},
+            ]
+        },
+    )
+    assert reorder.status_code == 200, reorder.text
+    assert reorder.json() == {"ok": True}
+
+    ordered = await async_client.get(
+        f"/studio/courses/{course_id}/lessons",
+        headers=auth_header(teacher_token),
+    )
+    assert ordered.status_code == 200, ordered.text
+    items = ordered.json().get("items") or []
+    assert [item.get("id") for item in items] == [
+        lesson_ids[2],
+        lesson_ids[0],
+        lesson_ids[1],
+    ]
+    assert [item.get("position") for item in items] == [1, 2, 3]

@@ -407,7 +407,9 @@ class TeacherProfileMediaUpdate(BaseModel):
 class TeacherProfileMediaListResponse(BaseModel):
     items: List[TeacherProfileMediaItem]
     lesson_media: List[TeacherProfileLessonSource] = Field(default_factory=list)
-    seminar_recordings: List[TeacherProfileRecordingSource] = Field(default_factory=list)
+    seminar_recordings: List[TeacherProfileRecordingSource] = Field(
+        default_factory=list
+    )
 
 
 class TeacherProfileMediaPublicResponse(BaseModel):
@@ -1090,6 +1092,15 @@ class LessonIntroUpdate(BaseModel):
 
 class MediaReorder(BaseModel):
     media_ids: List[str]
+
+
+class LessonReorderItem(BaseModel):
+    id: str
+    position: int
+
+
+class LessonReorder(BaseModel):
+    lessons: List[LessonReorderItem]
 
 
 class QuizEnsureResult(BaseModel):

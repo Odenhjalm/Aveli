@@ -187,12 +187,24 @@ def _best_storage_candidate(
                 return candidate_bucket, candidate_key, "manual_review", True
             if candidate_bucket != normalized_bucket:
                 return candidate_bucket, candidate_key, "bucket_mismatch", True
-            stripped = normalized_path[len(f"{normalized_bucket}/") :].lstrip("/") if normalized_bucket else normalized_path
+            stripped = (
+                normalized_path[len(f"{normalized_bucket}/") :].lstrip("/")
+                if normalized_bucket
+                else normalized_path
+            )
             if normalized_bucket and candidate_key == stripped and stripped != normalized_path:
                 return candidate_bucket, candidate_key, "key_format_drift", True
             return candidate_bucket, candidate_key, None, True
 
-    return normalized_bucket, normalized_path, _failure_reason(storage_bucket=normalized_bucket, storage_path=normalized_path), False
+    return (
+        normalized_bucket,
+        normalized_path,
+        _failure_reason(
+            storage_bucket=normalized_bucket,
+            storage_path=normalized_path,
+        ),
+        False,
+    )
 
 
 def _attach_media_robustness(
