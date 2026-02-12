@@ -558,6 +558,16 @@ class StudioRepository {
     );
   }
 
+  Future<void> reorderCourseLessons(
+    String courseId,
+    List<Map<String, dynamic>> orderedLessons,
+  ) async {
+    await _client.patch(
+      '/studio/courses/$courseId/lessons/reorder',
+      body: {'lessons': orderedLessons},
+    );
+  }
+
   Future<Uint8List> downloadMedia(String mediaId) {
     return _client.getBytes('/studio/media/$mediaId');
   }
