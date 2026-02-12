@@ -266,13 +266,7 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
     course_id = str(row["id"])
-    user_id = str(current["id"]) if current else None
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
-        if user_id
-        else False
-    )
-    if not row.get("is_published") and not teacher_access:
+    if not row.get("is_published"):
         raise HTTPException(status_code=404, detail="Course not found")
     _attach_cover_links(row)
     module = _virtual_module(course_id)
@@ -293,13 +287,7 @@ async def course_detail(course_id: str, current: OptionalCurrentUser = None):
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    user_id = str(current["id"]) if current else None
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
-        if user_id
-        else False
-    )
-    if not row.get("is_published") and not teacher_access:
+    if not row.get("is_published"):
         raise HTTPException(status_code=404, detail="Course not found")
     module = _virtual_module(course_id)
     modules = [module]

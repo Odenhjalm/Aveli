@@ -232,7 +232,8 @@ async def presign_lesson_media_upload(
         raise HTTPException(status_code=403, detail="Not course owner")
 
     bucket = "course-media"
-    path = f"{bucket}/lessons/{lesson_id}/{payload.filename}"
+    filename = Path(payload.filename).name.strip() or f"{lesson_id}.bin"
+    path = f"courses/{course_id}/lessons/{lesson_id}/{filename}"
     upload = await storage_service.storage_service.create_upload_url(
         path,
         content_type=payload.content_type,
