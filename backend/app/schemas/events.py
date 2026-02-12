@@ -117,4 +117,3 @@ class EventParticipantRecord(BaseModel):
     role: EventParticipantRole
     status: EventParticipantStatus
     registered_at: datetime
-

@@ -55,7 +55,14 @@ async def _assert_audience_permissions(audiences: list[NotificationAudienceCreat
             has_all_members = True
         elif aud.audience_type == NotificationAudienceType.event_participants and aud.event_id:
             event_ids.add(str(aud.event_id))
-        elif aud.audience_type in {NotificationAudienceType.course_participants, NotificationAudienceType.course_members} and aud.course_id:
+        elif (
+            aud.audience_type
+            in {
+                NotificationAudienceType.course_participants,
+                NotificationAudienceType.course_members,
+            }
+            and aud.course_id
+        ):
             course_ids.add(str(aud.course_id))
 
     if has_all_members and not is_admin:
