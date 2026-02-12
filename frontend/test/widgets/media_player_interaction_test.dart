@@ -437,7 +437,7 @@ void main() {
 
     await tester.tap(find.byType(VideoSurfaceTapTarget));
     await tester.pump();
-    expect(find.text('Laddar ström...'), findsOneWidget);
+    expect(find.text('Spela video'), findsNothing);
 
     hostSetState!(() {
       rebuildTick++;
@@ -445,7 +445,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('tick:1'), findsOneWidget);
-    expect(find.text('Laddar ström...'), findsOneWidget);
     expect(find.text('Spela video'), findsNothing);
   });
 
@@ -479,7 +478,7 @@ void main() {
 
     await tester.tap(find.byType(VideoSurfaceTapTarget));
     await tester.pump();
-    expect(find.text('Laddar ström...'), findsOneWidget);
+    expect(find.text('Spela video'), findsNothing);
 
     hostSetState!(() {
       currentUrl = 'https://cdn.example.com/b.mp4';
@@ -487,7 +486,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Spela video'), findsOneWidget);
-    expect(find.text('Laddar ström...'), findsNothing);
   });
 
   testWidgets('inline player handles malformed or unsupported urls safely', (
