@@ -471,6 +471,9 @@ def fetch_orphan_media_objects(
         joins.append("LEFT JOIN app.events e ON e.image_id = mo.id")
         where_clauses.append("  AND e.id IS NULL")
 
+    joins_sql = "\n".join(joins)
+    where_sql = "\n".join(where_clauses)
+
     query = f"""
         SELECT
           mo.id AS media_object_id,
@@ -479,8 +482,8 @@ def fetch_orphan_media_objects(
           mo.content_type,
           mo.original_name,
           mo.byte_size
-        {'\n'.join(joins)}
-        {'\n'.join(where_clauses)}
+        {joins_sql}
+        {where_sql}
         ORDER BY mo.id ASC
         LIMIT %s
     """
