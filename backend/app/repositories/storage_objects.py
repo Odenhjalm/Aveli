@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable
 
 from psycopg import errors
 
@@ -47,4 +47,3 @@ async def fetch_storage_object_existence(
         return existence, True
     except errors.UndefinedTable:
         return {}, False
-
