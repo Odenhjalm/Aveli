@@ -266,7 +266,15 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
     course_id = str(row["id"])
-    if not row.get("is_published"):
+    user_id = str(current["id"]) if current else None
+    role = (str(current.get("role_v2") or "").lower() if current else "")
+    can_preview_unpublished = bool(current and (current.get("is_admin") or role == "teacher"))
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
+        if (user_id and can_preview_unpublished)
+        else False
+    )
+    if not row.get("is_published") and not teacher_access:
         raise HTTPException(status_code=404, detail="Course not found")
     _attach_cover_links(row)
     module = _virtual_module(course_id)
@@ -287,7 +295,15 @@ async def course_detail(course_id: str, current: OptionalCurrentUser = None):
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    if not row.get("is_published"):
+    user_id = str(current["id"]) if current else None
+    role = (str(current.get("role_v2") or "").lower() if current else "")
+    can_preview_unpublished = bool(current and (current.get("is_admin") or role == "teacher"))
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
+        if (user_id and can_preview_unpublished)
+        else False
+    )
+    if not row.get("is_published") and not teacher_access:
         raise HTTPException(status_code=404, detail="Course not found")
     module = _virtual_module(course_id)
     modules = [module]
