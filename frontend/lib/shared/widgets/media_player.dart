@@ -433,7 +433,10 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     });
     _startActivationTimeout();
     if (_useMediaKit) {
-      unawaited(_prepareMediaKitPlayer(parsedUrl));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_activated || !_initializing) return;
+        unawaited(_prepareMediaKitPlayer(parsedUrl));
+      });
     } else {
       _videoController = VideoPlayerController.networkUrl(parsedUrl);
       unawaited(_initVideoPlayer());
