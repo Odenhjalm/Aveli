@@ -306,7 +306,9 @@ async def list_courses(
                 await cur.execute(query, params)
             except errors.UndefinedColumn:
                 await conn.rollback()
-                fallback_query = query.replace(_FULL_COURSE_COLUMNS, _legacy_course_columns())
+                fallback_query = query.replace(
+                    _FULL_COURSE_COLUMNS, _legacy_course_columns()
+                )
                 await cur.execute(fallback_query, params)
             return await cur.fetchall()
 
@@ -351,7 +353,9 @@ async def list_public_courses(
                 await cur.execute(query, params)
             except errors.UndefinedColumn:
                 await conn.rollback()
-                fallback_query = query.replace(_FULL_COURSE_COLUMNS, _legacy_course_columns())
+                fallback_query = query.replace(
+                    _FULL_COURSE_COLUMNS, _legacy_course_columns()
+                )
                 await cur.execute(fallback_query, params)
             return await cur.fetchall()
 
@@ -503,7 +507,9 @@ async def update_course(
                         fallback_updates.append((column, value))
                 if not fallback_updates:
                     raise
-                fallback_clause = ", ".join(f"{column} = %s" for column, _ in fallback_updates)
+                fallback_clause = ", ".join(
+                    f"{column} = %s" for column, _ in fallback_updates
+                )
                 fallback_params = [value for _, value in fallback_updates]
                 fallback_params.append(course_id)
                 fallback_query = f"""
@@ -542,7 +548,11 @@ async def clear_course_cover(course_id: str) -> str | None:
             await cur.execute(query, (course_id, course_id))
             row = await cur.fetchone()
             await conn.commit()
-            return str(row["cover_media_id"]) if row and row.get("cover_media_id") else None
+            return (
+                str(row["cover_media_id"])
+                if row and row.get("cover_media_id")
+                else None
+            )
 
 
 async def delete_course(course_id: str) -> bool:
@@ -991,9 +1001,35 @@ async def reorder_lessons(
     if not lesson_ids_in_order:
         return
 
+    normalized_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for raw_lesson_id in lesson_ids_in_order:
+        lesson_id = str(raw_lesson_id).strip()
+        if not lesson_id:
+            raise ValueError("lesson id cannot be empty")
+        if lesson_id in seen_ids:
+            raise ValueError("duplicate lesson id")
+        seen_ids.add(lesson_id)
+        normalized_ids.append(lesson_id)
+
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            for index, lesson_id in enumerate(lesson_ids_in_order):
+            # Move to temporary negative positions first to avoid unique conflicts
+            # on (course_id, position) during reordering.
+            for index, lesson_id in enumerate(normalized_ids, start=1):
+                await cur.execute(
+                    """
+                    UPDATE app.lessons
+                    SET position = %s, updated_at = now()
+                    WHERE id = %s AND course_id = %s
+                    """,
+                    (-index, lesson_id, course_id),
+                )
+                if cur.rowcount != 1:
+                    await conn.rollback()
+                    raise ValueError("lesson ids must belong to the selected course")
+
+            for index, lesson_id in enumerate(normalized_ids, start=1):
                 await cur.execute(
                     """
                     UPDATE app.lessons
@@ -1306,7 +1342,9 @@ async def enforce_free_intro_enrollment(user_id: str, course_id: str) -> None:
     await ensure_course_enrollment(user_id, course_id, source="free_intro")
 
 
-async def ensure_course_enrollment(user_id: str, course_id: str, *, source: str = "purchase") -> None:
+async def ensure_course_enrollment(
+    user_id: str, course_id: str, *, source: str = "purchase"
+) -> None:
     source_value = source or "purchase"
     query = """
         INSERT INTO app.enrollments (user_id, course_id, source)

@@ -5,7 +5,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 from uuid import UUID, uuid4
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 
 from .. import models, repositories, schemas
 from ..auth import CurrentUser
@@ -217,7 +226,9 @@ async def presign_lesson_media_upload(
         raise HTTPException(status_code=404, detail="Lesson not found")
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
+        _log_course_owner_denied(
+            str(current["id"]), course_id=course_id, lesson_id=lesson_id_str
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
 
     bucket = "course-media"
@@ -251,7 +262,9 @@ async def complete_lesson_media_upload(
         raise HTTPException(status_code=404, detail="Lesson not found")
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
+        _log_course_owner_denied(
+            str(current["id"]), course_id=course_id, lesson_id=lesson_id_str
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
 
     kind = _detect_kind(payload.content_type)
@@ -270,7 +283,9 @@ async def complete_lesson_media_upload(
     if payload.byte_size <= 0:
         raise HTTPException(status_code=422, detail="byte_size must be greater than 0")
 
-    original_name = (payload.original_name or "").strip() or Path(payload.storage_path).name
+    original_name = (payload.original_name or "").strip() or Path(
+        payload.storage_path
+    ).name
     media_object = await models.create_media_object(
         owner_id=str(current["id"]),
         storage_path=payload.storage_path,
@@ -316,7 +331,9 @@ async def list_lesson_media(lesson_id: UUID, current: TeacherUser):
     lesson_id_str = str(lesson_id)
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(str(current["id"]), course_id=course_id, lesson_id=lesson_id_str)
+        _log_course_owner_denied(
+            str(current["id"]), course_id=course_id, lesson_id=lesson_id_str
+        )
         raise HTTPException(status_code=403, detail="Not course owner")
     items = await models.list_lesson_media(str(lesson_id))
     return {"items": items}
@@ -352,10 +369,14 @@ async def studio_create_profile_media(
     current: TeacherUser,
 ):
     media_kind = payload.media_kind
-    if media_kind in {
-        schemas.TeacherProfileMediaKind.lesson_media,
-        schemas.TeacherProfileMediaKind.seminar_recording,
-    } and payload.media_id is None:
+    if (
+        media_kind
+        in {
+            schemas.TeacherProfileMediaKind.lesson_media,
+            schemas.TeacherProfileMediaKind.seminar_recording,
+        }
+        and payload.media_id is None
+    ):
         raise HTTPException(
             status_code=422, detail="media_id is required for selected media kind"
         )
@@ -372,7 +393,9 @@ async def studio_create_profile_media(
     }:
         title = (payload.title or "").strip()
         if not title:
-            raise HTTPException(status_code=422, detail="title is required for selected media kind")
+            raise HTTPException(
+                status_code=422, detail="title is required for selected media kind"
+            )
 
     row = await repositories.create_teacher_profile_media(
         teacher_id=str(current["id"]),
@@ -381,9 +404,7 @@ async def studio_create_profile_media(
         external_url=payload.external_url,
         title=payload.title,
         description=payload.description,
-        cover_media_id=str(payload.cover_media_id)
-        if payload.cover_media_id
-        else None,
+        cover_media_id=str(payload.cover_media_id) if payload.cover_media_id else None,
         cover_image_url=payload.cover_image_url,
         position=payload.position,
         is_published=payload.is_published,
@@ -444,7 +465,9 @@ async def studio_update_profile_media(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Profile media item not found")
-    current_cover_media_id = str(row["cover_media_id"]) if row.get("cover_media_id") else None
+    current_cover_media_id = (
+        str(row["cover_media_id"]) if row.get("cover_media_id") else None
+    )
     if previous_cover_media_id and previous_cover_media_id != current_cover_media_id:
         await models.cleanup_media_object(previous_cover_media_id)
     return profile_media_item_from_row(row)
@@ -458,7 +481,9 @@ async def studio_delete_profile_media(item_id: UUID, current: TeacherUser):
     )
     if not existing:
         raise HTTPException(status_code=404, detail="Profile media item not found")
-    cover_media_id = str(existing["cover_media_id"]) if existing.get("cover_media_id") else None
+    cover_media_id = (
+        str(existing["cover_media_id"]) if existing.get("cover_media_id") else None
+    )
     deleted = await repositories.delete_teacher_profile_media(
         item_id=str(item_id),
         teacher_id=str(current["id"]),
@@ -491,7 +516,9 @@ async def studio_home_player_library(current: TeacherUser):
     return schemas.HomePlayerLibraryResponse(
         uploads=[schemas.HomePlayerUploadItem(**row) for row in uploads],
         course_links=[schemas.HomePlayerCourseLinkItem(**row) for row in links],
-        course_media=[schemas.TeacherProfileLessonSource(**row) for row in course_media],
+        course_media=[
+            schemas.TeacherProfileLessonSource(**row) for row in course_media
+        ],
     )
 
 
@@ -529,7 +556,9 @@ async def studio_home_player_upload_url(
         )
 
     await _assert_storage_bucket_exists(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
-    storage_client = storage_service.get_storage_service(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
+    storage_client = storage_service.get_storage_service(
+        _HOME_PLAYER_UPLOADS_STORAGE_BUCKET
+    )
     if not storage_client.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -597,7 +626,9 @@ async def studio_refresh_home_player_upload_url(
     mime_type = "audio/mpeg" if is_mp3 else "video/mp4"
 
     await _assert_storage_bucket_exists(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
-    storage_client = storage_service.get_storage_service(_HOME_PLAYER_UPLOADS_STORAGE_BUCKET)
+    storage_client = storage_service.get_storage_service(
+        _HOME_PLAYER_UPLOADS_STORAGE_BUCKET
+    )
     if not storage_client.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -663,7 +694,9 @@ async def studio_create_home_player_upload(
             raise HTTPException(status_code=400, detail="Failed to create upload")
         return schemas.HomePlayerUploadItem(**created)
 
-    storage_bucket = (payload.storage_bucket or "").strip() or _HOME_PLAYER_UPLOADS_STORAGE_BUCKET
+    storage_bucket = (
+        payload.storage_bucket or ""
+    ).strip() or _HOME_PLAYER_UPLOADS_STORAGE_BUCKET
     if storage_bucket != _HOME_PLAYER_UPLOADS_STORAGE_BUCKET:
         raise HTTPException(status_code=422, detail="Unsupported storage bucket")
     await _assert_storage_bucket_exists(storage_bucket)
@@ -684,7 +717,9 @@ async def studio_create_home_player_upload(
     normalized_type = content_type.lower()
     normalized_ext = Path(storage_path).suffix.lower().lstrip(".")
     if normalized_ext == "wav" or normalized_type in _HOME_PLAYER_WAV_MIME_TYPES:
-        raise HTTPException(status_code=422, detail="WAV uploads must use the media pipeline")
+        raise HTTPException(
+            status_code=422, detail="WAV uploads must use the media pipeline"
+        )
 
     is_mp3 = normalized_ext == "mp3" or normalized_type in _HOME_PLAYER_MP3_MIME_TYPES
     is_mp4 = normalized_ext == "mp4" or normalized_type == "video/mp4"
@@ -754,7 +789,9 @@ async def studio_update_home_player_upload(
     return schemas.HomePlayerUploadItem(**row)
 
 
-@router.delete("/home-player/uploads/{upload_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/home-player/uploads/{upload_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def studio_delete_home_player_upload(upload_id: UUID, current: TeacherUser):
     deleted = await repositories.delete_home_player_upload(
         upload_id=str(upload_id),
@@ -844,7 +881,9 @@ async def studio_update_home_player_course_link(
     return schemas.HomePlayerCourseLinkItem(**row)
 
 
-@router.delete("/home-player/course-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/home-player/course-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def studio_delete_home_player_course_link(link_id: UUID, current: TeacherUser):
     deleted = await repositories.delete_home_player_course_link(
         link_id=str(link_id),
@@ -1300,6 +1339,66 @@ async def course_lessons(course_id: str, current: TeacherUser):
     return {"items": lessons}
 
 
+@router.patch("/courses/{course_id}/lessons/reorder")
+async def reorder_course_lessons(
+    course_id: str,
+    payload: schemas.LessonReorder,
+    current: TeacherUser,
+):
+    if not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+        )
+        raise HTTPException(status_code=403, detail="Not course owner")
+
+    requested = payload.lessons
+    if not requested:
+        return {"ok": True}
+
+    positions: set[int] = set()
+    ordered_entries: list[schemas.LessonReorderItem] = []
+    seen_ids: set[str] = set()
+    for item in requested:
+        lesson_id = item.id.strip()
+        if not lesson_id:
+            raise HTTPException(status_code=422, detail="Lesson id cannot be empty")
+        if lesson_id in seen_ids:
+            raise HTTPException(
+                status_code=422, detail="Duplicate lesson id in reorder payload"
+            )
+        if item.position in positions:
+            raise HTTPException(
+                status_code=422, detail="Duplicate lesson position in reorder payload"
+            )
+        seen_ids.add(lesson_id)
+        positions.add(item.position)
+        ordered_entries.append(
+            schemas.LessonReorderItem(id=lesson_id, position=item.position)
+        )
+
+    existing = await courses_service.list_course_lessons(course_id)
+    existing_ids = {
+        str(row.get("id")).strip()
+        for row in existing
+        if row.get("id") is not None and str(row.get("id")).strip()
+    }
+    if seen_ids != existing_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Reorder payload must include every lesson in the course exactly once",
+        )
+
+    ordered_entries.sort(key=lambda entry: entry.position)
+    ordered_lesson_ids = [entry.id for entry in ordered_entries]
+    try:
+        await courses_service.reorder_lessons(course_id, ordered_lesson_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {"ok": True}
+
+
 @router.get("/courses/{course_id}/modules")
 async def course_modules(course_id: str, current: TeacherUser):
     if not await models.is_course_owner(current["id"], course_id):
@@ -1531,7 +1630,9 @@ async def upload_media(
     effective_intro = is_intro or lesson_is_intro
 
     storage_bucket = (
-        upload_routes._PUBLIC_MEDIA_BUCKET if effective_intro else upload_routes._COURSE_MEDIA_BUCKET
+        upload_routes._PUBLIC_MEDIA_BUCKET
+        if effective_intro
+        else upload_routes._COURSE_MEDIA_BUCKET
     )
 
     course_id_str = str(course_id)
@@ -1540,11 +1641,15 @@ async def upload_media(
     allowed_prefixes = upload_routes._LESSON_ALLOWED_PREFIXES + tuple(
         upload_routes._LESSON_ALLOWED_EXACT_TYPES
     )
-    detected_kind = upload_routes._detect_kind(file.content_type or mimetypes.guess_type(file.filename or "")[0])
+    detected_kind = upload_routes._detect_kind(
+        file.content_type or mimetypes.guess_type(file.filename or "")[0]
+    )
     if detected_kind in {"image", "video", "audio", "pdf"}:
         relative_dir /= detected_kind
 
-    destination_dir = upload_routes._safe_join(upload_routes.UPLOADS_ROOT, *relative_dir.parts)
+    destination_dir = upload_routes._safe_join(
+        upload_routes.UPLOADS_ROOT, *relative_dir.parts
+    )
     write_result = await upload_routes._write_upload(
         destination_dir,
         file,
@@ -1622,7 +1727,9 @@ async def delete_media(media_id: str, current: TeacherUser):
 
         streaming_path = media_asset.get("streaming_object_path")
         if streaming_path:
-            streaming_bucket = media_asset.get("streaming_storage_bucket") or original_bucket
+            streaming_bucket = (
+                media_asset.get("streaming_storage_bucket") or original_bucket
+            )
             if streaming_bucket:
                 delete_targets.add((str(streaming_bucket), str(streaming_path)))
 
@@ -1631,7 +1738,9 @@ async def delete_media(media_id: str, current: TeacherUser):
                 service = storage_service.get_storage_service(bucket)
                 await service.delete_object(path)
             except storage_service.StorageServiceError as exc:
-                logger.warning("Storage delete failed bucket=%s path=%s: %s", bucket, path, exc)
+                logger.warning(
+                    "Storage delete failed bucket=%s path=%s: %s", bucket, path, exc
+                )
     return {"deleted": True}
 
 

@@ -331,6 +331,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _lessonActionBusy = false;
   static const Duration _lessonMediaPollInterval = Duration(seconds: 5);
   Timer? _lessonMediaPollTimer;
+  Timer? _lessonReorderDebounceTimer;
   bool _lessonMediaPollInFlight = false;
 
   quill.QuillController? _lessonContentController;
@@ -442,6 +443,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _resetCourseContext({bool clearLists = false}) {
+    _lessonReorderDebounceTimer?.cancel();
+    _lessonReorderDebounceTimer = null;
     _resetCoverState(clearPreview: true);
     _lessonsLoadError = null;
     _mediaLoadError = null;
@@ -530,6 +533,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonTitleCtrl.dispose();
     _coverPollTimer?.cancel();
     _lessonMediaPollTimer?.cancel();
+    _lessonReorderDebounceTimer?.cancel();
     super.dispose();
   }
 
@@ -933,8 +937,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Widget _buildLessonListTile(
     BuildContext context,
-    Map<String, dynamic> lesson,
-  ) {
+    Map<String, dynamic> lesson, {
+    required int index,
+  }) {
     final theme = Theme.of(context);
     final lessonId = safeString(lesson, 'id');
     final title = safeString(lesson, 'title') ?? 'Lektion';
@@ -948,7 +953,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           : Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       child: ListTile(
-        key: lessonId == null ? null : ValueKey('lesson-$lessonId'),
         dense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         leading: CircleAvatar(
@@ -962,16 +966,76 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: isIntro ? const Text('Intro') : null,
-        trailing: IconButton(
-          tooltip: 'Ta bort lektion',
-          onPressed: lessonId == null || _lessonActionBusy
-              ? null
-              : () => _deleteLesson(lessonId),
-          icon: const Icon(Icons.delete_outline),
+        trailing: Wrap(
+          spacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            IconButton(
+              tooltip: 'Ta bort lektion',
+              onPressed: lessonId == null || _lessonActionBusy
+                  ? null
+                  : () => _deleteLesson(lessonId),
+              icon: const Icon(Icons.delete_outline),
+            ),
+            ReorderableDragStartListener(
+              index: index,
+              child: const Icon(Icons.drag_handle_rounded),
+            ),
+          ],
         ),
         onTap: lessonId == null ? null : () => _selectLesson(lessonId),
       ),
     );
+  }
+
+  List<Map<String, dynamic>> _reindexLessons(
+    List<Map<String, dynamic>> lessons,
+  ) {
+    return List<Map<String, dynamic>>.generate(lessons.length, (index) {
+      final lesson = lessons[index];
+      return <String, dynamic>{...lesson, 'position': index + 1};
+    }, growable: false);
+  }
+
+  void _scheduleLessonReorderSave() {
+    _lessonReorderDebounceTimer?.cancel();
+    _lessonReorderDebounceTimer = Timer(const Duration(milliseconds: 450), () {
+      unawaited(_persistLessonOrder());
+    });
+  }
+
+  Future<void> _persistLessonOrder() async {
+    final courseId = _selectedCourseId;
+    if (courseId == null || _lessons.isEmpty) return;
+
+    final updates = <Map<String, dynamic>>[];
+    for (var index = 0; index < _lessons.length; index += 1) {
+      final lessonId = safeString(_lessons[index], 'id');
+      if (lessonId == null) {
+        return;
+      }
+      updates.add(<String, dynamic>{'id': lessonId, 'position': index + 1});
+    }
+
+    try {
+      await _studioRepo.reorderCourseLessons(courseId, updates);
+    } catch (error, stackTrace) {
+      if (!mounted || _selectedCourseId != courseId) return;
+      _showFriendlyErrorSnack('Kunde inte spara ordningen', error, stackTrace);
+      await _loadLessons(preserveSelection: true);
+    }
+  }
+
+  void _handleLessonReorder(int oldIndex, int newIndex) {
+    if (_lessonActionBusy || oldIndex == newIndex) return;
+    setState(() {
+      if (newIndex > oldIndex) newIndex -= 1;
+      final reordered = [..._lessons];
+      final lesson = reordered.removeAt(oldIndex);
+      reordered.insert(newIndex, lesson);
+      _lessons = _reindexLessons(reordered);
+    });
+    _scheduleLessonReorderSave();
   }
 
   Map<String, dynamic>? _lessonById(String? id) {
@@ -4819,19 +4883,30 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               )
                             else ...[
                               if (_lessons.isNotEmpty) ...[
-                                Column(
-                                  children: [
-                                    for (final lesson in _lessons)
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 4,
-                                        ),
-                                        child: _buildLessonListTile(
-                                          context,
-                                          lesson,
-                                        ),
+                                ReorderableListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: _lessons.length,
+                                  onReorder: _handleLessonReorder,
+                                  buildDefaultDragHandles: false,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    final lesson = _lessons[index];
+                                    final lessonId = safeString(lesson, 'id');
+                                    return Padding(
+                                      key: ValueKey(lessonId),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 4,
                                       ),
-                                  ],
+                                      child: _buildLessonListTile(
+                                        context,
+                                        lesson,
+                                        index: index,
+                                      ),
+                                    );
+                                  },
                                 ),
                               ],
                               if (!isWide && _selectedLessonId != null) ...[
