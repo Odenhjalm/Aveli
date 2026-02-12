@@ -1,4 +1,4 @@
-.PHONY: backend.setup backend.dev backend.test backend.lint supabase.migrate qa.teacher docker.up docker.down flutter.get flutter.test
+.PHONY: backend.setup backend.dev backend.test backend.lint supabase.migrate qa.teacher docker.up docker.down flutter.get flutter.test guardrails.install task.branch
 
 backend.setup:
 	cd backend && poetry env use 3.11 && poetry install --sync
@@ -29,3 +29,10 @@ flutter.get:
 
 flutter.test:
 	cd frontend && flutter test
+
+guardrails.install:
+	./codex/scripts/install-task-guardrails.sh
+
+task.branch:
+	@test -n "$(TASK)" || (echo "Set TASK, example: make task.branch TASK='lesson reorder'" && exit 1)
+	./codex/scripts/start-task-branch.sh "$(TASK)"
