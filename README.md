@@ -90,6 +90,17 @@ docker compose --env-file .env.docker up --build
 - MCP Supabase helper: `backend/scripts/mcp_supabase.py` (uses `.vscode/mcp.json`).
 - Course import/QA utilities: see `docs/BACKEND_STRUCTURE.md` and `docs/DEPLOYMENT.md`.
 
+## Task Branch Guardrail
+Install once per clone:
+```bash
+make guardrails.install
+```
+Start every new task on a fresh branch:
+```bash
+make task.branch TASK="short task name"
+```
+The repo hooks block commit/push on protected branches (`main`, `master`, `develop`, `dev`, `production`, `release`).
+
 ## Documentation
 - Security/rotation: `docs/SECURITY.md`
 - Deployment (Fly.io + compose): `docs/DEPLOYMENT.md`
