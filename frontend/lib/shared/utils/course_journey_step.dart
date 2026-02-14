@@ -4,8 +4,14 @@
 /// Use `is_free_intro` for the global intro vs paid course type logic.
 enum CourseJourneyStep { intro, step1, step2, step3 }
 
-CourseJourneyStep? courseJourneyStepFromApi(String? value) {
-  switch (value) {
+CourseJourneyStep? courseJourneyStepFromApi(Object? value) {
+  final raw = value?.toString().trim();
+  if (raw == null || raw.isEmpty) {
+    return null;
+  }
+
+  final normalized = raw.toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
+  switch (normalized) {
     case 'intro':
       return CourseJourneyStep.intro;
     case 'step1':
