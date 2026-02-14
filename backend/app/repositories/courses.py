@@ -23,7 +23,6 @@ _FULL_COURSE_COLUMNS = """
         video_url,
         branch,
         is_free_intro,
-        journey_group_id,
         journey_step,
         price_amount_cents,
         currency,
@@ -52,28 +51,33 @@ _BASE_COURSE_UPDATE_COLUMNS = {
 
 def _legacy_course_columns(alias: str | None = None) -> str:
     prefix = f"{alias}." if alias else ""
-    price_source = f"{prefix}price_cents"
-    column_lines = [
-        f"{prefix}id",
-        f"{prefix}slug",
-        f"{prefix}title",
-        f"{prefix}description",
-        f"{prefix}cover_url",
-        "NULL::uuid AS cover_media_id",
-        f"{prefix}video_url",
-        f"{prefix}branch",
-        f"{prefix}is_free_intro",
-        f"COALESCE(NULLIF(trim({prefix}slug), ''), {prefix}id::text) AS journey_group_id",
-        "1::smallint AS journey_step",
-        f"COALESCE({price_source}, 0)::int AS price_amount_cents",
-        "'sek'::text AS currency",
-        "NULL::text AS stripe_product_id",
-        "NULL::text AS stripe_price_id",
-        f"{prefix}is_published",
-        f"{prefix}created_by",
-        f"{prefix}created_at",
-        f"{prefix}updated_at",
+    base_columns = [
+        "id",
+        "slug",
+        "title",
+        "description",
+        "cover_url",
+        "video_url",
+        "branch",
+        "is_free_intro",
+        "journey_step",
+        "is_published",
+        "created_by",
+        "created_at",
+        "updated_at",
     ]
+    column_lines = [f"{prefix}{column}" for column in base_columns]
+    cover_index = base_columns.index("cover_url") + 1
+    column_lines.insert(cover_index, "NULL::uuid AS cover_media_id")
+    price_source = f"{prefix}price_cents"
+    column_lines.extend(
+        [
+            f"COALESCE({price_source}, 0)::int AS price_amount_cents",
+            "'sek'::text AS currency",
+            "NULL::text AS stripe_product_id",
+            "NULL::text AS stripe_price_id",
+        ]
+    )
     return ",\n        ".join(column_lines)
 
 
@@ -98,32 +102,6 @@ def _coerce_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
-
-
-def _normalize_journey_group_id(value: Any) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
-
-
-def _normalize_journey_step(value: Any) -> int | None:
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        legacy_map = {
-            "intro": 1,
-            "step1": 1,
-            "step2": 2,
-            "step3": 3,
-        }
-        if normalized in legacy_map:
-            return legacy_map[normalized]
-    parsed = _coerce_int(value)
-    if parsed is None:
-        return None
-    if parsed not in {1, 2, 3}:
-        raise ValueError("journey_step must be one of: 1, 2, 3")
-    return parsed
 
 
 async def get_course(
@@ -391,14 +369,6 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
     columns = ["title", "created_by"]
     placeholders = ["%s", "%s"]
     values: list[Any] = [data["title"], data["created_by"]]
-    journey_group_raw = data.get("journey_group_id")
-    journey_step_raw = data.get("journey_step")
-    journey_group_id = _normalize_journey_group_id(journey_group_raw)
-    journey_step = _normalize_journey_step(journey_step_raw)
-    if "journey_group_id" in data and journey_group_raw is not None and journey_group_id is None:
-        raise ValueError("journey_group_id cannot be empty")
-    if "journey_step" in data and journey_step_raw is not None and journey_step is None:
-        raise ValueError("journey_step must be one of: 1, 2, 3")
 
     optional_fields: list[tuple[str, Any]] = [
         ("slug", data.get("slug")),
@@ -406,8 +376,7 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
         ("video_url", data.get("video_url")),
         ("branch", data.get("branch")),
         ("currency", data.get("currency")),
-        ("journey_group_id", journey_group_id),
-        ("journey_step", journey_step),
+        ("journey_step", data.get("journey_step")),
     ]
 
     bool_fields = {
@@ -456,7 +425,6 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
                         "branch",
                         "currency",
                         "price_amount_cents",
-                        "journey_group_id",
                         "journey_step",
                     }
                 ]
@@ -492,20 +460,11 @@ async def update_course(
         "video_url",
         "branch",
         "currency",
+        "journey_step",
     )
     for column in text_columns:
         if column in data:
             updates.append((column, data[column]))
-    if "journey_group_id" in data:
-        journey_group_id = _normalize_journey_group_id(data.get("journey_group_id"))
-        if journey_group_id is None:
-            raise ValueError("journey_group_id cannot be empty")
-        updates.append(("journey_group_id", journey_group_id))
-    if "journey_step" in data:
-        journey_step = _normalize_journey_step(data.get("journey_step"))
-        if journey_step is None:
-            raise ValueError("journey_step is required when provided")
-        updates.append(("journey_step", journey_step))
 
     if "is_free_intro" in data:
         updates.append(("is_free_intro", _coerce_bool(data.get("is_free_intro"))))
