@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter
 
 from .. import models, repositories, schemas
@@ -7,6 +9,7 @@ from ..auth import CurrentUser
 from ..schemas.memberships import MembershipRecord, MembershipResponse
 
 router = APIRouter(prefix="/api/me", tags=["me"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/membership", response_model=MembershipResponse)
@@ -34,7 +37,9 @@ async def get_my_entitlements(current: CurrentUser) -> schemas.EntitlementsRespo
     membership_payload = None
     if membership:
         status_value = membership.get("status")
-        is_active = status_value not in {None, "canceled", "unpaid", "incomplete_expired", "past_due"}
+        if status_value == "incomplete":
+            logger.warning("Incomplete membership encountered for user %s", str(current["id"]))
+        is_active = status_value == "active"
         membership_payload = schemas.EntitlementsMembership(
             is_active=bool(is_active),
             status=status_value,

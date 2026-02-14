@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 from pathlib import Path
@@ -29,12 +30,7 @@ CoursePayload = Mapping[str, Any]
 ModulePayload = Mapping[str, Any]
 LessonPayload = Mapping[str, Any]
 
-_INACTIVE_SUBSCRIPTION_STATUSES: set[str | None] = {
-    None,
-    "canceled",
-    "unpaid",
-    "incomplete_expired",
-}
+logger = logging.getLogger(__name__)
 
 
 def _is_admin_profile(profile: Mapping[str, Any] | None) -> bool:
@@ -53,7 +49,14 @@ def _has_active_subscription(
     if _is_admin_profile(profile):
         return True
     status_value = (subscription or {}).get("status")
-    return status_value not in _INACTIVE_SUBSCRIPTION_STATUSES
+    if status_value == "incomplete":
+        user_id = (
+            (profile or {}).get("user_id")
+            or (subscription or {}).get("user_id")
+            or "unknown"
+        )
+        logger.warning("Incomplete membership encountered for user %s", user_id)
+    return status_value == "active"
 
 
 def _normalize_value(value: Any) -> Any:
