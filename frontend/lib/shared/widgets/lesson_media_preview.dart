@@ -6,7 +6,12 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../utils/media_kit_support.dart';
 import 'inline_audio_player.dart';
-import 'media_player.dart' show InlineVideoPlayer;
+import 'media_player.dart'
+    show
+        InlineVideoControlChrome,
+        InlineVideoControlsMode,
+        InlineVideoPlayer,
+        tryCreateVideoPlaybackState;
 
 /// Controller-less media preview for course editor.
 ///
