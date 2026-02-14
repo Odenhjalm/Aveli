@@ -29,6 +29,8 @@ class StudioRepository {
   Future<Map<String, dynamic>> createCourse({
     required String title,
     required String slug,
+    required String journeyGroupId,
+    int journeyStep = 1,
     String? description,
     int? priceCents,
     bool isFreeIntro = false,
@@ -39,6 +41,8 @@ class StudioRepository {
     final body = {
       'title': title,
       'slug': slug,
+      'journey_group_id': journeyGroupId,
+      'journey_step': journeyStep,
       if (description != null) 'description': description,
       if (priceCents != null) 'price_amount_cents': priceCents,
       'is_free_intro': isFreeIntro,
