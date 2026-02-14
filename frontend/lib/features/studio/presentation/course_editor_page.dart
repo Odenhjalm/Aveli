@@ -355,12 +355,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   final TextEditingController _courseSlugCtrl = TextEditingController();
   final TextEditingController _courseDescCtrl = TextEditingController();
   final TextEditingController _coursePriceCtrl = TextEditingController();
+  final TextEditingController _courseJourneyGroupCtrl = TextEditingController();
 
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
   bool _courseIsFreeIntro = false;
   bool _courseIsPublished = false;
-  CourseJourneyStep _courseJourneyStep = CourseJourneyStep.intro;
+  CourseJourneyStep _courseJourneyStep = CourseJourneyStep.step1;
   String? _courseCoverPath;
   String? _courseCoverPreviewUrl;
   bool _updatingCourseCover = false;
@@ -451,7 +452,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _mediaStatus = null;
     _downloadStatus = null;
     _courseMetaLoading = false;
-    _courseJourneyStep = CourseJourneyStep.intro;
+    _courseJourneyStep = CourseJourneyStep.step1;
+    _courseJourneyGroupCtrl.text = '';
     _lessonsLoading = false;
     _mediaLoading = false;
     _lessonsNeedingRefresh.clear();
@@ -525,6 +527,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _courseDescCtrl.dispose();
     _coursePriceCtrl.removeListener(_onCoursePriceChanged);
     _coursePriceCtrl.dispose();
+    _courseJourneyGroupCtrl.dispose();
     _lessonContentController?.removeListener(_onLessonDocumentChanged);
     _lessonContentController?.dispose();
     _lessonContentFocusNode.dispose();
@@ -605,6 +608,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _courseTitleCtrl.text = safeString(map, 'title') ?? '';
       _courseSlugCtrl.text = safeString(map, 'slug') ?? '';
       _courseDescCtrl.text = safeString(map, 'description') ?? '';
+      _courseJourneyGroupCtrl.text =
+          safeString(map, 'journey_group_id') ??
+          safeString(map, 'slug') ??
+          safeString(map, 'id') ??
+          '';
       final priceRaw = map['price_amount_cents'] ?? map['price_cents'];
       final priceOre = priceRaw == null ? null : int.tryParse('$priceRaw');
       _coursePriceCtrl.text = priceOre == null
@@ -615,8 +623,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _courseIsFreeIntro = safeBool(map, 'is_free_intro') ?? false;
           _courseIsPublished = safeBool(map, 'is_published') ?? false;
           _courseJourneyStep =
-              courseJourneyStepFromApi(safeString(map, 'journey_step')) ??
-              CourseJourneyStep.intro;
+              courseJourneyStepFromApi(map['journey_step']) ??
+              CourseJourneyStep.step1;
           final coverPath = safeString(map, 'cover_url');
           _courseCoverPath = coverPath;
           _courseCoverPreviewUrl = _resolveMediaUrl(_courseCoverPath);
@@ -4283,6 +4291,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
+        TextField(
+          controller: _courseJourneyGroupCtrl,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            labelText: 'Journey group ID',
+            hintText: 't.ex. soulwisdom-bas',
+          ),
+        ),
+        const SizedBox(height: 8),
         RadioGroup<CourseJourneyStep>(
           groupValue: _courseJourneyStep,
           onChanged: (value) {
@@ -4311,6 +4328,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final title = _courseTitleCtrl.text.trim();
     final slug = _courseSlugCtrl.text.trim();
     final desc = _courseDescCtrl.text.trim();
+    final journeyGroupId = _courseJourneyGroupCtrl.text.trim();
     final priceText = _coursePriceCtrl.text.trim();
     final priceOre = priceText.isEmpty ? 0 : parseSekInputToOre(priceText);
     final effectivePriceOre = _courseIsFreeIntro ? 0 : priceOre;
@@ -4326,6 +4344,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
       return;
     }
+    if (journeyGroupId.isEmpty) {
+      showSnack(context, 'Journey group ID krävs.');
+      return;
+    }
     if (_courseIsPublished) {
       final guard = _publishGuardReason(priceOverrideOre: effectivePriceOre);
       if (guard != null) {
@@ -4339,6 +4361,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       'description': desc.isEmpty ? null : desc,
       'price_amount_cents': effectivePriceOre,
       'is_free_intro': _courseIsFreeIntro,
+      'journey_group_id': journeyGroupId,
       'journey_step': _courseJourneyStep.apiValue,
       'is_published': _courseIsPublished,
     };
@@ -4400,6 +4423,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return '$base-$random-$ts';
   }
 
+  String _defaultJourneyGroupId({String? slug, String? courseId}) {
+    final fromSlug = (slug ?? '').trim();
+    if (fromSlug.isNotEmpty) return fromSlug;
+    final fromCourseId = (courseId ?? '').trim();
+    if (fromCourseId.isNotEmpty) return fromCourseId;
+    return const Uuid().v4();
+  }
+
   Future<void> _createCourse() async {
     final profile = ref.read(authControllerProvider).profile;
     if (profile == null) {
@@ -4415,10 +4446,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     try {
       final slug = _slugify(title);
+      final journeyGroupId = _defaultJourneyGroupId(slug: slug);
       final inserted = await _studioRepo.createCourse(
         title: title,
         slug: slug,
         description: desc.isEmpty ? null : desc,
+        journeyGroupId: journeyGroupId,
+        journeyStep: CourseJourneyStep.step1.apiValue,
       );
       if (!mounted) return;
       final row = Map<String, dynamic>.from(inserted);

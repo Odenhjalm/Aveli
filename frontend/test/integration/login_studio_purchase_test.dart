@@ -106,6 +106,7 @@ void main() {
       final createdCourse = await studioRepository.createCourse(
         title: 'Testkurs',
         slug: 'test-kurs',
+        journeyGroupId: 'test-kurs',
         description: 'En kurs för test',
         priceCents: 0,
         isFreeIntro: true,
