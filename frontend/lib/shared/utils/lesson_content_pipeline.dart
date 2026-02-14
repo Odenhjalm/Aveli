@@ -57,7 +57,6 @@ String videoBlockEmbedValueFromLessonMedia({
 
 const HtmlEscape _htmlAttributeEscape = HtmlEscape(HtmlEscapeMode.attribute);
 
-@visibleForTesting
 String? lessonMediaUrlFromEmbedValue(dynamic value) {
   if (value is String && value.trim().isNotEmpty) {
     final trimmed = value.trim();
@@ -186,7 +185,6 @@ String _normalizeMediaSourceAttribute(Map<String, String> attrs) {
   return '';
 }
 
-@visibleForTesting
 DeltaToMarkdown createLessonDeltaToMarkdown() {
   return DeltaToMarkdown(
     customEmbedHandlers: {
@@ -266,7 +264,6 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
   );
 }
 
-@visibleForTesting
 MarkdownToDelta createLessonMarkdownToDelta(md.Document markdownDocument) {
   return MarkdownToDelta(
     markdownDocument: markdownDocument,
@@ -507,7 +504,6 @@ quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
   return result;
 }
 
-@visibleForTesting
 quill_delta.Delta convertLessonMarkdownToDelta(
   MarkdownToDelta converter,
   String markdown,
@@ -728,7 +724,6 @@ Future<String> prepareLessonMarkdownForRendering(
   return resolved;
 }
 
-@visibleForTesting
 String normalizeLessonMarkdownForStorage(String markdown) {
   if (markdown.isEmpty) return markdown;
 
