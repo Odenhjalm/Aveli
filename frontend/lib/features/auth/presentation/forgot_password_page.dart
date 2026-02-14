@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/env/env_state.dart';
-import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -24,6 +23,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   final TextEditingController _emailCtrl = TextEditingController();
   bool _busy = false;
   String? _errorMessage;
+  String? _confirmationMessage;
 
   @override
   void dispose() {
@@ -90,6 +90,26 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
                                     ),
                                   )
                                 : const SizedBox(key: ValueKey('forgot-ok')),
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: _confirmationMessage != null
+                                ? Padding(
+                                    key: const ValueKey('forgot-confirmation'),
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      _confirmationMessage!,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox(
+                                    key: ValueKey('forgot-no-confirmation'),
+                                  ),
                           ),
                           gap16,
                           const Text(
@@ -169,23 +189,31 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     setState(() {
       _busy = true;
       _errorMessage = null;
+      _confirmationMessage = null;
     });
     try {
-      final repo = ref.read(authRepositoryProvider);
-      await repo.requestPasswordReset(email);
-      if (!mounted || !context.mounted) return;
-      showSnack(
-        context,
-        'Om adressen finns skickar vi nu instruktioner till $email.',
+      final supabase = Supabase.instance.client;
+      await supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'https://app.aveli.app/reset-password',
       );
-      context.goNamed(AppRoute.login);
-    } catch (error, stackTrace) {
       if (!mounted || !context.mounted) return;
-      final failure = AppFailure.from(error, stackTrace);
+      final confirmation =
+          'Om adressen finns skickar vi nu instruktioner till $email.';
       setState(() {
-        _errorMessage = failure.message;
+        _confirmationMessage = confirmation;
       });
-      showSnack(context, failure.message);
+      showSnack(context, confirmation);
+    } catch (error) {
+      if (!mounted || !context.mounted) return;
+      var message = 'Kunde inte skicka återställningsinstruktioner.';
+      if (error is AuthException && error.message.trim().isNotEmpty) {
+        message = error.message;
+      }
+      setState(() {
+        _errorMessage = message;
+      });
+      showSnack(context, message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
