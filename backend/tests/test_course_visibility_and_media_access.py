@@ -451,3 +451,91 @@ async def test_media_sign_allows_subscription_only_access(async_client, tmp_path
     )
     assert studio_get_ok.status_code == 200, studio_get_ok.text
     assert studio_get_ok.content == b"png"
+
+
+async def test_incomplete_subscription_does_not_grant_course_or_media_access(async_client):
+    password = "Passw0rd!"
+    _, owner_id = await register_user(
+        async_client,
+        f"incomplete_owner_{uuid.uuid4().hex[:6]}@example.org",
+        password,
+        "Owner",
+    )
+    student_token, student_id = await register_user(
+        async_client,
+        f"incomplete_student_{uuid.uuid4().hex[:6]}@example.com",
+        password,
+        "Student",
+    )
+
+    course_id = await insert_course(
+        slug=f"incomplete-subscription-{uuid.uuid4().hex[:8]}",
+        title="Incomplete Subscription Course",
+        owner_id=owner_id,
+        is_published=True,
+        is_free_intro=False,
+    )
+    lesson = await courses_repo.create_lesson(
+        course_id,
+        title="Lesson",
+        position=0,
+        is_intro=False,
+    )
+    assert lesson
+
+    media_object = await models.create_media_object(
+        owner_id=owner_id,
+        storage_path=f"unit-tests/{uuid.uuid4().hex}.png",
+        storage_bucket="lesson-media",
+        content_type="image/png",
+        byte_size=3,
+        checksum=None,
+        original_name="incomplete.png",
+    )
+    assert media_object
+    legacy_media = await models.add_lesson_media_entry(
+        lesson_id=str(lesson["id"]),
+        kind="image",
+        storage_path=media_object["storage_path"],
+        storage_bucket=media_object["storage_bucket"],
+        media_id=str(media_object["id"]),
+        position=1,
+    )
+    assert legacy_media
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.subscriptions (user_id, subscription_id, status)
+                VALUES (%s, %s, %s)
+                """,
+                (student_id, f"sub_{uuid.uuid4().hex[:10]}", "incomplete"),
+            )
+            await conn.commit()
+
+    access_resp = await async_client.get(
+        f"/courses/{course_id}/access",
+        headers=auth_header(student_token),
+    )
+    assert access_resp.status_code == 200, access_resp.text
+    access_payload = access_resp.json()
+    assert access_payload["has_active_subscription"] is False
+    assert access_payload["has_access"] is False
+    assert access_payload["can_access"] is False
+    assert access_payload["access_reason"] == "none"
+    assert access_payload["enrolled"] is False
+
+    lesson_detail_resp = await async_client.get(
+        f"/courses/lessons/{lesson['id']}",
+        headers=auth_header(student_token),
+    )
+    assert lesson_detail_resp.status_code == 200, lesson_detail_resp.text
+    assert lesson_detail_resp.json()["media"] == []
+
+    sign_resp = await async_client.post(
+        "/media/sign",
+        json={"media_id": str(legacy_media["id"])},
+        headers=auth_header(student_token),
+    )
+    assert sign_resp.status_code == 403, sign_resp.text
