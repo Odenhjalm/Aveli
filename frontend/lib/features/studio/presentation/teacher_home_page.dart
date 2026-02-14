@@ -66,6 +66,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
       if (!mounted) return;
       setState(() => _deletingCourseIds.remove(courseId));
       ref.invalidate(myCoursesProvider);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Kurs borttagen.')));
@@ -75,6 +76,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
         _deletingCourseIds.remove(courseId);
         _hiddenCourseIds.remove(courseId);
       });
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Kunde inte ta bort kursen: $e')));

@@ -3150,7 +3150,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           setState(() => _updatingCourseCover = false);
         }
         await _loadCourseMeta();
-        if (status.state == 'failed' && context.mounted) {
+        if (!mounted) return;
+        if (!context.mounted) return;
+        if (status.state == 'failed') {
           final detail = status.errorMessage?.trim();
           showSnack(
             context,
@@ -3302,9 +3304,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final repo = ref.read(mediaPipelineRepositoryProvider);
       await repo.clearCourseCover(courseId);
       await _loadCourseMeta();
-      if (context.mounted) {
-        showSnack(context, 'Kursbild borttagen.');
-      }
+      if (!mounted) return;
+      if (!context.mounted) return;
+      showSnack(context, 'Kursbild borttagen.');
     } catch (e, stackTrace) {
       if (!mounted) return;
       setState(() {
@@ -3443,14 +3445,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? await _saveLessonContent(showSuccessSnack: false)
         : false;
 
-    if (context.mounted) {
-      final message = inserted
-          ? (saved
-                ? 'Media infogat och sparat i lektionen.'
-                : 'Media infogat men kunde inte sparas i lektionen.')
-          : 'Media uppladdad: ${job.filename}';
-      showSnack(context, message);
-    }
+    if (!mounted) return;
+    if (!context.mounted) return;
+    final message = inserted
+        ? (saved
+              ? 'Media infogat och sparat i lektionen.'
+              : 'Media infogat men kunde inte sparas i lektionen.')
+        : 'Media uppladdad: ${job.filename}';
+    showSnack(context, message);
     if (mounted) {
       setState(
         () => _mediaStatus = inserted
@@ -3645,9 +3647,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (mounted) {
         setState(() => _downloadStatus = 'Öppnar ljud i ny flik…');
       }
-      if (context.mounted) {
-        showSnack(context, 'Ljud öppnas i en ny flik.');
-      }
+      if (!mounted) return;
+      if (!context.mounted) return;
+      showSnack(context, 'Ljud öppnas i en ny flik.');
       unawaited(launchUrlString(playbackUrl));
       if (mounted) {
         setState(() => _downloadStatus = null);
