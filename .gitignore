@@ -1,4 +1,6 @@
 # Environment and secrets
+.env.local
+.env.prod
 .env
 .env.*
 .envrc
