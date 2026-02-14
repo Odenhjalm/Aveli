@@ -84,12 +84,16 @@ void main() {
       MediaKit.ensureInitialized();
       await _loadEnvFile(requiredFile: false);
       if (dotenv.isInitialized) {
+        final dotenvSupabaseClientKey =
+            dotenv.maybeGet('SUPABASE_PUBLISHABLE_API_KEY') ??
+            dotenv.maybeGet('SUPABASE_PUBLIC_API_KEY') ??
+            dotenv.maybeGet('SUPABASE_ANON_KEY');
         debugPrint('ENV KEYS: ${dotenv.env.keys}');
         debugPrint(
-          'DOTENV STRIPE_PUBLISHABLE_KEY=${dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY')}',
+          'DOTENV STRIPE_PUBLISHABLE_KEY=${_maskSecret(dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY'))}',
         );
         debugPrint(
-          'DOTENV SUPABASE_PUBLISHABLE_API_KEY=${dotenv.maybeGet('SUPABASE_PUBLISHABLE_API_KEY')}',
+          'DOTENV SUPABASE_CLIENT_KEY=${_maskSecret(dotenvSupabaseClientKey)}',
         );
       } else {
         debugPrint(
@@ -105,7 +109,7 @@ void main() {
       final subscriptionsEnabled = EnvResolver.subscriptionsEnabled;
 
       final supabaseUrl = EnvResolver.supabaseUrl;
-      final supabasePublishableKey = EnvResolver.supabasePublishableKey;
+      final supabaseClientKey = EnvResolver.supabaseClientKey;
       final oauthRedirectWeb = EnvResolver.oauthRedirectWeb;
       final oauthRedirectMobile = EnvResolver.oauthRedirectMobile;
 
@@ -115,7 +119,7 @@ void main() {
         debugPrint(
           'Env resolved apiBase=$baseUrl '
           'supabase=$supabaseUrl '
-          'publishableKey=${supabasePublishableKey.isEmpty ? "(empty)" : "(provided)"} '
+          'supabaseKey=${_maskSecret(supabaseClientKey)} '
           'redirectWeb=$oauthRedirectWeb '
           'redirectMobile=$oauthRedirectMobile',
         );
@@ -131,17 +135,18 @@ void main() {
         );
       }
 
-      if (supabaseUrl.isNotEmpty && supabasePublishableKey.isNotEmpty) {
+      if (supabaseUrl.isNotEmpty && supabaseClientKey.isNotEmpty) {
         await supa.Supabase.initialize(
           url: supabaseUrl,
-          anonKey: supabasePublishableKey,
+          anonKey: supabaseClientKey,
           authOptions: const supa.FlutterAuthClientOptions(
             authFlowType: supa.AuthFlowType.pkce,
           ),
         );
       } else {
         debugPrint(
-          'Supabase config saknas. Checkout/token-flöden kan kräva SUPABASE_URL och SUPABASE_PUBLISHABLE_API_KEY.',
+          'Supabase config saknas. Checkout/token-flöden kan kräva SUPABASE_URL och '
+          'SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY/SUPABASE_ANON_KEY.',
         );
       }
 
@@ -263,6 +268,13 @@ Future<void> _loadEnvFile({required bool requiredFile}) async {
     }
     debugPrint('Warning: $message');
   }
+}
+
+String _maskSecret(String? value) {
+  final trimmed = value?.trim() ?? '';
+  if (trimmed.isEmpty) return '(empty)';
+  if (trimmed.length <= 6) return '$trimmed***';
+  return '${trimmed.substring(0, 6)}***';
 }
 
 class AveliApp extends ConsumerWidget {

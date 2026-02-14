@@ -66,8 +66,13 @@ class EnvResolver {
     ),
     _RequiredKey(displayName: 'SUPABASE_URL', keys: ['SUPABASE_URL']),
     _RequiredKey(
-      displayName: 'SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY',
-      keys: ['SUPABASE_PUBLISHABLE_API_KEY', 'SUPABASE_PUBLIC_API_KEY'],
+      displayName:
+          'SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY/SUPABASE_ANON_KEY',
+      keys: [
+        'SUPABASE_PUBLISHABLE_API_KEY',
+        'SUPABASE_PUBLIC_API_KEY',
+        'SUPABASE_ANON_KEY',
+      ],
     ),
     _RequiredKey(
       displayName: 'OAUTH_REDIRECT_WEB',
@@ -95,6 +100,7 @@ class EnvResolver {
     'SUPABASE_PUBLIC_API_KEY': String.fromEnvironment(
       'SUPABASE_PUBLIC_API_KEY',
     ),
+    'SUPABASE_ANON_KEY': String.fromEnvironment('SUPABASE_ANON_KEY'),
     'STRIPE_PUBLISHABLE_KEY': String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
     'STRIPE_MERCHANT_DISPLAY_NAME': String.fromEnvironment(
       'STRIPE_MERCHANT_DISPLAY_NAME',
@@ -206,12 +212,15 @@ class EnvResolver {
 
   static String get supabaseUrl => _readFirstNonEmpty(const ['SUPABASE_URL']);
 
-  static String get supabasePublishableKey {
+  static String get supabaseClientKey {
     return _readFirstNonEmpty(const [
       'SUPABASE_PUBLISHABLE_API_KEY',
       'SUPABASE_PUBLIC_API_KEY',
+      'SUPABASE_ANON_KEY',
     ]);
   }
+
+  static String get supabasePublishableKey => supabaseClientKey;
 
   static String get apiBaseUrl => _readFirstNonEmpty(const ['API_BASE_URL']);
 
@@ -246,10 +255,18 @@ class EnvResolver {
       'oauthRedirectWeb=${_logValue(oauthRedirectWeb)} '
       'oauthRedirectMobile=${_logValue(oauthRedirectMobile)} '
       'supabaseUrl=${_logValue(supabaseUrl)} '
-      'stripeKey=${_logValue(stripePublishableKey)} '
+      'supabaseKey=${_maskSecret(supabaseClientKey)} '
+      'stripeKey=${_maskSecret(stripePublishableKey)} '
       'source=${mode == EnvResolutionMode.runtime ? 'dotenv>dart-define' : 'dart-define-only'}',
     );
   }
 
   static String _logValue(String value) => value.isEmpty ? '(empty)' : value;
+
+  static String _maskSecret(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '(empty)';
+    if (trimmed.length <= 6) return '$trimmed***';
+    return '${trimmed.substring(0, 6)}***';
+  }
 }
