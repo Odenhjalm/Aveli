@@ -444,7 +444,7 @@ class CourseSummary {
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
     isFreeIntro: json['is_free_intro'] == true,
-    journeyStep: courseJourneyStepFromApi(json['journey_step'] as String?),
+    journeyStep: courseJourneyStepFromApi(json['journey_step']),
     isPublished: json['is_published'] == true,
     // Prefer the newer price_amount_cents field when present; fallback to price_cents.
     priceCents:
