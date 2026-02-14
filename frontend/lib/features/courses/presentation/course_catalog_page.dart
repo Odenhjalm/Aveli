@@ -19,7 +19,7 @@ import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
-import 'package:aveli/features/courses/presentation/course_journey_contract.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});
@@ -67,11 +67,6 @@ class _JourneyPage extends ConsumerWidget {
     final published = courses
         .where((course) => (course.slug ?? '').trim().isNotEmpty)
         .toList(growable: false);
-    final introCourses = published
-        .where((course) => course.isFreeIntro)
-        .toList(growable: false);
-    final journeyContract = buildCourseJourneyContract(published);
-    final journeys = journeyContract.rows;
 
     if (published.isEmpty) {
       final theme = Theme.of(context);
@@ -103,22 +98,43 @@ class _JourneyPage extends ConsumerWidget {
       );
     }
 
+    final introCourses = <CourseSummary>[];
+    final step1Courses = <CourseSummary>[];
+    final step2Courses = <CourseSummary>[];
+    final step3Courses = <CourseSummary>[];
+    final unclassified = <CourseSummary>[];
+
+    for (final course in published) {
+      switch (course.journeyStep) {
+        case CourseJourneyStep.intro:
+          introCourses.add(course);
+          break;
+        case CourseJourneyStep.step1:
+          step1Courses.add(course);
+          break;
+        case CourseJourneyStep.step2:
+          step2Courses.add(course);
+          break;
+        case CourseJourneyStep.step3:
+          step3Courses.add(course);
+          break;
+        default:
+          unclassified.add(course);
+          break;
+      }
+    }
+
     assert(() {
-      if (journeyContract.issues.isEmpty) return true;
+      if (unclassified.isEmpty) return true;
       debugPrint(
-        'CourseCatalogPage: ${journeyContract.issues.length} course(s) violate journey contract and were omitted: '
-        '${journeyContract.issues.map((issue) => issue.courseId).join(', ')}',
+        'CourseCatalogPage: ${unclassified.length} course(s) missing/invalid journey_step, omitted from rendering: '
+        '${unclassified.map((c) => c.id).join(', ')}',
       );
       return true;
     }());
 
-    if (journeys.isEmpty) {
-      return _JourneyContractState(issueCount: journeyContract.issues.length);
-    }
-
-    final step3Ids = journeys
-        .map((journey) => journey.step3?.id)
-        .whereType<String>()
+    final step3Ids = step3Courses
+        .map((course) => course.id)
         .toList(growable: false);
 
     final step3ProgressAsync = ref.watch(
@@ -134,88 +150,22 @@ class _JourneyPage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (introCourses.isNotEmpty) ...[
-            _ActIntroSection(
-              courses: introCourses,
-              assets: assets,
-              mediaRepository: mediaRepository,
-            ),
-            const SizedBox(height: 22),
-          ],
-          _ActJourneySection(
-            journeys: journeys,
+          _ActIntroSection(
+            courses: introCourses,
             assets: assets,
             mediaRepository: mediaRepository,
           ),
-          if (journeyContract.issues.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _JourneyContractNotice(
-              invalidCourseCount: journeyContract.issues.length,
-            ),
-          ],
+          const SizedBox(height: 22),
+          _ActJourneySection(
+            step1: List.unmodifiable(step1Courses),
+            step2: List.unmodifiable(step2Courses),
+            step3: List.unmodifiable(step3Courses),
+            assets: assets,
+            mediaRepository: mediaRepository,
+          ),
           const SizedBox(height: 26),
           _ActAveliProSection(isEnabled: hasCompletedStep3),
         ],
-      ),
-    );
-  }
-}
-
-class _JourneyContractState extends StatelessWidget {
-  const _JourneyContractState({required this.issueCount});
-
-  final int issueCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.account_tree_outlined,
-            size: 56,
-            color: theme.colorScheme.onSurface,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Kurserna saknar giltig resestruktur.',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          if (issueCount > 0) ...[
-            const SizedBox(height: 8),
-            Text(
-              '$issueCount kurs(er) har ogiltig journey-data.',
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _JourneyContractNotice extends StatelessWidget {
-  const _JourneyContractNotice({required this.invalidCourseCount});
-
-  final int invalidCourseCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text(
-        '$invalidCourseCount kurs(er) kunde inte visas på grund av ogiltig journey-data.',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
@@ -340,12 +290,16 @@ class _ActIntroSection extends StatelessWidget {
 
 class _ActJourneySection extends StatelessWidget {
   const _ActJourneySection({
-    required this.journeys,
+    required this.step1,
+    required this.step2,
+    required this.step3,
     required this.assets,
     required this.mediaRepository,
   });
 
-  final List<CourseJourneyRow> journeys;
+  final List<CourseSummary> step1;
+  final List<CourseSummary> step2;
+  final List<CourseSummary> step3;
   final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
@@ -361,209 +315,149 @@ class _ActJourneySection extends StatelessWidget {
           fontWeight: FontWeight.w800,
         ),
         const SizedBox(height: 10),
-        for (var index = 0; index < journeys.length; index++) ...[
-          _JourneyRowCard(
-            sequence: index + 1,
-            journey: journeys[index],
-            assets: assets,
-            mediaRepository: mediaRepository,
-          ),
-          if (index < journeys.length - 1) const SizedBox(height: 14),
-        ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 980;
+            final arrowColor = theme.colorScheme.onSurface.withValues(
+              alpha: 0.55,
+            );
+
+            const minColumnWidth = 320.0;
+            final available = constraints.maxWidth;
+            final columnWidth = isWide ? (available - 96) / 3 : minColumnWidth;
+
+            Widget arrow() => Padding(
+              padding: const EdgeInsets.only(top: 42),
+              child: Icon(Icons.arrow_forward_rounded, color: arrowColor),
+            );
+
+            final row = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: columnWidth,
+                  child: _JourneyStepColumn(
+                    label: 'Steg 1',
+                    description: 'Fördjupning och grund',
+                    courses: step1,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                arrow(),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: columnWidth,
+                  child: _JourneyStepColumn(
+                    label: 'Steg 2',
+                    description: 'Integration och praktik',
+                    courses: step2,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                arrow(),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: columnWidth,
+                  child: _JourneyStepColumn(
+                    label: 'Steg 3',
+                    description: 'Fördjupad förståelse och mognad',
+                    courses: step3,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                ),
+              ],
+            );
+
+            if (isWide) return row;
+
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: row,
+              ),
+            );
+          },
+        ),
       ],
     );
   }
 }
 
-class _JourneyRowCard extends StatelessWidget {
-  const _JourneyRowCard({
-    required this.sequence,
-    required this.journey,
-    required this.assets,
-    required this.mediaRepository,
-  });
-
-  final int sequence;
-  final CourseJourneyRow journey;
-  final BackendAssetResolver assets;
-  final MediaRepository mediaRepository;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 900;
-        final arrowColor = theme.colorScheme.onSurface.withValues(alpha: 0.55);
-
-        Widget arrowForward() =>
-            Icon(Icons.arrow_forward_rounded, color: arrowColor);
-
-        Widget arrowDown() =>
-            Icon(Icons.arrow_downward_rounded, color: arrowColor);
-
-        final step1 = _JourneyStepCell(
-          label: 'Steg 1',
-          description: 'Fördjupning och grund',
-          course: journey.step1,
-          assets: assets,
-          mediaRepository: mediaRepository,
-        );
-        final step2 = _JourneyStepCell(
-          label: 'Steg 2',
-          description: 'Integration och praktik',
-          course: journey.step2,
-          assets: assets,
-          mediaRepository: mediaRepository,
-        );
-        final step3 = _JourneyStepCell(
-          label: 'Steg 3',
-          description: 'Fördjupad förståelse och mognad',
-          course: journey.step3,
-          assets: assets,
-          mediaRepository: mediaRepository,
-        );
-
-        return GlassCard(
-          opacity: 0.1,
-          sigmaX: 10,
-          sigmaY: 10,
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-          borderColor: Colors.white.withValues(alpha: 0.16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Resa $sequence',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: TextColors.primary,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                journey.journeyGroupId,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: TextColors.primary.withValues(alpha: 0.66),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (isMobile)
-                Column(
-                  children: [
-                    step1,
-                    const SizedBox(height: 8),
-                    arrowDown(),
-                    const SizedBox(height: 8),
-                    step2,
-                    const SizedBox(height: 8),
-                    arrowDown(),
-                    const SizedBox(height: 8),
-                    step3,
-                  ],
-                )
-              else
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: step1),
-                    const SizedBox(width: 8),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 42),
-                      child: arrowForward(),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: step2),
-                    const SizedBox(width: 8),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 42),
-                      child: arrowForward(),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: step3),
-                  ],
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _JourneyStepCell extends StatelessWidget {
-  const _JourneyStepCell({
+class _JourneyStepColumn extends StatelessWidget {
+  const _JourneyStepColumn({
     required this.label,
     required this.description,
-    required this.course,
+    required this.courses,
     required this.assets,
     required this.mediaRepository,
   });
 
   final String label;
   final String description;
-  final CourseSummary? course;
+  final List<CourseSummary> courses;
   final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: TextColors.primary,
-            fontWeight: FontWeight.w800,
+    return GlassCard(
+      opacity: 0.12,
+      sigmaX: 10,
+      sigmaY: 10,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: DesignTokens.bodyTextColor,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          description,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: TextColors.primary.withValues(alpha: 0.72),
-            fontWeight: FontWeight.w600,
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: DesignTokens.bodyTextColor.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        if (course == null)
-          const _JourneyStepPlaceholder()
-        else
-          _JourneyCourseCard(
-            course: course!,
-            assets: assets,
-            mediaRepository: mediaRepository,
-          ),
-      ],
-    );
-  }
-}
-
-class _JourneyStepPlaceholder extends StatelessWidget {
-  const _JourneyStepPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      constraints: const BoxConstraints(minHeight: 120),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.white.withValues(alpha: 0.08),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-      ),
-      child: Center(
-        child: Text(
-          'Kommer snart',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: TextColors.primary.withValues(alpha: 0.72),
-            fontWeight: FontWeight.w700,
-          ),
-          textAlign: TextAlign.center,
-        ),
+          const SizedBox(height: 12),
+          if (courses.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 10),
+              child: Text(
+                'Fler kurser kommer snart.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: DesignTokens.bodyTextColor.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            Column(
+              children: [
+                for (final course in courses) ...[
+                  _JourneyCourseCard(
+                    course: course,
+                    assets: assets,
+                    mediaRepository: mediaRepository,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+        ],
       ),
     );
   }
@@ -680,7 +574,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: TextColors.primary,
+                            color: DesignTokens.bodyTextColor,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -696,7 +590,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: TextColors.primary,
+                                  color: DesignTokens.bodyTextColor,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -706,7 +600,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
                               priceLabel,
                               textAlign: TextAlign.right,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: TextColors.primary.withValues(
+                                color: DesignTokens.bodyTextColor.withValues(
                                   alpha: 0.72,
                                 ),
                                 fontWeight: FontWeight.w700,
@@ -841,7 +735,7 @@ class _JourneyCourseCard extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.titleMedium?.copyWith(
-                              color: TextColors.primary,
+                              color: DesignTokens.bodyTextColor,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -853,7 +747,7 @@ class _JourneyCourseCard extends StatelessWidget {
                                 priceLabel,
                                 textAlign: TextAlign.right,
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  color: TextColors.primary.withValues(
+                                  color: DesignTokens.bodyTextColor.withValues(
                                     alpha: 0.72,
                                   ),
                                   fontWeight: FontWeight.w700,

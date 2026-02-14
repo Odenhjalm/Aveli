@@ -5,7 +5,7 @@ from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field
 from uuid import UUID
 
-CourseJourneyStep = Literal[1, 2, 3]
+CourseJourneyStep = Literal["intro", "step1", "step2", "step3"]
 
 
 class Token(BaseModel):
@@ -641,8 +641,7 @@ class Course(BaseModel):
     cover_media_id: UUID | None = None
     video_url: str | None = None
     is_free_intro: bool
-    journey_group_id: str
-    journey_step: CourseJourneyStep
+    journey_step: CourseJourneyStep | None = None
     price_amount_cents: int = 0
     currency: str = "sek"
     stripe_product_id: str | None = None
@@ -678,8 +677,7 @@ class StudioCourseCreate(BaseModel):
     description: str | None = None
     video_url: str | None = None
     is_free_intro: bool = False
-    journey_group_id: str | None = Field(default=None, min_length=1)
-    journey_step: CourseJourneyStep = 1
+    journey_step: CourseJourneyStep = "intro"
     is_published: bool = False
     price_amount_cents: int | None = None
     branch: str | None = None
@@ -691,7 +689,6 @@ class StudioCourseUpdate(BaseModel):
     description: str | None = None
     video_url: str | None = None
     is_free_intro: bool | None = None
-    journey_group_id: str | None = Field(default=None, min_length=1)
     journey_step: CourseJourneyStep | None = None
     is_published: bool | None = None
     price_amount_cents: int | None = None

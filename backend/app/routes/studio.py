@@ -207,10 +207,7 @@ async def studio_add_certificate(
 
 @router.post("/courses")
 async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUser):
-    try:
-        row = await models.create_course_for_user(current["id"], payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    row = await models.create_course_for_user(current["id"], payload.model_dump())
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create course")
     return row
@@ -1306,12 +1303,9 @@ async def update_course(
     payload: schemas.StudioCourseUpdate,
     current: TeacherUser,
 ):
-    try:
-        row = await models.update_course_for_user(
-            current["id"], course_id, payload.model_dump(exclude_unset=True)
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    row = await models.update_course_for_user(
+        current["id"], course_id, payload.model_dump(exclude_unset=True)
+    )
     if not row:
         _log_course_owner_denied(
             str(current["id"]),
