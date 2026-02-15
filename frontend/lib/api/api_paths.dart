@@ -9,6 +9,7 @@ class ApiPaths {
   static const authRegister = '/auth/register';
 
   static const checkoutCreate = '/api/checkout/create';
+  static const checkoutVerify = '/api/checkout/verify';
   static String courseBundleCheckout(String bundleId) =>
       '/api/course-bundles/$bundleId/checkout-session';
 

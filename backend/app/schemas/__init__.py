@@ -13,6 +13,7 @@ from .billing import (
 from .checkout import (
     CheckoutCreateRequest as CheckoutCreateRequest,
     CheckoutCreateResponse as CheckoutCreateResponse,
+    CheckoutVerifyResponse as CheckoutVerifyResponse,
     CheckoutType as CheckoutType,
 )
 from .memberships import (
@@ -23,6 +24,7 @@ from .memberships import (
 __all__ = [
     "CheckoutCreateRequest",
     "CheckoutCreateResponse",
+    "CheckoutVerifyResponse",
     "CheckoutType",
     "MembershipRecord",
     "MembershipResponse",

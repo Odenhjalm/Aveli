@@ -46,6 +46,7 @@ import 'package:aveli/features/payments/presentation/booking_page.dart';
 import 'package:aveli/features/payments/presentation/claim_purchase_page.dart';
 import 'package:aveli/features/payments/presentation/order_history_page.dart';
 import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
+import 'package:aveli/features/paywall/presentation/checkout_return_page.dart';
 import 'package:aveli/features/paywall/presentation/checkout_result_page.dart';
 import 'package:aveli/features/paywall/presentation/checkout_webview_page.dart';
 import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
@@ -345,6 +346,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           }
           return CheckoutWebViewPage(url: url);
         },
+      ),
+      GoRoute(
+        path: RoutePath.checkoutReturn,
+        name: AppRoute.checkoutReturn,
+        builder: (context, state) => CheckoutReturnPage(
+          sessionId: state.uri.queryParameters['session_id'],
+        ),
       ),
       GoRoute(
         path: RoutePath.checkoutSuccess,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -10,7 +11,11 @@ from starlette.concurrency import run_in_threadpool
 from ..config import settings
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
-from ..schemas.billing import SessionStatusResponse, SubscriptionCheckoutResponse, SubscriptionInterval
+from ..schemas.billing import (
+    SessionStatusResponse,
+    SubscriptionCheckoutResponse,
+    SubscriptionInterval,
+)
 from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
@@ -36,6 +41,27 @@ class SubscriptionConfigError(SubscriptionError):
         super().__init__(detail, status_code=503)
 
 
+def _checkout_urls() -> tuple[str, str]:
+    success_from_env = (os.getenv("CHECKOUT_SUCCESS_URL") or "").strip()
+    if not success_from_env:
+        success_from_env = (os.getenv("STRIPE_RETURN_URL") or "").strip()
+    cancel_from_env = (os.getenv("CHECKOUT_CANCEL_URL") or "").strip()
+
+    success_url = (
+        success_from_env
+        or settings.checkout_success_url
+        or _build_frontend_url(RETURN_PATH)
+        or RETURN_DEEP_LINK
+    )
+    cancel_url = (
+        cancel_from_env
+        or settings.checkout_cancel_url
+        or _build_frontend_url(CANCEL_PATH)
+        or CANCEL_DEEP_LINK
+    )
+    return success_url, cancel_url
+
+
 async def create_subscription_checkout(
     user: Mapping[str, Any], interval: SubscriptionInterval
 ) -> SubscriptionCheckoutResponse:
@@ -50,8 +76,7 @@ async def create_subscription_checkout(
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
 
-    success_url = settings.checkout_success_url or _build_frontend_url(RETURN_PATH) or RETURN_DEEP_LINK
-    cancel_url = settings.checkout_cancel_url or _build_frontend_url(CANCEL_PATH) or CANCEL_DEEP_LINK
+    success_url, cancel_url = _checkout_urls()
 
     def _create_session() -> dict[str, Any]:
         return stripe.checkout.Session.create(
@@ -76,7 +101,9 @@ async def create_subscription_checkout(
             ) from exc
         raise SubscriptionError(_format_invalid_request(exc), status_code=502) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-        raise SubscriptionError("Stripe-fel vid prenumerationssession", status_code=502) from exc
+        raise SubscriptionError(
+            "Stripe-fel vid prenumerationssession", status_code=502
+        ) from exc
     checkout_url = session.get("url")
     if not isinstance(checkout_url, str):
         raise SubscriptionError("Stripe session missing checkout url", status_code=502)
@@ -102,7 +129,9 @@ async def create_subscription_checkout(
     return SubscriptionCheckoutResponse(checkout_url=checkout_url)
 
 
-async def create_checkout_session(user: Mapping[str, Any], interval: SubscriptionInterval) -> str:
+async def create_checkout_session(
+    user: Mapping[str, Any], interval: SubscriptionInterval
+) -> str:
     try:
         stripe_context = stripe_mode.resolve_stripe_context()
         price_config = stripe_mode.resolve_membership_price(interval, stripe_context)
@@ -113,6 +142,7 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
     stripe.api_key = stripe_context.secret_key
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
+    success_url, cancel_url = _checkout_urls()
 
     def _create_session() -> dict[str, Any]:
         return stripe.checkout.Session.create(
@@ -120,12 +150,8 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
             customer=customer_id,
             line_items=[{"price": price_config.price_id, "quantity": 1}],
             subscription_data={"trial_period_days": 14},
-            success_url=settings.checkout_success_url
-            or _build_frontend_url(RETURN_PATH)
-            or RETURN_DEEP_LINK,
-            cancel_url=settings.checkout_cancel_url
-            or _build_frontend_url(CANCEL_PATH)
-            or CANCEL_DEEP_LINK,
+            success_url=success_url,
+            cancel_url=cancel_url,
             locale="sv",
         )
 
@@ -138,7 +164,9 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
             ) from exc
         raise SubscriptionError(_format_invalid_request(exc), status_code=502) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-        raise SubscriptionError("Stripe-fel vid prenumerationssession", status_code=502) from exc
+        raise SubscriptionError(
+            "Stripe-fel vid prenumerationssession", status_code=502
+        ) from exc
     checkout_url = session.get("url")
     if not isinstance(checkout_url, str):
         raise SubscriptionError("Stripe session missing checkout url", status_code=502)
@@ -157,7 +185,11 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
 
 
 async def fetch_session_status(session_id: str) -> SessionStatusResponse:
-    if not isinstance(session_id, str) or not session_id.startswith("cs_") or len(session_id) < 8:
+    if (
+        not isinstance(session_id, str)
+        or not session_id.startswith("cs_")
+        or len(session_id) < 8
+    ):
         raise SubscriptionError("Invalid session_id", status_code=400)
     if len(session_id) > 255:
         raise SubscriptionError("Invalid session_id", status_code=400)
@@ -177,10 +209,16 @@ async def fetch_session_status(session_id: str) -> SessionStatusResponse:
         )
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
         if getattr(exc, "code", "") == "resource_missing":
-            raise SubscriptionError("Checkout session not found", status_code=404) from exc
-        raise SubscriptionError("Stripe error retrieving checkout session", status_code=502) from exc
+            raise SubscriptionError(
+                "Checkout session not found", status_code=404
+            ) from exc
+        raise SubscriptionError(
+            "Stripe error retrieving checkout session", status_code=502
+        ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-        raise SubscriptionError("Stripe error retrieving checkout session", status_code=502) from exc
+        raise SubscriptionError(
+            "Stripe error retrieving checkout session", status_code=502
+        ) from exc
 
     mode = session.get("mode")
     payment_status = session.get("payment_status")
@@ -241,10 +279,14 @@ async def cancel_subscription(
 
     target_subscription_id = subscription_id or membership.get("stripe_subscription_id")
     if not target_subscription_id:
-        raise SubscriptionError("Prenumerationen saknar Stripe subscription-id", status_code=400)
+        raise SubscriptionError(
+            "Prenumerationen saknar Stripe subscription-id", status_code=400
+        )
 
     if subscription_id and subscription_id != target_subscription_id:
-        raise SubscriptionError("Angivet subscription-id matchar inte ditt konto", status_code=400)
+        raise SubscriptionError(
+            "Angivet subscription-id matchar inte ditt konto", status_code=400
+        )
 
     stripe.api_key = stripe_context.secret_key
 
@@ -257,13 +299,19 @@ async def cancel_subscription(
     try:
         updated = await run_in_threadpool(_cancel)
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
-        raise SubscriptionError("Stripe kunde inte avsluta prenumerationen", status_code=400) from exc
+        raise SubscriptionError(
+            "Stripe kunde inte avsluta prenumerationen", status_code=400
+        ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise SubscriptionError("Stripe-fel vid avbokning", status_code=502) from exc
 
     cancel_at_period_end = bool(updated.get("cancel_at_period_end"))
     period_end_raw = updated.get("current_period_end")
-    end_date = _to_datetime(period_end_raw) if cancel_at_period_end else datetime.now(timezone.utc)
+    end_date = (
+        _to_datetime(period_end_raw)
+        if cancel_at_period_end
+        else datetime.now(timezone.utc)
+    )
     status = updated.get("status") or "canceled"
 
     await memberships_repo.upsert_membership_record(
@@ -327,7 +375,9 @@ async def process_event(event: Mapping[str, Any]) -> None:
     }:
         await _handle_subscription_event(data_object)
     elif event_type == "customer.subscription.deleted":
-        await _handle_subscription_event(data_object, override_status="canceled", force_end=True)
+        await _handle_subscription_event(
+            data_object, override_status="canceled", force_end=True
+        )
     elif event_type == "invoice.payment_succeeded":
         await _handle_invoice_payment_succeeded(data_object)
     elif event_type == "invoice.payment_failed":
@@ -358,10 +408,14 @@ async def _handle_subscription_event(
     if not user_id:
         membership = await memberships_repo.get_membership_by_stripe_reference(
             customer_id=customer_id if isinstance(customer_id, str) else None,
-            subscription_id=subscription_id if isinstance(subscription_id, str) else None,
+            subscription_id=subscription_id
+            if isinstance(subscription_id, str)
+            else None,
         )
         if membership:
-            user_id = str(membership.get("user_id")) if membership.get("user_id") else None
+            user_id = (
+                str(membership.get("user_id")) if membership.get("user_id") else None
+            )
 
     if not user_id:
         logger.warning(
@@ -381,7 +435,9 @@ async def _handle_subscription_event(
         price_id=price_id,
         status=status,
         stripe_customer_id=customer_id if isinstance(customer_id, str) else None,
-        stripe_subscription_id=subscription_id if isinstance(subscription_id, str) else None,
+        stripe_subscription_id=subscription_id
+        if isinstance(subscription_id, str)
+        else None,
         start_date=_to_datetime(payload.get("current_period_start")),
         end_date=_determine_end_date(payload, force_end=force_end),
     )
@@ -423,7 +479,9 @@ async def _handle_invoice_payment_succeeded(payload: Mapping[str, Any]) -> None:
         price_id=price_id,
         status="active",
         stripe_customer_id=customer_id if isinstance(customer_id, str) else None,
-        stripe_subscription_id=subscription_id if isinstance(subscription_id, str) else None,
+        stripe_subscription_id=subscription_id
+        if isinstance(subscription_id, str)
+        else None,
         start_date=period.get("start"),
         end_date=period.get("end"),
     )
@@ -475,7 +533,9 @@ async def _get_or_create_customer(user: Mapping[str, Any]) -> str:
     return customer_id
 
 
-def _extract_plan_from_payload(payload: Mapping[str, Any]) -> tuple[str | None, str | None]:
+def _extract_plan_from_payload(
+    payload: Mapping[str, Any],
+) -> tuple[str | None, str | None]:
     items = payload.get("items", {})
     data = items.get("data") if isinstance(items, Mapping) else None
     if isinstance(data, list) and data:
@@ -488,7 +548,9 @@ def _extract_plan_from_payload(payload: Mapping[str, Any]) -> tuple[str | None, 
     return None, None
 
 
-def _extract_plan_from_invoice(payload: Mapping[str, Any]) -> tuple[str | None, str | None]:
+def _extract_plan_from_invoice(
+    payload: Mapping[str, Any],
+) -> tuple[str | None, str | None]:
     lines = payload.get("lines", {})
     data = lines.get("data") if isinstance(lines, Mapping) else None
     if isinstance(data, list) and data:
@@ -526,7 +588,9 @@ def _extract_user_id(payload: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _determine_end_date(payload: Mapping[str, Any], *, force_end: bool = False) -> datetime | None:
+def _determine_end_date(
+    payload: Mapping[str, Any], *, force_end: bool = False
+) -> datetime | None:
     if force_end:
         return datetime.now(timezone.utc)
     end_value = payload.get("current_period_end")

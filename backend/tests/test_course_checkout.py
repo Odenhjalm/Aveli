@@ -76,8 +76,12 @@ async def _cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
-            await cur.execute("DELETE FROM app.course_entitlements WHERE user_id = %s", (user_id,))
-            await cur.execute("DELETE FROM app.stripe_customers WHERE user_id = %s", (user_id,))
+            await cur.execute(
+                "DELETE FROM app.course_entitlements WHERE user_id = %s", (user_id,)
+            )
+            await cur.execute(
+                "DELETE FROM app.stripe_customers WHERE user_id = %s", (user_id,)
+            )
             await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
             await conn.commit()
 
@@ -156,9 +160,15 @@ async def test_course_checkout_success(async_client, monkeypatch):
 
     def fake_session_create(**kwargs):
         captured_session.update(kwargs)
-        return {"id": "cs_test", "url": "https://stripe.test/cs_test", "payment_intent": "pi_test"}
+        return {
+            "id": "cs_test",
+            "url": "https://stripe.test/cs_test",
+            "payment_intent": "pi_test",
+        }
 
-    monkeypatch.setattr(settings, "checkout_success_url", "https://checkout.test/success")
+    monkeypatch.setattr(
+        settings, "checkout_success_url", "https://checkout.test/success"
+    )
     monkeypatch.setattr(settings, "checkout_cancel_url", "https://checkout.test/cancel")
     monkeypatch.setattr("stripe.Product.create", fake_product_create)
     monkeypatch.setattr("stripe.Price.create", fake_price_create)
@@ -185,6 +195,60 @@ async def test_course_checkout_success(async_client, monkeypatch):
         await _cleanup_course(course_id)
 
 
+async def test_course_checkout_uses_env_redirect_urls(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
+    base_slug = f"env{uuid.uuid4().hex[:6]}"
+    course_id = await _create_course(base_slug, price_amount_cents=1500)
+    headers, user_id, _ = await register_user(async_client)
+
+    captured_session: dict[str, object] = {}
+
+    def fake_product_create(**kwargs):
+        return {"id": "prod_test"}
+
+    def fake_price_create(**kwargs):
+        return {"id": "price_test"}
+
+    def fake_customer_create(**kwargs):
+        return {"id": "cus_test"}
+
+    def fake_session_create(**kwargs):
+        captured_session.update(kwargs)
+        return {
+            "id": "cs_test",
+            "url": "https://stripe.test/cs_test",
+            "payment_intent": "pi_test",
+        }
+
+    monkeypatch.setenv(
+        "CHECKOUT_SUCCESS_URL",
+        "https://env.test/checkout/return?session_id={CHECKOUT_SESSION_ID}",
+    )
+    monkeypatch.setenv("CHECKOUT_CANCEL_URL", "https://env.test/checkout/cancel")
+    monkeypatch.setattr(settings, "checkout_success_url", None)
+    monkeypatch.setattr(settings, "checkout_cancel_url", None)
+    monkeypatch.setattr("stripe.Product.create", fake_product_create)
+    monkeypatch.setattr("stripe.Price.create", fake_price_create)
+    monkeypatch.setattr("stripe.Customer.create", fake_customer_create)
+    monkeypatch.setattr("stripe.checkout.Session.create", fake_session_create)
+
+    try:
+        resp = await async_client.post(
+            "/api/checkout/create",
+            headers=headers,
+            json={"type": "course", "slug": f"{base_slug}-rand"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert (
+            captured_session.get("success_url")
+            == "https://env.test/checkout/return?session_id={CHECKOUT_SESSION_ID}"
+        )
+        assert captured_session.get("cancel_url") == "https://env.test/checkout/cancel"
+    finally:
+        await _cleanup_user(str(user_id))
+        await _cleanup_course(course_id)
+
+
 async def test_webhook_checkout_session_grants_entitlement(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
     monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_test")
@@ -193,7 +257,10 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
 
     def fake_construct_event(payload, sig_header, secret):
         body = json.loads(payload)
-        return {"type": body.get("event_type"), "data": {"object": body.get("object", body)}}
+        return {
+            "type": body.get("event_type"),
+            "data": {"object": body.get("object", body)},
+        }
 
     monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
 
@@ -217,7 +284,9 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
             headers={"stripe-signature": "sig_test"},
         )
         assert resp.status_code == 200, resp.text
-        entitlements = await course_entitlements.list_entitlements_for_user(str(user_id))
+        entitlements = await course_entitlements.list_entitlements_for_user(
+            str(user_id)
+        )
         assert slug in entitlements
     finally:
         await _clear_entitlement(str(user_id), slug)
@@ -232,7 +301,10 @@ async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypat
 
     def fake_construct_event(payload, sig_header, secret):
         body = json.loads(payload)
-        return {"type": body.get("event_type"), "data": {"object": body.get("object", body)}}
+        return {
+            "type": body.get("event_type"),
+            "data": {"object": body.get("object", body)},
+        }
 
     monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
 
@@ -252,7 +324,9 @@ async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypat
             headers={"stripe-signature": "sig_test"},
         )
         assert resp.status_code == 200, resp.text
-        entitlements = await course_entitlements.list_entitlements_for_user(str(user_id))
+        entitlements = await course_entitlements.list_entitlements_for_user(
+            str(user_id)
+        )
         assert slug in entitlements
     finally:
         await _clear_entitlement(str(user_id), slug)

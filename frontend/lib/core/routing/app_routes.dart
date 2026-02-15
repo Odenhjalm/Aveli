@@ -26,6 +26,7 @@ abstract class AppRoute {
   static const profileSubscription = 'profile-subscription';
   static const profileSubscriptionPortal = 'profile-subscription-portal';
   static const checkout = 'checkout';
+  static const checkoutReturn = 'checkout-return';
   static const tarot = 'tarot';
   static const admin = 'admin';
   static const studio = 'studio';

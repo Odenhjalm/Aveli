@@ -83,7 +83,9 @@ async def _resolve_price(
         if not payload.interval:
             raise CheckoutError("Subscription interval is required")
         try:
-            price_config = stripe_mode.resolve_membership_price(payload.interval, context)
+            price_config = stripe_mode.resolve_membership_price(
+                payload.interval, context
+            )
             price = await stripe_mode.ensure_price_accessible(price_config, context)
         except stripe_mode.StripeConfigurationError as exc:
             raise CheckoutConfigError(str(exc)) from exc
@@ -118,7 +120,10 @@ async def _resolve_price(
 
 
 async def _retrieve_price(
-    price_id: str, env_var: str, context: stripe_mode.StripeContext, expected_product: str | None = None
+    price_id: str,
+    env_var: str,
+    context: stripe_mode.StripeContext,
+    expected_product: str | None = None,
 ) -> dict[str, Any]:
     try:
         price = await stripe_mode.ensure_price_accessible(
@@ -186,7 +191,9 @@ async def create_checkout_session(
         course_id=price_info.course_id,
         amount_cents=price_info.amount_cents,
         currency=price_info.currency,
-        order_type="subscription" if payload.type is schemas.CheckoutType.subscription else "one_off",
+        order_type="subscription"
+        if payload.type is schemas.CheckoutType.subscription
+        else "one_off",
         metadata=metadata,
         stripe_customer_id=customer_id,
         stripe_subscription_id=None,
@@ -197,17 +204,27 @@ async def create_checkout_session(
     metadata["order_id"] = str(order["id"])
 
     frontend_base = (settings.frontend_base_url or "").rstrip("/")
+    success_from_env = (os.getenv("CHECKOUT_SUCCESS_URL") or "").strip()
+    if not success_from_env:
+        success_from_env = (os.getenv("STRIPE_RETURN_URL") or "").strip()
+    cancel_from_env = (os.getenv("CHECKOUT_CANCEL_URL") or "").strip()
     success_url = (
-        settings.checkout_success_url
+        success_from_env
+        or settings.checkout_success_url
         or (f"{frontend_base}/{RETURN_PATH}" if frontend_base else None)
         or RETURN_DEEP_LINK
     )
     cancel_url = (
-        settings.checkout_cancel_url
+        cancel_from_env
+        or settings.checkout_cancel_url
         or (f"{frontend_base}/{CANCEL_PATH}" if frontend_base else None)
         or CANCEL_DEEP_LINK
     )
-    checkout_mode = "subscription" if payload.type is schemas.CheckoutType.subscription else "payment"
+    checkout_mode = (
+        "subscription"
+        if payload.type is schemas.CheckoutType.subscription
+        else "payment"
+    )
     checkout_kwargs: dict[str, Any] = {
         "mode": checkout_mode,
         "customer": customer_id,
@@ -243,7 +260,9 @@ async def create_checkout_session(
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
         raise CheckoutError(_format_invalid_request(exc), status_code=502) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-        raise CheckoutError("Failed to create Stripe checkout session", status_code=502) from exc
+        raise CheckoutError(
+            "Failed to create Stripe checkout session", status_code=502
+        ) from exc
 
     await repositories.set_order_checkout_reference(
         order_id=order["id"],
