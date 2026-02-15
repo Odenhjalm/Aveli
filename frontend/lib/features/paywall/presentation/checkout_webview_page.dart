@@ -3,10 +3,12 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
+import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 
@@ -41,12 +43,11 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
           onNavigationRequest: (request) {
             final url = request.url;
             if (_isSuccessUrl(url)) {
-              _refreshEntitlements();
-              Navigator.of(context).pop();
+              _handleSuccessRedirect(url);
               return NavigationDecision.prevent;
             }
             if (_isCancelUrl(url)) {
-              Navigator.of(context).pop();
+              context.go(RoutePath.checkoutCancel);
               return NavigationDecision.prevent;
             }
             return NavigationDecision.navigate;
@@ -87,6 +88,21 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
         normalized.contains('checkout_cancel=true') ||
         normalized.contains('checkout_cancel') ||
         normalized.contains('checkout/cancel');
+  }
+
+  void _handleSuccessRedirect(String url) {
+    final parsed = Uri.tryParse(url);
+    final sessionId = parsed?.queryParameters['session_id'];
+    if (sessionId != null && sessionId.isNotEmpty) {
+      context.go(
+        Uri(
+          path: RoutePath.checkoutReturn,
+          queryParameters: {'session_id': sessionId},
+        ).toString(),
+      );
+      return;
+    }
+    context.go(RoutePath.checkoutReturn);
   }
 
   Future<void> _refreshEntitlements() async {

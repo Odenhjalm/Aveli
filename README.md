@@ -28,6 +28,17 @@ Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in 
 - Do **not** commit real keys (.env files are ignored).
 - Backend listens on port `8080` by default; update `API_BASE_URL`/`NEXT_PUBLIC_API_BASE_URL` accordingly.
 
+## Stripe Checkout Return URLs
+- Backend checkout session creation reads redirect URLs from env:
+  - `STRIPE_RETURN_URL` (fallback source for success URL)
+  - `CHECKOUT_SUCCESS_URL`
+  - `CHECKOUT_CANCEL_URL`
+- Production success URL should point to:
+  - `/checkout/return?session_id={CHECKOUT_SESSION_ID}`
+- Flutter route `/checkout/return` reads `session_id` and verifies checkout outcome with:
+  - `GET /api/checkout/verify?session_id=...`
+- Keep webhook URLs/secrets unchanged; this return flow is client redirect verification only.
+
 ## Backend (FastAPI)
 ```bash
 cd backend

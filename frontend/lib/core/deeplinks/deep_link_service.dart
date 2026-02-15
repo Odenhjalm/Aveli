@@ -62,7 +62,8 @@ class DeepLinkService {
     final isAppScheme =
         uri.scheme == 'aveliapp' &&
         (uri.host == 'auth-callback' || uri.path.contains('auth-callback'));
-    final isAuthCallback = uri.path.toLowerCase().contains('auth/callback') ||
+    final isAuthCallback =
+        uri.path.toLowerCase().contains('auth/callback') ||
         uri.path.toLowerCase().contains('auth-callback');
     final isHttp = uri.scheme == 'http' || uri.scheme == 'https';
     return isAppScheme || (isHttp && isAuthCallback);
@@ -70,7 +71,7 @@ class DeepLinkService {
 
   bool _isSuccessPath(Uri uri) {
     final path = uri.path.toLowerCase();
-    return path.contains('success');
+    return path.contains('success') || path.contains('return');
   }
 
   bool _isCancelPath(Uri uri) {
@@ -85,13 +86,14 @@ class DeepLinkService {
       _handleMissingSession();
       return;
     }
-    _ref.read(checkoutRedirectStateProvider.notifier).state =
-        CheckoutRedirectState(
+    _ref
+        .read(checkoutRedirectStateProvider.notifier)
+        .state = CheckoutRedirectState(
       status: CheckoutRedirectStatus.processing,
       sessionId: sessionId,
     );
     _goWithQuery(
-      RoutePath.checkoutSuccess,
+      RoutePath.checkoutReturn,
       sessionId: sessionId,
       extraParams: {
         if (subscriptionStatus != null && subscriptionStatus.isNotEmpty)
@@ -117,7 +119,7 @@ class DeepLinkService {
       status: CheckoutRedirectStatus.error,
       error: 'Saknar session_id i checkout-redirect.',
     );
-    _goWithQuery(RoutePath.checkoutSuccess, errored: true);
+    _goWithQuery(RoutePath.checkoutReturn, errored: true);
   }
 
   void _goWithQuery(
@@ -126,9 +128,7 @@ class DeepLinkService {
     bool errored = false,
     Map<String, String>? extraParams,
   }) {
-    final params = <String, String>{
-      if (extraParams != null) ...extraParams,
-    };
+    final params = <String, String>{if (extraParams != null) ...extraParams};
     if (sessionId != null && sessionId.isNotEmpty) {
       params['session_id'] = sessionId;
     }

@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from ..auth import CurrentUser
-from ..schemas import CheckoutCreateRequest, CheckoutCreateResponse, CheckoutType
+from ..schemas import (
+    CheckoutCreateRequest,
+    CheckoutCreateResponse,
+    CheckoutType,
+    CheckoutVerifyResponse,
+)
 from ..services import checkout_service, universal_checkout_service
 
 router = APIRouter(prefix="/api/checkout", tags=["checkout"])
@@ -26,8 +31,18 @@ async def create_checkout_handler(
             )
         return await checkout_service.create_course_checkout(current, payload.slug)
     try:
-        return await universal_checkout_service.create_checkout_session(current, payload)
+        return await universal_checkout_service.create_checkout_session(
+            current, payload
+        )
     except universal_checkout_service.CheckoutConfigError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except universal_checkout_service.CheckoutError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.get(
+    "/verify",
+    response_model=CheckoutVerifyResponse,
+)
+async def verify_checkout_handler(session_id: str) -> CheckoutVerifyResponse:
+    return await checkout_service.verify_checkout_session(session_id)

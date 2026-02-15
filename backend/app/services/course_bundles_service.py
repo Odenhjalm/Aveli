@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import stripe
 from starlette.concurrency import run_in_threadpool
 
@@ -56,7 +58,9 @@ async def create_bundle(
     if payload.course_ids:
         for idx, course_id in enumerate(payload.course_ids):
             await _ensure_course_is_owned(course_id, teacher_id)
-            await bundle_repo.add_course_to_bundle(bundle["id"], course_id, position=idx)
+            await bundle_repo.add_course_to_bundle(
+                bundle["id"], course_id, position=idx
+            )
     detailed = await get_bundle(bundle["id"], include_inactive=True)
     if not detailed:
         raise CourseBundleError("Bundle could not be created", status_code=500)
@@ -84,7 +88,9 @@ async def attach_course(
     return detailed
 
 
-async def list_teacher_bundles(current_user: Mapping[str, Any]) -> list[CourseBundleResponse]:
+async def list_teacher_bundles(
+    current_user: Mapping[str, Any],
+) -> list[CourseBundleResponse]:
     teacher_id = str(current_user["id"])
     bundles = await bundle_repo.list_bundles(teacher_id=teacher_id, active_only=False)
     results: list[CourseBundleResponse] = []
@@ -95,7 +101,9 @@ async def list_teacher_bundles(current_user: Mapping[str, Any]) -> list[CourseBu
     return results
 
 
-async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> CourseBundleResponse | None:
+async def get_bundle(
+    bundle_id: str, *, include_inactive: bool = False
+) -> CourseBundleResponse | None:
     bundle = await bundle_repo.get_bundle(bundle_id)
     if not bundle:
         return None
@@ -128,7 +136,9 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
     )
 
 
-async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> CheckoutCreateResponse:
+async def create_checkout_session(
+    user: Mapping[str, Any], bundle_id: str
+) -> CheckoutCreateResponse:
     _require_stripe()
 
     bundle = await bundle_repo.get_bundle(bundle_id)
@@ -187,7 +197,9 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
             )
         )
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-        raise CourseBundleError("Kunde inte skapa Stripe-session", status_code=502) from exc
+        raise CourseBundleError(
+            "Kunde inte skapa Stripe-session", status_code=502
+        ) from exc
 
     await repositories.set_order_checkout_reference(
         order_id=order["id"],
@@ -253,7 +265,9 @@ async def _ensure_stripe_assets(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
     amount_cents = int(bundle.get("price_amount_cents") or 0)
     currency = (bundle.get("currency") or "sek").lower()
     if amount_cents <= 0:
-        raise CourseBundleError("Paketpriset måste vara större än noll", status_code=400)
+        raise CourseBundleError(
+            "Paketpriset måste vara större än noll", status_code=400
+        )
 
     product_id = bundle.get("stripe_product_id")
     price_id = bundle.get("stripe_price_id")
@@ -272,7 +286,9 @@ async def _ensure_stripe_assets(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
                     },
                 )
         except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-            raise CourseBundleError("Kunde inte hämta Stripe-pris", status_code=502) from exc
+            raise CourseBundleError(
+                "Kunde inte hämta Stripe-pris", status_code=502
+            ) from exc
 
     if not product_id:
         try:
@@ -284,13 +300,17 @@ async def _ensure_stripe_assets(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
             )
             product_id = product.get("id")
             if not isinstance(product_id, str):
-                raise CourseBundleError("Stripe returnerade inget produkt-id", status_code=502)
+                raise CourseBundleError(
+                    "Stripe returnerade inget produkt-id", status_code=502
+                )
             await bundle_repo.update_bundle(
                 bundle_id,
                 {"stripe_product_id": product_id},
             )
         except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-            raise CourseBundleError("Kunde inte skapa Stripe-produkt", status_code=502) from exc
+            raise CourseBundleError(
+                "Kunde inte skapa Stripe-produkt", status_code=502
+            ) from exc
 
     if not price_id:
         try:
@@ -303,13 +323,17 @@ async def _ensure_stripe_assets(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
             )
             price_id = price.get("id")
             if not isinstance(price_id, str):
-                raise CourseBundleError("Stripe returnerade inget pris-id", status_code=502)
+                raise CourseBundleError(
+                    "Stripe returnerade inget pris-id", status_code=502
+                )
             await bundle_repo.update_bundle(
                 bundle_id,
                 {"stripe_price_id": price_id},
             )
         except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-            raise CourseBundleError("Kunde inte skapa Stripe-pris", status_code=502) from exc
+            raise CourseBundleError(
+                "Kunde inte skapa Stripe-pris", status_code=502
+            ) from exc
 
     updated = dict(bundle)
     updated["stripe_product_id"] = product_id
@@ -326,11 +350,26 @@ def _require_stripe() -> None:
 
 
 def _default_checkout_urls() -> tuple[str, str]:
+    success_from_env = (os.getenv("CHECKOUT_SUCCESS_URL") or "").strip()
+    if not success_from_env:
+        success_from_env = (os.getenv("STRIPE_RETURN_URL") or "").strip()
+    cancel_from_env = (os.getenv("CHECKOUT_CANCEL_URL") or "").strip()
+
     base = (settings.frontend_base_url or "").rstrip("/")
     success_http = f"{base}/{RETURN_PATH}" if base else None
     cancel_http = f"{base}/{CANCEL_PATH}" if base else None
-    success_url = settings.checkout_success_url or success_http or RETURN_DEEP_LINK
-    cancel_url = settings.checkout_cancel_url or cancel_http or CANCEL_DEEP_LINK
+    success_url = (
+        success_from_env
+        or settings.checkout_success_url
+        or success_http
+        or RETURN_DEEP_LINK
+    )
+    cancel_url = (
+        cancel_from_env
+        or settings.checkout_cancel_url
+        or cancel_http
+        or CANCEL_DEEP_LINK
+    )
     return success_url, cancel_url
 
 

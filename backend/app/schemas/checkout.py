@@ -32,3 +32,18 @@ class CheckoutCreateResponse(BaseModel):
     url: str
     session_id: Optional[str] = None
     order_id: Optional[str] = None
+
+
+class CheckoutVerifyResponse(BaseModel):
+    ok: bool = True
+    session_id: str
+    success: bool
+    status: str
+    mode: Optional[str] = None
+    session_status: Optional[str] = None
+    payment_status: Optional[str] = None
+    checkout_type: Optional[str] = None
+    order_id: Optional[str] = None
+    course_slug: Optional[str] = None
+    service_slug: Optional[str] = None
+    customer_id: Optional[str] = None

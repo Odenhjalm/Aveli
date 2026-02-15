@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Mapping
 
 import stripe
@@ -20,11 +21,27 @@ CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
 
 
 def _default_checkout_urls() -> tuple[str, str]:
+    # Explicit env values always win so prod can control redirects without code changes.
+    success_from_env = (os.getenv("CHECKOUT_SUCCESS_URL") or "").strip()
+    cancel_from_env = (os.getenv("CHECKOUT_CANCEL_URL") or "").strip()
+    if not success_from_env:
+        success_from_env = (os.getenv("STRIPE_RETURN_URL") or "").strip()
+
     base = (settings.frontend_base_url or "").rstrip("/")
     success_http = f"{base}/{RETURN_PATH}" if base else None
     cancel_http = f"{base}/{CANCEL_PATH}" if base else None
-    success_url = settings.checkout_success_url or success_http or RETURN_DEEP_LINK
-    cancel_url = settings.checkout_cancel_url or cancel_http or CANCEL_DEEP_LINK
+    success_url = (
+        success_from_env
+        or settings.checkout_success_url
+        or success_http
+        or RETURN_DEEP_LINK
+    )
+    cancel_url = (
+        cancel_from_env
+        or settings.checkout_cancel_url
+        or cancel_http
+        or CANCEL_DEEP_LINK
+    )
     return success_url, cancel_url
 
 
@@ -46,7 +63,9 @@ async def create_course_checkout(
     _require_stripe()
     course = await courses_repo.get_course_by_slug(slug)
     if not course:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="course not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="course not found"
+        )
     if course.get("is_free_intro") is True:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -123,9 +142,9 @@ async def create_course_checkout(
 
     success_url, cancel_url = _default_checkout_urls()
     line_items: list[dict[str, Any]]
-    override_amount = (
-        settings.checkout_success_url or ""
-    ).startswith("http://localhost")
+    override_amount = (settings.checkout_success_url or "").startswith(
+        "http://localhost"
+    )
     if override_amount:
         line_items = [
             {
@@ -152,7 +171,9 @@ async def create_course_checkout(
     checkout_kwargs["ui_mode"] = settings.stripe_checkout_ui_mode or "custom"
 
     try:
-        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**checkout_kwargs))
+        session = await run_in_threadpool(
+            lambda: stripe.checkout.Session.create(**checkout_kwargs)
+        )
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -176,6 +197,98 @@ async def create_course_checkout(
         url=url,
         session_id=session.get("id"),
         order_id=str(order["id"]),
+    )
+
+
+def _validate_session_id(session_id: str) -> str:
+    normalized = session_id.strip()
+    if not normalized.startswith("cs_") or len(normalized) < 8 or len(normalized) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session_id"
+        )
+    return normalized
+
+
+def _normalize_checkout_status(
+    *,
+    session_status: str | None,
+    payment_status: str | None,
+    mode: str | None,
+) -> tuple[bool, str]:
+    normalized_session_status = (session_status or "").lower()
+    normalized_payment_status = (payment_status or "").lower()
+    normalized_mode = (mode or "").lower()
+
+    if normalized_payment_status in {"paid", "no_payment_required"}:
+        return True, "success"
+    if normalized_session_status == "complete" and normalized_mode == "subscription":
+        return True, "success"
+    if normalized_session_status == "expired":
+        return False, "canceled"
+    if normalized_payment_status in {"unpaid", "failed"}:
+        return False, "failed"
+    return False, "pending"
+
+
+async def verify_checkout_session(session_id: str) -> schemas.CheckoutVerifyResponse:
+    normalized_session_id = _validate_session_id(session_id)
+    _require_stripe()
+
+    try:
+        session = await run_in_threadpool(
+            lambda: stripe.checkout.Session.retrieve(normalized_session_id)
+        )
+    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+        if getattr(exc, "code", "") == "resource_missing":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Checkout session not found",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Stripe error retrieving checkout session",
+        ) from exc
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Stripe error retrieving checkout session",
+        ) from exc
+
+    metadata = session.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    customer = session.get("customer")
+    customer_id: str | None
+    if isinstance(customer, dict):
+        customer_id = customer.get("id")
+    elif isinstance(customer, str):
+        customer_id = customer
+    else:
+        customer_id = None
+
+    mode = session.get("mode")
+    payment_status = session.get("payment_status")
+    session_status = session.get("status")
+    success, normalized_status = _normalize_checkout_status(
+        session_status=session_status,
+        payment_status=payment_status,
+        mode=mode,
+    )
+
+    return schemas.CheckoutVerifyResponse(
+        ok=True,
+        session_id=normalized_session_id,
+        success=success,
+        status=normalized_status,
+        mode=mode,
+        session_status=session_status,
+        payment_status=payment_status,
+        checkout_type=metadata.get("checkout_type"),
+        order_id=metadata.get("order_id"),
+        course_slug=metadata.get("course_slug"),
+        service_slug=metadata.get("service_slug"),
+        customer_id=customer_id,
     )
 
 
