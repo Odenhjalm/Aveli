@@ -15,6 +15,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
@@ -76,6 +77,9 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final double gridMainAxisSpacing;
 
   static const EdgeInsets _glassCardPadding = EdgeInsets.all(16);
+  static final RegExp _step1Pattern = RegExp(r'\bsteg\s*1\b');
+  static final RegExp _step2Pattern = RegExp(r'\bsteg\s*2\b');
+  static final RegExp _step3Pattern = RegExp(r'\bsteg\s*3\b');
 
   static double _resolveCardsContainerWidth({
     required double maxWidth,
@@ -309,7 +313,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
       addCourse(course);
     }
 
-    return _normalizeCourseCovers(combined, mediaRepository);
+    final ordered = _sortCourseMapsForProgression(combined);
+    return _normalizeCourseCovers(ordered, mediaRepository);
   }
 
   static List<Map<String, dynamic>> _normalizeCourseCovers(
@@ -331,7 +336,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
   static List<Map<String, dynamic>> _mapCourseSummaries(
     List<CourseSummary> courses,
   ) {
-    return courses
+    final ordered = _sortCourseSummariesForProgression(courses);
+    return ordered
         .map((course) {
           return {
             'id': course.id,
@@ -344,6 +350,81 @@ class CoursesShowcaseSection extends ConsumerWidget {
           };
         })
         .toList(growable: false);
+  }
+
+  static List<CourseSummary> _sortCourseSummariesForProgression(
+    List<CourseSummary> courses,
+  ) {
+    final indexed = courses.indexed.toList(growable: false);
+    indexed.sort((a, b) {
+      final rankA = _progressionRankForSummary(a.$2);
+      final rankB = _progressionRankForSummary(b.$2);
+      if (rankA != rankB) return rankA.compareTo(rankB);
+      return a.$1.compareTo(b.$1);
+    });
+    return indexed.map((entry) => entry.$2).toList(growable: false);
+  }
+
+  static int _progressionRankForSummary(CourseSummary course) {
+    if (course.isFreeIntro) return 0;
+    switch (course.journeyStep) {
+      case CourseJourneyStep.intro:
+      case CourseJourneyStep.step1:
+        return 0;
+      case CourseJourneyStep.step2:
+        return 1;
+      case CourseJourneyStep.step3:
+        return 2;
+      case null:
+        return _progressionRankFromTitle(course.title);
+    }
+  }
+
+  static List<Map<String, dynamic>> _sortCourseMapsForProgression(
+    List<Map<String, dynamic>> courses,
+  ) {
+    final indexed = courses.indexed.toList(growable: false);
+    indexed.sort((a, b) {
+      final rankA = _progressionRankForMap(a.$2);
+      final rankB = _progressionRankForMap(b.$2);
+      if (rankA != rankB) return rankA.compareTo(rankB);
+      return a.$1.compareTo(b.$1);
+    });
+    return indexed.map((entry) => entry.$2).toList(growable: false);
+  }
+
+  static int _progressionRankForMap(Map<String, dynamic> course) {
+    final isFreeIntro = course['is_free_intro'] == true;
+    if (isFreeIntro) return 0;
+
+    final step =
+        (course['journey_step'] as String?)?.trim().toLowerCase() ?? '';
+    switch (step) {
+      case 'intro':
+      case 'step1':
+      case '1':
+        return 0;
+      case 'step2':
+      case '2':
+        return 1;
+      case 'step3':
+      case '3':
+        return 2;
+    }
+
+    final title = (course['title'] as String?) ?? '';
+    return _progressionRankFromTitle(title);
+  }
+
+  static int _progressionRankFromTitle(String title) {
+    final normalized = title.toLowerCase();
+    if (normalized.contains('introduktion') ||
+        _step1Pattern.hasMatch(normalized)) {
+      return 0;
+    }
+    if (_step2Pattern.hasMatch(normalized)) return 1;
+    if (_step3Pattern.hasMatch(normalized)) return 2;
+    return 3;
   }
 
   static Widget _buildLayout(
