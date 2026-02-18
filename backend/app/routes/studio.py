@@ -97,7 +97,7 @@ def _detect_kind(content_type: str | None) -> str:
     if lower.startswith("audio/"):
         return "audio"
     if lower == "application/pdf":
-        return "pdf"
+        return "document"
     return "other"
 
 
@@ -268,7 +268,7 @@ async def complete_lesson_media_upload(
         raise HTTPException(status_code=403, detail="Not course owner")
 
     kind = _detect_kind(payload.content_type)
-    if kind not in {"image", "video", "audio", "pdf"}:
+    if kind not in {"image", "video", "audio", "document"}:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported media type",
@@ -322,6 +322,8 @@ async def complete_lesson_media_upload(
     row["content_type"] = payload.content_type
     row["byte_size"] = payload.byte_size
     row["original_name"] = original_name
+    if kind == "document":
+        row["media_state"] = "ready"
     media_signer.attach_media_links(row)
     return row
 
@@ -1644,7 +1646,7 @@ async def upload_media(
     detected_kind = upload_routes._detect_kind(
         file.content_type or mimetypes.guess_type(file.filename or "")[0]
     )
-    if detected_kind in {"image", "video", "audio", "pdf"}:
+    if detected_kind in {"image", "video", "audio", "document"}:
         relative_dir /= detected_kind
 
     destination_dir = upload_routes._safe_join(

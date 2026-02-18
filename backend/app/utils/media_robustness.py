@@ -38,11 +38,15 @@ class MediaRecommendedAction(StrEnum):
     safe_to_delete = "safe_to_delete"
 
 
-SUPPORTED_MEDIA_KINDS: frozenset[str] = frozenset({"image", "video", "audio", "pdf"})
+SUPPORTED_MEDIA_KINDS: frozenset[str] = frozenset(
+    {"image", "video", "audio", "document"}
+)
 
 
 def normalize_media_kind(value: str | None) -> str:
     normalized = (value or "").strip().lower()
+    if normalized == "pdf":
+        normalized = "document"
     if normalized in SUPPORTED_MEDIA_KINDS:
         return normalized
     return "other"

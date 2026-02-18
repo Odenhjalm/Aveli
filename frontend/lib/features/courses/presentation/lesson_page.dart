@@ -757,6 +757,7 @@ class _MediaItem extends ConsumerWidget {
         return Icons.movie_creation_outlined;
       case 'audio':
         return Icons.audiotrack_outlined;
+      case 'document':
       case 'pdf':
         return Icons.picture_as_pdf_outlined;
       default:
