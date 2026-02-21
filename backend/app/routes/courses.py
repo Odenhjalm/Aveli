@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from .. import schemas
 from ..auth import CurrentUser, OptionalCurrentUser
 from ..permissions import AdminUser
+from .. import repositories
 from ..repositories import courses as courses_repo
 from ..services import courses_service
 from ..utils import media_signer
@@ -35,6 +36,38 @@ def _virtual_module(course_id: str) -> dict[str, Any]:
         "title": "Lektioner",
         "position": 0,
     }
+
+
+async def assert_can_access_course(user: OptionalCurrentUser, course_id: str) -> dict[str, Any]:
+    course = await courses_service.fetch_course(course_id=course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        )
+
+    user_id = str(user["id"])
+    role_value = str(user.get("role_v2") or "").lower()
+    if bool(user.get("is_admin")) or role_value == "admin":
+        return course
+
+    if await courses_service.is_course_teacher_or_instructor(user_id, course_id):
+        return course
+
+    if await courses_service.is_user_enrolled(user_id, course_id):
+        return course
+
+    membership = await repositories.get_membership(user_id)
+    if bool(course.get("is_free_intro")) and (membership or {}).get("status") == "active":
+        return course
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Forbidden",
+    )
 
 
 @router.get("", response_model=schemas.CourseListResponse)
@@ -92,29 +125,13 @@ async def bind_course_price(slug: str, payload: dict[str, str], current: AdminUs
 
 @router.get("/{course_id}/modules")
 async def modules_for_course(course_id: str, current: OptionalCurrentUser = None):
-    course = await courses_service.fetch_course(course_id=course_id)
-    user_id = str(current["id"]) if current else None
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
-        if user_id
-        else False
-    )
-    if not course or (not course.get("is_published") and not teacher_access):
-        return {"items": []}
+    await assert_can_access_course(current, course_id)
     return {"items": [_virtual_module(course_id)]}
 
 
 @router.get("/modules/{module_id}/lessons")
 async def lessons_for_module(module_id: str, current: OptionalCurrentUser = None):
-    course = await courses_service.fetch_course(course_id=module_id)
-    user_id = str(current["id"]) if current else None
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, module_id)
-        if user_id
-        else False
-    )
-    if not course or (not course.get("is_published") and not teacher_access):
-        return {"items": []}
+    await assert_can_access_course(current, module_id)
     lessons = await courses_service.list_course_lessons(module_id)
     return {"items": lessons}
 
@@ -129,37 +146,18 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     if not course_id:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    user_id = str(current["id"]) if current else None
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
-        if user_id
-        else False
-    )
-    course = await courses_service.fetch_course(course_id=course_id)
-    if not course or (not course.get("is_published") and not teacher_access):
-        raise HTTPException(status_code=404, detail="Course not found")
+    course = await assert_can_access_course(current, course_id)
 
     module = _virtual_module(course_id)
     modules = [module]
     course_lessons = await courses_service.list_course_lessons(course_id)
     module_lessons = course_lessons
 
-    media: list[dict] = []
-    can_access_media = False
-    if teacher_access:
-        can_access_media = True
-    elif lesson.get("is_intro") or course.get("is_free_intro"):
-        can_access_media = True
-    elif user_id:
-        snapshot = await courses_service.course_access_snapshot(user_id, course_id)
-        can_access_media = snapshot.get("can_access") is True
-
-    if can_access_media:
-        media_rows = await courses_service.list_lesson_media(
-            lesson_id,
-            mode="student_render",
-        )
-        media.extend(media_rows)
+    media_rows = await courses_service.list_lesson_media(
+        lesson_id,
+        mode="student_render",
+    )
+    media: list[dict] = list(media_rows)
     return {
         "lesson": lesson,
         "module": module,
@@ -266,22 +264,15 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
     course_id = str(row["id"])
-    user_id = str(current["id"]) if current else None
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
-        if user_id
-        else False
-    )
-    if not row.get("is_published") and not teacher_access:
-        raise HTTPException(status_code=404, detail="Course not found")
-    _attach_cover_links(row)
+    course = await assert_can_access_course(current, course_id)
+    _attach_cover_links(course)
     module = _virtual_module(course_id)
     modules = [module]
     lessons_map: dict[str, list] = {
         course_id: await courses_service.list_course_lessons(course_id)
     }
     response = {
-        "course": row,
+        "course": course,
         "modules": modules,
         "lessons": lessons_map,
     }
@@ -290,17 +281,7 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
 
 @router.get("/{course_id}")
 async def course_detail(course_id: str, current: OptionalCurrentUser = None):
-    row = await courses_service.fetch_course(course_id=course_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Course not found")
-    user_id = str(current["id"]) if current else None
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, course_id)
-        if user_id
-        else False
-    )
-    if not row.get("is_published") and not teacher_access:
-        raise HTTPException(status_code=404, detail="Course not found")
+    row = await assert_can_access_course(current, course_id)
     module = _virtual_module(course_id)
     modules = [module]
     lessons_map: dict[str, list] = {

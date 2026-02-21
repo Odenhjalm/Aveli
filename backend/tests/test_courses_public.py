@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app import db
+from app import db, repositories
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -113,18 +113,13 @@ async def test_course_public_endpoints(async_client):
         assert any(str(item["id"]) == course_id for item in list_items)
 
         detail_resp = await async_client.get(f"/courses/{course_id}")
-        assert detail_resp.status_code == 200
-        detail_json = detail_resp.json()
-        assert detail_json["course"]["id"] == course_id
-        assert any(m["id"] == module_id for m in detail_json["modules"])
+        assert detail_resp.status_code == 403
 
         modules_resp = await async_client.get(f"/courses/{course_id}/modules")
-        assert modules_resp.status_code == 200
-        assert any(m["id"] == module_id for m in modules_resp.json()["items"])
+        assert modules_resp.status_code == 403
 
         lessons_resp = await async_client.get(f"/courses/modules/{module_id}/lessons")
-        assert lessons_resp.status_code == 200
-        assert any(lesson["id"] == lesson_id for lesson in lessons_resp.json()["items"])
+        assert lessons_resp.status_code == 403
 
         intro_resp = await async_client.get("/courses/intro-first")
         assert intro_resp.status_code == 200
@@ -174,6 +169,43 @@ async def test_course_public_endpoints(async_client):
         assert access_after["can_access"] is True
         assert access_after["access_reason"] == "enrolled"
         assert access_after["enrolled"] is True
+
+        detail_after_enroll = await async_client.get(
+            f"/courses/{course_id}",
+            headers=auth_header(student_token),
+        )
+        assert detail_after_enroll.status_code == 200, detail_after_enroll.text
+        detail_json = detail_after_enroll.json()
+        assert detail_json["course"]["id"] == course_id
+        assert any(m["id"] == module_id for m in detail_json["modules"])
+
+        modules_after_enroll = await async_client.get(
+            f"/courses/{course_id}/modules",
+            headers=auth_header(student_token),
+        )
+        assert modules_after_enroll.status_code == 200, modules_after_enroll.text
+        assert any(m["id"] == module_id for m in modules_after_enroll.json()["items"])
+
+        lessons_after_enroll = await async_client.get(
+            f"/courses/modules/{module_id}/lessons",
+            headers=auth_header(student_token),
+        )
+        assert lessons_after_enroll.status_code == 200, lessons_after_enroll.text
+        assert any(lesson["id"] == lesson_id for lesson in lessons_after_enroll.json()["items"])
+
+        lesson_detail_after_enroll = await async_client.get(
+            f"/courses/lessons/{lesson_id}",
+            headers=auth_header(student_token),
+        )
+        assert lesson_detail_after_enroll.status_code == 200, lesson_detail_after_enroll.text
+        assert lesson_detail_after_enroll.json()["lesson"]["id"] == lesson_id
+
+        by_slug_after_enroll = await async_client.get(
+            f"/courses/by-slug/{slug}",
+            headers=auth_header(student_token),
+        )
+        assert by_slug_after_enroll.status_code == 200, by_slug_after_enroll.text
+        assert by_slug_after_enroll.json()["course"]["id"] == course_id
 
         second_course_resp = await async_client.post(
             "/studio/courses",
@@ -312,3 +344,95 @@ async def test_teacher_has_full_access_to_own_paid_course(async_client):
     finally:
         if teacher_id:
             await cleanup_user(teacher_id)
+
+
+async def test_active_subscription_only_grants_intro_course_access(async_client):
+    teacher_email = f"teacher_sub_{uuid.uuid4().hex[:8]}@example.com"
+    student_email = f"student_sub_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+
+    teacher_token, _, teacher_id = await register_user(
+        async_client, teacher_email, password, "Teacher"
+    )
+    await promote_to_teacher(teacher_id)
+    student_token, _, student_id = await register_user(
+        async_client, student_email, password, "Student"
+    )
+
+    try:
+        intro_slug = f"intro-sub-{uuid.uuid4().hex[:8]}"
+        intro_course_resp = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Subscription Intro",
+                "slug": intro_slug,
+                "description": "Intro course",
+                "is_free_intro": True,
+                "is_published": True,
+                "price_amount_cents": 0,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert intro_course_resp.status_code == 200, intro_course_resp.text
+        intro_course_id = str(intro_course_resp.json()["id"])
+        intro_lesson_resp = await async_client.post(
+            "/studio/lessons",
+            json={
+                "course_id": intro_course_id,
+                "title": "Intro Lesson",
+                "content_markdown": "# Intro",
+                "position": 1,
+                "is_intro": True,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert intro_lesson_resp.status_code == 200, intro_lesson_resp.text
+        intro_lesson_id = str(intro_lesson_resp.json()["id"])
+
+        paid_slug = f"paid-sub-{uuid.uuid4().hex[:8]}"
+        paid_course_resp = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Subscription Paid",
+                "slug": paid_slug,
+                "description": "Paid course",
+                "is_free_intro": False,
+                "is_published": True,
+                "price_amount_cents": 14900,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert paid_course_resp.status_code == 200, paid_course_resp.text
+        paid_course_id = str(paid_course_resp.json()["id"])
+
+        await repositories.upsert_membership_record(
+            str(student_id),
+            plan_interval="month",
+            price_id="price_monthly",
+            status="active",
+            stripe_customer_id="cus_sub_test",
+            stripe_subscription_id="sub_sub_test",
+        )
+
+        intro_course_access = await async_client.get(
+            f"/courses/{intro_course_id}",
+            headers=auth_header(student_token),
+        )
+        assert intro_course_access.status_code == 200, intro_course_access.text
+
+        intro_lesson_access = await async_client.get(
+            f"/courses/lessons/{intro_lesson_id}",
+            headers=auth_header(student_token),
+        )
+        assert intro_lesson_access.status_code == 200, intro_lesson_access.text
+
+        paid_course_access = await async_client.get(
+            f"/courses/{paid_course_id}",
+            headers=auth_header(student_token),
+        )
+        assert paid_course_access.status_code == 403, paid_course_access.text
+    finally:
+        if teacher_id:
+            await cleanup_user(teacher_id)
+        if student_id:
+            await cleanup_user(student_id)
