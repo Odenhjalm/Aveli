@@ -8,6 +8,7 @@ from psycopg import errors
 from app import db
 from app.config import settings
 from app.repositories import course_entitlements
+from app.services import subscription_service
 
 from .utils import register_user
 
@@ -257,3 +258,30 @@ async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypat
     finally:
         await _clear_entitlement(str(user_id), slug)
         await _cleanup_user(str(user_id))
+
+
+async def test_webhook_returns_500_when_subscription_processing_fails(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
+    monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
+
+    def fake_construct_event(payload, sig_header, secret):
+        assert secret == "whsec_test"
+        return {
+            "id": "evt_subscription_fail",
+            "type": "customer.subscription.updated",
+            "data": {"object": {"id": "sub_test"}},
+        }
+
+    async def fail_process_event(event):
+        raise RuntimeError("processing failed")
+
+    monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+    monkeypatch.setattr(subscription_service, "process_event", fail_process_event)
+
+    resp = await async_client.post(
+        "/webhooks/stripe",
+        content=json.dumps({}),
+        headers={"stripe-signature": "sig_test"},
+    )
+    assert resp.status_code == 500, resp.text
+    assert "webhook processing failed" in resp.json()["detail"].lower()

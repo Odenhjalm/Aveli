@@ -124,7 +124,6 @@ async def stripe_payment_element_webhook(request: Request):
     event_type = event.get("type")
     event_id = event.get("id")
     data_object = event.get("data", {}).get("object", {})
-    had_error = False
 
     try:
         if event_type == "payment_intent.succeeded":
@@ -149,12 +148,7 @@ async def stripe_payment_element_webhook(request: Request):
         elif event_type and (
             event_type.startswith("customer.subscription") or event_type.startswith("invoice.payment_")
         ):
-            try:
-                await subscription_service.process_event(event)
-            except Exception as exc:  # pragma: no cover - defensive logging
-                had_error = True
-                _capture_exception(event_type, str(event_id) if event_id else None, exc)
-                logger.warning("Failed to process subscription event %s: %s", event_type, exc)
+            await subscription_service.process_event(event)
         elif event_type == "payment_intent.payment_failed":
             logger.info(
                 "Payment failed for intent %s",
@@ -165,7 +159,6 @@ async def stripe_payment_element_webhook(request: Request):
         else:
             logger.info("Unhandled Stripe event %s", event_type)
     except Exception as exc:  # pragma: no cover - defensive logging
-        had_error = True
         _capture_exception(str(event_type) if event_type else None, str(event_id) if event_id else None, exc)
         logger.exception("Stripe webhook processing failed: %s", exc)
         raise HTTPException(
@@ -173,14 +166,13 @@ async def stripe_payment_element_webhook(request: Request):
             detail="Webhook processing failed",
         ) from exc
 
-    if not had_error:
-        _capture_message(
-            status="success",
-            event_type=str(event_type) if event_type else None,
-            event_id=str(event_id) if event_id else None,
-            message="Stripe webhook processed",
-            level="info",
-        )
+    _capture_message(
+        status="success",
+        event_type=str(event_type) if event_type else None,
+        event_id=str(event_id) if event_id else None,
+        message="Stripe webhook processed",
+        level="info",
+    )
 
     return {"status": "ok"}
 
