@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from .. import models, repositories, schemas
 from ..auth import CurrentUser
 from ..schemas.memberships import MembershipRecord, MembershipResponse
+from ..utils.membership_status import is_membership_active
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ async def get_my_entitlements(current: CurrentUser) -> schemas.EntitlementsRespo
         status_value = membership.get("status")
         if status_value == "incomplete":
             logger.warning("Incomplete membership encountered for user %s", str(current["id"]))
-        is_active = status_value == "active"
+        is_active = is_membership_active(status_value or "")
         membership_payload = schemas.EntitlementsMembership(
             is_active=bool(is_active),
             status=status_value,

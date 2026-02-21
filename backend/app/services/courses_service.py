@@ -25,6 +25,7 @@ from ..services import storage_service
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
 from ..utils import media_robustness
+from ..utils.membership_status import is_membership_active
 
 
 CoursePayload = Mapping[str, Any]
@@ -57,7 +58,7 @@ def _has_active_subscription(
             or "unknown"
         )
         logger.warning("Incomplete membership encountered for user %s", user_id)
-    return status_value == "active"
+    return is_membership_active(status_value or "")
 
 
 def _normalize_value(value: Any) -> Any:
@@ -713,7 +714,7 @@ async def enroll_free_intro(user_id: str, course_id: str) -> dict[str, Any]:
         return {"ok": True, "status": "step1_unlimited"}
 
     membership = await get_membership(user_id)
-    if (membership or {}).get("status") != "active":
+    if not is_membership_active((membership or {}).get("status") or ""):
         return {"ok": False, "status": "subscription_required"}
 
     return await courses_repo.claim_intro_monthly_access(user_id, course_id, monthly_limit=1)
