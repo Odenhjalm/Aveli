@@ -1715,13 +1715,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               icon: const Icon(Icons.image_outlined),
               label: const Text('Infoga bild'),
             ),
-            OutlinedButton.icon(
+            FilledButton.icon(
               key: const Key('editor_media_controls_upload_pdf'),
               onPressed: canInsertLessonMedia
                   ? () => _handleMediaToolbarUpload(_UploadKind.pdf)
                   : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
               icon: const Icon(Icons.picture_as_pdf_outlined),
-              label: const Text('Upload PDF'),
+              label: const Text('Infoga PDF'),
             ),
           ],
         ),
@@ -5049,7 +5053,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     return Padding(
                                       padding: const EdgeInsets.only(top: 4),
                                       child: Text(
-                                        'Använd verktygsfältet ovan för bild, video och ljud. PDF laddas upp via knappen Upload PDF.',
+                                        'Använd verktygsfältet ovan för bild, video och ljud. PDF laddas upp via knappen Infoga PDF.',
                                         style: Theme.of(
                                           context,
                                         ).textTheme.bodySmall,
