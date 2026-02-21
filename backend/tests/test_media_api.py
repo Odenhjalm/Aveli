@@ -459,6 +459,239 @@ async def test_lesson_playback_invalid_row_returns_404(async_client, monkeypatch
         await cleanup_user(user_id)
 
 
+async def test_lesson_playback_pipeline_preserves_teacher_bypass(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_media_id = str(uuid.uuid4())
+        media_asset_id = str(uuid.uuid4())
+
+        async def fake_get_media(media_id: str):
+            assert media_id == lesson_media_id
+            return {
+                "id": lesson_media_id,
+                "media_asset_id": media_asset_id,
+                "storage_path": None,
+            }
+
+        async def fake_get_media_asset_access(media_id: str):
+            assert media_id == media_asset_id
+            return {
+                "id": media_asset_id,
+                "media_type": "audio",
+                "state": "ready",
+                "purpose": "lesson_audio",
+                "course_id": str(uuid.uuid4()),
+                "is_published": False,
+                "is_intro": False,
+                "is_free_intro": False,
+                "streaming_object_path": "media/derived/audio/demo.mp3",
+                "streaming_storage_bucket": "course-media",
+                "storage_bucket": "course-media",
+            }
+
+        async def fake_is_course_teacher_or_instructor(user_id_value: str, _: str):
+            assert user_id_value == user_id
+            return True
+
+        async def fail_if_snapshot_called(*args, **kwargs):
+            raise AssertionError("course_access_snapshot must not be called for teacher bypass")
+
+        class _FakeStorageClient:
+            async def get_presigned_url(
+                self,
+                path,
+                ttl,
+                filename=None,
+                *,
+                download=True,
+            ):
+                assert ttl > 0
+                assert filename == "demo.mp3"
+                assert download is False
+                return storage_module.PresignedUrl(
+                    url=f"https://stream.local/{path}",
+                    expires_in=300,
+                    headers={},
+                )
+
+        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service.media_assets_repo,
+            "get_media_asset_access",
+            fake_get_media_asset_access,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.courses_service,
+            "is_course_teacher_or_instructor",
+            fake_is_course_teacher_or_instructor,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.models,
+            "course_access_snapshot",
+            fail_if_snapshot_called,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.storage_service,
+            "get_storage_service",
+            lambda _bucket: _FakeStorageClient(),
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": lesson_media_id},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["url"].startswith("https://stream.local/")
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_media_id = str(uuid.uuid4())
+        expires_at = datetime.now(timezone.utc)
+
+        async def fake_get_media(media_id: str):
+            assert media_id == lesson_media_id
+            return {
+                "id": lesson_media_id,
+                "media_asset_id": None,
+                "storage_path": "courses/demo/lessons/demo/legacy.mp3",
+                "storage_bucket": "course-media",
+            }
+
+        async def fake_get_lesson_media_access_by_path(*, storage_path: str, storage_bucket: str):
+            assert storage_path
+            assert storage_bucket
+            return {
+                "course_id": str(uuid.uuid4()),
+                "is_published": True,
+                "is_intro": True,
+                "is_free_intro": False,
+            }
+
+        async def fake_is_course_teacher_or_instructor(*_args, **_kwargs):
+            return False
+
+        async def fail_if_snapshot_called(*args, **kwargs):
+            raise AssertionError("course_access_snapshot must not be called for intro media")
+
+        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service.courses_repo,
+            "get_lesson_media_access_by_path",
+            fake_get_lesson_media_access_by_path,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.courses_service,
+            "is_course_teacher_or_instructor",
+            fake_is_course_teacher_or_instructor,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.models,
+            "course_access_snapshot",
+            fail_if_snapshot_called,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "is_signing_enabled",
+            lambda: True,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "issue_signed_url",
+            lambda *_args, **_kwargs: ("/media/stream/legacy-token", expires_at),
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": lesson_media_id},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["url"] == "/media/stream/legacy-token"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_playback_legacy_non_intro_requires_snapshot(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_media_id = str(uuid.uuid4())
+
+        async def fake_get_media(media_id: str):
+            assert media_id == lesson_media_id
+            return {
+                "id": lesson_media_id,
+                "media_asset_id": None,
+                "storage_path": "courses/demo/lessons/demo/legacy.mp3",
+                "storage_bucket": "course-media",
+            }
+
+        async def fake_get_lesson_media_access_by_path(*, storage_path: str, storage_bucket: str):
+            assert storage_path
+            assert storage_bucket
+            return {
+                "course_id": str(uuid.uuid4()),
+                "is_published": True,
+                "is_intro": False,
+                "is_free_intro": False,
+            }
+
+        async def fake_is_course_teacher_or_instructor(*_args, **_kwargs):
+            return False
+
+        async def fake_snapshot(*_args, **_kwargs):
+            return {"can_access": False}
+
+        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service.courses_repo,
+            "get_lesson_media_access_by_path",
+            fake_get_lesson_media_access_by_path,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.courses_service,
+            "is_course_teacher_or_instructor",
+            fake_is_course_teacher_or_instructor,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.models,
+            "course_access_snapshot",
+            fake_snapshot,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "is_signing_enabled",
+            lambda: True,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": lesson_media_id},
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"] == "Access denied"
+    finally:
+        await cleanup_user(user_id)
+
+
 async def test_upload_url_requires_auth(async_client):
     resp = await async_client.post(
         "/api/media/upload-url",
