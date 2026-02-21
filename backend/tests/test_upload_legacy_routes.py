@@ -40,7 +40,7 @@ async def promote_to_teacher(user_id: str):
             await conn.commit()
 
 
-async def create_lesson(async_client, headers):
+async def create_lesson(async_client, headers, *, is_intro: bool = False):
     slug = f"upload-course-{uuid.uuid4().hex[:6]}"
     course_resp = await async_client.post(
         "/studio/courses",
@@ -63,7 +63,7 @@ async def create_lesson(async_client, headers):
             "title": "Lesson",
             "content_markdown": "# Lesson",
             "position": 1,
-            "is_intro": False,
+            "is_intro": is_intro,
         },
     )
     assert lesson_resp.status_code == 200, lesson_resp.text
@@ -199,3 +199,75 @@ async def test_upload_lesson_image_rejects_too_large(async_client, monkeypatch):
         files={"file": ("photo.webp", b"12345", "image/webp")},
     )
     assert resp.status_code == 413, resp.text
+
+
+async def test_upload_course_media_pdf_uses_document_kind_and_attachment_header(
+    async_client,
+    tmp_path,
+    monkeypatch,
+):
+    headers, _ = await register_teacher(async_client)
+    course_id, lesson_id = await create_lesson(async_client, headers)
+
+    from app.routes import upload as upload_routes
+
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(upload_routes, "UPLOADS_ROOT", upload_root, raising=True)
+
+    resp = await async_client.post(
+        "/upload/course-media",
+        headers=headers,
+        data={"course_id": course_id, "lesson_id": lesson_id, "type": "document"},
+        files={"file": ("material.pdf", b"%PDF-1.7 test", "application/pdf")},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    media = payload.get("media") or {}
+    assert isinstance(media, dict)
+    assert media.get("kind") == "document"
+    assert media.get("media_state") == "ready"
+
+    media_id = str(media.get("id") or "")
+    assert media_id
+    download = await async_client.get(f"/studio/media/{media_id}", headers=headers)
+    assert download.status_code == 200, download.text
+    content_disposition = download.headers.get("content-disposition", "")
+    assert content_disposition.startswith("attachment;")
+    assert 'filename="material.pdf"' in content_disposition
+
+
+async def test_public_pdf_files_are_served_as_attachment(async_client, tmp_path, monkeypatch):
+    headers, _ = await register_teacher(async_client)
+    course_id, lesson_id = await create_lesson(async_client, headers, is_intro=True)
+
+    from app.routes import upload as upload_routes
+
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(upload_routes, "UPLOADS_ROOT", upload_root, raising=True)
+
+    resp = await async_client.post(
+        "/upload/course-media",
+        headers=headers,
+        data={
+            "course_id": course_id,
+            "lesson_id": lesson_id,
+            "type": "document",
+            "is_intro": "true",
+        },
+        files={"file": ("intro.pdf", b"%PDF-1.7 public", "application/pdf")},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    media = payload.get("media") or {}
+    assert media.get("storage_bucket") == "public-media"
+
+    url = payload.get("url") or ""
+    assert isinstance(url, str) and "/api/files/public-media/" in url
+    path = urlparse(url).path
+    public_get = await async_client.get(path)
+    assert public_get.status_code == 200, public_get.text
+    content_disposition = public_get.headers.get("content-disposition", "")
+    assert content_disposition.startswith("attachment;")
+    assert 'filename="intro.pdf"' in content_disposition

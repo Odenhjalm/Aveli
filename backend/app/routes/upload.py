@@ -120,7 +120,7 @@ def _detect_kind(content_type: str | None) -> str:
     if lower.startswith("audio/"):
         return "audio"
     if lower == "application/pdf":
-        return "pdf"
+        return "document"
     return "other"
 
 
@@ -246,6 +246,8 @@ async def _persist_lesson_media(
             status_code=status.HTTP_409_CONFLICT,
             detail="Could not allocate lesson media position",
         )
+    if kind in {"document", "pdf"}:
+        row["media_state"] = "ready"
 
     media_signer.attach_media_links(row, purpose="editor_preview")
     return row
@@ -682,13 +684,20 @@ async def serve_uploaded_file(path: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     media_type, _ = mimetypes.guess_type(file_path.name)
-    response = FileResponse(file_path, media_type=media_type or "application/octet-stream")
+    resolved_media_type = media_type or "application/octet-stream"
+    response = FileResponse(file_path, media_type=resolved_media_type)
     cache_seconds = max(0, settings.media_public_cache_seconds)
     if cache_seconds > 0:
         response.headers["Cache-Control"] = f"public, max-age={cache_seconds}"
     else:
         response.headers["Cache-Control"] = "no-store"
-    response.headers["Content-Disposition"] = build_content_disposition(relative.name, disposition="inline")
+    disposition = "inline"
+    if resolved_media_type.lower() == "application/pdf":
+        disposition = "attachment"
+    response.headers["Content-Disposition"] = build_content_disposition(
+        relative.name,
+        disposition=disposition,
+    )
     return response
 
 

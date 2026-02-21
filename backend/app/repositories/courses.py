@@ -1066,7 +1066,14 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           ) AS content_type,
           mo.byte_size,
           coalesce(mo.original_name, ma.original_filename) AS original_name,
-          ma.state AS media_state,
+          coalesce(
+            ma.state,
+            CASE
+              WHEN lower(coalesce(lm.kind, '')) IN ('document', 'pdf')
+                THEN 'ready'
+              ELSE NULL
+            END
+          ) AS media_state,
           ma.ingest_format,
           ma.streaming_format,
           ma.codec,

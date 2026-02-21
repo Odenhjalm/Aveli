@@ -195,6 +195,7 @@ async def _build_streaming_response(
     lesson_media_id: str | None = None,
     mode: str | None = None,
 ) -> StreamingResponse:
+    kind = str(row.get("kind") or "").strip().lower()
     storage_path = row.get("storage_path")
     if not storage_path:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -432,7 +433,15 @@ async def _build_streaming_response(
             )
             raise HTTPException(status_code=503, detail="Storage unavailable") from None
 
-        content_type = upstream.headers.get("content-type") or row.get("content_type") or "application/octet-stream"
+        content_type = (
+            upstream.headers.get("content-type")
+            or row.get("content_type")
+            or "application/octet-stream"
+        )
+        lower_content_type = str(content_type).strip().lower()
+        document_response = kind in {"document", "pdf"} or lower_content_type.startswith(
+            "application/pdf"
+        )
         response_headers = {
             "Accept-Ranges": upstream.headers.get("accept-ranges", "bytes"),
             "Access-Control-Allow-Origin": "*",
@@ -444,7 +453,7 @@ async def _build_streaming_response(
             response_headers["Cache-Control"] = "no-store"
         response_headers["Content-Disposition"] = build_content_disposition(
             filename,
-            disposition="inline",
+            disposition="attachment" if document_response else "inline",
         )
         for header_name in ("content-range", "content-length"):
             if header_name in upstream.headers:
@@ -464,6 +473,10 @@ async def _build_streaming_response(
 
     file_size = file_path.stat().st_size
     content_type = row.get("content_type") or "application/octet-stream"
+    lower_content_type = str(content_type).strip().lower()
+    document_response = kind in {"document", "pdf"} or lower_content_type.startswith(
+        "application/pdf"
+    )
     range_header = request.headers.get("range")
 
     def file_iterator(
@@ -495,7 +508,10 @@ async def _build_streaming_response(
         headers["Cache-Control"] = f"private, max-age={cache_seconds}"
     else:
         headers["Cache-Control"] = "no-store"
-    headers["Content-Disposition"] = build_content_disposition(filename, disposition="inline")
+    headers["Content-Disposition"] = build_content_disposition(
+        filename,
+        disposition="attachment" if document_response else "inline",
+    )
 
     if range_header and range_header.startswith("bytes="):
         try:

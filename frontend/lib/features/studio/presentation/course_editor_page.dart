@@ -1715,6 +1715,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               icon: const Icon(Icons.image_outlined),
               label: const Text('Infoga bild'),
             ),
+            FilledButton.icon(
+              key: const Key('editor_media_controls_upload_pdf'),
+              onPressed: canInsertLessonMedia
+                  ? () => _handleMediaToolbarUpload(_UploadKind.pdf)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('Infoga PDF'),
+            ),
           ],
         ),
         gap12,
@@ -2440,6 +2452,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return contentType.startsWith('image/');
   }
 
+  bool _isDocumentMedia(Map<String, dynamic> media) {
+    final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
+    if (kind == 'document' || kind == 'pdf') return true;
+    final contentType = ((media['content_type'] as String?) ?? '')
+        .trim()
+        .toLowerCase();
+    return contentType == 'application/pdf';
+  }
+
   bool _isPipelineMedia(Map<String, dynamic> media) {
     return media['media_asset_id'] != null;
   }
@@ -2962,6 +2983,58 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  void _insertDocumentLinkIntoLesson({
+    required String resolvedUrl,
+    required String fileName,
+    TextSelection? targetSelection,
+  }) {
+    final controller = _lessonContentController;
+    if (controller == null) return;
+
+    final label = '📄 $fileName';
+    final docLength = controller.document.length;
+    TextSelection selection = targetSelection ?? controller.selection;
+    if (selection.start < 0 || selection.end < 0) {
+      selection = TextSelection.collapsed(offset: docLength);
+    }
+
+    final start = max(0, min(selection.start, selection.end));
+    final end = max(0, max(selection.start, selection.end));
+    final baseIndex = min(start, docLength);
+    final extentIndex = min(end, docLength);
+    final deleteLength = max(0, extentIndex - baseIndex);
+
+    controller.replaceText(
+      baseIndex,
+      deleteLength,
+      label,
+      TextSelection.collapsed(offset: baseIndex + label.length),
+    );
+    controller.formatText(
+      baseIndex,
+      label.length,
+      quill.LinkAttribute(resolvedUrl),
+    );
+    controller.replaceText(
+      baseIndex + label.length,
+      0,
+      '\n',
+      TextSelection.collapsed(offset: baseIndex + label.length + 1),
+    );
+
+    final collapsed = TextSelection.collapsed(
+      offset: baseIndex + label.length + 1,
+    );
+    controller.updateSelection(collapsed, quill.ChangeSource.local);
+    _lastLessonSelection = collapsed;
+    if (!_lessonContentFocusNode.hasFocus) {
+      _lessonContentFocusNode.requestFocus();
+    }
+    if (!_lessonContentDirty) {
+      setState(() => _lessonContentDirty = true);
+    }
+  }
+
   void _insertMediaIntoLesson(
     Map<String, dynamic> media, {
     bool showSaveHint = true,
@@ -3006,6 +3079,30 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           showSaveHint
               ? 'Bild infogad i lektionen. Kom ihåg att spara.'
               : 'Bild infogad i lektionen.',
+        );
+      }
+      return;
+    }
+    if (_isDocumentMedia(media)) {
+      final documentUrl = resolved;
+      if (documentUrl == null || documentUrl.trim().isEmpty) {
+        if (mounted && context.mounted) {
+          showSnack(context, 'Kunde inte resolveda en dokumentlänk.');
+        }
+        return;
+      }
+      final fileName = _fileNameFromMedia(media);
+      _insertDocumentLinkIntoLesson(
+        resolvedUrl: documentUrl,
+        fileName: fileName,
+        targetSelection: _lastLessonSelection,
+      );
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          showSaveHint
+              ? 'PDF-länk infogad i lektionen. Kom ihåg att spara.'
+              : 'PDF-länk infogad i lektionen.',
         );
       }
       return;
@@ -3436,7 +3533,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     var inserted = false;
     if (contentType.startsWith('video/') ||
         contentType.startsWith('audio/') ||
-        contentType.startsWith('image/')) {
+        contentType.startsWith('image/') ||
+        contentType == 'application/pdf') {
       _insertMediaIntoLesson(uploaded, showSaveHint: false);
       inserted = true;
     }
@@ -3788,6 +3886,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return 'video/*';
       case 'audio':
         return 'audio/*';
+      case 'document':
       case 'pdf':
         return 'application/pdf';
       default:
@@ -3799,7 +3898,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (contentType.startsWith('image/')) return 'image';
     if (contentType.startsWith('video/')) return 'video';
     if (contentType.startsWith('audio/')) return 'audio';
-    if (contentType == 'application/pdf') return 'pdf';
+    if (contentType == 'application/pdf') return 'document';
     return 'other';
   }
 
@@ -3811,6 +3910,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return Icons.movie_creation_outlined;
       case 'audio':
         return Icons.audiotrack_outlined;
+      case 'document':
       case 'pdf':
         return Icons.picture_as_pdf_outlined;
       default:
@@ -4955,7 +5055,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     return Padding(
                                       padding: const EdgeInsets.only(top: 4),
                                       child: Text(
-                                        'Använd ikonerna i verktygsfältet ovan för att ladda upp bild, video eller ljud. Dokument (PDF) kan laddas upp via knappen med dokumentikonen.',
+                                        'Använd verktygsfältet ovan för bild, video och ljud. PDF laddas upp via knappen Infoga PDF.',
                                         style: Theme.of(
                                           context,
                                         ).textTheme.bodySmall,
@@ -5121,6 +5221,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             !isWavMedia &&
                                             downloadUrl != null &&
                                             downloadUrl.isNotEmpty;
+                                        final isDocument = _isDocumentMedia(
+                                          media,
+                                        );
                                         final canDownload =
                                             !hasInvalidPipelineReference &&
                                             !isWavMedia &&
@@ -5189,7 +5292,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             borderColor: Colors.white
                                                 .withValues(alpha: 0.28),
                                             child: ListTile(
-                                              onTap: canPreview
+                                              onTap:
+                                                  isDocument &&
+                                                      canInsertIntoLesson
+                                                  ? () =>
+                                                        _insertMediaIntoLesson(
+                                                          media,
+                                                        )
+                                                  : canPreview
                                                   ? () =>
                                                         _handleMediaPreviewTap(
                                                           media,
@@ -5337,11 +5447,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                       tooltip:
                                                           'Infoga i lektionen',
                                                       icon: Icon(
-                                                        kind == 'video' ||
-                                                                contentType
-                                                                    .startsWith(
-                                                                      'video/',
-                                                                    )
+                                                        isDocument
+                                                            ? Icons
+                                                                  .picture_as_pdf_outlined
+                                                            : kind == 'video' ||
+                                                                  contentType
+                                                                      .startsWith(
+                                                                        'video/',
+                                                                      )
                                                             ? Icons
                                                                   .movie_creation_outlined
                                                             : Icons
