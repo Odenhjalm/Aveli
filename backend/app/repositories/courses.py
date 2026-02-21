@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 from psycopg import errors
@@ -1428,6 +1429,43 @@ async def user_owns_course_step(user_id: str, course_family: str, step_level: st
         return (await cur.fetchone()) is not None
 
 
+async def user_owns_any_course_step(user_id: str, step_level: str) -> bool:
+    normalized_level = _normalize_step_level(step_level)
+    if not normalized_level:
+        return False
+
+    query = """
+        SELECT 1
+        FROM app.course_entitlements ce
+        JOIN app.courses c ON lower(c.slug) = lower(ce.course_slug)
+        WHERE ce.user_id = %s
+          AND lower(c.step_level) = %s
+        LIMIT 1
+    """
+    fallback_query = """
+        SELECT 1
+        FROM app.course_entitlements ce
+        JOIN app.courses c ON lower(c.slug) = lower(ce.course_slug)
+        WHERE ce.user_id = %s
+          AND lower(
+              COALESCE(
+                  NULLIF(c.journey_step, ''),
+                  CASE WHEN c.is_free_intro THEN 'intro' ELSE 'step1' END
+              )
+          ) = %s
+        LIMIT 1
+    """
+
+    async with get_conn() as cur:
+        try:
+            await cur.execute(query, (user_id, normalized_level))
+        except errors.UndefinedColumn:
+            await cur.execute(fallback_query, (user_id, normalized_level))
+        except errors.UndefinedTable:
+            return False
+        return (await cur.fetchone()) is not None
+
+
 async def enforce_free_intro_enrollment(user_id: str, course_id: str) -> None:
     await ensure_course_enrollment(user_id, course_id, source="free_intro")
 
@@ -1509,6 +1547,123 @@ async def enroll_free_intro(
         "ok": True,
         "status": "enrolled",
     }
+
+
+async def claim_intro_monthly_access(
+    user_id: str,
+    course_id: str,
+    *,
+    monthly_limit: int = 1,
+    at: datetime | None = None,
+) -> dict[str, Any]:
+    usage_time = at.astimezone(timezone.utc) if at else datetime.now(timezone.utc)
+    usage_year = int(usage_time.year)
+    usage_month = int(usage_time.month)
+    safe_limit = max(int(monthly_limit), 1)
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT id, is_free_intro, is_published
+                FROM app.courses
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (course_id,),
+            )
+            course_row = await cur.fetchone()
+            if not course_row:
+                await conn.rollback()
+                return {"ok": False, "status": "not_found"}
+            if not bool(course_row.get("is_free_intro")):
+                await conn.rollback()
+                return {"ok": False, "status": "not_free_intro"}
+
+            await cur.execute(
+                """
+                SELECT EXISTS(
+                  SELECT 1
+                  FROM app.enrollments
+                  WHERE user_id = %s AND course_id = %s
+                ) AS already
+                """,
+                (user_id, course_id),
+            )
+            already_row = await cur.fetchone()
+            if bool((already_row or {}).get("already")):
+                await conn.rollback()
+                return {"ok": True, "status": "already_enrolled"}
+
+            try:
+                await cur.execute(
+                    """
+                    INSERT INTO app.intro_usage (user_id, year, month, count)
+                    VALUES (%s, %s, %s, 0)
+                    ON CONFLICT (user_id, year, month) DO NOTHING
+                    """,
+                    (user_id, usage_year, usage_month),
+                )
+
+                await cur.execute(
+                    """
+                    SELECT count
+                    FROM app.intro_usage
+                    WHERE user_id = %s
+                      AND year = %s
+                      AND month = %s
+                    FOR UPDATE
+                    """,
+                    (user_id, usage_year, usage_month),
+                )
+                usage_row = await cur.fetchone() or {}
+                current_count = int(usage_row.get("count") or 0)
+                if current_count >= safe_limit:
+                    await conn.rollback()
+                    return {
+                        "ok": False,
+                        "status": "limit_reached",
+                        "count": current_count,
+                        "year": usage_year,
+                        "month": usage_month,
+                    }
+
+                await cur.execute(
+                    """
+                    UPDATE app.intro_usage
+                       SET count = count + 1,
+                           updated_at = now()
+                     WHERE user_id = %s
+                       AND year = %s
+                       AND month = %s
+                    RETURNING count
+                    """,
+                    (user_id, usage_year, usage_month),
+                )
+                updated_usage = await cur.fetchone() or {}
+                updated_count = int(updated_usage.get("count") or (current_count + 1))
+            except errors.UndefinedTable:
+                updated_count = None
+
+            await cur.execute(
+                """
+                INSERT INTO app.enrollments (user_id, course_id, source)
+                VALUES (%s, %s, 'free_intro')
+                ON CONFLICT (user_id, course_id) DO NOTHING
+                """,
+                (user_id, course_id),
+            )
+            await conn.commit()
+
+    result: dict[str, Any] = {
+        "ok": True,
+        "status": "enrolled",
+        "year": usage_year,
+        "month": usage_month,
+    }
+    if updated_count is not None:
+        result["count"] = updated_count
+    return result
 
 
 async def get_course_intro_state(course_id: str) -> dict[str, Any] | None:
@@ -1605,9 +1760,11 @@ __all__ = [
     "list_my_courses",
     "is_enrolled",
     "user_owns_course_step",
+    "user_owns_any_course_step",
     "enforce_free_intro_enrollment",
     "ensure_course_enrollment",
     "enroll_free_intro",
+    "claim_intro_monthly_access",
     "get_course_intro_state",
     "get_course_quiz",
     "is_user_certified_for_course",

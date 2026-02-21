@@ -2,6 +2,8 @@ import uuid
 
 import pytest
 
+from app import repositories
+
 
 @pytest.mark.anyio("asyncio")
 async def test_courses_me_returns_enrolled_courses(async_client):
@@ -55,6 +57,18 @@ async def test_courses_me_updates_after_free_intro_enrollment(async_client):
     if not intro_items:
         pytest.skip("No free intro courses available in clean Supabase dataset")
     course = intro_items[0]
+
+    me = await async_client.get("/auth/me", headers=headers)
+    assert me.status_code == 200, me.text
+    user_id = str(me.json()["user_id"])
+    await repositories.upsert_membership_record(
+        user_id,
+        plan_interval="month",
+        price_id="price_monthly_intro",
+        status="active",
+        stripe_customer_id=f"cus_{uuid.uuid4().hex[:8]}",
+        stripe_subscription_id=f"sub_{uuid.uuid4().hex[:8]}",
+    )
 
     enroll = await async_client.post(
         f"/courses/{course['id']}/enroll", headers=headers

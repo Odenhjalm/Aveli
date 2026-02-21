@@ -3,6 +3,7 @@ import uuid
 import pytest
 
 from app import db, repositories
+from app.repositories import course_entitlements
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -144,6 +145,21 @@ async def test_course_public_endpoints(async_client):
         assert enroll_status_resp.status_code == 200
         assert enroll_status_resp.json()["enrolled"] is False
 
+        enroll_without_subscription = await async_client.post(
+            f"/courses/{course_id}/enroll",
+            headers=auth_header(student_token),
+        )
+        assert enroll_without_subscription.status_code == 403
+
+        await repositories.upsert_membership_record(
+            str(student_id),
+            plan_interval="month",
+            price_id="price_monthly_intro",
+            status="active",
+            stripe_customer_id=f"cus_{uuid.uuid4().hex[:8]}",
+            stripe_subscription_id=f"sub_{uuid.uuid4().hex[:8]}",
+        )
+
         enroll_resp = await async_client.post(
             f"/courses/{course_id}/enroll",
             headers=auth_header(student_token),
@@ -226,30 +242,8 @@ async def test_course_public_endpoints(async_client):
             f"/courses/{second_course_id}/enroll",
             headers=auth_header(student_token),
         )
-        assert second_enroll.status_code == 200, second_enroll.text
-        assert second_enroll.json()["status"] in {"enrolled", "already_enrolled"}
-
-        third_course_resp = await async_client.post(
-            "/studio/courses",
-            json={
-                "title": "Free Intro Course 3",
-                "slug": f"{slug}-3",
-                "description": "Unlimited intro",
-                "is_free_intro": True,
-                "is_published": True,
-                "price_amount_cents": 0,
-            },
-            headers=auth_header(teacher_token),
-        )
-        assert third_course_resp.status_code == 200, third_course_resp.text
-        third_course_id = str(third_course_resp.json()["id"])
-
-        third_enroll = await async_client.post(
-            f"/courses/{third_course_id}/enroll",
-            headers=auth_header(student_token),
-        )
-        assert third_enroll.status_code == 200, third_enroll.text
-        assert third_enroll.json()["status"] in {"enrolled", "already_enrolled"}
+        assert second_enroll.status_code == 403, second_enroll.text
+        assert "monthly intro limit" in second_enroll.text.lower()
 
         unauthorized_enroll = await async_client.post(f"/courses/{course_id}/enroll")
         assert unauthorized_enroll.status_code == 401
@@ -431,6 +425,96 @@ async def test_active_subscription_only_grants_intro_course_access(async_client)
             headers=auth_header(student_token),
         )
         assert paid_course_access.status_code == 403, paid_course_access.text
+    finally:
+        if teacher_id:
+            await cleanup_user(teacher_id)
+        if student_id:
+            await cleanup_user(student_id)
+
+
+async def test_step1_ownership_bypasses_intro_monthly_limit(async_client):
+    teacher_email = f"teacher_step1_{uuid.uuid4().hex[:8]}@example.com"
+    student_email = f"student_step1_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+
+    teacher_token, _, teacher_id = await register_user(
+        async_client, teacher_email, password, "Teacher"
+    )
+    await promote_to_teacher(teacher_id)
+    student_token, _, student_id = await register_user(
+        async_client, student_email, password, "Student"
+    )
+
+    try:
+        step1_slug = f"owned-step1-{uuid.uuid4().hex[:8]}"
+        step1_resp = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Owned Step1",
+                "slug": step1_slug,
+                "description": "Step1 course",
+                "journey_step": "step1",
+                "is_free_intro": False,
+                "is_published": True,
+                "price_amount_cents": 9900,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert step1_resp.status_code == 200, step1_resp.text
+
+        await course_entitlements.grant_course_entitlement(
+            user_id=str(student_id),
+            course_slug=step1_slug,
+            stripe_customer_id="cus_step1_owner",
+            payment_intent_id="pi_step1_owner",
+        )
+
+        intro_one_resp = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Intro One",
+                "slug": f"intro-one-{uuid.uuid4().hex[:8]}",
+                "description": "First intro",
+                "is_free_intro": True,
+                "is_published": True,
+                "price_amount_cents": 0,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert intro_one_resp.status_code == 200, intro_one_resp.text
+        intro_two_resp = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Intro Two",
+                "slug": f"intro-two-{uuid.uuid4().hex[:8]}",
+                "description": "Second intro",
+                "is_free_intro": True,
+                "is_published": True,
+                "price_amount_cents": 0,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert intro_two_resp.status_code == 200, intro_two_resp.text
+
+        intro_one_id = str(intro_one_resp.json()["id"])
+        intro_two_id = str(intro_two_resp.json()["id"])
+
+        enroll_intro_one = await async_client.post(
+            f"/courses/{intro_one_id}/enroll",
+            headers=auth_header(student_token),
+        )
+        assert enroll_intro_one.status_code == 200, enroll_intro_one.text
+        enroll_intro_two = await async_client.post(
+            f"/courses/{intro_two_id}/enroll",
+            headers=auth_header(student_token),
+        )
+        assert enroll_intro_two.status_code == 200, enroll_intro_two.text
+
+        intro_two_access = await async_client.get(
+            f"/courses/{intro_two_id}",
+            headers=auth_header(student_token),
+        )
+        assert intro_two_access.status_code == 200, intro_two_access.text
     finally:
         if teacher_id:
             await cleanup_user(teacher_id)

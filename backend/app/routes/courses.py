@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, Query, status
 from .. import schemas
 from ..auth import CurrentUser, OptionalCurrentUser
 from ..permissions import AdminUser
-from .. import repositories
 from ..repositories import courses as courses_repo
 from ..services import courses_service
 from ..utils import media_signer
@@ -60,9 +59,10 @@ async def assert_can_access_course(user: OptionalCurrentUser, course_id: str) ->
     if await courses_service.is_user_enrolled(user_id, course_id):
         return course
 
-    membership = await repositories.get_membership(user_id)
-    if bool(course.get("is_free_intro")) and (membership or {}).get("status") == "active":
-        return course
+    if bool(course.get("is_free_intro")):
+        intro_access = await courses_service.enroll_free_intro(user_id, course_id)
+        if intro_access.get("ok"):
+            return course
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -196,6 +196,15 @@ async def enroll_course(course_id: str, current: CurrentUser):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Course is not marked as free intro",
+        )
+    if status_code in {"subscription_required", "limit_reached"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Monthly intro limit reached"
+                if status_code == "limit_reached"
+                else "Active subscription required"
+            ),
         )
 
     if not result.get("ok"):

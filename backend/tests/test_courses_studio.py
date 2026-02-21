@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app import db
+from app import db, repositories
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -248,6 +248,15 @@ async def test_course_and_studio_endpoints(async_client):
         )
         assert resp.status_code == 200
         assert resp.json()["enrolled"] is False
+
+        await repositories.upsert_membership_record(
+            str(student_id),
+            plan_interval="month",
+            price_id="price_monthly_intro",
+            status="active",
+            stripe_customer_id=f"cus_{uuid.uuid4().hex[:8]}",
+            stripe_subscription_id=f"sub_{uuid.uuid4().hex[:8]}",
+        )
 
         # Enroll in free intro course
         resp = await async_client.post(
