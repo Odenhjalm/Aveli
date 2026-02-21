@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app import db
+from app import db, models
+from app import schemas
 from app.config import settings
 from app.repositories import media_assets as media_assets_repo
+from app.routes import api_media
 from app.services import storage_service as storage_module
 from .utils import register_user
 
@@ -344,6 +346,116 @@ async def test_playback_url_authorized(async_client, monkeypatch):
         expires_at = datetime.fromisoformat(body["expires_at"])
         delta = (expires_at - now).total_seconds()
         assert 290 <= delta <= 310
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_playback_pipeline_row(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_media_id = str(uuid.uuid4())
+        media_asset_id = str(uuid.uuid4())
+
+        async def fake_get_media(media_id: str):
+            assert media_id == lesson_media_id
+            return {
+                "id": lesson_media_id,
+                "media_asset_id": media_asset_id,
+                "storage_path": None,
+            }
+
+        async def fake_request_playback_url(payload, current):
+            assert str(payload.media_id) == media_asset_id
+            assert current.get("id")
+            return schemas.MediaPlaybackUrlResponse(
+                playback_url="https://stream.local/media/derived/audio/demo.mp3",
+                expires_at=datetime.now(timezone.utc),
+                format="mp3",
+            )
+
+        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            api_media,
+            "request_playback_url",
+            fake_request_playback_url,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": lesson_media_id},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["url"].startswith("https://stream.local/")
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_playback_legacy_row(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_media_id = str(uuid.uuid4())
+
+        async def fake_get_media(media_id: str):
+            assert media_id == lesson_media_id
+            return {
+                "id": lesson_media_id,
+                "media_asset_id": None,
+                "storage_path": "courses/demo/lessons/demo/legacy.mp3",
+            }
+
+        async def fake_sign_media(payload, current):
+            assert payload.media_id == lesson_media_id
+            assert current.get("id")
+            return schemas.MediaSignResponse(
+                media_id=lesson_media_id,
+                signed_url="/media/stream/legacy-token",
+                expires_at=datetime.now(timezone.utc),
+            )
+
+        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            api_media.media_routes,
+            "sign_media",
+            fake_sign_media,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": lesson_media_id},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["url"].startswith("/media/stream/")
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_playback_invalid_row_returns_404(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        media_id = str(uuid.uuid4())
+
+        async def fake_get_media(_: str):
+            return {
+                "id": media_id,
+                "media_asset_id": None,
+                "storage_path": None,
+            }
+
+        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+
+        resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": media_id},
+        )
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["detail"] == "Lesson media has no playable source"
     finally:
         await cleanup_user(user_id)
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
 from .. import models, repositories, schemas
 from ..auth import CurrentUser
@@ -17,6 +18,7 @@ from ..repositories import media_assets as media_assets_repo
 from ..services import courses_service, media_cleanup
 from ..services import storage_service
 from ..utils import media_paths
+from . import media as media_routes
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,14 @@ router = APIRouter(prefix="/api/media", tags=["media"])
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
 _WAV_MIME_TYPES = {"audio/wav", "audio/x-wav"}
 _COVER_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+class LessonPlaybackRequest(BaseModel):
+    lesson_media_id: UUID
+
+
+class LessonPlaybackResponse(BaseModel):
+    url: str
 
 
 def _normalize_mime(value: str) -> str:
@@ -633,4 +643,43 @@ async def request_playback_url(
         playback_url=presigned.url,
         expires_at=expires_at,
         format="mp3",
+    )
+
+
+@router.post("/lesson-playback", response_model=LessonPlaybackResponse)
+async def request_lesson_playback(
+    payload: LessonPlaybackRequest,
+    current: CurrentUser,
+):
+    lesson_media_id = str(payload.lesson_media_id)
+    row = await models.get_media(lesson_media_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson media not found")
+
+    media_asset_id = row.get("media_asset_id")
+    if media_asset_id:
+        try:
+            media_asset_uuid = UUID(str(media_asset_id))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lesson media has invalid media asset",
+            ) from exc
+
+        playback = await request_playback_url(
+            schemas.MediaPlaybackUrlRequest(media_id=media_asset_uuid),
+            current,
+        )
+        return LessonPlaybackResponse(url=playback.playback_url)
+
+    if row.get("storage_path"):
+        signed = await media_routes.sign_media(
+            schemas.MediaSignRequest(media_id=lesson_media_id, mode="student_render"),
+            current,
+        )
+        return LessonPlaybackResponse(url=signed.signed_url)
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Lesson media has no playable source",
     )
