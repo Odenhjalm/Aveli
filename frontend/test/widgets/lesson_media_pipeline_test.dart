@@ -14,10 +14,11 @@ import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
-  _FakeMediaPipelineRepository(this._future);
+  _FakeMediaPipelineRepository(this._lessonPlaybackFuture);
 
-  final Future<MediaPlaybackUrl> _future;
+  final Future<String> _lessonPlaybackFuture;
   int playbackCalls = 0;
+  int lessonPlaybackCalls = 0;
 
   @override
   Future<MediaUploadTarget> requestUploadUrl({
@@ -68,7 +69,17 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   @override
   Future<MediaPlaybackUrl> fetchPlaybackUrl(String mediaId) async {
     playbackCalls += 1;
-    return _future;
+    return MediaPlaybackUrl(
+      playbackUrl: Uri.parse(await _lessonPlaybackFuture),
+      expiresAt: DateTime.now().toUtc(),
+      format: 'mp3',
+    );
+  }
+
+  @override
+  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
+    lessonPlaybackCalls += 1;
+    return _lessonPlaybackFuture;
   }
 }
 
@@ -116,13 +127,7 @@ void main() {
     tester,
   ) async {
     final repo = _FakeMediaPipelineRepository(
-      Future.value(
-        MediaPlaybackUrl(
-          playbackUrl: Uri.parse('https://cdn.test/audio.mp3'),
-          expiresAt: DateTime.now().toUtc(),
-          format: 'mp3',
-        ),
-      ),
+      Future.value('https://cdn.test/audio.mp3'),
     );
     final data = _buildLessonData(mediaState: 'processing');
 
@@ -148,12 +153,13 @@ void main() {
 
     expect(find.text('Ljudet bearbetas…'), findsOneWidget);
     expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+    expect(repo.lessonPlaybackCalls, 0);
     expect(repo.playbackCalls, 0);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('requests playback only when ready', (tester) async {
-    final pending = Completer<MediaPlaybackUrl>();
+    final pending = Completer<String>();
     final repo = _FakeMediaPipelineRepository(pending.future);
     final data = _buildLessonData(mediaState: 'ready');
 
@@ -178,16 +184,11 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(repo.playbackCalls, 1);
+    expect(repo.lessonPlaybackCalls, 1);
+    expect(repo.playbackCalls, 0);
     expect(find.byType(LinearProgressIndicator), findsWidgets);
 
-    pending.complete(
-      MediaPlaybackUrl(
-        playbackUrl: Uri.parse('https://cdn.test/audio.mp3'),
-        expiresAt: DateTime.now().toUtc(),
-        format: 'mp3',
-      ),
-    );
+    pending.complete('https://cdn.test/audio.mp3');
 
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -202,13 +203,7 @@ void main() {
     tester,
   ) async {
     final repo = _FakeMediaPipelineRepository(
-      Future.value(
-        MediaPlaybackUrl(
-          playbackUrl: Uri.parse('https://cdn.test/video.mp4'),
-          expiresAt: DateTime.now().toUtc(),
-          format: 'mp4',
-        ),
-      ),
+      Future.value('https://cdn.test/video.mp4'),
     );
     final data = LessonDetailData(
       lesson: const LessonDetail(
@@ -258,13 +253,7 @@ void main() {
     tester,
   ) async {
     final repo = _FakeMediaPipelineRepository(
-      Future.value(
-        MediaPlaybackUrl(
-          playbackUrl: Uri.parse('https://cdn.test/audio.mp3'),
-          expiresAt: DateTime.now().toUtc(),
-          format: 'mp3',
-        ),
-      ),
+      Future.value('https://cdn.test/audio.mp3'),
     );
     const imageUrl = 'https://cdn.test/lesson-image.webp';
     final data = LessonDetailData(

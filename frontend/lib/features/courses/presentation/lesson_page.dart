@@ -15,7 +15,6 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/media/AveliLessonImage.dart';
@@ -613,6 +612,7 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(mediaRepositoryProvider);
+    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
     final isAuthenticated = ref.watch(authControllerProvider).isAuthenticated;
     var resolved = url;
     try {
@@ -632,7 +632,7 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
         : resolveLessonMediaSignedPlaybackUrl(
             lessonMediaId: mediaId,
             mediaRepository: repo,
-            mode: MediaResolutionMode.studentRender,
+            pipelineRepository: pipelineRepo,
           );
     return FutureBuilder<String?>(
       future: playbackFuture,

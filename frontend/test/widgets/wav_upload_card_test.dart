@@ -80,6 +80,11 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
       format: 'mp3',
     );
   }
+
+  @override
+  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
+    return 'https://cdn.test/audio.mp3';
+  }
 }
 
 void main() {
