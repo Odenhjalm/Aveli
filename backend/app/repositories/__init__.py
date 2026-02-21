@@ -18,6 +18,8 @@ from .orders import (
     set_order_checkout_reference,
     list_user_orders,
     get_latest_order_for_course,
+    get_order_by_payment_intent,
+    mark_order_refunded,
 )
 from .payments import mark_order_paid, record_payment
 from .feed import list_feed
@@ -82,7 +84,11 @@ from .home_player_library import (
 )
 from .subscriptions import get_latest_subscription, get_membership
 from .memberships import upsert_membership_record
-from .course_entitlements import grant_course_entitlement, list_entitlements_for_user
+from .course_entitlements import (
+    grant_course_entitlement,
+    list_entitlements_for_user,
+    revoke_course_entitlement,
+)
 from .sessions import (
     create_session,
     update_session,
@@ -132,6 +138,8 @@ __all__ = [
     "set_order_checkout_reference",
     "list_user_orders",
     "get_latest_order_for_course",
+    "get_order_by_payment_intent",
+    "mark_order_refunded",
     "mark_order_paid",
     "record_payment",
     # Feed
@@ -198,6 +206,7 @@ __all__ = [
     "upsert_membership_record",
     "grant_course_entitlement",
     "list_entitlements_for_user",
+    "revoke_course_entitlement",
     # Sessions/slots
     "create_session",
     "update_session",

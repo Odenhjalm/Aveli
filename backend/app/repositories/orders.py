@@ -271,3 +271,88 @@ async def set_order_checkout_reference(
             row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None
+
+
+async def get_order_by_payment_intent(payment_intent: str) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id,
+                   user_id,
+                   service_id,
+                   course_id,
+                   session_id,
+                   session_slot_id,
+                   order_type,
+                   amount_cents,
+                   currency,
+                   status,
+                   stripe_checkout_id,
+                   stripe_payment_intent,
+                   stripe_subscription_id,
+                   stripe_customer_id,
+                   connected_account_id,
+                   metadata,
+                   created_at,
+                   updated_at
+            FROM app.orders
+            WHERE stripe_payment_intent = %s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (payment_intent,),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def mark_order_refunded(
+    order_id: str | UUID,
+    *,
+    payment_intent: str | None = None,
+) -> dict[str, Any] | None:
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                WITH existing AS (
+                    SELECT status
+                    FROM app.orders
+                    WHERE id = %s
+                    FOR UPDATE
+                ),
+                updated AS (
+                    UPDATE app.orders
+                    SET status = 'refunded',
+                        stripe_payment_intent = COALESCE(%s, stripe_payment_intent),
+                        updated_at = now()
+                    WHERE id = %s
+                    RETURNING id,
+                              user_id,
+                              service_id,
+                              course_id,
+                              session_id,
+                              session_slot_id,
+                              order_type,
+                              amount_cents,
+                              currency,
+                              status,
+                              stripe_checkout_id,
+                              stripe_payment_intent,
+                              stripe_subscription_id,
+                              stripe_customer_id,
+                              connected_account_id,
+                              metadata,
+                              created_at,
+                              updated_at
+                )
+                SELECT updated.*,
+                       existing.status AS previous_status
+                FROM updated
+                LEFT JOIN existing ON true
+                """,
+                (order_id, payment_intent, order_id),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+            return dict(row) if row else None

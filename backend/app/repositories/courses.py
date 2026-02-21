@@ -1485,6 +1485,19 @@ async def ensure_course_enrollment(
             await conn.commit()
 
 
+async def revoke_course_enrollment(user_id: str, course_id: str) -> bool:
+    query = """
+        DELETE FROM app.enrollments
+        WHERE user_id = %s AND course_id = %s
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (user_id, course_id))
+            deleted = cur.rowcount > 0
+            await conn.commit()
+    return deleted
+
+
 async def enroll_free_intro(
     user_id: str,
     course_id: str,
@@ -1666,6 +1679,46 @@ async def claim_intro_monthly_access(
     return result
 
 
+async def decrement_intro_usage(
+    user_id: str,
+    *,
+    amount: int = 1,
+    at: datetime | None = None,
+) -> dict[str, Any]:
+    usage_time = at.astimezone(timezone.utc) if at else datetime.now(timezone.utc)
+    usage_year = int(usage_time.year)
+    usage_month = int(usage_time.month)
+    decrement_amount = max(int(amount), 1)
+    query = """
+        UPDATE app.intro_usage
+           SET count = GREATEST(count - %s, 0),
+               updated_at = now()
+         WHERE user_id = %s
+           AND year = %s
+           AND month = %s
+        RETURNING count
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(
+                    query,
+                    (decrement_amount, user_id, usage_year, usage_month),
+                )
+            except errors.UndefinedTable:
+                await conn.rollback()
+                return {"ok": False, "status": "intro_usage_missing"}
+            row = await cur.fetchone()
+            await conn.commit()
+    return {
+        "ok": True,
+        "status": "updated" if row is not None else "not_found",
+        "count": int((row or {}).get("count") or 0),
+        "year": usage_year,
+        "month": usage_month,
+    }
+
+
 async def get_course_intro_state(course_id: str) -> dict[str, Any] | None:
     query = """
         SELECT id, is_free_intro, is_published
@@ -1763,8 +1816,10 @@ __all__ = [
     "user_owns_any_course_step",
     "enforce_free_intro_enrollment",
     "ensure_course_enrollment",
+    "revoke_course_enrollment",
     "enroll_free_intro",
     "claim_intro_monthly_access",
+    "decrement_intro_usage",
     "get_course_intro_state",
     "get_course_quiz",
     "is_user_certified_for_course",

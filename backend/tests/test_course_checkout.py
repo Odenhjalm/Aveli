@@ -1,13 +1,15 @@
 import json
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
 from psycopg import errors
 
-from app import db
+from app import db, repositories
 from app.config import settings
 from app.repositories import course_entitlements
+from app.repositories import courses as courses_repo
 from app.services import subscription_service
 
 from .utils import register_user
@@ -31,6 +33,7 @@ async def _create_course(
     *,
     step_level: str = "step1",
     course_family: str | None = None,
+    is_free_intro: bool = False,
 ) -> str:
     family_value = course_family or slug
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
@@ -48,12 +51,13 @@ async def _create_course(
                         course_family,
                         is_published
                     )
-                    VALUES (%s, %s, false, %s, 'sek', %s, %s, true)
+                    VALUES (%s, %s, %s, %s, 'sek', %s, %s, true)
                     RETURNING id
                     """,
                     (
                         slug,
                         f"Course {slug}",
+                        is_free_intro,
                         price_amount_cents,
                         step_level,
                         family_value,
@@ -71,10 +75,10 @@ async def _create_course(
                         currency,
                         is_published
                     )
-                    VALUES (%s, %s, false, %s, 'sek', true)
+                    VALUES (%s, %s, %s, %s, 'sek', true)
                     RETURNING id
                     """,
-                    (slug, f"Course {slug}", price_amount_cents),
+                    (slug, f"Course {slug}", is_free_intro, price_amount_cents),
                 )
             row = await cur.fetchone()
             await conn.commit()
@@ -106,6 +110,35 @@ async def _clear_entitlement(user_id: str, slug: str):
                 (user_id, slug),
             )
             await conn.commit()
+
+
+async def _upsert_active_membership(user_id: str) -> None:
+    await repositories.upsert_membership_record(
+        user_id,
+        plan_interval="month",
+        price_id="price_monthly_intro",
+        status="active",
+        stripe_customer_id=f"cus_{uuid.uuid4().hex[:8]}",
+        stripe_subscription_id=f"sub_{uuid.uuid4().hex[:8]}",
+    )
+
+
+async def _intro_usage_count(user_id: str, at: datetime | None = None) -> int:
+    usage_time = at.astimezone(timezone.utc) if at else datetime.now(timezone.utc)
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT count
+                FROM app.intro_usage
+                WHERE user_id = %s
+                  AND year = %s
+                  AND month = %s
+                """,
+                (user_id, usage_time.year, usage_time.month),
+            )
+            row = await cur.fetchone()
+    return int(row[0]) if row else 0
 
 
 async def test_course_checkout_unknown_slug(async_client, monkeypatch):
@@ -303,6 +336,156 @@ async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypat
     finally:
         await _clear_entitlement(str(user_id), slug)
         await _cleanup_user(str(user_id))
+
+
+async def test_refunded_step1_order_revokes_entitlement_and_enrollment(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
+    monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
+    slug = f"refund-step1-{uuid.uuid4().hex[:6]}"
+    course_id = await _create_course(
+        slug,
+        price_amount_cents=1500,
+        step_level="step1",
+        course_family=f"family-{uuid.uuid4().hex[:6]}",
+    )
+    headers, user_id, _ = await register_user(async_client)
+
+    order = await repositories.create_order(
+        user_id=str(user_id),
+        service_id=None,
+        course_id=course_id,
+        amount_cents=1500,
+        currency="sek",
+        order_type="one_off",
+        metadata={"course_slug": slug},
+        stripe_customer_id="cus_refund_step1",
+        stripe_subscription_id=None,
+        connected_account_id=None,
+        session_id=None,
+        session_slot_id=None,
+    )
+    await repositories.mark_order_paid(
+        order["id"],
+        payment_intent="pi_refund_step1",
+        checkout_id="cs_refund_step1",
+    )
+    await course_entitlements.grant_course_entitlement(
+        user_id=str(user_id),
+        course_slug=slug,
+        stripe_customer_id="cus_refund_step1",
+        payment_intent_id="pi_refund_step1",
+    )
+    await courses_repo.ensure_course_enrollment(str(user_id), course_id, source="purchase")
+
+    def fake_construct_event(payload, sig_header, secret):
+        assert secret == "whsec_test"
+        return {
+            "id": "evt_charge_refunded_step1",
+            "type": "charge.refunded",
+            "data": {"object": {"id": "ch_refund_step1", "payment_intent": "pi_refund_step1"}},
+        }
+
+    monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+
+    try:
+        webhook_resp = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_refund_step1"},
+        )
+        assert webhook_resp.status_code == 200, webhook_resp.text
+
+        updated_order = await repositories.get_order(order["id"])
+        assert updated_order is not None
+        assert updated_order["status"] == "refunded"
+
+        entitlements = await course_entitlements.list_entitlements_for_user(str(user_id))
+        assert slug not in entitlements
+
+        assert await courses_repo.is_enrolled(str(user_id), course_id) is False
+
+        course_detail = await async_client.get(f"/courses/{course_id}", headers=headers)
+        assert course_detail.status_code == 403, course_detail.text
+    finally:
+        await _cleanup_user(str(user_id))
+        await _cleanup_course(course_id)
+
+
+async def test_refunded_intro_order_decrements_intro_usage_once(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
+    monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
+    slug = f"refund-intro-{uuid.uuid4().hex[:6]}"
+    course_id = await _create_course(
+        slug,
+        price_amount_cents=0,
+        step_level="intro",
+        course_family=f"family-{uuid.uuid4().hex[:6]}",
+        is_free_intro=True,
+    )
+    headers, user_id, _ = await register_user(async_client)
+    user_id_str = str(user_id)
+
+    await _upsert_active_membership(user_id_str)
+
+    enroll_resp = await async_client.post(f"/courses/{course_id}/enroll", headers=headers)
+    assert enroll_resp.status_code == 200, enroll_resp.text
+    assert await _intro_usage_count(user_id_str) == 1
+
+    order = await repositories.create_order(
+        user_id=user_id_str,
+        service_id=None,
+        course_id=course_id,
+        amount_cents=1000,
+        currency="sek",
+        order_type="one_off",
+        metadata={"course_slug": slug},
+        stripe_customer_id="cus_refund_intro",
+        stripe_subscription_id=None,
+        connected_account_id=None,
+        session_id=None,
+        session_slot_id=None,
+    )
+    await repositories.mark_order_paid(
+        order["id"],
+        payment_intent="pi_refund_intro",
+        checkout_id="cs_refund_intro",
+    )
+
+    def fake_construct_event(payload, sig_header, secret):
+        assert secret == "whsec_test"
+        return {
+            "id": "evt_payment_intent_canceled_intro",
+            "type": "payment_intent.canceled",
+            "data": {"object": {"id": "pi_refund_intro"}},
+        }
+
+    monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+
+    try:
+        first_refund = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_refund_intro"},
+        )
+        assert first_refund.status_code == 200, first_refund.text
+        assert await _intro_usage_count(user_id_str) == 0
+
+        second_refund = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_refund_intro"},
+        )
+        assert second_refund.status_code == 200, second_refund.text
+        assert await _intro_usage_count(user_id_str) == 0
+
+        updated_order = await repositories.get_order(order["id"])
+        assert updated_order is not None
+        assert updated_order["status"] == "refunded"
+
+        assert await courses_repo.is_enrolled(user_id_str, course_id) is False
+    finally:
+        await _cleanup_user(user_id_str)
+        await _cleanup_course(course_id)
 
 
 async def test_webhook_returns_500_when_subscription_processing_fails(async_client, monkeypatch):

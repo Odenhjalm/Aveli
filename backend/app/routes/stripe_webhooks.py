@@ -154,6 +154,8 @@ async def stripe_payment_element_webhook(request: Request):
                 "Payment failed for intent %s",
                 data_object.get("id"),
             )
+        elif event_type in {"charge.refunded", "payment_intent.canceled"}:
+            await _handle_refund_event(event_type, data_object)
         elif event_type and event_type.startswith("account."):
             await _handle_connect_event(event_type, event, data_object, context)
         else:
@@ -258,6 +260,74 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
             created_order["id"],
             payment_intent=str(payment_intent) if payment_intent else None,
             checkout_id=checkout_id if isinstance(checkout_id, str) else None,
+        )
+
+
+async def _handle_refund_event(event_type: str, payload: dict[str, object]) -> None:
+    payment_intent_id: str | None = None
+    if event_type == "payment_intent.canceled":
+        intent_value = payload.get("id")
+        if isinstance(intent_value, str):
+            payment_intent_id = intent_value
+    elif event_type == "charge.refunded":
+        intent_value = payload.get("payment_intent")
+        if isinstance(intent_value, str):
+            payment_intent_id = intent_value
+
+    if not payment_intent_id:
+        logger.info("Refund event missing payment intent id: event=%s", event_type)
+        return
+
+    order = await repositories.get_order_by_payment_intent(payment_intent_id)
+    if not order:
+        logger.info("Refund event could not match order by payment intent: %s", payment_intent_id)
+        return
+
+    refunded_order = await repositories.mark_order_refunded(
+        order["id"],
+        payment_intent=payment_intent_id,
+    )
+    if not refunded_order:
+        return
+
+    await repositories.record_payment(
+        order_id=refunded_order["id"],
+        provider="stripe",
+        provider_reference=payment_intent_id,
+        status="refunded",
+        amount_cents=int(refunded_order.get("amount_cents") or 0),
+        currency=(refunded_order.get("currency") or "sek").lower(),
+        metadata={"event": event_type},
+        payload=payload,
+    )
+
+    user_id = refunded_order.get("user_id")
+    course_id = refunded_order.get("course_id")
+    if not user_id or not course_id:
+        return
+
+    user_id_value = str(user_id)
+    course_id_value = str(course_id)
+    course = await courses_repo.get_course(course_id=course_id_value)
+    if not course:
+        return
+
+    course_slug = course.get("slug")
+    if course_slug:
+        await course_entitlements.revoke_course_entitlement(user_id_value, str(course_slug))
+    await courses_repo.revoke_course_enrollment(user_id_value, course_id_value)
+
+    previous_status = str(refunded_order.get("previous_status") or "").lower()
+    if previous_status == "refunded":
+        return
+
+    if bool(course.get("is_free_intro")):
+        created_at = refunded_order.get("created_at")
+        usage_time = created_at if isinstance(created_at, datetime) else datetime.now(timezone.utc)
+        await courses_repo.decrement_intro_usage(
+            user_id_value,
+            amount=1,
+            at=usage_time,
         )
 
 
