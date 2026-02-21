@@ -5,7 +5,7 @@ import pytest
 from psycopg import errors
 
 from app.config import settings
-from app import db, models
+from app import db, models, repositories
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
 pytestmark = pytest.mark.anyio("asyncio")
@@ -90,6 +90,17 @@ async def insert_course(
             await conn.commit()
     assert row
     return str(row[0])
+
+
+async def upsert_membership(user_id: str, status: str) -> None:
+    await repositories.upsert_membership_record(
+        user_id,
+        plan_interval="month",
+        price_id=f"price_{status}_{uuid.uuid4().hex[:8]}",
+        status=status,
+        stripe_customer_id=f"cus_{uuid.uuid4().hex[:8]}",
+        stripe_subscription_id=f"sub_{uuid.uuid4().hex[:8]}",
+    )
 
 
 async def test_public_course_list_only_shows_published(async_client):
@@ -327,19 +338,57 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     assert sign_ok.status_code == 200, sign_ok.text
 
 
-async def test_media_sign_allows_subscription_only_access(async_client, tmp_path, monkeypatch):
-    """Regression: users with active subscription can access lesson media in published courses."""
+async def test_trialing_membership_grants_course_access(async_client):
+    password = "Passw0rd!"
+    _, owner_id = await register_user(
+        async_client,
+        f"trialing_owner_{uuid.uuid4().hex[:6]}@example.org",
+        password,
+        "Owner",
+    )
+    student_token, student_id = await register_user(
+        async_client,
+        f"trialing_student_{uuid.uuid4().hex[:6]}@example.com",
+        password,
+        "Student",
+    )
+
+    course_id = await insert_course(
+        slug=f"trialing-course-{uuid.uuid4().hex[:8]}",
+        title="Trialing Course",
+        owner_id=owner_id,
+        is_published=True,
+        is_free_intro=False,
+    )
+
+    await upsert_membership(student_id, "trialing")
+
+    access_resp = await async_client.get(
+        f"/courses/{course_id}/access",
+        headers=auth_header(student_token),
+    )
+    assert access_resp.status_code == 200, access_resp.text
+    access_payload = access_resp.json()
+    assert access_payload["has_active_subscription"] is True
+    assert access_payload["has_access"] is True
+    assert access_payload["can_access"] is True
+    assert access_payload["access_reason"] == "subscription"
+    assert access_payload["enrolled"] is False
+
+
+async def test_trialing_membership_grants_media_playback(async_client, tmp_path, monkeypatch):
+    """Regression: trialing memberships must match active-media access behavior."""
     password = "Passw0rd!"
     owner_token, owner_id = await register_user(
         async_client,
-        f"sub_media_owner_{uuid.uuid4().hex[:6]}@example.org",
+        f"trialing_media_owner_{uuid.uuid4().hex[:6]}@example.org",
         password,
         "Owner",
     )
     await promote_to_teacher(owner_id)
     student_token, student_id = await register_user(
         async_client,
-        f"sub_media_student_{uuid.uuid4().hex[:6]}@example.com",
+        f"trialing_media_student_{uuid.uuid4().hex[:6]}@example.com",
         password,
         "Student",
     )
@@ -385,17 +434,7 @@ async def test_media_sign_allows_subscription_only_access(async_client, tmp_path
     local_path.parent.mkdir(parents=True, exist_ok=True)
     local_path.write_bytes(b"png")
 
-    # Grant the student an active subscription (without enrollment).
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.subscriptions (user_id, subscription_id, status)
-                VALUES (%s, %s, %s)
-                """,
-                (student_id, f"sub_{uuid.uuid4().hex[:10]}", "active"),
-            )
-            await conn.commit()
+    await upsert_membership(student_id, "trialing")
 
     access_resp = await async_client.get(
         f"/courses/{course_id}/access",
@@ -403,7 +442,6 @@ async def test_media_sign_allows_subscription_only_access(async_client, tmp_path
     )
     assert access_resp.status_code == 200, access_resp.text
     access_payload = access_resp.json()
-    print("course_access_snapshot", access_payload)
     assert access_payload["has_active_subscription"] is True
     assert access_payload["has_access"] is True
     assert access_payload["enrolled"] is False
@@ -453,24 +491,27 @@ async def test_media_sign_allows_subscription_only_access(async_client, tmp_path
     assert studio_get_ok.content == b"png"
 
 
-async def test_incomplete_subscription_does_not_grant_course_or_media_access(async_client):
+@pytest.mark.parametrize("membership_status", ["canceled", "incomplete"])
+async def test_non_active_membership_statuses_do_not_grant_course_or_media_access(
+    async_client, membership_status: str
+):
     password = "Passw0rd!"
     _, owner_id = await register_user(
         async_client,
-        f"incomplete_owner_{uuid.uuid4().hex[:6]}@example.org",
+        f"{membership_status}_owner_{uuid.uuid4().hex[:6]}@example.org",
         password,
         "Owner",
     )
     student_token, student_id = await register_user(
         async_client,
-        f"incomplete_student_{uuid.uuid4().hex[:6]}@example.com",
+        f"{membership_status}_student_{uuid.uuid4().hex[:6]}@example.com",
         password,
         "Student",
     )
 
     course_id = await insert_course(
-        slug=f"incomplete-subscription-{uuid.uuid4().hex[:8]}",
-        title="Incomplete Subscription Course",
+        slug=f"{membership_status}-subscription-{uuid.uuid4().hex[:8]}",
+        title=f"{membership_status.title()} Subscription Course",
         owner_id=owner_id,
         is_published=True,
         is_free_intro=False,
@@ -490,7 +531,7 @@ async def test_incomplete_subscription_does_not_grant_course_or_media_access(asy
         content_type="image/png",
         byte_size=3,
         checksum=None,
-        original_name="incomplete.png",
+        original_name=f"{membership_status}.png",
     )
     assert media_object
     legacy_media = await models.add_lesson_media_entry(
@@ -503,16 +544,7 @@ async def test_incomplete_subscription_does_not_grant_course_or_media_access(asy
     )
     assert legacy_media
 
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.subscriptions (user_id, subscription_id, status)
-                VALUES (%s, %s, %s)
-                """,
-                (student_id, f"sub_{uuid.uuid4().hex[:10]}", "incomplete"),
-            )
-            await conn.commit()
+    await upsert_membership(student_id, membership_status)
 
     access_resp = await async_client.get(
         f"/courses/{course_id}/access",
