@@ -16,6 +16,7 @@ from ..repositories import (
     courses as courses_repo,
     get_latest_order_for_course,
     get_latest_subscription,
+    get_membership,
     get_profile,
     storage_objects,
 )
@@ -700,8 +701,22 @@ async def is_user_enrolled(user_id: str, course_id: str) -> bool:
 
 
 async def enroll_free_intro(user_id: str, course_id: str) -> dict[str, Any]:
-    """Enroll a user in a free intro course."""
-    return await courses_repo.enroll_free_intro(user_id, course_id)
+    """Apply intro access policy and enroll if allowed."""
+    course = await fetch_course(course_id=course_id)
+    if not course:
+        return {"ok": False, "status": "not_found"}
+    if not bool(course.get("is_free_intro")):
+        return {"ok": False, "status": "not_free_intro"}
+
+    if await courses_repo.user_owns_any_course_step(user_id, "step1"):
+        await courses_repo.ensure_course_enrollment(user_id, course_id, source="free_intro")
+        return {"ok": True, "status": "step1_unlimited"}
+
+    membership = await get_membership(user_id)
+    if (membership or {}).get("status") != "active":
+        return {"ok": False, "status": "subscription_required"}
+
+    return await courses_repo.claim_intro_monthly_access(user_id, course_id, monthly_limit=1)
 
 
 async def latest_order_for_course(user_id: str, course_id: str) -> dict[str, Any] | None:

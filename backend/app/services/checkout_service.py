@@ -19,6 +19,13 @@ RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
 CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
 
 
+def _normalize_step_level(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"intro", "step1", "step2", "step3"}:
+        return normalized
+    return "step1"
+
+
 def _default_checkout_urls() -> tuple[str, str]:
     base = (settings.frontend_base_url or "").rstrip("/")
     success_http = f"{base}/{RETURN_PATH}" if base else None
@@ -39,6 +46,39 @@ def _require_stripe() -> None:
     stripe.api_key = context.secret_key
 
 
+async def can_purchase_course(
+    user: Mapping[str, Any],
+    course: Mapping[str, Any],
+) -> tuple[bool, str | None]:
+    user_id = str(user.get("id") or "").strip()
+    if not user_id:
+        return False, "user id missing"
+
+    course_step = course.get("step_level")
+    if course_step in (None, ""):
+        course_step = course.get("journey_step")
+    if course_step in (None, "") and course.get("is_free_intro"):
+        course_step = "intro"
+    step_level = _normalize_step_level(course_step)
+    if step_level in {"intro", "step1"}:
+        return True, None
+
+    family_value = str(course.get("course_family") or "").strip().lower()
+    if not family_value:
+        return False, "course family is missing"
+
+    has_step1 = await courses_repo.user_owns_course_step(user_id, family_value, "step1")
+    if step_level == "step2":
+        if has_step1:
+            return True, None
+        return False, "step2 purchase requires ownership of step1"
+
+    has_step2 = await courses_repo.user_owns_course_step(user_id, family_value, "step2")
+    if has_step1 and has_step2:
+        return True, None
+    return False, "step3 purchase requires ownership of step1 and step2"
+
+
 async def create_course_checkout(
     user: Mapping[str, Any],
     slug: str,
@@ -51,6 +91,12 @@ async def create_course_checkout(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="intro courses cannot be purchased",
+        )
+    can_purchase, denial_reason = await can_purchase_course(user, course)
+    if not can_purchase:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=denial_reason or "course prerequisites are not satisfied",
         )
 
     amount_cents = int(course.get("price_amount_cents") or 0)

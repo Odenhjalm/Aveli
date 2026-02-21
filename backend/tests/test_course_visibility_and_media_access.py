@@ -127,9 +127,9 @@ async def test_public_course_list_only_shows_published(async_client):
     assert published_id in ids2
     assert unpublished_id not in ids2
 
-    # Unpublished course details must not be publicly accessible.
+    # Owner must keep access to their own unpublished course.
     detail = await async_client.get(f"/courses/{unpublished_id}", headers=auth_header(owner_token))
-    assert detail.status_code == 404
+    assert detail.status_code == 200
 
 
 async def test_published_course_visible_even_with_processing_media(async_client):
@@ -530,8 +530,7 @@ async def test_incomplete_subscription_does_not_grant_course_or_media_access(asy
         f"/courses/lessons/{lesson['id']}",
         headers=auth_header(student_token),
     )
-    assert lesson_detail_resp.status_code == 200, lesson_detail_resp.text
-    assert lesson_detail_resp.json()["media"] == []
+    assert lesson_detail_resp.status_code == 403, lesson_detail_resp.text
 
     sign_resp = await async_client.post(
         "/media/sign",

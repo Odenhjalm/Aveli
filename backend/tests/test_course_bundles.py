@@ -224,7 +224,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
             body = json.loads(payload)
             return {"type": body.get("event_type"), "data": {"object": body.get("object", body)}}
 
-        monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_test")
+        monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
         monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
 
         webhook_payload = {
@@ -240,7 +240,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
             },
         }
         webhook_resp = await async_client.post(
-            "/webhooks/stripe",
+            "/api/stripe/webhook",
             content=json.dumps(webhook_payload),
             headers={"stripe-signature": "sig_test"},
         )

@@ -70,4 +70,20 @@ async def list_entitlements_for_user(user_id: str | UUID) -> list[str]:
     return [row["course_slug"] for row in rows]
 
 
-__all__ = ["grant_course_entitlement", "list_entitlements_for_user"]
+async def revoke_course_entitlement(user_id: str | UUID, course_slug: str) -> bool:
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                DELETE FROM app.course_entitlements
+                 WHERE user_id = %s
+                   AND course_slug = %s
+                """,
+                (user_id, course_slug),
+            )
+            deleted = cur.rowcount > 0
+            await conn.commit()
+    return deleted
+
+
+__all__ = ["grant_course_entitlement", "list_entitlements_for_user", "revoke_course_entitlement"]

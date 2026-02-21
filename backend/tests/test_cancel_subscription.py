@@ -73,3 +73,35 @@ async def test_cancel_subscription_marks_membership(async_client, monkeypatch):
     membership = await repositories.get_membership(str(user_id))
     assert membership is not None
     assert membership["status"] == "canceled"
+
+
+async def test_cancel_subscription_rejects_mismatched_subscription_id(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
+    headers, user_id, _ = await register_user(async_client)
+
+    await repositories.upsert_membership_record(
+        str(user_id),
+        plan_interval="month",
+        price_id="price_test",
+        status="active",
+        stripe_customer_id="cus_test",
+        stripe_subscription_id="sub_real",
+    )
+
+    stripe_called = False
+
+    def fake_modify(sub_id, **kwargs):
+        nonlocal stripe_called
+        stripe_called = True
+        return {"id": sub_id}
+
+    monkeypatch.setattr("stripe.Subscription.modify", fake_modify)
+
+    resp = await async_client.post(
+        "/api/billing/cancel-subscription",
+        headers=headers,
+        json={"subscription_id": "sub_other_user"},
+    )
+    assert resp.status_code == 403, resp.text
+    assert "matchar inte ditt konto" in resp.json()["detail"].lower()
+    assert stripe_called is False

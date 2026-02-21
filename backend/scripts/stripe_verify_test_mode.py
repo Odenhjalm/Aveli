@@ -148,19 +148,14 @@ def main() -> int:
 
     stripe_routes = ROOT / "backend" / "app" / "routes"
     webhook_file = stripe_routes / "stripe_webhooks.py"
-    billing_file = stripe_routes / "stripe_webhook.py"
     main_file = ROOT / "backend" / "app" / "main.py"
 
     if not _exists(webhook_file):
         errors.append("Missing stripe_webhooks.py route module")
-    if not _exists(billing_file):
-        errors.append("Missing stripe_webhook.py route module")
     if _exists(main_file):
         text = main_file.read_text(encoding="utf-8")
         if "stripe_webhooks" not in text:
             errors.append("stripe_webhooks router not wired in main.py")
-        if "stripe_webhook" not in text:
-            errors.append("stripe_webhook router not wired in main.py")
     else:
         errors.append("Missing main.py to verify Stripe routes")
 

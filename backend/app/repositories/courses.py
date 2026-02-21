@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 from psycopg import errors
@@ -24,6 +25,8 @@ _FULL_COURSE_COLUMNS = """
         branch,
         is_free_intro,
         journey_step,
+        step_level,
+        course_family,
         price_amount_cents,
         currency,
         stripe_product_id,
@@ -70,8 +73,16 @@ def _legacy_course_columns(alias: str | None = None) -> str:
     cover_index = base_columns.index("cover_url") + 1
     column_lines.insert(cover_index, "NULL::uuid AS cover_media_id")
     price_source = f"{prefix}price_cents"
+    journey_source = f"{prefix}journey_step"
+    intro_source = f"{prefix}is_free_intro"
+    slug_source = f"{prefix}slug"
     column_lines.extend(
         [
+            (
+                f"COALESCE(NULLIF({journey_source}, ''), "
+                f"CASE WHEN {intro_source} THEN 'intro' ELSE 'step1' END)::text AS step_level"
+            ),
+            f"LOWER(SPLIT_PART({slug_source}, '-', 1))::text AS course_family",
             f"COALESCE({price_source}, 0)::int AS price_amount_cents",
             "'sek'::text AS currency",
             "NULL::text AS stripe_product_id",
@@ -370,17 +381,32 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
     placeholders = ["%s", "%s"]
     values: list[Any] = [data["title"], data["created_by"]]
 
+    slug_value_raw = data.get("slug")
+    slug_value = str(slug_value_raw).strip() if slug_value_raw is not None else None
+    journey_step_value = data.get("journey_step")
+    intro_value = _coerce_bool(data.get("is_free_intro"))
+
+    step_level_value = data.get("step_level") or journey_step_value
+    if step_level_value is None:
+        step_level_value = "intro" if intro_value else "step1"
+
+    course_family_value = data.get("course_family")
+    if course_family_value in (None, "") and slug_value:
+        course_family_value = str(slug_value).strip().lower()
+
     optional_fields: list[tuple[str, Any]] = [
-        ("slug", data.get("slug")),
+        ("slug", slug_value),
         ("description", data.get("description")),
         ("video_url", data.get("video_url")),
         ("branch", data.get("branch")),
         ("currency", data.get("currency")),
-        ("journey_step", data.get("journey_step")),
+        ("journey_step", journey_step_value),
+        ("step_level", step_level_value),
+        ("course_family", course_family_value),
     ]
 
     bool_fields = {
-        "is_free_intro": _coerce_bool(data.get("is_free_intro")),
+        "is_free_intro": intro_value,
         "is_published": _coerce_bool(data.get("is_published")),
     }
     price_amount_value = _coerce_int(data.get("price_amount_cents"))
@@ -426,6 +452,8 @@ async def create_course(data: Mapping[str, Any]) -> CourseRow:
                         "currency",
                         "price_amount_cents",
                         "journey_step",
+                        "step_level",
+                        "course_family",
                     }
                 ]
                 if "price_amount_cents" in columns:
@@ -461,6 +489,8 @@ async def update_course(
         "branch",
         "currency",
         "journey_step",
+        "step_level",
+        "course_family",
     )
     for column in text_columns:
         if column in data:
@@ -503,6 +533,8 @@ async def update_course(
                 for column, value in updates:
                     if column == "price_amount_cents":
                         fallback_updates.append(("price_cents", value))
+                    elif column == "step_level":
+                        fallback_updates.append(("journey_step", value))
                     elif column in _BASE_COURSE_UPDATE_COLUMNS - {"price_amount_cents"}:
                         fallback_updates.append((column, value))
                 if not fallback_updates:
@@ -1345,6 +1377,95 @@ async def is_enrolled(user_id: str, course_id: str) -> bool:
         return (await cur.fetchone()) is not None
 
 
+def _normalize_step_level(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"intro", "step1", "step2", "step3"}:
+        return normalized
+    return None
+
+
+async def user_owns_course_step(user_id: str, course_family: str, step_level: str) -> bool:
+    normalized_level = _normalize_step_level(step_level)
+    normalized_family = str(course_family or "").strip().lower()
+    if not normalized_level or not normalized_family:
+        return False
+
+    query = """
+        SELECT 1
+        FROM app.course_entitlements ce
+        JOIN app.courses c ON lower(c.slug) = lower(ce.course_slug)
+        WHERE ce.user_id = %s
+          AND lower(c.course_family) = %s
+          AND lower(c.step_level) = %s
+        LIMIT 1
+    """
+    fallback_query = """
+        SELECT 1
+        FROM app.course_entitlements ce
+        JOIN app.courses c ON lower(c.slug) = lower(ce.course_slug)
+        WHERE ce.user_id = %s
+          AND lower(split_part(c.slug, '-', 1)) = %s
+          AND lower(
+              COALESCE(
+                  NULLIF(c.journey_step, ''),
+                  CASE WHEN c.is_free_intro THEN 'intro' ELSE 'step1' END
+              )
+          ) = %s
+        LIMIT 1
+    """
+
+    async with get_conn() as cur:
+        try:
+            await cur.execute(query, (user_id, normalized_family, normalized_level))
+        except errors.UndefinedColumn:
+            await cur.execute(
+                fallback_query,
+                (user_id, normalized_family, normalized_level),
+            )
+        except errors.UndefinedTable:
+            return False
+        return (await cur.fetchone()) is not None
+
+
+async def user_owns_any_course_step(user_id: str, step_level: str) -> bool:
+    normalized_level = _normalize_step_level(step_level)
+    if not normalized_level:
+        return False
+
+    query = """
+        SELECT 1
+        FROM app.course_entitlements ce
+        JOIN app.courses c ON lower(c.slug) = lower(ce.course_slug)
+        WHERE ce.user_id = %s
+          AND lower(c.step_level) = %s
+        LIMIT 1
+    """
+    fallback_query = """
+        SELECT 1
+        FROM app.course_entitlements ce
+        JOIN app.courses c ON lower(c.slug) = lower(ce.course_slug)
+        WHERE ce.user_id = %s
+          AND lower(
+              COALESCE(
+                  NULLIF(c.journey_step, ''),
+                  CASE WHEN c.is_free_intro THEN 'intro' ELSE 'step1' END
+              )
+          ) = %s
+        LIMIT 1
+    """
+
+    async with get_conn() as cur:
+        try:
+            await cur.execute(query, (user_id, normalized_level))
+        except errors.UndefinedColumn:
+            await cur.execute(fallback_query, (user_id, normalized_level))
+        except errors.UndefinedTable:
+            return False
+        return (await cur.fetchone()) is not None
+
+
 async def enforce_free_intro_enrollment(user_id: str, course_id: str) -> None:
     await ensure_course_enrollment(user_id, course_id, source="free_intro")
 
@@ -1362,6 +1483,19 @@ async def ensure_course_enrollment(
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (user_id, course_id, source_value))
             await conn.commit()
+
+
+async def revoke_course_enrollment(user_id: str, course_id: str) -> bool:
+    query = """
+        DELETE FROM app.enrollments
+        WHERE user_id = %s AND course_id = %s
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (user_id, course_id))
+            deleted = cur.rowcount > 0
+            await conn.commit()
+    return deleted
 
 
 async def enroll_free_intro(
@@ -1425,6 +1559,163 @@ async def enroll_free_intro(
     return {
         "ok": True,
         "status": "enrolled",
+    }
+
+
+async def claim_intro_monthly_access(
+    user_id: str,
+    course_id: str,
+    *,
+    monthly_limit: int = 1,
+    at: datetime | None = None,
+) -> dict[str, Any]:
+    usage_time = at.astimezone(timezone.utc) if at else datetime.now(timezone.utc)
+    usage_year = int(usage_time.year)
+    usage_month = int(usage_time.month)
+    safe_limit = max(int(monthly_limit), 1)
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT id, is_free_intro, is_published
+                FROM app.courses
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (course_id,),
+            )
+            course_row = await cur.fetchone()
+            if not course_row:
+                await conn.rollback()
+                return {"ok": False, "status": "not_found"}
+            if not bool(course_row.get("is_free_intro")):
+                await conn.rollback()
+                return {"ok": False, "status": "not_free_intro"}
+
+            await cur.execute(
+                """
+                SELECT EXISTS(
+                  SELECT 1
+                  FROM app.enrollments
+                  WHERE user_id = %s AND course_id = %s
+                ) AS already
+                """,
+                (user_id, course_id),
+            )
+            already_row = await cur.fetchone()
+            if bool((already_row or {}).get("already")):
+                await conn.rollback()
+                return {"ok": True, "status": "already_enrolled"}
+
+            try:
+                await cur.execute(
+                    """
+                    INSERT INTO app.intro_usage (user_id, year, month, count)
+                    VALUES (%s, %s, %s, 0)
+                    ON CONFLICT (user_id, year, month) DO NOTHING
+                    """,
+                    (user_id, usage_year, usage_month),
+                )
+
+                await cur.execute(
+                    """
+                    SELECT count
+                    FROM app.intro_usage
+                    WHERE user_id = %s
+                      AND year = %s
+                      AND month = %s
+                    FOR UPDATE
+                    """,
+                    (user_id, usage_year, usage_month),
+                )
+                usage_row = await cur.fetchone() or {}
+                current_count = int(usage_row.get("count") or 0)
+                if current_count >= safe_limit:
+                    await conn.rollback()
+                    return {
+                        "ok": False,
+                        "status": "limit_reached",
+                        "count": current_count,
+                        "year": usage_year,
+                        "month": usage_month,
+                    }
+
+                await cur.execute(
+                    """
+                    UPDATE app.intro_usage
+                       SET count = count + 1,
+                           updated_at = now()
+                     WHERE user_id = %s
+                       AND year = %s
+                       AND month = %s
+                    RETURNING count
+                    """,
+                    (user_id, usage_year, usage_month),
+                )
+                updated_usage = await cur.fetchone() or {}
+                updated_count = int(updated_usage.get("count") or (current_count + 1))
+            except errors.UndefinedTable:
+                updated_count = None
+
+            await cur.execute(
+                """
+                INSERT INTO app.enrollments (user_id, course_id, source)
+                VALUES (%s, %s, 'free_intro')
+                ON CONFLICT (user_id, course_id) DO NOTHING
+                """,
+                (user_id, course_id),
+            )
+            await conn.commit()
+
+    result: dict[str, Any] = {
+        "ok": True,
+        "status": "enrolled",
+        "year": usage_year,
+        "month": usage_month,
+    }
+    if updated_count is not None:
+        result["count"] = updated_count
+    return result
+
+
+async def decrement_intro_usage(
+    user_id: str,
+    *,
+    amount: int = 1,
+    at: datetime | None = None,
+) -> dict[str, Any]:
+    usage_time = at.astimezone(timezone.utc) if at else datetime.now(timezone.utc)
+    usage_year = int(usage_time.year)
+    usage_month = int(usage_time.month)
+    decrement_amount = max(int(amount), 1)
+    query = """
+        UPDATE app.intro_usage
+           SET count = GREATEST(count - %s, 0),
+               updated_at = now()
+         WHERE user_id = %s
+           AND year = %s
+           AND month = %s
+        RETURNING count
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(
+                    query,
+                    (decrement_amount, user_id, usage_year, usage_month),
+                )
+            except errors.UndefinedTable:
+                await conn.rollback()
+                return {"ok": False, "status": "intro_usage_missing"}
+            row = await cur.fetchone()
+            await conn.commit()
+    return {
+        "ok": True,
+        "status": "updated" if row is not None else "not_found",
+        "count": int((row or {}).get("count") or 0),
+        "year": usage_year,
+        "month": usage_month,
     }
 
 
@@ -1521,9 +1812,14 @@ __all__ = [
     "is_course_teacher_or_instructor",
     "list_my_courses",
     "is_enrolled",
+    "user_owns_course_step",
+    "user_owns_any_course_step",
     "enforce_free_intro_enrollment",
     "ensure_course_enrollment",
+    "revoke_course_enrollment",
     "enroll_free_intro",
+    "claim_intro_monthly_access",
+    "decrement_intro_usage",
     "get_course_intro_state",
     "get_course_quiz",
     "is_user_certified_for_course",
