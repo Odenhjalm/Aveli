@@ -82,8 +82,7 @@ from .home_player_library import (
     get_active_home_upload_by_media_id,
     get_active_home_upload_by_media_asset_id,
 )
-from .subscriptions import get_latest_subscription, get_membership
-from .memberships import upsert_membership_record
+from .memberships import get_latest_subscription, get_membership, upsert_membership_record
 from .course_entitlements import (
     grant_course_entitlement,
     list_entitlements_for_user,
