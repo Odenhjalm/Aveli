@@ -239,12 +239,14 @@ async def cancel_subscription(
     if not membership:
         raise SubscriptionError("Ingen aktiv prenumeration hittades", status_code=404)
 
-    target_subscription_id = subscription_id or membership.get("stripe_subscription_id")
-    if not target_subscription_id:
+    membership_subscription_id = membership.get("stripe_subscription_id")
+    if not membership_subscription_id:
         raise SubscriptionError("Prenumerationen saknar Stripe subscription-id", status_code=400)
 
-    if subscription_id and subscription_id != target_subscription_id:
-        raise SubscriptionError("Angivet subscription-id matchar inte ditt konto", status_code=400)
+    if subscription_id and subscription_id != membership_subscription_id:
+        raise SubscriptionError("Angivet subscription-id matchar inte ditt konto", status_code=403)
+
+    target_subscription_id = membership_subscription_id
 
     stripe.api_key = stripe_context.secret_key
 
