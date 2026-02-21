@@ -25,7 +25,14 @@ def _set_stripe_test_env(monkeypatch, *, secret: str = "sk_test_value") -> None:
     settings.stripe_test_secret_key = secret
 
 
-async def _create_course(slug: str, price_amount_cents: int) -> str:
+async def _create_course(
+    slug: str,
+    price_amount_cents: int,
+    *,
+    step_level: str = "step1",
+    course_family: str | None = None,
+) -> str:
+    family_value = course_family or slug
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
@@ -37,12 +44,20 @@ async def _create_course(slug: str, price_amount_cents: int) -> str:
                         is_free_intro,
                         price_amount_cents,
                         currency,
+                        step_level,
+                        course_family,
                         is_published
                     )
-                    VALUES (%s, %s, false, %s, 'sek', true)
+                    VALUES (%s, %s, false, %s, 'sek', %s, %s, true)
                     RETURNING id
                     """,
-                    (slug, f"Course {slug}", price_amount_cents),
+                    (
+                        slug,
+                        f"Course {slug}",
+                        price_amount_cents,
+                        step_level,
+                        family_value,
+                    ),
                 )
             except errors.UndefinedColumn:
                 await conn.rollback()
@@ -181,6 +196,36 @@ async def test_course_checkout_success(async_client, monkeypatch):
         assert metadata.get("checkout_type") == "course"
         assert captured_session.get("success_url") == "https://checkout.test/success"
         assert captured_session.get("cancel_url") == "https://checkout.test/cancel"
+    finally:
+        await _cleanup_user(str(user_id))
+        await _cleanup_course(course_id)
+
+
+async def test_step2_checkout_requires_step1_ownership(async_client, monkeypatch):
+    _set_stripe_test_env(monkeypatch)
+    family = f"family-{uuid.uuid4().hex[:8]}"
+    step2_slug = f"step2-{uuid.uuid4().hex[:8]}"
+    course_id = await _create_course(
+        step2_slug,
+        price_amount_cents=1500,
+        step_level="step2",
+        course_family=family,
+    )
+    headers, user_id, _ = await register_user(async_client)
+
+    def unexpected_checkout(**kwargs):
+        raise AssertionError("Stripe checkout should not be called when prerequisites fail")
+
+    monkeypatch.setattr("stripe.checkout.Session.create", unexpected_checkout)
+
+    try:
+        resp = await async_client.post(
+            "/api/checkout/create",
+            headers=headers,
+            json={"type": "course", "slug": step2_slug},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "step1" in resp.text.lower()
     finally:
         await _cleanup_user(str(user_id))
         await _cleanup_course(course_id)
