@@ -4,10 +4,9 @@ from datetime import datetime, timezone
 import pytest
 
 from app import db, models
-from app import schemas
 from app.config import settings
 from app.repositories import media_assets as media_assets_repo
-from app.routes import api_media
+from app.services import lesson_playback_service
 from app.services import storage_service as storage_module
 from .utils import register_user
 
@@ -354,30 +353,30 @@ async def test_lesson_playback_pipeline_row(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
-        media_asset_id = str(uuid.uuid4())
+        media_asset_id_expected = str(uuid.uuid4())
 
         async def fake_get_media(media_id: str):
             assert media_id == lesson_media_id
             return {
                 "id": lesson_media_id,
-                "media_asset_id": media_asset_id,
+                "media_asset_id": media_asset_id_expected,
                 "storage_path": None,
             }
 
-        async def fake_request_playback_url(payload, current):
-            assert str(payload.media_id) == media_asset_id
-            assert current.get("id")
-            return schemas.MediaPlaybackUrlResponse(
-                playback_url="https://stream.local/media/derived/audio/demo.mp3",
-                expires_at=datetime.now(timezone.utc),
-                format="mp3",
-            )
+        async def fake_resolve_pipeline_playback(*, media_asset_id: str, user_id: str):
+            assert media_asset_id == media_asset_id_expected
+            assert user_id
+            return {
+                "url": "https://stream.local/media/derived/audio/demo.mp3",
+                "expires_at": datetime.now(timezone.utc),
+                "format": "mp3",
+            }
 
         monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
         monkeypatch.setattr(
-            api_media,
-            "request_playback_url",
-            fake_request_playback_url,
+            lesson_playback_service,
+            "resolve_pipeline_playback",
+            fake_resolve_pipeline_playback,
             raising=True,
         )
 
@@ -406,20 +405,20 @@ async def test_lesson_playback_legacy_row(async_client, monkeypatch):
                 "storage_path": "courses/demo/lessons/demo/legacy.mp3",
             }
 
-        async def fake_sign_media(payload, current):
-            assert payload.media_id == lesson_media_id
-            assert current.get("id")
-            return schemas.MediaSignResponse(
-                media_id=lesson_media_id,
-                signed_url="/media/stream/legacy-token",
-                expires_at=datetime.now(timezone.utc),
-            )
+        async def fake_resolve_legacy_playback(*, lesson_media_id: str, user_id: str, mode: str | None = None):
+            assert lesson_media_id
+            assert user_id
+            return {
+                "media_id": lesson_media_id,
+                "url": "/media/stream/legacy-token",
+                "expires_at": datetime.now(timezone.utc),
+            }
 
         monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
         monkeypatch.setattr(
-            api_media.media_routes,
-            "sign_media",
-            fake_sign_media,
+            lesson_playback_service,
+            "resolve_legacy_playback",
+            fake_resolve_legacy_playback,
             raising=True,
         )
 
