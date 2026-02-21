@@ -112,7 +112,7 @@ async def test_backend_api_smoke(async_client, monkeypatch):
         "currency": order_payload["currency"],
     }
     webhook_resp = await async_client.post(
-        "/webhooks/stripe",
+        "/api/stripe/webhook",
         content=json.dumps(webhook_payload),
         headers={"stripe-signature": "signature"},
     )
@@ -333,7 +333,7 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
             "customer": "cus_test",
         }
         webhook_resp = await async_client.post(
-            "/webhooks/stripe",
+            "/api/stripe/webhook",
             content=json.dumps(webhook_payload),
             headers={"stripe-signature": "sig_course"},
         )

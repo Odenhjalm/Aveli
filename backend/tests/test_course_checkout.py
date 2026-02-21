@@ -188,7 +188,7 @@ async def test_course_checkout_success(async_client, monkeypatch):
 
 async def test_webhook_checkout_session_grants_entitlement(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
-    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_test")
+    monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
     slug = f"web-{uuid.uuid4().hex[:6]}"
     headers, user_id, _ = await register_user(async_client)
 
@@ -213,7 +213,7 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
 
     try:
         resp = await async_client.post(
-            "/webhooks/stripe",
+            "/api/stripe/webhook",
             content=json.dumps(payload),
             headers={"stripe-signature": "sig_test"},
         )
@@ -227,7 +227,7 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
 
 async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
-    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_test")
+    monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
     slug = f"intent-{uuid.uuid4().hex[:6]}"
     headers, user_id, _ = await register_user(async_client)
 
@@ -248,7 +248,7 @@ async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypat
 
     try:
         resp = await async_client.post(
-            "/webhooks/stripe",
+            "/api/stripe/webhook",
             content=json.dumps(payload),
             headers={"stripe-signature": "sig_test"},
         )
@@ -279,7 +279,7 @@ async def test_webhook_returns_500_when_subscription_processing_fails(async_clie
     monkeypatch.setattr(subscription_service, "process_event", fail_process_event)
 
     resp = await async_client.post(
-        "/webhooks/stripe",
+        "/api/stripe/webhook",
         content=json.dumps({}),
         headers={"stripe-signature": "sig_test"},
     )

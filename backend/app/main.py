@@ -51,7 +51,6 @@ from .routes import (
     session_slots,
     studio,
     studio_sessions,
-    stripe_webhook,
     stripe_webhooks,
     upload,
 )
@@ -157,7 +156,6 @@ app.include_router(seminars.router)
 app.include_router(session_slots.router)
 app.include_router(studio.router)
 app.include_router(studio_sessions.router)
-app.include_router(stripe_webhook.router)
 app.include_router(stripe_webhooks.router)
 app.include_router(livekit_webhooks.router)
 app.include_router(upload.router)

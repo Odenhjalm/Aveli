@@ -14,7 +14,7 @@ from ..repositories import courses as courses_repo
 from ..services import checkout_service, subscription_service, course_bundles_service
 from .. import stripe_mode
 
-router = APIRouter(prefix="/webhooks", tags=["stripe-webhooks"])
+router = APIRouter(prefix="/api/stripe", tags=["stripe-webhooks"])
 logger = logging.getLogger(__name__)
 
 
@@ -62,9 +62,9 @@ def _capture_exception(
         sentry_sdk.capture_exception(exc)
 
 
-@router.post("/stripe", status_code=status.HTTP_200_OK)
+@router.post("/webhook", status_code=status.HTTP_200_OK)
 async def stripe_payment_element_webhook(request: Request):
-    # /webhooks/stripe handles Payment Element & one-off purchases via STRIPE_WEBHOOK_SECRET.
+    # /api/stripe/webhook is the canonical Stripe webhook endpoint.
     try:
         context = stripe_mode.resolve_stripe_context()
         secret, _ = stripe_mode.resolve_webhook_secret("default", context)
