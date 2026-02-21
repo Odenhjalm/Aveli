@@ -12,15 +12,13 @@ from starlette.background import BackgroundTask
 from .. import models, schemas
 from ..auth import CurrentUser
 from ..config import settings
-from ..repositories import courses as courses_repo
 from ..repositories import media_resolution_failures
 from ..repositories import storage_objects
-from ..services import courses_service, storage_service
+from ..services import lesson_playback_service, storage_service
 from ..utils.http_headers import build_content_disposition
 from ..utils import media_robustness
 from ..utils.media_signer import (
     MediaTokenError,
-    issue_signed_url,
     is_signing_enabled,
     verify_media_token,
 )
@@ -553,81 +551,15 @@ async def _build_streaming_response(
 
 @router.post("/sign", response_model=schemas.MediaSignResponse)
 async def sign_media(payload: schemas.MediaSignRequest, current: CurrentUser):
-    row = await models.get_media(payload.media_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Media not found")
-
-    normalized_mode = media_resolution_failures.normalize_mode(payload.mode)
-    if not is_signing_enabled():
-        await media_resolution_failures.record_media_resolution_failure(
-            lesson_media_id=str(row.get("id") or payload.media_id),
-            mode=normalized_mode,
-            reason="cannot_sign",
-            details={
-                "storage_bucket": row.get("storage_bucket"),
-                "storage_path": row.get("storage_path"),
-                "media_signing_enabled": False,
-                "recommended_action": _recommended_action_for_reason("cannot_sign"),
-            },
-        )
-        raise HTTPException(status_code=503, detail="Media signing disabled")
-
-    storage_path = row.get("storage_path")
-    storage_bucket = row.get("storage_bucket")
-    if not storage_path or not storage_bucket:
-        await media_resolution_failures.record_media_resolution_failure(
-            lesson_media_id=str(row.get("id") or payload.media_id),
-            mode=normalized_mode,
-            reason="unsupported",
-            details={
-                "storage_bucket": storage_bucket,
-                "storage_path": storage_path,
-                "recommended_action": _recommended_action_for_reason("unsupported"),
-            },
-        )
-        raise HTTPException(status_code=404, detail="Media not found")
-    access_row = await courses_repo.get_lesson_media_access_by_path(
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
+    resolved = await lesson_playback_service.resolve_legacy_playback(
+        lesson_media_id=payload.media_id,
+        user_id=str(current["id"]),
+        mode=payload.mode,
     )
-    if not access_row:
-        raise HTTPException(status_code=404, detail="Media not found")
-
-    user_id = str(current["id"])
-    course_id = access_row.get("course_id")
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, str(course_id))
-        if course_id
-        else False
-    )
-    if not teacher_access:
-        if not access_row.get("is_published"):
-            raise HTTPException(status_code=403, detail="Course not published")
-        if not (access_row.get("is_intro") or access_row.get("is_free_intro")):
-            if not course_id:
-                raise HTTPException(status_code=403, detail="Access denied")
-            snapshot = await models.course_access_snapshot(user_id, str(course_id))
-            if snapshot.get("can_access") is not True:
-                raise HTTPException(status_code=403, detail="Access denied")
-
-    issued = issue_signed_url(row["id"], purpose=normalized_mode)
-    if not issued:
-        await media_resolution_failures.record_media_resolution_failure(
-            lesson_media_id=str(row.get("id") or payload.media_id),
-            mode=normalized_mode,
-            reason="cannot_sign",
-            details={
-                "storage_bucket": storage_bucket,
-                "storage_path": storage_path,
-                "media_signing_enabled": False,
-                "recommended_action": _recommended_action_for_reason("cannot_sign"),
-            },
-        )
-        raise HTTPException(status_code=503, detail="Unable to create signed URL")
-
-    signed_url, expires_at = issued
     return schemas.MediaSignResponse(
-        media_id=str(row["id"]), signed_url=signed_url, expires_at=expires_at
+        media_id=resolved["media_id"],
+        signed_url=resolved["url"],
+        expires_at=resolved["expires_at"],
     )
 
 

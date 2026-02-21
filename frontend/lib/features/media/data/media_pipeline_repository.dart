@@ -273,4 +273,16 @@ class MediaPipelineRepository {
     );
     return MediaPlaybackUrl.fromJson(response);
   }
+
+  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      ApiPaths.mediaLessonPlaybackUrl,
+      body: {'lesson_media_id': lessonMediaId},
+    );
+    final rawUrl = response['url'] as String?;
+    if (rawUrl == null || rawUrl.trim().isEmpty) {
+      throw const FormatException('Playback URL saknas');
+    }
+    return rawUrl;
+  }
 }

@@ -6,15 +6,15 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
-from .. import models, repositories, schemas
+from .. import models, schemas
 from ..auth import CurrentUser
 from ..config import settings
-from ..db import get_conn
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
-from ..services import courses_service, media_cleanup
+from ..services import courses_service, lesson_playback_service, media_cleanup
 from ..services import storage_service
 from ..utils import media_paths
 
@@ -25,6 +25,14 @@ router = APIRouter(prefix="/api/media", tags=["media"])
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
 _WAV_MIME_TYPES = {"audio/wav", "audio/x-wav"}
 _COVER_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+class LessonPlaybackRequest(BaseModel):
+    lesson_media_id: UUID
+
+
+class LessonPlaybackResponse(BaseModel):
+    url: str
 
 
 def _normalize_mime(value: str) -> str:
@@ -114,46 +122,6 @@ async def _authorize_course_upload(user_id: str, course_id: str) -> None:
             course_id,
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
-
-
-async def _authorize_lesson_playback(user_id: str, row: dict) -> None:
-    course_id = row.get("course_id")
-    if course_id and await courses_service.is_course_teacher_or_instructor(
-        user_id, str(course_id)
-    ):
-        return
-    if not row.get("is_published"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course not published")
-    if row.get("is_intro") or row.get("is_free_intro"):
-        return
-    if not course_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    snapshot = await models.course_access_snapshot(user_id, str(course_id))
-    if snapshot.get("can_access") is True:
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-
-async def _authorize_home_player_upload_playback(user_id: str, teacher_id: str) -> None:
-    if user_id == teacher_id:
-        return
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT 1
-            FROM app.enrollments e
-            JOIN app.courses c ON c.id = e.course_id
-            WHERE e.user_id = %s
-              AND e.status = 'active'
-              AND c.is_published = true
-              AND c.created_by = %s
-            LIMIT 1
-            """,
-            (user_id, teacher_id),
-        )
-        row = await cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 @router.post("/upload-url", response_model=schemas.MediaUploadUrlResponse)
@@ -567,70 +535,53 @@ async def request_playback_url(
     current: CurrentUser,
 ):
     user_id = str(current["id"])
-    media = await media_assets_repo.get_media_asset_access(str(payload.media_id))
-    if not media:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-    if (media.get("media_type") or "").lower() != "audio":
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only audio playback is supported",
-        )
-    if media.get("state") != "ready":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Media is not ready",
-        )
-
-    purpose = (media.get("purpose") or "").lower()
-    if purpose == "lesson_audio":
-        await _authorize_lesson_playback(user_id, media)
-    elif purpose == "home_player_audio":
-        upload = await repositories.get_active_home_upload_by_media_asset_id(
-            str(payload.media_id)
-        )
-        if not upload:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-        teacher_id = upload.get("teacher_id")
-        if not teacher_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Media missing owner",
-            )
-        await _authorize_home_player_upload_playback(
-            user_id,
-            str(teacher_id),
-        )
-    else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    storage_path = media.get("streaming_object_path")
-    if not storage_path:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Streaming asset unavailable",
-        )
-
-    streaming_bucket = media.get("streaming_storage_bucket") or media.get("storage_bucket")
-    storage_client = storage_service.get_storage_service(streaming_bucket)
-
-    try:
-        presigned = await storage_client.get_presigned_url(
-            storage_path,
-            ttl=settings.media_playback_url_ttl_seconds,
-            filename=Path(storage_path).name,
-            download=False,
-        )
-    except storage_service.StorageServiceError as exc:
-        logger.warning("Playback URL issuance failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Storage signing unavailable",
-        ) from exc
-
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=presigned.expires_in)
-    logger.info("Issued media playback URL user_id=%s path=%s", user_id, storage_path)
+    resolved = await lesson_playback_service.resolve_pipeline_playback(
+        media_asset_id=str(payload.media_id),
+        user_id=user_id,
+    )
+    logger.info("Issued media playback URL user_id=%s", user_id)
     return schemas.MediaPlaybackUrlResponse(
-        playback_url=presigned.url,
-        expires_at=expires_at,
-        format="mp3",
+        playback_url=resolved["url"],
+        expires_at=resolved["expires_at"],
+        format=resolved["format"],
+    )
+
+
+@router.post("/lesson-playback", response_model=LessonPlaybackResponse)
+async def request_lesson_playback(
+    payload: LessonPlaybackRequest,
+    current: CurrentUser,
+):
+    lesson_media_id = str(payload.lesson_media_id)
+    row = await models.get_media(lesson_media_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson media not found")
+
+    media_asset_id = row.get("media_asset_id")
+    if media_asset_id:
+        try:
+            media_asset_uuid = UUID(str(media_asset_id))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lesson media has invalid media asset",
+            ) from exc
+
+        playback = await lesson_playback_service.resolve_pipeline_playback(
+            media_asset_id=str(media_asset_uuid),
+            user_id=str(current["id"]),
+        )
+        return LessonPlaybackResponse(url=playback["url"])
+
+    if row.get("storage_path"):
+        signed = await lesson_playback_service.resolve_legacy_playback(
+            lesson_media_id=lesson_media_id,
+            user_id=str(current["id"]),
+            mode="student_render",
+        )
+        return LessonPlaybackResponse(url=signed["url"])
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Lesson media has no playable source",
     )

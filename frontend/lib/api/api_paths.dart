@@ -28,6 +28,7 @@ class ApiPaths {
   static const mediaUploadUrl = '/api/media/upload-url';
   static const mediaUploadUrlRefresh = '/api/media/upload-url/refresh';
   static const mediaPlaybackUrl = '/api/media/playback-url';
+  static const mediaLessonPlaybackUrl = '/api/media/lesson-playback';
   static const mediaCoverUploadUrl = '/api/media/cover-upload-url';
   static const mediaCoverFromMedia = '/api/media/cover-from-media';
   static const mediaCoverClear = '/api/media/cover-clear';
