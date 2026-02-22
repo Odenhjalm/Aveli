@@ -7,6 +7,7 @@ import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
+import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class CoursesGrid extends StatelessWidget {
@@ -211,12 +212,18 @@ class CoursesGrid extends StatelessWidget {
                             Align(
                               alignment: Alignment.bottomRight,
                               child: GradientButton(
-                                onPressed: slug.isEmpty
-                                    ? null
-                                    : () => context.pushNamed(
-                                        AppRoute.course,
-                                        pathParameters: {'slug': slug},
-                                      ),
+                                onPressed: () {
+                                  if (!isValidSlug(slug)) {
+                                    debugPrint(
+                                      '[GRID_BLOCKED] Invalid slug: $slug',
+                                    );
+                                    return;
+                                  }
+                                  context.pushNamed(
+                                    AppRoute.course,
+                                    pathParameters: {'slug': slug},
+                                  );
+                                },
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
                                   vertical: 10,

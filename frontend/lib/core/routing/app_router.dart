@@ -61,6 +61,7 @@ import 'package:aveli/features/seminars/presentation/seminar_route_args.dart';
 import 'package:aveli/features/seminars/presentation/seminar_broadcast_page.dart';
 import 'package:aveli/features/seminars/presentation/seminar_discover_page.dart';
 import 'package:aveli/features/seminars/presentation/seminar_join_page.dart';
+import 'package:aveli/shared/utils/slug_validator.dart';
 
 class AppRouterNotifier extends ChangeNotifier {
   AppRouterNotifier(this.ref) {
@@ -284,8 +285,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.course,
         name: AppRoute.course,
-        builder: (context, state) =>
-            CoursePage(slug: state.pathParameters['slug']!),
+        builder: (context, state) {
+          final slug = state.pathParameters['slug']!;
+          if (!isValidSlug(slug)) {
+            debugPrint('[ROUTER_GUARD] Invalid slug: $slug');
+            return const SizedBox.shrink();
+          }
+          return CoursePage(slug: slug);
+        },
       ),
       GoRoute(
         path: RoutePath.lesson,

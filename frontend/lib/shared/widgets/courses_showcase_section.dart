@@ -16,6 +16,7 @@ import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/utils/money.dart';
+import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
@@ -804,11 +805,11 @@ class _CourseTileGlass extends StatelessWidget {
     );
 
     void openCourse() {
-      if (slug.isNotEmpty) {
-        context.pushNamed(AppRoute.course, pathParameters: {'slug': slug});
-      } else {
-        context.pushNamed(AppRoute.courseIntro);
+      if (!isValidSlug(slug)) {
+        debugPrint('[GRID_BLOCKED] Invalid slug: $slug');
+        return;
       }
+      context.pushNamed(AppRoute.course, pathParameters: {'slug': slug});
     }
 
     return Material(

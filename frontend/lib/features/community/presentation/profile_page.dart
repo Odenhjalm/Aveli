@@ -674,8 +674,15 @@ class _CoursesSection extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: InkWell(
                       onTap: () {
-                        final slug = course.slug ?? course.id;
-                        if (slug.isEmpty) return;
+                        final slug = course.slug;
+                        // TODO: Keep course detail routing strictly slug-based.
+                        // Falling back to UUID course.id breaks /course/:slug navigation.
+                        if (slug == null || slug.isEmpty) {
+                          debugPrint(
+                            '[NAV_BLOCKED] Course missing slug: ${course.id}',
+                          );
+                          return;
+                        }
                         context.goNamed(
                           AppRoute.course,
                           pathParameters: {'slug': slug},
@@ -865,7 +872,8 @@ class _ChangePasswordSection extends ConsumerStatefulWidget {
       _ChangePasswordSectionState();
 }
 
-class _ChangePasswordSectionState extends ConsumerState<_ChangePasswordSection> {
+class _ChangePasswordSectionState
+    extends ConsumerState<_ChangePasswordSection> {
   final _formKey = GlobalKey<FormState>();
   final _currentPasswordCtrl = TextEditingController();
   final _newPasswordCtrl = TextEditingController();
@@ -1054,10 +1062,7 @@ class _ChangePasswordSectionState extends ConsumerState<_ChangePasswordSection> 
 
       // Step 3: Session handling.
       if (client.auth.currentSession == null) {
-        _setFeedback(
-          'Logga in igen med ditt nya lösenord.',
-          isError: false,
-        );
+        _setFeedback('Logga in igen med ditt nya lösenord.', isError: false);
         if (!mounted) return;
         showSnack(context, 'Logga in igen med ditt nya lösenord.');
         await ref.read(authControllerProvider.notifier).logout();
