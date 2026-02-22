@@ -16,6 +16,8 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
     required this.url,
     this.title,
     this.onDownload,
+    this.onEnded,
+    this.onError,
     this.durationHint,
     this.compact = false,
     this.autoPlay = false,
@@ -25,6 +27,8 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
   final String url;
   final String? title;
   final Future<void> Function()? onDownload;
+  final VoidCallback? onEnded;
+  final ValueChanged<String>? onError;
   final Duration? durationHint;
   final bool compact;
   final bool autoPlay;
@@ -77,6 +81,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
         _position = Duration.zero;
         _state = PlayerState.completed;
       });
+      widget.onEnded?.call();
     });
 
     unawaited(_prepare());
@@ -103,10 +108,12 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       await _prepareFromBytes(error);
     } catch (error) {
       if (!mounted) return;
+      final message = error.toString();
       setState(() {
         _initializing = false;
-        _error = error.toString();
+        _error = message;
       });
+      widget.onError?.call(message);
     }
   }
 
@@ -129,13 +136,13 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       unawaited(_maybeAutoPlay());
     } catch (error) {
       if (!mounted) return;
+      final message = error.toString();
       setState(() {
         _initializing = false;
         final original = originalError?.toString() ?? '';
-        _error = original.isEmpty
-            ? error.toString()
-            : '$original / ${error.toString()}';
+        _error = original.isEmpty ? message : '$original / $message';
       });
+      widget.onError?.call(_error ?? message);
     }
   }
 
@@ -169,16 +176,26 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
 
   Future<void> _toggle() async {
     if (_error != null) return;
-    if (_state == PlayerState.playing) {
-      await _player.pause();
-    } else if (_state == PlayerState.paused && _position > Duration.zero) {
-      await _player.resume();
-    } else {
-      if (_usingBytes && _cachedBytes != null) {
-        await _player.play(BytesSource(_cachedBytes!));
+    try {
+      if (_state == PlayerState.playing) {
+        await _player.pause();
+      } else if (_state == PlayerState.paused && _position > Duration.zero) {
+        await _player.resume();
       } else {
-        await _player.play(UrlSource(widget.url));
+        if (_usingBytes && _cachedBytes != null) {
+          await _player.play(BytesSource(_cachedBytes!));
+        } else {
+          await _player.play(UrlSource(widget.url));
+        }
       }
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString();
+      setState(() {
+        _error = message;
+        _initializing = false;
+      });
+      widget.onError?.call(message);
     }
   }
 

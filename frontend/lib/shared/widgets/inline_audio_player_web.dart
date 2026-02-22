@@ -13,6 +13,8 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
     required this.url,
     this.title,
     this.onDownload,
+    this.onEnded,
+    this.onError,
     this.durationHint,
     this.compact = false,
     this.autoPlay = false,
@@ -22,6 +24,8 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
   final String url;
   final String? title;
   final Future<void> Function()? onDownload;
+  final void Function()? onEnded;
+  final ValueChanged<String>? onError;
   final Duration? durationHint;
   final bool compact;
   final bool autoPlay;
@@ -123,6 +127,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
         _isPlaying = false;
         _position = Duration.zero;
       });
+      widget.onEnded?.call();
     });
     _errorSub = _audio.onError.listen((event) {
       if (!mounted) return;
@@ -139,6 +144,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
         _initializing = false;
         _error = message;
       });
+      widget.onError?.call(message);
     });
   }
 
@@ -182,10 +188,12 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       }
     } catch (error) {
       if (!mounted) return;
+      final message = error.toString();
       setState(() {
-        _error = error.toString();
+        _error = message;
         _initializing = false;
       });
+      widget.onError?.call(message);
     }
   }
 
@@ -198,10 +206,12 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       await _audio.play();
     } catch (error) {
       if (!mounted) return;
+      final message = error.toString();
       setState(() {
-        _error = error.toString();
+        _error = message;
         _initializing = false;
       });
+      widget.onError?.call(message);
     }
   }
 

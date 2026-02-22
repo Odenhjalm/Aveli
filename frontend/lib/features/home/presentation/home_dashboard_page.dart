@@ -14,6 +14,7 @@ import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
+import 'package:aveli/features/home/application/home_audio_playlist_queue.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/home/data/home_audio_repository.dart';
@@ -390,61 +391,94 @@ class _HomeAudioList extends ConsumerStatefulWidget {
 }
 
 class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
+  static const Duration _errorSkipDelay = Duration(milliseconds: 500);
+  static const Set<String> _supportedAudioContentTypes = <String>{
+    'audio/mpeg',
+    'audio/mp3',
+  };
+
+  final HomeAudioPlaylistQueue _playlist = HomeAudioPlaylistQueue();
+  List<HomeAudioItem> _playlistItems = const <HomeAudioItem>[];
+  Map<String, HomeAudioItem> _itemById = const <String, HomeAudioItem>{};
   String? _selectedId;
+  String? _statusMessage;
+  Timer? _errorSkipTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPlaylist();
+  }
 
   @override
   void didUpdateWidget(covariant _HomeAudioList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_selectedId == null) return;
-    final stillExists = widget.items.any((item) => item.id == _selectedId);
-    if (!stillExists) {
+    final preferredCurrentId =
+        _selectedId ?? ref.read(mediaPlaybackControllerProvider).currentMediaId;
+    _syncPlaylist(preferredCurrentId: preferredCurrentId);
+  }
+
+  @override
+  void dispose() {
+    _errorSkipTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncPlaylist({String? preferredCurrentId}) {
+    final filtered = widget.items
+        .where(_isSupportedHomePlaylistItem)
+        .toList(growable: false);
+    final index = <String, HomeAudioItem>{
+      for (final item in filtered) item.id: item,
+    };
+    _playlistItems = filtered;
+    _itemById = Map<String, HomeAudioItem>.unmodifiable(index);
+    _playlist.setItems(
+      filtered
+          .map(
+            (item) => HomeAudioQueueItem(
+              id: item.id,
+              isPlayable: _canAttemptPlayback(item),
+            ),
+          )
+          .toList(growable: false),
+      preferredCurrentId: preferredCurrentId,
+    );
+
+    if (_selectedId != null && !_itemById.containsKey(_selectedId)) {
       _selectedId = null;
+    }
+    if (_playlist.hasRemainingPlayableItems &&
+        _statusMessage == 'Kan inte spela upp just nu.') {
+      _statusMessage = null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = widget.items;
-    if (items.isEmpty) return const SizedBox.shrink();
+    if (_playlistItems.isEmpty ||
+        !_playlist.hasPlayableItems ||
+        _playlist.allPlayableItemsFailed) {
+      return _buildUnavailableState(context);
+    }
+
     final playback = ref.watch(mediaPlaybackControllerProvider);
-    final activeId = playback.currentMediaId;
-    final selected =
-        (activeId != null &&
-            items.any((item) => item.id == activeId) &&
-            playback.isPlaying)
-        ? items.firstWhere((item) => item.id == activeId)
-        : _resolveSelected(items);
+    final selected = _resolveSelected(playback);
+    if (selected == null) {
+      return _buildUnavailableState(context);
+    }
 
-    final selectedDurationSeconds = selected.durationSeconds;
-    final durationHint =
-        selectedDurationSeconds != null && selectedDurationSeconds > 0
-        ? Duration(seconds: selectedDurationSeconds)
-        : null;
-
-    final mediaType = selected.kind == 'video'
-        ? MediaPlaybackType.video
-        : MediaPlaybackType.audio;
+    final durationHint = _durationHintFor(selected);
     final isActive =
         playback.currentMediaId == selected.id &&
         playback.isPlaying &&
-        playback.mediaType == mediaType;
-    final activeUrl = playback.url?.trim();
-    final resolvedActiveUrl = activeUrl ?? '';
-    final hasUrl = resolvedActiveUrl.isNotEmpty;
-    final activeVideoPlayback = mediaType == MediaPlaybackType.video && hasUrl
-        ? tryCreateVideoPlaybackState(
-            mediaId: selected.id,
-            url: resolvedActiveUrl,
-            title: (playback.title ?? selected.displayTitle).trim(),
-            controlsMode: InlineVideoControlsMode.home,
-            controlChrome: InlineVideoControlChrome.hidden,
-            minimalUi: true,
-          )
-        : null;
+        playback.mediaType == MediaPlaybackType.audio;
+    final activeUrl = playback.url?.trim() ?? '';
+    final hasUrl = activeUrl.isNotEmpty;
     final showLoading = isActive && playback.isLoading;
-
-    final (onPlay, statusMessage, canPlay, statusIsError) =
-        _resolvePlaybackAction(selected, durationHint: durationHint);
+    final canPlay = _canAttemptPlayback(selected);
+    final statusMessage = _statusMessage ?? _statusMessageForItem(selected);
+    final canSkip = _playlist.hasRemainingPlayableItems;
 
     return _NowPlayingShell(
       child: Column(
@@ -498,8 +532,24 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
               ),
               IconButton(
                 tooltip: 'Bibliotek',
-                onPressed: () => _openLibrary(context, items),
+                onPressed: _playlistItems.isEmpty
+                    ? null
+                    : () => _openLibrary(context, _playlistItems),
                 icon: const Icon(Icons.library_music_outlined),
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              IconButton(
+                tooltip: 'Föregående',
+                onPressed: canSkip ? () => unawaited(_playPrev()) : null,
+                icon: const Icon(Icons.skip_previous_rounded),
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              IconButton(
+                tooltip: 'Nästa',
+                onPressed: canSkip
+                    ? () => unawaited(_playNext(auto: false))
+                    : null,
+                icon: const Icon(Icons.skip_next_rounded),
                 color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 6),
@@ -518,7 +568,9 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
               else
                 IconButton.filled(
                   tooltip: 'Spela',
-                  onPressed: canPlay ? () async => await onPlay() : null,
+                  onPressed: canPlay
+                      ? () => unawaited(_playItem(selected))
+                      : null,
                   style: IconButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -534,90 +586,258 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             ),
           if (isActive && hasUrl) ...[
             const SizedBox(height: 12),
-            if (mediaType == MediaPlaybackType.audio)
-              InlineAudioPlayer(
-                url: resolvedActiveUrl,
-                title: null,
-                durationHint: durationHint,
-                autoPlay: true,
-                compact: true,
-              )
-            else if (activeVideoPlayback != null)
-              InlineVideoPlayer(playback: activeVideoPlayback, autoPlay: true),
+            InlineAudioPlayer(
+              url: activeUrl,
+              title: null,
+              durationHint: durationHint,
+              autoPlay: true,
+              compact: true,
+              onEnded: () => _handleTrackEnded(selected.id),
+              onError: (message) => _handleTrackError(selected.id, message),
+            ),
           ],
         ],
       ),
     );
   }
 
-  (
-    Future<void> Function() onPlay,
-    String? statusMessage,
-    bool canPlay,
-    bool statusIsError,
-  )
-  _resolvePlaybackAction(HomeAudioItem item, {Duration? durationHint}) {
-    final mediaAssetId = item.mediaAssetId;
-    if (mediaAssetId != null) {
-      final state = item.mediaState ?? 'uploaded';
-      if (state != 'ready') {
-        final message = state == 'failed'
-            ? 'Ljudet kunde inte bearbetas.'
-            : 'Ljudet bearbetas…';
-        return (_noOp, message, false, state == 'failed');
-      }
-      return (
-        () => _playPipelineInline(item, durationHint: durationHint),
-        null,
-        true,
-        false,
-      );
-    }
-    final url = item.preferredUrl;
-    if (url == null || url.trim().isEmpty) {
-      return (_noOp, 'Ljudlänken saknas för detta spår.', false, true);
-    }
-    return (
-      () => _playLegacyInline(item, durationHint: durationHint),
-      null,
-      true,
-      false,
+  Widget _buildUnavailableState(BuildContext context) {
+    final statusMessage = _statusMessage ?? 'Kan inte spela upp just nu.';
+    return _NowPlayingShell(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const _NowPlayingArtwork(),
+          const SizedBox(width: 24),
+          Expanded(
+            child: Text(
+              statusMessage,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Bibliotek',
+            onPressed: _playlistItems.isEmpty
+                ? null
+                : () => _openLibrary(context, _playlistItems),
+            icon: const Icon(Icons.library_music_outlined),
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ],
+      ),
     );
   }
 
-  Future<void> _noOp() async {}
+  HomeAudioItem? _resolveSelected(MediaPlaybackState playback) {
+    final activeId = playback.currentMediaId;
+    if (activeId != null && _itemById.containsKey(activeId)) {
+      return _itemById[activeId];
+    }
+
+    final selectedId = _selectedId;
+    if (selectedId != null && _itemById.containsKey(selectedId)) {
+      return _itemById[selectedId];
+    }
+
+    final currentQueueId = _playlist.currentItem?.id;
+    if (currentQueueId != null && _itemById.containsKey(currentQueueId)) {
+      return _itemById[currentQueueId];
+    }
+    return _playlistItems.isNotEmpty ? _playlistItems.first : null;
+  }
+
+  bool _isSupportedHomePlaylistItem(HomeAudioItem item) {
+    // Home playlist is intentionally audio-only for now to avoid web video
+    // decode/pipeline failures; we keep selection deterministic to mp3 audio.
+    final kind = item.kind.trim().toLowerCase();
+    if (kind != 'audio') return false;
+    final contentType = (item.contentType ?? '').trim().toLowerCase();
+    if (contentType.isEmpty) return true;
+    return _supportedAudioContentTypes.contains(contentType);
+  }
+
+  bool _canAttemptPlayback(HomeAudioItem item) {
+    if (!_isSupportedHomePlaylistItem(item)) return false;
+    final mediaAssetId = (item.mediaAssetId ?? '').trim();
+    if (mediaAssetId.isNotEmpty) {
+      final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
+      return state == 'ready';
+    }
+    final url = item.preferredUrl;
+    return url != null && url.trim().isNotEmpty;
+  }
+
+  String? _statusMessageForItem(HomeAudioItem item) {
+    if (!_isSupportedHomePlaylistItem(item)) {
+      return 'Hemspelaren använder mp3-ljud just nu.';
+    }
+    final mediaAssetId = (item.mediaAssetId ?? '').trim();
+    if (mediaAssetId.isNotEmpty) {
+      final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
+      if (state == 'ready') return null;
+      return state == 'failed'
+          ? 'Ljudet kunde inte bearbetas.'
+          : 'Ljudet bearbetas…';
+    }
+    final url = item.preferredUrl;
+    if (url == null || url.trim().isEmpty) {
+      return 'Ljudlänken saknas för detta spår.';
+    }
+    return null;
+  }
+
+  Duration? _durationHintFor(HomeAudioItem item) {
+    final seconds = item.durationSeconds;
+    if (seconds == null || seconds <= 0) return null;
+    return Duration(seconds: seconds);
+  }
+
+  void _alignQueueToItem(String itemId) {
+    final index = _playlist.indexOf(itemId);
+    if (index < 0) return;
+    _playlist.playAt(index);
+    _selectedId = itemId;
+  }
+
+  Future<void> _playItem(HomeAudioItem item) async {
+    _errorSkipTimer?.cancel();
+    _alignQueueToItem(item.id);
+    _playlist.clearFailure(item.id);
+    if (mounted) {
+      setState(() {
+        _statusMessage = null;
+      });
+    }
+
+    if (!_canAttemptPlayback(item)) {
+      _handleTrackError(
+        item.id,
+        _statusMessageForItem(item) ?? 'Fel vid uppspelning.',
+      );
+      return;
+    }
+
+    final durationHint = _durationHintFor(item);
+    try {
+      final mediaAssetId = (item.mediaAssetId ?? '').trim();
+      if (mediaAssetId.isNotEmpty) {
+        await _playPipelineInline(item, durationHint: durationHint);
+      } else {
+        await _playLegacyInline(item, durationHint: durationHint);
+      }
+      if (mounted) {
+        setState(() => _statusMessage = null);
+      }
+    } catch (error, stackTrace) {
+      final failure = AppFailure.from(error, stackTrace);
+      _handleTrackError(item.id, failure.message);
+    }
+  }
+
+  Future<void> _playNext({required bool auto}) async {
+    final next = _playlist.playNext(auto: auto);
+    if (next == null) {
+      _stopWithUnavailableState();
+      return;
+    }
+    final item = _itemById[next.id];
+    if (item == null) {
+      _stopWithUnavailableState();
+      return;
+    }
+    await _playItem(item);
+  }
+
+  Future<void> _playPrev() async {
+    final previous = _playlist.playPrev();
+    if (previous == null) {
+      _stopWithUnavailableState();
+      return;
+    }
+    final item = _itemById[previous.id];
+    if (item == null) {
+      _stopWithUnavailableState();
+      return;
+    }
+    await _playItem(item);
+  }
+
+  void _handleTrackEnded(String mediaId) {
+    _errorSkipTimer?.cancel();
+    _alignQueueToItem(mediaId);
+    unawaited(_playNext(auto: true));
+  }
+
+  void _handleTrackError(String mediaId, String rawMessage) {
+    final message = rawMessage.trim();
+    if (message.isNotEmpty) {
+      debugPrint('Home player playback error ($mediaId): $message');
+    }
+    _alignQueueToItem(mediaId);
+    _playlist.markCurrentFailed();
+
+    if (_playlist.allPlayableItemsFailed ||
+        !_playlist.hasRemainingPlayableItems) {
+      _stopWithUnavailableState();
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _statusMessage = 'Spåret kunde inte spelas upp, hoppar vidare…';
+      });
+    }
+
+    _errorSkipTimer?.cancel();
+    _errorSkipTimer = Timer(_errorSkipDelay, () {
+      if (!mounted) return;
+      unawaited(_playNext(auto: true));
+    });
+  }
+
+  void _stopWithUnavailableState() {
+    _errorSkipTimer?.cancel();
+    ref.read(mediaPlaybackControllerProvider.notifier).stop();
+    if (!mounted) return;
+    setState(() {
+      _statusMessage = 'Kan inte spela upp just nu.';
+    });
+  }
+
+  Future<void> _restartIfCurrentTrack(String mediaId) async {
+    final playback = ref.read(mediaPlaybackControllerProvider);
+    if (playback.currentMediaId != mediaId || !playback.isPlaying) return;
+    ref.read(mediaPlaybackControllerProvider.notifier).stop();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
 
   Future<void> _playPipelineInline(
     HomeAudioItem item, {
     Duration? durationHint,
   }) async {
-    final mediaAssetId = item.mediaAssetId;
-    if (mediaAssetId == null || mediaAssetId.trim().isEmpty) return;
-    final mediaType = item.kind == 'video'
-        ? MediaPlaybackType.video
-        : MediaPlaybackType.audio;
-    final controller = ref.read(mediaPlaybackControllerProvider.notifier);
-    try {
-      await controller.play(
-        mediaId: item.id,
-        mediaType: mediaType,
-        title: item.displayTitle,
-        durationHint: durationHint,
-        urlLoader: () async {
-          final repo = ref.read(mediaPipelineRepositoryProvider);
-          final playback = await repo.fetchPlaybackUrl(mediaAssetId);
-          return playback.playbackUrl.toString();
-        },
-      );
-    } catch (error, stackTrace) {
-      if (!mounted) return;
-      final failure = AppFailure.from(error, stackTrace);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Kunde inte spela upp media: ${failure.message}'),
-        ),
-      );
+    final mediaAssetId = (item.mediaAssetId ?? '').trim();
+    if (mediaAssetId.isEmpty) {
+      throw StateError('Saknar media_asset_id för uppspelning.');
     }
+    await _restartIfCurrentTrack(item.id);
+    final controller = ref.read(mediaPlaybackControllerProvider.notifier);
+    await controller.play(
+      mediaId: item.id,
+      mediaType: MediaPlaybackType.audio,
+      title: item.displayTitle,
+      durationHint: durationHint,
+      urlLoader: () async {
+        // Resolve a fresh playback URL per track hop; ApiClient performs a
+        // single refresh/retry cycle on 401 responses when available.
+        final repo = ref.read(mediaPipelineRepositoryProvider);
+        final playback = await repo.fetchPlaybackUrl(mediaAssetId);
+        return playback.playbackUrl.toString();
+      },
+    );
   }
 
   Future<void> _playLegacyInline(
@@ -625,22 +845,22 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     Duration? durationHint,
   }) async {
     final preferred = item.preferredUrl;
-    if (preferred == null || preferred.trim().isEmpty) return;
+    if (preferred == null || preferred.trim().isEmpty) {
+      throw StateError('Ljudlänken saknas för detta spår.');
+    }
     String url = preferred.trim();
     final repo = ref.read(mediaRepositoryProvider);
     try {
       url = repo.resolveUrl(url);
     } catch (_) {
-      // Keep original URL when it's already absolute (e.g. signed storage URL).
+      // Keep original URL when it's already absolute (for signed URLs).
     }
-    final mediaType = item.kind == 'video'
-        ? MediaPlaybackType.video
-        : MediaPlaybackType.audio;
+    await _restartIfCurrentTrack(item.id);
     await ref
         .read(mediaPlaybackControllerProvider.notifier)
         .play(
           mediaId: item.id,
-          mediaType: mediaType,
+          mediaType: MediaPlaybackType.audio,
           url: url,
           title: item.displayTitle,
           durationHint: durationHint,
@@ -648,7 +868,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   }
 
   void _openLibrary(BuildContext context, List<HomeAudioItem> items) {
-    final selectedId = _resolveSelected(items).id;
+    final selectedId = _resolveLibrarySelection(items).id;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -698,7 +918,11 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
                             isSelected: isSelected,
                             onTap: () {
                               if (!mounted) return;
-                              setState(() => _selectedId = item.id);
+                              setState(() {
+                                _selectedId = item.id;
+                                _statusMessage = _statusMessageForItem(item);
+                                _alignQueueToItem(item.id);
+                              });
                               Navigator.of(sheetContext).pop();
                             },
                           );
@@ -715,14 +939,18 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     );
   }
 
-  HomeAudioItem _resolveSelected(List<HomeAudioItem> items) {
-    if (_selectedId == null) {
-      return items.first;
+  HomeAudioItem _resolveLibrarySelection(List<HomeAudioItem> items) {
+    final selectedId = _selectedId;
+    if (selectedId != null) {
+      final selected = _itemById[selectedId];
+      if (selected != null) return selected;
     }
-    return items.firstWhere(
-      (item) => item.id == _selectedId,
-      orElse: () => items.first,
-    );
+    final current = _playlist.currentItem;
+    if (current != null) {
+      final currentItem = _itemById[current.id];
+      if (currentItem != null) return currentItem;
+    }
+    return items.first;
   }
 }
 
