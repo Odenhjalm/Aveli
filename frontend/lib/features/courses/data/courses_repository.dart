@@ -222,9 +222,17 @@ class CoursesRepository {
     }
   }
 
-  Future<void> enrollFreeIntro(String courseId) async {
+  Future<String> enrollCourse(String courseId) async {
     try {
-      await _client.post('/courses/$courseId/enroll');
+      final res = await _client.post<Map<String, dynamic>>(
+        '/courses/$courseId/enroll',
+      );
+      final statusRaw = res['status'];
+      final status = statusRaw == null ? '' : statusRaw.toString().trim();
+      if (status.isNotEmpty) {
+        return status;
+      }
+      return 'enrolled';
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -249,6 +257,10 @@ class CoursesRepository {
 
   Future<bool> isEnrolled(String courseId) async {
     return hasAccess(courseId);
+  }
+
+  Future<CourseAccessData> fetchCourseAccessSnapshot(String courseId) {
+    return _fetchCourseAccess(courseId);
   }
 
   Future<CourseOrderSummary?> latestOrderForCourse(String courseId) async {
@@ -415,6 +427,7 @@ class CourseSummary {
     this.coverMediaId,
     this.videoUrl,
     this.branch,
+    this.createdBy,
     this.isFreeIntro = false,
     this.journeyStep,
     this.isPublished = false,
@@ -429,6 +442,7 @@ class CourseSummary {
   final String? coverMediaId;
   final String? videoUrl;
   final String? branch;
+  final String? createdBy;
   final bool isFreeIntro;
   final CourseJourneyStep? journeyStep;
   final bool isPublished;
@@ -443,6 +457,7 @@ class CourseSummary {
     coverMediaId: json['cover_media_id'] as String?,
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
+    createdBy: json['created_by'] as String?,
     isFreeIntro: json['is_free_intro'] == true,
     journeyStep: courseJourneyStepFromApi(json['journey_step']),
     isPublished: json['is_published'] == true,
