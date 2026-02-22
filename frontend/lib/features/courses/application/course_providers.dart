@@ -60,7 +60,15 @@ final hasCourseAccessProvider = AutoDisposeFutureProvider.family<bool, String>((
   courseId,
 ) async {
   final repo = ref.watch(coursesRepositoryProvider);
-  return repo.isEnrolled(courseId);
+  try {
+    final accessSnapshot = await repo.fetchCourseAccessSnapshot(courseId);
+    if (accessSnapshot.accessReason.trim().toLowerCase() == 'teacher') {
+      return true;
+    }
+    return accessSnapshot.hasAccess;
+  } catch (_) {
+    return repo.isEnrolled(courseId);
+  }
 });
 
 final lessonDetailProvider =
@@ -123,20 +131,21 @@ final courseProgressProvider =
       return repo.getProgressForCourses(request.courseIds);
     });
 
-class EnrollController extends AutoDisposeFamilyAsyncNotifier<void, String> {
+class EnrollController extends AutoDisposeFamilyAsyncNotifier<String?, String> {
   late final String _courseId;
 
   @override
-  FutureOr<void> build(String courseId) {
+  FutureOr<String?> build(String courseId) {
     _courseId = courseId;
+    return null;
   }
 
   Future<void> enroll() async {
     final repo = ref.read(coursesRepositoryProvider);
     state = const AsyncLoading();
     try {
-      await repo.enrollFreeIntro(_courseId);
-      state = const AsyncData(null);
+      final status = await repo.enrollCourse(_courseId);
+      state = AsyncData(status);
     } catch (error, stackTrace) {
       state = AsyncError(AppFailure.from(error, stackTrace), stackTrace);
     }
@@ -144,7 +153,7 @@ class EnrollController extends AutoDisposeFamilyAsyncNotifier<void, String> {
 }
 
 final enrollProvider =
-    AutoDisposeAsyncNotifierProviderFamily<EnrollController, void, String>(
+    AutoDisposeAsyncNotifierProviderFamily<EnrollController, String?, String>(
       EnrollController.new,
     );
 

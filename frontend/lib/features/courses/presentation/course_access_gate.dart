@@ -20,8 +20,12 @@ class CourseAccessGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final access = ref.watch(hasCourseAccessProvider(courseId));
     return access.when(
-      data: (hasAccess) =>
-          hasAccess ? child : PaywallPrompt(courseId: courseId),
+      data: (hasAccess) {
+        if (hasAccess) {
+          return child;
+        }
+        return PaywallPrompt(courseId: courseId);
+      },
       loading: () =>
           loading ?? const Center(child: CircularProgressIndicator()),
       error: (error, stackTrace) => PaywallPrompt(courseId: courseId),

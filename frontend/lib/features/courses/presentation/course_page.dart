@@ -55,6 +55,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         final slug = (detail.course.slug?.isNotEmpty ?? false)
             ? detail.course.slug!
             : widget.slug;
+        final currentUserId = ref.watch(authControllerProvider).profile?.id;
         final coverPath = (detail.course.coverUrl ?? '').trim();
         final coverUrl = coverPath.isEmpty
             ? null
@@ -83,10 +84,12 @@ class _CoursePageState extends ConsumerState<CoursePage> {
             await repo.latestOrderForCourse(detail.course.id);
             ref.invalidate(courseDetailProvider(widget.slug));
           },
+          onOpenCourse: () => _openFirstLesson(detail),
           enrollState: ref.watch(enrollProvider(detail.course.id)),
           subscriptionsEnabled: ref
               .watch(appConfigProvider)
               .subscriptionsEnabled,
+          currentUserId: currentUserId,
         );
       },
     );
@@ -97,10 +100,18 @@ class _CoursePageState extends ConsumerState<CoursePage> {
     await notifier.enroll();
     final state = ref.read(enrollProvider(detail.course.id));
     state.when(
-      data: (_) {
+      data: (status) {
         if (!mounted || !context.mounted) return;
-        showSnack(context, 'Du är nu anmäld till introduktionen.');
+        final normalized = (status ?? '').trim().toLowerCase();
+        final shouldShowSuccess =
+            normalized == 'enrolled' ||
+            normalized == 'intro_enrolled' ||
+            normalized == 'step1_unlimited';
+        if (shouldShowSuccess) {
+          showSnack(context, 'Du är nu anmäld till introduktionen.');
+        }
         ref.invalidate(courseDetailProvider(widget.slug));
+        ref.invalidate(hasCourseAccessProvider(detail.course.id));
       },
       error: (error, _) {
         if (!mounted || !context.mounted) return;
@@ -108,6 +119,44 @@ class _CoursePageState extends ConsumerState<CoursePage> {
       },
       loading: () {},
     );
+  }
+
+  void _openFirstLesson(CourseDetailData detail) {
+    final lessonId = _resolveFirstLessonId(detail);
+    if (lessonId == null || lessonId.isEmpty) {
+      return;
+    }
+    if (!mounted || !context.mounted) return;
+    context.pushNamed(AppRoute.lesson, pathParameters: {'id': lessonId});
+  }
+
+  String? _resolveFirstLessonId(CourseDetailData detail) {
+    final modules = [...detail.modules]
+      ..sort((a, b) => a.position.compareTo(b.position));
+    for (final module in modules) {
+      final lessons = [
+        ...(detail.lessonsByModule[module.id] ?? const <LessonSummary>[]).where(
+          (lesson) =>
+              lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_'),
+        ),
+      ]..sort((a, b) => a.position.compareTo(b.position));
+      if (lessons.isNotEmpty) {
+        return lessons.first.id;
+      }
+    }
+
+    LessonSummary? first;
+    for (final lessons in detail.lessonsByModule.values) {
+      for (final lesson in lessons) {
+        if (lesson.title.isEmpty || lesson.title.trim().startsWith('_')) {
+          continue;
+        }
+        if (first == null || lesson.position < first.position) {
+          first = lesson;
+        }
+      }
+    }
+    return first?.id;
   }
 
   Widget _buildBuyButton({
@@ -241,18 +290,22 @@ class _CourseContent extends StatelessWidget {
     required this.coverUrl,
     required this.onEnroll,
     required this.onRefreshOrderStatus,
+    required this.onOpenCourse,
     required this.enrollState,
     required this.subscriptionsEnabled,
     required this.buyButton,
+    required this.currentUserId,
   });
 
   final CourseDetailData detail;
   final String? coverUrl;
   final VoidCallback onEnroll;
   final Future<void> Function() onRefreshOrderStatus;
-  final AsyncValue<void> enrollState;
+  final VoidCallback onOpenCourse;
+  final AsyncValue<String?> enrollState;
   final bool subscriptionsEnabled;
   final Widget buyButton;
+  final String? currentUserId;
 
   String _orderStatusLabel(String status) {
     final normalized = status.toLowerCase();
@@ -271,10 +324,18 @@ class _CourseContent extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final priceCents = course.priceCents ?? 0;
-    final showPurchase = !course.isFreeIntro && priceCents > 0;
-    final hasAccess = detail.hasAccess;
+    final accessReason = detail.accessReason.trim().toLowerCase();
+    final isOwner =
+        accessReason == 'teacher' ||
+        currentUserId != null &&
+            currentUserId!.isNotEmpty &&
+            course.createdBy == currentUserId;
+    final hasAccess = detail.hasAccess || isOwner;
+    final isFreeIntro = course.isFreeIntro;
+    final journeyStepValue = _journeyStepValue(course.journeyStep?.name);
+    final canStartIntro = isFreeIntro && journeyStepValue <= 1;
+    final canShowPurchase = priceCents > 0;
     final isEnrolled = detail.isEnrolled;
-    final accessReason = detail.accessReason;
     final hasSubscription =
         subscriptionsEnabled && detail.hasActiveSubscription;
     final enrolledText = hasAccess
@@ -288,6 +349,34 @@ class _CourseContent extends StatelessWidget {
         : '';
     final isEnrolling = enrollState.isLoading;
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
+    final hasNavigableLesson = _hasNavigableLesson(detail);
+    Widget? primaryCta;
+    if (isOwner) {
+      if (!hasNavigableLesson) {
+        primaryCta = FilledButton(
+          onPressed: hasNavigableLesson ? onOpenCourse : null,
+          child: const Text('Öppna kurs'),
+        );
+      }
+    } else if (hasAccess) {
+      primaryCta = const FilledButton(
+        onPressed: null,
+        child: Text('Åtkomst aktiverad'),
+      );
+    } else if (canStartIntro) {
+      primaryCta = ElevatedButton(
+        onPressed: isEnrolling ? null : onEnroll,
+        child: isEnrolling
+            ? const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Starta introduktion'),
+      );
+    } else if (canShowPurchase) {
+      primaryCta = SizedBox(height: 48, child: buyButton);
+    }
     return AppScaffold(
       title: course.title,
       body: ListView(
@@ -321,32 +410,12 @@ class _CourseContent extends StatelessWidget {
                 if (course.description != null)
                   Text(course.description!, style: t.bodyLarge),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: isEnrolling ? null : onEnroll,
-                        child: isEnrolling
-                            ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('Starta introduktion'),
-                      ),
-                    ),
-                    if (showPurchase) ...[
-                      const SizedBox(width: 10),
-                      Expanded(child: SizedBox(height: 48, child: buyButton)),
-                    ],
-                  ],
-                ),
+                if (primaryCta != null)
+                  SizedBox(width: double.infinity, child: primaryCta),
                 const SizedBox(height: 8),
                 if (enrolledText.isNotEmpty)
                   Text(enrolledText, style: t.bodySmall),
-                if (hasAccess && showPurchase) ...[
+                if (hasAccess && canShowPurchase) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Du har redan full åtkomst till kursen.',
@@ -489,4 +558,27 @@ class _CourseContent extends StatelessWidget {
   }
 
   String _friendlyError(Object error) => AppFailure.from(error).message;
+
+  int _journeyStepValue(String? stepName) {
+    return switch ((stepName ?? '').trim().toLowerCase()) {
+      'step1' => 1,
+      'step2' => 2,
+      'step3' => 3,
+      'intro' => 0,
+      _ => 0,
+    };
+  }
+
+  bool _hasNavigableLesson(CourseDetailData detail) {
+    for (final module in detail.modules) {
+      final lessons =
+          detail.lessonsByModule[module.id] ?? const <LessonSummary>[];
+      for (final lesson in lessons) {
+        if (lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 }
