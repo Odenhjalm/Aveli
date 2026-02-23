@@ -233,5 +233,62 @@ void main() {
         expect(detail.latestOrder, isNull);
       },
     );
+
+    test('maps flat lessons payload into synthetic module', () async {
+      final client = _MockApiClient();
+      final repo = CoursesRepository(
+        client: client,
+        accessApi: const _FakeAccessApi(primary: true),
+      );
+
+      when(
+        () => client.get<Map<String, dynamic>>(
+          '/courses/by-slug/$slug',
+          queryParameters: null,
+        ),
+      ).thenAnswer(
+        (_) async => {
+          'course': {
+            'id': courseId,
+            'slug': slug,
+            'title': 'Aveli 101',
+            'description': 'Flat lessons payload',
+            'is_free_intro': false,
+            'is_published': true,
+            'price_cents': 0,
+          },
+          'lessons': [
+            {'id': 'lesson-1', 'title': 'L1', 'position': 1, 'is_intro': true},
+            {'id': 'lesson-2', 'title': 'L2', 'position': 2, 'is_intro': false},
+          ],
+        },
+      );
+
+      when(
+        () => client.get<Map<String, dynamic>>(
+          '/courses/$courseId/access',
+          queryParameters: null,
+        ),
+      ).thenAnswer(
+        (_) async => {
+          'can_access': true,
+          'has_access': true,
+          'access_reason': 'enrolled',
+          'enrolled': true,
+          'has_active_subscription': false,
+        },
+      );
+
+      final detail = await repo.fetchCourseDetailBySlug(slug);
+
+      expect(detail.modules, hasLength(1));
+      expect(detail.modules.single.id, flatLessonsModuleId);
+      expect(detail.modules.single.title, isEmpty);
+      expect(detail.lessonsByModule.keys, contains(flatLessonsModuleId));
+      expect(
+        detail.lessonsByModule[flatLessonsModuleId]!.map((l) => l.title),
+        orderedEquals(['L1', 'L2']),
+      );
+    });
   });
 }

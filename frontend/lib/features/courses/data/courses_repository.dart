@@ -6,6 +6,8 @@ import 'package:aveli/shared/utils/course_journey_step.dart';
 
 import 'course_access_api.dart';
 
+const String flatLessonsModuleId = '__flat__';
+
 class CoursesRepository {
   CoursesRepository({required ApiClient client, CourseAccessApi? accessApi})
     : _client = client,
@@ -92,11 +94,31 @@ class CoursesRepository {
     final course = CourseSummary.fromJson(
       Map<String, dynamic>.from(payload['course'] as Map),
     );
+    final lessonsRaw = payload['lessons'];
+    if (lessonsRaw is List) {
+      final flatLessons = lessonsRaw
+          .map(
+            (e) => LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
+          .toList();
+      return CourseDetailData(
+        course: course,
+        modules: [
+          CourseModule(
+            id: flatLessonsModuleId,
+            title: '',
+            position: 0,
+            courseId: course.id,
+          ),
+        ],
+        lessonsByModule: {flatLessonsModuleId: flatLessons},
+      );
+    }
+
     final modules = (payload['modules'] as List? ?? [])
         .map((e) => CourseModule.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
     final lessonsMap = <String, List<LessonSummary>>{};
-    final lessonsRaw = payload['lessons'];
     if (lessonsRaw is Map) {
       lessonsRaw.forEach((key, value) {
         final list = (value as List? ?? [])
