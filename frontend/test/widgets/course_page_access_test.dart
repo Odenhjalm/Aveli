@@ -186,4 +186,79 @@ void main() {
     expect(find.textContaining('Köp'), findsNothing);
     expect(find.text('Anmäl'), findsNothing);
   });
+
+  testWidgets(
+    'renders flat lessons with synthetic module and no module title requirement',
+    (tester) async {
+      final detail = CourseDetailData(
+        course: const CourseSummary(
+          id: 'course-flat',
+          slug: 'flat-lessons-course',
+          title: 'Flat Lessons',
+          description: 'Course with flat lesson payload',
+          isFreeIntro: false,
+          isPublished: true,
+          priceCents: 0,
+        ),
+        modules: const [
+          CourseModule(
+            id: flatLessonsModuleId,
+            courseId: 'course-flat',
+            title: '',
+            position: 0,
+          ),
+        ],
+        lessonsByModule: const {
+          flatLessonsModuleId: [
+            LessonSummary(
+              id: 'lesson-1',
+              title: 'L1',
+              position: 1,
+              isIntro: true,
+            ),
+            LessonSummary(
+              id: 'lesson-2',
+              title: 'L2',
+              position: 2,
+              isIntro: false,
+            ),
+          ],
+        },
+        hasAccess: true,
+        accessReason: 'enrolled',
+        isEnrolled: true,
+        hasActiveSubscription: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost:8080',
+                stripePublishableKey: 'pk_test',
+                stripeMerchantDisplayName: 'Aveli Test',
+                subscriptionsEnabled: true,
+              ),
+            ),
+            authOverride(),
+            courseDetailProvider.overrideWith((ref, slug) async => detail),
+            coursePricingProvider.overrideWith(
+              (ref, slug) async =>
+                  CoursePricing(amountCents: 0, currency: 'sek'),
+            ),
+          ],
+          child: const MaterialApp(
+            home: CoursePage(slug: 'flat-lessons-course'),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('L1'), findsOneWidget);
+      expect(find.text('L2'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

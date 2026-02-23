@@ -456,9 +456,12 @@ class _CourseContent extends StatelessWidget {
           const SizedBox(height: 16),
           ...detail.modules
               .where(
-                (m) => m.title.isNotEmpty && !m.title.trim().startsWith('_'),
+                (m) =>
+                    m.id == flatLessonsModuleId ||
+                    (m.title.isNotEmpty && !m.title.trim().startsWith('_')),
               )
               .map((module) {
+                final isSyntheticFlatModule = module.id == flatLessonsModuleId;
                 final lessons = (detail.lessonsByModule[module.id] ?? const [])
                     .where(
                       (l) =>
@@ -478,13 +481,15 @@ class _CourseContent extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          module.title,
-                          style: t.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
+                        if (!isSyntheticFlatModule) ...[
+                          Text(
+                            module.title,
+                            style: t.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
+                          const SizedBox(height: 8),
+                        ],
                         ...lessons.map((lesson) {
                           final isLocked = !lesson.isIntro && !hasAccess;
                           return ListTile(
