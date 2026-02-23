@@ -112,6 +112,64 @@ async def _clear_entitlement(user_id: str, slug: str):
             await conn.commit()
 
 
+async def _latest_payment_command(user_id: str) -> dict[str, object] | None:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(
+                    """
+                    SELECT command_id,
+                           command_type,
+                           status,
+                           stripe_checkout_session_id,
+                           stripe_payment_intent_id,
+                           stripe_subscription_id,
+                           idempotency_key,
+                           request_metadata
+                    FROM app.payment_commands
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                )
+            except errors.UndefinedTable:
+                await conn.rollback()
+                return None
+            row = await cur.fetchone()
+    if not row:
+        return None
+    return {
+        "command_id": row[0],
+        "command_type": row[1],
+        "status": row[2],
+        "stripe_checkout_session_id": row[3],
+        "stripe_payment_intent_id": row[4],
+        "stripe_subscription_id": row[5],
+        "idempotency_key": row[6],
+        "request_metadata": row[7],
+    }
+
+
+async def _stripe_event_ledger_count(event_id: str) -> int | None:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(
+                    """
+                    SELECT count(*)
+                    FROM app.stripe_event_ledger
+                    WHERE event_id = %s
+                    """,
+                    (event_id,),
+                )
+            except errors.UndefinedTable:
+                await conn.rollback()
+                return None
+            row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
 async def _upsert_active_membership(user_id: str) -> None:
     await repositories.upsert_membership_record(
         user_id,
@@ -229,6 +287,12 @@ async def test_course_checkout_success(async_client, monkeypatch):
         assert metadata.get("checkout_type") == "course"
         assert captured_session.get("success_url") == "https://checkout.test/success"
         assert captured_session.get("cancel_url") == "https://checkout.test/cancel"
+        command = await _latest_payment_command(str(user_id))
+        if command:
+            assert command["command_type"] == "course_purchase"
+            assert command["status"] == "session_created"
+            assert command["stripe_checkout_session_id"] == "cs_test"
+            assert command["stripe_payment_intent_id"] == "pi_test"
     finally:
         await _cleanup_user(str(user_id))
         await _cleanup_course(course_id)
@@ -477,6 +541,9 @@ async def test_refunded_intro_order_decrements_intro_usage_once(async_client, mo
         )
         assert second_refund.status_code == 200, second_refund.text
         assert await _intro_usage_count(user_id_str) == 0
+        ledger_count = await _stripe_event_ledger_count("evt_payment_intent_canceled_intro")
+        if ledger_count is not None:
+            assert ledger_count == 1
 
         updated_order = await repositories.get_order(order["id"])
         assert updated_order is not None

@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from time import perf_counter
 
 import sentry_sdk
 import stripe
 from fastapi import APIRouter, HTTPException, Request, status
 from starlette.concurrency import run_in_threadpool
 
-from .. import repositories
+from .. import metrics, repositories
 from ..repositories import course_entitlements
 from ..repositories import courses as courses_repo
-from ..services import checkout_service, subscription_service, course_bundles_service
+from ..services import checkout_service, course_bundles_service, payment_command_shadow, subscription_service
 from .. import stripe_mode
 
 router = APIRouter(prefix="/api/stripe", tags=["stripe-webhooks"])
@@ -124,6 +125,35 @@ async def stripe_payment_element_webhook(request: Request):
     event_type = event.get("type")
     event_id = event.get("id")
     data_object = event.get("data", {}).get("object", {})
+    if not isinstance(data_object, dict):
+        data_object = {}
+
+    metrics.webhook_event_received.inc()
+    apply_started = perf_counter()
+    duplicate_detected = False
+    resolved_command_id, stripe_identifiers = await payment_command_shadow.resolve_command_id_from_event(
+        event_type=str(event_type) if event_type else None,
+        data_object=data_object,
+    )
+
+    if isinstance(event_id, str) and event_id:
+        inserted = await payment_command_shadow.record_webhook_event(
+            event_id=event_id,
+            event_type=str(event_type) if event_type else "",
+            raw_event=event if isinstance(event, dict) else {"type": event_type, "id": event_id},
+            resolved_command_id=resolved_command_id,
+        )
+        if inserted is False:
+            duplicate_detected = True
+            metrics.webhook_event_duplicate.inc()
+            logger.info(
+                "Stripe webhook duplicate detected event_id=%s event_type=%s command_id=%s duplicate_detection=true",
+                event_id,
+                event_type,
+                resolved_command_id,
+            )
+    else:
+        logger.info("Stripe webhook event missing event_id; skipping shadow ledger write type=%s", event_type)
 
     try:
         if event_type == "payment_intent.succeeded":
@@ -161,12 +191,38 @@ async def stripe_payment_element_webhook(request: Request):
         else:
             logger.info("Unhandled Stripe event %s", event_type)
     except Exception as exc:  # pragma: no cover - defensive logging
+        apply_duration_ms = (perf_counter() - apply_started) * 1000
         _capture_exception(str(event_type) if event_type else None, str(event_id) if event_id else None, exc)
         logger.exception("Stripe webhook processing failed: %s", exc)
+        logger.error(
+            "Stripe webhook apply failed event_id=%s event_type=%s command_id=%s duplicate_detection=%s stripe_checkout_session_id=%s stripe_payment_intent_id=%s stripe_subscription_id=%s apply_duration_ms=%.2f",
+            event_id,
+            event_type,
+            resolved_command_id,
+            duplicate_detected,
+            stripe_identifiers.get("stripe_checkout_session_id"),
+            stripe_identifiers.get("stripe_payment_intent_id"),
+            stripe_identifiers.get("stripe_subscription_id"),
+            apply_duration_ms,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed",
         ) from exc
+
+    apply_duration_ms = (perf_counter() - apply_started) * 1000
+    metrics.webhook_event_applied.inc()
+    logger.info(
+        "Stripe webhook applied event_id=%s event_type=%s command_id=%s duplicate_detection=%s stripe_checkout_session_id=%s stripe_payment_intent_id=%s stripe_subscription_id=%s apply_duration_ms=%.2f",
+        event_id,
+        event_type,
+        resolved_command_id,
+        duplicate_detected,
+        stripe_identifiers.get("stripe_checkout_session_id"),
+        stripe_identifiers.get("stripe_payment_intent_id"),
+        stripe_identifiers.get("stripe_subscription_id"),
+        apply_duration_ms,
+    )
 
     _capture_message(
         status="success",

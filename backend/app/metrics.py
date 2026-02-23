@@ -45,3 +45,20 @@ livekit_webhook_queue_size = Gauge(
     "livekit_webhook_queue_size",
     "Current in-memory queue size for LiveKit webhook worker.",
 )
+
+payment_command_created = Counter(
+    "payment_command_created",
+    "Number of shadow payment command records created.",
+)
+webhook_event_received = Counter(
+    "webhook_event_received",
+    "Number of Stripe webhook events received after signature verification.",
+)
+webhook_event_duplicate = Counter(
+    "webhook_event_duplicate",
+    "Number of duplicate Stripe webhook events detected in shadow ledger.",
+)
+webhook_event_applied = Counter(
+    "webhook_event_applied",
+    "Number of Stripe webhook events that reached legacy mutation flow successfully.",
+)

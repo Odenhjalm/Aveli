@@ -17,6 +17,7 @@ from ..schemas.course_bundles import (
     CourseBundleCreateRequest,
     CourseBundleResponse,
 )
+from . import payment_command_shadow
 from . import stripe_customers as stripe_customers_service
 
 RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
@@ -128,7 +129,13 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
     )
 
 
-async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> CheckoutCreateResponse:
+async def create_checkout_session(
+    user: Mapping[str, Any],
+    bundle_id: str,
+    *,
+    idempotency_key: str | None = None,
+    request_metadata: Mapping[str, Any] | None = None,
+) -> CheckoutCreateResponse:
     _require_stripe()
 
     bundle = await bundle_repo.get_bundle(bundle_id)
@@ -172,6 +179,28 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
     )
     metadata["order_id"] = str(order["id"])
 
+    shadow_metadata = dict(request_metadata or {})
+    shadow_metadata.update(
+        {
+            "checkout_entrypoint": "api_course_bundle_checkout_session",
+            "checkout_type": "bundle",
+            "bundle_id": str(bundle_id),
+            "price_id": price_id,
+            "course_count": len(courses),
+        }
+    )
+    command_id = await payment_command_shadow.create_checkout_command(
+        user_id=user_id,
+        command_type="bundle_purchase",
+        idempotency_key=idempotency_key,
+        request_metadata=shadow_metadata,
+        amount_cents=int(bundle.get("price_amount_cents") or 0),
+        currency=(bundle.get("currency") or "sek").lower(),
+        course_id=None,
+        bundle_id=str(bundle_id),
+        service_id=None,
+    )
+
     success_url, cancel_url = _default_checkout_urls()
     try:
         session = await run_in_threadpool(
@@ -188,6 +217,18 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
         )
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise CourseBundleError("Kunde inte skapa Stripe-session", status_code=502) from exc
+
+    await payment_command_shadow.mark_checkout_session_created(
+        command_id=command_id,
+        idempotency_key=idempotency_key,
+        stripe_checkout_session_id=str(session.get("id")) if session.get("id") else None,
+        stripe_payment_intent_id=str(session.get("payment_intent"))
+        if session.get("payment_intent")
+        else None,
+        stripe_subscription_id=str(session.get("subscription"))
+        if session.get("subscription")
+        else None,
+    )
 
     await repositories.set_order_checkout_reference(
         order_id=order["id"],

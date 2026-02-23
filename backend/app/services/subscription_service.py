@@ -11,6 +11,7 @@ from ..config import settings
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
 from ..schemas.billing import SessionStatusResponse, SubscriptionCheckoutResponse, SubscriptionInterval
+from . import payment_command_shadow
 from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
@@ -37,18 +38,45 @@ class SubscriptionConfigError(SubscriptionError):
 
 
 async def create_subscription_checkout(
-    user: Mapping[str, Any], interval: SubscriptionInterval
+    user: Mapping[str, Any],
+    interval: SubscriptionInterval,
+    *,
+    idempotency_key: str | None = None,
+    request_metadata: Mapping[str, Any] | None = None,
 ) -> SubscriptionCheckoutResponse:
     try:
         stripe_context = stripe_mode.resolve_stripe_context()
         price_config = stripe_mode.resolve_membership_price(interval, stripe_context)
-        await stripe_mode.ensure_price_accessible(price_config, stripe_context)
+        price = await stripe_mode.ensure_price_accessible(price_config, stripe_context)
     except stripe_mode.StripeConfigurationError as exc:
         raise SubscriptionConfigError(str(exc)) from exc
 
     stripe.api_key = stripe_context.secret_key
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
+    amount_cents = int(price.get("unit_amount") or 0)
+    currency = (price.get("currency") or "sek").lower()
+
+    shadow_metadata = dict(request_metadata or {})
+    shadow_metadata.update(
+        {
+            "checkout_entrypoint": "api_billing_create_subscription",
+            "interval": interval.value,
+            "price_id": price_config.price_id,
+            "stripe_mode": stripe_context.mode.value,
+        }
+    )
+    command_id = await payment_command_shadow.create_checkout_command(
+        user_id=user_id,
+        command_type="membership_start",
+        idempotency_key=idempotency_key,
+        request_metadata=shadow_metadata,
+        amount_cents=amount_cents,
+        currency=currency,
+        course_id=None,
+        bundle_id=None,
+        service_id=None,
+    )
 
     success_url = settings.checkout_success_url or _build_frontend_url(RETURN_PATH) or RETURN_DEEP_LINK
     cancel_url = settings.checkout_cancel_url or _build_frontend_url(CANCEL_PATH) or CANCEL_DEEP_LINK
@@ -77,6 +105,19 @@ async def create_subscription_checkout(
         raise SubscriptionError(_format_invalid_request(exc), status_code=502) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise SubscriptionError("Stripe-fel vid prenumerationssession", status_code=502) from exc
+
+    await payment_command_shadow.mark_checkout_session_created(
+        command_id=command_id,
+        idempotency_key=idempotency_key,
+        stripe_checkout_session_id=str(session.get("id")) if session.get("id") else None,
+        stripe_payment_intent_id=str(session.get("payment_intent"))
+        if session.get("payment_intent")
+        else None,
+        stripe_subscription_id=str(session.get("subscription"))
+        if session.get("subscription")
+        else None,
+    )
+
     checkout_url = session.get("url")
     if not isinstance(checkout_url, str):
         raise SubscriptionError("Stripe session missing checkout url", status_code=502)
@@ -102,17 +143,46 @@ async def create_subscription_checkout(
     return SubscriptionCheckoutResponse(checkout_url=checkout_url)
 
 
-async def create_checkout_session(user: Mapping[str, Any], interval: SubscriptionInterval) -> str:
+async def create_checkout_session(
+    user: Mapping[str, Any],
+    interval: SubscriptionInterval,
+    *,
+    idempotency_key: str | None = None,
+    request_metadata: Mapping[str, Any] | None = None,
+) -> str:
     try:
         stripe_context = stripe_mode.resolve_stripe_context()
         price_config = stripe_mode.resolve_membership_price(interval, stripe_context)
-        await stripe_mode.ensure_price_accessible(price_config, stripe_context)
+        price = await stripe_mode.ensure_price_accessible(price_config, stripe_context)
     except stripe_mode.StripeConfigurationError as exc:
         raise SubscriptionConfigError(str(exc)) from exc
 
     stripe.api_key = stripe_context.secret_key
     user_id = str(user["id"])
     customer_id = await _get_or_create_customer(user)
+    amount_cents = int(price.get("unit_amount") or 0)
+    currency = (price.get("currency") or "sek").lower()
+
+    shadow_metadata = dict(request_metadata or {})
+    shadow_metadata.update(
+        {
+            "checkout_entrypoint": "membership_checkout_session",
+            "interval": interval.value,
+            "price_id": price_config.price_id,
+            "stripe_mode": stripe_context.mode.value,
+        }
+    )
+    command_id = await payment_command_shadow.create_checkout_command(
+        user_id=user_id,
+        command_type="membership_start",
+        idempotency_key=idempotency_key,
+        request_metadata=shadow_metadata,
+        amount_cents=amount_cents,
+        currency=currency,
+        course_id=None,
+        bundle_id=None,
+        service_id=None,
+    )
 
     def _create_session() -> dict[str, Any]:
         return stripe.checkout.Session.create(
@@ -139,6 +209,19 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
         raise SubscriptionError(_format_invalid_request(exc), status_code=502) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise SubscriptionError("Stripe-fel vid prenumerationssession", status_code=502) from exc
+
+    await payment_command_shadow.mark_checkout_session_created(
+        command_id=command_id,
+        idempotency_key=idempotency_key,
+        stripe_checkout_session_id=str(session.get("id")) if session.get("id") else None,
+        stripe_payment_intent_id=str(session.get("payment_intent"))
+        if session.get("payment_intent")
+        else None,
+        stripe_subscription_id=str(session.get("subscription"))
+        if session.get("subscription")
+        else None,
+    )
+
     checkout_url = session.get("url")
     if not isinstance(checkout_url, str):
         raise SubscriptionError("Stripe session missing checkout url", status_code=502)

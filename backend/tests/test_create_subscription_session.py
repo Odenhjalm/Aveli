@@ -1,5 +1,8 @@
 import pytest
 
+from psycopg import errors
+
+from app import db
 from app import repositories
 from app.config import settings
 
@@ -56,3 +59,26 @@ async def test_create_subscription_session(async_client, monkeypatch):
     assert membership is not None
     assert membership["plan_interval"] == "month"
     assert membership["status"] == "incomplete"
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(
+                    """
+                    SELECT command_type, status, stripe_checkout_session_id
+                    FROM app.payment_commands
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (str(user_id),),
+                )
+            except errors.UndefinedTable:
+                await conn.rollback()
+                return
+            row = await cur.fetchone()
+
+    assert row is not None
+    assert row[0] == "membership_start"
+    assert row[1] == "session_created"
+    assert row[2] == "cs_test"

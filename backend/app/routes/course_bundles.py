@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from ..auth import CurrentUser
 from ..permissions import TeacherUser
@@ -11,7 +11,7 @@ from ..schemas.course_bundles import (
     CourseBundleResponse,
     CourseBundleListResponse,
 )
-from ..services import course_bundles_service
+from ..services import course_bundles_service, payment_command_shadow
 
 router = APIRouter(tags=["course-bundles"])
 
@@ -88,9 +88,19 @@ async def add_course_to_bundle(
 async def create_bundle_checkout(
     bundle_id: str,
     current: CurrentUser,
+    request: Request,
 ) -> CheckoutCreateResponse:
+    idempotency_key = payment_command_shadow.extract_idempotency_key(request.headers)
     try:
-        return await course_bundles_service.create_checkout_session(current, bundle_id)
+        return await course_bundles_service.create_checkout_session(
+            current,
+            bundle_id,
+            idempotency_key=idempotency_key,
+            request_metadata={
+                "endpoint": str(request.url.path),
+                "method": request.method,
+            },
+        )
     except course_bundles_service.CourseBundleConfigError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except course_bundles_service.CourseBundleError as exc:

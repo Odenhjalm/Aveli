@@ -11,6 +11,7 @@ from ..config import settings
 from .. import stripe_mode
 from ..repositories import courses as courses_repo
 from . import courses_service
+from . import payment_command_shadow
 from . import stripe_customers as stripe_customers_service
 
 RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
@@ -82,6 +83,9 @@ async def can_purchase_course(
 async def create_course_checkout(
     user: Mapping[str, Any],
     slug: str,
+    *,
+    idempotency_key: str | None = None,
+    request_metadata: Mapping[str, Any] | None = None,
 ) -> schemas.CheckoutCreateResponse:
     _require_stripe()
     course = await courses_repo.get_course_by_slug(slug)
@@ -167,6 +171,29 @@ async def create_course_checkout(
     )
     metadata["order_id"] = str(order["id"])
 
+    shadow_metadata = dict(request_metadata or {})
+    shadow_metadata.update(
+        {
+            "checkout_entrypoint": "api_checkout_create",
+            "checkout_type": "course",
+            "slug_requested": slug,
+            "course_slug": course_slug,
+            "course_id": str(course_id_value),
+            "price_id": price_id,
+        }
+    )
+    command_id = await payment_command_shadow.create_checkout_command(
+        user_id=user_id,
+        command_type="course_purchase",
+        idempotency_key=idempotency_key,
+        request_metadata=shadow_metadata,
+        amount_cents=amount_cents,
+        currency=currency,
+        course_id=str(course_id_value),
+        bundle_id=None,
+        service_id=None,
+    )
+
     success_url, cancel_url = _default_checkout_urls()
     line_items: list[dict[str, Any]]
     override_amount = (
@@ -204,6 +231,18 @@ async def create_course_checkout(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to create Stripe checkout session",
         ) from exc
+
+    await payment_command_shadow.mark_checkout_session_created(
+        command_id=command_id,
+        idempotency_key=idempotency_key,
+        stripe_checkout_session_id=str(session.get("id")) if session.get("id") else None,
+        stripe_payment_intent_id=str(session.get("payment_intent"))
+        if session.get("payment_intent")
+        else None,
+        stripe_subscription_id=str(session.get("subscription"))
+        if session.get("subscription")
+        else None,
+    )
 
     await repositories.set_order_checkout_reference(
         order_id=order["id"],

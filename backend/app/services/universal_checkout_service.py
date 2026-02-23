@@ -14,6 +14,7 @@ from .. import repositories, schemas
 from ..config import settings
 from ..repositories import memberships as memberships_repo
 from . import stripe_customers as stripe_customers_service
+from . import payment_command_shadow
 from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,9 @@ def _format_invalid_request(exc: stripe.error.InvalidRequestError) -> str:  # ty
 async def create_checkout_session(
     user: Mapping[str, Any],
     payload: schemas.CheckoutCreateRequest,
+    *,
+    idempotency_key: str | None = None,
+    request_metadata: Mapping[str, Any] | None = None,
 ) -> schemas.CheckoutCreateResponse:
     context = _require_stripe()
 
@@ -195,6 +199,35 @@ async def create_checkout_session(
         session_slot_id=None,
     )
     metadata["order_id"] = str(order["id"])
+
+    command_type = "service_purchase"
+    if payload.type is schemas.CheckoutType.subscription:
+        command_type = "membership_start"
+    elif payload.type is schemas.CheckoutType.course:
+        command_type = "course_purchase"
+
+    shadow_metadata = dict(request_metadata or {})
+    shadow_metadata.update(
+        {
+            "checkout_entrypoint": "api_checkout_create",
+            "checkout_type": payload.type.value if payload.type else None,
+            "slug": payload.slug,
+            "interval": payload.interval.value if payload.interval else None,
+            "price_id": price_info.price_id,
+            "stripe_mode": price_info.stripe_mode.value if price_info.stripe_mode else None,
+        }
+    )
+    command_id = await payment_command_shadow.create_checkout_command(
+        user_id=user_id,
+        command_type=command_type,
+        idempotency_key=idempotency_key,
+        request_metadata=shadow_metadata,
+        amount_cents=price_info.amount_cents,
+        currency=price_info.currency,
+        course_id=price_info.course_id,
+        bundle_id=None,
+        service_id=price_info.service_id,
+    )
 
     frontend_base = (settings.frontend_base_url or "").rstrip("/")
     success_url = (
@@ -244,6 +277,18 @@ async def create_checkout_session(
         raise CheckoutError(_format_invalid_request(exc), status_code=502) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise CheckoutError("Failed to create Stripe checkout session", status_code=502) from exc
+
+    await payment_command_shadow.mark_checkout_session_created(
+        command_id=command_id,
+        idempotency_key=idempotency_key,
+        stripe_checkout_session_id=str(session.get("id")) if session.get("id") else None,
+        stripe_payment_intent_id=str(session.get("payment_intent"))
+        if session.get("payment_intent")
+        else None,
+        stripe_subscription_id=str(session.get("subscription"))
+        if session.get("subscription")
+        else None,
+    )
 
     await repositories.set_order_checkout_reference(
         order_id=order["id"],
