@@ -118,13 +118,13 @@ async def test_upload_preflight_includes_cors_headers(async_client):
     resp = await async_client.options(
         "/upload/course-media",
         headers={
-            "Origin": "http://localhost:3000",
+            "Origin": "https://app.aveli.app",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "authorization,content-type,x-upsert",
         },
     )
     assert resp.status_code == 200
-    assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert resp.headers.get("access-control-allow-origin") == "https://app.aveli.app"
     assert "access-control-allow-headers" in resp.headers
 
 
