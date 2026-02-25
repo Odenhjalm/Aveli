@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
+import json
+import logging
 import os
 from pathlib import Path
+from typing import List
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,6 +64,7 @@ ASSETS_ROOT = Path(__file__).resolve().parents[1] / "assets"
 UPLOADS_ROOT = ASSETS_ROOT / "uploads"
 
 setup_logging()
+logger = logging.getLogger(__name__)
 
 
 def setup_sentry() -> None:
@@ -95,13 +99,39 @@ async def lifespan(app: FastAPI):
         await pool.close()
 
 
-def get_allowed_origins() -> list[str]:
+def _normalize_origin(origin: str) -> str:
+    origin = origin.strip().strip('"').strip("'")
+    return origin.rstrip("/")
+
+
+def get_allowed_origins() -> List[str]:
     raw = os.getenv("CORS_ALLOW_ORIGINS")
-    if raw:
-        parsed = [origin.strip() for origin in raw.split(",") if origin.strip() and origin.strip() != "*"]
-        if parsed:
-            return parsed
-    return ["https://app.aveli.app"]
+    if not raw:
+        logger.warning("CORS_ALLOW_ORIGINS not set, defaulting to production frontend origin.")
+        return ["https://app.aveli.app"]
+
+    raw = raw.strip()
+    origins: List[str] = []
+
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                origins = [_normalize_origin(origin) for origin in parsed if isinstance(origin, str)]
+            else:
+                raise ValueError("CORS_ALLOW_ORIGINS JSON must be a list.")
+        except Exception as exc:
+            logger.error("Failed to parse CORS_ALLOW_ORIGINS as JSON: %s", exc)
+            raise RuntimeError("Invalid CORS_ALLOW_ORIGINS format")
+    else:
+        origins = [_normalize_origin(origin) for origin in raw.split(",") if origin.strip()]
+
+    origins = [origin for origin in origins if origin and origin != "*"]
+    if not origins:
+        raise RuntimeError("CORS_ALLOW_ORIGINS resolved to empty list.")
+
+    logger.info("CORS allowed origins loaded: %s", origins)
+    return origins
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
 
