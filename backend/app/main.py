@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,6 +59,8 @@ from .db import get_conn
 
 ASSETS_ROOT = Path(__file__).resolve().parents[1] / "assets"
 UPLOADS_ROOT = ASSETS_ROOT / "uploads"
+PRODUCTION_FRONTEND_ORIGIN = "https://app.aveli.app"
+LOCAL_CORS_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 setup_logging()
 
@@ -94,13 +97,52 @@ async def lifespan(app: FastAPI):
         await pool.close()
 
 
-app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
-
-app.add_middleware(RequestContextMiddleware)
-
 app_env_value = os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or ""
 app_env_lower = app_env_value.strip().lower()
 is_production_env = app_env_lower in {"production", "prod", "live"}
+
+
+def _normalize_origin(origin: str) -> str:
+    return origin.strip().rstrip("/")
+
+
+def _is_local_origin(origin: str) -> bool:
+    parsed = urlparse(origin)
+    host = (parsed.hostname or "").strip().lower()
+    return host in LOCAL_CORS_HOSTS
+
+
+def get_allowed_origins() -> list[str]:
+    raw = os.getenv("CORS_ALLOW_ORIGINS", "")
+    if raw:
+        candidates = [origin.strip() for origin in raw.split(",") if origin.strip()]
+        env_driven = True
+    else:
+        candidates = [origin.strip() for origin in settings.cors_allow_origins if origin and origin.strip()]
+        env_driven = False
+
+    allowed: list[str] = []
+    seen: set[str] = set()
+    for origin in candidates:
+        normalized = _normalize_origin(origin)
+        key = normalized.lower()
+        if not normalized or normalized == "*" or key in seen:
+            continue
+        seen.add(key)
+        allowed.append(normalized)
+
+    if not env_driven and is_production_env:
+        allowed = [origin for origin in allowed if not _is_local_origin(origin)]
+        seen = {origin.lower() for origin in allowed}
+
+    production_origin_key = PRODUCTION_FRONTEND_ORIGIN.lower()
+    if production_origin_key not in seen:
+        allowed.append(PRODUCTION_FRONTEND_ORIGIN)
+
+    if not allowed:
+        return [PRODUCTION_FRONTEND_ORIGIN]
+    return allowed
+
 
 cors_allow_origin_regex = None
 configured_regex = (settings.cors_allow_origin_regex or "").strip()
@@ -115,16 +157,20 @@ if not is_production_env:
     else:
         cors_allow_origin_regex = local_origin_regex
 
+app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_allow_origins,
+    allow_origins=get_allowed_origins(),
     allow_origin_regex=cors_allow_origin_regex,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     # Allow all headers so browser preflights don't fail when uploads include
     # additional metadata headers (e.g. resumable/tus uploads).
     allow_headers=["*"],
 )
+
+app.add_middleware(RequestContextMiddleware)
 
 app.mount("/assets", StaticFiles(directory=ASSETS_ROOT), name="assets")
 
