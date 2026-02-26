@@ -144,14 +144,25 @@ class MediaRepository {
     return '/api/files/$normalizedBucket/$normalizedPath';
   }
 
-  void assertNoSupabasePublicUrl(String url) {
+  bool _isSupabasePublicUrl(String url) {
     final normalized = url.toLowerCase();
+    return normalized.contains('/storage/v1/object/public/');
+  }
+
+  bool _isAbsoluteUrl(String url) {
+    final normalized = url.toLowerCase();
+    return normalized.startsWith('http://') ||
+        normalized.startsWith('https://');
+  }
+
+  void assertNoSupabasePublicUrl(String url) {
+    final normalized = url.trim().toLowerCase();
+    final hasSupabasePublicPath = _isSupabasePublicUrl(normalized);
     assert(
-      !normalized.contains('storage/v1/object/public'),
+      !hasSupabasePublicPath || _isAbsoluteUrl(normalized),
       'Direct Supabase public URL usage is forbidden. Use backend resolver.',
     );
-    if (normalized.contains('/storage/v1/object/public/') ||
-        normalized.contains('storage/v1/object/public/')) {
+    if (hasSupabasePublicPath && !_isAbsoluteUrl(normalized)) {
       throw ArgumentError(
         'Direct Supabase public URL usage is forbidden. Use backend resolver.',
       );
@@ -160,7 +171,25 @@ class MediaRepository {
 
   /// Resolve a media download URL/path against the configured API base.
   String resolveDownloadUrl(String downloadPath) {
-    return _resolveMediaUrl(downloadPath);
+    final normalized = downloadPath.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError('downloadPath may not be empty');
+    }
+
+    if (_isAbsoluteUrl(normalized)) {
+      // Backend-emitted canonical URLs (for example course covers) must pass
+      // through unchanged.
+      assertNoSupabasePublicUrl(normalized);
+      return normalized;
+    }
+
+    // Relative Supabase public paths are considered manual construction and are
+    // blocked by invariant checks.
+    if (_isSupabasePublicUrl(normalized)) {
+      assertNoSupabasePublicUrl(normalized);
+    }
+
+    return _resolveMediaUrl(normalized);
   }
 
   /// Resolve a media playback URL/path against the configured API base.
