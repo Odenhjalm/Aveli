@@ -200,15 +200,21 @@ async def _build_streaming_response(
 
     file_path: Path | None = None
     candidates: list[Path] = []
+    bucket = row.get("storage_bucket")
     try:
         relative = Path(storage_path)
         candidates.append(
             upload_routes._safe_join(upload_routes.UPLOADS_ROOT, *relative.parts)
         )
+        if bucket:
+            candidates.append(
+                upload_routes._safe_join(
+                    upload_routes.UPLOADS_ROOT, str(bucket), *relative.parts
+                )
+            )
     except HTTPException:
         pass
 
-    bucket = row.get("storage_bucket")
     base_dir = Path(settings.media_root)
     if bucket:
         candidates.append(base_dir / bucket / storage_path)

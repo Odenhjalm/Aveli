@@ -99,7 +99,7 @@ async def test_media_stream_records_telemetry_on_missing_file(async_client, monk
     headers, _ = await register_teacher(async_client)
     _, lesson_id = await create_course_and_lesson(async_client, headers)
 
-    unique_path = f"course-media/missing/{uuid.uuid4().hex}/demo.png"
+    unique_path = f"missing/{uuid.uuid4().hex}/demo.png"
     lesson_media = await models.add_lesson_media_entry_with_position_retry(
         lesson_id=lesson_id,
         kind="image",
@@ -140,4 +140,4 @@ async def test_media_stream_records_telemetry_on_missing_file(async_client, monk
     assert row is not None
     mode, reason = row
     assert mode == "student_render"
-    assert reason == "key_format_drift"
+    assert reason == "missing_object"

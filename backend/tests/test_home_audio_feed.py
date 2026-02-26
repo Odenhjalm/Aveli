@@ -324,7 +324,7 @@ async def test_home_audio_course_link_marks_missing_source_when_deleted(async_cl
 
     media_object = await models.create_media_object(
         owner_id=owner_id,
-        storage_path=f"lesson-media/{uuid.uuid4().hex}.mp3",
+        storage_path=f"{uuid.uuid4().hex}.mp3",
         storage_bucket="lesson-media",
         content_type="audio/mpeg",
         byte_size=3,

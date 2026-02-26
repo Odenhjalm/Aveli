@@ -159,7 +159,7 @@ async def test_cover_from_lesson_media_creates_asset(async_client):
         media = await models.add_lesson_media_entry(
             lesson_id=lesson_id,
             kind="image",
-            storage_path="course-media/demo/cover.png",
+            storage_path="demo/cover.png",
             storage_bucket=storage_module.storage_service.bucket,
             media_id=None,
             media_asset_id=None,
@@ -180,7 +180,7 @@ async def test_cover_from_lesson_media_creates_asset(async_client):
         body = resp.json()
         asset = await media_assets_repo.get_media_asset(body["media_id"])
         assert asset is not None
-        assert asset["original_object_path"] == "course-media/demo/cover.png"
+        assert asset["original_object_path"] == "demo/cover.png"
         assert asset["purpose"] == "course_cover"
     finally:
         await cleanup_user(user_id)
