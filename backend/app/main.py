@@ -26,6 +26,7 @@ from .db import pool
 from .logging_utils import setup_logging
 from .middleware.request_context import RequestContextMiddleware
 from .services import livekit_events, media_transcode_worker
+from .utils.media_paths import normalize_storage_path
 from .routes import (
     admin,
     api_ai,

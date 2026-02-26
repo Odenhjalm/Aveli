@@ -30,6 +30,7 @@ from .services import courses_service
 from .services import storage_service
 from .config import settings
 from .utils import media_signer
+from .utils.media_paths import normalize_storage_path, storage_path_has_bucket_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,11 @@ async def create_media_object(
     checksum: str | None,
     original_name: str | None,
 ) -> dict | None:
+    normalized_bucket = str(storage_bucket or "").strip().strip("/")
+    normalized_storage_path = normalize_storage_path(normalized_bucket, storage_path)
+    if storage_path_has_bucket_prefix(normalized_bucket, normalized_storage_path):
+        raise RuntimeError("Invalid storage_path: contains bucket prefix")
+
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -77,8 +83,8 @@ async def create_media_object(
                 """,
                 (
                     owner_id,
-                    storage_path,
-                    storage_bucket,
+                    normalized_storage_path,
+                    normalized_bucket,
                     content_type,
                     byte_size,
                     checksum,
@@ -1052,6 +1058,13 @@ async def add_lesson_media_entry(
     media_asset_id: str | None = None,
     duration_seconds: int | None = None,
 ) -> dict | None:
+    normalized_bucket = str(storage_bucket or "").strip().strip("/")
+    normalized_storage_path = storage_path
+    if storage_path is not None:
+        normalized_storage_path = normalize_storage_path(normalized_bucket, storage_path)
+        if storage_path_has_bucket_prefix(normalized_bucket, normalized_storage_path):
+            raise RuntimeError("Invalid storage_path: contains bucket prefix")
+
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -1100,8 +1113,8 @@ async def add_lesson_media_entry(
                 (
                     lesson_id,
                     kind,
-                    storage_path,
-                    storage_bucket,
+                    normalized_storage_path,
+                    normalized_bucket,
                     media_id,
                     media_asset_id,
                     position,

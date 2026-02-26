@@ -25,6 +25,7 @@ from ..services import storage_service
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
 from ..utils import media_robustness
+from ..utils.media_paths import storage_path_has_bucket_prefix
 from ..utils.membership_status import is_membership_active
 
 
@@ -212,6 +213,20 @@ def _best_storage_candidate(
     )
 
 
+def _is_malformed_storage_path_for_bucket(
+    *,
+    storage_bucket: str | None,
+    storage_path: str | None,
+) -> bool:
+    bucket = (storage_bucket or "").strip() or None
+    if not bucket or not storage_path:
+        return False
+    normalized_path = _normalize_storage_path(str(storage_path))
+    if not normalized_path:
+        return False
+    return storage_path_has_bucket_prefix(bucket, normalized_path)
+
+
 def _attach_media_robustness(
     item: dict[str, Any],
     *,
@@ -240,7 +255,21 @@ def _attach_media_robustness(
         elif state == "ready" and bytes_exist is True:
             status = media_robustness.MediaStatus.ok
         elif state == "ready" and bytes_exist is False:
-            status = media_robustness.MediaStatus.missing_bytes
+            if _is_malformed_storage_path_for_bucket(
+                storage_bucket=bucket,
+                storage_path=str(path) if path is not None else None,
+            ):
+                logger.warning(
+                    "Skipping missing_bytes robustness status for malformed storage path: "
+                    "bucket=%s path=%s media_asset_id=%s",
+                    bucket,
+                    path,
+                    item.get("media_asset_id"),
+                )
+                status = media_robustness.MediaStatus.manual_review
+                reason = "manual_review"
+            else:
+                status = media_robustness.MediaStatus.missing_bytes
         elif state == "failed":
             status = media_robustness.MediaStatus.unsupported
         else:
@@ -276,8 +305,22 @@ def _attach_media_robustness(
         status = media_robustness.MediaStatus.unsupported
         reason = "unsupported"
     elif bytes_exist is False or reason == "missing_object":
-        status = media_robustness.MediaStatus.missing_bytes
-        reason = "missing_object"
+        if _is_malformed_storage_path_for_bucket(
+            storage_bucket=str(bucket) if bucket is not None else None,
+            storage_path=str(path) if path is not None else None,
+        ):
+            logger.warning(
+                "Skipping missing_bytes robustness status for malformed legacy storage path: "
+                "bucket=%s path=%s lesson_media_id=%s",
+                bucket,
+                path,
+                item.get("id"),
+            )
+            status = media_robustness.MediaStatus.manual_review
+            reason = "manual_review"
+        else:
+            status = media_robustness.MediaStatus.missing_bytes
+            reason = "missing_object"
     elif reason in {"bucket_mismatch", "key_format_drift"}:
         status = media_robustness.MediaStatus.needs_migration
     else:
