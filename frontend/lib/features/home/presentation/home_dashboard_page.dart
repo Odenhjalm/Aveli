@@ -850,11 +850,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     }
     String url = preferred.trim();
     final repo = ref.read(mediaRepositoryProvider);
-    try {
-      url = repo.resolveUrl(url);
-    } catch (_) {
-      // Keep original URL when it's already absolute (for signed URLs).
-    }
+    url = repo.resolvePlaybackUrl(url);
     await _restartIfCurrentTrack(item.id);
     await ref
         .read(mediaPlaybackControllerProvider.notifier)

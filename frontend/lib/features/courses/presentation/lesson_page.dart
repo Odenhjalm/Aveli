@@ -200,7 +200,7 @@ class _LessonContent extends ConsumerWidget {
         if (url == null || url.isEmpty) continue;
         if (markdownContent.contains(url)) return true;
         try {
-          final resolved = mediaRepo.resolveUrl(url);
+          final resolved = mediaRepo.resolveDownloadUrl(url);
           if (markdownContent.contains(resolved)) return true;
         } catch (_) {}
       }
@@ -580,26 +580,24 @@ class _LessonResolvedAudioPlayer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(mediaRepositoryProvider);
-    var resolved = url;
     try {
-      resolved = repo.resolveUrl(url);
-    } catch (_) {
-      // Keep the raw value when we cannot safely resolve it.
-    }
+      final resolved = repo.resolvePlaybackUrl(url);
+      final uri = Uri.tryParse(resolved);
+      if (uri != null && uri.path.startsWith('/studio/media/')) {
+        return const _MissingMediaFallback();
+      }
 
-    final uri = Uri.tryParse(resolved);
-    if (uri != null && uri.path.startsWith('/studio/media/')) {
+      final playbackUrl = _normalizeInlinePlaybackUrl(resolved);
+      if (playbackUrl == null) return const _MissingMediaFallback();
+
+      return AveliLessonMediaPlayer(
+        playbackUrl: playbackUrl,
+        title: 'Ljud',
+        kind: 'audio',
+      );
+    } catch (_) {
       return const _MissingMediaFallback();
     }
-
-    final playbackUrl = _normalizeInlinePlaybackUrl(resolved);
-    if (playbackUrl == null) return const _MissingMediaFallback();
-
-    return AveliLessonMediaPlayer(
-      playbackUrl: playbackUrl,
-      title: 'Ljud',
-      kind: 'audio',
-    );
   }
 }
 
@@ -614,50 +612,48 @@ class _LessonResolvedVideoPlayer extends ConsumerWidget {
     final repo = ref.watch(mediaRepositoryProvider);
     final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
     final isAuthenticated = ref.watch(authControllerProvider).isAuthenticated;
-    var resolved = url;
     try {
-      resolved = repo.resolveUrl(url);
+      final resolved = repo.resolvePlaybackUrl(url);
+      final uri = Uri.tryParse(resolved);
+      if (uri != null && uri.path.startsWith('/studio/media/')) {
+        return const _MissingMediaFallback();
+      }
+      final mediaId = lessonMediaId?.trim();
+      final playbackFuture =
+          !isAuthenticated || mediaId == null || mediaId.isEmpty
+          ? Future<String?>.value(resolved)
+          : resolveLessonMediaSignedPlaybackUrl(
+              lessonMediaId: mediaId,
+              mediaRepository: repo,
+              pipelineRepository: pipelineRepo,
+            );
+      return FutureBuilder<String?>(
+        future: playbackFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final normalizedUrl = _normalizeInlinePlaybackUrl(snapshot.data);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _LessonGlassMediaWrapper(
+              child: normalizedUrl == null
+                  ? const _MissingMediaFallback()
+                  : AveliLessonMediaPlayer(
+                      playbackUrl: normalizedUrl,
+                      title: 'Video',
+                      kind: 'video',
+                    ),
+            ),
+          );
+        },
+      );
     } catch (_) {
-      // Keep the raw value when we cannot safely resolve it.
-    }
-
-    final uri = Uri.tryParse(resolved);
-    if (uri != null && uri.path.startsWith('/studio/media/')) {
       return const _MissingMediaFallback();
     }
-    final mediaId = lessonMediaId?.trim();
-    final playbackFuture =
-        !isAuthenticated || mediaId == null || mediaId.isEmpty
-        ? Future<String?>.value(resolved)
-        : resolveLessonMediaSignedPlaybackUrl(
-            lessonMediaId: mediaId,
-            mediaRepository: repo,
-            pipelineRepository: pipelineRepo,
-          );
-    return FutureBuilder<String?>(
-      future: playbackFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: LinearProgressIndicator(),
-          );
-        }
-        final normalizedUrl = _normalizeInlinePlaybackUrl(snapshot.data);
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _LessonGlassMediaWrapper(
-            child: normalizedUrl == null
-                ? const _MissingMediaFallback()
-                : AveliLessonMediaPlayer(
-                    playbackUrl: normalizedUrl,
-                    title: 'Video',
-                    kind: 'video',
-                  ),
-          ),
-        );
-      },
-    );
   }
 }
 
@@ -910,9 +906,9 @@ class _MediaItem extends ConsumerWidget {
         return ListTile(leading: Icon(_iconForKind()), title: Text(_fileName));
       }
       try {
-        downloadUrl = mediaRepo.resolveUrl(preferredUrl);
+        downloadUrl = mediaRepo.resolveDownloadUrl(preferredUrl);
       } catch (_) {
-        downloadUrl = preferredUrl;
+        downloadUrl = null;
       }
     }
 

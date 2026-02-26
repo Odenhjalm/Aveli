@@ -17,19 +17,17 @@ String? _resolveBrowserPlayableUrl(
   final raw = value?.trim();
   if (raw == null || raw.isEmpty) return null;
 
-  var resolved = raw;
   try {
-    resolved = mediaRepository.resolveUrl(raw);
+    final resolved = mediaRepository.resolvePlaybackUrl(raw);
+    final uri = Uri.tryParse(resolved);
+    final path = uri?.path ?? resolved;
+    if (_isAuthProtectedPlaybackPath(path)) {
+      return null;
+    }
+    return resolved;
   } catch (_) {
-    // Keep the original URL when it is already absolute/signed.
-  }
-
-  final uri = Uri.tryParse(resolved);
-  final path = uri?.path ?? resolved;
-  if (_isAuthProtectedPlaybackPath(path)) {
     return null;
   }
-  return resolved;
 }
 
 Future<String?> resolveLessonMediaSignedPlaybackUrl({

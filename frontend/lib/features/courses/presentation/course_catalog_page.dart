@@ -889,8 +889,8 @@ class _ActAveliProSection extends StatelessWidget {
 String? _resolveCoverUrl(MediaRepository repository, String? path) {
   if (path == null || path.trim().isEmpty) return null;
   try {
-    return repository.resolveUrl(path);
+    return repository.resolveDownloadUrl(path);
   } catch (_) {
-    return path;
+    return null;
   }
 }

@@ -11,6 +11,7 @@ import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:mime/mime.dart' as mime;
 
@@ -624,7 +625,7 @@ class _MediaToolbarState extends ConsumerState<MediaToolbar> {
 
     try {
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      final url = _extractUrl(payload, config.apiBaseUrl);
+      final url = _extractUrl(payload);
       if (url == null || url.isEmpty) {
         throw const MediaUploadException('Ogiltigt svar från servern.');
       }
@@ -699,7 +700,7 @@ class _MediaToolbarState extends ConsumerState<MediaToolbar> {
     widget.focusNode?.requestFocus();
   }
 
-  String? _extractUrl(Map<String, dynamic> payload, String baseUrl) {
+  String? _extractUrl(Map<String, dynamic> payload) {
     final candidate =
         payload['download_url'] ??
         payload['downloadUrl'] ??
@@ -707,7 +708,7 @@ class _MediaToolbarState extends ConsumerState<MediaToolbar> {
         payload['url'] ??
         payload['path'];
     if (candidate is String && candidate.isNotEmpty) {
-      return _resolveUrl(candidate, baseUrl);
+      return _resolveUrl(candidate);
     }
     final media = payload['media'];
     if (media is Map<String, dynamic>) {
@@ -718,20 +719,14 @@ class _MediaToolbarState extends ConsumerState<MediaToolbar> {
           media['url'] ??
           media['path'];
       if (nested is String && nested.isNotEmpty) {
-        return _resolveUrl(nested, baseUrl);
+        return _resolveUrl(nested);
       }
     }
     return null;
   }
 
-  String _resolveUrl(String candidate, String baseUrl) {
-    final base = Uri.parse(baseUrl);
-    final uri = Uri.parse(candidate);
-    if (uri.hasScheme) {
-      return uri.toString();
-    }
-    final normalized = candidate.startsWith('/') ? candidate : '/$candidate';
-    return base.resolve(normalized).toString();
+  String _resolveUrl(String candidate) {
+    return ref.read(mediaRepositoryProvider).resolveDownloadUrl(candidate);
   }
 
   MediaUploadFile? _pendingFileFromPlatformFile(PlatformFile platformFile) {

@@ -1189,12 +1189,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         bucket = parts[0];
       }
     }
-    if (bucket == null || bucket.isEmpty) return null;
-
-    final pathWithBucket = normalized.startsWith('$bucket/')
-        ? normalized
-        : '$bucket/$normalized';
-    return '/api/files/$pathWithBucket';
+    final resolvedBucket = (bucket ?? '').trim();
+    if (resolvedBucket.isEmpty) return null;
+    final relativePath = normalized.startsWith('$resolvedBucket/')
+        ? normalized.substring(resolvedBucket.length + 1)
+        : normalized;
+    return ref
+        .read(mediaRepositoryProvider)
+        .buildMediaUrl(resolvedBucket, relativePath);
   }
 
   Map<String, String> _apiFilesPathToStudioMediaUrlForSelectedLesson() {
@@ -2506,12 +2508,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         bucket = parts[0];
       }
     }
-    if (!_isPublicBucket(bucket)) return null;
-
-    final pathWithBucket = normalized.startsWith('$bucket/')
-        ? normalized
-        : '$bucket/$normalized';
-    return '/api/files/$pathWithBucket';
+    final resolvedBucket = (bucket ?? '').trim();
+    if (!_isPublicBucket(resolvedBucket)) return null;
+    final relativePath = normalized.startsWith('$resolvedBucket/')
+        ? normalized.substring(resolvedBucket.length + 1)
+        : normalized;
+    return ref
+        .read(mediaRepositoryProvider)
+        .buildMediaUrl(resolvedBucket, relativePath);
   }
 
   String? _resolveMediaDisplayUrl(Map<String, dynamic> media) {
@@ -3844,9 +3848,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _resolveMediaUrl(String? path) {
     if (path == null || path.isEmpty) return null;
     try {
-      return ref.read(mediaRepositoryProvider).resolveUrl(path);
+      return ref.read(mediaRepositoryProvider).resolveDownloadUrl(path);
     } catch (_) {
-      return path;
+      return null;
     }
   }
 

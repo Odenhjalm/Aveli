@@ -63,9 +63,9 @@ class _CoursePageState extends ConsumerState<CoursePage> {
                 try {
                   return ref
                       .read(mediaRepositoryProvider)
-                      .resolveUrl(coverPath);
+                      .resolveDownloadUrl(coverPath);
                 } catch (_) {
-                  return coverPath;
+                  return null;
                 }
               }();
         final pricingAsync = ref.watch(coursePricingProvider(slug));

@@ -67,10 +67,10 @@ Future<LandingSectionState> _fetchLandingSection(
           final cover = map['cover_url'] as String?;
           if (cover != null && cover.isNotEmpty) {
             try {
-              final resolved = mediaRepository.resolveUrl(cover);
+              final resolved = mediaRepository.resolveDownloadUrl(cover);
               map['cover_url'] = resolved;
             } catch (_) {
-              // Leave original value on resolve failure.
+              map['cover_url'] = null;
             }
           }
           return map;

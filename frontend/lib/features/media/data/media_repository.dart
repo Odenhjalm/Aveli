@@ -112,13 +112,64 @@ class MediaRepository {
     return dir;
   }
 
-  /// Resolve a relative download path to an absolute URL based on the API base.
-  String resolveUrl(String downloadPath) {
-    final target = _normalizeDownloadTarget(downloadPath);
-    if (target.isAbsolute) return target.path;
-    final base = Uri.parse(_config.apiBaseUrl);
-    return base.resolve(target.path).toString();
+  String buildMediaUrl(String bucket, String path) {
+    final normalizedBucket = bucket
+        .trim()
+        .replaceAll('\\', '/')
+        .replaceAll(RegExp(r'^/+'), '')
+        .replaceAll(RegExp(r'/+$'), '');
+    if (normalizedBucket.isEmpty) {
+      throw ArgumentError('bucket may not be empty');
+    }
+
+    var normalizedPath = path
+        .trim()
+        .replaceAll('\\', '/')
+        .replaceAll(RegExp(r'^/+'), '');
+    if (normalizedPath.isEmpty) {
+      throw ArgumentError('path may not be empty');
+    }
+
+    assert(
+      !normalizedPath.startsWith('$normalizedBucket/'),
+      'storage_path must not contain bucket prefix',
+    );
+    if (normalizedPath.startsWith('$normalizedBucket/')) {
+      normalizedPath = normalizedPath.substring(normalizedBucket.length + 1);
+    }
+    if (normalizedPath.isEmpty) {
+      throw ArgumentError('path may not be empty');
+    }
+
+    return '/api/files/$normalizedBucket/$normalizedPath';
   }
+
+  void assertNoSupabasePublicUrl(String url) {
+    final normalized = url.toLowerCase();
+    assert(
+      !normalized.contains('storage/v1/object/public'),
+      'Direct Supabase public URL usage is forbidden. Use backend resolver.',
+    );
+    if (normalized.contains('/storage/v1/object/public/') ||
+        normalized.contains('storage/v1/object/public/')) {
+      throw ArgumentError(
+        'Direct Supabase public URL usage is forbidden. Use backend resolver.',
+      );
+    }
+  }
+
+  /// Resolve a media download URL/path against the configured API base.
+  String resolveDownloadUrl(String downloadPath) {
+    return _resolveMediaUrl(downloadPath);
+  }
+
+  /// Resolve a media playback URL/path against the configured API base.
+  String resolvePlaybackUrl(String playbackPath) {
+    return _resolveMediaUrl(playbackPath);
+  }
+
+  /// Backward-compatible alias for older call sites.
+  String resolveUrl(String downloadPath) => resolveDownloadUrl(downloadPath);
 
   /// Download a media asset (if needed) and return the cached file on disk.
   Future<File> cacheMedia({
@@ -132,7 +183,7 @@ class MediaRepository {
       );
     }
 
-    final target = _normalizeDownloadTarget(downloadPath);
+    final target = _normalizeMediaTarget(downloadPath);
     final key = '$cacheKey::${target.path}';
     final pending = _inflight[key];
     if (pending != null) return pending;
@@ -175,7 +226,7 @@ class MediaRepository {
     String? fileExtension,
   }) async {
     if (kIsWeb) {
-      final target = _normalizeDownloadTarget(downloadPath);
+      final target = _normalizeMediaTarget(downloadPath);
       final key = '$cacheKey::${target.path}';
       final existing = _memoryCache[key];
       if (existing != null) return existing;
@@ -239,7 +290,16 @@ class MediaRepository {
     }
   }
 
-  _DownloadTarget _normalizeDownloadTarget(String input) {
+  String _resolveMediaUrl(String input) {
+    final target = _normalizeMediaTarget(input);
+    final resolved = target.isAbsolute
+        ? target.path
+        : Uri.parse(_config.apiBaseUrl).resolve(target.path).toString();
+    assertNoSupabasePublicUrl(resolved);
+    return resolved;
+  }
+
+  _DownloadTarget _normalizeMediaTarget(String input) {
     if (input.isEmpty) {
       throw ArgumentError('downloadPath may not be empty');
     }
@@ -252,41 +312,56 @@ class MediaRepository {
           uri.host == base.host &&
           uri.port == base.port;
       if (!sameOrigin) {
-        if (_isAllowedSupabaseUri(uri)) {
-          return _DownloadTarget(
-            path: uri.toString(),
-            skipAuth: true,
-            isAbsolute: true,
-          );
+        final converted = _tryConvertSupabasePublicUrl(uri);
+        if (converted != null) {
+          return _DownloadTarget(path: converted, skipAuth: false);
         }
-        throw ArgumentError('downloadPath must target the configured API host.');
+        return _DownloadTarget(
+          path: uri.toString(),
+          skipAuth: true,
+          isAbsolute: true,
+        );
       }
       final path = uri.path.isEmpty ? '/' : uri.path;
       final query = uri.hasQuery ? '?${uri.query}' : '';
       return _DownloadTarget(path: '$path$query', skipAuth: false);
     }
 
-    return _DownloadTarget(
-      path: input.startsWith('/') ? input : '/$input',
-      skipAuth: false,
-    );
+    final normalized = input.startsWith('/') ? input : '/$input';
+    final uri = Uri.tryParse(normalized);
+    if (uri != null) {
+      final converted = _tryConvertSupabasePublicUrl(uri);
+      if (converted != null) {
+        return _DownloadTarget(path: converted, skipAuth: false);
+      }
+    }
+
+    return _DownloadTarget(path: normalized, skipAuth: false);
   }
 
-  bool _isAllowedSupabaseUri(Uri uri) {
-    final rawBase = _config.supabaseUrl.trim();
-    if (rawBase.isEmpty) return false;
-    final base = Uri.tryParse(rawBase);
-    if (base == null || base.host.isEmpty) return false;
-
-    final sameOrigin =
-        uri.scheme == base.scheme &&
-        uri.host == base.host &&
-        uri.port == base.port;
-    if (!sameOrigin) return false;
-
-    final normalizedPath = uri.path.trim();
-    if (!normalizedPath.startsWith('/storage/v1/')) return false;
-    return true;
+  String? _tryConvertSupabasePublicUrl(Uri uri) {
+    final segments = uri.pathSegments;
+    if (segments.length < 6) return null;
+    if (segments[0] != 'storage' ||
+        segments[1] != 'v1' ||
+        segments[2] != 'object' ||
+        segments[3] != 'public') {
+      return null;
+    }
+    final bucket = segments[4].trim();
+    final objectSegments = segments
+        .sublist(5)
+        .where((segment) => segment.trim().isNotEmpty)
+        .toList(growable: false);
+    if (bucket.isEmpty || objectSegments.isEmpty) {
+      throw ArgumentError(
+        'Supabase public URL is missing bucket or object path.',
+      );
+    }
+    final objectPath = objectSegments.join('/');
+    final resolvedPath = buildMediaUrl(bucket, objectPath);
+    final query = uri.hasQuery ? '?${uri.query}' : '';
+    return '$resolvedPath$query';
   }
 
   String? _sanitizeExtension(String? input) {

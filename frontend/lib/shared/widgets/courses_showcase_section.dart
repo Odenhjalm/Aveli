@@ -321,9 +321,9 @@ class CoursesShowcaseSection extends ConsumerWidget {
       final cover = course['cover_url'] as String?;
       if (cover == null || cover.isEmpty) continue;
       try {
-        course['cover_url'] = mediaRepository.resolveUrl(cover);
+        course['cover_url'] = mediaRepository.resolveDownloadUrl(cover);
       } catch (_) {
-        // Keep original value on resolve failure.
+        course['cover_url'] = null;
       }
     }
     return courses;

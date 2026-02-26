@@ -691,11 +691,7 @@ Future<String> prepareLessonMarkdownForRendering(
         }
 
         final signed = await mediaRepository.signMedia(id);
-        try {
-          resolvedUrls[id] = mediaRepository.resolveUrl(signed.signedUrl);
-        } catch (_) {
-          resolvedUrls[id] = signed.signedUrl;
-        }
+        resolvedUrls[id] = mediaRepository.resolvePlaybackUrl(signed.signedUrl);
       } catch (error, stackTrace) {
         if (kDebugMode) {
           debugPrint(
