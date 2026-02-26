@@ -24,7 +24,7 @@ class ApiPaths {
   static const orders = '/orders';
   static String order(String orderId) => '/orders/$orderId';
 
-  static const mediaSign = '/media/sign';
+  static const mediaSign = '/api/media/sign';
   static const mediaUploadUrl = '/api/media/upload-url';
   static const mediaUploadUrlRefresh = '/api/media/upload-url/refresh';
   static const mediaPlaybackUrl = '/api/media/playback-url';
