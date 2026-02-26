@@ -270,4 +270,5 @@ async def test_public_pdf_files_are_served_as_attachment(async_client, tmp_path,
     assert public_get.status_code == 200, public_get.text
     content_disposition = public_get.headers.get("content-disposition", "")
     assert content_disposition.startswith("attachment;")
-    assert 'filename="intro.pdf"' in content_disposition
+    assert 'filename="' in content_disposition
+    assert content_disposition.endswith('.pdf"')

@@ -428,13 +428,14 @@ async def upload_course_media(
     if lesson_id:
         if not resolved_course_id_str or not lesson_id_str:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing course_id for lesson media")
-        relative_dir = Path(storage_bucket) / resolved_course_id_str / lesson_id_str
+        storage_relative_dir = Path(resolved_course_id_str) / lesson_id_str
     else:
         if not resolved_course_id_str:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing course_id")
-        relative_dir = Path(storage_bucket) / resolved_course_id_str
+        storage_relative_dir = Path(resolved_course_id_str)
     if media_type:
-        relative_dir /= media_type.value
+        storage_relative_dir /= media_type.value
+    relative_dir = Path(storage_bucket) / storage_relative_dir
 
     allowed_prefixes = type_prefixes
     allowed_exact: set[str] = set()
@@ -457,6 +458,7 @@ async def upload_course_media(
         max_bytes=settings.lesson_media_max_bytes if lesson_id else None,
     )
     relative_path = relative_dir / write_result.filename
+    storage_relative_path = storage_relative_dir / write_result.filename
     content_type = (
         file.content_type
         or mimetypes.guess_type(write_result.destination_path.name)[0]
@@ -485,7 +487,7 @@ async def upload_course_media(
         media_row = await _persist_lesson_media(
             owner_id=owner_id,
             lesson_id=lesson_id,
-            relative_path=relative_path,
+            relative_path=storage_relative_path,
             original_name=file.filename,
             content_type=content_type,
             size=write_result.size,

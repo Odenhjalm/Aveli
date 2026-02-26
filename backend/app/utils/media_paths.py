@@ -23,9 +23,9 @@ def normalize_storage_path(bucket: str, path: str) -> str:
         raise ValueError("storage_path cannot be empty")
     bucket_prefix = f"{normalized_bucket}/"
     if normalized_bucket and normalized_path.startswith(bucket_prefix):
-        normalized_path = normalized_path[len(bucket_prefix) :]
-    if not normalized_path:
-        raise ValueError("storage_path cannot be empty")
+        raise RuntimeError(
+            f"Invalid storage_path contains bucket prefix: {normalized_path}"
+        )
     return normalized_path
 
 

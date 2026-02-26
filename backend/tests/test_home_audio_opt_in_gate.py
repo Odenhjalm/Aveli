@@ -98,7 +98,7 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
     lesson_media = await models.add_lesson_media_entry(
         lesson_id=lesson_id,
         kind="audio",
-        storage_path=f"lesson-media/{uuid.uuid4().hex}.mp3",
+        storage_path=f"{uuid.uuid4().hex}.mp3",
         storage_bucket="lesson-media",
         position=1,
         media_id=None,

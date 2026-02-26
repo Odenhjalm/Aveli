@@ -232,7 +232,7 @@ async def presign_lesson_media_upload(
         raise HTTPException(status_code=403, detail="Not course owner")
 
     bucket = "course-media"
-    path = f"{bucket}/lessons/{lesson_id}/{payload.filename}"
+    path = f"lessons/{lesson_id}/{payload.filename}"
     upload = await storage_service.storage_service.create_upload_url(
         path,
         content_type=payload.content_type,
@@ -1639,7 +1639,7 @@ async def upload_media(
 
     course_id_str = str(course_id)
     lesson_id_str = str(lesson_id)
-    relative_dir = Path(storage_bucket) / course_id_str / lesson_id_str
+    storage_relative_dir = Path(course_id_str) / lesson_id_str
     allowed_prefixes = upload_routes._LESSON_ALLOWED_PREFIXES + tuple(
         upload_routes._LESSON_ALLOWED_EXACT_TYPES
     )
@@ -1647,7 +1647,8 @@ async def upload_media(
         file.content_type or mimetypes.guess_type(file.filename or "")[0]
     )
     if detected_kind in {"image", "video", "audio", "document"}:
-        relative_dir /= detected_kind
+        storage_relative_dir /= detected_kind
+    relative_dir = Path(storage_bucket) / storage_relative_dir
 
     destination_dir = upload_routes._safe_join(
         upload_routes.UPLOADS_ROOT, *relative_dir.parts
@@ -1659,6 +1660,7 @@ async def upload_media(
         max_bytes=_MAX_MEDIA_BYTES,
     )
     relative_path = relative_dir / write_result.filename
+    storage_relative_path = storage_relative_dir / write_result.filename
     content_type = (
         file.content_type
         or mimetypes.guess_type(write_result.destination_path.name)[0]
@@ -1668,7 +1670,7 @@ async def upload_media(
     row = await upload_routes._persist_lesson_media(
         owner_id=owner_id,
         lesson_id=lesson_id,
-        relative_path=relative_path,
+        relative_path=storage_relative_path,
         original_name=file.filename,
         content_type=content_type,
         size=write_result.size,

@@ -5,10 +5,14 @@ from app.services import courses_service
 from app.utils import media_robustness
 
 
-def test_removes_bucket_prefix():
+def test_rejects_bucket_prefix():
     bucket = "public-media"
     path = "public-media/abc/def/file.mp3"
-    assert normalize_storage_path(bucket, path) == "abc/def/file.mp3"
+    with pytest.raises(
+        RuntimeError,
+        match="Invalid storage_path contains bucket prefix: public-media/abc/def/file.mp3",
+    ):
+        normalize_storage_path(bucket, path)
 
 
 def test_keeps_valid_path():
@@ -19,7 +23,7 @@ def test_keeps_valid_path():
 
 def test_strips_leading_slash():
     bucket = "public-media"
-    path = "/public-media/abc/file.mp3"
+    path = "/abc/file.mp3"
     assert normalize_storage_path(bucket, path) == "abc/file.mp3"
 
 

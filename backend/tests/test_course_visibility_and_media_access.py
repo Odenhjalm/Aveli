@@ -300,7 +300,7 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     # Legacy media signing must also enforce access (403 before enrollment, 200 after).
     media_object = await models.create_media_object(
         owner_id=owner_id,
-        storage_path=f"lesson-media/{uuid.uuid4().hex}.mp3",
+        storage_path=f"{uuid.uuid4().hex}.mp3",
         storage_bucket="lesson-media",
         content_type="audio/mpeg",
         byte_size=3,
