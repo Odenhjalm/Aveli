@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Verify remote DB read-only posture and write launch-readiness evidence.
+# Mutates state: Yes (writes local audit/report files; DB checks are read-only).
+# Run context: CI and controlled local verification runs.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

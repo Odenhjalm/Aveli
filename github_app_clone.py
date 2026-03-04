@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+# --------------------------------------------------------
+# WARNING
+#
+# This script performs automated git clone, commit, and push
+# operations using authentication tokens.
+#
+# It MUST NOT be executed in production environments.
+#
+# Use only for controlled testing or local experiments.
+# --------------------------------------------------------
 import os, sys, time, subprocess, tempfile
 from pathlib import Path
 

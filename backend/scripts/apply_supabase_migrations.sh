@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Apply SQL migrations from supabase/migrations to the configured database.
+# Mutates state: Yes (executes migration SQL against the target database).
+# Run context: CI and controlled local/dev operations.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
