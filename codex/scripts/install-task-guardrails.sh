@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Install Codex task-branch guardrails and activate repository git hooks.
+# Mutates state: Yes (changes file permissions and sets `core.hooksPath`).
+# Run context: Local repository setup only; not for CI.
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"

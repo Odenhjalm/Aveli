@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Start the local backend stack (DB + API) for development.
+# Mutates state: Yes (may start containers, run migrations, and start server processes).
+# Run context: Local development only; not for CI.
 set -euo pipefail
 
 # Starts the local development backend (Postgres + FastAPI) for the Flutter app.

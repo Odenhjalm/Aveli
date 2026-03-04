@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Create and switch to sanitized task branches with safety checks.
+# Mutates state: Yes (creates/checks out git branches and may update refs).
+# Run context: Local development workflow only; not for CI.
 set -euo pipefail
 
 usage() {

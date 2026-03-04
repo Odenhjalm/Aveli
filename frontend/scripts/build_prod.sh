@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Build canonical Flutter web production artifacts with invariant checks.
+# Mutates state: Yes (generates build outputs and removes non-canonical build dirs).
+# Run context: CI release guards and controlled local release builds.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
