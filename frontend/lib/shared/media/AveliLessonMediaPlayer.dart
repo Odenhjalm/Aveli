@@ -117,7 +117,7 @@ class _VideoRendererState extends State<_VideoRenderer> {
               _hasError = false;
             });
           })
-          .catchError((Object _, StackTrace __) {
+          .catchError((Object _, StackTrace _) {
             if (!mounted || !identical(controller, _controller)) return;
             setState(() {
               _initializing = false;
@@ -212,7 +212,7 @@ class _VideoRendererState extends State<_VideoRenderer> {
               bottom: 44,
               child: ValueListenableBuilder<VideoPlayerValue>(
                 valueListenable: controller,
-                builder: (_, value, __) {
+                builder: (_, value, _) {
                   final isPlaying = value.isPlaying;
                   return Semantics(
                     button: true,

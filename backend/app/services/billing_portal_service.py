@@ -11,11 +11,9 @@ from .. import stripe_mode
 from ..db import get_conn
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
+from ..utils.membership_status import is_membership_active
 
 logger = logging.getLogger(__name__)
-
-_PORTAL_ALLOWED_STATUSES = {"active", "trialing"}
-
 
 class BillingPortalError(Exception):
     status_code = 400
@@ -79,8 +77,12 @@ async def create_billing_portal_session(user: Mapping[str, Any]) -> str:
 def _has_active_membership(membership: Mapping[str, Any] | None) -> bool:
     if not membership:
         return False
-    status_value = (membership.get("status") or "").lower()
-    return status_value in _PORTAL_ALLOWED_STATUSES
+    if (membership.get("plan_interval") or "").lower() == "referral":
+        return False
+    return is_membership_active(
+        (membership.get("status") or "").lower(),
+        membership.get("end_date"),
+    )
 
 
 async def ensure_customer_id(

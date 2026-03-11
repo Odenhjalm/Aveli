@@ -45,10 +45,17 @@ class AuthRepository {
     required String email,
     required String password,
     required String displayName,
+    String? referralCode,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiPaths.authRegister,
-      body: {'email': email, 'password': password, 'display_name': displayName},
+      body: {
+        'email': email,
+        'password': password,
+        'display_name': displayName,
+        if (referralCode != null && referralCode.trim().isNotEmpty)
+          'referral_code': referralCode.trim(),
+      },
       skipAuth: true,
     );
     final accessToken = data['access_token'] as String?;

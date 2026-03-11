@@ -74,10 +74,16 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
             email=payload.email,
             hashed_password=hashed,
             display_name=payload.display_name,
+            referral_code=payload.referral_code,
         )
     except repositories.UniqueViolationError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+        ) from exc
+    except repositories.InvalidReferralCodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Referral code is invalid, inactive, or already used",
         ) from exc
 
     user = result["user"]

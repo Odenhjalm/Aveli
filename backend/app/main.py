@@ -25,7 +25,7 @@ from .config import settings
 from .db import pool
 from .logging_utils import setup_logging
 from .middleware.request_context import RequestContextMiddleware
-from .services import livekit_events, media_transcode_worker
+from .services import livekit_events, media_transcode_worker, membership_expiry_warnings
 from .routes import (
     admin,
     api_ai,
@@ -91,9 +91,11 @@ async def lifespan(app: FastAPI):
     await pool.open(wait=True)
     await livekit_events.start_worker()
     await media_transcode_worker.start_worker()
+    await membership_expiry_warnings.start_worker()
     try:
         yield
     finally:
+        await membership_expiry_warnings.stop_worker()
         await media_transcode_worker.stop_worker()
         await livekit_events.stop_worker()
         await pool.close()

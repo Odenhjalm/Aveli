@@ -1289,8 +1289,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final lessonMediaItems = () {
       final selectedLessonId = _selectedLessonId;
       if (selectedLessonId == null) return const <LessonMediaItem>[];
-      if (_lessonMediaLessonId != selectedLessonId)
+      if (_lessonMediaLessonId != selectedLessonId) {
         return const <LessonMediaItem>[];
+      }
       if (_lessonMedia.isEmpty) return const <LessonMediaItem>[];
       final items = <LessonMediaItem>[];
       for (final raw in _lessonMedia) {
@@ -1891,7 +1892,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       const placeholder = Center(
                         child: Icon(Icons.image_outlined, size: 28),
                       );
-                      if (!hasCover || coverPreviewUrl == null) {
+                      if (!hasCover) {
                         return placeholder;
                       }
 

@@ -127,6 +127,7 @@ class _FakeAuthRepository implements AuthRepository {
     required String email,
     required String password,
     required String displayName,
+    String? referralCode,
   }) {
     throw UnsupportedError('Not implemented in tests');
   }

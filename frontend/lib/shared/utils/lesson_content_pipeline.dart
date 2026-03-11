@@ -374,8 +374,9 @@ String _preserveExtraBlankLinesForDelta(String markdown) {
 }
 
 String _stripBlankLineSentinelForDisplay(String markdown) {
-  if (markdown.isEmpty || !markdown.contains(_blankLineSentinel))
+  if (markdown.isEmpty || !markdown.contains(_blankLineSentinel)) {
     return markdown;
+  }
   // Defensive: never allow the internal blank-line sentinel to reach any
   // user-visible output (rendering/copy/export).
   return markdown.replaceAll(_blankLineSentinel, '');

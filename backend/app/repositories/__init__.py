@@ -1,4 +1,5 @@
 from .auth import (
+    InvalidReferralCodeError,
     UniqueViolationError,
     create_user,
     get_user_by_email,
@@ -115,6 +116,7 @@ from .media_assets import (
 
 __all__ = [
     # Auth
+    "InvalidReferralCodeError",
     "UniqueViolationError",
     "create_user",
     "get_user_by_email",

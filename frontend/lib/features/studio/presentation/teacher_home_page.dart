@@ -22,6 +22,19 @@ class TeacherHomeScreen extends ConsumerStatefulWidget {
 class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
   final Set<String> _deletingCourseIds = <String>{};
   final Set<String> _hiddenCourseIds = <String>{};
+  final TextEditingController _referralEmailCtrl = TextEditingController();
+  final TextEditingController _referralDurationCtrl = TextEditingController(
+    text: '14',
+  );
+  String _referralDurationUnit = 'days';
+  bool _sendingReferral = false;
+
+  @override
+  void dispose() {
+    _referralEmailCtrl.dispose();
+    _referralDurationCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _confirmAndDeleteCourse(
     BuildContext context,
@@ -38,7 +51,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
         content: Text(
           title == null || title.isEmpty
               ? 'Vill du ta bort kursen? Detta går inte att ångra.'
-              : 'Vill du ta bort \"$title\"? Detta går inte att ångra.',
+              : 'Vill du ta bort "${title}"? Detta går inte att ångra.',
         ),
         actions: [
           TextButton(
@@ -81,6 +94,53 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Kunde inte ta bort kursen: $e')));
     }
+  }
+
+  Future<void> _sendReferralInvitation(BuildContext context) async {
+    final email = _referralEmailCtrl.text.trim();
+    if (!_isValidEmail(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ange en giltig e-postadress.')),
+      );
+      return;
+    }
+
+    final durationValue = int.tryParse(_referralDurationCtrl.text.trim());
+    if (durationValue == null || durationValue <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ange en giltig längd för inbjudan.')),
+      );
+      return;
+    }
+
+    setState(() => _sendingReferral = true);
+    try {
+      final repo = ref.read(studioRepositoryProvider);
+      await repo.createReferralInvitation(
+        email: email,
+        freeDays: _referralDurationUnit == 'days' ? durationValue : null,
+        freeMonths: _referralDurationUnit == 'months' ? durationValue : null,
+      );
+      if (!mounted) return;
+      _referralEmailCtrl.clear();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Invitation sent to $email')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kunde inte skicka inbjudan: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sendingReferral = false);
+      }
+    }
+  }
+
+  bool _isValidEmail(String value) {
+    final regex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    return regex.hasMatch(value);
   }
 
   @override
@@ -571,6 +631,91 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                       onPressed: () => context.goNamed(AppRoute.seminarStudio),
                       icon: const Icon(Icons.live_tv_outlined),
                       label: const Text('Öppna liveseminarier'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              GlassCard(
+                padding: const EdgeInsets.all(24),
+                opacity: 0.16,
+                borderColor: Colors.white.withValues(alpha: 0.15),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Create invitation code',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Skicka en personlig medlemsinbjudan som ger tillfällig tillgång utan Stripe-provperiod.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _referralEmailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        hintText: 'namn@example.com',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _referralDurationCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Duration',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _referralDurationUnit,
+                            decoration: const InputDecoration(
+                              labelText: 'Unit',
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'days',
+                                child: Text('Days'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'months',
+                                child: Text('Months'),
+                              ),
+                            ],
+                            onChanged: _sendingReferral
+                                ? null
+                                : (value) {
+                                    if (value == null) return;
+                                    setState(
+                                      () => _referralDurationUnit = value,
+                                    );
+                                  },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    GradientButton(
+                      onPressed: _sendingReferral
+                          ? null
+                          : () => _sendReferralInvitation(context),
+                      child: _sendingReferral
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Send invitation'),
                     ),
                   ],
                 ),

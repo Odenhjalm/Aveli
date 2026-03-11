@@ -31,7 +31,7 @@ class AveliLessonImage extends StatelessWidget {
       width: double.infinity,
       fit: BoxFit.contain,
       semanticLabel: semanticLabel,
-      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      errorBuilder: (_, _, _) => const SizedBox.shrink(),
     );
   }
 }

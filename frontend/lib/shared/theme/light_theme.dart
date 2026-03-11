@@ -17,12 +17,10 @@ ThemeData buildLightTheme({bool forLanding = false}) {
   final scheme = forLanding
       ? baseScheme.copyWith(
           onSurface: DesignTokens.headingTextColor,
-          onBackground: DesignTokens.headingTextColor,
           onSurfaceVariant: DesignTokens.headingTextColor,
         )
       : baseScheme.copyWith(
           onSurface: AppTextColor.body,
-          onBackground: AppTextColor.body,
           onSurfaceVariant: AppTextColor.meta,
         );
 

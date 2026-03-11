@@ -1016,6 +1016,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 @visibleForTesting
 class InlineVideoControlOverlay extends StatelessWidget {
   const InlineVideoControlOverlay({
+    super.key,
     required this.isPlaying,
     required this.showStopButton,
     required this.onToggle,

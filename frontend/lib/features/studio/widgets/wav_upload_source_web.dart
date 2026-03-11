@@ -679,10 +679,10 @@ Future<int> _uploadChunkWithRetry(
       return int.tryParse(offsetRaw) ?? offset;
     } on WavUploadFailure catch (error) {
       if (error.kind == WavUploadFailureKind.cancelled) {
-        throw error;
+        rethrow;
       }
       if (error.kind == WavUploadFailureKind.expired) {
-        throw error;
+        rethrow;
       }
       lastFailure = error;
     }

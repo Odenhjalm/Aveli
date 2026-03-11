@@ -107,7 +107,7 @@ async def _resolve_recipients(audiences: list[NotificationAudienceCreate]) -> se
                 SELECT DISTINCT p.user_id
                 FROM app.memberships m
                 JOIN app.profiles p ON p.user_id = m.user_id
-                WHERE m.status = 'active'
+                WHERE m.status IN ('active', 'trialing')
                   AND (m.end_date IS NULL OR m.end_date > now())
                 """,
             )
