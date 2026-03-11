@@ -382,7 +382,6 @@ class _ProfileMediaCard extends StatelessWidget {
 
 class _ProfileMediaTile extends ConsumerWidget {
   const _ProfileMediaTile({
-    super.key,
     required this.item,
     required this.onOpenCourse,
     required this.onOpenLink,
@@ -482,7 +481,7 @@ class _ProfileMediaTile extends ConsumerWidget {
           ],
           if (isActive && hasUrl) ...[
             const SizedBox(height: 10),
-            if (playable?.mediaType == MediaPlaybackType.audio)
+            if (playable.mediaType == MediaPlaybackType.audio)
               InlineAudioPlayer(
                 url: resolvedActiveUrl,
                 title: title,

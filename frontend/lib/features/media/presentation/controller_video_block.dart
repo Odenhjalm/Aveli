@@ -248,7 +248,7 @@ class ControllerVideoBlock extends ConsumerWidget {
                 throw StateError('Empty playback URL');
               },
             )
-            .catchError((Object _, StackTrace __) {}),
+            .catchError((Object _, StackTrace _) {}),
       );
       return;
     }
@@ -263,7 +263,7 @@ class ControllerVideoBlock extends ConsumerWidget {
             url: trimmedUrl,
             title: title,
           )
-          .catchError((Object _, StackTrace __) {}),
+          .catchError((Object _, StackTrace _) {}),
     );
   }
 }

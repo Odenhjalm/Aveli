@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -159,8 +158,5 @@ void registerTestAssetHandlers() {
 }
 
 Widget wrapWithTestAssets(Widget child) {
-  return DefaultAssetBundle(
-    bundle: TestAssetBundle.instance,
-    child: child,
-  );
+  return DefaultAssetBundle(bundle: TestAssetBundle.instance, child: child);
 }

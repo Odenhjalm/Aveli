@@ -38,7 +38,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
         content: Text(
           title == null || title.isEmpty
               ? 'Vill du ta bort kursen? Detta går inte att ångra.'
-              : 'Vill du ta bort \"$title\"? Detta går inte att ångra.',
+              : 'Vill du ta bort "${title}"? Detta går inte att ångra.',
         ),
         actions: [
           TextButton(

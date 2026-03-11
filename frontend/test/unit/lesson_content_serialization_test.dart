@@ -319,8 +319,9 @@ Intro
             if (value.type != quill.BlockEmbed.imageType) return false;
             if (value.data != sampleImageUrl) return false;
           } else if (value is Map) {
-            if (value[quill.BlockEmbed.imageType] != sampleImageUrl)
+            if (value[quill.BlockEmbed.imageType] != sampleImageUrl) {
               return false;
+            }
           } else {
             return false;
           }
