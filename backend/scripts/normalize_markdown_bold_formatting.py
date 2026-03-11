@@ -34,9 +34,7 @@ if TYPE_CHECKING:
 
 _ESCAPED_BOLD_MARKER_PATTERN = re.compile(r"""\\\*\\\*""")
 _UNESCAPED_BOLD_PATTERN = re.compile(r"""(?<!\\)\*\*""")
-_REPEATED_BOLD_PATTERN = re.compile(
-    r"""(?<!\*)(?P<open>\*{4,})(?P<inner>[^\n]+?)(?P<close>\*{4,})(?!\*)"""
-)
+_REPEATED_BOLD_MARKER_PATTERN = re.compile(r"""(?<!\\)\*{3,}""")
 _FENCED_CODE_BLOCK_PATTERN = re.compile(
     r"""(^|\n)(?P<fence>`{3,}|~{3,})[^\n]*\n.*?\n(?P=fence)[^\n]*(?=\n|$)""",
     re.MULTILINE | re.DOTALL,
@@ -197,32 +195,15 @@ def _preview(issue_type: str, before: str, after: str, start: int, end: int | No
     )
 
 
-def _normalize_escaped_bold_markers(segment: str) -> tuple[str, IssuePreview | None]:
-    first_match = _ESCAPED_BOLD_MARKER_PATTERN.search(segment)
+def _normalize_bold_markers(segment: str) -> tuple[str, IssuePreview | None]:
+    first_match = _ESCAPED_BOLD_MARKER_PATTERN.search(segment) or _REPEATED_BOLD_MARKER_PATTERN.search(
+        segment
+    )
     if not first_match:
         return segment, None
+
     updated = _ESCAPED_BOLD_MARKER_PATTERN.sub("**", segment)
-    if updated == segment:
-        return segment, None
-    return updated, _preview("escaped_bold", segment, updated, first_match.start(), first_match.end())
-
-
-def _collapse_repeated_bold(segment: str) -> tuple[str, IssuePreview | None]:
-    first_match = _REPEATED_BOLD_PATTERN.search(segment)
-    if not first_match:
-        return segment, None
-
-    def _replacement(match: re.Match[str]) -> str:
-        opening = match.group("open") or ""
-        closing = match.group("close") or ""
-        if len(opening) % 2 != 0 or len(closing) % 2 != 0:
-            return match.group(0) or ""
-        inner = (match.group("inner") or "").strip()
-        if not inner:
-            return match.group(0) or ""
-        return f"**{inner}**"
-
-    updated = _REPEATED_BOLD_PATTERN.sub(_replacement, segment)
+    updated = _REPEATED_BOLD_MARKER_PATTERN.sub("**", updated)
     if updated == segment:
         return segment, None
     return updated, _preview("escaped_bold", segment, updated, first_match.start(), first_match.end())
@@ -316,13 +297,9 @@ def _normalize_text_segment(segment: str) -> tuple[str, tuple[IssuePreview, ...]
     issues: dict[str, IssuePreview] = {}
     updated = segment
 
-    updated, escaped_issue = _normalize_escaped_bold_markers(updated)
+    updated, escaped_issue = _normalize_bold_markers(updated)
     if escaped_issue:
         issues[escaped_issue.issue_type] = escaped_issue
-
-    updated, repeated_issue = _collapse_repeated_bold(updated)
-    if repeated_issue and repeated_issue.issue_type not in issues:
-        issues[repeated_issue.issue_type] = repeated_issue
 
     parts = _BLANK_LINE_SPLIT_PATTERN.split(updated)
     normalized_parts: list[str] = []

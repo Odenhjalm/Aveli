@@ -9,9 +9,9 @@ def test_normalize_lesson_markdown_fixes_escaped_bold():
 
 
 def test_normalize_lesson_markdown_fixes_nested_escaped_bold():
-    normalized, issues = normalize_lesson_markdown("**** Heading ****")
+    normalized, issues = normalize_lesson_markdown("****text****")
 
-    assert normalized == "**Heading**"
+    assert normalized == "**text**"
     assert {issue.issue_type for issue in issues} == {"escaped_bold"}
 
 
@@ -30,6 +30,25 @@ def test_normalize_lesson_markdown_fixes_whitespace_bold():
 
     assert normalized == "**Tips:**"
     assert {issue.issue_type for issue in issues} == {"whitespace_bold"}
+
+
+def test_normalize_lesson_markdown_is_idempotent():
+    first_pass, first_issues = normalize_lesson_markdown(r"\*\*\*\* text \*\*\*\*")
+    second_pass, second_issues = normalize_lesson_markdown(first_pass)
+
+    assert first_pass == "**text**"
+    assert {issue.issue_type for issue in first_issues} == {"escaped_bold", "whitespace_bold"}
+    assert second_pass == first_pass
+    assert second_issues == ()
+
+
+def test_normalize_lesson_markdown_collapses_escaped_bold_inside_existing_bold():
+    normalized, issues = normalize_lesson_markdown(r"**\*\* Energi och symbolik\*\***")
+
+    assert normalized == "**Energi och symbolik**"
+    assert {issue.issue_type for issue in issues} == {"escaped_bold", "whitespace_bold"}
+    escaped_issue = next(issue for issue in issues if issue.issue_type == "escaped_bold")
+    assert escaped_issue.after_snippet == "** Energi och symbolik**"
 
 
 def test_normalize_lesson_markdown_ignores_code_blocks():
