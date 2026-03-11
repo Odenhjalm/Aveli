@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 from ..auth import CurrentUser
 from ..db import get_conn, pool
 from ..permissions import TeacherUser
+from ..repositories import memberships as memberships_repo
 from ..schemas.events import (
     EventCreateRequest,
     EventListResponse,
@@ -24,6 +25,7 @@ from ..schemas.notifications import (
     NotificationListResponse,
     NotificationRecord,
 )
+from ..utils.membership_status import is_membership_row_active
 
 
 router = APIRouter(prefix="/api/events", tags=["events"])
@@ -59,19 +61,8 @@ def _validate_status_transition(old: str, new: str) -> None:
 
 
 async def _has_active_membership(user_id: str) -> bool:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT 1
-            FROM app.memberships m
-            WHERE m.user_id = %s
-              AND m.status = 'active'
-              AND (m.end_date IS NULL OR m.end_date > now())
-            LIMIT 1
-            """,
-            (user_id,),
-        )
-        return (await cur.fetchone()) is not None
+    membership = await memberships_repo.get_membership(user_id)
+    return is_membership_row_active(membership)
 
 
 async def _get_event_row(event_id: str) -> dict | None:
@@ -251,7 +242,7 @@ async def list_events(
                   SELECT 1
                   FROM app.memberships m
                   WHERE m.user_id = %(user_id)s
-                    AND m.status = 'active'
+                    AND m.status IN ('active', 'trialing')
                     AND (m.end_date IS NULL OR m.end_date > now())
                 )
               )

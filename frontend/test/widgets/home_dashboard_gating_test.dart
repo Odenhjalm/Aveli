@@ -41,6 +41,7 @@ class _StubAuthRepository implements AuthRepository {
     required String email,
     required String password,
     required String displayName,
+    String? referralCode,
   }) => throw UnimplementedError();
 
   @override

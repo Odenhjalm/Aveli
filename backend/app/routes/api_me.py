@@ -40,7 +40,10 @@ async def get_my_entitlements(current: CurrentUser) -> schemas.EntitlementsRespo
         status_value = membership.get("status")
         if status_value == "incomplete":
             logger.warning("Incomplete membership encountered for user %s", str(current["id"]))
-        is_active = is_membership_active(status_value or "")
+        is_active = is_membership_active(
+            status_value or "",
+            membership.get("end_date"),
+        )
         membership_payload = schemas.EntitlementsMembership(
             is_active=bool(is_active),
             status=status_value,

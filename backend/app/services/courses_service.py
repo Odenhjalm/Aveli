@@ -59,7 +59,7 @@ def _has_active_subscription(
             or "unknown"
         )
         logger.warning("Incomplete membership encountered for user %s", user_id)
-    return is_membership_active(status_value or "")
+    return is_membership_active(status_value or "", (subscription or {}).get("end_date"))
 
 
 def _normalize_value(value: Any) -> Any:
@@ -727,7 +727,10 @@ async def enroll_free_intro(user_id: str, course_id: str) -> dict[str, Any]:
         return {"ok": True, "status": "step1_unlimited"}
 
     membership = await get_membership(user_id)
-    if not is_membership_active((membership or {}).get("status") or ""):
+    if not is_membership_active(
+        (membership or {}).get("status") or "",
+        (membership or {}).get("end_date"),
+    ):
         return {"ok": False, "status": "subscription_required"}
 
     return await courses_repo.claim_intro_monthly_access(user_id, course_id, monthly_limit=1)

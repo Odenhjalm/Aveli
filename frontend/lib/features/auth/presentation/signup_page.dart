@@ -23,12 +23,23 @@ class _SignupPageState extends ConsumerState<SignupPage> {
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _displayNameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
+  final TextEditingController _referralCodeCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final referralCode = Uri.base.queryParameters['referral_code']?.trim();
+    if (referralCode != null && referralCode.isNotEmpty) {
+      _referralCodeCtrl.text = referralCode;
+    }
+  }
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _displayNameCtrl.dispose();
     _passwordCtrl.dispose();
+    _referralCodeCtrl.dispose();
     super.dispose();
   }
 
@@ -125,15 +136,25 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                             enabled: !envBlocked,
                             obscureText: true,
                             autofillHints: const [AutofillHints.newPassword],
-                            textInputAction: TextInputAction.done,
-                            onFieldSubmitted: busy || envBlocked
-                                ? null
-                                : (_) => _signUp(context),
+                            textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'Lösenord',
                               hintText: 'Minst 6 tecken',
                             ),
                             validator: _validatePassword,
+                          ),
+                          gap16,
+                          TextFormField(
+                            controller: _referralCodeCtrl,
+                            enabled: !envBlocked,
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: busy || envBlocked
+                                ? null
+                                : (_) => _signUp(context),
+                            decoration: const InputDecoration(
+                              labelText: 'Inbjudningskod (valfritt)',
+                              hintText: 'Ange din referral-kod',
+                            ),
                           ),
                           gap24,
                           GradientButton(
@@ -203,10 +224,16 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     final email = _emailCtrl.text.trim();
     final displayName = _displayNameCtrl.text.trim();
     final password = _passwordCtrl.text;
+    final referralCode = _referralCodeCtrl.text.trim();
 
     try {
       final controller = ref.read(authControllerProvider.notifier);
-      await controller.register(email, password, displayName: displayName);
+      await controller.register(
+        email,
+        password,
+        displayName: displayName,
+        referralCode: referralCode.isEmpty ? null : referralCode,
+      );
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Konto skapat. Inloggad som $email');
       context.goNamed(AppRoute.landingRoot);

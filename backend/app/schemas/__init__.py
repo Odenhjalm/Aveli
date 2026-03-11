@@ -19,6 +19,11 @@ from .memberships import (
     MembershipRecord as MembershipRecord,
     MembershipResponse as MembershipResponse,
 )
+from .referrals import (
+    ReferralCodeCreateRequest as ReferralCodeCreateRequest,
+    ReferralCodeCreateResponse as ReferralCodeCreateResponse,
+    ReferralCodeRecord as ReferralCodeRecord,
+)
 
 __all__ = [
     "CheckoutCreateRequest",
@@ -26,6 +31,9 @@ __all__ = [
     "CheckoutType",
     "MembershipRecord",
     "MembershipResponse",
+    "ReferralCodeCreateRequest",
+    "ReferralCodeCreateResponse",
+    "ReferralCodeRecord",
     "SubscriptionCheckoutResponse",
     "SubscriptionInterval",
     "SubscriptionSessionRequest",
@@ -53,6 +61,7 @@ class AuthRegisterRequest(BaseModel):
     email: str
     password: str
     display_name: str
+    referral_code: str | None = None
 
 
 class AuthForgotPasswordRequest(BaseModel):

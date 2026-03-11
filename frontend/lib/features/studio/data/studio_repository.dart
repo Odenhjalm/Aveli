@@ -18,6 +18,22 @@ class StudioRepository {
     return StudioStatus.fromJson(res);
   }
 
+  Future<Map<String, dynamic>> createReferralInvitation({
+    required String email,
+    int? freeDays,
+    int? freeMonths,
+  }) async {
+    final res = await _client.post<Map<String, dynamic>>(
+      '/studio/referrals/create',
+      body: {
+        'email': email,
+        if (freeDays != null) 'free_days': freeDays,
+        if (freeMonths != null) 'free_months': freeMonths,
+      },
+    );
+    return Map<String, dynamic>.from(res);
+  }
+
   Future<List<Map<String, dynamic>>> myCourses() async {
     final res = await _client.get<Map<String, dynamic>>('/studio/courses');
     final list = res['items'] as List? ?? const [];

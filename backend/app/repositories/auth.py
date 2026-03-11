@@ -10,10 +10,16 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from ..db import get_conn, pool
+from ..utils.referrals import referral_membership_window
+from .referrals import normalize_referral_code, normalize_referral_email
 
 
 class UniqueViolationError(Exception):
     """Raised when attempting to insert a record that already exists."""
+
+
+class InvalidReferralCodeError(Exception):
+    """Raised when a supplied referral code cannot be redeemed."""
 
 
 async def create_user(
@@ -21,9 +27,11 @@ async def create_user(
     email: str,
     hashed_password: str,
     display_name: str | None,
+    referral_code: str | None = None,
 ) -> dict[str, Any]:
     """Insert a new auth user + profile."""
     new_id = uuid.uuid4()
+    normalized_email = email.strip().lower()
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             try:
@@ -33,7 +41,7 @@ async def create_user(
                     VALUES (%s, %s, %s, now(), now())
                     RETURNING id, email, created_at, updated_at
                     """,
-                    (new_id, email, hashed_password),
+                    (new_id, normalized_email, hashed_password),
                 )
             except errors.UniqueViolation as exc:
                 await conn.rollback()
@@ -54,14 +62,87 @@ async def create_user(
                       updated_at = now()
                 RETURNING user_id, email, display_name, role_v2, is_admin, created_at, updated_at
                 """,
-                (user_id, email, display_name),
+                (user_id, normalized_email, display_name),
             )
             profile_row = await cur.fetchone()
+
+            redeemed_referral = None
+            if referral_code:
+                await cur.execute(
+                    """
+                    SELECT id,
+                           code,
+                           teacher_id,
+                           email,
+                           free_days,
+                           free_months,
+                           active,
+                           redeemed_by_user_id,
+                           redeemed_at,
+                           created_at
+                      FROM app.referral_codes
+                     WHERE code = %s
+                     FOR UPDATE
+                    """,
+                    (normalize_referral_code(referral_code),),
+                )
+                redeemed_referral = await cur.fetchone()
+                if (
+                    not redeemed_referral
+                    or not redeemed_referral.get("active")
+                    or redeemed_referral.get("redeemed_by_user_id") is not None
+                    or normalize_referral_email(redeemed_referral.get("email") or "")
+                    != normalize_referral_email(normalized_email)
+                ):
+                    await conn.rollback()
+                    raise InvalidReferralCodeError
+
+                start_date, end_date = referral_membership_window(
+                    free_days=redeemed_referral.get("free_days"),
+                    free_months=redeemed_referral.get("free_months"),
+                )
+                await cur.execute(
+                    """
+                    INSERT INTO app.memberships (
+                        user_id,
+                        plan_interval,
+                        price_id,
+                        status,
+                        stripe_customer_id,
+                        stripe_subscription_id,
+                        start_date,
+                        end_date,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (%s, 'referral', 'referral_grant', 'active', NULL, NULL, %s, %s, now(), now())
+                    ON CONFLICT (user_id) DO UPDATE
+                    SET plan_interval = EXCLUDED.plan_interval,
+                        price_id = EXCLUDED.price_id,
+                        status = EXCLUDED.status,
+                        stripe_customer_id = NULL,
+                        stripe_subscription_id = NULL,
+                        start_date = EXCLUDED.start_date,
+                        end_date = EXCLUDED.end_date,
+                        updated_at = now()
+                    """,
+                    (user_id, start_date, end_date),
+                )
+                await cur.execute(
+                    """
+                    UPDATE app.referral_codes
+                       SET redeemed_by_user_id = %s,
+                           redeemed_at = now()
+                     WHERE id = %s
+                    """,
+                    (user_id, str(redeemed_referral["id"])),
+                )
 
             await conn.commit()
             return {
                 "user": dict(user_row),
                 "profile": dict(profile_row) if profile_row else None,
+                "referral": dict(redeemed_referral) if redeemed_referral else None,
             }
 
 

@@ -22,7 +22,13 @@ from ..config import settings
 from ..db import get_conn
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
-from ..services import courses_service, livekit as livekit_service, storage_service
+from ..services import (
+    courses_service,
+    email_service,
+    livekit as livekit_service,
+    referral_service,
+    storage_service,
+)
 from ..services import media_cleanup
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 from ..utils import media_signer
@@ -182,6 +188,34 @@ async def studio_courses(current: TeacherUser):
 async def studio_status(current: CurrentUser):
     info = await models.teacher_status(current["id"])
     return info
+
+
+@router.post(
+    "/referrals/create",
+    response_model=schemas.ReferralCodeCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_referral_invitation(
+    payload: schemas.ReferralCodeCreateRequest,
+    current: TeacherUser,
+):
+    try:
+        referral, delivery = await referral_service.create_referral_invitation(
+            teacher_id=str(current["id"]),
+            email=payload.email,
+            free_days=payload.free_days,
+            free_months=payload.free_months,
+        )
+    except email_service.EmailDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send referral invitation email",
+        ) from exc
+
+    return schemas.ReferralCodeCreateResponse(
+        referral=schemas.ReferralCodeRecord(**referral),
+        email_delivery=delivery.mode,
+    )
 
 
 @router.get("/certificates")

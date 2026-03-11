@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timedelta, timezone
+
+from ..config import settings
+from ..db import get_conn
+from ..repositories import memberships as memberships_repo
+from . import email_service
+
+logger = logging.getLogger(__name__)
+
+_worker_task: asyncio.Task[None] | None = None
+_WARNING_STEP = "membership_expiry_warning_sent"
+_WARNING_TYPE = "expiry_7_day"
+
+
+async def start_worker() -> None:
+    global _worker_task
+    if _worker_task is not None:
+        return
+    _worker_task = asyncio.create_task(_poll_loop())
+    logger.info("Membership expiry warning worker started")
+
+
+async def stop_worker() -> None:
+    global _worker_task
+    if _worker_task is None:
+        return
+    _worker_task.cancel()
+    try:
+        await _worker_task
+    except asyncio.CancelledError:
+        pass
+    _worker_task = None
+    logger.info("Membership expiry warning worker stopped")
+
+
+async def run_once(*, now: datetime | None = None) -> int:
+    current_time = now or datetime.now(timezone.utc)
+    window_start = current_time + timedelta(days=7)
+    window_end = current_time + timedelta(days=8)
+    candidates = await _list_expiring_memberships(window_start, window_end)
+    sent_count = 0
+
+    for membership in candidates:
+        end_date = membership.get("end_date")
+        membership_id = str(membership["membership_id"])
+        user_id = str(membership["user_id"])
+        if not isinstance(end_date, datetime):
+            continue
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+
+        if await _warning_already_sent(
+            membership_id=membership_id,
+            end_date=end_date,
+        ):
+            continue
+
+        email = str(membership.get("email") or "").strip()
+        if not email:
+            continue
+
+        try:
+            delivery = await email_service.send_email(
+                to_email=email,
+                subject="Ditt Aveli-medlemskap löper snart ut",
+                text_body=_build_warning_email_text(
+                    display_name=membership.get("display_name"),
+                    end_date=end_date,
+                ),
+            )
+        except email_service.EmailDeliveryError:
+            logger.exception(
+                "Failed to send membership expiry warning membership_id=%s user_id=%s",
+                membership_id,
+                user_id,
+            )
+            continue
+
+        await memberships_repo.insert_billing_log(
+            user_id=user_id,
+            step=_WARNING_STEP,
+            info={
+                "membership_id": membership_id,
+                "end_date": end_date.isoformat(),
+                "warning_type": _WARNING_TYPE,
+                "delivery_mode": delivery.mode,
+            },
+        )
+        sent_count += 1
+
+    return sent_count
+
+
+async def _poll_loop() -> None:
+    while True:
+        try:
+            await run_once()
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:  # pragma: no cover - defensive worker logging
+            logger.exception("Membership expiry warning worker error: %s", exc)
+        await asyncio.sleep(settings.membership_expiry_warning_interval_seconds)
+
+
+async def _list_expiring_memberships(
+    window_start: datetime,
+    window_end: datetime,
+) -> list[dict]:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT m.membership_id,
+                   m.user_id,
+                   m.status,
+                   m.end_date,
+                   p.email,
+                   p.display_name
+              FROM app.memberships m
+              JOIN app.profiles p ON p.user_id = m.user_id
+             WHERE m.status IN ('active', 'trialing')
+               AND m.end_date >= %s
+               AND m.end_date < %s
+             ORDER BY m.end_date ASC
+            """,
+            (window_start, window_end),
+        )
+        rows = await cur.fetchall()
+    return [dict(row) for row in (rows or [])]
+
+
+async def _warning_already_sent(*, membership_id: str, end_date: datetime) -> bool:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT 1
+              FROM app.billing_logs
+             WHERE step = %s
+               AND info->>'warning_type' = %s
+               AND info->>'membership_id' = %s
+               AND info->>'end_date' = %s
+             LIMIT 1
+            """,
+            (
+                _WARNING_STEP,
+                _WARNING_TYPE,
+                membership_id,
+                end_date.isoformat(),
+            ),
+        )
+        return (await cur.fetchone()) is not None
+
+
+def _build_warning_email_text(
+    *,
+    display_name: str | None,
+    end_date: datetime,
+) -> str:
+    greeting = f"Hej {display_name}," if display_name else "Hej,"
+    formatted_date = end_date.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return (
+        f"{greeting}\n\n"
+        "Ditt Aveli-medlemskap löper snart ut.\n"
+        f"Nuvarande åtkomst avslutas {formatted_date}.\n\n"
+        "Om du vill fortsätta utan avbrott, uppdatera eller förnya medlemskapet innan dess.\n"
+    )
+
+
+__all__ = ["run_once", "start_worker", "stop_worker"]
