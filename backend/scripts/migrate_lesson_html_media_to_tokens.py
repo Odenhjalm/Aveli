@@ -2,9 +2,10 @@
 """Migrate legacy lesson HTML media embeds to canonical Markdown tokens.
 
 This script rewrites legacy lesson `content_markdown` stored in `app.lessons`
-from HTML media tags to canonical Markdown media tokens:
+from HTML media tags to canonical Markdown media syntax:
 
 * `<img src="/studio/media/{id}">` -> `!image({id})`
+* `<img src="https://.../storage/.../image.png">` -> `![](https://.../storage/.../image.png)`
 * `<audio src="/studio/media/{id}"></audio>` -> `!audio({id})`
 * `<video src="/studio/media/{id}"></video>` -> `!video({id})`
 
@@ -12,8 +13,8 @@ Safety:
 
 * Defaults to dry-run unless `--apply` is passed.
 * Only rows whose normalized content changes are updated.
-* Media HTML that cannot be mapped to a valid lesson media id is removed and
-  logged; invalid tokens are never written.
+* Audio/video HTML that cannot be mapped to a valid lesson media id is removed
+  and logged; HTML images with a usable source are converted instead of removed.
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ _AUDIO_HTML_TAG_PATTERN = re.compile(r"</?audio\b[^>]*>", re.IGNORECASE)
 _VIDEO_HTML_TAG_PATTERN = re.compile(r"</?video\b[^>]*>", re.IGNORECASE)
 _FORBIDDEN_HTML_MEDIA_PATTERN = re.compile(r"<\s*(video|audio|img)\b", re.IGNORECASE)
 _HTML_ATTRIBUTE_PATTERN = re.compile(
-    r"""([a-zA-Z_:][a-zA-Z0-9_\-:.]*)\s*=\s*("([^"]*)"|'([^']*)')"""
+    r"""([a-zA-Z_:][a-zA-Z0-9_\-:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))"""
 )
 _STUDIO_MEDIA_URL_PATTERN = re.compile(
     rf"""(?:https?:\/\/[^\s"'()]+)?\/studio\/media\/({MEDIA_ID_FRAGMENT})\b""",
@@ -141,7 +142,7 @@ def _parse_html_attributes(raw_html: str) -> dict[str, str]:
         key = match.group(1)
         if not key:
             continue
-        value = match.group(3) or match.group(4) or ""
+        value = match.group(2) or match.group(3) or match.group(4) or ""
         attrs[key.lower()] = value
     return attrs
 
@@ -232,6 +233,41 @@ def _replace_html_media(
     return pattern.sub(_replacement, markdown)
 
 
+def _markdown_image_from_src(src: str) -> str:
+    return f"![]({src})"
+
+
+def _image_conversion_warning(raw: str, converted: str) -> str:
+    return (
+        "Converted HTML image → Markdown image: "
+        f"before: {_warning_preview(raw, limit=180)} "
+        f"after: {_warning_preview(converted, limit=180)}"
+    )
+
+
+def _replace_html_images(markdown: str, warnings: list[str]) -> str:
+    def _replacement(match: re.Match[str]) -> str:
+        raw = match.group(0) or ""
+        attrs = _parse_html_attributes(raw)
+        src = _normalize_media_source_attribute(attrs)
+        if not src:
+            warnings.append(
+                f"Removed unresolved <img> HTML media tag: {_warning_preview(raw)}"
+            )
+            return ""
+
+        lesson_media_id = _lesson_media_id_from_media_attributes(attrs, src)
+        converted = (
+            _lesson_media_token("image", lesson_media_id)
+            if lesson_media_id
+            else _markdown_image_from_src(src)
+        )
+        warnings.append(_image_conversion_warning(raw, converted))
+        return converted
+
+    return _IMG_HTML_TAG_PATTERN.sub(_replacement, markdown)
+
+
 def _normalize_markdown_image(match: re.Match[str]) -> str:
     url = (match.group(1) or "").strip()
     if not url:
@@ -281,7 +317,7 @@ def assert_no_html_media(markdown: str) -> None:
     if markdown and _FORBIDDEN_HTML_MEDIA_PATTERN.search(markdown):
         raise ValueError(
             "Canonical text contract violation: HTML media tags are forbidden. "
-            "Use !video(id), !audio(id), or !image(id)."
+            "Use !video(id), !audio(id), !image(id), or Markdown image syntax."
         )
 
 
@@ -303,12 +339,7 @@ def normalize_lesson_markdown(markdown: str) -> tuple[str, tuple[str, ...]]:
         kind="video",
         warnings=warnings,
     )
-    normalized = _replace_html_media(
-        normalized,
-        pattern=_IMG_HTML_TAG_PATTERN,
-        kind="image",
-        warnings=warnings,
-    )
+    normalized = _replace_html_images(normalized, warnings)
     normalized = _MEDIA_STREAM_URL_PATTERN.sub(
         lambda match: (
             f"/studio/media/{lesson_media_id}"
