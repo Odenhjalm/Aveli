@@ -216,8 +216,11 @@ class _ImageEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
-    final src = value == null ? '' : value.toString().trim();
-    return AveliLessonImage(src: src);
+    final src =
+        lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
+        (value == null ? '' : value.toString().trim());
+    final alt = lesson_pipeline.lessonMediaAltFromEmbedValue(value);
+    return AveliLessonImage(src: src, alt: alt);
   }
 }
 
@@ -1224,6 +1227,51 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return mapping;
   }
 
+  Map<String, String> _lessonMediaUrlToStudioMediaUrlForSelectedLesson() {
+    final lessonId = _selectedLessonId;
+    if (lessonId == null) return const <String, String>{};
+    if (_lessonMediaLessonId != lessonId) return const <String, String>{};
+    if (_lessonMedia.isEmpty) return const <String, String>{};
+
+    final mapping = <String, String>{};
+    for (final media in _lessonMedia) {
+      final mediaId = safeString(media, 'id');
+      if (mediaId == null) continue;
+      final replacement = '/studio/media/$mediaId';
+      final candidates = <String?>[
+        _mediaUrl(media),
+        safeString(media, 'url'),
+        safeString(media, 'preferredUrl'),
+        safeString(media, 'preferred_url'),
+        _apiFilesDownloadPathForMedia(media),
+        _resolveMediaDisplayUrl(media),
+        _resolveMediaListThumbnailUrl(media),
+      ];
+      for (final candidate in candidates) {
+        final normalized = candidate?.trim();
+        if (normalized == null || normalized.isEmpty) continue;
+        mapping[normalized] = replacement;
+      }
+    }
+    return mapping;
+  }
+
+  String _rewriteKnownLessonMediaUrlsToStudioMediaUrls({
+    required String markdown,
+    required Map<String, String> urlToStudioMediaUrl,
+  }) {
+    if (markdown.isEmpty || urlToStudioMediaUrl.isEmpty) return markdown;
+
+    final entries = urlToStudioMediaUrl.entries.toList(growable: false)
+      ..sort((left, right) => right.key.length.compareTo(left.key.length));
+
+    var rewritten = markdown;
+    for (final entry in entries) {
+      rewritten = rewritten.replaceAll(entry.key, entry.value);
+    }
+    return rewritten;
+  }
+
   Future<String> _prepareLessonMarkdownForEditing(String markdown) async {
     if (markdown.trim().isEmpty) return markdown;
     final repo = ref.read(mediaRepositoryProvider);
@@ -1391,6 +1439,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
       }
     }
+    final lessonMediaUrlMapping =
+        _lessonMediaUrlToStudioMediaUrlForSelectedLesson();
+    if (lessonMediaUrlMapping.isNotEmpty) {
+      rawMarkdown = _rewriteKnownLessonMediaUrlsToStudioMediaUrls(
+        markdown: rawMarkdown,
+        urlToStudioMediaUrl: lessonMediaUrlMapping,
+      );
+    }
+    rawMarkdown = lesson_pipeline.convertHtmlMediaToTokens(rawMarkdown);
     final markdown = lesson_pipeline.normalizeLessonMarkdownForStorage(
       rawMarkdown,
     );

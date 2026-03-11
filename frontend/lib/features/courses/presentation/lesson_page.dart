@@ -561,13 +561,7 @@ class _LessonImageEmbedBuilder implements quill.EmbedBuilder {
     final src =
         lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    String? alt;
-    if (value is Map) {
-      final dynamic rawAlt = value['alt'];
-      if (rawAlt is String && rawAlt.trim().isNotEmpty) {
-        alt = rawAlt.trim();
-      }
-    }
+    final alt = lessonMediaAltFromEmbedValue(value);
     return AveliLessonImage(src: src, alt: alt);
   }
 }

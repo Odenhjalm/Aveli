@@ -11,13 +11,12 @@ import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/lesson_media_playback_resolver.dart';
 
-/// Lesson content is stored as Markdown (`content_markdown`), but when media is
-/// resized in the Studio editor we serialize embeds as HTML tags (e.g.
-/// `<img ... />`) to preserve width/height/style attributes.
+/// Lesson content is stored as canonical Markdown (`content_markdown`).
 ///
-/// To avoid inconsistencies (like raw `<img>` leaking as visible text), both
-/// Studio and lesson presentation must use this single Markdown ↔ Delta
-/// conversion pipeline.
+/// Lesson media persists as canonical tokens (`!image(id)`, `!audio(id)`,
+/// `!video(id)`) while the editor continues to use Quill Delta internally.
+/// Legacy HTML media is still accepted on import/render so both Studio and
+/// lesson presentation can share this single Markdown ↔ Delta pipeline.
 
 class AudioBlockEmbed extends quill.CustomBlockEmbed {
   static const String embedType = 'audio';
@@ -53,6 +52,17 @@ String videoBlockEmbedValueFromLessonMedia({
   'lesson_media_id': lessonMediaId,
   'kind': 'video',
   if (src != null && src.trim().isNotEmpty) 'src': src.trim(),
+});
+
+String imageBlockEmbedValueFromLessonMedia({
+  required String lessonMediaId,
+  String? src,
+  String? alt,
+}) => jsonEncode(<String, dynamic>{
+  'lesson_media_id': lessonMediaId,
+  'kind': 'image',
+  if (src != null && src.trim().isNotEmpty) 'src': src.trim(),
+  if (alt != null && alt.trim().isNotEmpty) 'alt': alt.trim(),
 });
 
 const HtmlEscape _htmlAttributeEscape = HtmlEscape(HtmlEscapeMode.attribute);
@@ -132,6 +142,28 @@ String? _lessonMediaIdFromEmbedValue(dynamic value) {
 String? lessonMediaIdFromEmbedValue(dynamic value) =>
     _lessonMediaIdFromEmbedValue(value);
 
+String? lessonMediaAltFromEmbedValue(dynamic value) {
+  if (value is Map) {
+    final raw = value['alt'];
+    if (raw is String && raw.trim().isNotEmpty) return raw.trim();
+  }
+
+  if (value is String && value.trim().isNotEmpty) {
+    final trimmed = value.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        final decoded = json.decode(trimmed);
+        if (decoded is Map) {
+          final raw = decoded['alt'];
+          if (raw is String && raw.trim().isNotEmpty) return raw.trim();
+        }
+      } catch (_) {}
+    }
+  }
+
+  return null;
+}
+
 String? normalizeVideoPlaybackUrl(String? rawValue) {
   final trimmed = rawValue?.trim();
   if (trimmed == null || trimmed.isEmpty) return null;
@@ -185,80 +217,44 @@ String _normalizeMediaSourceAttribute(Map<String, String> attrs) {
   return '';
 }
 
+String _lessonMediaToken({
+  required String kind,
+  required String lessonMediaId,
+}) => '!$kind($lessonMediaId)';
+
 DeltaToMarkdown createLessonDeltaToMarkdown() {
   return DeltaToMarkdown(
     customEmbedHandlers: {
       AudioBlockEmbed.embedType: (embed, out) {
         final lessonMediaId = _lessonMediaIdFromEmbedValue(embed.value.data);
         if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
-          final escapedId = _htmlAttributeEscape.convert(lessonMediaId);
-          out.write('<audio controls');
-          out.write(' data-lesson-media-id="$escapedId"');
-          out.write(' data-kind="audio"');
-          out.write(' src="/studio/media/$escapedId"></audio>');
+          out.write(
+            _lessonMediaToken(kind: 'audio', lessonMediaId: lessonMediaId),
+          );
           return;
         }
-
-        final url = lessonMediaUrlFromEmbedValue(embed.value.data);
-        if (url == null || url.isEmpty) return;
-        final escaped = _htmlAttributeEscape.convert(url);
-        out.write('<audio controls src="$escaped"></audio>');
       },
       quill.BlockEmbed.imageType: (embed, out) {
-        final url = lessonMediaUrlFromEmbedValue(embed.value.data);
-        if (url == null || url.isEmpty) return;
-
-        final styleValue =
-            embed.style.attributes[quill.Attribute.style.key]?.value;
-        final widthValue =
-            embed.style.attributes[quill.Attribute.width.key]?.value;
-        final heightValue =
-            embed.style.attributes[quill.Attribute.height.key]?.value;
-
-        final style =
-            (styleValue is String ? styleValue : styleValue?.toString() ?? '')
-                .trim();
-        final width =
-            (widthValue is String ? widthValue : widthValue?.toString() ?? '')
-                .trim();
-        final height =
-            (heightValue is String
-                    ? heightValue
-                    : heightValue?.toString() ?? '')
-                .trim();
-
-        if (style.isEmpty && width.isEmpty && height.isEmpty) {
-          out.write('![]($url)');
+        final lessonMediaId = _lessonMediaIdFromEmbedValue(embed.value.data);
+        if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
+          out.write(
+            _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId),
+          );
           return;
         }
 
-        final escaped = _htmlAttributeEscape.convert(url);
-        out.write('<img src="$escaped"');
-        if (style.isNotEmpty) {
-          out.write(' style="${_htmlAttributeEscape.convert(style)}"');
-        }
-        if (width.isNotEmpty) {
-          out.write(' width="${_htmlAttributeEscape.convert(width)}"');
-        }
-        if (height.isNotEmpty) {
-          out.write(' height="${_htmlAttributeEscape.convert(height)}"');
-        }
-        out.write(' />');
+        final url = lessonMediaUrlFromEmbedValue(embed.value.data);
+        if (url == null || url.isEmpty) return;
+        out.write('![]($url)');
       },
       quill.BlockEmbed.videoType: (embed, out) {
         final lessonMediaId = _lessonMediaIdFromEmbedValue(embed.value.data);
         if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
-          final escapedId = _htmlAttributeEscape.convert(lessonMediaId);
-          out.write('<video controls');
-          out.write(' data-lesson-media-id="$escapedId"');
-          out.write(' data-kind="video"');
-          out.write(' src="/studio/media/$escapedId"></video>');
+          out.write(
+            _lessonMediaToken(kind: 'video', lessonMediaId: lessonMediaId),
+          );
           return;
         }
-        final url = lessonMediaUrlFromEmbedValue(embed.value.data);
-        if (url == null || url.isEmpty) return;
-        final escaped = _htmlAttributeEscape.convert(url);
-        out.write('<video controls src="$escaped"></video>');
       },
     },
   );
@@ -290,6 +286,20 @@ MarkdownToDelta createLessonMarkdownToDelta(md.Document markdownDocument) {
   );
 }
 
+const String _lessonMediaIdFragment = r'([A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*)';
+
+final RegExp _audioHtmlElementPattern = RegExp(
+  r'''<audio\b[^>]*?(?:\/>|>.*?<\/audio>)''',
+  caseSensitive: false,
+  dotAll: true,
+);
+
+final RegExp _videoHtmlElementPattern = RegExp(
+  r'''<video\b[^>]*?(?:\/>|>.*?<\/video>)''',
+  caseSensitive: false,
+  dotAll: true,
+);
+
 final RegExp _audioHtmlTagPattern = RegExp(
   r'''<audio\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*></audio>''',
   caseSensitive: false,
@@ -307,6 +317,26 @@ final RegExp _imgHtmlTagPattern = RegExp(
 
 final RegExp _htmlAttributePattern = RegExp(
   r'''([a-zA-Z_:][a-zA-Z0-9_\-:.]*)\s*=\s*("([^"]*)"|'([^']*)')''',
+);
+
+final RegExp _lessonImageTokenPattern = RegExp(
+  '!image\\($_lessonMediaIdFragment\\)',
+  caseSensitive: false,
+);
+
+final RegExp _lessonAudioTokenPattern = RegExp(
+  '!audio\\($_lessonMediaIdFragment\\)',
+  caseSensitive: false,
+);
+
+final RegExp _lessonVideoTokenPattern = RegExp(
+  '!video\\($_lessonMediaIdFragment\\)',
+  caseSensitive: false,
+);
+
+final RegExp _markdownImagePattern = RegExp(
+  r'''!\[[^\]]*]\((?:<)?([^)>\s]+)(?:>)?(?:\s+"[^"]*")?\)''',
+  caseSensitive: false,
 );
 
 // This sentinel preserves empty paragraphs during Markdown → Quill Delta
@@ -379,6 +409,45 @@ Map<String, String> _parseHtmlAttributes(String html) {
     attributes[key.toLowerCase()] = value;
   }
   return attributes;
+}
+
+String convertHtmlMediaToTokens(String markdown) {
+  if (markdown.isEmpty) return markdown;
+
+  var converted = markdown;
+  converted = converted.replaceAllMapped(_audioHtmlElementPattern, (match) {
+    final raw = match.group(0) ?? '';
+    if (raw.isEmpty) return raw;
+    final attrs = _parseHtmlAttributes(raw);
+    final src = _normalizeMediaSourceAttribute(attrs);
+    final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
+    if (lessonMediaId == null || lessonMediaId.isEmpty) return '';
+    return _lessonMediaToken(kind: 'audio', lessonMediaId: lessonMediaId);
+  });
+  converted = converted.replaceAllMapped(_videoHtmlElementPattern, (match) {
+    final raw = match.group(0) ?? '';
+    if (raw.isEmpty) return raw;
+    final attrs = _parseHtmlAttributes(raw);
+    final src = _normalizeMediaSourceAttribute(attrs);
+    final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
+    if (lessonMediaId == null || lessonMediaId.isEmpty) return '';
+    return _lessonMediaToken(kind: 'video', lessonMediaId: lessonMediaId);
+  });
+  converted = converted.replaceAllMapped(_imgHtmlTagPattern, (match) {
+    final raw = match.group(0) ?? '';
+    if (raw.isEmpty) return raw;
+    final attrs = _parseHtmlAttributes(raw);
+    final src = _normalizeMediaSourceAttribute(attrs);
+    final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
+    if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
+      return _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId);
+    }
+    if (src.isNotEmpty) {
+      return '![]($src)';
+    }
+    return '';
+  });
+  return converted;
 }
 
 quill_delta.Delta _replaceHtmlTagWithEmbed(
@@ -462,7 +531,8 @@ quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
       final raw = match.group(0) ?? '';
       final attrs = _parseHtmlAttributes(raw);
       final src = _normalizeMediaSourceAttribute(attrs);
-      if (src.isEmpty) {
+      final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
+      if (src.isEmpty && (lessonMediaId == null || lessonMediaId.isEmpty)) {
         if (raw.isNotEmpty) {
           result.insert(raw, operation.attributes);
         }
@@ -485,12 +555,75 @@ quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
           mergedAttrs[quill.Attribute.height.key] = height.trim();
         }
 
+        final alt = attrs['alt'];
+        final imageValue = lessonMediaId != null && lessonMediaId.isNotEmpty
+            ? imageBlockEmbedValueFromLessonMedia(
+                lessonMediaId: lessonMediaId,
+                src: src.isEmpty ? null : src,
+                alt: alt,
+              )
+            : src;
+
         result.insert(
-          quill.BlockEmbed.image(src),
+          quill.BlockEmbed.image(imageValue),
           mergedAttrs.isEmpty ? null : mergedAttrs,
         );
       }
 
+      cursor = match.end;
+    }
+
+    if (cursor < value.length) {
+      final remainder = value.substring(cursor);
+      if (remainder.isNotEmpty) {
+        result.insert(remainder, operation.attributes);
+      }
+    }
+  }
+  return result;
+}
+
+quill_delta.Delta _replaceTokenWithEmbed(
+  quill_delta.Delta source,
+  RegExp pattern,
+  dynamic Function(String lessonMediaId) embedFactory,
+) {
+  final result = quill_delta.Delta();
+  for (final operation in source.toList()) {
+    if (!operation.isInsert) {
+      result.push(operation);
+      continue;
+    }
+    final value = operation.value;
+    if (value is! String) {
+      result.push(operation);
+      continue;
+    }
+
+    final matches = pattern.allMatches(value).toList();
+    if (matches.isEmpty) {
+      result.insert(value, operation.attributes);
+      continue;
+    }
+
+    var cursor = 0;
+    for (final match in matches) {
+      if (match.start > cursor) {
+        final chunk = value.substring(cursor, match.start);
+        if (chunk.isNotEmpty) {
+          result.insert(chunk, operation.attributes);
+        }
+      }
+
+      final lessonMediaId = match.group(1)?.trim();
+      if (lessonMediaId == null || lessonMediaId.isEmpty) {
+        final raw = match.group(0) ?? '';
+        if (raw.isNotEmpty) {
+          result.insert(raw, operation.attributes);
+        }
+      } else {
+        result.insert(embedFactory(lessonMediaId), operation.attributes);
+      }
       cursor = match.end;
     }
 
@@ -551,7 +684,27 @@ quill_delta.Delta convertLessonMarkdownToDelta(
     return raw;
   });
   final withImages = _replaceHtmlImgTagsWithEmbeds(withVideo);
-  return withImages;
+  final withAudioTokens = _replaceTokenWithEmbed(
+    withImages,
+    _lessonAudioTokenPattern,
+    (lessonMediaId) =>
+        AudioBlockEmbed.fromLessonMedia(lessonMediaId: lessonMediaId),
+  );
+  final withVideoTokens = _replaceTokenWithEmbed(
+    withAudioTokens,
+    _lessonVideoTokenPattern,
+    (lessonMediaId) => quill.BlockEmbed.video(
+      videoBlockEmbedValueFromLessonMedia(lessonMediaId: lessonMediaId),
+    ),
+  );
+  final withImageTokens = _replaceTokenWithEmbed(
+    withVideoTokens,
+    _lessonImageTokenPattern,
+    (lessonMediaId) => quill.BlockEmbed.image(
+      imageBlockEmbedValueFromLessonMedia(lessonMediaId: lessonMediaId),
+    ),
+  );
+  return withImageTokens;
 }
 
 String? _lessonMediaIdFromMediaAttributes(
@@ -592,7 +745,7 @@ final RegExp mediaStreamUrlPattern = RegExp(
 );
 
 final RegExp lessonMediaIdAttributePattern = RegExp(
-  r'''data-lesson-media-id\s*=\s*["']([0-9a-fA-F-]{36})["']''',
+  r'''data-lesson-media-id\s*=\s*["']''' + _lessonMediaIdFragment + r'''["']''',
   caseSensitive: false,
 );
 
@@ -634,6 +787,24 @@ Set<String> extractLessonEmbeddedMediaIds(String markdown) {
       ids.add(id);
     }
   }
+  for (final match in _lessonImageTokenPattern.allMatches(markdown)) {
+    final id = match.group(1);
+    if (id != null && id.isNotEmpty) {
+      ids.add(id);
+    }
+  }
+  for (final match in _lessonAudioTokenPattern.allMatches(markdown)) {
+    final id = match.group(1);
+    if (id != null && id.isNotEmpty) {
+      ids.add(id);
+    }
+  }
+  for (final match in _lessonVideoTokenPattern.allMatches(markdown)) {
+    final id = match.group(1);
+    if (id != null && id.isNotEmpty) {
+      ids.add(id);
+    }
+  }
   return ids;
 }
 
@@ -665,6 +836,25 @@ Future<String> prepareLessonMarkdownForRendering(
 }) async {
   markdown = _stripBlankLineSentinelForDisplay(markdown);
   if (markdown.trim().isEmpty) return markdown;
+  markdown = markdown
+      .replaceAllMapped(_lessonImageTokenPattern, (match) {
+        final id = match.group(1)?.trim();
+        if (id == null || id.isEmpty) return match.group(0) ?? '';
+        final escapedId = _htmlAttributeEscape.convert(id);
+        return '<img data-lesson-media-id="$escapedId" src="/studio/media/$escapedId" />';
+      })
+      .replaceAllMapped(_lessonAudioTokenPattern, (match) {
+        final id = match.group(1)?.trim();
+        if (id == null || id.isEmpty) return match.group(0) ?? '';
+        final escapedId = _htmlAttributeEscape.convert(id);
+        return '<audio controls data-lesson-media-id="$escapedId" src="/studio/media/$escapedId"></audio>';
+      })
+      .replaceAllMapped(_lessonVideoTokenPattern, (match) {
+        final id = match.group(1)?.trim();
+        if (id == null || id.isEmpty) return match.group(0) ?? '';
+        final escapedId = _htmlAttributeEscape.convert(id);
+        return '<video controls data-lesson-media-id="$escapedId" src="/studio/media/$escapedId"></video>';
+      });
 
   final ids = extractLessonEmbeddedMediaIds(markdown);
   if (ids.isEmpty) return markdown;
@@ -723,7 +913,7 @@ Future<String> prepareLessonMarkdownForRendering(
 String normalizeLessonMarkdownForStorage(String markdown) {
   if (markdown.isEmpty) return markdown;
 
-  var normalized = markdown;
+  var normalized = convertHtmlMediaToTokens(markdown);
   normalized = normalized.replaceAllMapped(studioMediaUrlPattern, (match) {
     final id = match.group(1);
     if (id == null || id.isEmpty) return match.group(0) ?? '';
@@ -736,5 +926,19 @@ String normalizeLessonMarkdownForStorage(String markdown) {
     if (id == null || id.isEmpty) return match.group(0) ?? '';
     return '/studio/media/$id';
   });
+  normalized = normalized.replaceAllMapped(_markdownImagePattern, (match) {
+    final url = match.group(1)?.trim();
+    if (url == null || url.isEmpty) return match.group(0) ?? '';
+    final lessonMediaId = _lessonMediaIdFromEmbedValue(url);
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      return match.group(0) ?? '';
+    }
+    return _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId);
+  });
+  normalized = normalized
+      .replaceAll(_blankLineSentinel, '')
+      .replaceAllMapped(_audioHtmlElementPattern, (_) => '')
+      .replaceAllMapped(_videoHtmlElementPattern, (_) => '')
+      .replaceAllMapped(_imgHtmlTagPattern, (_) => '');
   return normalized;
 }

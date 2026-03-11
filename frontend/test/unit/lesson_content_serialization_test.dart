@@ -14,18 +14,24 @@ void main() {
     const sampleVideoUrl = 'https://example.com/video.mp4';
     const sampleLessonMediaId = '123e4567-e89b-12d3-a456-426614174000';
 
-    test('audio embed converts to <audio> HTML on markdown export', () {
+    test('lesson media audio embed exports as canonical token', () {
       final delta = quill_delta.Delta()
         ..insert('Intro\n')
-        ..insert(AudioBlockEmbed.fromUrl(sampleUrl))
+        ..insert(
+          AudioBlockEmbed.fromLessonMedia(
+            lessonMediaId: sampleLessonMediaId,
+            src: sampleUrl,
+          ),
+        )
         ..insert('\n');
 
       final markdown = createLessonDeltaToMarkdown().convert(delta);
 
-      expect(markdown, contains('<audio controls src="$sampleUrl"></audio>'));
+      expect(markdown, contains('!audio($sampleLessonMediaId)'));
+      expect(markdown, isNot(contains(sampleUrl)));
     });
 
-    test('lesson media audio embed persists as /studio/media marker', () {
+    test('lesson media audio embed does not persist playback URLs', () {
       const playbackUrl =
           'https://storage.example.com/audio.mp3?X-Amz-Signature=abc';
       final delta = quill_delta.Delta()
@@ -40,12 +46,11 @@ void main() {
 
       final markdown = createLessonDeltaToMarkdown().convert(delta);
 
-      expect(markdown, contains('data-lesson-media-id="$sampleLessonMediaId"'));
-      expect(markdown, contains('src="/studio/media/$sampleLessonMediaId"'));
+      expect(markdown, contains('!audio($sampleLessonMediaId)'));
       expect(markdown, isNot(contains(playbackUrl)));
     });
 
-    test('lesson media video embed persists as /studio/media marker', () {
+    test('lesson media video embed exports as canonical token', () {
       const playbackUrl =
           'https://storage.example.com/video.mp4?X-Amz-Signature=abc';
       final delta = quill_delta.Delta()
@@ -62,39 +67,41 @@ void main() {
 
       final markdown = createLessonDeltaToMarkdown().convert(delta);
 
-      expect(markdown, contains('data-lesson-media-id="$sampleLessonMediaId"'));
-      expect(markdown, contains('src="/studio/media/$sampleLessonMediaId"'));
+      expect(markdown, contains('!video($sampleLessonMediaId)'));
       expect(markdown, isNot(contains(playbackUrl)));
     });
 
-    test('resized image embed converts to <img> HTML on markdown export', () {
+    test('lesson media image embed exports as canonical token', () {
       const style = 'width: 200; height: 100;';
       final delta = quill_delta.Delta()
         ..insert('Intro\n')
-        ..insert(quill.BlockEmbed.image(sampleImageUrl), {
-          quill.Attribute.style.key: style,
-        })
+        ..insert(
+          quill.BlockEmbed.image(
+            imageBlockEmbedValueFromLessonMedia(
+              lessonMediaId: sampleLessonMediaId,
+              src: sampleImageUrl,
+            ),
+          ),
+          {quill.Attribute.style.key: style},
+        )
         ..insert('\n');
 
       final markdown = createLessonDeltaToMarkdown().convert(delta);
 
-      expect(markdown, contains('<img'));
-      expect(markdown, contains('src="$sampleImageUrl"'));
-      expect(markdown, contains('style="$style"'));
+      expect(markdown, contains('!image($sampleLessonMediaId)'));
+      expect(markdown, isNot(contains(sampleImageUrl)));
+      expect(markdown, isNot(contains(style)));
     });
 
-    test('video embed exports with native controls attribute', () {
+    test('external image embed stays as standard markdown image', () {
       final delta = quill_delta.Delta()
         ..insert('Intro\n')
-        ..insert(quill.BlockEmbed.video(sampleVideoUrl))
+        ..insert(quill.BlockEmbed.image(sampleImageUrl))
         ..insert('\n');
 
       final markdown = createLessonDeltaToMarkdown().convert(delta);
 
-      expect(
-        markdown,
-        contains('<video controls src="$sampleVideoUrl"></video>'),
-      );
+      expect(markdown, contains('![]($sampleImageUrl)'));
     });
 
     test('audio HTML converts back to custom embed on markdown import', () {
@@ -133,6 +140,41 @@ Intro
       });
 
       expect(hasAudioEmbed, isTrue);
+    });
+
+    test('audio token converts back to structured lesson media embed', () {
+      final document = md.Document(
+        encodeHtml: false,
+        extensionSet: md.ExtensionSet.gitHubWeb,
+      );
+      const markdown =
+          '''
+Intro
+
+!audio($sampleLessonMediaId)
+''';
+
+      final converter = createLessonMarkdownToDelta(document);
+      final delta = convertLessonMarkdownToDelta(converter, markdown);
+
+      final hasStructured = delta.toList().any((operation) {
+        if (!operation.isInsert) return false;
+        final value = operation.value;
+        final data = switch (value) {
+          AudioBlockEmbed() => value.data,
+          Map() => value[AudioBlockEmbed.embedType],
+          _ => null,
+        };
+        if (data is! String || !data.trim().startsWith('{')) return false;
+        try {
+          final decoded = jsonDecode(data) as Map;
+          return decoded['lesson_media_id'] == sampleLessonMediaId;
+        } catch (_) {
+          return false;
+        }
+      });
+
+      expect(hasStructured, isTrue);
     });
 
     test(
@@ -219,6 +261,43 @@ Intro
         expect(hasStructured, isTrue);
       },
     );
+
+    test('image token converts back to structured image embed payload', () {
+      final document = md.Document(
+        encodeHtml: false,
+        extensionSet: md.ExtensionSet.gitHubWeb,
+      );
+      const markdown =
+          '''
+Intro
+
+!image($sampleLessonMediaId)
+''';
+
+      final converter = createLessonMarkdownToDelta(document);
+      final delta = convertLessonMarkdownToDelta(converter, markdown);
+
+      final hasStructured = delta.toList().any((operation) {
+        if (!operation.isInsert) return false;
+        final value = operation.value;
+        final data = switch (value) {
+          quill.Embeddable() when value.type == quill.BlockEmbed.imageType =>
+            value.data,
+          Map() => value[quill.BlockEmbed.imageType],
+          _ => null,
+        };
+        if (data is! String || !data.trim().startsWith('{')) return false;
+        try {
+          final decoded = jsonDecode(data) as Map;
+          return decoded['lesson_media_id'] == sampleLessonMediaId &&
+              decoded['kind'] == 'image';
+        } catch (_) {
+          return false;
+        }
+      });
+
+      expect(hasStructured, isTrue);
+    });
 
     test(
       'img HTML converts back to image embed with style on markdown import',

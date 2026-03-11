@@ -22,7 +22,7 @@ void main() {
 
       final normalized = normalizeLessonMarkdownForStorage(markdown);
 
-      expect(normalized, contains('/studio/media/$id'));
+      expect(normalized, contains('!image($id)'));
       expect(normalized, isNot(contains('https://api.example.com')));
     });
 
@@ -53,10 +53,42 @@ void main() {
 
         final normalized = normalizeLessonMarkdownForStorage(markdown);
 
-        expect(normalized, contains('/studio/media/$id'));
+        expect(normalized, contains('!image($id)'));
         expect(normalized, isNot(contains('/media/stream/$token')));
       },
     );
+
+    test('converts legacy HTML media tags into canonical tokens', () {
+      const imageId = '123e4567-e89b-12d3-a456-426614174001';
+      const audioId = '123e4567-e89b-12d3-a456-426614174002';
+      const videoId = '123e4567-e89b-12d3-a456-426614174003';
+      const markdown =
+          '''
+<img src="/studio/media/$imageId">
+
+<audio src="/studio/media/$audioId"></audio>
+
+<video src="/studio/media/$videoId"></video>
+''';
+
+      final normalized = normalizeLessonMarkdownForStorage(markdown);
+
+      expect(normalized, contains('!image($imageId)'));
+      expect(normalized, contains('!audio($audioId)'));
+      expect(normalized, contains('!video($videoId)'));
+      expect(normalized, isNot(contains('<img')));
+      expect(normalized, isNot(contains('<audio')));
+      expect(normalized, isNot(contains('<video')));
+    });
+
+    test('removes unsupported HTML media tags before storage', () {
+      const markdown = '<video src="https://cdn.test/legacy.mp4"></video>';
+
+      final normalized = normalizeLessonMarkdownForStorage(markdown);
+
+      expect(normalized, isNot(contains('<video')));
+      expect(normalized.trim(), isEmpty);
+    });
 
     test('legacy video detection: empty and invalid URLs are legacy', () {
       expect(isLegacyVideoEmbed(''), isTrue);
