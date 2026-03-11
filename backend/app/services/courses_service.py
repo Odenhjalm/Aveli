@@ -22,6 +22,7 @@ from ..repositories import (
 )
 from . import media_cleanup
 from ..services import storage_service
+from ..utils.audio_content_types import resolve_runtime_audio_content_type
 from ..utils.lesson_content import serialize_audio_embeds
 from ..utils import media_signer
 from ..utils import media_robustness
@@ -79,6 +80,16 @@ def _materialize_optional_row(row: Mapping[str, Any] | None) -> dict[str, Any] |
 
 def _materialize_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [_materialize_mapping(row) for row in rows]
+
+
+def _apply_audio_content_type_fallback(item: dict[str, Any]) -> None:
+    resolved = resolve_runtime_audio_content_type(
+        kind=str(item.get("kind") or ""),
+        content_type=item.get("content_type"),
+        storage_path=item.get("storage_path"),
+    )
+    if resolved is not None:
+        item["content_type"] = resolved
 
 
 _KNOWN_BUCKET_PREFIXES: set[str] = {
@@ -445,6 +456,7 @@ async def list_lesson_media(
         item = _materialize_mapping(row)
         if not item.get("storage_bucket") and not item.get("media_asset_id"):
             item["storage_bucket"] = "lesson-media"
+        _apply_audio_content_type_fallback(item)
         if not item.get("media_asset_id"):
             media_signer.attach_media_links(item, purpose=mode)
         items.append(item)
@@ -614,6 +626,7 @@ async def list_home_audio_media(
         item = _materialize_mapping(row)
         if not item.get("media_asset_id") and not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
+        _apply_audio_content_type_fallback(item)
         if not item.get("media_asset_id"):
             media_signer.attach_media_links(item, purpose="student_render")
         items.append(item)

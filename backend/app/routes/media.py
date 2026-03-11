@@ -16,6 +16,7 @@ from ..repositories import media_resolution_failures
 from ..repositories import storage_objects
 from ..services import lesson_playback_service, storage_service
 from ..utils.http_headers import build_content_disposition
+from ..utils.audio_content_types import resolve_runtime_audio_content_type
 from ..utils import media_robustness
 from ..utils.media_signer import (
     MediaTokenError,
@@ -437,11 +438,11 @@ async def _build_streaming_response(
             )
             raise HTTPException(status_code=503, detail="Storage unavailable") from None
 
-        content_type = (
-            upstream.headers.get("content-type")
-            or row.get("content_type")
-            or "application/octet-stream"
-        )
+        content_type = resolve_runtime_audio_content_type(
+            kind=kind,
+            content_type=upstream.headers.get("content-type") or row.get("content_type"),
+            storage_path=str(storage_path),
+        ) or "application/octet-stream"
         lower_content_type = str(content_type).strip().lower()
         document_response = kind in {"document", "pdf"} or lower_content_type.startswith(
             "application/pdf"
@@ -476,7 +477,11 @@ async def _build_streaming_response(
         )
 
     file_size = file_path.stat().st_size
-    content_type = row.get("content_type") or "application/octet-stream"
+    content_type = resolve_runtime_audio_content_type(
+        kind=kind,
+        content_type=row.get("content_type"),
+        storage_path=str(storage_path),
+    ) or "application/octet-stream"
     lower_content_type = str(content_type).strip().lower()
     document_response = kind in {"document", "pdf"} or lower_content_type.startswith(
         "application/pdf"

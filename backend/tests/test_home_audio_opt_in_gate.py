@@ -157,3 +157,93 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
     resp_disabled = await async_client.get("/home/audio", headers=auth_header(teacher_token))
     assert resp_disabled.status_code == 200, resp_disabled.text
     assert lesson_media_id not in {it.get("id") for it in resp_disabled.json().get("items") or []}
+
+
+async def test_home_audio_falls_back_to_extension_mime_for_generic_audio_types(
+    async_client,
+):
+    password = "Passw0rd!"
+    teacher_token, teacher_id = await register_user(
+        async_client,
+        f"home_mime_teacher_{uuid.uuid4().hex[:6]}@example.org",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    slug = f"home-mime-{uuid.uuid4().hex[:8]}"
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.courses (
+                  slug,
+                  title,
+                  is_free_intro,
+                  price_amount_cents,
+                  currency,
+                  is_published,
+                  created_by
+                )
+                VALUES (%s, %s, false, 1000, 'sek', true, %s)
+                RETURNING id
+                """,
+                (slug, f"Course {slug}", teacher_id),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    course_id = str(row[0])
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.lessons (course_id, title, position, is_intro)
+                VALUES (%s, %s, 0, false)
+                RETURNING id
+                """,
+                (course_id, "Lesson"),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    lesson_id = str(row[0])
+
+    media_object = await models.create_media_object(
+        owner_id=teacher_id,
+        storage_path=f"{uuid.uuid4().hex}.mp3",
+        storage_bucket="lesson-media",
+        content_type="application/octet-stream",
+        byte_size=3,
+        checksum=None,
+        original_name="legacy.mp3",
+    )
+    assert media_object
+
+    lesson_media = await models.add_lesson_media_entry(
+        lesson_id=lesson_id,
+        kind="audio",
+        storage_path=media_object["storage_path"],
+        storage_bucket=media_object["storage_bucket"],
+        media_id=str(media_object["id"]),
+        position=1,
+    )
+    assert lesson_media
+    lesson_media_id = str(lesson_media["id"])
+
+    create_link = await async_client.post(
+        "/studio/home-player/course-links",
+        headers=auth_header(teacher_token),
+        json={
+            "lesson_media_id": lesson_media_id,
+            "title": "Home track",
+            "enabled": True,
+        },
+    )
+    assert create_link.status_code == 201, create_link.text
+
+    resp = await async_client.get("/home/audio", headers=auth_header(teacher_token))
+    assert resp.status_code == 200, resp.text
+    items = resp.json().get("items") or []
+    item = next((entry for entry in items if entry.get("id") == lesson_media_id), None)
+    assert item, resp.json()
+    assert item.get("content_type") == "audio/mpeg"
