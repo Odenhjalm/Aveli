@@ -315,6 +315,11 @@ final RegExp _imgHtmlTagPattern = RegExp(
   caseSensitive: false,
 );
 
+final RegExp _forbiddenHtmlMediaPattern = RegExp(
+  r'<\s*(video|audio|img)\b',
+  caseSensitive: false,
+);
+
 final RegExp _htmlAttributePattern = RegExp(
   r'''([a-zA-Z_:][a-zA-Z0-9_\-:.]*)\s*=\s*("([^"]*)"|'([^']*)')''',
 );
@@ -409,6 +414,16 @@ Map<String, String> _parseHtmlAttributes(String html) {
     attributes[key.toLowerCase()] = value;
   }
   return attributes;
+}
+
+void assertNoHtmlMedia(String markdown) {
+  if (markdown.isEmpty) return;
+  if (_forbiddenHtmlMediaPattern.hasMatch(markdown)) {
+    throw StateError(
+      'Canonical text contract violation: HTML media tags are forbidden. '
+      'Use !video(id), !audio(id), or !image(id).',
+    );
+  }
 }
 
 String convertHtmlMediaToTokens(String markdown) {
@@ -935,10 +950,7 @@ String normalizeLessonMarkdownForStorage(String markdown) {
     }
     return _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId);
   });
-  normalized = normalized
-      .replaceAll(_blankLineSentinel, '')
-      .replaceAllMapped(_audioHtmlElementPattern, (_) => '')
-      .replaceAllMapped(_videoHtmlElementPattern, (_) => '')
-      .replaceAllMapped(_imgHtmlTagPattern, (_) => '');
+  normalized = normalized.replaceAll(_blankLineSentinel, '');
+  assertNoHtmlMedia(normalized);
   return normalized;
 }
