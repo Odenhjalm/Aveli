@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -19,8 +20,11 @@ from ..auth import (
     verify_password,
 )
 from ..config import settings
+from ..services.email_verification import send_verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
 
 _AVATAR_ALLOWED_PREFIXES = ("image/",)
 _AVATAR_MAX_BYTES = 5 * 1024 * 1024
@@ -107,6 +111,13 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
         user_agent=request.headers.get("user-agent"),
         metadata={"refresh_jti": refresh_jti},
     )
+    try:
+        await send_verification_email(user["email"])
+    except Exception:
+        logger.exception(
+            "Failed to send verification email after signup email=%s",
+            user["email"],
+        )
     return schemas.Token(access_token=access_token, refresh_token=refresh_token)
 
 

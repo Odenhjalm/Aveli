@@ -51,6 +51,11 @@ const List<RouteManifestEntry> routeManifest = [
     redirectAuthed: true,
   ),
   RouteManifestEntry(
+    name: AppRoute.verifyEmail,
+    path: RoutePath.verifyEmail,
+    access: RouteAccessLevel.public,
+  ),
+  RouteManifestEntry(
     name: AppRoute.forgotPassword,
     path: RoutePath.forgotPassword,
     access: RouteAccessLevel.public,
@@ -143,6 +148,11 @@ const List<RouteManifestEntry> routeManifest = [
   RouteManifestEntry(
     name: AppRoute.profile,
     path: RoutePath.profile,
+    access: RouteAccessLevel.authenticated,
+  ),
+  RouteManifestEntry(
+    name: AppRoute.createProfile,
+    path: RoutePath.createProfile,
     access: RouteAccessLevel.authenticated,
   ),
   RouteManifestEntry(

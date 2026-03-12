@@ -1,0 +1,288 @@
+[
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "4534405f-bf8d-4295-90f9-dfa9c50b5001",
+    "lessonMediaId": "a9f5f457-82ae-4d5d-b278-37299f800c5d",
+    "issueType": null,
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "course-media",
+      "storagePath": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/4534405f-bf8d-4295-90f9-dfa9c50b5001/21c6fcdee4f2411a89d7c4a0e98f36da_lektion tarot 1.mp3",
+      "probe": {
+        "bucket": "course-media",
+        "path": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/4534405f-bf8d-4295-90f9-dfa9c50b5001/21c6fcdee4f2411a89d7c4a0e98f36da_lektion tarot 1.mp3",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "audio/mpeg",
+        "contentLength": 6592931
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 6592931,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "4534405f-bf8d-4295-90f9-dfa9c50b5001",
+    "lessonMediaId": "6bea5ad4-5827-49da-94c3-e1e5156ffe5b",
+    "issueType": "LEGACY_DIRECT_REFERENCE",
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "public-media",
+      "storagePath": "lessons/4534405f-bf8d-4295-90f9-dfa9c50b5001/images/a97d66de-126b-4fd8-8d9b-11587558a196.jpg",
+      "probe": {
+        "bucket": "public-media",
+        "path": "lessons/4534405f-bf8d-4295-90f9-dfa9c50b5001/images/a97d66de-126b-4fd8-8d9b-11587558a196.jpg",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "image/jpeg",
+        "contentLength": 132663
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 132663,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "48304542-3ef0-4cd5-8e21-1d75cb3b6756",
+    "lessonMediaId": "5cb1bcd3-dfcc-44f4-b2af-0a6423b2e92a",
+    "issueType": "LEGACY_DIRECT_REFERENCE",
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "public-media",
+      "storagePath": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/48304542-3ef0-4cd5-8e21-1d75cb3b6756/image/c89fd1cc93a04ee78b0e93f9fa09afa8.jpg",
+      "probe": {
+        "bucket": "public-media",
+        "path": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/48304542-3ef0-4cd5-8e21-1d75cb3b6756/image/c89fd1cc93a04ee78b0e93f9fa09afa8.jpg",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "image/jpeg",
+        "contentLength": 361386
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 361386,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "48304542-3ef0-4cd5-8e21-1d75cb3b6756",
+    "lessonMediaId": "2132c8f4-df9b-490c-b926-1954c17e8ff4",
+    "issueType": "LEGACY_DIRECT_REFERENCE",
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "public-media",
+      "storagePath": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/48304542-3ef0-4cd5-8e21-1d75cb3b6756/image/726c349020524df7ae9b9dfe086c3d0a.png",
+      "probe": {
+        "bucket": "public-media",
+        "path": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/48304542-3ef0-4cd5-8e21-1d75cb3b6756/image/726c349020524df7ae9b9dfe086c3d0a.png",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "image/png",
+        "contentLength": 2566216
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 2566216,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "48304542-3ef0-4cd5-8e21-1d75cb3b6756",
+    "lessonMediaId": "b777a5aa-2178-4a6f-a81a-19337519a016",
+    "issueType": null,
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "course-media",
+      "storagePath": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/48304542-3ef0-4cd5-8e21-1d75cb3b6756/ab344e62ca77498ca869d71d3444e6da_Lektion 2 tarot.mp3",
+      "probe": {
+        "bucket": "course-media",
+        "path": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/48304542-3ef0-4cd5-8e21-1d75cb3b6756/ab344e62ca77498ca869d71d3444e6da_Lektion 2 tarot.mp3",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "audio/mpeg",
+        "contentLength": 7049342
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 7049342,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "6352c53c-38f4-45af-863b-d38fbf8369e7",
+    "lessonMediaId": "9ca7637b-bf4f-4e6a-87eb-6ef6189eeb58",
+    "issueType": null,
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "course-media",
+      "storagePath": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/6352c53c-38f4-45af-863b-d38fbf8369e7/c77e077922884efdac286b5231bccff7_lektion 3 tarot.mp3",
+      "probe": {
+        "bucket": "course-media",
+        "path": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/6352c53c-38f4-45af-863b-d38fbf8369e7/c77e077922884efdac286b5231bccff7_lektion 3 tarot.mp3",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "audio/mpeg",
+        "contentLength": 5270090
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 5270090,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "6352c53c-38f4-45af-863b-d38fbf8369e7",
+    "lessonMediaId": "04218733-f24c-44c1-9f0e-07e14d88779a",
+    "issueType": "LEGACY_DIRECT_REFERENCE",
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "public-media",
+      "storagePath": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/6352c53c-38f4-45af-863b-d38fbf8369e7/image/c6bc55e787214a4b91fe79d3f0d5e15b.png",
+      "probe": {
+        "bucket": "public-media",
+        "path": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/6352c53c-38f4-45af-863b-d38fbf8369e7/image/c6bc55e787214a4b91fe79d3f0d5e15b.png",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "image/png",
+        "contentLength": 2566216
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 2566216,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "6352c53c-38f4-45af-863b-d38fbf8369e7",
+    "lessonMediaId": "ef4bd85b-2ab7-45aa-ac36-58baa3dffd05",
+    "issueType": null,
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "course-media",
+      "storagePath": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/6352c53c-38f4-45af-863b-d38fbf8369e7/c77e077922884efdac286b5231bccff7_lektion 3 tarot.mp3",
+      "probe": {
+        "bucket": "course-media",
+        "path": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/6352c53c-38f4-45af-863b-d38fbf8369e7/c77e077922884efdac286b5231bccff7_lektion 3 tarot.mp3",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "audio/mpeg",
+        "contentLength": 5270090
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 5270090,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "6352c53c-38f4-45af-863b-d38fbf8369e7",
+    "lessonMediaId": "6dfed876-15cc-4051-ad4b-45be9df06150",
+    "issueType": "LEGACY_DIRECT_REFERENCE",
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "public-media",
+      "storagePath": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/6352c53c-38f4-45af-863b-d38fbf8369e7/image/1021a1d6bba340f78fc5ad38df3b02c6.jpg",
+      "probe": {
+        "bucket": "public-media",
+        "path": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/6352c53c-38f4-45af-863b-d38fbf8369e7/image/1021a1d6bba340f78fc5ad38df3b02c6.jpg",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "image/jpeg",
+        "contentLength": 361386
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 361386,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "fe1e1caf-ed07-4ad9-9468-17891c1ddad8",
+    "lessonMediaId": "78eba8da-0422-4db4-9149-7bbfc8aa214c",
+    "issueType": "LEGACY_DIRECT_REFERENCE",
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "public-media",
+      "storagePath": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/fe1e1caf-ed07-4ad9-9468-17891c1ddad8/image/31b8edc8e3a3401786c3983868c13176.png",
+      "probe": {
+        "bucket": "public-media",
+        "path": "9a0c9632-0a23-4cbb-b3fb-989179cfd049/fe1e1caf-ed07-4ad9-9468-17891c1ddad8/image/31b8edc8e3a3401786c3983868c13176.png",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "image/png",
+        "contentLength": 2522524
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 2522524,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  },
+  {
+    "status": "PASS",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "fe1e1caf-ed07-4ad9-9468-17891c1ddad8",
+    "lessonMediaId": "52653beb-69fc-4bb6-aaa6-e87e471ce79f",
+    "issueType": null,
+    "message": "verification checks passed",
+    "details": {
+      "bucket": "course-media",
+      "storagePath": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/fe1e1caf-ed07-4ad9-9468-17891c1ddad8/a1cf4a9a13624fabb147ce123409aaec_Lektion 4 tarot.mp3",
+      "probe": {
+        "bucket": "course-media",
+        "path": "media/derived/audio/courses/9a0c9632-0a23-4cbb-b3fb-989179cfd049/lessons/fe1e1caf-ed07-4ad9-9468-17891c1ddad8/a1cf4a9a13624fabb147ce123409aaec_Lektion 4 tarot.mp3",
+        "exists": true,
+        "statusCode": 200,
+        "contentType": "audio/mpeg",
+        "contentLength": 4112134
+      },
+      "probeError": null,
+      "probeAuthFailure": false,
+      "supported": true,
+      "byteSize": 4112134,
+      "assetReady": true,
+      "canonicalReference": true
+    }
+  }
+]

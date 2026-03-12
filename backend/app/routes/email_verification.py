@@ -1,34 +1,57 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from collections import defaultdict, deque
+import logging
+import time
 
-from .. import repositories
-from ..services.email_service import EmailDeliveryError
-from ..services.email_tokens import (
-    EmailVerificationTokenError,
-    verify_verification_token,
+from fastapi import APIRouter, Query, status
+from fastapi.responses import JSONResponse
+
+from .. import repositories, schemas
+from ..services.email_verification import (
+    InvalidEmailVerificationTokenError,
+    send_verification_email,
+    verify_email_token_and_mark_user,
 )
-from ..services.email_verification import mark_email_verified, send_verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+logger = logging.getLogger(__name__)
 
-class SendVerificationRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+_RATE_LIMIT_MAX_ATTEMPTS = 5
+_send_verification_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
 
 
-@router.post("/send-verification", status_code=status.HTTP_202_ACCEPTED)
-async def send_verification(payload: SendVerificationRequest):
-    user = await repositories.get_user_by_email(payload.email)
+def _consume_send_verification_attempt(email: str) -> bool:
+    bucket = _send_verification_attempts[email]
+    now = time.monotonic()
+    while bucket and now - bucket[0] > _RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= _RATE_LIMIT_MAX_ATTEMPTS:
+        return False
+    bucket.append(now)
+    return True
+
+
+@router.post("/send-verification")
+async def send_verification(payload: schemas.AuthForgotPasswordRequest):
+    normalized_email = payload.email.strip().lower()
+    if not _consume_send_verification_attempt(normalized_email):
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"error": "rate_limited"},
+        )
+
+    user = await repositories.get_user_by_email(normalized_email)
     if user:
         try:
             await send_verification_email(user["email"])
-        except EmailDeliveryError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to send verification email",
-            ) from exc
+        except Exception:
+            logger.exception(
+                "Failed to send verification email email=%s",
+                normalized_email,
+            )
 
     return {"status": "ok"}
 
@@ -36,25 +59,11 @@ async def send_verification(payload: SendVerificationRequest):
 @router.get("/verify-email")
 async def verify_email(token: str = Query(..., min_length=1)):
     try:
-        email = verify_verification_token(token)
-    except EmailVerificationTokenError as exc:
-        raise HTTPException(
+        result = await verify_email_token_and_mark_user(token)
+    except InvalidEmailVerificationTokenError:
+        return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token",
-        ) from exc
-
-    user = await repositories.get_user_by_email(email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            content={"error": "invalid_or_expired_token"},
         )
 
-    updated = await mark_email_verified(email)
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    return {"status": "verified"}
+    return {"status": result["status"]}

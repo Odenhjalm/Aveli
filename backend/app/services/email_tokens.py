@@ -6,25 +6,29 @@ from jose import JWTError, jwt
 
 from ..config import settings
 
-_TOKEN_TYPE = "verify"
-_TOKEN_TTL = timedelta(minutes=15)
+_SUPPORTED_TOKEN_TYPES = frozenset({"invite", "reset", "verify"})
 
 
-class EmailVerificationTokenError(ValueError):
+class EmailTokenError(ValueError):
     pass
 
 
-def create_verification_token(email: str) -> str:
-    expires_at = datetime.now(timezone.utc) + _TOKEN_TTL
+def create_email_token(email: str, token_type: str, expires_minutes: int) -> str:
+    normalized_type = _normalize_token_type(token_type)
+    if expires_minutes <= 0:
+        raise EmailTokenError("expires_minutes must be positive")
+
+    normalized_email = _normalize_email(email)
     payload = {
-        "sub": email.strip().lower(),
-        "type": _TOKEN_TYPE,
-        "exp": expires_at,
+        "sub": normalized_email,
+        "type": normalized_type,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_minutes),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def verify_verification_token(token: str) -> str:
+def verify_email_token(token: str, expected_type: str) -> str:
+    normalized_type = _normalize_token_type(expected_type)
     try:
         payload = jwt.decode(
             token,
@@ -32,15 +36,27 @@ def verify_verification_token(token: str) -> str:
             algorithms=[settings.jwt_algorithm],
         )
     except JWTError as exc:
-        raise EmailVerificationTokenError("Invalid verification token") from exc
+        raise EmailTokenError("Invalid or expired email token") from exc
 
-    if payload.get("type") != _TOKEN_TYPE:
-        raise EmailVerificationTokenError("Invalid verification token")
-    if "exp" not in payload:
-        raise EmailVerificationTokenError("Invalid verification token")
+    if payload.get("type") != normalized_type:
+        raise EmailTokenError("Invalid or expired email token")
 
     email = payload.get("sub")
     if not isinstance(email, str) or not email.strip():
-        raise EmailVerificationTokenError("Invalid verification token")
+        raise EmailTokenError("Invalid or expired email token")
 
-    return email.strip().lower()
+    return _normalize_email(email)
+
+
+def _normalize_token_type(token_type: str) -> str:
+    normalized = token_type.strip().lower()
+    if normalized not in _SUPPORTED_TOKEN_TYPES:
+        raise EmailTokenError("Unsupported email token type")
+    return normalized
+
+
+def _normalize_email(email: str) -> str:
+    normalized = email.strip().lower()
+    if not normalized:
+        raise EmailTokenError("Email is required")
+    return normalized

@@ -7,6 +7,8 @@ class ApiPaths {
   static const authMe = '/auth/me';
   static const authLogin = '/auth/login';
   static const authRegister = '/auth/register';
+  static const authSendVerification = '/auth/send-verification';
+  static const authVerifyEmail = '/auth/verify-email';
 
   static const checkoutCreate = '/api/checkout/create';
   static String courseBundleCheckout(String bundleId) =>

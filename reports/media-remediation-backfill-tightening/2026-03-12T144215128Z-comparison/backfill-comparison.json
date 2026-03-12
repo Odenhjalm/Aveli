@@ -1,0 +1,167 @@
+{
+  "baselineBackfillCount": 14,
+  "newBackfillCount": 9,
+  "removedCount": 5,
+  "addedCount": 0,
+  "newBackfillCandidates": [
+    {
+      "lesson_media_id": "e2a17c71-e42c-4fa2-842b-30c08d918759",
+      "course_id": "15c7cab0-c5b8-41af-b3af-ef732c645106",
+      "lesson_id": "eb87712f-d590-40d7-940d-d06fc48c2636",
+      "safe_matching_media_asset_id": "e6306de3-0598-4850-9159-782c9103def0",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "999fa13c-4824-430e-8d04-1b47ffbd6a6f",
+      "course_id": "31b70b33-9ce6-4595-8491-a1f99719fed1",
+      "lesson_id": "4bf61669-fe1c-4aa5-b089-7638f0362839",
+      "safe_matching_media_asset_id": "402f1201-14fb-48fb-9b99-1c3d59b9c7bd",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "28a965f0-02fd-4253-a0fe-877a7b8d2fb2",
+      "course_id": "31b70b33-9ce6-4595-8491-a1f99719fed1",
+      "lesson_id": "4bf61669-fe1c-4aa5-b089-7638f0362839",
+      "safe_matching_media_asset_id": "402f1201-14fb-48fb-9b99-1c3d59b9c7bd",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "7740905a-60f6-45c0-a92d-31a228793300",
+      "course_id": "31b70b33-9ce6-4595-8491-a1f99719fed1",
+      "lesson_id": "4bf61669-fe1c-4aa5-b089-7638f0362839",
+      "safe_matching_media_asset_id": "402f1201-14fb-48fb-9b99-1c3d59b9c7bd",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "204a2227-4b98-4e3c-973d-3607286fac74",
+      "course_id": "31b70b33-9ce6-4595-8491-a1f99719fed1",
+      "lesson_id": "4bf61669-fe1c-4aa5-b089-7638f0362839",
+      "safe_matching_media_asset_id": "402f1201-14fb-48fb-9b99-1c3d59b9c7bd",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "5d929e29-b380-4db4-8762-6fa1eb0595cc",
+      "course_id": "835cb790-c971-4401-9b0f-b3bcf0358b8e",
+      "lesson_id": "c836a652-b36c-4677-8f74-97fae6657520",
+      "safe_matching_media_asset_id": "6d7ea1c3-4c9b-4fc9-b3b2-533a84a9f8c3",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "48da35b8-daf2-483f-b051-bbabb161466a",
+      "course_id": "835cb790-c971-4401-9b0f-b3bcf0358b8e",
+      "lesson_id": "c836a652-b36c-4677-8f74-97fae6657520",
+      "safe_matching_media_asset_id": "6d7ea1c3-4c9b-4fc9-b3b2-533a84a9f8c3",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "241e0565-a30f-48e7-aa2b-6ff150aa22dd",
+      "course_id": "835cb790-c971-4401-9b0f-b3bcf0358b8e",
+      "lesson_id": "c836a652-b36c-4677-8f74-97fae6657520",
+      "safe_matching_media_asset_id": "6d7ea1c3-4c9b-4fc9-b3b2-533a84a9f8c3",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    },
+    {
+      "lesson_media_id": "272ec874-57df-430d-a5fb-2f6c464c7a45",
+      "course_id": "835cb790-c971-4401-9b0f-b3bcf0358b8e",
+      "lesson_id": "c836a652-b36c-4677-8f74-97fae6657520",
+      "safe_matching_media_asset_id": "6d7ea1c3-4c9b-4fc9-b3b2-533a84a9f8c3",
+      "issue_type": "MISSING_IN_STORAGE",
+      "repair_priority": 25
+    }
+  ],
+  "removedCandidates": [
+    {
+      "lesson_media_id": "1b19f8cf-d2ae-4846-92a0-f81661b12860",
+      "course_id": "31b70b33-9ce6-4595-8491-a1f99719fed1",
+      "lesson_id": "4bf61669-fe1c-4aa5-b089-7638f0362839",
+      "old_safe_matching_media_asset_id": "402f1201-14fb-48fb-9b99-1c3d59b9c7bd",
+      "issue_type": "MISSING_IN_STORAGE",
+      "old_fix_strategy": "BACKFILL_MEDIA_ASSET",
+      "compatibility": {
+        "same_course_id": true,
+        "same_lesson_id": true,
+        "media_kind_compatible": false,
+        "extension_compatible": false,
+        "mime_compatible": false
+      }
+    },
+    {
+      "lesson_media_id": "9ca7637b-bf4f-4e6a-87eb-6ef6189eeb58",
+      "course_id": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+      "lesson_id": "6352c53c-38f4-45af-863b-d38fbf8369e7",
+      "old_safe_matching_media_asset_id": "de02a2ba-fa54-4837-b6f5-363af0e2c0da",
+      "issue_type": "MISSING_IN_STORAGE",
+      "old_fix_strategy": "BACKFILL_MEDIA_ASSET",
+      "compatibility": {
+        "same_course_id": true,
+        "same_lesson_id": true,
+        "media_kind_compatible": false,
+        "extension_compatible": false,
+        "mime_compatible": false
+      }
+    },
+    {
+      "lesson_media_id": "39eff01a-0aff-4992-9e06-89ad56f0eafe",
+      "course_id": "f8854c47-fc78-4ab8-ab58-cf69570d0d92",
+      "lesson_id": "e55ec7c2-5567-4e9b-bd80-df3a6ed59fc3",
+      "old_safe_matching_media_asset_id": "9822bef7-9daa-4e9e-bffd-a9f69be06076",
+      "issue_type": "MISSING_IN_STORAGE",
+      "old_fix_strategy": "BACKFILL_MEDIA_ASSET",
+      "compatibility": {
+        "same_course_id": true,
+        "same_lesson_id": true,
+        "media_kind_compatible": false,
+        "extension_compatible": false,
+        "mime_compatible": false
+      }
+    },
+    {
+      "lesson_media_id": "7550f738-04c8-4a18-bc48-a9895d5ed58f",
+      "course_id": "0b67c20d-2699-459c-a106-c2c192ed80b7",
+      "lesson_id": "3f4b71d2-c3c2-4f04-934c-29e7c5b70833",
+      "old_safe_matching_media_asset_id": "f1612edf-aa1d-4a23-8347-9d1618cb7383",
+      "issue_type": "LEGACY_DIRECT_REFERENCE",
+      "old_fix_strategy": "BACKFILL_MEDIA_ASSET",
+      "compatibility": {
+        "same_course_id": true,
+        "same_lesson_id": true,
+        "media_kind_compatible": false,
+        "extension_compatible": false,
+        "mime_compatible": false
+      }
+    },
+    {
+      "lesson_media_id": "ccba759f-d81c-4598-8488-7da0221500c6",
+      "course_id": "0b67c20d-2699-459c-a106-c2c192ed80b7",
+      "lesson_id": "674aeed0-e553-467c-a167-59967a844459",
+      "old_safe_matching_media_asset_id": "cdebdf26-7bc9-4794-a4be-36d778a4a02b",
+      "issue_type": "LEGACY_DIRECT_REFERENCE",
+      "old_fix_strategy": "BACKFILL_MEDIA_ASSET",
+      "compatibility": {
+        "same_course_id": true,
+        "same_lesson_id": true,
+        "media_kind_compatible": false,
+        "extension_compatible": false,
+        "mime_compatible": false
+      }
+    }
+  ],
+  "pilotRow": {
+    "lesson_media_id": "9ca7637b-bf4f-4e6a-87eb-6ef6189eeb58",
+    "course_id": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lesson_id": "6352c53c-38f4-45af-863b-d38fbf8369e7",
+    "issue_type": "MISSING_IN_STORAGE",
+    "fix_strategy": "MANUAL_REUPLOAD_REQUIRED",
+    "safe_matching_media_asset_count": 0,
+    "safe_matching_media_asset_id": null
+  },
+  "pilotRejected": true
+}

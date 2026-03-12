@@ -84,10 +84,6 @@ class AppRouterNotifier extends ChangeNotifier {
     final hasTentativeSession = session.hasTentativeSession;
     final isAuthLoading = session.isAuthLoading;
 
-    if (state.matchedLocation == _verifyEmailRoutePath) {
-      return null;
-    }
-
     final isBootRoute = state.matchedLocation == RoutePath.boot;
     if (isBootRoute) {
       if (isAuthLoading) return null;
@@ -176,8 +172,6 @@ class AppRouterNotifier extends ChangeNotifier {
 const RouteAccessMeta _defaultPrivateMeta = RouteAccessMeta(
   level: RouteAccessLevel.authenticated,
 );
-const _verifyEmailRoutePath = '/verify';
-const _createProfileRoutePath = '/create-profile';
 
 RouteAccessMeta _resolveRouteMeta(GoRouterState state) {
   final routeName = state.name;
@@ -245,8 +239,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SignupPage(),
       ),
       GoRoute(
-        path: _verifyEmailRoutePath,
-        name: 'verify-email',
+        path: RoutePath.verifyEmail,
+        name: AppRoute.verifyEmail,
         builder: (context, state) =>
             VerifyEmailPage(token: state.uri.queryParameters['token']),
       ),
@@ -340,7 +334,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const community_profile.ProfilePage(),
       ),
       GoRoute(
-        path: _createProfileRoutePath,
+        path: RoutePath.createProfile,
+        name: AppRoute.createProfile,
         builder: (context, state) => const community_profile.ProfilePage(),
       ),
       GoRoute(

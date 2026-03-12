@@ -85,6 +85,34 @@ class AuthRepository {
     }
   }
 
+  Future<void> sendVerificationEmail(String email) async {
+    try {
+      await _client.post<Map<String, dynamic>>(
+        ApiPaths.authSendVerification,
+        body: {'email': email},
+        skipAuth: true,
+      );
+    } on DioException catch (e) {
+      debugPrint(
+        'Send verification email failed: ${e.response?.data ?? e.message}',
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> verifyEmail(String token) async {
+    try {
+      await _client.get<Map<String, dynamic>>(
+        ApiPaths.authVerifyEmail,
+        queryParameters: {'token': token},
+        skipAuth: true,
+      );
+    } on DioException catch (e) {
+      debugPrint('Email verification failed: ${e.response?.data ?? e.message}');
+      rethrow;
+    }
+  }
+
   Future<void> resetPassword({
     required String email,
     required String newPassword,

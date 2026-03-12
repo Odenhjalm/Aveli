@@ -5,16 +5,16 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-_TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "email_templates"
+_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "email_templates"
 
 
 @lru_cache(maxsize=1)
-def _get_environment() -> Environment:
+def _template_environment() -> Environment:
     return Environment(
-        loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+        loader=FileSystemLoader(str(_TEMPLATE_DIR)),
         autoescape=select_autoescape(("html", "xml")),
     )
 
 
 def render_template(name: str, **data: object) -> str:
-    return _get_environment().get_template(name).render(**data)
+    return _template_environment().get_template(name).render(**data)

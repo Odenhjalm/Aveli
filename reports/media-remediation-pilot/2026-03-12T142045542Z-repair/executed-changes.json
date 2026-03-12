@@ -1,0 +1,20 @@
+[
+  {
+    "phase": "repair",
+    "courseId": "9a0c9632-0a23-4cbb-b3fb-989179cfd049",
+    "lessonId": "6352c53c-38f4-45af-863b-d38fbf8369e7",
+    "lessonMediaId": "9ca7637b-bf4f-4e6a-87eb-6ef6189eeb58",
+    "mediaObjectId": "0499e016-69e3-43ac-9372-a0089e98b525",
+    "mediaAssetId": null,
+    "issueType": "MISSING_IN_STORAGE",
+    "fixStrategy": "BACKFILL_MEDIA_ASSET",
+    "timestamp": "2026-03-12T14:22:16.338Z",
+    "action": "backfill_media_asset_reference",
+    "status": "planned",
+    "details": {
+      "patch": {
+        "media_asset_id": "de02a2ba-fa54-4837-b6f5-363af0e2c0da"
+      }
+    }
+  }
+]
