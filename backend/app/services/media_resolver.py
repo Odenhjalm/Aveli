@@ -19,6 +19,7 @@ _KNOWN_BUCKETS = {
 }
 _PUBLIC_PATH_PREFIXES = ("users/", "avatars/", "hero/", "logos/")
 _SOURCE_PATH_PREFIXES = ("media/", "courses/", "lessons/", "home-player/")
+_DERIVED_AUDIO_PREFIX = "media/derived/audio"
 
 
 def _normalize_storage_path(storage_path: str) -> str:
@@ -88,11 +89,17 @@ async def resolve_media_url(storage_path: str) -> str:
     return presigned.url
 
 
+def _append_cache_version(url: str, version: str) -> str:
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}v={version}"
+
+
 async def resolve_lesson_media_playback_url(
     *,
     lesson_media_id: str,
     storage_path: str,
     storage_bucket: str | None = None,
+    media_object_id: str | None = None,
 ) -> str:
     bucket, key = _detect_bucket_and_key(
         storage_path,
@@ -104,10 +111,15 @@ async def resolve_lesson_media_playback_url(
         filename=Path(key).name,
         download=False,
     )
-    logger.debug(
-        "resolved_media lesson_media_id=%s storage_path=%s resolved_signed_url=%s",
-        lesson_media_id,
-        storage_path,
-        presigned.url,
+    signed_url = presigned.url
+    if media_object_id and key.startswith(_DERIVED_AUDIO_PREFIX):
+        signed_url = _append_cache_version(signed_url, str(media_object_id))
+    logger.info(
+        "MEDIA_RESOLVED",
+        extra={
+            "lesson_media_id": lesson_media_id,
+            "storage_path": storage_path,
+            "resolved_url": signed_url,
+        },
     )
-    return presigned.url
+    return signed_url

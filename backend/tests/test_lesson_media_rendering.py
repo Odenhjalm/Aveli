@@ -167,7 +167,7 @@ async def test_lesson_detail_resolves_audio_playback_url(async_client, monkeypat
         assert ttl == 3600
         assert filename == "resolved.mp3"
         return storage_module.PresignedUrl(
-            url=f"https://stream.local/course-media/{path}",
+            url=f"https://stream.local/course-media/{path}?token=abc123",
             expires_in=3600,
             headers={},
         )
@@ -194,6 +194,9 @@ async def test_lesson_detail_resolves_audio_playback_url(async_client, monkeypat
     media_items = resp.json().get("media") or []
     item = next(it for it in media_items if it.get("id") == str(lesson_media["id"]))
     assert item.get("kind") == "audio"
-    assert item.get("playback_url") == f"https://stream.local/course-media/{derived_path}"
+    assert item.get("playback_url") == (
+        f"https://stream.local/course-media/{derived_path}"
+        f"?token=abc123&v={media_object['id']}"
+    )
     assert "storage_path" not in item
     assert "storage_bucket" not in item

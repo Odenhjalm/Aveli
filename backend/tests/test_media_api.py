@@ -435,6 +435,75 @@ async def test_lesson_playback_legacy_row(async_client, monkeypatch):
         await cleanup_user(user_id)
 
 
+async def test_lesson_playback_derived_audio_adds_cache_version(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+        derived_path = (
+            f"media/derived/audio/courses/{course_id}/lessons/{lesson_id}/demo.mp3"
+        )
+        media_object = await models.create_media_object(
+            owner_id=user_id,
+            storage_path=derived_path,
+            storage_bucket="course-media",
+            content_type="audio/mpeg",
+            byte_size=321,
+            checksum=None,
+            original_name="demo.mp3",
+        )
+        assert media_object
+
+        lesson_media = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="audio",
+            storage_path=derived_path,
+            storage_bucket="course-media",
+            media_id=str(media_object["id"]),
+            position=1,
+            duration_seconds=None,
+        )
+        assert lesson_media
+
+        async def fake_get_presigned_url(
+            self,
+            path,
+            ttl,
+            filename=None,
+            *,
+            download=True,
+        ):
+            assert download is False
+            assert path == derived_path
+            assert ttl == 3600
+            assert filename == "demo.mp3"
+            return storage_module.PresignedUrl(
+                url=f"https://stream.local/course-media/{path}",
+                expires_in=3600,
+                headers={},
+            )
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "get_presigned_url",
+            fake_get_presigned_url,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": str(lesson_media["id"])},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["url"] == (
+            f"https://stream.local/course-media/{derived_path}?v={media_object['id']}"
+        )
+        assert body["playback_url"] == body["url"]
+    finally:
+        await cleanup_user(user_id)
+
+
 async def test_lesson_playback_invalid_row_returns_404(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:

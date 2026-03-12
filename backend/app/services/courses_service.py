@@ -576,6 +576,9 @@ async def list_lesson_media(
                 lesson_media_id=str(item["id"]),
                 storage_path=str(path),
                 storage_bucket=bucket,
+                media_object_id=(
+                    str(item["media_id"]) if item.get("media_id") is not None else None
+                ),
             )
         except (ValueError, storage_service.StorageServiceError):
             return
