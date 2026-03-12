@@ -6,6 +6,8 @@ import {
   classifySafetyGroup,
   inferTranscodeTarget,
   isSupportedPlaybackFormat,
+  normalizeFilenameLabelForMatch,
+  normalizeFilenameForMatch,
 } from "../src/repair-utils.js";
 
 test("canonicalizeStoredReference strips duplicate bucket prefixes", () => {
@@ -75,5 +77,19 @@ test("classifySafetyGroup blocks active references before anything else", () => 
       referencedByAnyMedia: true,
     }),
     "BLOCKED_BY_ACTIVE_REFERENCE",
+  );
+});
+
+test("normalizeFilenameForMatch lowercases, strips diacritics, decodes url encoding, and collapses separators", () => {
+  assert.equal(
+    normalizeFilenameForMatch("Änglar%20%20-%20övning__vind.wav"),
+    "anglar-ovning-vind.wav",
+  );
+});
+
+test("normalizeFilenameLabelForMatch strips generated prefixes before normalizing", () => {
+  assert.equal(
+    normalizeFilenameLabelForMatch("a0c26c36f0b44ad3818e2905b7119403_Änglar - övning.wav"),
+    "anglar-ovning",
   );
 });

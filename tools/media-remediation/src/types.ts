@@ -12,11 +12,19 @@ export const FIX_STRATEGIES = [
   "TRANSCODE_FORMAT",
   "REKEY_STORAGE_PATH",
   "BACKFILL_MEDIA_ASSET",
+  "RECOVER_FROM_STORAGE_MATCH",
   "MANUAL_REUPLOAD_REQUIRED",
   "NO_ACTION",
 ] as const;
 
 export const VERIFICATION_STATUSES = ["PASS", "WARNING", "FAIL"] as const;
+
+export const STORAGE_RECOVERY_CLASSIFICATIONS = [
+  "SAFE_AUTO_RECOVER",
+  "PROBABLE_MATCH",
+  "AMBIGUOUS_MATCH",
+  "NO_MATCH",
+] as const;
 
 export const SAFETY_GROUPS = [
   "SAFE_TO_QUARANTINE",
@@ -28,6 +36,7 @@ export type IssueType = (typeof ISSUE_TYPES)[number];
 export type FixStrategy = (typeof FIX_STRATEGIES)[number];
 export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number];
 export type SafetyGroup = (typeof SAFETY_GROUPS)[number];
+export type StorageRecoveryClassification = (typeof STORAGE_RECOVERY_CLASSIFICATIONS)[number];
 
 export interface ActiveMediaInventoryRow {
   course_id: string;
@@ -82,6 +91,14 @@ export interface MediaRepairPlanRow extends ActiveMediaInventoryRow {
   issue_type: IssueType | null;
   fix_strategy: FixStrategy;
   repair_priority: number;
+  storage_recovery_classification?: StorageRecoveryClassification | null;
+  storage_recovery_bucket?: string | null;
+  storage_recovery_path?: string | null;
+  storage_recovery_content_type?: string | null;
+  storage_recovery_size_bytes?: number | null;
+  storage_recovery_confidence_score?: number | null;
+  storage_recovery_match_reason?: string | null;
+  storage_recovery_candidate_count?: number | null;
 }
 
 export interface MediaObjectRecord {
@@ -144,6 +161,45 @@ export interface StorageObjectRecord {
   created_at: string | null;
   updated_at: string | null;
   metadata: Record<string, unknown> | null;
+}
+
+export interface StorageCatalogEntry {
+  bucket: string;
+  storage_path: string;
+  filename: string;
+  extension: string | null;
+  size: number | null;
+  content_type: string | null;
+  mime_family: string | null;
+  etag: string | null;
+  created_at: string | null;
+  normalized_filename: string | null;
+  course_id_hint: string | null;
+  lesson_id_hint: string | null;
+}
+
+export interface StorageRecoveryReportRow {
+  course_id: string;
+  lesson_id: string;
+  lesson_media_id: string;
+  reference_type: ActiveMediaInventoryRow["reference_type"];
+  original_db_bucket: string | null;
+  original_db_path: string | null;
+  matched_storage_bucket: string | null;
+  matched_storage_path: string | null;
+  confidence_score: number;
+  classification: StorageRecoveryClassification;
+  match_reason: string;
+  fix_strategy_before: FixStrategy;
+  fix_strategy_after: FixStrategy;
+}
+
+export interface StorageRecoverySummary {
+  rows_reduced_from_manual_reupload_required: number;
+  safe_auto_recover_count: number;
+  probable_match_count: number;
+  ambiguous_match_count: number;
+  no_match_count: number;
 }
 
 export interface StorageProbe {
