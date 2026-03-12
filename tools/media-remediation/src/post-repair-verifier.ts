@@ -25,6 +25,10 @@ function isAuthFailure(error: unknown): boolean {
   return message.includes("auth failed") || message.includes(": 401 ") || message.includes(": 403 ");
 }
 
+function lower(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
 function computeReferenceCanonicality(row: ActiveMediaInventoryRow): boolean {
   if (row.reference_type === "media_asset") {
     if (row.media_state?.toLowerCase() !== "ready") {
@@ -66,6 +70,75 @@ export function summarizeVerificationAsMarkdown(results: VerificationResult[]): 
   return [...header, ...body, ""].join("\n");
 }
 
+function applySimulatedPlanState(
+  row: ActiveMediaInventoryRow,
+  plan: MediaRepairPlanRow | null,
+  simulatePlannedRepairs: boolean,
+): ActiveMediaInventoryRow {
+  if (
+    !simulatePlannedRepairs
+    || plan === null
+    || plan.fix_strategy !== "RECOVER_FROM_STORAGE_MATCH"
+    || !plan.storage_recovery_bucket
+    || !plan.storage_recovery_path
+  ) {
+    return row;
+  }
+
+  const contentType = plan.storage_recovery_content_type ?? row.content_type;
+  const byteSize = plan.storage_recovery_size_bytes ?? row.byte_size;
+
+  if (row.reference_type === "media_object") {
+    return {
+      ...row,
+      bucket: plan.storage_recovery_bucket,
+      storage_path: plan.storage_recovery_path,
+      content_type: contentType,
+      byte_size: byteSize,
+      media_object_bucket: plan.storage_recovery_bucket,
+      media_object_path: plan.storage_recovery_path,
+      media_object_content_type: contentType,
+      media_object_byte_size: byteSize,
+    };
+  }
+
+  if (row.reference_type === "media_asset") {
+    if (lower(row.media_state) === "ready") {
+      return {
+        ...row,
+        bucket: plan.storage_recovery_bucket,
+        storage_path: plan.storage_recovery_path,
+        content_type: contentType,
+        byte_size: byteSize,
+        media_asset_stream_bucket: plan.storage_recovery_bucket,
+        media_asset_stream_path: plan.storage_recovery_path,
+      };
+    }
+
+    return {
+      ...row,
+      bucket: plan.storage_recovery_bucket,
+      storage_path: plan.storage_recovery_path,
+      content_type: contentType,
+      byte_size: byteSize,
+      media_asset_source_bucket: plan.storage_recovery_bucket,
+      media_asset_source_path: plan.storage_recovery_path,
+      media_asset_original_content_type: contentType,
+      media_asset_original_size_bytes: byteSize,
+    };
+  }
+
+  return {
+    ...row,
+    bucket: plan.storage_recovery_bucket,
+    storage_path: plan.storage_recovery_path,
+    content_type: contentType,
+    byte_size: byteSize,
+    lesson_storage_bucket: plan.storage_recovery_bucket,
+    lesson_storage_path: plan.storage_recovery_path,
+  };
+}
+
 export class PostRepairVerifier {
   public constructor(
     private readonly storage: SupabaseStorageAdmin,
@@ -76,14 +149,18 @@ export class PostRepairVerifier {
   public async verify(
     inventory: ActiveMediaInventoryRow[],
     planRows: Map<string, MediaRepairPlanRow>,
+    options: {
+      simulatePlannedRepairs?: boolean;
+    } = {},
   ): Promise<VerificationResult[]> {
     const results: VerificationResult[] = [];
 
     for (const row of inventory) {
       const plan = planRows.get(row.lesson_media_id) ?? null;
+      const effectiveRow = applySimulatedPlanState(row, plan, options.simulatePlannedRepairs ?? false);
       let probe: StorageProbe = {
-        bucket: row.bucket ?? "",
-        path: row.storage_path ?? "",
+        bucket: effectiveRow.bucket ?? "",
+        path: effectiveRow.storage_path ?? "",
         exists: false,
         statusCode: 0,
         contentType: null,
@@ -91,9 +168,9 @@ export class PostRepairVerifier {
       };
       let probeError: string | null = null;
       let probeAuthFailure = false;
-      if (row.bucket && row.storage_path) {
+      if (effectiveRow.bucket && effectiveRow.storage_path) {
         try {
-          probe = await this.storage.probeObject(row.bucket, row.storage_path);
+          probe = await this.storage.probeObject(effectiveRow.bucket, effectiveRow.storage_path);
         } catch (error) {
           probeError = error instanceof Error ? error.message : String(error);
           probeAuthFailure = isAuthFailure(error);
@@ -101,16 +178,16 @@ export class PostRepairVerifier {
       }
 
       const supported = isSupportedPlaybackFormat({
-        kind: row.lesson_media_kind,
-        contentType: probe.contentType ?? row.content_type,
-        storagePath: row.storage_path,
+        kind: effectiveRow.lesson_media_kind,
+        contentType: probe.contentType ?? effectiveRow.content_type,
+        storagePath: effectiveRow.storage_path,
       });
-      const byteSize = probe.contentLength ?? row.byte_size ?? 0;
-      const assetReady = row.media_asset_id === null || row.media_state?.toLowerCase() === "ready";
-      const canonicalReference = computeReferenceCanonicality(row);
+      const byteSize = probe.contentLength ?? effectiveRow.byte_size ?? 0;
+      const assetReady = effectiveRow.media_asset_id === null || effectiveRow.media_state?.toLowerCase() === "ready";
+      const canonicalReference = computeReferenceCanonicality(effectiveRow);
       const mediaKindCompatible = areMediaKindsCompatible({
-        lessonMediaKind: row.lesson_media_kind,
-        mediaAssetType: row.media_asset_type,
+        lessonMediaKind: effectiveRow.lesson_media_kind,
+        mediaAssetType: effectiveRow.media_asset_type,
       });
 
       let status: VerificationStatus = "PASS";
@@ -151,14 +228,14 @@ export class PostRepairVerifier {
 
       const result: VerificationResult = {
         status,
-        courseId: row.course_id,
-        lessonId: row.lesson_id,
-        lessonMediaId: row.lesson_media_id,
+        courseId: effectiveRow.course_id,
+        lessonId: effectiveRow.lesson_id,
+        lessonMediaId: effectiveRow.lesson_media_id,
         issueType: plan?.issue_type ?? null,
         message: messages.join("; "),
         details: {
-          bucket: row.bucket,
-          storagePath: row.storage_path,
+          bucket: effectiveRow.bucket,
+          storagePath: effectiveRow.storage_path,
           probe,
           probeError,
           probeAuthFailure,
@@ -167,6 +244,11 @@ export class PostRepairVerifier {
           assetReady,
           canonicalReference,
           mediaKindCompatible,
+          simulatedReferenceApplied:
+            (options.simulatePlannedRepairs ?? false)
+            && plan?.fix_strategy === "RECOVER_FROM_STORAGE_MATCH"
+            && plan.storage_recovery_bucket !== null
+            && plan.storage_recovery_path !== null,
         },
       };
       results.push(result);

@@ -6,10 +6,10 @@ import {
   loadLessonMedia,
   loadMediaAssets,
   loadMediaObjects,
-  loadMediaRepairPlan,
+  loadMediaRepairPlanAnalysis,
   loadStorageObjects,
 } from "./data.js";
-import { buildRunDirectory, ensureDir, writeJsonFile, writeTextFile } from "./fs-utils.js";
+import { buildRunDirectory, ensureDir, resolveWorkspaceReportPath, writeJsonFile, writeTextFile } from "./fs-utils.js";
 import { StructuredLogger } from "./logger.js";
 import { SupabaseAdminClient } from "./postgrest.js";
 import { summarizeVerificationAsMarkdown, PostRepairVerifier } from "./post-repair-verifier.js";
@@ -17,7 +17,8 @@ import { buildPlannedManifest, MediaRepairExecutor } from "./repair-executor.js"
 import { isExecutedAsMain } from "./runtime.js";
 import { SafetyReportGenerator } from "./safety-report.js";
 import { SupabaseStorageAdmin } from "./storage.js";
-import type { ActiveMediaInventoryRow, MediaRepairPlanRow } from "./types.js";
+import { summarizeStorageRecoveryAsMarkdown } from "./storage-forensics.js";
+import type { ActiveMediaInventoryRow, MediaRepairPlanRow, StorageCatalogEntry } from "./types.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -81,6 +82,31 @@ function summarizeRepairPlanAsMarkdown(rows: MediaRepairPlanRow[]): string {
   return lines.join("\n");
 }
 
+function summarizeStorageCatalogAsMarkdown(rows: StorageCatalogEntry[]): string {
+  const byBucket = rows.reduce<Record<string, number>>((counts, row) => {
+    counts[row.bucket] = (counts[row.bucket] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  return [
+    "# Storage Catalog",
+    "",
+    `Generated at: ${nowIso()}`,
+    "",
+    `- storage objects catalogued: ${rows.length}`,
+    ...Object.entries(byBucket)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([bucket, count]) => `- ${bucket}: ${count}`),
+    "",
+    "| bucket | storage_path | filename | extension | size | content_type | etag | created_at |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...rows.map((row) =>
+      `| ${row.bucket} | ${row.storage_path.replaceAll("|", "\\|")} | ${row.filename.replaceAll("|", "\\|")} | ${row.extension ?? ""} | ${row.size ?? ""} | ${row.content_type ?? ""} | ${row.etag ?? ""} | ${row.created_at ?? ""} |`,
+    ),
+    "",
+  ].join("\n");
+}
+
 export async function runMediaRemediation(argv: string[] = process.argv.slice(2)): Promise<void> {
   if (argv.includes("--help")) {
     printUsage("run-media-remediation");
@@ -109,6 +135,21 @@ export async function runMediaRemediation(argv: string[] = process.argv.slice(2)
       env.options.retryDelayMs,
     );
 
+    logger.info("pipeline.phase.start", { phase: "storage_catalog" });
+    const planAnalysisPromise = loadMediaRepairPlanAnalysis(client, {
+      activeOnly: false,
+      courseIds: env.options.courseIds,
+    });
+    const storageCatalog = (await planAnalysisPromise).storageCatalog;
+    await writeJsonFile(resolveWorkspaceReportPath("storage-catalog.json"), storageCatalog);
+    await writeJsonFile(path.join(runDir, "00-storage-catalog.json"), storageCatalog);
+    await writeTextFile(path.join(runDir, "00-storage-catalog.md"), summarizeStorageCatalogAsMarkdown(storageCatalog));
+    logger.info("pipeline.phase.complete", {
+      phase: "storage_catalog",
+      rowCount: storageCatalog.length,
+      reportPath: resolveWorkspaceReportPath("storage-catalog.json"),
+    });
+
     logger.info("pipeline.phase.start", { phase: "read_only_inventory" });
     const allInventoryRows = await loadActiveMediaInventory(client, {
       activeOnly: false,
@@ -124,12 +165,19 @@ export async function runMediaRemediation(argv: string[] = process.argv.slice(2)
     });
 
     logger.info("pipeline.phase.start", { phase: "media_issue_classification" });
-    const allPlanRows = await loadMediaRepairPlan(client, {
-      activeOnly: false,
-      courseIds: env.options.courseIds,
-    });
+    const planAnalysis = await planAnalysisPromise;
+    const allPlanRows = planAnalysis.rows;
     const inScopePlanRows = allPlanRows.filter(
       (row) => row.is_inventory_in_scope && row.issue_type !== null && row.fix_strategy !== "NO_ACTION",
+    );
+    await writeJsonFile(path.join(runDir, "02-storage-recovery-report.json"), {
+      generatedAt: nowIso(),
+      summary: planAnalysis.recoverySummary,
+      rows: planAnalysis.recoveryReportRows,
+    });
+    await writeTextFile(
+      path.join(runDir, "02-storage-recovery-report.md"),
+      summarizeStorageRecoveryAsMarkdown(planAnalysis.recoveryReportRows, planAnalysis.recoverySummary),
     );
     await writeJsonFile(path.join(runDir, "02-media-repair-plan.json"), inScopePlanRows);
     await writeTextFile(path.join(runDir, "02-media-repair-plan.md"), summarizeRepairPlanAsMarkdown(inScopePlanRows));
@@ -137,6 +185,8 @@ export async function runMediaRemediation(argv: string[] = process.argv.slice(2)
       phase: "media_issue_classification",
       allRowCount: allPlanRows.length,
       repairScopeRowCount: inScopePlanRows.length,
+      storageRecoveryRowsReduced: planAnalysis.recoverySummary.rows_reduced_from_manual_reupload_required,
+      storageRecoverySafeAutoRecoverCount: planAnalysis.recoverySummary.safe_auto_recover_count,
     });
 
     logger.info("pipeline.phase.start", { phase: "repair_execution", dryRun: env.options.dryRun });
@@ -161,14 +211,15 @@ export async function runMediaRemediation(argv: string[] = process.argv.slice(2)
       activeOnly: true,
       courseIds: env.options.courseIds,
     });
-    const refreshedPlanRows = await loadMediaRepairPlan(client, {
+    const refreshedPlanRows = (await loadMediaRepairPlanAnalysis(client, {
       activeOnly: true,
       courseIds: env.options.courseIds,
-    });
+    })).rows;
     const verifier = new PostRepairVerifier(storage, logger, env.options.minByteSize);
     const verificationResults = await verifier.verify(
       refreshedInventoryRows,
       new Map(refreshedPlanRows.map((row) => [row.lesson_media_id, row])),
+      { simulatePlannedRepairs: env.options.dryRun },
     );
     await writeJsonFile(path.join(runDir, "04-post-repair-verification.json"), verificationResults);
     await writeTextFile(
@@ -239,6 +290,12 @@ export async function runMediaRemediation(argv: string[] = process.argv.slice(2)
         verificationRows: verificationResults.length,
         verificationFailures: verificationResults.filter((row) => row.status === "FAIL").length,
         safetyCandidates: safetyReport.length,
+        storageCatalogRows: storageCatalog.length,
+        storageRecoveryRowsReduced: planAnalysis.recoverySummary.rows_reduced_from_manual_reupload_required,
+        storageRecoverySafeAutoRecoverCount: planAnalysis.recoverySummary.safe_auto_recover_count,
+        storageRecoveryProbableMatchCount: planAnalysis.recoverySummary.probable_match_count,
+        storageRecoveryAmbiguousMatchCount: planAnalysis.recoverySummary.ambiguous_match_count,
+        storageRecoveryNoMatchCount: planAnalysis.recoverySummary.no_match_count,
       },
     });
   } finally {

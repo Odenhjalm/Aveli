@@ -93,6 +93,11 @@ export function buildPlannedManifest(rows: MediaRepairPlanRow[]): ChangeManifest
           storagePath: row.storage_path,
           normalizedBucket: row.normalized_bucket,
           normalizedStoragePath: row.normalized_storage_path,
+          storageRecoveryClassification: row.storage_recovery_classification ?? null,
+          storageRecoveryBucket: row.storage_recovery_bucket ?? null,
+          storageRecoveryPath: row.storage_recovery_path ?? null,
+          storageRecoveryConfidenceScore: row.storage_recovery_confidence_score ?? null,
+          storageRecoveryMatchReason: row.storage_recovery_match_reason ?? null,
         },
       }),
     );
@@ -156,6 +161,10 @@ export class MediaRepairExecutor {
         key = `transcode:asset:${row.media_asset_id}`;
       } else if (row.fix_strategy === "TRANSCODE_FORMAT" && row.media_object_id) {
         key = `transcode:object:${row.media_object_id}`;
+      } else if (row.fix_strategy === "RECOVER_FROM_STORAGE_MATCH" && row.media_object_id) {
+        key = `recover:object:${row.media_object_id}`;
+      } else if (row.fix_strategy === "RECOVER_FROM_STORAGE_MATCH" && row.media_asset_id) {
+        key = `recover:asset:${row.media_asset_id}`;
       }
       if (key === null || seen.has(key)) {
         continue;
@@ -180,6 +189,14 @@ export class MediaRepairExecutor {
       }
       if (row.fix_strategy === "TRANSCODE_FORMAT" && row.media_object_id) {
         results.push(await this.transcodeMediaObject(row));
+        continue;
+      }
+      if (row.fix_strategy === "RECOVER_FROM_STORAGE_MATCH" && row.media_object_id) {
+        results.push(await this.recoverMediaObjectReference(row));
+        continue;
+      }
+      if (row.fix_strategy === "RECOVER_FROM_STORAGE_MATCH" && row.media_asset_id) {
+        results.push(await this.recoverMediaAssetReference(row));
       }
     }
     return results;
@@ -202,6 +219,10 @@ export class MediaRepairExecutor {
       }
       if (row.fix_strategy === "REKEY_STORAGE_PATH" && !row.media_object_id && !row.media_asset_id) {
         results.push(await this.rekeyDirectLessonReference(row));
+        continue;
+      }
+      if (row.fix_strategy === "RECOVER_FROM_STORAGE_MATCH" && !row.media_object_id && !row.media_asset_id) {
+        results.push(await this.recoverDirectLessonReference(row));
         continue;
       }
       if (row.fix_strategy === "TRANSCODE_FORMAT" && !row.media_object_id && !row.media_asset_id) {
@@ -494,6 +515,115 @@ export class MediaRepairExecutor {
 
     return toManifestEntry(row, {
       action: "backfill_media_asset_reference",
+      status: "applied",
+      details: { patch },
+    });
+  }
+
+  private async recoverMediaObjectReference(row: MediaRepairPlanRow): Promise<ChangeManifestEntry> {
+    if (!row.media_object_id || !row.storage_recovery_bucket || !row.storage_recovery_path) {
+      return toManifestEntry(row, {
+        action: "recover_media_object_reference",
+        status: "skipped",
+        details: { reason: "missing_media_object_or_storage_recovery_target" },
+      });
+    }
+
+    const patch = {
+      storage_bucket: row.storage_recovery_bucket,
+      storage_path: row.storage_recovery_path,
+      content_type: row.storage_recovery_content_type ?? row.content_type,
+      byte_size: row.storage_recovery_size_bytes ?? row.byte_size,
+      updated_at: nowIso(),
+    };
+
+    if (this.options.dryRun) {
+      return toManifestEntry(row, {
+        action: "recover_media_object_reference",
+        status: "planned",
+        details: { patch },
+      });
+    }
+
+    await this.client.patch("media_objects", patch, {
+      filters: [{ column: "id", operator: "eq", value: row.media_object_id }],
+    });
+    return toManifestEntry(row, {
+      action: "recover_media_object_reference",
+      status: "applied",
+      details: { patch },
+    });
+  }
+
+  private async recoverMediaAssetReference(row: MediaRepairPlanRow): Promise<ChangeManifestEntry> {
+    if (!row.media_asset_id || !row.storage_recovery_bucket || !row.storage_recovery_path) {
+      return toManifestEntry(row, {
+        action: "recover_media_asset_reference",
+        status: "skipped",
+        details: { reason: "missing_media_asset_or_storage_recovery_target" },
+      });
+    }
+
+    const patch =
+      row.media_state?.toLowerCase() === "ready"
+        ? {
+            streaming_storage_bucket: row.storage_recovery_bucket,
+            streaming_object_path: row.storage_recovery_path,
+            updated_at: nowIso(),
+          }
+        : {
+            storage_bucket: row.storage_recovery_bucket,
+            original_object_path: row.storage_recovery_path,
+            original_content_type: row.storage_recovery_content_type ?? row.media_asset_original_content_type ?? row.content_type,
+            original_size_bytes: row.storage_recovery_size_bytes ?? row.media_asset_original_size_bytes ?? row.byte_size,
+            updated_at: nowIso(),
+          };
+
+    if (this.options.dryRun) {
+      return toManifestEntry(row, {
+        action: "recover_media_asset_reference",
+        status: "planned",
+        details: { patch },
+      });
+    }
+
+    await this.client.patch("media_assets", patch, {
+      filters: [{ column: "id", operator: "eq", value: row.media_asset_id }],
+    });
+    return toManifestEntry(row, {
+      action: "recover_media_asset_reference",
+      status: "applied",
+      details: { patch },
+    });
+  }
+
+  private async recoverDirectLessonReference(row: MediaRepairPlanRow): Promise<ChangeManifestEntry> {
+    if (!row.storage_recovery_bucket || !row.storage_recovery_path) {
+      return toManifestEntry(row, {
+        action: "recover_direct_lesson_reference",
+        status: "skipped",
+        details: { reason: "missing_storage_recovery_target" },
+      });
+    }
+
+    const patch = {
+      storage_bucket: row.storage_recovery_bucket,
+      storage_path: row.storage_recovery_path,
+    };
+
+    if (this.options.dryRun) {
+      return toManifestEntry(row, {
+        action: "recover_direct_lesson_reference",
+        status: "planned",
+        details: { patch },
+      });
+    }
+
+    await this.client.patch("lesson_media", patch, {
+      filters: [{ column: "id", operator: "eq", value: row.lesson_media_id }],
+    });
+    return toManifestEntry(row, {
+      action: "recover_direct_lesson_reference",
       status: "applied",
       details: { patch },
     });

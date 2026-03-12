@@ -4,6 +4,9 @@ import type {
   MediaAssetRecord,
   MediaObjectRecord,
   MediaRepairPlanRow,
+  StorageCatalogEntry,
+  StorageRecoveryReportRow,
+  StorageRecoverySummary,
   StorageObjectRecord,
 } from "./types.js";
 import {
@@ -11,7 +14,15 @@ import {
   loadMediaRepairPlanWithFallback,
 } from "./derived-views.js";
 import type { SupabaseAdminClient } from "./postgrest.js";
-import { loadStorageObjectsViaApi } from "./storage-catalog.js";
+import { loadStorageCatalog, loadStorageObjectsViaApi } from "./storage-catalog.js";
+import { analyzeStorageRecovery } from "./storage-forensics.js";
+
+export interface MediaRepairPlanAnalysis {
+  rows: MediaRepairPlanRow[];
+  storageCatalog: StorageCatalogEntry[];
+  recoveryReportRows: StorageRecoveryReportRow[];
+  recoverySummary: StorageRecoverySummary;
+}
 
 export async function loadActiveMediaInventory(
   client: SupabaseAdminClient,
@@ -24,7 +35,38 @@ export async function loadMediaRepairPlan(
   client: SupabaseAdminClient,
   options: { activeOnly: boolean; courseIds: string[] },
 ): Promise<MediaRepairPlanRow[]> {
-  return loadMediaRepairPlanWithFallback(client, options);
+  const analysis = await loadMediaRepairPlanAnalysis(client, options);
+  return analysis.rows;
+}
+
+export async function loadMediaRepairPlanAnalysis(
+  client: SupabaseAdminClient,
+  options: { activeOnly: boolean; courseIds: string[] },
+): Promise<MediaRepairPlanAnalysis> {
+  const planRows = await loadMediaRepairPlanWithFallback(client, options);
+  if (!planRows.some((row) => row.fix_strategy === "MANUAL_REUPLOAD_REQUIRED")) {
+    return {
+      rows: planRows,
+      storageCatalog: await loadStorageCatalog(client),
+      recoveryReportRows: [],
+      recoverySummary: {
+        rows_reduced_from_manual_reupload_required: 0,
+        safe_auto_recover_count: 0,
+        probable_match_count: 0,
+        ambiguous_match_count: 0,
+        no_match_count: 0,
+      },
+    };
+  }
+
+  const storageCatalog = await loadStorageCatalog(client);
+  const analysis = analyzeStorageRecovery(planRows, storageCatalog);
+  return {
+    rows: analysis.rows,
+    storageCatalog,
+    recoveryReportRows: analysis.reportRows,
+    recoverySummary: analysis.summary,
+  };
 }
 
 export async function loadMediaObjects(client: SupabaseAdminClient): Promise<MediaObjectRecord[]> {

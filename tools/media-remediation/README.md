@@ -4,11 +4,12 @@ This package implements a no-delete media remediation pipeline for production us
 
 Pipeline order:
 
-1. Read-only inventory
-2. Media issue classification
-3. Repair execution
-4. Post-repair verification
-5. Safety report
+1. Storage catalog
+2. Read-only inventory
+3. Media issue classification + storage-forensics recovery classification
+4. Repair execution
+5. Post-repair verification
+6. Safety report
 
 Safety guarantees:
 
@@ -17,6 +18,7 @@ Safety guarantees:
 - Repair execution is dry-run by default.
 - Repair actions run object-first, then reference-first.
 - Legacy `lesson_media.media_asset_id` backfills only occur when a single verified `READY` asset match exists.
+- Storage-forensics recovery only updates database references and never mutates storage objects.
 - FFmpeg is only required for local transcode repairs and is preflighted before non-dry-run transcode execution.
 
 ## SQL Views
@@ -87,7 +89,9 @@ Safety behavior:
 
 Each run creates a timestamped directory under `reports/media-remediation/` with:
 
+- `00-storage-catalog.json|md`
 - `01-active-media-inventory.json|md`
+- `02-storage-recovery-report.json|md`
 - `02-media-repair-plan.json|md`
 - `03-planned-repair-manifest.json`
 - `03-executed-repair-manifest.json`
@@ -95,6 +99,19 @@ Each run creates a timestamped directory under `reports/media-remediation/` with
 - `05-safety-report.json|md`
 - `pipeline-summary.json`
 - `audit.log`
+
+The pipeline also writes a root catalog snapshot to:
+
+- `reports/storage-catalog.json`
+
+Storage-forensics recovery classifications:
+
+- `SAFE_AUTO_RECOVER`
+- `PROBABLE_MATCH`
+- `AMBIGUOUS_MATCH`
+- `NO_MATCH`
+
+`SAFE_AUTO_RECOVER` rows are converted from `MANUAL_REUPLOAD_REQUIRED` to `RECOVER_FROM_STORAGE_MATCH`.
 
 The safety report groups candidates into:
 

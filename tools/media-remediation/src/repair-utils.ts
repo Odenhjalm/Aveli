@@ -53,7 +53,15 @@ function normalizeBucket(value: string | null | undefined): string | null {
   return normalized === "" ? null : normalized;
 }
 
-function normalizePath(value: string | null | undefined): string | null {
+export function decodeUrlComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function normalizeStoragePath(value: string | null | undefined): string | null {
   const raw = (value ?? "").trim();
   if (raw === "") {
     return null;
@@ -139,6 +147,64 @@ export function normalizeStoragePath(value: string | null | undefined): string |
     return null;
   }
   return lowercaseExtension(candidate);
+}
+
+function normalizePath(value: string | null | undefined): string | null {
+  return normalizeStoragePath(value);
+}
+
+export function normalizeFilenameForMatch(value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (raw === "") {
+    return null;
+  }
+  const decoded = decodeUrlComponentSafe(raw);
+  const normalized = decoded
+    .normalize("NFD")
+    .replace(/\p{Diacritic}+/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[-_]{2,}/g, "-")
+    .replace(/\.+/g, ".")
+    .replace(/\/+/g, "/")
+    .replace(/(^[-._/]+|[-._/]+$)/g, "");
+  return normalized === "" ? null : normalized;
+}
+
+export function stripGeneratedFilenamePrefix(value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (raw === "") {
+    return null;
+  }
+
+  const decoded = decodeUrlComponentSafe(raw);
+  const stripped = decoded.replace(
+    /^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[0-9a-f]{16,})(?:[\s._-]+)/i,
+    "",
+  );
+
+  const normalized = stripped.trim();
+  return normalized === "" ? null : normalized;
+}
+
+export function normalizeFilenameLabelForMatch(value: string | null | undefined): string | null {
+  const stripped = stripGeneratedFilenamePrefix(value);
+  if (stripped === null) {
+    return null;
+  }
+
+  const extension = path.posix.extname(stripped);
+  const basename = extension === "" ? stripped : stripped.slice(0, -extension.length);
+  return normalizeFilenameForMatch(basename);
+}
+
+export function mimeFamily(contentType: string | null | undefined): string | null {
+  const normalized = (contentType ?? "").trim().toLowerCase();
+  if (normalized === "") {
+    return null;
+  }
+  const [family] = normalized.split("/", 1);
+  return family?.trim() || null;
 }
 
 export function normalizeMediaKind(value: string | null | undefined): string | null {
