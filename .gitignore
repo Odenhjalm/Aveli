@@ -137,3 +137,10 @@ backend/supabase/.temp/
 supabase/.temp/
 supabase/.branches/
 applied
+
+# Media remediation report artifacts
+reports/
+pipeline-summary.json
+storage-catalog.json
+*-report.json
+*-report.md
