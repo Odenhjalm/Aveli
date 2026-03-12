@@ -160,3 +160,10 @@ ms-playwright/
 /playwright/auth.setup.ts
 
 playwright/.auth
+
+# Media remediation report artifacts
+reports/
+pipeline-summary.json
+storage-catalog.json
+*-report.json
+*-report.md
