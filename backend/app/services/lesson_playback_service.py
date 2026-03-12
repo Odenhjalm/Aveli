@@ -11,7 +11,7 @@ from ..config import settings
 from ..db import get_conn
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
-from ..services import courses_service, storage_service
+from ..services import courses_service, media_resolver, storage_service
 from ..repositories import media_resolution_failures
 from ..utils.media_signer import (
     issue_signed_url,
@@ -131,6 +131,85 @@ async def resolve_pipeline_playback(
     }
 
 
+async def _authorize_legacy_media_playback(
+    *,
+    storage_path: str,
+    storage_bucket: str,
+    user_id: str,
+) -> None:
+    access_row = await courses_repo.get_lesson_media_access_by_path(
+        storage_path=storage_path,
+        storage_bucket=storage_bucket,
+    )
+    if not access_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    course_id = access_row.get("course_id")
+    teacher_access = (
+        await courses_service.is_course_teacher_or_instructor(user_id, str(course_id))
+        if course_id
+        else False
+    )
+    if teacher_access:
+        return
+
+    if not access_row.get("is_published"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Course not published",
+        )
+    if access_row.get("is_intro") or access_row.get("is_free_intro"):
+        return
+    if not course_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    snapshot = await models.course_access_snapshot(user_id, str(course_id))
+    if snapshot.get("can_access") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+
+async def resolve_object_media_playback(
+    *,
+    lesson_media_id: str,
+    user_id: str,
+) -> dict[str, Any]:
+    row = await models.get_media(lesson_media_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    storage_path = row.get("storage_path")
+    storage_bucket = row.get("storage_bucket")
+    if not storage_path or not storage_bucket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    await _authorize_legacy_media_playback(
+        storage_path=str(storage_path),
+        storage_bucket=str(storage_bucket),
+        user_id=user_id,
+    )
+
+    try:
+        playback_url = await media_resolver.resolve_lesson_media_playback_url(
+            lesson_media_id=str(row["id"]),
+            storage_path=str(storage_path),
+            storage_bucket=str(storage_bucket),
+        )
+    except (ValueError, storage_service.StorageServiceError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    return {
+        "media_id": str(row["id"]),
+        "url": playback_url,
+        "playback_url": playback_url,
+        "storage_path": str(storage_path),
+    }
+
+
 async def resolve_legacy_playback(
     *,
     lesson_media_id: str,
@@ -153,34 +232,11 @@ async def resolve_legacy_playback(
     if not storage_path or not storage_bucket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
 
-    access_row = await courses_repo.get_lesson_media_access_by_path(
+    await _authorize_legacy_media_playback(
         storage_path=storage_path,
         storage_bucket=storage_bucket,
+        user_id=user_id,
     )
-    if not access_row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-
-    course_id = access_row.get("course_id")
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, str(course_id))
-        if course_id
-        else False
-    )
-    if not teacher_access:
-        if not access_row.get("is_published"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Course not published",
-            )
-        if not (access_row.get("is_intro") or access_row.get("is_free_intro")):
-            if not course_id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-            snapshot = await models.course_access_snapshot(user_id, str(course_id))
-            if snapshot.get("can_access") is not True:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied",
-                )
 
     issued = issue_signed_url(str(row["id"]), purpose=normalized_mode)
     if not issued:
@@ -195,4 +251,3 @@ async def resolve_legacy_playback(
         "url": signed_url,
         "expires_at": expires_at,
     }
-

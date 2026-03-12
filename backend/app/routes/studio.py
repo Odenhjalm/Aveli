@@ -371,7 +371,12 @@ async def list_lesson_media(lesson_id: UUID, current: TeacherUser):
             str(current["id"]), course_id=course_id, lesson_id=lesson_id_str
         )
         raise HTTPException(status_code=403, detail="Not course owner")
-    items = await models.list_lesson_media(str(lesson_id))
+    items = list(
+        await courses_service.list_lesson_media(
+            str(lesson_id),
+            mode="editor_preview",
+        )
+    )
     return {"items": items}
 
 
@@ -1449,7 +1454,12 @@ async def course_modules(course_id: str, current: TeacherUser):
         lessons_raw = await courses_service.list_lessons(module["id"])
         lessons = [dict(lesson) for lesson in lessons_raw]
         for lesson in lessons:
-            lesson["media"] = await models.list_lesson_media(lesson["id"])
+            lesson["media"] = list(
+                await courses_service.list_lesson_media(
+                    lesson["id"],
+                    mode="editor_preview",
+                )
+            )
         module["lessons"] = lessons
     return {"items": modules}
 
@@ -1466,7 +1476,12 @@ async def module_lessons(module_id: str, current: TeacherUser):
     lessons_raw = await courses_service.list_lessons(module_id)
     lessons = [dict(lesson) for lesson in lessons_raw]
     for lesson in lessons:
-        lesson["media"] = await models.list_lesson_media(lesson["id"])
+        lesson["media"] = list(
+            await courses_service.list_lesson_media(
+                lesson["id"],
+                mode="editor_preview",
+            )
+        )
     return {"items": lessons}
 
 
@@ -1693,7 +1708,6 @@ async def upload_media(
         allowed_prefixes=allowed_prefixes,
         max_bytes=_MAX_MEDIA_BYTES,
     )
-    relative_path = relative_dir / write_result.filename
     storage_relative_path = storage_relative_dir / write_result.filename
     content_type = (
         file.content_type

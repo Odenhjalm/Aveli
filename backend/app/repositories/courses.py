@@ -1091,6 +1091,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           END AS storage_bucket,
           lm.media_id,
           lm.media_asset_id,
+          lm.position,
           coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
           coalesce(
             mo.content_type,

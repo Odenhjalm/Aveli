@@ -4,7 +4,6 @@ import asyncio
 import logging
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
-from pathlib import Path
 
 import stripe
 from starlette.concurrency import run_in_threadpool
@@ -21,6 +20,7 @@ from ..repositories import (
     storage_objects,
 )
 from . import media_cleanup
+from . import media_resolver
 from ..services import storage_service
 from ..utils.audio_content_types import resolve_runtime_audio_content_type
 from ..utils.lesson_content import serialize_audio_embeds
@@ -556,41 +556,33 @@ async def list_lesson_media(
                 item.pop("download_url", None)
 
     async def _attach_pipeline_playback_url(item: dict[str, Any]) -> None:
-        if not item.get("media_asset_id"):
-            return
-        if item.get("playback_url"):
-            return
         if item.get("kind") != "audio":
             return
-        if item.get("resolvable_for_editor") is not True:
+
+        if editor_mode:
+            resolvable = item.get("resolvable_for_editor") is True
+        else:
+            resolvable = item.get("resolvable_for_student") is True
+        if not resolvable:
             return
 
         bucket = (item.get("storage_bucket") or "").strip() or None
         path = item.get("storage_path")
-        resolved_bucket, resolved_key, _, bytes_exist = _best_storage_candidate(
-            storage_bucket=bucket,
-            storage_path=str(path) if path is not None else None,
-            existence=existence,
-            storage_table_available=storage_table_available,
-        )
-        if bytes_exist is not True or not resolved_bucket or not resolved_key:
+        if path is None:
             return
 
-        storage_client = storage_service.get_storage_service(resolved_bucket)
         try:
-            presigned = await storage_client.get_presigned_url(
-                resolved_key,
-                ttl=settings.media_playback_url_ttl_seconds,
-                filename=Path(resolved_key).name,
-                download=False,
+            item["playback_url"] = await media_resolver.resolve_lesson_media_playback_url(
+                lesson_media_id=str(item["id"]),
+                storage_path=str(path),
+                storage_bucket=bucket,
             )
-        except storage_service.StorageServiceError:
+        except (ValueError, storage_service.StorageServiceError):
             return
-        item["playback_url"] = presigned.url
 
-    pipeline_items = [item for item in items if item.get("media_asset_id")]
-    if pipeline_items:
-        await asyncio.gather(*[_attach_pipeline_playback_url(item) for item in pipeline_items])
+    audio_items = [item for item in items if item.get("kind") == "audio"]
+    if audio_items:
+        await asyncio.gather(*[_attach_pipeline_playback_url(item) for item in audio_items])
 
     if editor_mode:
         for item in items:
@@ -601,6 +593,10 @@ async def list_lesson_media(
             item["preview_blocked"] = preview_blocked
             if preview_blocked:
                 item.pop("playback_url", None)
+    else:
+        for item in items:
+            item.pop("storage_path", None)
+            item.pop("storage_bucket", None)
     return items
 
 

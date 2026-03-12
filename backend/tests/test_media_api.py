@@ -405,20 +405,20 @@ async def test_lesson_playback_legacy_row(async_client, monkeypatch):
                 "storage_path": "courses/demo/lessons/demo/legacy.mp3",
             }
 
-        async def fake_resolve_legacy_playback(*, lesson_media_id: str, user_id: str, mode: str | None = None):
+        async def fake_resolve_object_media_playback(*, lesson_media_id: str, user_id: str):
             assert lesson_media_id
             assert user_id
             return {
                 "media_id": lesson_media_id,
-                "url": "/media/stream/legacy-token",
-                "expires_at": datetime.now(timezone.utc),
+                "url": "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3",
+                "playback_url": "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3",
             }
 
         monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
         monkeypatch.setattr(
             lesson_playback_service,
-            "resolve_legacy_playback",
-            fake_resolve_legacy_playback,
+            "resolve_object_media_playback",
+            fake_resolve_object_media_playback,
             raising=True,
         )
 
@@ -429,7 +429,8 @@ async def test_lesson_playback_legacy_row(async_client, monkeypatch):
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["url"].startswith("/media/stream/")
+        assert body["url"].startswith("https://stream.local/")
+        assert body["playback_url"] == body["url"]
     finally:
         await cleanup_user(user_id)
 
@@ -555,7 +556,6 @@ async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeyp
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
-        expires_at = datetime.now(timezone.utc)
 
         async def fake_get_media(media_id: str):
             assert media_id == lesson_media_id
@@ -601,16 +601,13 @@ async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeyp
             fail_if_snapshot_called,
             raising=True,
         )
+        async def fake_resolve_lesson_media_playback_url(**_kwargs):
+            return "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3"
+
         monkeypatch.setattr(
-            lesson_playback_service,
-            "is_signing_enabled",
-            lambda: True,
-            raising=True,
-        )
-        monkeypatch.setattr(
-            lesson_playback_service,
-            "issue_signed_url",
-            lambda *_args, **_kwargs: ("/media/stream/legacy-token", expires_at),
+            lesson_playback_service.media_resolver,
+            "resolve_lesson_media_playback_url",
+            fake_resolve_lesson_media_playback_url,
             raising=True,
         )
 
@@ -620,7 +617,10 @@ async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeyp
             json={"lesson_media_id": lesson_media_id},
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["url"] == "/media/stream/legacy-token"
+        assert resp.json()["url"] == (
+            "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3"
+        )
+        assert resp.json()["playback_url"] == resp.json()["url"]
     finally:
         await cleanup_user(user_id)
 
@@ -674,13 +674,6 @@ async def test_lesson_playback_legacy_non_intro_requires_snapshot(async_client, 
             fake_snapshot,
             raising=True,
         )
-        monkeypatch.setattr(
-            lesson_playback_service,
-            "is_signing_enabled",
-            lambda: True,
-            raising=True,
-        )
-
         resp = await async_client.post(
             "/api/media/lesson-playback",
             headers=headers,
@@ -688,6 +681,52 @@ async def test_lesson_playback_legacy_non_intro_requires_snapshot(async_client, 
         )
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"] == "Access denied"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_debug_media_returns_storage_path_and_signed_url(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_media_id = str(uuid.uuid4())
+        storage_path = "media/derived/audio/courses/demo/lessons/demo/legacy.mp3"
+
+        async def fake_get_media(media_id: str):
+            assert media_id == lesson_media_id
+            return {
+                "id": lesson_media_id,
+                "media_asset_id": None,
+                "storage_path": storage_path,
+                "storage_bucket": "course-media",
+            }
+
+        async def fake_resolve_object_media_playback(*, lesson_media_id: str, user_id: str):
+            assert lesson_media_id
+            assert user_id
+            return {
+                "media_id": lesson_media_id,
+                "url": f"https://stream.local/course-media/{storage_path}",
+                "playback_url": f"https://stream.local/course-media/{storage_path}",
+                "storage_path": storage_path,
+            }
+
+        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "resolve_object_media_playback",
+            fake_resolve_object_media_playback,
+            raising=True,
+        )
+
+        resp = await async_client.get(
+            f"/debug/media/{lesson_media_id}",
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["lesson_media_id"] == lesson_media_id
+        assert body["storage_path"] == storage_path
+        assert body["signed_url"] == f"https://stream.local/course-media/{storage_path}"
     finally:
         await cleanup_user(user_id)
 

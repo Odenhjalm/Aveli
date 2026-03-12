@@ -14,13 +14,14 @@ from ..config import settings
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
-from ..services import courses_service, lesson_playback_service, media_cleanup
+from ..services import lesson_playback_service, media_cleanup
 from ..services import storage_service
 from ..utils import media_paths
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/media", tags=["media"])
+debug_router = APIRouter(prefix="/debug", tags=["debug"])
 
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
 _WAV_MIME_TYPES = {"audio/wav", "audio/x-wav"}
@@ -32,7 +33,14 @@ class LessonPlaybackRequest(BaseModel):
 
 
 class LessonPlaybackResponse(BaseModel):
+    playback_url: str
     url: str
+
+
+class DebugMediaResponse(BaseModel):
+    lesson_media_id: UUID
+    storage_path: str
+    signed_url: str
 
 
 def _normalize_mime(value: str) -> str:
@@ -571,17 +579,69 @@ async def request_lesson_playback(
             media_asset_id=str(media_asset_uuid),
             user_id=str(current["id"]),
         )
-        return LessonPlaybackResponse(url=playback["url"])
+        return LessonPlaybackResponse(
+            playback_url=playback["url"],
+            url=playback["url"],
+        )
 
     if row.get("storage_path"):
-        signed = await lesson_playback_service.resolve_legacy_playback(
+        signed = await lesson_playback_service.resolve_object_media_playback(
             lesson_media_id=lesson_media_id,
             user_id=str(current["id"]),
-            mode="student_render",
         )
-        return LessonPlaybackResponse(url=signed["url"])
+        return LessonPlaybackResponse(
+            playback_url=signed["url"],
+            url=signed["url"],
+        )
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Lesson media has no playable source",
+    )
+
+
+@debug_router.get("/media/{lesson_media_id}", response_model=DebugMediaResponse)
+async def debug_media(
+    lesson_media_id: UUID,
+    current: CurrentUser,
+):
+    lesson_media_id_str = str(lesson_media_id)
+    row = await models.get_media(lesson_media_id_str)
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lesson media not found",
+        )
+
+    storage_path = row.get("storage_path")
+    signed_url: str | None = None
+
+    media_asset_id = row.get("media_asset_id")
+    if media_asset_id:
+        playback = await lesson_playback_service.resolve_pipeline_playback(
+            media_asset_id=str(media_asset_id),
+            user_id=str(current["id"]),
+        )
+        signed_url = playback["url"]
+        if not storage_path:
+            media_asset = await media_assets_repo.get_media_asset_access(str(media_asset_id))
+            if media_asset:
+                storage_path = media_asset.get("streaming_object_path")
+    elif storage_path:
+        playback = await lesson_playback_service.resolve_object_media_playback(
+            lesson_media_id=lesson_media_id_str,
+            user_id=str(current["id"]),
+        )
+        signed_url = playback["url"]
+
+    if not storage_path or not signed_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lesson media has no playable source",
+        )
+
+    return DebugMediaResponse(
+        lesson_media_id=lesson_media_id,
+        storage_path=str(storage_path),
+        signed_url=signed_url,
     )
