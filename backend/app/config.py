@@ -219,13 +219,8 @@ class Settings(BaseSettings):
             "BACKEND_SENTRY_TRACES_SAMPLE_RATE",
         ),
     )
-    smtp_host: str | None = None
-    smtp_port: int = 587
-    smtp_username: str | None = None
-    smtp_password: str | None = None
-    smtp_from_email: str | None = None
-    smtp_from_name: str = "Aveli"
-    smtp_use_starttls: bool = True
+    resend_api_key: str | None = Field(default=None, validation_alias="RESEND_API_KEY")
+    email_from: str | None = Field(default=None, validation_alias="EMAIL_FROM")
     membership_expiry_warning_interval_seconds: int = 60 * 60 * 24
 
     @model_validator(mode="after")
