@@ -7,6 +7,7 @@ abstract class AppRoute {
   static const landing = 'landing';
   static const login = 'login';
   static const signup = 'signup';
+  static const verifyEmail = 'verify-email';
   static const forgotPassword = 'forgot-password';
   static const newPassword = 'new-password';
   static const courseIntro = 'course-intro';
@@ -23,6 +24,7 @@ abstract class AppRoute {
   static const messages = 'messages';
   static const directMessage = 'dm';
   static const profile = 'profile';
+  static const createProfile = 'create-profile';
   static const profileSubscription = 'profile-subscription';
   static const profileSubscriptionPortal = 'profile-subscription-portal';
   static const checkout = 'checkout';

@@ -4,6 +4,7 @@ from .auth import (
     create_user,
     get_user_by_email,
     get_user_by_id,
+    mark_user_email_verified,
     upsert_refresh_token,
     get_refresh_token,
     insert_auth_event,
@@ -83,7 +84,11 @@ from .home_player_library import (
     get_active_home_upload_by_media_id,
     get_active_home_upload_by_media_asset_id,
 )
-from .memberships import get_latest_subscription, get_membership, upsert_membership_record
+from .memberships import (
+    get_latest_subscription,
+    get_membership,
+    upsert_membership_record,
+)
 from .course_entitlements import (
     grant_course_entitlement,
     list_entitlements_for_user,
@@ -121,6 +126,7 @@ __all__ = [
     "create_user",
     "get_user_by_email",
     "get_user_by_id",
+    "mark_user_email_verified",
     "upsert_refresh_token",
     "get_refresh_token",
     "insert_auth_event",

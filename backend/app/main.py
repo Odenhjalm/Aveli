@@ -15,11 +15,14 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 
 try:  # pragma: no cover - optional dependency for metrics
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-except ImportError:  # pragma: no cover - graceful fallback in dev/test without prometheus_client
+except (
+    ImportError
+):  # pragma: no cover - graceful fallback in dev/test without prometheus_client
     CONTENT_TYPE_LATEST = "text/plain"
 
     def generate_latest() -> bytes:
         return b""
+
 
 from .config import settings
 from .db import pool
@@ -49,6 +52,7 @@ from .routes import (
     landing,
     livekit_webhooks,
     course_bundles,
+    email_verification,
     media,
     profiles,
     seminars,
@@ -70,7 +74,11 @@ logger = logging.getLogger(__name__)
 def setup_sentry() -> None:
     if not settings.sentry_dsn:
         return
-    environment = os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or os.environ.get("ENV")
+    environment = (
+        os.environ.get("APP_ENV")
+        or os.environ.get("ENVIRONMENT")
+        or os.environ.get("ENV")
+    )
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         environment=environment,
@@ -109,7 +117,9 @@ def _normalize_origin(origin: str) -> str:
 def get_allowed_origins() -> List[str]:
     raw = os.getenv("CORS_ALLOW_ORIGINS")
     if not raw:
-        logger.warning("CORS_ALLOW_ORIGINS not set, defaulting to production frontend origin.")
+        logger.warning(
+            "CORS_ALLOW_ORIGINS not set, defaulting to production frontend origin."
+        )
         return ["https://app.aveli.app"]
 
     raw = raw.strip()
@@ -119,14 +129,20 @@ def get_allowed_origins() -> List[str]:
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                origins = [_normalize_origin(origin) for origin in parsed if isinstance(origin, str)]
+                origins = [
+                    _normalize_origin(origin)
+                    for origin in parsed
+                    if isinstance(origin, str)
+                ]
             else:
                 raise ValueError("CORS_ALLOW_ORIGINS JSON must be a list.")
         except Exception as exc:
             logger.error("Failed to parse CORS_ALLOW_ORIGINS as JSON: %s", exc)
             raise RuntimeError("Invalid CORS_ALLOW_ORIGINS format")
     else:
-        origins = [_normalize_origin(origin) for origin in raw.split(",") if origin.strip()]
+        origins = [
+            _normalize_origin(origin) for origin in raw.split(",") if origin.strip()
+        ]
 
     origins = [origin for origin in origins if origin and origin != "*"]
     if not origins:
@@ -134,6 +150,7 @@ def get_allowed_origins() -> List[str]:
 
     logger.info("CORS allowed origins loaded: %s", origins)
     return origins
+
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
 
@@ -156,6 +173,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Internal Server Error"},
     )
+
 
 app.mount("/assets", StaticFiles(directory=ASSETS_ROOT), name="assets")
 
@@ -180,6 +198,7 @@ app.include_router(home.router)
 app.include_router(courses.router)
 app.include_router(courses.api_router)
 app.include_router(course_bundles.router)
+app.include_router(email_verification.router)
 app.include_router(landing.router)
 app.include_router(media.router)
 app.include_router(profiles.router)

@@ -182,6 +182,30 @@ async def get_user_by_id(user_id: str | UUID) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+async def mark_user_email_verified(email: str) -> dict[str, Any] | None:
+    normalized_email = email.strip().lower()
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE auth.users
+                   SET email_confirmed_at = COALESCE(email_confirmed_at, now()),
+                       confirmed_at = COALESCE(confirmed_at, now()),
+                       raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb)
+                           || '{"email_verified": true}'::jsonb,
+                       raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb)
+                           || '{"email_verified": true}'::jsonb,
+                       updated_at = now()
+                 WHERE lower(email) = lower(%s)
+                 RETURNING id, email, email_confirmed_at, confirmed_at
+                """,
+                (normalized_email,),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+            return dict(row) if row else None
+
+
 async def upsert_refresh_token(
     *,
     user_id: str | UUID,

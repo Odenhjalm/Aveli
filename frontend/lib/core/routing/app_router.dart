@@ -19,6 +19,7 @@ import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/features/auth/presentation/new_password_page.dart';
 import 'package:aveli/features/auth/presentation/settings_page.dart';
 import 'package:aveli/features/auth/presentation/signup_page.dart';
+import 'package:aveli/features/auth/presentation/verify_email_page.dart';
 import 'package:aveli/features/community/presentation/admin_page.dart';
 import 'package:aveli/features/community/presentation/admin_settings_page.dart';
 import 'package:aveli/features/community/presentation/community_page.dart';
@@ -238,6 +239,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SignupPage(),
       ),
       GoRoute(
+        path: RoutePath.verifyEmail,
+        name: AppRoute.verifyEmail,
+        builder: (context, state) =>
+            VerifyEmailPage(token: state.uri.queryParameters['token']),
+      ),
+      GoRoute(
         path: RoutePath.forgotPassword,
         name: AppRoute.forgotPassword,
         builder: (context, state) => const ForgotPasswordPage(),
@@ -324,6 +331,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.profile,
         name: AppRoute.profile,
+        builder: (context, state) => const community_profile.ProfilePage(),
+      ),
+      GoRoute(
+        path: RoutePath.createProfile,
+        name: AppRoute.createProfile,
         builder: (context, state) => const community_profile.ProfilePage(),
       ),
       GoRoute(
