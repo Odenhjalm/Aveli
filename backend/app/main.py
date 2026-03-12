@@ -49,6 +49,7 @@ from .routes import (
     landing,
     livekit_webhooks,
     course_bundles,
+    email_verification,
     media,
     profiles,
     seminars,
@@ -180,6 +181,7 @@ app.include_router(home.router)
 app.include_router(courses.router)
 app.include_router(courses.api_router)
 app.include_router(course_bundles.router)
+app.include_router(email_verification.router)
 app.include_router(landing.router)
 app.include_router(media.router)
 app.include_router(profiles.router)

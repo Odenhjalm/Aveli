@@ -19,6 +19,7 @@ import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/features/auth/presentation/new_password_page.dart';
 import 'package:aveli/features/auth/presentation/settings_page.dart';
 import 'package:aveli/features/auth/presentation/signup_page.dart';
+import 'package:aveli/features/auth/presentation/verify_email_page.dart';
 import 'package:aveli/features/community/presentation/admin_page.dart';
 import 'package:aveli/features/community/presentation/admin_settings_page.dart';
 import 'package:aveli/features/community/presentation/community_page.dart';
@@ -82,6 +83,10 @@ class AppRouterNotifier extends ChangeNotifier {
     final isAuthed = session.isAuthenticated;
     final hasTentativeSession = session.hasTentativeSession;
     final isAuthLoading = session.isAuthLoading;
+
+    if (state.matchedLocation == _verifyEmailRoutePath) {
+      return null;
+    }
 
     final isBootRoute = state.matchedLocation == RoutePath.boot;
     if (isBootRoute) {
@@ -171,6 +176,8 @@ class AppRouterNotifier extends ChangeNotifier {
 const RouteAccessMeta _defaultPrivateMeta = RouteAccessMeta(
   level: RouteAccessLevel.authenticated,
 );
+const _verifyEmailRoutePath = '/verify';
+const _createProfileRoutePath = '/create-profile';
 
 RouteAccessMeta _resolveRouteMeta(GoRouterState state) {
   final routeName = state.name;
@@ -236,6 +243,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.signup,
         name: AppRoute.signup,
         builder: (context, state) => const SignupPage(),
+      ),
+      GoRoute(
+        path: _verifyEmailRoutePath,
+        name: 'verify-email',
+        builder: (context, state) =>
+            VerifyEmailPage(token: state.uri.queryParameters['token']),
       ),
       GoRoute(
         path: RoutePath.forgotPassword,
@@ -324,6 +337,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.profile,
         name: AppRoute.profile,
+        builder: (context, state) => const community_profile.ProfilePage(),
+      ),
+      GoRoute(
+        path: _createProfileRoutePath,
         builder: (context, state) => const community_profile.ProfilePage(),
       ),
       GoRoute(

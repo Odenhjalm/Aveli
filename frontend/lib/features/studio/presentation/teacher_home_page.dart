@@ -51,7 +51,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
         content: Text(
           title == null || title.isEmpty
               ? 'Vill du ta bort kursen? Detta går inte att ångra.'
-              : 'Vill du ta bort "${title}"? Detta går inte att ångra.',
+              : 'Vill du ta bort "$title"? Detta går inte att ångra.',
         ),
         actions: [
           TextButton(
@@ -678,7 +678,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: _referralDurationUnit,
+                            initialValue: _referralDurationUnit,
                             decoration: const InputDecoration(
                               labelText: 'Unit',
                             ),
