@@ -44,8 +44,8 @@ Future<String?> resolveLessonMediaSignedPlaybackUrl({
 /// Single source of truth for resolving lesson media playback URLs.
 ///
 /// - Always resolves lesson media via `POST /api/media/lesson-playback`.
-/// - Backend handles both pipeline (`media_asset_id`) and legacy (`storage_path`)
-///   rows for backward compatibility.
+/// - Backend prefers pipeline (`media_asset_id`) rows and only signs legacy
+///   audio when it already points at canonical derived storage.
 Future<String?> resolveLessonMediaPlaybackUrl({
   required LessonMediaItem item,
   required MediaRepository mediaRepository,

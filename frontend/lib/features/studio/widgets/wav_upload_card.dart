@@ -60,6 +60,8 @@ class WavUploadCard extends ConsumerStatefulWidget {
 class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   static const _lessonRequiredText =
       'Spara lektionen för att kunna ladda upp ljud.';
+  static const _deprecatedMp3Text =
+      'MP3 uploads are deprecated. Please upload WAV or M4A.';
 
   WavUploadFile? _selectedFile;
   double _progress = 0.0;
@@ -96,6 +98,9 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
   String _normalizeWavMimeType(String? mimeType, String filename) {
     final lower = (mimeType ?? '').trim().toLowerCase();
+    if (lower == 'audio/mpeg' || lower == 'audio/mp3') {
+      return 'audio/mpeg';
+    }
     if (lower == 'audio/wav' || lower == 'audio/x-wav') {
       return lower;
     }
@@ -114,7 +119,30 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     if (filename.toLowerCase().endsWith('.m4a')) {
       return 'audio/m4a';
     }
+    if (filename.toLowerCase().endsWith('.mp3')) {
+      return 'audio/mpeg';
+    }
     return lower.isEmpty ? 'audio/wav' : lower;
+  }
+
+  String? _validationMessageForSelectedFile(WavUploadFile file) {
+    final lowerName = file.name.trim().toLowerCase();
+    final normalizedMime = _normalizeWavMimeType(file.mimeType, file.name);
+    final isMp3 = lowerName.endsWith('.mp3') || normalizedMime == 'audio/mpeg';
+    if (isMp3) {
+      return _deprecatedMp3Text;
+    }
+    final isSupported =
+        lowerName.endsWith('.wav') ||
+        lowerName.endsWith('.m4a') ||
+        normalizedMime == 'audio/wav' ||
+        normalizedMime == 'audio/x-wav' ||
+        normalizedMime == 'audio/m4a' ||
+        normalizedMime == 'audio/mp4';
+    if (isSupported) {
+      return null;
+    }
+    return 'Only WAV or M4A files are supported.';
   }
 
   String _suggestMediaDisplayName(String filename) {
@@ -182,6 +210,18 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     if (!mounted) return;
     if (picked == null) {
       setState(() => _status = 'Ingen fil vald.');
+      return;
+    }
+
+    final validationMessage = _validationMessageForSelectedFile(picked);
+    if (validationMessage != null) {
+      setState(() {
+        _selectedFile = null;
+        _status = validationMessage;
+        _error = validationMessage;
+        _uploading = false;
+      });
+      showSnack(context, validationMessage);
       return;
     }
 
@@ -498,10 +538,10 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Ljud (WAV)', style: titleStyle),
+          Text('Ljud (WAV/M4A)', style: titleStyle),
           const SizedBox(height: 8),
           Text(
-            'Varje WAV laddas upp och bearbetas till MP3 innan uppspelning.',
+            'Varje WAV- eller M4A-fil laddas upp och bearbetas till MP3 innan uppspelning.',
             style: bodyStyle,
           ),
           if (actionRowChildren.isNotEmpty) ...[

@@ -3,6 +3,50 @@ import path from "node:path";
 import type { CanonicalStorageReference, SafetyGroup, TranscodeTarget } from "./types.js";
 
 const KNOWN_BUCKETS = new Set(["course-media", "public-media", "lesson-media", "seminar-media"]);
+const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const LEGACY_KIND_SEGMENTS = "(?:audio|video|image|images|files|documents|document|pdf|other)";
+const STORAGE_API_PREFIX_PATTERNS = [
+  /^api\/files\//i,
+  /^storage\/v1\/object\/public\//i,
+  /^storage\/v1\/object\/sign\//i,
+  /^storage\/v1\/object\/authenticated\//i,
+  /^storage\/v1\/object\//i,
+  /^object\/public\//i,
+  /^object\/sign\//i,
+  /^object\/authenticated\//i,
+  /^object\//i,
+];
+const MEDIA_PIPELINE_PREFIX_PATTERN =
+  /^media\/(?:source|derived)\/(?:audio|video|image|images|files|documents|document|pdf|other)\//i;
+const LEGACY_LESSON_PATH_PATTERN = new RegExp(
+  `^(?<course>${UUID_PATTERN})/(?<lesson>${UUID_PATTERN})/${LEGACY_KIND_SEGMENTS}/(?<filename>.+)$`,
+  "i",
+);
+const CANONICAL_LESSON_PATH_PATTERN = new RegExp(
+  `^courses/(?<course>${UUID_PATTERN})/lessons/(?<lesson>${UUID_PATTERN})/${LEGACY_KIND_SEGMENTS}/(?<filename>.+)$`,
+  "i",
+);
+const LESSON_ONLY_PATH_PATTERN = new RegExp(
+  `^lessons/(?<lesson>${UUID_PATTERN})/${LEGACY_KIND_SEGMENTS}/(?<filename>.+)$`,
+  "i",
+);
+
+function safelyDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function lowercaseExtension(storagePath: string): string {
+  const parsed = path.posix.parse(storagePath);
+  if (parsed.ext === "") {
+    return storagePath;
+  }
+  const prefix = parsed.dir === "" ? "" : `${parsed.dir}/`;
+  return `${prefix}${parsed.name}${parsed.ext.toLowerCase()}`;
+}
 
 function normalizeBucket(value: string | null | undefined): string | null {
   const normalized = (value ?? "").trim().replace(/^\/+|\/+$/g, "");
@@ -23,7 +67,9 @@ function normalizePath(value: string | null | undefined): string | null {
   } catch {
     // Keep the raw string when URL parsing fails.
   }
+  candidate = safelyDecodeURIComponent(candidate);
   candidate = candidate.replace(/^\/+/, "");
+  candidate = candidate.replace(/\/{2,}/g, "/");
   for (const prefix of [
     "api/files/",
     "storage/v1/object/public/",
@@ -36,7 +82,63 @@ function normalizePath(value: string | null | undefined): string | null {
       break;
     }
   }
-  return candidate.replace(/^\/+/, "");
+  return lowercaseExtension(candidate.replace(/^\/+/, "").replace(/\/{2,}/g, "/"));
+}
+
+export function normalizeStoragePath(value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (raw === "") {
+    return null;
+  }
+
+  let candidate = raw.replaceAll("\\", "/");
+  try {
+    if (/^https?:\/\//i.test(candidate)) {
+      const parsed = new URL(candidate);
+      candidate = parsed.pathname;
+    }
+  } catch {
+    // Keep the raw string when URL parsing fails.
+  }
+
+  candidate = safelyDecodeURIComponent(candidate).trim();
+  candidate = candidate.replace(/^\/+/, "");
+  candidate = candidate.replace(/\/{2,}/g, "/");
+
+  for (const pattern of STORAGE_API_PREFIX_PATTERNS) {
+    if (pattern.test(candidate)) {
+      candidate = candidate.replace(pattern, "");
+      break;
+    }
+  }
+
+  const pathSegments = candidate.split("/");
+  if (pathSegments.length > 1 && KNOWN_BUCKETS.has(pathSegments[0] ?? "")) {
+    candidate = pathSegments.slice(1).join("/");
+  }
+
+  candidate = candidate.replace(MEDIA_PIPELINE_PREFIX_PATTERN, "");
+
+  const canonicalMatch = candidate.match(CANONICAL_LESSON_PATH_PATTERN);
+  if (canonicalMatch?.groups) {
+    candidate = `courses/${canonicalMatch.groups["course"]}/lessons/${canonicalMatch.groups["lesson"]}/${canonicalMatch.groups["filename"]}`;
+  } else {
+    const legacyMatch = candidate.match(LEGACY_LESSON_PATH_PATTERN);
+    if (legacyMatch?.groups) {
+      candidate = `courses/${legacyMatch.groups["course"]}/lessons/${legacyMatch.groups["lesson"]}/${legacyMatch.groups["filename"]}`;
+    } else {
+      const lessonOnlyMatch = candidate.match(LESSON_ONLY_PATH_PATTERN);
+      if (lessonOnlyMatch?.groups) {
+        candidate = `lessons/${lessonOnlyMatch.groups["lesson"]}/${lessonOnlyMatch.groups["filename"]}`;
+      }
+    }
+  }
+
+  candidate = candidate.replace(/\/{2,}/g, "/").replace(/^\/+/, "");
+  if (candidate === "") {
+    return null;
+  }
+  return lowercaseExtension(candidate);
 }
 
 export function normalizeMediaKind(value: string | null | undefined): string | null {

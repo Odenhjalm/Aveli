@@ -97,6 +97,16 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
             fake_create_upload_url,
             raising=True,
         )
+        async def fake_storage_object_exists(*, storage_bucket, storage_path):
+            assert storage_bucket == "course-media"
+            assert storage_path.startswith(f"lessons/{lesson_id}/")
+            return True
+
+        monkeypatch.setattr(
+            "app.routes.upload._storage_object_exists",
+            fake_storage_object_exists,
+            raising=True,
+        )
 
         presign_resp = await async_client.post(
             f"/studio/lessons/{lesson_id}/media/presign",
@@ -130,7 +140,9 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
         assert body["storage_path"] == presign_data["storage_path"]
         assert body["storage_bucket"] == presign_data["storage_bucket"]
         assert body["content_type"] == "video/mp4"
-        assert body.get("media_id")
+        assert body.get("media_asset_id")
+        assert body.get("media_id") is None
+        assert body.get("media_state") == "ready"
         assert body.get("original_name") == "demo.mp4"
 
         monkeypatch.setattr(

@@ -281,7 +281,7 @@ void main() {
     expect(find.text('Lektioner i kursen'), findsOneWidget);
     expect(find.text('Välkommen'), findsWidgets);
     expect(find.text('Spara lektionsinnehåll'), findsOneWidget);
-    expect(find.text('Ladda upp WAV'), findsOneWidget);
+    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
     expect(find.text('material.pdf'), findsOneWidget);
     expect(find.text('processing'), findsOneWidget);
     expect(find.byType(EditorMediaControls), findsOneWidget);
@@ -306,7 +306,7 @@ void main() {
     );
     final uploadButton = tester.widget<ElevatedButton>(
       find.ancestor(
-        of: find.text('Ladda upp WAV'),
+        of: find.text('Ladda upp WAV/M4A'),
         matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
       ),
     );

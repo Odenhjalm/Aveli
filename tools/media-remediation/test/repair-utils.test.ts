@@ -6,6 +6,7 @@ import {
   classifySafetyGroup,
   inferTranscodeTarget,
   isSupportedPlaybackFormat,
+  normalizeStoragePath,
 } from "../src/repair-utils.js";
 
 test("canonicalizeStoredReference strips duplicate bucket prefixes", () => {
@@ -20,6 +21,22 @@ test("canonicalizeStoredReference strips duplicate bucket prefixes", () => {
       changed: true,
       reasons: ["bucket_prefix_stripped"],
     },
+  );
+});
+
+test("normalizeStoragePath trims, decodes, collapses slashes, and lowercases the extension", () => {
+  assert.equal(
+    normalizeStoragePath(" /storage/v1/object/public/course-media/courses/demo%20file//lesson%20one/Track.M4A "),
+    "courses/demo file/lesson one/Track.m4a",
+  );
+});
+
+test("normalizeStoragePath canonicalizes legacy course and lesson layouts", () => {
+  assert.equal(
+    normalizeStoragePath(
+      "fa8f3753-cf21-4144-bf90-f25eaefc5c47/c5480dac-c2cd-4c4b-8124-46177c9435ff/audio/4eb2f0a238e345afb7eb0a8e2dcb9aea_symboliska-farger.M4A",
+    ),
+    "courses/fa8f3753-cf21-4144-bf90-f25eaefc5c47/lessons/c5480dac-c2cd-4c4b-8124-46177c9435ff/4eb2f0a238e345afb7eb0a8e2dcb9aea_symboliska-farger.m4a",
   );
 });
 

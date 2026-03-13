@@ -1080,14 +1080,14 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           lm.lesson_id,
           lm.kind,
           CASE
-            WHEN ma.id IS NOT NULL THEN
-              CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
-            ELSE coalesce(mo.storage_path, lm.storage_path)
+            WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+              coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
+            ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
           END AS storage_path,
           CASE
-            WHEN ma.id IS NOT NULL THEN
-              CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
-            ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+            WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+              coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+            ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
           END AS storage_bucket,
           lm.media_id,
           lm.media_asset_id,
@@ -1095,9 +1095,13 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
           coalesce(
             mo.content_type,
-            CASE WHEN ma.state = 'ready' THEN 'audio/mpeg' ELSE NULL END
+            CASE
+              WHEN ma.state = 'ready' AND lower(coalesce(ma.media_type, '')) = 'audio'
+                THEN 'audio/mpeg'
+              ELSE ma.original_content_type
+            END
           ) AS content_type,
-          mo.byte_size,
+          coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
           coalesce(mo.original_name, ma.original_filename) AS original_name,
           coalesce(
             ma.state,
@@ -1153,8 +1157,16 @@ async def get_lesson_media_access_by_path(
           lm.id,
           lm.lesson_id,
           lm.kind,
-          coalesce(mo.storage_path, lm.storage_path) AS storage_path,
-          coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') AS storage_bucket,
+          CASE
+            WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+              coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
+            ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
+          END AS storage_path,
+          CASE
+            WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+              coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+            ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
+          END AS storage_bucket,
           l.is_intro,
           c.id AS course_id,
           c.created_by,
@@ -1164,8 +1176,21 @@ async def get_lesson_media_access_by_path(
         JOIN app.lessons l ON l.id = lm.lesson_id
         JOIN app.courses c ON c.id = l.course_id
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
-        WHERE coalesce(mo.storage_path, lm.storage_path) = %s
-          AND coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media') = %s
+        LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
+        WHERE (
+            CASE
+              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+                coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
+              ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
+            END
+          ) = %s
+          AND (
+            CASE
+              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+                coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+              ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
+            END
+          ) = %s
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -1251,14 +1276,14 @@ async def list_home_audio_media(
             c.slug AS course_slug,
             lm.kind,
             CASE
-              WHEN ma.id IS NOT NULL THEN
-                CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
-              ELSE coalesce(mo.storage_path, lm.storage_path)
+              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+                coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
+              ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
             END AS storage_path,
             CASE
-              WHEN ma.id IS NOT NULL THEN
-                CASE WHEN ma.state = 'ready' THEN ma.storage_bucket ELSE NULL END
-              ELSE coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+                coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+              ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
             END AS storage_bucket,
             lm.media_id,
             lm.media_asset_id,
@@ -1266,9 +1291,13 @@ async def list_home_audio_media(
             linked.created_at AS created_at,
             coalesce(
               mo.content_type,
-              CASE WHEN (ma.state = 'ready' and lm.kind = 'audio') THEN 'audio/mpeg' ELSE NULL END
+              CASE
+                WHEN (ma.state = 'ready' and lower(coalesce(ma.media_type, '')) = 'audio')
+                  THEN 'audio/mpeg'
+                ELSE ma.original_content_type
+              END
             ) AS content_type,
-            mo.byte_size,
+            coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
             coalesce(mo.original_name, ma.original_filename) AS original_name,
             l.is_intro,
             c.is_free_intro,
@@ -1300,13 +1329,13 @@ async def list_home_audio_media(
             NULL::text AS course_slug,
             hpu.kind AS kind,
             CASE
-              WHEN ma.id IS NOT NULL THEN
-                CASE WHEN ma.state = 'ready' THEN ma.streaming_object_path ELSE NULL END
+              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+                coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path)
               ELSE mo.storage_path
             END AS storage_path,
             CASE
-              WHEN ma.id IS NOT NULL THEN
-                CASE WHEN ma.state = 'ready' THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket) ELSE NULL END
+              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+                coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket)
               ELSE mo.storage_bucket
             END AS storage_bucket,
             mo.id AS media_id,
@@ -1315,7 +1344,11 @@ async def list_home_audio_media(
             hpu.created_at AS created_at,
             coalesce(
               mo.content_type,
-              CASE WHEN (ma.state = 'ready' and hpu.kind = 'audio') THEN 'audio/mpeg' ELSE NULL END
+              CASE
+                WHEN (ma.state = 'ready' and lower(coalesce(ma.media_type, '')) = 'audio')
+                  THEN 'audio/mpeg'
+                ELSE ma.original_content_type
+              END
             ) AS content_type,
             coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
             coalesce(mo.original_name, ma.original_filename) AS original_name,

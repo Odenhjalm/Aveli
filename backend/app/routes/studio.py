@@ -265,8 +265,20 @@ async def presign_lesson_media_upload(
         )
         raise HTTPException(status_code=403, detail="Not course owner")
 
+    detected_kind = _detect_kind(
+        payload.content_type or mimetypes.guess_type(payload.filename or "")[0]
+    )
+    if detected_kind == "audio" or (payload.media_type or "").strip().lower() == "audio":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Audio uploads must use the media pipeline",
+        )
+
     bucket = "course-media"
-    path = f"lessons/{lesson_id}/{payload.filename}"
+    safe_name = Path(payload.filename or "").name.strip() or "media"
+    path = upload_routes.media_paths.validate_new_upload_object_path(
+        f"lessons/{lesson_id}/{safe_name}"
+    )
     upload = await storage_service.storage_service.create_upload_url(
         path,
         content_type=payload.content_type,
@@ -307,6 +319,11 @@ async def complete_lesson_media_upload(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported media type",
         )
+    if kind == "audio":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Audio uploads must use the media pipeline",
+        )
     expected_bucket = "course-media"
     if payload.storage_bucket != expected_bucket:
         raise HTTPException(
@@ -320,39 +337,17 @@ async def complete_lesson_media_upload(
     original_name = (payload.original_name or "").strip() or Path(
         payload.storage_path
     ).name
-    media_object = await models.create_media_object(
+    row = await upload_routes._persist_lesson_media(
         owner_id=str(current["id"]),
+        lesson_id=str(lesson_id),
         storage_path=payload.storage_path,
-        storage_bucket=payload.storage_bucket,
-        content_type=payload.content_type,
-        byte_size=payload.byte_size,
-        checksum=payload.checksum,
         original_name=original_name,
+        content_type=payload.content_type,
+        size=payload.byte_size,
+        checksum=payload.checksum,
+        storage_bucket=payload.storage_bucket,
+        course_id=str(course_id),
     )
-    if not media_object:
-        raise HTTPException(status_code=500, detail="Failed to persist media object")
-
-    media_object_id = str(media_object["id"])
-    try:
-        row = await models.add_lesson_media_entry_with_position_retry(
-            lesson_id=str(lesson_id),
-            kind=kind,
-            storage_path=payload.storage_path,
-            storage_bucket=payload.storage_bucket,
-            media_id=media_object_id,
-            duration_seconds=None,
-            max_retries=10,
-        )
-    except Exception:
-        await models.cleanup_media_object(media_object_id)
-        raise
-
-    if not row:
-        await models.cleanup_media_object(media_object_id)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Could not allocate lesson media position",
-        )
     row["content_type"] = payload.content_type
     row["byte_size"] = payload.byte_size
     row["original_name"] = original_name
@@ -608,7 +603,9 @@ async def studio_home_player_upload_url(
 
     safe_name = Path(payload.filename).name.strip() or "media"
     token = uuid4().hex
-    object_path = (Path("home-player") / teacher_id / f"{token}_{safe_name}").as_posix()
+    object_path = upload_routes.media_paths.validate_new_upload_object_path(
+        (Path("home-player") / teacher_id / f"{token}_{safe_name}").as_posix()
+    )
 
     try:
         upload = await storage_client.create_upload_url(
@@ -645,6 +642,12 @@ async def studio_refresh_home_player_upload_url(
     object_path = str(payload.object_path or "").strip().lstrip("/")
     if not object_path:
         raise HTTPException(status_code=422, detail="object_path is required")
+    try:
+        object_path = upload_routes.media_paths.validate_new_upload_object_path(
+            object_path
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     expected_prefix = f"home-player/{teacher_id}/"
     if not object_path.startswith(expected_prefix):
@@ -745,10 +748,20 @@ async def studio_create_home_player_upload(
     storage_path = (payload.storage_path or "").strip().lstrip("/")
     if not storage_path:
         raise HTTPException(status_code=422, detail="storage_path is required")
+    try:
+        storage_path = upload_routes.media_paths.validate_new_upload_object_path(
+            storage_path
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     expected_prefix = f"home-player/{teacher_id}/"
     if not storage_path.startswith(expected_prefix):
         raise HTTPException(status_code=403, detail="Access denied")
+    await upload_routes._assert_storage_object_exists(
+        storage_bucket=storage_bucket,
+        storage_path=storage_path,
+    )
 
     content_type = (
         (payload.content_type or "").strip()
@@ -1695,9 +1708,35 @@ async def upload_media(
     detected_kind = upload_routes._detect_kind(
         file.content_type or mimetypes.guess_type(file.filename or "")[0]
     )
+    if detected_kind == "audio":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Audio uploads must use the media pipeline",
+        )
     if detected_kind in {"image", "video", "audio", "document"}:
-        storage_relative_dir /= detected_kind
-    relative_dir = Path(storage_bucket) / storage_relative_dir
+        if detected_kind == "image":
+            storage_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
+                course_id=course_id_str,
+                lesson_id=lesson_id_str,
+                media_kind=detected_kind,
+                filename=file.filename or "media",
+            )
+        else:
+            storage_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
+                course_id=course_id_str,
+                lesson_id=lesson_id_str,
+                media_kind=detected_kind,
+                filename=file.filename or "media",
+            )
+    else:
+        storage_path = (
+            Path("courses")
+            / course_id_str
+            / "lessons"
+            / lesson_id_str
+            / f"{uuid4().hex}_{Path(file.filename or 'media').name}"
+        ).as_posix()
+    relative_dir = Path(storage_bucket) / Path(storage_path).parent
 
     destination_dir = upload_routes._safe_join(
         upload_routes.UPLOADS_ROOT, *relative_dir.parts
@@ -1708,7 +1747,7 @@ async def upload_media(
         allowed_prefixes=allowed_prefixes,
         max_bytes=_MAX_MEDIA_BYTES,
     )
-    storage_relative_path = storage_relative_dir / write_result.filename
+    storage_relative_path = (Path(storage_path).parent / write_result.filename).as_posix()
     content_type = (
         file.content_type
         or mimetypes.guess_type(write_result.destination_path.name)[0]
@@ -1718,12 +1757,13 @@ async def upload_media(
     row = await upload_routes._persist_lesson_media(
         owner_id=owner_id,
         lesson_id=lesson_id,
-        relative_path=storage_relative_path,
+        storage_path=storage_relative_path,
         original_name=file.filename,
         content_type=content_type,
         size=write_result.size,
         checksum=write_result.checksum,
         storage_bucket=storage_bucket,
+        course_id=course_id_str,
     )
 
     logger.info(

@@ -152,7 +152,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Ladda upp WAV'));
+    await tester.tap(find.text('Ladda upp WAV/M4A'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ge ljudet/videon ett namn'), findsOneWidget);
@@ -229,25 +229,25 @@ void main() {
       ),
     );
 
-    expect(find.text('Ladda upp WAV'), findsOneWidget);
-    expect(find.text('Byt WAV'), findsNothing);
+    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
+    expect(find.text('Byt WAV/M4A'), findsNothing);
 
-    await tester.tap(find.text('Ladda upp WAV'));
+    await tester.tap(find.text('Ladda upp WAV/M4A'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Demo');
     await tester.pump();
     await tester.tap(find.text('Fortsätt'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ladda upp WAV'), findsOneWidget);
-    expect(find.text('Byt WAV'), findsNothing);
+    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
+    expect(find.text('Byt WAV/M4A'), findsNothing);
     expect(find.text('Uppladdning klar – bearbetas till MP3'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 10));
     await tester.pump();
 
-    expect(find.text('Ladda upp WAV'), findsOneWidget);
-    expect(find.text('Byt WAV'), findsNothing);
+    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
+    expect(find.text('Byt WAV/M4A'), findsNothing);
     expect(find.text('MP3 klar – ljudet kan spelas upp'), findsOneWidget);
   });
 
@@ -262,8 +262,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Ladda upp WAV'), findsOneWidget);
-    expect(find.text('Byt WAV'), findsNothing);
+    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
+    expect(find.text('Byt WAV/M4A'), findsNothing);
     expect(find.text('Uppladdning klar – bearbetas till MP3'), findsNothing);
   });
 
@@ -284,13 +284,88 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Ladda upp WAV'), findsOneWidget);
+    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
     final button = tester.widget<ElevatedButton>(
       find.ancestor(
-        of: find.text('Ladda upp WAV'),
+        of: find.text('Ladda upp WAV/M4A'),
         matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
       ),
     );
     expect(button.onPressed, isNull);
+  });
+
+  testWidgets('rejects deprecated MP3 uploads before starting pipeline', (
+    tester,
+  ) async {
+    final uploadTarget = MediaUploadTarget(
+      mediaId: 'media-1',
+      uploadUrl: Uri.parse('https://storage.test/upload'),
+      objectPath: 'media/source/audio/demo.wav',
+      headers: const {},
+      expiresAt: DateTime.now().toUtc(),
+    );
+    final repo = _FakeMediaPipelineRepository(
+      uploadTarget: uploadTarget,
+      statuses: const [MediaStatus(mediaId: 'media-1', state: 'processing')],
+    );
+
+    var uploadRequested = false;
+
+    Future<WavUploadFile?> fakePick() async {
+      final data = Uint8List(10);
+      final file = fs.XFile.fromData(
+        data,
+        name: 'demo.mp3',
+        mimeType: 'audio/mpeg',
+      );
+      return WavUploadFile(file, 'audio/mpeg', 10);
+    }
+
+    Future<void> fakeUpload({
+      required String mediaId,
+      required String courseId,
+      required String lessonId,
+      required Uri uploadUrl,
+      required String objectPath,
+      required Map<String, String> headers,
+      required WavUploadFile file,
+      required String contentType,
+      required void Function(int sent, int total) onProgress,
+      WavUploadCancelToken? cancelToken,
+      void Function(bool resumed)? onResume,
+      Future<bool> Function()? ensureAuth,
+      Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
+      refreshSigning,
+      void Function()? onSigningRefresh,
+      WavResumableSession? resumableSession,
+    }) async {
+      uploadRequested = true;
+    }
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [mediaPipelineRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: WavUploadCard(
+              courseId: 'course-1',
+              lessonId: 'lesson-1',
+              pickFileOverride: fakePick,
+              uploadFileOverride: fakeUpload,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Ladda upp WAV/M4A'));
+    await tester.pump();
+
+    expect(
+      find.text('MP3 uploads are deprecated. Please upload WAV or M4A.'),
+      findsWidgets,
+    );
+    expect(uploadRequested, isFalse);
+    expect(find.byType(AlertDialog), findsNothing);
   });
 }

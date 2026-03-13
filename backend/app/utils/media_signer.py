@@ -229,12 +229,19 @@ def _is_public_cover_url(url: str | None) -> bool:
 def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
     """Mutate a lesson media dict with download and signed URLs."""
 
-    if item.get("media_asset_id"):
-        return
-
     media_id = item.get("id")
     if not media_id:
         return
+    media_state = (item.get("media_state") or "").strip().lower()
+    has_media_asset = item.get("media_asset_id") is not None
+    has_legacy_media = item.get("media_id") is not None
+    if has_media_asset and media_state and media_state != "ready" and not has_legacy_media:
+        item.pop("download_url", None)
+        item.pop("playback_url", None)
+        item.pop("signed_url", None)
+        item.pop("signed_url_expires_at", None)
+        return
+
     legacy_url = f"/studio/media/{media_id}"
     legacy_enabled = settings.media_allow_legacy_media
     public_url = _public_download_path(

@@ -24,6 +24,8 @@ router = APIRouter(prefix="/api/media", tags=["media"])
 debug_router = APIRouter(prefix="/debug", tags=["debug"])
 
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
+_MP3_MIME_TYPES = {"audio/mpeg", "audio/mp3"}
+_MP3_DEPRECATED_DETAIL = "MP3 uploads are deprecated. Please upload WAV or M4A."
 _AUDIO_SOURCE_MIME_TYPES_BY_EXT = {
     "wav": {"audio/wav", "audio/x-wav"},
     "m4a": {"audio/m4a", "audio/mp4"},
@@ -53,6 +55,11 @@ def _normalize_mime(value: str) -> str:
 
 def _audio_ingest_format(filename: str, mime_type: str) -> str:
     ext = Path(filename).suffix.lower().lstrip(".")
+    if ext == "mp3" or mime_type in _MP3_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_MP3_DEPRECATED_DETAIL,
+        )
     if ext not in _AUDIO_SOURCE_MIME_TYPES_BY_EXT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -104,6 +111,30 @@ def _build_cover_source_object_path(course_id: str, filename: str) -> str:
         / f"{token}_{safe_name}"
     )
     return path.as_posix()
+
+
+def _lesson_audio_source_prefix(course_id: str, lesson_id: str) -> str:
+    return (
+        Path("media")
+        / "source"
+        / "audio"
+        / "courses"
+        / course_id
+        / "lessons"
+        / lesson_id
+    ).as_posix() + "/"
+
+
+def _is_canonical_lesson_audio_source_path(
+    object_path: str,
+    *,
+    course_id: str,
+    lesson_id: str,
+) -> bool:
+    normalized = str(object_path or "").strip().lstrip("/")
+    if not normalized:
+        return False
+    return normalized.startswith(_lesson_audio_source_prefix(course_id, lesson_id))
 
 
 def _upload_max_bytes(media_type: str) -> int:
@@ -223,37 +254,39 @@ async def request_upload_url(
 
     course_id: str | None = None
     lesson_id: str | None = None
-    resource_prefix: Path | None = None
+    object_path: str | None = None
     if purpose == "home_player_audio":
         if payload.course_id is not None or payload.lesson_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="course_id/lesson_id not allowed for home player uploads",
             )
-        resource_prefix = Path("home-player") / user_id
+        object_path = media_paths.build_home_player_audio_source_object_path(
+            user_id, payload.filename
+        )
     else:
-        if payload.lesson_id is not None:
-            lesson_id = str(payload.lesson_id)
-            course_id = await _authorize_lesson_upload(
-                user_id=user_id,
-                lesson_id=lesson_id,
-                course_id=payload.course_id,
-            )
-            course_id = str(course_id)
-            resource_prefix = Path("courses") / course_id / "lessons" / lesson_id
-        elif payload.course_id is not None:
-            course_id = str(payload.course_id)
-            await _authorize_course_upload(user_id, course_id)
-            resource_prefix = Path("courses") / course_id
-        else:
+        if payload.lesson_id is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="course_id or lesson_id is required",
+                detail="lesson_id is required for lesson audio uploads",
             )
-
-    object_path = media_paths.build_audio_source_object_path(
-        resource_prefix, payload.filename
-    )
+        lesson_id = str(payload.lesson_id)
+        course_id = await _authorize_lesson_upload(
+            user_id=user_id,
+            lesson_id=lesson_id,
+            course_id=payload.course_id,
+        )
+        course_id = str(course_id)
+        object_path = media_paths.build_lesson_audio_source_object_path(
+            course_id, lesson_id, payload.filename
+        )
+    try:
+        object_path = media_paths.validate_new_upload_object_path(object_path)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     try:
         upload = await storage_service.storage_service.create_upload_url(
             object_path,
@@ -370,6 +403,32 @@ async def refresh_upload_url(
             detail="Media missing storage path",
         )
 
+    purpose = (media_asset.get("purpose") or "").strip().lower()
+    course_id = str(media_asset.get("course_id") or "").strip()
+    lesson_id = str(media_asset.get("lesson_id") or "").strip()
+    if purpose == "lesson_audio":
+        if not course_id or not lesson_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Lesson audio is missing course or lesson context",
+            )
+        if not _is_canonical_lesson_audio_source_path(
+            object_path,
+            course_id=course_id,
+            lesson_id=lesson_id,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Lesson audio must use the canonical pipeline source path",
+            )
+    try:
+        object_path = media_paths.validate_new_upload_object_path(object_path)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
     content_type = _normalize_mime(media_asset.get("original_content_type") or "")
     if not content_type:
         content_type = _default_audio_content_type(
@@ -443,6 +502,13 @@ async def request_cover_upload_url(
         )
 
     object_path = _build_cover_source_object_path(course_id, payload.filename)
+    try:
+        object_path = media_paths.validate_new_upload_object_path(object_path)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     try:
         upload = await storage_service.storage_service.create_upload_url(
             object_path,
@@ -640,44 +706,13 @@ async def request_lesson_playback(
     current: CurrentUser,
 ):
     lesson_media_id = str(payload.lesson_media_id)
-    row = await models.get_media(lesson_media_id)
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Lesson media not found"
-        )
-
-    media_asset_id = row.get("media_asset_id")
-    if media_asset_id:
-        try:
-            media_asset_uuid = UUID(str(media_asset_id))
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Lesson media has invalid media asset",
-            ) from exc
-
-        playback = await lesson_playback_service.resolve_pipeline_playback(
-            media_asset_id=str(media_asset_uuid),
-            user_id=str(current["id"]),
-        )
-        return LessonPlaybackResponse(
-            playback_url=playback["url"],
-            url=playback["url"],
-        )
-
-    if row.get("storage_path"):
-        signed = await lesson_playback_service.resolve_object_media_playback(
-            lesson_media_id=lesson_media_id,
-            user_id=str(current["id"]),
-        )
-        return LessonPlaybackResponse(
-            playback_url=signed["url"],
-            url=signed["url"],
-        )
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Lesson media has no playable source",
+    playback = await lesson_playback_service.resolve_lesson_media_playback(
+        lesson_media_id=lesson_media_id,
+        user_id=str(current["id"]),
+    )
+    return LessonPlaybackResponse(
+        playback_url=playback["url"],
+        url=playback["url"],
     )
 
 
@@ -699,8 +734,8 @@ async def debug_media(
 
     media_asset_id = row.get("media_asset_id")
     if media_asset_id:
-        playback = await lesson_playback_service.resolve_pipeline_playback(
-            media_asset_id=str(media_asset_id),
+        playback = await lesson_playback_service.resolve_lesson_media_playback(
+            lesson_media_id=lesson_media_id_str,
             user_id=str(current["id"]),
         )
         signed_url = playback["url"]

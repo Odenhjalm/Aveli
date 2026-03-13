@@ -115,6 +115,38 @@ void main() {
     },
   );
 
+  test('lesson-audio upload contract requires lessonId', () async {
+    final storage = _MemoryFlutterSecureStorage();
+    final tokens = TokenStorage(storage: storage);
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(4102444800),
+      refreshToken: 'rt-1',
+    );
+
+    final client = ApiClient(
+      baseUrl: 'http://127.0.0.1:1',
+      tokenStorage: tokens,
+    );
+    final repo = MediaPipelineRepository(client: client);
+
+    expect(
+      () => repo.requestUploadUrl(
+        filename: 'demo.wav',
+        mimeType: 'audio/wav',
+        sizeBytes: 10,
+        mediaType: 'audio',
+        courseId: '00000000-0000-0000-0000-000000000001',
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.message,
+          'message',
+          'lessonId is required for lesson_audio uploads.',
+        ),
+      ),
+    );
+  });
+
   test('upload-url contract guard rejects multipart/FormData', () async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);

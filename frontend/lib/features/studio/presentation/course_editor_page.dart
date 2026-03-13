@@ -5533,7 +5533,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   ],
                                                   if (isAudio)
                                                     IconButton(
-                                                      tooltip: 'Byt WAV',
+                                                      tooltip: 'Byt WAV/M4A',
                                                       icon: const Icon(
                                                         Icons.sync,
                                                       ),

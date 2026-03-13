@@ -78,6 +78,13 @@ def _detect_bucket_and_key(
     return settings.media_source_bucket, normalized_path
 
 
+def is_derived_audio_path(storage_path: str) -> bool:
+    normalized = _normalize_storage_path(storage_path)
+    return normalized == _DERIVED_AUDIO_PREFIX or normalized.startswith(
+        f"{_DERIVED_AUDIO_PREFIX}/"
+    )
+
+
 async def resolve_media_url(storage_path: str) -> str:
     bucket, key = _detect_bucket_and_key(storage_path)
     presigned = await storage_service.get_storage_service(bucket).get_presigned_url(
@@ -94,17 +101,20 @@ def _append_cache_version(url: str, version: str) -> str:
     return f"{url}{separator}v={version}"
 
 
-async def resolve_lesson_media_playback_url(
+async def resolve_storage_playback_url(
     *,
     lesson_media_id: str,
     storage_path: str,
     storage_bucket: str | None = None,
-    media_object_id: str | None = None,
+    cache_version: str | None = None,
+    require_derived_audio: bool = False,
 ) -> str:
     bucket, key = _detect_bucket_and_key(
         storage_path,
         storage_bucket=storage_bucket,
     )
+    if require_derived_audio and not is_derived_audio_path(key):
+        raise ValueError("Audio playback only supports media/derived/audio paths")
     presigned = await storage_service.get_storage_service(bucket).get_presigned_url(
         key,
         ttl=_SIGNED_URL_TTL_SECONDS,
@@ -112,8 +122,8 @@ async def resolve_lesson_media_playback_url(
         download=False,
     )
     signed_url = presigned.url
-    if media_object_id and key.startswith(_DERIVED_AUDIO_PREFIX):
-        signed_url = _append_cache_version(signed_url, str(media_object_id))
+    if cache_version and key.startswith(_DERIVED_AUDIO_PREFIX):
+        signed_url = _append_cache_version(signed_url, str(cache_version))
     logger.info(
         "MEDIA_RESOLVED",
         extra={
@@ -123,3 +133,19 @@ async def resolve_lesson_media_playback_url(
         },
     )
     return signed_url
+
+
+async def resolve_lesson_media_playback_url(
+    *,
+    lesson_media_id: str,
+    storage_path: str,
+    storage_bucket: str | None = None,
+    media_object_id: str | None = None,
+) -> str:
+    return await resolve_storage_playback_url(
+        lesson_media_id=lesson_media_id,
+        storage_path=storage_path,
+        storage_bucket=storage_bucket,
+        cache_version=media_object_id,
+        require_derived_audio=True,
+    )

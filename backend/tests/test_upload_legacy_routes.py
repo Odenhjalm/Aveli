@@ -91,6 +91,8 @@ async def test_upload_course_media_legacy_route_accepts_audio(async_client, tmp_
     payload = resp.json()
     media = payload.get("media") or {}
     assert isinstance(media, dict)
+    assert media.get("media_asset_id")
+    assert media.get("media_id") is None
     assert (media.get("download_url") or "").startswith("/studio/media/")
 
 
@@ -151,6 +153,8 @@ async def test_upload_lesson_image_returns_public_preferred_url(async_client, tm
     assert media.get("kind") == "image"
     assert media.get("original_name") == "diagram.png"
     assert media.get("storage_bucket") == "public-media"
+    assert media.get("media_asset_id")
+    assert media.get("media_id") is None
     assert str(media.get("storage_path", "")).startswith(f"lessons/{lesson_id}/images/")
 
     url = media.get("url") or ""
@@ -226,6 +230,8 @@ async def test_upload_course_media_pdf_uses_document_kind_and_attachment_header(
     media = payload.get("media") or {}
     assert isinstance(media, dict)
     assert media.get("kind") == "document"
+    assert media.get("media_asset_id")
+    assert media.get("media_id") is None
     assert media.get("media_state") == "ready"
 
     media_id = str(media.get("id") or "")

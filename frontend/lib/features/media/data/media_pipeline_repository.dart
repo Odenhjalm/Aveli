@@ -167,10 +167,8 @@ class MediaPipelineRepository {
         );
       }
     } else {
-      if (resolvedCourseId == null && resolvedLessonId == null) {
-        throw ArgumentError(
-          'courseId or lessonId is required for lesson_audio uploads.',
-        );
+      if (resolvedLessonId == null) {
+        throw ArgumentError('lessonId is required for lesson_audio uploads.');
       }
     }
 

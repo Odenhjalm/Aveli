@@ -457,8 +457,7 @@ async def list_lesson_media(
         if not item.get("storage_bucket") and not item.get("media_asset_id"):
             item["storage_bucket"] = "lesson-media"
         _apply_audio_content_type_fallback(item)
-        if not item.get("media_asset_id"):
-            media_signer.attach_media_links(item, purpose=mode)
+        media_signer.attach_media_links(item, purpose=mode)
         items.append(item)
 
     candidate_pairs: list[tuple[str, str]] = []
@@ -626,8 +625,7 @@ async def list_home_audio_media(
         if not item.get("media_asset_id") and not item.get("storage_bucket"):
             item["storage_bucket"] = "lesson-media"
         _apply_audio_content_type_fallback(item)
-        if not item.get("media_asset_id"):
-            media_signer.attach_media_links(item, purpose="student_render")
+        media_signer.attach_media_links(item, purpose="student_render")
         items.append(item)
     return items
 

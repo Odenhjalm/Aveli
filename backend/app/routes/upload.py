@@ -19,9 +19,11 @@ from .. import models
 from ..auth import CurrentUser
 from ..config import settings
 from ..permissions import TeacherUser
+from ..repositories import media_assets as media_assets_repo
+from ..repositories import storage_objects
 from ..services import courses_service
 from ..services import storage_service
-from ..utils import media_signer
+from ..utils import media_paths, media_signer
 from ..utils.http_headers import build_content_disposition
 
 logger = logging.getLogger(__name__)
@@ -82,6 +84,130 @@ class UploadWriteResult:
     destination_path: Path
     size: int
     checksum: str | None
+
+
+def _storage_candidates(
+    *,
+    storage_bucket: str,
+    storage_path: str,
+) -> list[tuple[str, str]]:
+    normalized_bucket = str(storage_bucket or "").strip()
+    normalized_path = media_paths.normalize_storage_path(normalized_bucket, storage_path)
+    candidates = [(normalized_bucket, normalized_path)]
+    bucket_prefix = f"{normalized_bucket}/"
+    if normalized_path.startswith(bucket_prefix):
+        stripped = normalized_path[len(bucket_prefix) :].lstrip("/")
+        if stripped:
+            candidates.append((normalized_bucket, stripped))
+    return list(dict.fromkeys(candidates))
+
+
+def _local_storage_candidates(bucket: str, storage_path: str) -> list[Path]:
+    normalized = media_paths.normalize_storage_path(bucket, storage_path)
+    return [
+        _safe_join(UPLOADS_ROOT, bucket, *Path(normalized).parts),
+        _safe_join(UPLOADS_ROOT, *Path(normalized).parts),
+    ]
+
+
+async def _storage_object_exists(*, storage_bucket: str, storage_path: str) -> bool:
+    normalized_path = media_paths.normalize_storage_path(storage_bucket, storage_path)
+    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
+        _storage_candidates(
+            storage_bucket=storage_bucket,
+            storage_path=normalized_path,
+        )
+    )
+    if storage_table_available and any(existence.values()):
+        return True
+    return any(candidate.is_file() for candidate in _local_storage_candidates(storage_bucket, normalized_path))
+
+
+async def _assert_storage_object_exists(*, storage_bucket: str, storage_path: str) -> str:
+    normalized_path = media_paths.normalize_storage_path(storage_bucket, storage_path)
+    if await _storage_object_exists(storage_bucket=storage_bucket, storage_path=normalized_path):
+        return normalized_path
+    logger.error(
+        "Upload aborted because storage object is missing: bucket=%s path=%s",
+        storage_bucket,
+        normalized_path,
+    )
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Uploaded file is missing from storage",
+    )
+
+
+def _asset_media_type(kind: str) -> str:
+    normalized = str(kind or "").strip().lower()
+    if normalized in {"image", "video", "audio", "document"}:
+        return normalized
+    return "document"
+
+
+def _asset_streaming_format(*, content_type: str, storage_path: str) -> str:
+    suffix = Path(storage_path).suffix.lower().lstrip(".")
+    if suffix:
+        return suffix
+    normalized_type = (content_type or "").strip().lower()
+    if normalized_type == "application/pdf":
+        return "pdf"
+    if "/" in normalized_type:
+        return normalized_type.split("/", 1)[1]
+    return "bin"
+
+
+async def _create_ready_lesson_media_asset(
+    *,
+    owner_id: str,
+    lesson_id: str,
+    course_id: str | None,
+    kind: str,
+    storage_path: str,
+    storage_bucket: str,
+    content_type: str,
+    size: int,
+    original_name: str | None,
+) -> dict[str, Any]:
+    media_type = _asset_media_type(kind)
+    streaming_format = _asset_streaming_format(
+        content_type=content_type,
+        storage_path=storage_path,
+    )
+    media_asset = await media_assets_repo.create_media_asset(
+        owner_id=owner_id,
+        course_id=course_id,
+        lesson_id=lesson_id,
+        media_type=media_type,
+        purpose="lesson_media",
+        ingest_format=streaming_format,
+        original_object_path=storage_path,
+        original_content_type=content_type,
+        original_filename=original_name,
+        original_size_bytes=size,
+        storage_bucket=storage_bucket,
+        state="ready",
+    )
+    if not media_asset:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist media asset",
+        )
+    marked_ready = await media_assets_repo.mark_media_asset_ready(
+        media_id=str(media_asset["id"]),
+        streaming_object_path=storage_path,
+        streaming_format=streaming_format,
+        duration_seconds=None,
+        codec=None,
+        streaming_storage_bucket=storage_bucket,
+    )
+    if not marked_ready:
+        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to finalize media asset",
+        )
+    return media_asset
 
 
 def _safe_join(base: Path, *parts: str) -> Path:
@@ -213,35 +339,47 @@ async def _persist_lesson_media(
     *,
     owner_id: str,
     lesson_id: str,
-    relative_path: Path,
+    storage_path: str,
     original_name: str | None,
     content_type: str,
     size: int,
     checksum: str | None,
     storage_bucket: str = _LESSON_MEDIA_BUCKET,
+    course_id: str | None = None,
 ) -> dict[str, Any]:
     kind = _detect_kind(content_type)
-
-    media_object = await models.create_media_object(
+    normalized_path = media_paths.validate_new_upload_object_path(storage_path)
+    await _assert_storage_object_exists(
+        storage_bucket=storage_bucket,
+        storage_path=normalized_path,
+    )
+    media_asset = await _create_ready_lesson_media_asset(
         owner_id=owner_id,
-        storage_path=relative_path.as_posix(),
+        lesson_id=lesson_id,
+        course_id=course_id,
+        kind=kind,
+        storage_path=normalized_path,
         storage_bucket=storage_bucket,
         content_type=content_type,
-        byte_size=size,
-        checksum=checksum,
+        size=size,
         original_name=original_name,
     )
-    media_id = media_object["id"] if media_object else None
 
-    row = await models.add_lesson_media_entry_with_position_retry(
-        lesson_id=lesson_id,
-        kind=kind,
-        storage_path=relative_path.as_posix(),
-        storage_bucket=storage_bucket,
-        media_id=media_id,
-        max_retries=10,
-    )
+    try:
+        row = await models.add_lesson_media_entry_with_position_retry(
+            lesson_id=lesson_id,
+            kind=kind,
+            storage_path=normalized_path,
+            storage_bucket=storage_bucket,
+            media_id=None,
+            media_asset_id=str(media_asset["id"]),
+            max_retries=10,
+        )
+    except Exception:
+        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
+        raise
     if not row:
+        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Could not allocate lesson media position",
@@ -428,14 +566,18 @@ async def upload_course_media(
     if lesson_id:
         if not resolved_course_id_str or not lesson_id_str:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing course_id for lesson media")
-        storage_relative_dir = Path(resolved_course_id_str) / lesson_id_str
+        temp_storage_path = media_paths.build_lesson_passthrough_object_path(
+            course_id=resolved_course_id_str,
+            lesson_id=lesson_id_str,
+            media_kind=media_type.value if media_type else _detect_kind(normalized_content_type),
+            filename=file.filename or "media",
+        )
+        storage_relative_path = Path(temp_storage_path)
     else:
         if not resolved_course_id_str:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing course_id")
-        storage_relative_dir = Path(resolved_course_id_str)
-    if media_type:
-        storage_relative_dir /= media_type.value
-    relative_dir = Path(storage_bucket) / storage_relative_dir
+        storage_relative_path = Path("courses") / resolved_course_id_str / f"{uuid4().hex}_{Path(file.filename or 'media').name}"
+    relative_dir = Path(storage_bucket) / storage_relative_path.parent
 
     allowed_prefixes = type_prefixes
     allowed_exact: set[str] = set()
@@ -457,8 +599,8 @@ async def upload_course_media(
         allowed_prefixes=allowed_prefixes,
         max_bytes=settings.lesson_media_max_bytes if lesson_id else None,
     )
-    relative_path = relative_dir / write_result.filename
-    storage_relative_path = storage_relative_dir / write_result.filename
+    storage_relative_path = storage_relative_path.parent / write_result.filename
+    relative_path = Path(storage_bucket) / storage_relative_path
     content_type = (
         file.content_type
         or mimetypes.guess_type(write_result.destination_path.name)[0]
@@ -487,12 +629,13 @@ async def upload_course_media(
         media_row = await _persist_lesson_media(
             owner_id=owner_id,
             lesson_id=lesson_id,
-            relative_path=storage_relative_path,
+            storage_path=storage_relative_path.as_posix(),
             original_name=file.filename,
             content_type=content_type,
             size=write_result.size,
             checksum=write_result.checksum,
             storage_bucket=storage_bucket,
+            course_id=resolved_course_id_str,
         )
         response["media"] = media_row
 
@@ -595,25 +738,37 @@ async def upload_lesson_image(
         persisted_storage_path = storage_key
 
     checksum = hashlib.sha256(payload).hexdigest()
-    media_object = await models.create_media_object(
+    normalized_path = media_paths.validate_new_upload_object_path(persisted_storage_path)
+    await _assert_storage_object_exists(
+        storage_bucket=_PUBLIC_MEDIA_BUCKET,
+        storage_path=normalized_path,
+    )
+    media_asset = await _create_ready_lesson_media_asset(
         owner_id=owner_id,
-        storage_path=persisted_storage_path,
+        lesson_id=lesson_id_str,
+        course_id=str(lesson_course_id),
+        kind="image",
+        storage_path=normalized_path,
         storage_bucket=_PUBLIC_MEDIA_BUCKET,
         content_type=content_type,
-        byte_size=size,
-        checksum=checksum,
+        size=size,
         original_name=file.filename,
     )
-    media_object_id = media_object["id"] if media_object else None
-    row = await models.add_lesson_media_entry_with_position_retry(
-        lesson_id=lesson_id_str,
-        kind="image",
-        storage_path=persisted_storage_path,
-        storage_bucket=_PUBLIC_MEDIA_BUCKET,
-        media_id=media_object_id,
-        max_retries=10,
-    )
+    try:
+        row = await models.add_lesson_media_entry_with_position_retry(
+            lesson_id=lesson_id_str,
+            kind="image",
+            storage_path=normalized_path,
+            storage_bucket=_PUBLIC_MEDIA_BUCKET,
+            media_id=None,
+            media_asset_id=str(media_asset["id"]),
+            max_retries=10,
+        )
+    except Exception:
+        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
+        raise
     if not row:
+        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Could not allocate lesson media position",

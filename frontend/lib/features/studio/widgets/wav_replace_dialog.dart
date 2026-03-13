@@ -36,7 +36,7 @@ class _WavReplaceDialogState extends State<WavReplaceDialog> {
     final bodyStyle = theme.textTheme.bodySmall;
 
     return AlertDialog(
-      title: const Text('Byt WAV'),
+      title: const Text('Byt WAV/M4A'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: Column(
@@ -44,7 +44,7 @@ class _WavReplaceDialogState extends State<WavReplaceDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Ersätt "${widget.existingFileName}" genom att ladda upp en ny WAV. '
+              'Ersätt "${widget.existingFileName}" genom att ladda upp en ny WAV- eller M4A-fil. '
               'Den gamla filen tas bort när den nya MP3:an är klar.',
               style: bodyStyle,
             ),
@@ -53,13 +53,13 @@ class _WavReplaceDialogState extends State<WavReplaceDialog> {
               courseId: widget.courseId,
               lessonId: widget.lessonId,
               onMediaUpdated: widget.onMediaUpdated,
-              actionLabel: 'Byt WAV',
+              actionLabel: 'Byt WAV/M4A',
               onPipelineFinalState: _handleFinalState,
             ),
             if (_lastFinalState == 'failed') ...[
               const SizedBox(height: 12),
               Text(
-                'Bearbetningen misslyckades. Du kan försöka igen genom att ladda upp en ny WAV.',
+                'Bearbetningen misslyckades. Du kan försöka igen genom att ladda upp en ny WAV- eller M4A-fil.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),

@@ -1,5 +1,7 @@
 import type { StructuredLogger } from "./logger.js";
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 type FilterOperator = "eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "is" | "like" | "in";
 
 export interface Filter {
@@ -185,7 +187,11 @@ export class SupabaseAdminClient {
     while (true) {
       attempt += 1;
       try {
-        return await fetch(url, { method: urlMethod, ...init });
+        return await fetch(url, {
+          method: urlMethod,
+          ...init,
+          signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
       } catch (error) {
         if (attempt >= this.retryCount) {
           throw error;

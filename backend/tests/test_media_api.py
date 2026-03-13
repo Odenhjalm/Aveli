@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from fastapi import HTTPException
 
 from app import db, models
 from app.config import settings
@@ -116,7 +117,7 @@ async def _create_media_asset(
 async def test_upload_url_allows_wav(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
-        _, lesson_id = await create_lesson(async_client, headers)
+        course_id, lesson_id = await create_lesson(async_client, headers)
 
         async def fake_create_upload_url(
             self,
@@ -155,8 +156,9 @@ async def test_upload_url_allows_wav(async_client, monkeypatch):
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["upload_url"].startswith("https://storage.local/")
-        assert "media/source/audio" in body["object_path"]
-        assert body["object_path"].endswith("_demo.wav")
+        assert body["object_path"] == (
+            f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.wav"
+        )
         assert body.get("media_id")
         expires_at = datetime.fromisoformat(body["expires_at"])
         delta = (expires_at - now).total_seconds()
@@ -192,7 +194,7 @@ async def test_upload_url_allows_wav(async_client, monkeypatch):
 async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
     headers, user_id = await register_teacher(async_client)
     try:
-        _, lesson_id = await create_lesson(async_client, headers)
+        course_id, lesson_id = await create_lesson(async_client, headers)
 
         async def fake_create_upload_url(
             self,
@@ -230,8 +232,9 @@ async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["upload_url"].startswith("https://storage.local/")
-        assert "media/source/audio" in body["object_path"]
-        assert body["object_path"].endswith("_demo.m4a")
+        assert body["object_path"] == (
+            f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.m4a"
+        )
         assert body.get("media_id")
 
         asset = await media_assets_repo.get_media_asset(body["media_id"])
@@ -299,7 +302,7 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         body = resp.json()
         assert body["upload_url"].startswith("https://storage.local/")
         assert f"home-player/{user_id}" in body["object_path"]
-        assert body["object_path"].endswith("_home.wav")
+        assert body["object_path"].endswith("/home.wav")
         assert body.get("media_id")
 
         asset = await media_assets_repo.get_media_asset(body["media_id"])
@@ -309,7 +312,7 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         await cleanup_user(user_id)
 
 
-async def test_upload_url_rejects_non_audio(async_client):
+async def test_upload_url_rejects_deprecated_mp3(async_client):
     headers, user_id = await register_teacher(async_client)
     try:
         _, lesson_id = await create_lesson(async_client, headers)
@@ -324,7 +327,32 @@ async def test_upload_url_rejects_non_audio(async_client):
                 "lesson_id": lesson_id,
             },
         )
-        assert resp.status_code == 415, resp.text
+        assert resp.status_code == 400, resp.text
+        assert (
+            resp.json()["detail"]
+            == "MP3 uploads are deprecated. Please upload WAV or M4A."
+        )
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_upload_url_requires_lesson_id_for_lesson_audio(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, _ = await create_lesson(async_client, headers)
+        resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "demo.wav",
+                "mime_type": "audio/wav",
+                "size_bytes": 1024,
+                "media_type": "audio",
+                "course_id": course_id,
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["detail"] == "lesson_id is required for lesson audio uploads"
     finally:
         await cleanup_user(user_id)
 
@@ -439,18 +467,10 @@ async def test_lesson_playback_pipeline_row(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
-        media_asset_id_expected = str(uuid.uuid4())
-
-        async def fake_get_media(media_id: str):
-            assert media_id == lesson_media_id
-            return {
-                "id": lesson_media_id,
-                "media_asset_id": media_asset_id_expected,
-                "storage_path": None,
-            }
-
-        async def fake_resolve_pipeline_playback(*, media_asset_id: str, user_id: str):
-            assert media_asset_id == media_asset_id_expected
+        async def fake_resolve_lesson_media_playback(
+            *, lesson_media_id: str, user_id: str
+        ):
+            assert lesson_media_id
             assert user_id
             return {
                 "url": "https://stream.local/media/derived/audio/demo.mp3",
@@ -458,11 +478,10 @@ async def test_lesson_playback_pipeline_row(async_client, monkeypatch):
                 "format": "mp3",
             }
 
-        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
         monkeypatch.setattr(
             lesson_playback_service,
-            "resolve_pipeline_playback",
-            fake_resolve_pipeline_playback,
+            "resolve_lesson_media_playback",
+            fake_resolve_lesson_media_playback,
             raising=True,
         )
 
@@ -482,16 +501,7 @@ async def test_lesson_playback_legacy_row(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
-
-        async def fake_get_media(media_id: str):
-            assert media_id == lesson_media_id
-            return {
-                "id": lesson_media_id,
-                "media_asset_id": None,
-                "storage_path": "courses/demo/lessons/demo/legacy.mp3",
-            }
-
-        async def fake_resolve_object_media_playback(
+        async def fake_resolve_lesson_media_playback(
             *, lesson_media_id: str, user_id: str
         ):
             assert lesson_media_id
@@ -502,11 +512,10 @@ async def test_lesson_playback_legacy_row(async_client, monkeypatch):
                 "playback_url": "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3",
             }
 
-        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
         monkeypatch.setattr(
             lesson_playback_service,
-            "resolve_object_media_playback",
-            fake_resolve_object_media_playback,
+            "resolve_lesson_media_playback",
+            fake_resolve_lesson_media_playback,
             raising=True,
         )
 
@@ -599,14 +608,18 @@ async def test_lesson_playback_invalid_row_returns_404(async_client, monkeypatch
     try:
         media_id = str(uuid.uuid4())
 
-        async def fake_get_media(_: str):
-            return {
-                "id": media_id,
-                "media_asset_id": None,
-                "storage_path": None,
-            }
+        async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+            raise HTTPException(
+                status_code=404,
+                detail="Lesson media has no playable source",
+            )
 
-        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "resolve_lesson_media_playback",
+            fake_resolve_lesson_media_playback,
+            raising=True,
+        )
 
         resp = await async_client.post(
             "/api/media/lesson-playback",
@@ -910,6 +923,7 @@ async def test_debug_media_returns_storage_path_and_signed_url(
 
 
 async def test_upload_url_requires_auth(async_client):
+    lesson_id = str(uuid.uuid4())
     resp = await async_client.post(
         "/api/media/upload-url",
         json={
@@ -917,7 +931,7 @@ async def test_upload_url_requires_auth(async_client):
             "mime_type": "audio/wav",
             "size_bytes": 1024,
             "media_type": "audio",
-            "course_id": str(uuid.uuid4()),
+            "lesson_id": lesson_id,
         },
     )
     assert resp.status_code == 401
