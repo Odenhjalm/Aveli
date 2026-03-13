@@ -63,6 +63,20 @@ def _derive_cover_output_path(source_path: str, ext: str) -> str:
     return Path(normalized).with_suffix(f".{ext}").as_posix()
 
 
+def _audio_source_suffix(asset: dict) -> str:
+    for raw in (
+        asset.get("original_filename"),
+        asset.get("original_object_path"),
+    ):
+        suffix = Path(str(raw or "")).suffix.lower()
+        if suffix:
+            return suffix
+    ingest_format = str(asset.get("ingest_format") or "").strip().lower()
+    if ingest_format:
+        return f".{ingest_format}"
+    return ".wav"
+
+
 async def start_worker() -> None:
     global _worker_task
     if not _env_worker_enabled():
@@ -175,7 +189,9 @@ async def _process_asset(asset: dict) -> None:
             media_id=media_id,
             next_retry_at=_now() + timedelta(seconds=delay_seconds),
         )
-        logger.debug("Source not ready for %s; deferring processing (%s)", media_id, exc)
+        logger.debug(
+            "Source not ready for %s; deferring processing (%s)", media_id, exc
+        )
     except Exception as exc:  # pragma: no cover - logged and recorded
         if not attempt_consumed:
             await _consume_attempt()
@@ -207,7 +223,9 @@ async def _transcode_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> No
     raise RuntimeError(f"Unsupported media asset type: {media_type}/{purpose}")
 
 
-async def _transcode_audio_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> None:
+async def _transcode_audio_asset(
+    asset: dict, consume_attempt: ConsumeAttemptFn
+) -> None:
     source_path = asset.get("original_object_path")
     if not source_path:
         raise RuntimeError("Missing source object path")
@@ -226,7 +244,7 @@ async def _transcode_audio_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
 
     with tempfile.TemporaryDirectory(prefix="aveli_media_") as temp_dir:
         temp_root = Path(temp_dir)
-        input_file = temp_root / "source.wav"
+        input_file = temp_root / f"source{_audio_source_suffix(asset)}"
         output_file = temp_root / "output.mp3"
 
         await _download_to_file(signed.url, input_file)
@@ -269,7 +287,9 @@ async def _transcode_audio_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
     logger.info("Media transcode ready media_id=%s output=%s", asset["id"], output_path)
 
 
-async def _transcode_cover_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> None:
+async def _transcode_cover_asset(
+    asset: dict, consume_attempt: ConsumeAttemptFn
+) -> None:
     source_path = asset.get("original_object_path")
     if not source_path:
         raise RuntimeError("Missing source object path")
@@ -295,7 +315,9 @@ async def _transcode_cover_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
         await consume_attempt()
         await _run_ffmpeg_cover(input_file, output_file)
 
-        public_storage = storage_service.get_storage_service(settings.media_public_bucket)
+        public_storage = storage_service.get_storage_service(
+            settings.media_public_bucket
+        )
         upload = await public_storage.create_upload_url(
             output_path,
             content_type="image/jpeg",
@@ -332,7 +354,9 @@ async def _transcode_cover_asset(asset: dict, consume_attempt: ConsumeAttemptFn)
 
     if result.get("cover_applied") and asset.get("course_id"):
         try:
-            await media_cleanup.prune_course_cover_assets(course_id=str(asset["course_id"]))
+            await media_cleanup.prune_course_cover_assets(
+                course_id=str(asset["course_id"])
+            )
         except Exception as exc:  # pragma: no cover - best-effort cleanup
             logger.warning(
                 "Course cover prune failed course_id=%s: %s",
@@ -372,7 +396,9 @@ async def _upload_file(url: str, source: Path, headers: dict[str, str] | None) -
                 yield chunk
 
     async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.put(url, headers=upload_headers, content=_file_stream(source))
+        response = await client.put(
+            url, headers=upload_headers, content=_file_stream(source)
+        )
     if response.status_code >= 400:
         raise RuntimeError(f"Upload failed with status {response.status_code}")
 

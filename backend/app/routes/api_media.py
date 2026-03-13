@@ -24,7 +24,11 @@ router = APIRouter(prefix="/api/media", tags=["media"])
 debug_router = APIRouter(prefix="/debug", tags=["debug"])
 
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
-_WAV_MIME_TYPES = {"audio/wav", "audio/x-wav"}
+_AUDIO_SOURCE_MIME_TYPES_BY_EXT = {
+    "wav": {"audio/wav", "audio/x-wav"},
+    "m4a": {"audio/m4a", "audio/mp4"},
+}
+_AUDIO_SOURCE_MIME_TYPES = frozenset().union(*_AUDIO_SOURCE_MIME_TYPES_BY_EXT.values())
 _COVER_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
@@ -47,12 +51,58 @@ def _normalize_mime(value: str) -> str:
     return (value or "").strip().lower()
 
 
+def _audio_ingest_format(filename: str, mime_type: str) -> str:
+    ext = Path(filename).suffix.lower().lstrip(".")
+    if ext not in _AUDIO_SOURCE_MIME_TYPES_BY_EXT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only WAV or M4A audio files are supported",
+        )
+    if mime_type not in _AUDIO_SOURCE_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only WAV or M4A audio files are supported",
+        )
+    if mime_type not in _AUDIO_SOURCE_MIME_TYPES_BY_EXT[ext]:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only WAV or M4A audio files are supported",
+        )
+    return ext
+
+
+def _default_audio_content_type(
+    *,
+    ingest_format: str | None,
+    original_filename: str | None,
+    original_object_path: str | None,
+) -> str:
+    candidates = [
+        (ingest_format or "").strip().lower(),
+        Path(original_filename or "").suffix.lower().lstrip("."),
+        Path(original_object_path or "").suffix.lower().lstrip("."),
+    ]
+    for candidate in candidates:
+        if candidate == "m4a":
+            return "audio/m4a"
+        if candidate == "wav":
+            return "audio/wav"
+    return "audio/wav"
+
+
 def _build_cover_source_object_path(course_id: str, filename: str) -> str:
     safe_name = Path(filename).name.strip()
     if not safe_name:
         safe_name = "cover"
     token = uuid4().hex
-    path = Path("media") / "source" / "cover" / "courses" / course_id / f"{token}_{safe_name}"
+    path = (
+        Path("media")
+        / "source"
+        / "cover"
+        / "courses"
+        / course_id
+        / f"{token}_{safe_name}"
+    )
     return path.as_posix()
 
 
@@ -87,11 +137,15 @@ async def _authorize_lesson_upload(
 ) -> str:
     lesson = await models.get_lesson(lesson_id)
     if not lesson:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found"
+        )
 
     _, resolved_course_id = await models.lesson_course_ids(lesson_id)
     if not resolved_course_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lesson missing course")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Lesson missing course"
+        )
 
     if course_id is not None and str(course_id) != str(resolved_course_id):
         logger.warning(
@@ -114,7 +168,9 @@ async def _authorize_lesson_upload(
             resolved_course_id,
             lesson_id,
         )
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner"
+        )
 
     return resolved_course_id
 
@@ -122,14 +178,18 @@ async def _authorize_lesson_upload(
 async def _authorize_course_upload(user_id: str, course_id: str) -> None:
     course = await models.get_course(course_id=course_id)
     if not course:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
+        )
     if not await models.is_course_owner(user_id, course_id):
         logger.warning(
             "Permission denied: course owner required user_id=%s course_id=%s",
             user_id,
             course_id,
         )
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner"
+        )
 
 
 @router.post("/upload-url", response_model=schemas.MediaUploadUrlResponse)
@@ -144,11 +204,7 @@ async def request_upload_url(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="mime_type is required",
         )
-    if mime_type not in _WAV_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only WAV uploads are supported",
-        )
+    ingest_format = _audio_ingest_format(payload.filename, mime_type)
 
     max_bytes = _upload_max_bytes(payload.media_type)
     if payload.size_bytes > max_bytes:
@@ -195,7 +251,9 @@ async def request_upload_url(
                 detail="course_id or lesson_id is required",
             )
 
-    object_path = media_paths.build_audio_source_object_path(resource_prefix, payload.filename)
+    object_path = media_paths.build_audio_source_object_path(
+        resource_prefix, payload.filename
+    )
     try:
         upload = await storage_service.storage_service.create_upload_url(
             object_path,
@@ -216,7 +274,7 @@ async def request_upload_url(
         lesson_id=lesson_id,
         media_type="audio",
         purpose=purpose,
-        ingest_format="wav",
+        ingest_format=ingest_format,
         original_object_path=upload.path,
         original_content_type=mime_type,
         original_filename=payload.filename,
@@ -255,12 +313,13 @@ async def request_upload_url(
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
     logger.info(
-        "Issued WAV upload URL user_id=%s purpose=%s size_bytes=%s path=%s media_id=%s",
+        "Issued audio upload URL user_id=%s purpose=%s size_bytes=%s path=%s media_id=%s format=%s",
         user_id,
         purpose,
         payload.size_bytes,
         upload.path,
         media_asset["id"],
+        ingest_format,
     )
     return schemas.MediaUploadUrlResponse(
         media_id=media_asset["id"],
@@ -279,7 +338,9 @@ async def refresh_upload_url(
     user_id = str(current["id"])
     media_asset = await media_assets_repo.get_media_asset(str(payload.media_id))
     if not media_asset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
+        )
 
     owner_id = media_asset.get("owner_id")
     if owner_id and str(owner_id) != user_id:
@@ -291,13 +352,15 @@ async def refresh_upload_url(
                 payload.media_id,
                 course_id,
             )
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
 
     media_type = (media_asset.get("media_type") or "").lower()
     if media_type != "audio":
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only WAV uploads are supported",
+            detail="Only WAV or M4A audio files are supported",
         )
 
     object_path = media_asset.get("original_object_path")
@@ -309,9 +372,15 @@ async def refresh_upload_url(
 
     content_type = _normalize_mime(media_asset.get("original_content_type") or "")
     if not content_type:
-        content_type = "audio/wav"
+        content_type = _default_audio_content_type(
+            ingest_format=media_asset.get("ingest_format"),
+            original_filename=media_asset.get("original_filename"),
+            original_object_path=object_path,
+        )
 
-    storage_bucket = media_asset.get("storage_bucket") or storage_service.storage_service.bucket
+    storage_bucket = (
+        media_asset.get("storage_bucket") or storage_service.storage_service.bucket
+    )
     storage_client = storage_service.get_storage_service(storage_bucket)
 
     try:
@@ -330,7 +399,7 @@ async def refresh_upload_url(
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
     logger.info(
-        "Refreshed WAV upload URL user_id=%s media_id=%s path=%s",
+        "Refreshed audio upload URL user_id=%s media_id=%s path=%s",
         user_id,
         media_asset.get("id"),
         upload.path,
@@ -436,7 +505,9 @@ async def request_cover_from_media(
 
     media = await models.get_media(str(payload.lesson_media_id))
     if not media:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
+        )
 
     lesson_id = str(media.get("lesson_id")) if media.get("lesson_id") else None
     if not lesson_id:
@@ -462,7 +533,9 @@ async def request_cover_from_media(
 
     storage_path = media.get("storage_path")
     if not storage_path:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Media missing storage path")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Media missing storage path"
+        )
     storage_bucket = media.get("storage_bucket") or settings.media_source_bucket
 
     original_name = media.get("original_name")
@@ -520,12 +593,18 @@ async def media_status(
 ):
     media = await media_assets_repo.get_media_asset(str(media_id))
     if not media:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
+        )
     owner_id = media.get("owner_id")
     if owner_id and str(owner_id) != str(current["id"]):
         course_id = media.get("course_id")
-        if not course_id or not await models.is_course_owner(str(current["id"]), str(course_id)):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        if not course_id or not await models.is_course_owner(
+            str(current["id"]), str(course_id)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
     return schemas.MediaStatusResponse(
         media_id=media_id,
         state=media.get("state"),
@@ -563,7 +642,9 @@ async def request_lesson_playback(
     lesson_media_id = str(payload.lesson_media_id)
     row = await models.get_media(lesson_media_id)
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson media not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Lesson media not found"
+        )
 
     media_asset_id = row.get("media_asset_id")
     if media_asset_id:
@@ -624,7 +705,9 @@ async def debug_media(
         )
         signed_url = playback["url"]
         if not storage_path:
-            media_asset = await media_assets_repo.get_media_asset_access(str(media_asset_id))
+            media_asset = await media_assets_repo.get_media_asset_access(
+                str(media_asset_id)
+            )
             if media_asset:
                 storage_path = media_asset.get("streaming_object_path")
     elif storage_path:
