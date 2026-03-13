@@ -21,7 +21,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
     this.pickFileOverride,
     this.uploadFileOverride,
     this.pollInterval = const Duration(seconds: 5),
-    this.actionLabel = 'Ladda upp WAV',
+    this.actionLabel = 'Ladda upp WAV/M4A',
     this.onPipelineFinalState,
   });
 
@@ -102,8 +102,17 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     if (lower == 'audio/wave' || lower == 'audio/vnd.wave') {
       return 'audio/wav';
     }
+    if (lower == 'audio/m4a' || lower == 'audio/mp4') {
+      return lower;
+    }
+    if (lower == 'audio/x-m4a') {
+      return 'audio/m4a';
+    }
     if (filename.toLowerCase().endsWith('.wav')) {
       return 'audio/wav';
+    }
+    if (filename.toLowerCase().endsWith('.m4a')) {
+      return 'audio/m4a';
     }
     return lower.isEmpty ? 'audio/wav' : lower;
   }

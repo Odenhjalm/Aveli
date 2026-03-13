@@ -14,12 +14,23 @@ class WavUploadFile {
   String get name => file.name;
 }
 
+String _mimeTypeForAudioSource(String filename) {
+  final lower = filename.toLowerCase();
+  if (lower.endsWith('.m4a')) {
+    return 'audio/m4a';
+  }
+  return 'audio/wav';
+}
+
 Future<WavUploadFile?> pickWavFile() async {
-  final typeGroup = fs.XTypeGroup(label: 'wav', extensions: const ['wav']);
+  final typeGroup = fs.XTypeGroup(
+    label: 'wav/m4a',
+    extensions: const ['wav', 'm4a'],
+  );
   final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
   if (file == null) return null;
   final size = await file.length();
-  return WavUploadFile(file, 'audio/wav', size);
+  return WavUploadFile(file, _mimeTypeForAudioSource(file.name), size);
 }
 
 Future<WavUploadFile?> pickMediaFile() async {

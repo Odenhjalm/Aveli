@@ -42,7 +42,7 @@ class WavUploadFile {
 
 Future<WavUploadFile?> pickWavFile() async {
   final input = FileUploadInputElement()
-    ..accept = '.wav,audio/wav,audio/x-wav'
+    ..accept = '.wav,.m4a,audio/wav,audio/x-wav,audio/m4a,audio/mp4'
     ..multiple = false;
 
   final completer = Completer<WavUploadFile?>();
@@ -127,11 +127,11 @@ void clearResumableSession(WavResumableSession session) {
 }
 
 // Verification (manual):
-// 1) Start >=500 MB WAV upload in web app.
+// 1) Start >=500 MB WAV/M4A upload in web app.
 // 2) Let it reach ~20–40%.
 // 3) Close tab.
-// 4) Reopen app and click "Ladda upp WAV".
-// 5) Select the same WAV.
+// 4) Reopen app and click "Ladda upp WAV/M4A".
+// 5) Select the same WAV/M4A file.
 // 6) Confirm HEAD -> PATCH resume (no new POST).
 // 7) Let upload finish; verify storage.objects row exists.
 // 8) Confirm media_assets: uploaded -> processing -> ready; MP3 plays.

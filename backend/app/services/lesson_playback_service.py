@@ -195,6 +195,9 @@ async def resolve_object_media_playback(
             lesson_media_id=str(row["id"]),
             storage_path=str(storage_path),
             storage_bucket=str(storage_bucket),
+            media_object_id=(
+                str(row["media_id"]) if row.get("media_id") is not None else None
+            ),
         )
     except (ValueError, storage_service.StorageServiceError) as exc:
         raise HTTPException(
