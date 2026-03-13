@@ -12,7 +12,16 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class SignupPage extends ConsumerStatefulWidget {
-  const SignupPage({super.key});
+  const SignupPage({
+    super.key,
+    this.initialEmail,
+    this.inviteToken,
+    this.referralCode,
+  });
+
+  final String? initialEmail;
+  final String? inviteToken;
+  final String? referralCode;
 
   @override
   ConsumerState<SignupPage> createState() => _SignupPageState();
@@ -24,13 +33,22 @@ class _SignupPageState extends ConsumerState<SignupPage> {
   final TextEditingController _displayNameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
   final TextEditingController _referralCodeCtrl = TextEditingController();
+  String? _inviteToken;
 
   @override
   void initState() {
     super.initState();
-    final referralCode = Uri.base.queryParameters['referral_code']?.trim();
+    final email = widget.initialEmail?.trim();
+    if (email != null && email.isNotEmpty) {
+      _emailCtrl.text = email;
+    }
+    final referralCode = widget.referralCode?.trim();
     if (referralCode != null && referralCode.isNotEmpty) {
       _referralCodeCtrl.text = referralCode;
+    }
+    final inviteToken = widget.inviteToken?.trim();
+    if (inviteToken != null && inviteToken.isNotEmpty) {
+      _inviteToken = inviteToken;
     }
   }
 
@@ -50,6 +68,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     final envBlocked = envInfo.hasIssues;
     final busy = authState.isLoading;
     final textTheme = Theme.of(context).textTheme;
+    final hasInviteToken = _inviteToken != null;
 
     return AppScaffold(
       title: 'Skapa konto',
@@ -107,9 +126,19 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                                 : const SizedBox(key: ValueKey('signup-ok')),
                           ),
                           gap24,
+                          if (hasInviteToken)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Text(
+                                'Du registrerar dig via en personlig inbjudan. E-postadressen är förifylld från länken.',
+                                style: textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                           TextFormField(
                             controller: _emailCtrl,
-                            enabled: !envBlocked,
+                            enabled: !envBlocked && !hasInviteToken,
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.email],
                             textInputAction: TextInputAction.next,
@@ -233,9 +262,13 @@ class _SignupPageState extends ConsumerState<SignupPage> {
         password,
         displayName: displayName,
         referralCode: referralCode.isEmpty ? null : referralCode,
+        inviteToken: _inviteToken,
       );
       if (!mounted || !context.mounted) return;
-      showSnack(context, 'Konto skapat. Inloggad som $email');
+      showSnack(
+        context,
+        'Konto skapat. Kontrollera din e-post för att verifiera kontot.',
+      );
       context.goNamed(AppRoute.landingRoot);
     } catch (error) {
       if (!mounted || !context.mounted) return;

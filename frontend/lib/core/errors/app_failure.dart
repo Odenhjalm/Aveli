@@ -188,6 +188,10 @@ String _localizeDetail(String detail) {
       return 'E-postadressen är redan registrerad.';
     case 'user not found':
       return 'Kontot kunde inte hittas.';
+    case 'invalid_or_expired_token':
+      return 'Länken är ogiltig eller har gått ut.';
+    case 'rate_limited':
+      return 'För många försök. Vänta en stund och försök igen.';
     case 'unauthorized':
       return 'Behörighet saknas. Logga in igen.';
     case 'forbidden':

@@ -9,6 +9,7 @@ from .auth import (
     get_refresh_token,
     insert_auth_event,
     revoke_refresh_token,
+    revoke_refresh_tokens_for_user,
     touch_refresh_token_as_rotated,
 )
 from .profiles import get_profile, update_profile
@@ -131,6 +132,7 @@ __all__ = [
     "get_refresh_token",
     "insert_auth_event",
     "revoke_refresh_token",
+    "revoke_refresh_tokens_for_user",
     "touch_refresh_token_as_rotated",
     # Profiles
     "get_profile",

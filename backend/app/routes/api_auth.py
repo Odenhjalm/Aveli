@@ -1,11 +1,13 @@
 import hashlib
 import logging
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import FileResponse, JSONResponse
 from jose import JWTError
 
 from .. import models, repositories, schemas
@@ -20,7 +22,15 @@ from ..auth import (
     verify_password,
 )
 from ..config import settings
-from ..services.email_verification import send_verification_email
+from ..services.email_verification import (
+    InvalidInviteTokenError,
+    InvalidPasswordResetTokenError,
+    reset_password_with_token,
+    send_invite_email,
+    send_password_reset_email,
+    send_verification_email,
+    validate_invite_token,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -30,6 +40,11 @@ _AVATAR_ALLOWED_PREFIXES = ("image/",)
 _AVATAR_MAX_BYTES = 5 * 1024 * 1024
 _AVATAR_BUCKET = "profile-avatars"
 _AVATAR_ROOT = Path("avatars")
+_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+_PASSWORD_RESET_RATE_LIMIT = 5
+_SEND_INVITE_RATE_LIMIT = 10
+_password_reset_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
+_send_invite_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
 
 
 async def _client_ip(request: Request) -> str | None:
@@ -53,6 +68,52 @@ async def _claims_for_user(user_id: str, profile: dict | None = None) -> dict:
     }
 
 
+def _consume_rate_limit(
+    attempts: defaultdict[str, deque[float]],
+    key: str,
+    *,
+    max_attempts: int,
+) -> bool:
+    bucket = attempts[key]
+    now = time.monotonic()
+    while bucket and now - bucket[0] > _RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= max_attempts:
+        return False
+    bucket.append(now)
+    return True
+
+
+def _rate_limited_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"error": "rate_limited"},
+    )
+
+
+def _normalized_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _require_valid_invite_token(email: str, invite_token: str | None) -> None:
+    if not invite_token:
+        return
+
+    try:
+        invited_email = validate_invite_token(invite_token)
+    except InvalidInviteTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_or_expired_token",
+        ) from exc
+
+    if invited_email != _normalized_email(email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_or_expired_token",
+        )
+
+
 @router.post("/oauth")
 async def oauth_legacy_disabled():
     # Legacy backend OAuth endpoint is disabled in favor of Supabase client-side OAuth.
@@ -66,6 +127,8 @@ async def oauth_legacy_disabled():
     "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
 )
 async def register(payload: schemas.AuthRegisterRequest, request: Request):
+    _require_valid_invite_token(payload.email, payload.invite_token)
+
     existing = await repositories.get_user_by_email(payload.email)
     if existing:
         raise HTTPException(
@@ -167,24 +230,79 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
     return schemas.Token(access_token=access_token, refresh_token=refresh_token)
 
 
+@router.post("/request-password-reset", status_code=status.HTTP_202_ACCEPTED)
 @router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
-async def forgot_password(payload: schemas.AuthForgotPasswordRequest):
-    user = await repositories.get_user_by_email(payload.email)
+async def request_password_reset(payload: schemas.AuthForgotPasswordRequest):
+    normalized_email = _normalized_email(payload.email)
+    if not _consume_rate_limit(
+        _password_reset_attempts,
+        normalized_email,
+        max_attempts=_PASSWORD_RESET_RATE_LIMIT,
+    ):
+        return _rate_limited_response()
+
+    user = await repositories.get_user_by_email(normalized_email)
     if user:
-        # Placeholder for email/reset token integration.
-        pass
+        try:
+            await send_password_reset_email(user["email"])
+        except Exception:
+            logger.exception(
+                "Failed to send password reset email email=%s",
+                normalized_email,
+            )
     return {"status": "ok"}
 
 
 @router.post("/reset-password")
 async def reset_password(payload: schemas.AuthResetPasswordRequest):
-    user = await repositories.get_user_by_email(payload.email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+    try:
+        result = await reset_password_with_token(payload.token, payload.new_password)
+    except InvalidPasswordResetTokenError:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "invalid_or_expired_token"},
         )
-    await models.update_user_password(user["id"], payload.new_password)
+    return {"status": result["status"]}
+
+
+@router.post("/send-invite")
+async def send_invite(payload: schemas.AuthForgotPasswordRequest, current: CurrentUser):
+    sender_key = str(current["id"])
+    recipient_email = _normalized_email(payload.email)
+    if not _consume_rate_limit(
+        _send_invite_attempts,
+        sender_key,
+        max_attempts=_SEND_INVITE_RATE_LIMIT,
+    ):
+        return _rate_limited_response()
+
+    try:
+        await send_invite_email(recipient_email, inviter_email=current.get("email"))
+    except Exception as exc:
+        logger.exception(
+            "Failed to send invite email sender=%s recipient=%s",
+            current.get("email"),
+            recipient_email,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send invite email",
+        ) from exc
+
     return {"status": "ok"}
+
+
+@router.get("/validate-invite")
+async def validate_invite(token: str = Query(..., min_length=1)):
+    try:
+        email = validate_invite_token(token)
+    except InvalidInviteTokenError:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "invalid_or_expired_token"},
+        )
+
+    return {"status": "valid", "email": email}
 
 
 @router.post("/refresh", response_model=schemas.Token)

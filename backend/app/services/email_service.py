@@ -37,11 +37,9 @@ async def send_email(
 
     if not settings.resend_api_key or not settings.email_from:
         logger.info(
-            "Email delivery disabled; logging message to=%s subject=%s text_body=%s html_body=%s",
+            "Email delivery skipped recipient=%s subject=%s provider=log_only",
             recipient,
             subject,
-            text_body,
-            html_body,
         )
         return EmailDeliveryResult(mode="log_only")
 
@@ -65,6 +63,11 @@ async def send_email(
         )
         raise EmailDeliveryError("Failed to send email") from exc
 
+    logger.info(
+        "Email sent recipient=%s subject=%s provider=resend",
+        recipient,
+        subject,
+    )
     return EmailDeliveryResult(mode="sent")
 
 

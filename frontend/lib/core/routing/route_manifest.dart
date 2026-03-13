@@ -61,8 +61,13 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(
-    name: AppRoute.newPassword,
-    path: RoutePath.newPassword,
+    name: AppRoute.resetPassword,
+    path: RoutePath.resetPassword,
+    access: RouteAccessLevel.public,
+  ),
+  RouteManifestEntry(
+    name: AppRoute.invite,
+    path: RoutePath.invite,
     access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(

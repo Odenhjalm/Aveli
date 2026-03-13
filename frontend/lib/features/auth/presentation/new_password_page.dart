@@ -11,7 +11,9 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class NewPasswordPage extends ConsumerStatefulWidget {
-  const NewPasswordPage({super.key});
+  const NewPasswordPage({super.key, required this.token});
+
+  final String? token;
 
   @override
   ConsumerState<NewPasswordPage> createState() => _NewPasswordPageState();
@@ -19,7 +21,6 @@ class NewPasswordPage extends ConsumerStatefulWidget {
 
 class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   bool _busy = false;
@@ -27,7 +28,6 @@ class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
@@ -37,6 +37,51 @@ class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
   Widget build(BuildContext context) {
     final envInfo = ref.watch(envInfoProvider);
     final envBlocked = envInfo.hasIssues;
+    final hasToken = (widget.token?.trim().isNotEmpty ?? false);
+
+    if (!hasToken) {
+      return AppScaffold(
+        title: 'Nytt lösenord',
+        showHomeAction: false,
+        body: SafeArea(
+          top: false,
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Länken är ogiltig',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Återställningslänken saknas eller har gått ut. Be om en ny länk för att fortsätta.',
+                        ),
+                        const SizedBox(height: 24),
+                        GradientButton(
+                          onPressed: () =>
+                              context.goNamed(AppRoute.forgotPassword),
+                          child: const Text('Be om ny länk'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return AppScaffold(
       title: 'Nytt lösenord',
@@ -99,22 +144,7 @@ class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
                                 : const SizedBox(key: ValueKey('newpass-ok')),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
-                            'Ange den e-postadress som är kopplad till kontot och välj ett nytt lösenord. '
-                            'För lokala konton krävs inget e-poststeg.',
-                          ),
-                          const SizedBox(height: 24),
-                          TextFormField(
-                            controller: _emailCtrl,
-                            enabled: !envBlocked,
-                            keyboardType: TextInputType.emailAddress,
-                            autofillHints: const [AutofillHints.email],
-                            decoration: const InputDecoration(
-                              labelText: 'E-postadress',
-                            ),
-                            textInputAction: TextInputAction.next,
-                            validator: _validateEmail,
-                          ),
+                          const Text('Välj ett nytt lösenord för ditt konto.'),
                           const SizedBox(height: 16),
                           TextFormField(
                             controller: _passwordCtrl,
@@ -184,7 +214,7 @@ class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    final email = _emailCtrl.text.trim();
+    final token = widget.token!.trim();
     final password = _passwordCtrl.text;
 
     setState(() {
@@ -193,7 +223,7 @@ class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
     });
     try {
       final repo = ref.read(authRepositoryProvider);
-      await repo.resetPassword(email: email, newPassword: password);
+      await repo.resetPassword(token: token, newPassword: password);
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Lösenord uppdaterat. Du kan nu logga in.');
       context.goNamed(AppRoute.login);
@@ -207,18 +237,6 @@ class _NewPasswordPageState extends ConsumerState<NewPasswordPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  String? _validateEmail(String? value) {
-    final email = value?.trim() ?? '';
-    if (email.isEmpty) {
-      return 'Ange din e-postadress.';
-    }
-    final regex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-    if (!regex.hasMatch(email)) {
-      return 'Ogiltig e-postadress.';
-    }
-    return null;
   }
 
   String? _validatePassword(String? value) {

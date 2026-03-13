@@ -62,6 +62,7 @@ class AuthRegisterRequest(BaseModel):
     password: str
     display_name: str
     referral_code: str | None = None
+    invite_token: str | None = None
 
 
 class AuthForgotPasswordRequest(BaseModel):
@@ -69,7 +70,7 @@ class AuthForgotPasswordRequest(BaseModel):
 
 
 class AuthResetPasswordRequest(BaseModel):
-    email: str
+    token: str
     new_password: str
 
 

@@ -9,7 +9,8 @@ abstract class RoutePath {
   static const signup = '/signup';
   static const verifyEmail = '/verify';
   static const forgotPassword = '/forgot-password';
-  static const newPassword = '/new-password';
+  static const resetPassword = '/reset-password';
+  static const invite = '/invite';
   static const home = '/home';
   static const sfuDemo = '/sfu-demo';
   static const courseIntro = '/course-intro';

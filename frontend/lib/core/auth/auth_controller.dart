@@ -128,6 +128,7 @@ class AuthController extends StateNotifier<AuthState> {
     String password, {
     String? displayName,
     String? referralCode,
+    String? inviteToken,
   }) async {
     state = state.copyWith(isLoading: true, error: null, clearClaims: true);
     try {
@@ -138,6 +139,7 @@ class AuthController extends StateNotifier<AuthState> {
             ? displayName!.trim()
             : email.split('@').first,
         referralCode: referralCode,
+        inviteToken: inviteToken,
       );
       final token = await _repo.currentToken();
       final claims = token != null ? AuthClaims.fromToken(token) : null;

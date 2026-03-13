@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
@@ -192,11 +193,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
       _confirmationMessage = null;
     });
     try {
-      final supabase = Supabase.instance.client;
-      await supabase.auth.resetPasswordForEmail(
-        email,
-        redirectTo: 'https://app.aveli.app/reset-password',
-      );
+      await ref.read(authRepositoryProvider).requestPasswordReset(email);
       if (!mounted || !context.mounted) return;
       final confirmation =
           'Om adressen finns skickar vi nu instruktioner till $email.';
@@ -204,12 +201,9 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
         _confirmationMessage = confirmation;
       });
       showSnack(context, confirmation);
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted || !context.mounted) return;
-      var message = 'Kunde inte skicka återställningsinstruktioner.';
-      if (error is AuthException && error.message.trim().isNotEmpty) {
-        message = error.message;
-      }
+      final message = AppFailure.from(error, stackTrace).message;
       setState(() {
         _errorMessage = message;
       });

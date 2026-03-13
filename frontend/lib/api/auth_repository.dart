@@ -46,6 +46,7 @@ class AuthRepository {
     required String password,
     required String displayName,
     String? referralCode,
+    String? inviteToken,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiPaths.authRegister,
@@ -55,6 +56,8 @@ class AuthRepository {
         'display_name': displayName,
         if (referralCode != null && referralCode.trim().isNotEmpty)
           'referral_code': referralCode.trim(),
+        if (inviteToken != null && inviteToken.trim().isNotEmpty)
+          'invite_token': inviteToken.trim(),
       },
       skipAuth: true,
     );
@@ -73,7 +76,7 @@ class AuthRepository {
   Future<void> requestPasswordReset(String email) async {
     try {
       await _client.post<Map<String, dynamic>>(
-        ApiPaths.authForgotPassword,
+        ApiPaths.authRequestPasswordReset,
         body: {'email': email},
         skipAuth: true,
       );
@@ -113,14 +116,34 @@ class AuthRepository {
     }
   }
 
+  Future<String> validateInvite(String token) async {
+    try {
+      final data = await _client.get<Map<String, dynamic>>(
+        ApiPaths.authValidateInvite,
+        queryParameters: {'token': token},
+        skipAuth: true,
+      );
+      final email = data['email'] as String?;
+      if (email == null || email.trim().isEmpty) {
+        throw const FormatException(
+          'Missing email in invite validation response',
+        );
+      }
+      return email;
+    } on DioException catch (e) {
+      debugPrint('Invite validation failed: ${e.response?.data ?? e.message}');
+      rethrow;
+    }
+  }
+
   Future<void> resetPassword({
-    required String email,
+    required String token,
     required String newPassword,
   }) async {
     try {
       await _client.post<Map<String, dynamic>>(
         ApiPaths.authResetPassword,
-        body: {'email': email, 'new_password': newPassword},
+        body: {'token': token, 'new_password': newPassword},
         skipAuth: true,
       );
     } on DioException catch (e) {

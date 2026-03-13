@@ -150,7 +150,13 @@ async def get_user_by_email(email: str) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT id, email, encrypted_password, created_at, updated_at
+            SELECT id,
+                   email,
+                   encrypted_password,
+                   email_confirmed_at,
+                   confirmed_at,
+                   created_at,
+                   updated_at
             FROM auth.users
             WHERE lower(email) = lower(%s)
             LIMIT 1
@@ -168,7 +174,13 @@ async def get_user_by_id(user_id: str | UUID) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT id, email, encrypted_password, created_at, updated_at
+            SELECT id,
+                   email,
+                   encrypted_password,
+                   email_confirmed_at,
+                   confirmed_at,
+                   created_at,
+                   updated_at
             FROM auth.users
             WHERE id = %s
             LIMIT 1
@@ -259,6 +271,21 @@ async def revoke_refresh_token(jti: str) -> None:
                  WHERE jti = %s
                 """,
                 (jti,),
+            )
+            await conn.commit()
+
+
+async def revoke_refresh_tokens_for_user(user_id: str | UUID) -> None:
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.refresh_tokens
+                   SET revoked_at = now()
+                 WHERE user_id = %s
+                   AND revoked_at IS NULL
+                """,
+                (user_id,),
             )
             await conn.commit()
 
