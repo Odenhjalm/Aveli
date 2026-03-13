@@ -1,3 +1,4 @@
+import json
 import os
 from urllib.parse import urlparse
 
@@ -44,10 +45,10 @@ def _looks_like_supabase_host(hostname: str) -> bool:
     return "supabase" in host
 
 
-def _cors_origin_from_url(value: str | None) -> str | None:
+def _normalize_cors_origin(value: str | None) -> str | None:
     if not value:
         return None
-    raw = value.strip()
+    raw = value.strip().strip('"').strip("'")
     if not raw:
         return None
     parsed = urlparse(raw)
@@ -186,12 +187,12 @@ class Settings(BaseSettings):
     livekit_api_url: str | None = None
     livekit_webhook_secret: str | None = None
     cors_allow_origins: list[str] = [
+        "https://app.aveli.app",
+        "https://aveli.fly.dev",
         "http://localhost:3000",
-        "http://127.0.0.1:3000",
         "http://localhost:5173",
-        "http://127.0.0.1:5173",
     ]
-    cors_allow_origin_regex: str | None = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+    cors_allow_origin_regex: str | None = r"http://localhost(:\d+)?"
     lesson_media_max_bytes: int = 2 * 1024 * 1024 * 1024
     media_upload_max_image_bytes: int = 25 * 1024 * 1024
     media_upload_max_audio_bytes: int = 5 * 1024 * 1024 * 1024
@@ -246,19 +247,38 @@ class Settings(BaseSettings):
                     "Point DATABASE_URL to your local Postgres clone, or set AVELI_ALLOW_REMOTE_DB=1 to override."
                 )
 
-        frontend_origin = _cors_origin_from_url(self.frontend_base_url)
-        if frontend_origin:
-            existing = {origin.strip().lower() for origin in self.cors_allow_origins if origin}
-            if frontend_origin.strip().lower() not in existing:
-                self.cors_allow_origins.append(frontend_origin)
-
         return self
 
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def _split_origins(cls, value):
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("cors_allow_origins JSON must be a list of strings") from exc
+            else:
+                value = raw.split(",")
+
+        if isinstance(value, (list, tuple, set)):
+            origins: list[str] = []
+            seen: set[str] = set()
+            for origin in value:
+                if not isinstance(origin, str):
+                    raise ValueError("cors_allow_origins entries must be strings")
+                normalized = _normalize_cors_origin(origin)
+                if not normalized:
+                    continue
+                key = normalized.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                origins.append(normalized)
+            return origins
         return value
 
 

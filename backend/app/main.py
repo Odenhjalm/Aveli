@@ -1,17 +1,17 @@
 from contextlib import asynccontextmanager
-import json
-import logging
 import os
 from pathlib import Path
-from typing import List
+import re
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 try:  # pragma: no cover - optional dependency for metrics
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -68,7 +68,8 @@ ASSETS_ROOT = Path(__file__).resolve().parents[1] / "assets"
 UPLOADS_ROOT = ASSETS_ROOT / "uploads"
 
 setup_logging()
-logger = logging.getLogger(__name__)
+
+_CORS_ALLOW_METHODS = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
 
 
 def setup_sentry() -> None:
@@ -109,62 +110,58 @@ async def lifespan(app: FastAPI):
         await pool.close()
 
 
-def _normalize_origin(origin: str) -> str:
-    origin = origin.strip().strip('"').strip("'")
-    return origin.rstrip("/")
+def _origin_is_allowed(origin: str | None) -> bool:
+    if not origin:
+        return False
+    if origin in settings.cors_allow_origins:
+        return True
+    pattern = settings.cors_allow_origin_regex
+    return bool(pattern and re.fullmatch(pattern, origin))
 
 
-def get_allowed_origins() -> List[str]:
-    raw = os.getenv("CORS_ALLOW_ORIGINS")
-    if not raw:
-        logger.warning(
-            "CORS_ALLOW_ORIGINS not set, defaulting to production frontend origin."
-        )
-        return ["https://app.aveli.app"]
+def _cors_error_headers(request: Request) -> dict[str, str]:
+    origin = request.headers.get("origin")
+    if not _origin_is_allowed(origin):
+        return {}
 
-    raw = raw.strip()
-    origins: List[str] = []
-
-    if raw.startswith("["):
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                origins = [
-                    _normalize_origin(origin)
-                    for origin in parsed
-                    if isinstance(origin, str)
-                ]
-            else:
-                raise ValueError("CORS_ALLOW_ORIGINS JSON must be a list.")
-        except Exception as exc:
-            logger.error("Failed to parse CORS_ALLOW_ORIGINS as JSON: %s", exc)
-            raise RuntimeError("Invalid CORS_ALLOW_ORIGINS format")
-    else:
-        origins = [
-            _normalize_origin(origin) for origin in raw.split(",") if origin.strip()
-        ]
-
-    origins = [origin for origin in origins if origin and origin != "*"]
-    if not origins:
-        raise RuntimeError("CORS_ALLOW_ORIGINS resolved to empty list.")
-
-    logger.info("CORS allowed origins loaded: %s", origins)
-    return origins
+    requested_headers = request.headers.get("access-control-request-headers") or "*"
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": _CORS_ALLOW_METHODS,
+        "Access-Control-Allow-Headers": requested_headers,
+        "Vary": "Origin",
+    }
 
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=get_allowed_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    # Allow all headers so browser preflights don't fail when uploads include
-    # additional metadata headers (e.g. resumable/tus uploads).
-    allow_headers=["*"],
+    RequestContextMiddleware
 )
 
-app.add_middleware(RequestContextMiddleware)
+
+@app.middleware("http")
+async def add_cors_response_headers(request: Request, call_next):
+    if request.method == "OPTIONS":
+        response = Response(status_code=200)
+    else:
+        response = await call_next(request)
+    if _origin_is_allowed(request.headers.get("origin")):
+        response.headers.setdefault("Access-Control-Allow-Methods", _CORS_ALLOW_METHODS)
+        response.headers.setdefault(
+            "Access-Control-Allow-Headers",
+            request.headers.get("access-control-request-headers") or "*",
+        )
+    return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def cors_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    response = await http_exception_handler(request, exc)
+    for key, value in _cors_error_headers(request).items():
+        response.headers.setdefault(key, value)
+    return response
 
 
 @app.exception_handler(Exception)
@@ -172,6 +169,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal Server Error"},
+        headers=_cors_error_headers(request),
     )
 
 
@@ -238,3 +236,16 @@ async def readyz():
 def metrics_endpoint():
     payload = generate_latest()
     return Response(content=payload, media_type=CONTENT_TYPE_LATEST)
+
+
+fastapi_app = app
+app = CORSMiddleware(
+    app=app,
+    allow_origins=settings.cors_allow_origins,
+    allow_origin_regex=settings.cors_allow_origin_regex,
+    allow_credentials=True,
+    allow_methods=["*"],
+    # Allow all headers so browser preflights don't fail when uploads include
+    # additional metadata headers (e.g. resumable/tus uploads).
+    allow_headers=["*"],
+)

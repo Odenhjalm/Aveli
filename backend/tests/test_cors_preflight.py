@@ -11,12 +11,15 @@ async def test_cors_preflight_allows_frontend_origin():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.options(
-            "/courses/me",
+            "/missing-preflight-target",
             headers={
                 "Origin": "https://app.aveli.app",
                 "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization,content-type",
             },
         )
 
-    assert response.status_code in (200, 204)
+    assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "https://app.aveli.app"
+    assert response.headers.get("access-control-allow-methods")
+    assert response.headers.get("access-control-allow-headers")
