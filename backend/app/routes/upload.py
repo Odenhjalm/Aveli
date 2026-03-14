@@ -835,10 +835,10 @@ async def upload_lesson_image(
         storage_bucket=_PUBLIC_MEDIA_BUCKET,
         storage_path=normalized_path,
     )
-    media_asset = await _create_ready_lesson_media_asset(
+    row = await _persist_lesson_media(
         owner_id=owner_id,
         lesson_id=lesson_id_str,
-        storage_path=persisted_storage_path,
+        storage_path=normalized_path,
         original_name=file.filename,
         content_type=content_type,
         size=size,
