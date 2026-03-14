@@ -1,0 +1,197 @@
+Stopping containers...
+Stopped supabase local development setup.
+Local data are backed up to docker volume. Use docker to show them: docker volume ls --filter label=com.supabase.cli.project
+Using workdir /tmp/aveli_launch_reset
+ analytics Skipped - Image is already present locally 
+ vector Skipped - Image is already present locally 
+ api Skipped - Image is already present locally 
+ studio Skipped - Image is already present locally 
+ mailpit Skipped - Image is already present locally 
+ edgeRuntime Skipped - Image is already present locally 
+ realtime Skipped - Image is already present locally 
+ imgProxy Skipped - Image is already present locally 
+ pgmeta Skipped - Image is already present locally 
+ db Skipped - Image is already present locally 
+ gateway Skipped - Image is already present locally 
+ auth Skipped - Image is already present locally 
+ storage Skipped - Image is already present locally 
+Starting database from backup...
+Starting containers...
+Waiting for health checks...
+Started supabase local development setup.
+
+
+  Development Tools                 
+
+ Studio   http://127.0.0.1:54323     
+ Mailpit  http://127.0.0.1:54324     
+ MCP      http://127.0.0.1:54321/mcp 
+
+
+
+  APIs                                              
+
+ Project URL     http://127.0.0.1:54321              
+ REST            http://127.0.0.1:54321/rest/v1      
+ GraphQL         http://127.0.0.1:54321/graphql/v1   
+ Edge Functions  http://127.0.0.1:54321/functions/v1 
+
+
+
+  Database                                                    
+
+ URL  postgresql://postgres:postgres@127.0.0.1:54322/postgres 
+
+
+
+  Authentication Keys                                       
+
+ Publishable  [REDACTED]
+ Secret       [REDACTED]
+
+
+
+  Storage (S3)                                                               
+
+ URL         http://127.0.0.1:54321/storage/v1/s3                             
+ Access Key  [REDACTED]
+ Secret Key  [REDACTED]
+ Region      local                                                            
+
+
+Using workdir /tmp/aveli_launch_reset
+Using workdir /tmp/aveli_launch_reset
+Resetting local database...
+Recreating database...
+Initialising schema...
+Seeding globals from roles.sql...
+Applying migration 0001_schema.sql...
+NOTICE (42710): extension "pgcrypto" already exists, skipping
+NOTICE (42710): extension "uuid-ossp" already exists, skipping
+NOTICE (42P06): schema "auth" already exists, skipping
+Applying migration 0002_tables.sql...
+NOTICE (00000): view "service_reviews" does not exist, skipping
+Applying migration 0003_functions_triggers.sql...
+NOTICE (00000): trigger "trg_courses_touch" for relation "app.courses" does not exist, skipping
+NOTICE (00000): trigger "trg_modules_touch" for relation "app.modules" does not exist, skipping
+NOTICE (00000): trigger "trg_lessons_touch" for relation "app.lessons" does not exist, skipping
+NOTICE (00000): trigger "trg_services_touch" for relation "app.services" does not exist, skipping
+NOTICE (00000): trigger "trg_orders_touch" for relation "app.orders" does not exist, skipping
+NOTICE (00000): trigger "trg_payments_touch" for relation "app.payments" does not exist, skipping
+NOTICE (00000): trigger "trg_sessions_touch" for relation "app.sessions" does not exist, skipping
+NOTICE (00000): trigger "trg_session_slots_touch" for relation "app.session_slots" does not exist, skipping
+NOTICE (00000): trigger "trg_seminars_touch" for relation "app.seminars" does not exist, skipping
+NOTICE (00000): trigger "trg_seminar_sessions_touch" for relation "app.seminar_sessions" does not exist, skipping
+NOTICE (00000): trigger "trg_seminar_recordings_touch" for relation "app.seminar_recordings" does not exist, skipping
+NOTICE (00000): trigger "trg_livekit_webhook_jobs_touch" for relation "app.livekit_webhook_jobs" does not exist, skipping
+NOTICE (00000): trigger "trg_profiles_touch" for relation "app.profiles" does not exist, skipping
+NOTICE (00000): trigger "trg_teacher_approvals_touch" for relation "app.teacher_approvals" does not exist, skipping
+NOTICE (00000): trigger "trg_teacher_payout_methods_touch" for relation "app.teacher_payout_methods" does not exist, skipping
+NOTICE (00000): trigger "trg_teachers_touch" for relation "app.teachers" does not exist, skipping
+NOTICE (00000): trigger "trg_course_display_priorities_touch" for relation "app.course_display_priorities" does not exist, skipping
+NOTICE (00000): trigger "trg_teacher_profile_media_touch" for relation "app.teacher_profile_media" does not exist, skipping
+NOTICE (00000): trigger "trg_course_entitlements_touch" for relation "app.course_entitlements" does not exist, skipping
+NOTICE (00000): trigger "trg_course_products_updated" for relation "app.course_products" does not exist, skipping
+Applying migration 0004_rls_enable.sql...
+NOTICE (00000): policy "service_role_full_access" for relation "app.profiles" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.courses" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.modules" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.lessons" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.media_objects" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.lesson_media" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.enrollments" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.services" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.sessions" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.session_slots" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.orders" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.payments" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.memberships" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.subscriptions" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.payment_events" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.billing_logs" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.course_entitlements" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.course_products" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.entitlements" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.purchases" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.guest_claim_tokens" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.stripe_customers" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.refresh_tokens" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.auth_events" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.app_config" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.activities" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.seminars" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.seminar_attendees" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.seminar_sessions" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.seminar_recordings" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.livekit_webhook_jobs" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.teachers" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.teacher_payout_methods" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.teacher_permissions" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.teacher_directory" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.teacher_approvals" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.course_display_priorities" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.teacher_profile_media" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.course_bundles" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.course_bundle_courses" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.certificates" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.course_quizzes" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.quiz_questions" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.meditations" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.tarot_requests" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.reviews" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.posts" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.notifications" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.follows" does not exist, skipping
+NOTICE (00000): policy "service_role_full_access" for relation "app.messages" does not exist, skipping
+Applying migration 0005_policies.sql...
+NOTICE (00000): policy "profiles_self_read" for relation "app.profiles" does not exist, skipping
+NOTICE (00000): policy "profiles_self_write" for relation "app.profiles" does not exist, skipping
+NOTICE (00000): policy "courses_public_read" for relation "app.courses" does not exist, skipping
+NOTICE (00000): policy "courses_owner_write" for relation "app.courses" does not exist, skipping
+NOTICE (00000): policy "modules_course_owner" for relation "app.modules" does not exist, skipping
+NOTICE (00000): policy "lessons_select" for relation "app.lessons" does not exist, skipping
+NOTICE (00000): policy "lessons_write" for relation "app.lessons" does not exist, skipping
+NOTICE (00000): policy "media_owner_rw" for relation "app.media_objects" does not exist, skipping
+NOTICE (00000): policy "lesson_media_select" for relation "app.lesson_media" does not exist, skipping
+NOTICE (00000): policy "lesson_media_write" for relation "app.lesson_media" does not exist, skipping
+NOTICE (00000): policy "enrollments_user" for relation "app.enrollments" does not exist, skipping
+NOTICE (00000): policy "services_public_read" for relation "app.services" does not exist, skipping
+NOTICE (00000): policy "services_owner_rw" for relation "app.services" does not exist, skipping
+NOTICE (00000): policy "orders_user_read" for relation "app.orders" does not exist, skipping
+NOTICE (00000): policy "orders_user_write" for relation "app.orders" does not exist, skipping
+NOTICE (00000): policy "payments_read" for relation "app.payments" does not exist, skipping
+NOTICE (00000): policy "payout_teacher" for relation "app.teacher_payout_methods" does not exist, skipping
+NOTICE (00000): policy "seminars_public_read" for relation "app.seminars" does not exist, skipping
+NOTICE (00000): policy "seminars_host_rw" for relation "app.seminars" does not exist, skipping
+NOTICE (00000): policy "attendees_read" for relation "app.seminar_attendees" does not exist, skipping
+NOTICE (00000): policy "attendees_write" for relation "app.seminar_attendees" does not exist, skipping
+NOTICE (00000): policy "seminar_sessions_host" for relation "app.seminar_sessions" does not exist, skipping
+NOTICE (00000): policy "seminar_recordings_read" for relation "app.seminar_recordings" does not exist, skipping
+NOTICE (00000): policy "activities_read" for relation "app.activities" does not exist, skipping
+NOTICE (00000): policy "posts_author" for relation "app.posts" does not exist, skipping
+NOTICE (00000): policy "notifications_user" for relation "app.notifications" does not exist, skipping
+NOTICE (00000): policy "follows_user" for relation "app.follows" does not exist, skipping
+NOTICE (00000): policy "messages_user" for relation "app.messages" does not exist, skipping
+NOTICE (00000): policy "course_display_owner" for relation "app.course_display_priorities" does not exist, skipping
+NOTICE (00000): policy "tpm_teacher" for relation "app.teacher_profile_media" does not exist, skipping
+NOTICE (00000): policy "tpm_public_read" for relation "app.teacher_profile_media" does not exist, skipping
+NOTICE (00000): policy "teachers_owner" for relation "app.teachers" does not exist, skipping
+NOTICE (00000): policy "sessions_public_read" for relation "app.sessions" does not exist, skipping
+NOTICE (00000): policy "sessions_owner" for relation "app.sessions" does not exist, skipping
+NOTICE (00000): policy "session_slots_owner" for relation "app.session_slots" does not exist, skipping
+NOTICE (00000): policy "memberships_self" for relation "app.memberships" does not exist, skipping
+NOTICE (00000): policy "reviews_user" for relation "app.reviews" does not exist, skipping
+NOTICE (00000): policy "course_bundles_public_read" for relation "app.course_bundles" does not exist, skipping
+NOTICE (00000): policy "course_bundles_owner_write" for relation "app.course_bundles" does not exist, skipping
+NOTICE (00000): policy "course_bundle_courses_owner" for relation "app.course_bundle_courses" does not exist, skipping
+NOTICE (00000): policy "course_entitlements_self_read" for relation "app.course_entitlements" does not exist, skipping
+NOTICE (00000): policy "course_products_owner" for relation "app.course_products" does not exist, skipping
+NOTICE (00000): policy "entitlements_student" for relation "app.entitlements" does not exist, skipping
+NOTICE (00000): policy "entitlements_teacher" for relation "app.entitlements" does not exist, skipping
+NOTICE (00000): policy "purchases_owner_read" for relation "app.purchases" does not exist, skipping
+Applying migration 0006_storage.sql...
+NOTICE (00000): Skipping storage.objects policies: owner=supabase_storage_admin
+WARN: no files matched pattern: supabase/seed.sql
+Restarting containers...
+Finished supabase db reset on branch main.
+db reset --local: SUCCESS
