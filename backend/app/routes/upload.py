@@ -346,13 +346,18 @@ async def _persist_lesson_media(
     checksum: str | None,
     storage_bucket: str = _LESSON_MEDIA_BUCKET,
     course_id: str | None = None,
+    storage_object_verified: bool = False,
 ) -> dict[str, Any]:
     kind = _detect_kind(content_type)
     normalized_path = media_paths.validate_new_upload_object_path(storage_path)
-    await _assert_storage_object_exists(
-        storage_bucket=storage_bucket,
-        storage_path=normalized_path,
-    )
+    if not storage_object_verified:
+        # Browser/server uploads can immediately persist the object before we
+        # write the lesson row, but signed public uploads may not be observable
+        # through the storage catalog in the same request cycle.
+        await _assert_storage_object_exists(
+            storage_bucket=storage_bucket,
+            storage_path=normalized_path,
+        )
     media_asset = await _create_ready_lesson_media_asset(
         owner_id=owner_id,
         lesson_id=lesson_id,
@@ -738,41 +743,18 @@ async def upload_lesson_image(
         persisted_storage_path = storage_key
 
     checksum = hashlib.sha256(payload).hexdigest()
-    normalized_path = media_paths.validate_new_upload_object_path(persisted_storage_path)
-    await _assert_storage_object_exists(
-        storage_bucket=_PUBLIC_MEDIA_BUCKET,
-        storage_path=normalized_path,
-    )
-    media_asset = await _create_ready_lesson_media_asset(
+    row = await _persist_lesson_media(
         owner_id=owner_id,
         lesson_id=lesson_id_str,
-        course_id=str(lesson_course_id),
-        kind="image",
-        storage_path=normalized_path,
-        storage_bucket=_PUBLIC_MEDIA_BUCKET,
+        storage_path=persisted_storage_path,
+        original_name=file.filename,
         content_type=content_type,
         size=size,
-        original_name=file.filename,
+        checksum=checksum,
+        storage_bucket=_PUBLIC_MEDIA_BUCKET,
+        course_id=str(lesson_course_id),
+        storage_object_verified=True,
     )
-    try:
-        row = await models.add_lesson_media_entry_with_position_retry(
-            lesson_id=lesson_id_str,
-            kind="image",
-            storage_path=normalized_path,
-            storage_bucket=_PUBLIC_MEDIA_BUCKET,
-            media_id=None,
-            media_asset_id=str(media_asset["id"]),
-            max_retries=10,
-        )
-    except Exception:
-        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
-        raise
-    if not row:
-        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Could not allocate lesson media position",
-        )
 
     media_payload = dict(row)
     media_payload["kind"] = "image"

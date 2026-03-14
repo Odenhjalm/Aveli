@@ -139,21 +139,14 @@ app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     RequestContextMiddleware
 )
-
-
-@app.middleware("http")
-async def add_cors_response_headers(request: Request, call_next):
-    if request.method == "OPTIONS":
-        response = Response(status_code=200)
-    else:
-        response = await call_next(request)
-    if _origin_is_allowed(request.headers.get("origin")):
-        response.headers.setdefault("Access-Control-Allow-Methods", _CORS_ALLOW_METHODS)
-        response.headers.setdefault(
-            "Access-Control-Allow-Headers",
-            request.headers.get("access-control-request-headers") or "*",
-        )
-    return response
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allow_origins,
+    allow_origin_regex=settings.cors_allow_origin_regex,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -239,13 +232,3 @@ def metrics_endpoint():
 
 
 fastapi_app = app
-app = CORSMiddleware(
-    app=app,
-    allow_origins=settings.cors_allow_origins,
-    allow_origin_regex=settings.cors_allow_origin_regex,
-    allow_credentials=True,
-    allow_methods=["*"],
-    # Allow all headers so browser preflights don't fail when uploads include
-    # additional metadata headers (e.g. resumable/tus uploads).
-    allow_headers=["*"],
-)
