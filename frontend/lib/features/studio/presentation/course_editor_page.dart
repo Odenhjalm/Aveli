@@ -3960,7 +3960,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (contentType.startsWith('image/')) return 'image';
     if (contentType.startsWith('video/')) return 'video';
     if (contentType.startsWith('audio/')) return 'audio';
-    if (contentType == 'application/pdf') return 'document';
+    if (contentType == 'application/pdf') return 'pdf';
     return 'other';
   }
 

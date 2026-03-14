@@ -80,7 +80,9 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
     try:
         course_id, lesson_id = await create_lesson(async_client, headers)
 
-        async def fake_create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+        async def fake_create_upload_url(
+            self, path, *, content_type, upsert, cache_seconds
+        ):
             return storage_module.PresignedUpload(
                 url=f"https://storage.local/{path}",
                 headers={
@@ -97,6 +99,7 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
             fake_create_upload_url,
             raising=True,
         )
+
         async def fake_storage_object_exists(*, storage_bucket, storage_path):
             assert storage_bucket == "course-media"
             assert storage_path.startswith(f"lessons/{lesson_id}/")
@@ -171,16 +174,96 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
 
 
 @pytest.mark.anyio("asyncio")
+async def test_direct_lesson_pdf_upload_flow(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        _course_id, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self, path, *, content_type, upsert, cache_seconds
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={
+                    "x-upsert": "true" if upsert else "false",
+                    "content-type": content_type,
+                    "cache-control": f"max-age={cache_seconds}",
+                },
+                path=path,
+                expires_in=3600,
+            )
+
+        monkeypatch.setattr(
+            "app.services.storage_service.StorageService.create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+
+        async def fake_storage_object_exists(*, storage_bucket, storage_path):
+            assert storage_bucket == "course-media"
+            assert storage_path.startswith(f"lessons/{lesson_id}/")
+            return True
+
+        monkeypatch.setattr(
+            "app.routes.upload._storage_object_exists",
+            fake_storage_object_exists,
+            raising=True,
+        )
+
+        presign_resp = await async_client.post(
+            f"/studio/lessons/{lesson_id}/media/presign",
+            headers=headers,
+            json={
+                "filename": "guide.pdf",
+                "content_type": "application/pdf",
+                "media_type": "pdf",
+            },
+        )
+        assert presign_resp.status_code == 200, presign_resp.text
+        presign_data = presign_resp.json()
+
+        complete_resp = await async_client.post(
+            f"/studio/lessons/{lesson_id}/media/complete",
+            headers=headers,
+            json={
+                "storage_path": presign_data["storage_path"],
+                "storage_bucket": presign_data["storage_bucket"],
+                "content_type": "application/pdf",
+                "byte_size": 1024,
+                "original_name": "guide.pdf",
+            },
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+        body = complete_resp.json()
+        assert body["kind"] == "pdf"
+        assert body["storage_path"] == presign_data["storage_path"]
+        assert body["storage_bucket"] == presign_data["storage_bucket"]
+        assert body["content_type"] == "application/pdf"
+        assert body.get("media_asset_id")
+        assert body.get("media_id") is None
+        assert body.get("media_state") == "ready"
+        assert body.get("original_name") == "guide.pdf"
+    finally:
+        await cleanup_user(user_id)
+
+
+@pytest.mark.anyio("asyncio")
 async def test_complete_rejects_bucket_mismatch(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         course_id, lesson_id = await create_lesson(async_client, headers)
         # Short-circuit storage presign
 
-        async def fake_create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+        async def fake_create_upload_url(
+            self, path, *, content_type, upsert, cache_seconds
+        ):
             return storage_module.PresignedUpload(
                 url=f"https://storage.local/{path}",
-                headers={"x-upsert": "true", "content-type": content_type, "cache-control": "max-age=60"},
+                headers={
+                    "x-upsert": "true",
+                    "content-type": content_type,
+                    "cache-control": "max-age=60",
+                },
                 path=path,
                 expires_in=60,
             )
@@ -216,13 +299,17 @@ async def test_complete_rejects_bucket_mismatch(async_client, monkeypatch):
 
 
 @pytest.mark.anyio("asyncio")
-async def test_direct_lesson_media_upload_requires_course_owner(async_client, monkeypatch):
+async def test_direct_lesson_media_upload_requires_course_owner(
+    async_client, monkeypatch
+):
     owner_headers, owner_id = await register_teacher(async_client)
     other_headers, other_id = await register_teacher(async_client)
     try:
         _, lesson_id = await create_lesson(async_client, owner_headers)
 
-        async def fake_create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+        async def fake_create_upload_url(
+            self, path, *, content_type, upsert, cache_seconds
+        ):
             return storage_module.PresignedUpload(
                 url=f"https://storage.local/{path}",
                 headers={
@@ -243,7 +330,11 @@ async def test_direct_lesson_media_upload_requires_course_owner(async_client, mo
         presign_denied = await async_client.post(
             f"/studio/lessons/{lesson_id}/media/presign",
             headers=other_headers,
-            json={"filename": "demo.mp3", "content_type": "audio/mpeg", "media_type": "audio"},
+            json={
+                "filename": "demo.mp3",
+                "content_type": "audio/mpeg",
+                "media_type": "audio",
+            },
         )
         assert presign_denied.status_code == 403, presign_denied.text
 

@@ -92,7 +92,9 @@ def _storage_candidates(
     storage_path: str,
 ) -> list[tuple[str, str]]:
     normalized_bucket = str(storage_bucket or "").strip()
-    normalized_path = media_paths.normalize_storage_path(normalized_bucket, storage_path)
+    normalized_path = media_paths.normalize_storage_path(
+        normalized_bucket, storage_path
+    )
     candidates = [(normalized_bucket, normalized_path)]
     bucket_prefix = f"{normalized_bucket}/"
     if normalized_path.startswith(bucket_prefix):
@@ -112,7 +114,10 @@ def _local_storage_candidates(bucket: str, storage_path: str) -> list[Path]:
 
 async def _storage_object_exists(*, storage_bucket: str, storage_path: str) -> bool:
     normalized_path = media_paths.normalize_storage_path(storage_bucket, storage_path)
-    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
+    (
+        existence,
+        storage_table_available,
+    ) = await storage_objects.fetch_storage_object_existence(
         _storage_candidates(
             storage_bucket=storage_bucket,
             storage_path=normalized_path,
@@ -120,12 +125,19 @@ async def _storage_object_exists(*, storage_bucket: str, storage_path: str) -> b
     )
     if storage_table_available and any(existence.values()):
         return True
-    return any(candidate.is_file() for candidate in _local_storage_candidates(storage_bucket, normalized_path))
+    return any(
+        candidate.is_file()
+        for candidate in _local_storage_candidates(storage_bucket, normalized_path)
+    )
 
 
-async def _assert_storage_object_exists(*, storage_bucket: str, storage_path: str) -> str:
+async def _assert_storage_object_exists(
+    *, storage_bucket: str, storage_path: str
+) -> str:
     normalized_path = media_paths.normalize_storage_path(storage_bucket, storage_path)
-    if await _storage_object_exists(storage_bucket=storage_bucket, storage_path=normalized_path):
+    if await _storage_object_exists(
+        storage_bucket=storage_bucket, storage_path=normalized_path
+    ):
         return normalized_path
     logger.error(
         "Upload aborted because storage object is missing: bucket=%s path=%s",
@@ -140,7 +152,9 @@ async def _assert_storage_object_exists(*, storage_bucket: str, storage_path: st
 
 def _asset_media_type(kind: str) -> str:
     normalized = str(kind or "").strip().lower()
-    if normalized in {"image", "video", "audio", "document"}:
+    if normalized in {"document", "pdf"}:
+        return "document"
+    if normalized in {"image", "video", "audio"}:
         return normalized
     return "document"
 
@@ -213,7 +227,9 @@ async def _create_ready_lesson_media_asset(
 def _safe_join(base: Path, *parts: str) -> Path:
     candidate = base.joinpath(*parts).resolve()
     if not str(candidate).startswith(str(base.resolve())):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path"
+        )
     return candidate
 
 
@@ -246,7 +262,7 @@ def _detect_kind(content_type: str | None) -> str:
     if lower.startswith("audio/"):
         return "audio"
     if lower == "application/pdf":
-        return "document"
+        return "pdf"
     return "other"
 
 
@@ -282,17 +298,24 @@ async def _write_upload(
     max_bytes: int | None = None,
 ) -> UploadWriteResult:
     if not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing filename")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing filename"
+        )
 
     normalized_content_type = (file.content_type or "").lower()
-    if allowed_prefixes and not any(normalized_content_type.startswith(prefix) for prefix in allowed_prefixes):
+    if allowed_prefixes and not any(
+        normalized_content_type.startswith(prefix) for prefix in allowed_prefixes
+    ):
         logger.warning(
             "Rejected upload with unexpected content type: filename=%s content_type=%s allowed=%s",
             file.filename,
             normalized_content_type,
             allowed_prefixes,
         )
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported media type")
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported media type",
+        )
 
     suffix = Path(file.filename).suffix.lower()
     destination_dir.mkdir(parents=True, exist_ok=True)
@@ -301,7 +324,9 @@ async def _write_upload(
 
     payload = await file.read()
     if not payload:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty"
+        )
 
     size = len(payload)
     if max_bytes is not None and size > max_bytes:
@@ -409,9 +434,14 @@ async def upload_profile_media(
 
     payload = await file.read()
     if not payload:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty"
+        )
     if len(payload) > _PROFILE_MAX_BYTES:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large",
+        )
 
     content_type = (
         file.content_type
@@ -419,8 +449,14 @@ async def upload_profile_media(
         or "application/octet-stream"
     )
     normalized_content_type = content_type.lower()
-    if not any(normalized_content_type.startswith(prefix) for prefix in _ALLOWED_PROFILE_PREFIXES):
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported media type")
+    if not any(
+        normalized_content_type.startswith(prefix)
+        for prefix in _ALLOWED_PROFILE_PREFIXES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported media type",
+        )
 
     if storage_service.public_storage_service.enabled:
         try:
@@ -432,7 +468,9 @@ async def upload_profile_media(
             )
             timeout = httpx.Timeout(10.0, read=None)
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.put(upload.url, headers=dict(upload.headers), content=payload)
+                response = await client.put(
+                    upload.url, headers=dict(upload.headers), content=payload
+                )
             if response.status_code >= 400:
                 logger.warning(
                     "Supabase avatar upload failed: user_id=%s status=%s path=%s",
@@ -445,7 +483,11 @@ async def upload_profile_media(
                     detail="Failed to upload avatar",
                 )
         except storage_service.StorageServiceError as exc:
-            logger.warning("Supabase avatar upload signing failed: user_id=%s error=%s", user_id, exc)
+            logger.warning(
+                "Supabase avatar upload signing failed: user_id=%s error=%s",
+                user_id,
+                exc,
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Storage unavailable",
@@ -535,18 +577,24 @@ async def upload_course_media(
     lesson_is_intro: bool | None = None
     if lesson_id:
         _, lesson_course_id = await courses_service.lesson_course_ids(lesson_id)
-        if not lesson_course_id or not await models.is_course_owner(owner, lesson_course_id):
+        if not lesson_course_id or not await models.is_course_owner(
+            owner, lesson_course_id
+        ):
             logger.warning(
                 "Permission denied: course media upload user_id=%s course_id=%s lesson_id=%s",
                 owner_id,
                 lesson_course_id,
                 lesson_id,
             )
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner"
+            )
         resolved_course_id = lesson_course_id
         lesson_row = await courses_service.fetch_lesson(lesson_id)
         if not lesson_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found"
+            )
         lesson_is_intro = bool(lesson_row.get("is_intro"))
     elif course_id and not await models.is_course_owner(owner, course_id):
         logger.warning(
@@ -554,7 +602,9 @@ async def upload_course_media(
             owner_id,
             course_id,
         )
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner"
+        )
 
     effective_is_intro = is_intro if is_intro is not None else lesson_is_intro
     if effective_is_intro is None:
@@ -562,26 +612,46 @@ async def upload_course_media(
 
     storage_bucket = _COURSE_MEDIA_BUCKET
     if lesson_id:
-        is_image_upload = media_type == UploadMediaType.image or normalized_content_type.startswith("image/")
-        storage_bucket = _PUBLIC_MEDIA_BUCKET if (is_image_upload or effective_is_intro) else _COURSE_MEDIA_BUCKET
+        is_image_upload = (
+            media_type == UploadMediaType.image
+            or normalized_content_type.startswith("image/")
+        )
+        storage_bucket = (
+            _PUBLIC_MEDIA_BUCKET
+            if (is_image_upload or effective_is_intro)
+            else _COURSE_MEDIA_BUCKET
+        )
 
-    resolved_course_id_str: str | None = str(resolved_course_id) if resolved_course_id else None
+    resolved_course_id_str: str | None = (
+        str(resolved_course_id) if resolved_course_id else None
+    )
     lesson_id_str = str(lesson_id) if lesson_id else None
 
     if lesson_id:
         if not resolved_course_id_str or not lesson_id_str:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing course_id for lesson media")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing course_id for lesson media",
+            )
         temp_storage_path = media_paths.build_lesson_passthrough_object_path(
             course_id=resolved_course_id_str,
             lesson_id=lesson_id_str,
-            media_kind=media_type.value if media_type else _detect_kind(normalized_content_type),
+            media_kind=media_type.value
+            if media_type
+            else _detect_kind(normalized_content_type),
             filename=file.filename or "media",
         )
         storage_relative_path = Path(temp_storage_path)
     else:
         if not resolved_course_id_str:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing course_id")
-        storage_relative_path = Path("courses") / resolved_course_id_str / f"{uuid4().hex}_{Path(file.filename or 'media').name}"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Missing course_id"
+            )
+        storage_relative_path = (
+            Path("courses")
+            / resolved_course_id_str
+            / f"{uuid4().hex}_{Path(file.filename or 'media').name}"
+        )
     relative_dir = Path(storage_bucket) / storage_relative_path.parent
 
     allowed_prefixes = type_prefixes
@@ -592,10 +662,15 @@ async def upload_course_media(
 
     if allowed_prefixes and (
         not normalized_content_type
-        or not any(normalized_content_type.startswith(prefix) for prefix in allowed_prefixes)
+        or not any(
+            normalized_content_type.startswith(prefix) for prefix in allowed_prefixes
+        )
     ):
         if not normalized_content_type or normalized_content_type not in allowed_exact:
-            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported media type")
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported media type",
+            )
 
     destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)
     write_result = await _write_upload(
@@ -659,19 +734,29 @@ async def upload_lesson_image(
     owner_id = str(owner)
     lesson_id_str = str(lesson_id).strip()
     if not lesson_id_str:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lesson_id is required")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="lesson_id is required"
+        )
 
     _, lesson_course_id = await courses_service.lesson_course_ids(lesson_id_str)
-    if not lesson_course_id or not await models.is_course_owner(owner, lesson_course_id):
+    if not lesson_course_id or not await models.is_course_owner(
+        owner, lesson_course_id
+    ):
         logger.warning(
             "Permission denied: lesson image upload user_id=%s lesson_id=%s course_id=%s",
             owner_id,
             lesson_id_str,
             lesson_course_id,
         )
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner"
+        )
 
-    if course_id and str(course_id).strip() and str(course_id).strip() != str(lesson_course_id):
+    if (
+        course_id
+        and str(course_id).strip()
+        and str(course_id).strip() != str(lesson_course_id)
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="course_id does not match lesson ownership",
@@ -680,7 +765,9 @@ async def upload_lesson_image(
     content_type, extension = _normalize_lesson_image_upload(file)
     payload = await file.read()
     if not payload:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty"
+        )
 
     max_bytes = max(1, int(settings.media_upload_max_image_bytes))
     size = len(payload)
@@ -743,7 +830,12 @@ async def upload_lesson_image(
         persisted_storage_path = storage_key
 
     checksum = hashlib.sha256(payload).hexdigest()
-    row = await _persist_lesson_media(
+    normalized_path = media_paths.validate_new_upload_object_path(persisted_storage_path)
+    await _assert_storage_object_exists(
+        storage_bucket=_PUBLIC_MEDIA_BUCKET,
+        storage_path=normalized_path,
+    )
+    media_asset = await _create_ready_lesson_media_asset(
         owner_id=owner_id,
         lesson_id=lesson_id_str,
         storage_path=persisted_storage_path,
@@ -811,16 +903,25 @@ async def upload_public_media(
 @files_router.get("/{path:path}", name="serve_uploaded_file")
 async def serve_uploaded_file(path: str):
     if not path:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing path")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing path"
+        )
     relative = Path(path)
     if relative.is_absolute() or ".." in relative.parts:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path"
+        )
     if not _is_public_path(relative):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Media not publicly accessible")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Media not publicly accessible",
+        )
 
     file_path = _safe_join(UPLOADS_ROOT, *relative.parts)
     if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+        )
 
     media_type, _ = mimetypes.guess_type(file_path.name)
     resolved_media_type = media_type or "application/octet-stream"

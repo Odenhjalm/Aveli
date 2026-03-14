@@ -173,20 +173,20 @@ class StudioRepository {
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    if (_isWavUpload(contentType, filename)) {
-      return _uploadLessonWavViaPipeline(
+    if (_isProcessedLessonAudioUpload(contentType, filename)) {
+      return _uploadLessonAudioViaPipeline(
         courseId: courseId,
         lessonId: lessonId,
         data: data,
         filename: filename,
-        contentType: _normalizeWavMimeType(contentType, filename),
+        contentType: _normalizeProcessedAudioMimeType(contentType, filename),
         onProgress: onProgress,
         cancelToken: cancelToken,
       );
     }
 
     final mediaType = _detectUploadMediaType(contentType);
-    if (mediaType == 'video') {
+    if (mediaType == 'video' || mediaType == 'document') {
       return _uploadLessonMediaViaDirectPipeline(
         lessonId: lessonId,
         data: data,
@@ -305,7 +305,7 @@ class StudioRepository {
     return Map<String, dynamic>.from(complete);
   }
 
-  Future<Map<String, dynamic>> _uploadLessonWavViaPipeline({
+  Future<Map<String, dynamic>> _uploadLessonAudioViaPipeline({
     required String courseId,
     required String lessonId,
     required Uint8List data,
@@ -345,7 +345,7 @@ class StudioRepository {
     return {
       'media_asset_id': upload.mediaId,
       'media_state': 'uploaded',
-      'ingest_format': 'wav',
+      'ingest_format': _lessonAudioIngestFormat(contentType, filename) ?? 'wav',
       'original_name': filename,
       'content_type': contentType,
     };
@@ -672,29 +672,47 @@ String? _detectUploadMediaType(String contentType) {
   return null;
 }
 
-bool _isWavUpload(String contentType, String filename) {
+String? _lessonAudioIngestFormat(String contentType, String filename) {
   final lower = contentType.toLowerCase();
+  final lowerFilename = filename.toLowerCase();
   if (lower == 'audio/wav' ||
       lower == 'audio/x-wav' ||
       lower == 'audio/wave' ||
       lower == 'audio/vnd.wave') {
-    return true;
+    return 'wav';
   }
-  return filename.toLowerCase().endsWith('.wav');
+  if (lowerFilename.endsWith('.wav')) {
+    return 'wav';
+  }
+  if (lower == 'audio/m4a' || lower == 'audio/mp4') {
+    return 'm4a';
+  }
+  if (lowerFilename.endsWith('.m4a')) {
+    return 'm4a';
+  }
+  return null;
 }
 
-String _normalizeWavMimeType(String contentType, String filename) {
+bool _isProcessedLessonAudioUpload(String contentType, String filename) {
+  return _lessonAudioIngestFormat(contentType, filename) != null;
+}
+
+String _normalizeProcessedAudioMimeType(String contentType, String filename) {
   final lower = contentType.toLowerCase();
-  if (lower == 'audio/wav' || lower == 'audio/x-wav') {
-    return lower;
+  switch (_lessonAudioIngestFormat(contentType, filename)) {
+    case 'wav':
+      if (lower == 'audio/wav' || lower == 'audio/x-wav') {
+        return lower;
+      }
+      return 'audio/wav';
+    case 'm4a':
+      if (lower == 'audio/m4a' || lower == 'audio/mp4') {
+        return lower;
+      }
+      return 'audio/m4a';
+    default:
+      return lower.isEmpty ? 'application/octet-stream' : lower;
   }
-  if (lower == 'audio/wave' || lower == 'audio/vnd.wave') {
-    return 'audio/wav';
-  }
-  if (filename.toLowerCase().endsWith('.wav')) {
-    return 'audio/wav';
-  }
-  return lower.isEmpty ? 'audio/wav' : lower;
 }
 
 class UploadProgress {

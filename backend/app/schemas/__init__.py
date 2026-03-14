@@ -1026,7 +1026,7 @@ class MediaPresignResponse(BaseModel):
 class LessonMediaPresignRequest(BaseModel):
     filename: str
     content_type: str | None = None
-    media_type: Literal["image", "audio", "video", "document"] | None = None
+    media_type: Literal["image", "audio", "video", "document", "pdf"] | None = None
     is_intro: bool | None = None
 
 

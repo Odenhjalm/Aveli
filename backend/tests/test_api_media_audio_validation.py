@@ -2,6 +2,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.routes import api_media
+from app.routes import upload as upload_routes
 from app.services import media_resolver
 from app.utils import media_paths
 
@@ -19,8 +20,7 @@ def test_audio_ingest_format_rejects_deprecated_mp3():
 
     assert exc_info.value.status_code == 400
     assert (
-        exc_info.value.detail
-        == "MP3 uploads are deprecated. Please upload WAV or M4A."
+        exc_info.value.detail == "MP3 uploads are deprecated. Please upload WAV or M4A."
     )
 
 
@@ -110,3 +110,19 @@ def test_media_paths_build_lesson_passthrough_object_path_uses_allowed_prefixes(
         filename="demo.mp4",
     )
     assert video_path.startswith("courses/course-1/lessons/lesson-1/video/")
+
+    pdf_path = media_paths.build_lesson_passthrough_object_path(
+        course_id="course-1",
+        lesson_id="lesson-1",
+        media_kind="pdf",
+        filename="guide.pdf",
+    )
+    assert pdf_path.startswith("courses/course-1/lessons/lesson-1/documents/")
+
+
+def test_upload_detect_kind_uses_pdf_for_application_pdf():
+    assert upload_routes._detect_kind("application/pdf") == "pdf"
+
+
+def test_asset_media_type_maps_pdf_kind_to_document_asset():
+    assert upload_routes._asset_media_type("pdf") == "document"

@@ -71,7 +71,9 @@ async def create_lesson(async_client, headers, *, is_intro: bool = False):
     return course_id, lesson_id
 
 
-async def test_upload_course_media_legacy_route_accepts_audio(async_client, tmp_path, monkeypatch):
+async def test_upload_course_media_legacy_route_accepts_audio(
+    async_client, tmp_path, monkeypatch
+):
     headers, _ = await register_teacher(async_client)
     course_id, lesson_id = await create_lesson(async_client, headers)
 
@@ -96,7 +98,9 @@ async def test_upload_course_media_legacy_route_accepts_audio(async_client, tmp_
     assert (media.get("download_url") or "").startswith("/studio/media/")
 
 
-async def test_upload_public_media_returns_public_url(async_client, tmp_path, monkeypatch):
+async def test_upload_public_media_returns_public_url(
+    async_client, tmp_path, monkeypatch
+):
     headers, _ = await register_teacher(async_client)
 
     from app.routes import upload as upload_routes
@@ -130,7 +134,9 @@ async def test_upload_preflight_includes_cors_headers(async_client):
     assert "access-control-allow-headers" in resp.headers
 
 
-async def test_upload_lesson_image_returns_public_preferred_url(async_client, tmp_path, monkeypatch):
+async def test_upload_lesson_image_returns_public_preferred_url(
+    async_client, tmp_path, monkeypatch
+):
     headers, _ = await register_teacher(async_client)
     course_id, lesson_id = await create_lesson(async_client, headers)
 
@@ -205,7 +211,7 @@ async def test_upload_lesson_image_rejects_too_large(async_client, monkeypatch):
     assert resp.status_code == 413, resp.text
 
 
-async def test_upload_course_media_pdf_uses_document_kind_and_attachment_header(
+async def test_upload_course_media_pdf_uses_pdf_kind_and_attachment_header(
     async_client,
     tmp_path,
     monkeypatch,
@@ -229,7 +235,7 @@ async def test_upload_course_media_pdf_uses_document_kind_and_attachment_header(
     payload = resp.json()
     media = payload.get("media") or {}
     assert isinstance(media, dict)
-    assert media.get("kind") == "document"
+    assert media.get("kind") == "pdf"
     assert media.get("media_asset_id")
     assert media.get("media_id") is None
     assert media.get("media_state") == "ready"
@@ -243,7 +249,9 @@ async def test_upload_course_media_pdf_uses_document_kind_and_attachment_header(
     assert 'filename="material.pdf"' in content_disposition
 
 
-async def test_public_pdf_files_are_served_as_attachment(async_client, tmp_path, monkeypatch):
+async def test_public_pdf_files_are_served_as_attachment(
+    async_client, tmp_path, monkeypatch
+):
     headers, _ = await register_teacher(async_client)
     course_id, lesson_id = await create_lesson(async_client, headers, is_intro=True)
 

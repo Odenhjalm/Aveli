@@ -103,7 +103,7 @@ def _detect_kind(content_type: str | None) -> str:
     if lower.startswith("audio/"):
         return "audio"
     if lower == "application/pdf":
-        return "document"
+        return "pdf"
     return "other"
 
 
@@ -268,7 +268,10 @@ async def presign_lesson_media_upload(
     detected_kind = _detect_kind(
         payload.content_type or mimetypes.guess_type(payload.filename or "")[0]
     )
-    if detected_kind == "audio" or (payload.media_type or "").strip().lower() == "audio":
+    if (
+        detected_kind == "audio"
+        or (payload.media_type or "").strip().lower() == "audio"
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Audio uploads must use the media pipeline",
@@ -314,7 +317,7 @@ async def complete_lesson_media_upload(
         raise HTTPException(status_code=403, detail="Not course owner")
 
     kind = _detect_kind(payload.content_type)
-    if kind not in {"image", "video", "audio", "document"}:
+    if kind not in {"image", "video", "audio", "document", "pdf"}:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported media type",
@@ -351,7 +354,7 @@ async def complete_lesson_media_upload(
     row["content_type"] = payload.content_type
     row["byte_size"] = payload.byte_size
     row["original_name"] = original_name
-    if kind == "document":
+    if kind in {"document", "pdf"}:
         row["media_state"] = "ready"
     media_signer.attach_media_links(row)
     return row
@@ -1713,20 +1716,24 @@ async def upload_media(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Audio uploads must use the media pipeline",
         )
-    if detected_kind in {"image", "video", "audio", "document"}:
+    if detected_kind in {"image", "video", "audio", "document", "pdf"}:
         if detected_kind == "image":
-            storage_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
-                course_id=course_id_str,
-                lesson_id=lesson_id_str,
-                media_kind=detected_kind,
-                filename=file.filename or "media",
+            storage_path = (
+                upload_routes.media_paths.build_lesson_passthrough_object_path(
+                    course_id=course_id_str,
+                    lesson_id=lesson_id_str,
+                    media_kind=detected_kind,
+                    filename=file.filename or "media",
+                )
             )
         else:
-            storage_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
-                course_id=course_id_str,
-                lesson_id=lesson_id_str,
-                media_kind=detected_kind,
-                filename=file.filename or "media",
+            storage_path = (
+                upload_routes.media_paths.build_lesson_passthrough_object_path(
+                    course_id=course_id_str,
+                    lesson_id=lesson_id_str,
+                    media_kind=detected_kind,
+                    filename=file.filename or "media",
+                )
             )
     else:
         storage_path = (
@@ -1747,7 +1754,9 @@ async def upload_media(
         allowed_prefixes=allowed_prefixes,
         max_bytes=_MAX_MEDIA_BYTES,
     )
-    storage_relative_path = (Path(storage_path).parent / write_result.filename).as_posix()
+    storage_relative_path = (
+        Path(storage_path).parent / write_result.filename
+    ).as_posix()
     content_type = (
         file.content_type
         or mimetypes.guess_type(write_result.destination_path.name)[0]

@@ -6,7 +6,7 @@ export type LessonMediaUploadParams = {
   file: Blob | ArrayBuffer;
   filename: string;
   contentType: string;
-  mediaType?: 'image' | 'audio' | 'video' | 'document';
+  mediaType?: 'image' | 'audio' | 'video' | 'document' | 'pdf';
   isIntro?: boolean;
   accessToken?: string;
   credentials?: RequestCredentials;

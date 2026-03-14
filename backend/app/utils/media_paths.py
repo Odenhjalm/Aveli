@@ -50,7 +50,9 @@ def is_protected_storage_path(path: str) -> bool:
     lower_name = Path(normalized).name.lower()
     if lower_name in PROTECTED_STORAGE_OBJECT_NAMES:
         return True
-    return any(normalized.startswith(prefix) for prefix in PROTECTED_STORAGE_PATH_PREFIXES)
+    return any(
+        normalized.startswith(prefix) for prefix in PROTECTED_STORAGE_PATH_PREFIXES
+    )
 
 
 def validate_new_upload_object_path(path: str) -> str:
@@ -105,7 +107,11 @@ def build_lesson_passthrough_object_path(
         path = Path("lessons") / lesson_id / "images" / f"{token}_{safe_name}"
         return path.as_posix()
 
-    folder = "documents" if normalized_kind == "document" else (normalized_kind or "media")
+    folder = (
+        "documents"
+        if normalized_kind in {"document", "pdf"}
+        else (normalized_kind or "media")
+    )
     path = (
         Path("courses")
         / course_id
