@@ -1,0 +1,520 @@
+---
+
+# Codex-prompt: Implementera Media Control Plane för Aveli
+
+## ROLE
+
+Du arbetar som en senior staff engineer i Aveli-repot.
+
+Du ska implementera ett robust, framtidssäkert **Media Control Plane** för Aveli så att mediaflödet blir deterministiskt, observerbart och stabilt för både lärare och elever.
+
+Detta är **inte** en punktfix.
+Detta är **inte** en kosmetisk förbättring.
+Detta är en strukturell implementation för att få hela media-pipelinen under kontroll.
+
+Arbeta metodiskt, minimera risk, verifiera varje steg, och leverera produktionsduglig kod.
+
+---
+
+## HARD GUARDRAILS
+
+### Arbetsmiljö
+
+* Arbeta i **ren ephemeral worktree**
+* Ingen implementation direkt på `main`
+* Skapa en tydligt namngiven branch, exempelvis:
+
+  * `feat/media-control-plane`
+* Bekräfta att worktree är ren innan arbete startar
+* Om worktree inte är ren: stoppa och rapportera
+
+### Behörigheter och datakällor
+
+* Du får använda repo-kod, lokala filer, tester, existerande miljövariabler och Supabase MCP
+* **Supabase MCP ska användas read-first och minimalt**
+* Om MCP används i denna uppgift ska det vara **solklart att du inte gör några destruktiva eller oplanerade writes**
+* Alla databasändringar ska ske via **granskade migrationsfiler i repot**, inte via ad hoc-mutationer
+
+### Förbjudet
+
+* Inga snabba hacks
+* Inga tillfälliga fallback-lösningar som döljer trasig media
+* Ingen direkt konsumtion av rå storage-URL i frontend
+* Ingen fortsatt beroende-logik där frontend försöker gissa media state
+* Inga nya “legacy sign”-omvägar
+* Ingen broad refactor utanför denna scope
+* Ingen hemlig schemaändring utanför migration
+* Inga breaking changes utan tydlig adapter/backward compatibility där det behövs
+
+### Leveransregler
+
+* Ge fullständiga filer, inte diff-fragment
+* Kör verifiering före slutleverans
+* Rapportera exakt vad som ändrats, varför, och vad som verifierats
+* Var explicit med risker, avgränsningar och kvarvarande framtidsjobb
+
+---
+
+## PRIMARY GOAL
+
+Implementera ett **Media Control Plane** som centraliserar:
+
+1. **Media contract**
+2. **Media resolution**
+3. **Media state enforcement**
+4. **Media diagnostics**
+5. **Media admin visibility**
+
+Systemet ska säkerställa att appen alltid kan svara på:
+
+* Finns mediaobjektet?
+* Är det kopplat korrekt?
+* Finns filen i storage?
+* Är det spelbart?
+* Är det redo?
+* Om inte: varför inte?
+
+---
+
+# PRODUCT GOALS
+
+Det färdiga systemet ska ge följande egenskaper:
+
+* Lärare kan ladda upp media utan att pipeline blir okontrollerbar
+* Elever kan streama/consumera media stabilt
+* Frontend visar player endast när media faktiskt är `ready`
+* Trasig media blir diagnostiserbar, inte mystiskt “unsupported”
+* Markdown/embed-baserad media går via en kontrollerad resolver
+* Media blir observerbart och auditerbart
+* Arkitekturen blir framtidssäker för fler format senare
+
+---
+
+# HIGH-LEVEL DESIGN TO IMPLEMENT
+
+Implementera följande delar:
+
+## A. Media Contract
+
+Definiera och normalisera ett tydligt kontrakt för media i systemet.
+
+Utgå från existerande struktur i repot, särskilt allt som rör:
+
+* `media_assets`
+* `media_objects`
+* `lesson_media`
+* lesson/courses/media rendering
+* signing/resolution/playback endpoints
+* upload/process/transcode flows
+
+Målet är att etablera **en tydlig source of truth** för media.
+
+### Krav
+
+* Identifiera vilken tabell som ska vara canonical media index
+* Om `media_assets` redan är rätt riktning, bygg vidare där
+* Om legacy-strukturer måste stödjas tillfälligt, bygg adapter-lager men håll canonical contract tydligt
+* Definiera state machine för media, minst:
+
+  * `uploaded`
+  * `processing`
+  * `ready`
+  * `failed`
+  * `deleted`
+* Inför tydliga invariants i kod:
+
+  * frontend får inte behandla media som spelbar om state inte är `ready`
+  * resolver får inte returnera spelbar URL om state inte är `ready`
+
+---
+
+## B. Media Resolver API
+
+Inför eller refaktorera ett centralt resolver-flöde.
+
+### Mål
+
+Frontend ska inte:
+
+* läsa storage_path direkt
+* signera ad hoc
+* försöka gissa content type
+* försöka spela okänd media utan resolver
+
+### Implementera
+
+En central backend-resolution för media, exempelvis via något i stil med:
+
+* `GET /api/media/resolve/{media_id}`
+* eller motsvarande route-struktur som passar repo-konventioner
+
+Resolvern ska returnera ett tydligt kontrakt som minst innehåller:
+
+* `media_id`
+* `media_state`
+* `content_type`
+* `kind` eller motsvarande normaliserad media-typ
+* `duration_seconds` om relevant
+* `signed_url` endast när tillåtet
+* felorsak/status när media inte är redo
+
+### Krav
+
+* Om media saknas: tydligt 404/diagnostiskt svar
+* Om media finns men inte är redo: tydligt 409/422/semantiskt korrekt svar
+* Om relation är trasig: logga och returnera tydlig felstruktur
+* Resolvern ska vara enda vägen för spelbar media i klienten
+
+---
+
+## C. Frontend Consumption Refactor
+
+Refaktorera frontend så att media rendering går via resolver-kontraktet.
+
+### Omfattning
+
+Inspektera och uppdatera all relevant Flutter-kod för:
+
+* lesson playback
+* inline audio/video/pdf rendering
+* media cards
+* markdown-renderade embeds
+* eventuella legacy widgets eller repository-klasser för media
+
+### Krav
+
+* Ingen widget ska försöka spela media utan resolverat kontrakt
+* UI ska skilja på:
+
+  * loading
+  * processing
+  * failed
+  * missing
+  * ready
+* “Unsupported media” får inte längre vara ett generiskt svart hål för flera olika felorsaker
+* Felmeddelanden/logik ska bli strukturerade nog för felsökning
+
+### Särskilt viktigt
+
+Om systemet idag använder token-liknande embed-format i markdown, t.ex. `!audio(media_id)`, se till att dessa passerar genom resolver-flödet istället för att gå direkt mot signeringslogik eller legacy asset lookup.
+
+---
+
+## D. Media Doctor
+
+Implementera ett diagnostiskt lager, initialt som backend-/script-nivå om UI inte hinner bli fullt i första passet.
+
+### Mål
+
+Media Doctor ska kunna hitta och rapportera:
+
+1. DB-rader som refererar till media som saknas
+2. Media-rader vars storage-objekt saknas
+3. Storage-objekt utan motsvarande canonical DB-rad
+4. Media i `processing` för länge
+5. Media med ogiltig eller saknad content_type
+6. Embed-referenser i lesson content som inte kan resolvas
+7. Relationsdrift mellan:
+
+   * lessons
+   * lesson_media
+   * media assets
+   * markdown embeds
+
+### Leverabel
+
+Implementera minst en av följande, gärna båda:
+
+* backend admin/read-only endpoint(s)
+* script/CLI audit command i repot
+
+Output ska vara strukturerad och användbar, inte bara logsörja.
+
+---
+
+## E. Media Control Plane Admin Surface
+
+Implementera en första version av admin-synlighet för mediahälsa.
+
+Detta behöver inte börja som en full grafiskt färdig enterprise dashboard, men det ska finnas en konkret administrativ yta eller åtminstone tydliga backend endpoints som gör följande möjligt:
+
+* se total media count
+* se antal ready/processing/failed
+* se broken/orphaned media
+* se enskild media-inspection
+* se relationer till lessons/courses där relevant
+
+Om det redan finns en intern adminyta i Flutter eller backend admin-struktur, integrera där.
+Om inte, implementera en minimal men korrekt lösning som kan byggas vidare på.
+
+---
+
+# REQUIRED IMPLEMENTATION PHASES
+
+Genomför arbetet i denna ordning.
+
+## Phase 1: Repository + Architecture Discovery
+
+* Kartlägg existerande mediaflöde end-to-end
+* Identifiera:
+
+  * canonical tables
+  * upload flow
+  * processing flow
+  * signing flow
+  * playback flow
+  * markdown/media rendering path
+* Dokumentera kort vilka existerande komponenter som återanvänds vs ersätts
+
+## Phase 2: Contract Definition
+
+* Definiera canonical media contract i kod
+* Lägg till eller uppdatera typer/schemas/models/DTOs där det behövs
+* Lägg till migration(er) endast om nödvändigt och håll dem minimala men korrekta
+
+## Phase 3: Resolver Backend
+
+* Implementera resolver endpoint/service
+* Centralisera signering dit
+* Enforce media state
+
+## Phase 4: Frontend Integration
+
+* Uppdatera repositories/controllers/widgets/renderers för att använda resolvern
+* Eliminera direkta legacyvägar där det är säkert
+* Behåll adapter där det behövs för att undvika onödigt breakage
+
+## Phase 5: Media Doctor
+
+* Implementera diagnostik
+* Lägg till rapportstruktur och tydliga felkategorier
+
+## Phase 6: Admin Visibility
+
+* Implementera första adminyta eller diagnostiska endpoints
+
+## Phase 7: Verification + Cleanup
+
+* Kör tester
+* Kör relevanta lint/check/format
+* Verifiera att ingen gammal kritisk kodväg ligger kvar och används av misstag
+* Dokumentera kvarvarande legacy att avveckla senare
+
+---
+
+# SPECIFIC TECHNICAL REQUIREMENTS
+
+## Backend
+
+Använd befintliga Aveli-konventioner för:
+
+* FastAPI routers
+* service-lager
+* schemas/models
+* auth/access control
+* Supabase/storage helpers
+* telemetry/logging patterns
+
+### Backend ska ha
+
+* tydlig resolver service
+* tydliga response schemas
+* tydliga error paths
+* tydliga interna invariants
+* central plats för media signing/regler
+
+### Backend ska inte
+
+* sprida signeringslogik över flera endpoints
+* låta klienten avgöra readiness
+* returnera “best effort media” när state är okänt
+
+---
+
+## Database
+
+Använd migration om det verkligen behövs för att:
+
+* tydliggöra state
+* lägga till index
+* lägga till metadatafält
+* stödja doctor queries
+
+### Krav
+
+* migrations ska vara rerun-säkra där möjligt
+* inga destruktiva schemaingrepp utan stark motivering
+* legacy data måste hanteras försiktigt
+* vid behov: backfill i migration eller separat säker kodväg, men tydligt avgränsad
+
+---
+
+## Frontend (Flutter)
+
+Använd befintliga patterns för:
+
+* repositories
+* providers/controllers
+* widgets
+* route/state management
+
+### Krav
+
+* media widgets ska drivas av resolverad modell
+* olika media states ska ha separata UI states
+* lesson rendering ska inte förlita sig på rå markdown-token utan resolver
+* inga direkta storage URL-antaganden i UI
+
+---
+
+## Diagnostics / Media Doctor
+
+Designa tydliga felkategorier, exempelvis:
+
+* `missing_db_row`
+* `missing_storage_object`
+* `stale_processing`
+* `invalid_content_type`
+* `orphan_embed_reference`
+* `broken_lesson_relation`
+
+Använd dessa konsekvent i doctor output.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+Arbetet är klart först när följande är uppfyllt:
+
+## Contract
+
+* Det finns ett tydligt canonical media contract i systemet
+
+## Resolver
+
+* Det finns ett centralt media resolver-flöde
+* Playback i klient bygger på resolver, inte direkt storage access
+
+## State enforcement
+
+* Media som inte är `ready` behandlas inte som spelbar i klienten
+
+## Diagnostics
+
+* Det finns ett konkret sätt att upptäcka broken/orphaned/stale media
+
+## Admin visibility
+
+* Det finns en första kontrollpanel-yta eller motsvarande admin/debug endpoints för mediahälsa
+
+## Stability
+
+* Existerande relevanta playbackflöden fungerar fortsatt eller förbättras
+* Ingen uppenbar regression i lesson media rendering
+
+## Verification
+
+* Relevanta tester/checks körda
+* Resultat rapporterade tydligt
+
+---
+
+# REQUIRED OUTPUT FORMAT
+
+När du är klar, leverera i exakt denna struktur:
+
+## 1. Executive Summary
+
+Kort sammanfattning av vad som implementerades och varför.
+
+## 2. Architecture Decisions
+
+Beskriv:
+
+* canonical media source of truth
+* resolver design
+* hur legacy hanterades
+* doctor design
+* admin surface design
+
+## 3. Files Changed
+
+Lista alla ändrade filer med kort syfte per fil.
+
+## 4. Migrations
+
+Lista migrations och exakt vad de gör.
+
+## 5. Backend Changes
+
+Beskriv endpoints, services, schemas, invariants.
+
+## 6. Frontend Changes
+
+Beskriv repositories/controllers/widgets/renderers som ändrats.
+
+## 7. Diagnostics / Media Doctor
+
+Beskriv hur doctor fungerar, vad den hittar, och hur den körs.
+
+## 8. Verification Run
+
+Visa exakt vilka kommandon som kördes och resultat:
+
+* tests
+* lint
+* type/format checks
+* eventuella smoke checks
+
+## 9. Risks / Follow-ups
+
+Lista kvarvarande risker, legacy att avveckla, och rekommenderade nästa steg.
+
+## 10. Full File Delivery
+
+Ge fullständigt innehåll för alla nya filer och alla ändrade filer.
+
+---
+
+# EXTRA IMPLEMENTATION NOTES
+
+## Backward compatibility
+
+Var pragmatisk:
+
+* där gammal media fortfarande måste kunna läsas, använd adapterlager
+* men gör det tydligt vad som är legacy och vad som är canonical path
+
+## Observability
+
+Om repo redan har logging/telemetry patterns, koppla in resolver failures och doctor-fynd där det är rimligt.
+
+## Security
+
+* Signed URLs ska endast returneras när behörighet och media state tillåter
+* Respektera auth/access control i lessons/courses/media ownership
+* Ingen admin data ska läcka till vanliga användare
+
+## Performance
+
+* Gör inte onödigt dyra storage checks i vanlig playback-path
+* Doctor kan vara tyngre, resolvern måste vara snabb
+
+---
+
+# IMPORTANT FINAL INSTRUCTION
+
+Du ska implementera detta som en **seriös första version av ett framtida enterprise media control plane**, inte som ett “fixpaket”.
+
+Prioritera:
+
+1. korrekthet
+2. tydlighet
+3. determinism
+4. diagnosbarhet
+5. framtidssäkerhet
+
+Om du måste välja mellan snabbhet och arkitektonisk sundhet, välj sundhet.
+
+---
+
