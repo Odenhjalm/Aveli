@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Export all SECURITY DEFINER functions from the current DATABASE_URL connection
-# into a versioned SQL file. Usage:
-#   scripts/export_security_definers.sh [output_path]
-# Defaults to supabase/security_definer_export.sql
+# Purpose: Export SECURITY DEFINER functions from DATABASE_URL into a SQL snapshot.
+# Mutates state: Yes (writes or overwrites the output SQL file; does not modify DB).
+# Run context: Local maintenance or CI verification jobs.
+# Usage: scripts/export_security_definers.sh [output_path] (default: supabase/security_definer_export.sql)
 
 set -euo pipefail
 

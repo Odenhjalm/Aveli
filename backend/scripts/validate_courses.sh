@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+# Purpose: Validate course manifests by invoking importer dry-run mode.
+# Mutates state: No (validation only; no DB or remote writes in dry-run).
+# Run context: Safe for CI and local preflight checks.
 set -euo pipefail
 
 # Validate all manifests under courses/ using the importer in --dry-run mode.
-# No network calls are made in --dry-run; base-url/email/password are placeholders.
+# Base-url/email/password are placeholders for argument compatibility.
 
 BASE_URL="http://127.0.0.1:8080"
 EMAIL="dryrun@example.com"

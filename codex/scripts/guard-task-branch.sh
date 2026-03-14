@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Prevent task work on protected branches by enforcing branch guardrails.
+# Mutates state: No (validation only; exits non-zero when branch is disallowed).
+# Run context: Local git-hook checks and CI guard steps.
 set -euo pipefail
 
 protected_branches="${CODEX_PROTECTED_BRANCHES:-main master develop dev production release}"

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Install Android SDK command-line tooling and required host packages.
+# Mutates state: Yes (installs apt packages and writes SDK files under $HOME/Android/Sdk).
+# Run context: Local workstation bootstrap only; not for CI.
 set -euo pipefail
 
 # === Konfig ===
