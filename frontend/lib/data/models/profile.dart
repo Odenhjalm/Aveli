@@ -7,6 +7,16 @@ part 'profile.g.dart';
 
 enum UserRole { user, professional, teacher }
 
+abstract final class OnboardingStateValue {
+  static const registeredUnverified = 'registered_unverified';
+  static const verifiedUnpaid = 'verified_unpaid';
+  static const accessActiveProfileIncomplete =
+      'access_active_profile_incomplete';
+  static const accessActiveProfileComplete =
+      'access_active_profile_complete';
+  static const welcomed = 'welcomed';
+}
+
 UserRole parseUserRole(String? value) {
   switch (value) {
     case 'teacher':
@@ -31,6 +41,9 @@ class Profile extends Equatable {
     this.bio,
     this.photoUrl,
     this.avatarMediaId,
+    this.onboardingState,
+    this.emailVerified = false,
+    this.membershipActive = false,
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) =>
@@ -56,6 +69,15 @@ class Profile extends Equatable {
   @JsonKey(name: 'avatar_media_id')
   final String? avatarMediaId;
 
+  @JsonKey(name: 'onboarding_state')
+  final String? onboardingState;
+
+  @JsonKey(name: 'email_verified', defaultValue: false)
+  final bool emailVerified;
+
+  @JsonKey(name: 'membership_active', defaultValue: false)
+  final bool membershipActive;
+
   @JsonKey(fromJson: parseDateTime, toJson: dateTimeToIsoString)
   final DateTime createdAt;
 
@@ -73,6 +95,9 @@ class Profile extends Equatable {
     String? bio,
     String? photoUrl,
     String? avatarMediaId,
+    String? onboardingState,
+    bool? emailVerified,
+    bool? membershipActive,
   }) {
     return Profile(
       id: id ?? this.id,
@@ -85,6 +110,9 @@ class Profile extends Equatable {
       bio: bio ?? this.bio,
       photoUrl: photoUrl ?? this.photoUrl,
       avatarMediaId: avatarMediaId ?? this.avatarMediaId,
+      onboardingState: onboardingState ?? this.onboardingState,
+      emailVerified: emailVerified ?? this.emailVerified,
+      membershipActive: membershipActive ?? this.membershipActive,
     );
   }
 
@@ -102,6 +130,9 @@ class Profile extends Equatable {
     bio,
     photoUrl,
     avatarMediaId,
+    onboardingState,
+    emailVerified,
+    membershipActive,
     createdAt,
     updatedAt,
   ];

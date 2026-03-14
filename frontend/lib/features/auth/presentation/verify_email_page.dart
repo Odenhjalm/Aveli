@@ -7,10 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
+
+enum _VerifyPageState { checking, needsAction, verified, failed }
 
 class VerifyEmailPage extends ConsumerStatefulWidget {
   const VerifyEmailPage({super.key, required this.token});
@@ -22,7 +25,7 @@ class VerifyEmailPage extends ConsumerStatefulWidget {
 }
 
 class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
-  bool _isVerifying = true;
+  _VerifyPageState _pageState = _VerifyPageState.checking;
   bool _isResending = false;
   String? _resendMessage;
   String? _resendError;
@@ -35,8 +38,11 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final profile = ref.watch(authControllerProvider).profile;
+    final email = _resendTargetEmail;
+
     return AppScaffold(
-      title: 'Verify email',
+      title: 'Verifiera e-post',
       showHomeAction: false,
       body: SafeArea(
         top: false,
@@ -48,14 +54,35 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
               child: Card(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: _isVerifying
-                      ? const _VerifyEmailLoading()
-                      : _VerifyEmailFailure(
-                          resendMessage: _resendMessage,
-                          resendError: _resendError,
-                          isResending: _isResending,
-                          onResend: _resendVerificationEmail,
-                        ),
+                  child: switch (_pageState) {
+                    _VerifyPageState.checking => const _VerifyEmailLoading(),
+                    _VerifyPageState.verified => _VerifyEmailSuccess(
+                      showLoginButton: profile == null,
+                    ),
+                    _VerifyPageState.needsAction => _VerifyEmailPanel(
+                      title: 'Kontrollera din e-post',
+                      description: email != null
+                          ? 'Vi har skickat en verifieringslank till $email. Verifiera kontot for att fortsatta.'
+                          : 'Verifiera ditt konto via lank i e-postmeddelandet for att fortsatta.',
+                      resendMessage: _resendMessage,
+                      resendError: _resendError,
+                      isResending: _isResending,
+                      onResend: email == null ? null : _resendVerificationEmail,
+                      actionLabel: 'Till inloggning',
+                      onAction: () => context.goNamed(AppRoute.login),
+                    ),
+                    _VerifyPageState.failed => _VerifyEmailPanel(
+                      title: 'Verifieringslanken gick inte att anvanda',
+                      description:
+                          'Begara ett nytt verifieringsmail och forsok igen.',
+                      resendMessage: _resendMessage,
+                      resendError: _resendError,
+                      isResending: _isResending,
+                      onResend: email == null ? null : _resendVerificationEmail,
+                      actionLabel: 'Till inloggning',
+                      onAction: () => context.goNamed(AppRoute.login),
+                    ),
+                  },
                 ),
               ),
             ),
@@ -65,33 +92,52 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
     );
   }
 
+  String? get _resendTargetEmail {
+    final tokenEmail = _extractEmailFromToken(widget.token);
+    if (tokenEmail != null) {
+      return tokenEmail;
+    }
+    final profileEmail = ref.read(authControllerProvider).profile?.email.trim();
+    if (profileEmail == null || profileEmail.isEmpty) {
+      return null;
+    }
+    return profileEmail;
+  }
+
   Future<void> _verifyEmail() async {
     final token = widget.token?.trim();
     if (token == null || token.isEmpty) {
       if (!mounted) return;
-      setState(() => _isVerifying = false);
+      setState(() => _pageState = _VerifyPageState.needsAction);
       return;
     }
 
     try {
       await ref.read(authRepositoryProvider).verifyEmail(token);
-      if (!mounted || !context.mounted) return;
-      context.goNamed(AppRoute.createProfile);
-    } on DioException {
+      await ref.read(authControllerProvider.notifier).loadSession();
       if (!mounted) return;
-      setState(() => _isVerifying = false);
+      setState(() => _pageState = _VerifyPageState.verified);
+    } on DioException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _pageState = _VerifyPageState.failed;
+        _resendError = _resendErrorMessage(error);
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _isVerifying = false);
+      setState(() {
+        _pageState = _VerifyPageState.failed;
+        _resendError = 'Kunde inte verifiera e-postadressen.';
+      });
     }
   }
 
   Future<void> _resendVerificationEmail() async {
-    final email = _extractEmailFromToken(widget.token);
+    final email = _resendTargetEmail;
     if (email == null) {
       if (!mounted) return;
       setState(() {
-        _resendError = 'Could not determine which email to resend to.';
+        _resendError = 'Kunde inte avgora vilken e-postadress som ska anvandas.';
         _resendMessage = null;
       });
       return;
@@ -107,8 +153,7 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
       await ref.read(authRepositoryProvider).sendVerificationEmail(email);
       if (!mounted) return;
       setState(() {
-        _resendMessage =
-            'If the account exists, a new verification email has been sent.';
+        _resendMessage = 'En ny verifieringslank har skickats.';
       });
     } on DioException catch (error) {
       if (!mounted) return;
@@ -118,7 +163,7 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _resendError = 'Could not resend verification email.';
+        _resendError = 'Kunde inte skicka verifieringsmail.';
       });
     } finally {
       if (mounted) {
@@ -163,12 +208,12 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
       final message = data['error'];
       if (message is String && message.trim().isNotEmpty) {
         if (message == 'rate_limited') {
-          return 'Please wait before requesting another verification email.';
+          return 'Vanta en stund innan du begar ett nytt verifieringsmail.';
         }
         return message;
       }
     }
-    return 'Could not resend verification email.';
+    return 'Kunde inte skicka verifieringsmail.';
   }
 }
 
@@ -183,24 +228,16 @@ class _VerifyEmailLoading extends StatelessWidget {
       children: [
         Center(child: CircularProgressIndicator()),
         SizedBox(height: 24),
-        Text('Verifying your email...', textAlign: TextAlign.center),
+        Text('Verifierar din e-post...', textAlign: TextAlign.center),
       ],
     );
   }
 }
 
-class _VerifyEmailFailure extends StatelessWidget {
-  const _VerifyEmailFailure({
-    required this.resendMessage,
-    required this.resendError,
-    required this.isResending,
-    required this.onResend,
-  });
+class _VerifyEmailSuccess extends StatelessWidget {
+  const _VerifyEmailSuccess({required this.showLoginButton});
 
-  final String? resendMessage;
-  final String? resendError;
-  final bool isResending;
-  final Future<void> Function() onResend;
+  final bool showLoginButton;
 
   @override
   Widget build(BuildContext context) {
@@ -210,13 +247,66 @@ class _VerifyEmailFailure extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Verification link expired or invalid',
+          'E-postadressen ar verifierad',
           textAlign: TextAlign.center,
           style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         gap16,
         Text(
-          'Request a new verification email to continue.',
+          showLoginButton
+              ? 'Logga in for att fortsatta onboardingflodet.'
+              : 'Vi uppdaterar ditt konto och skickar dig vidare automatiskt.',
+          textAlign: TextAlign.center,
+          style: textTheme.bodyMedium,
+        ),
+        if (showLoginButton) ...[
+          gap24,
+          GradientButton(
+            onPressed: () => context.goNamed(AppRoute.login),
+            child: const Text('Till inloggning'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _VerifyEmailPanel extends StatelessWidget {
+  const _VerifyEmailPanel({
+    required this.title,
+    required this.description,
+    required this.resendMessage,
+    required this.resendError,
+    required this.isResending,
+    required this.onResend,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final String title;
+  final String description;
+  final String? resendMessage;
+  final String? resendError;
+  final bool isResending;
+  final Future<void> Function()? onResend;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        gap16,
+        Text(
+          description,
           textAlign: TextAlign.center,
           style: textTheme.bodyMedium,
         ),
@@ -242,21 +332,23 @@ class _VerifyEmailFailure extends StatelessWidget {
             ),
           ),
         ],
-        gap24,
-        GradientButton(
-          onPressed: isResending ? null : () => unawaited(onResend()),
-          child: isResending
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Resend verification email'),
-        ),
+        if (onResend != null) ...[
+          gap24,
+          GradientButton(
+            onPressed: isResending ? null : () => unawaited(onResend!()),
+            child: isResending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Skicka ny verifieringslank'),
+          ),
+        ],
         gap12,
         TextButton(
-          onPressed: isResending ? null : () => context.goNamed(AppRoute.login),
-          child: const Text('Back to login'),
+          onPressed: isResending ? null : onAction,
+          child: Text(actionLabel),
         ),
       ],
     );

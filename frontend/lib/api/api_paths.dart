@@ -23,6 +23,7 @@ class ApiPaths {
   static const meMembership = '/api/me/membership';
   static const meEntitlements = '/api/me/entitlements';
   static const meClaimPurchase = '/api/me/claim-purchase';
+  static const meWelcomeComplete = '/api/me/onboarding/welcome-complete';
 
   static const orders = '/orders';
   static String order(String orderId) => '/orders/$orderId';

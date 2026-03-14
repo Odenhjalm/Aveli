@@ -161,6 +161,11 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.authenticated,
   ),
   RouteManifestEntry(
+    name: AppRoute.welcome,
+    path: RoutePath.welcome,
+    access: RouteAccessLevel.authenticated,
+  ),
+  RouteManifestEntry(
     name: AppRoute.profileSubscription,
     path: RoutePath.profileSubscription,
     access: RouteAccessLevel.authenticated,
@@ -174,6 +179,16 @@ const List<RouteManifestEntry> routeManifest = [
     name: AppRoute.checkout,
     path: RoutePath.checkout,
     access: RouteAccessLevel.authenticated,
+  ),
+  RouteManifestEntry(
+    name: AppRoute.checkoutSuccess,
+    path: RoutePath.checkoutSuccess,
+    access: RouteAccessLevel.public,
+  ),
+  RouteManifestEntry(
+    name: AppRoute.checkoutCancel,
+    path: RoutePath.checkoutCancel,
+    access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(
     name: AppRoute.tarot,

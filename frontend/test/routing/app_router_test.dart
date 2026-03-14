@@ -8,6 +8,7 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/core/routing/route_extras.dart';
+import 'package:aveli/data/models/profile.dart';
 
 class _RouterHarness extends ConsumerWidget {
   const _RouterHarness();
@@ -39,6 +40,36 @@ final _testAppRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.home,
         name: AppRoute.home,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.verifyEmail,
+        name: AppRoute.verifyEmail,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.subscribe,
+        name: AppRoute.subscribe,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.createProfile,
+        name: AppRoute.createProfile,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.welcome,
+        name: AppRoute.welcome,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.checkoutSuccess,
+        name: AppRoute.checkoutSuccess,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.checkoutCancel,
+        name: AppRoute.checkoutCancel,
         builder: (context, _) => const SizedBox.shrink(),
       ),
       GoRoute(
@@ -114,6 +145,7 @@ void main() {
     hasTentativeSession: false,
     isTeacher: false,
     isAdmin: false,
+    onboardingState: OnboardingStateValue.welcomed,
   );
 
   const teacher = RouteSessionSnapshot(
@@ -122,6 +154,43 @@ void main() {
     hasTentativeSession: false,
     isTeacher: true,
     isAdmin: false,
+    onboardingState: OnboardingStateValue.welcomed,
+  );
+
+  const registeredUnverified = RouteSessionSnapshot(
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
+    isTeacher: false,
+    isAdmin: false,
+    onboardingState: OnboardingStateValue.registeredUnverified,
+  );
+
+  const verifiedUnpaid = RouteSessionSnapshot(
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
+    isTeacher: false,
+    isAdmin: false,
+    onboardingState: OnboardingStateValue.verifiedUnpaid,
+  );
+
+  const profileIncomplete = RouteSessionSnapshot(
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
+    isTeacher: false,
+    isAdmin: false,
+    onboardingState: OnboardingStateValue.accessActiveProfileIncomplete,
+  );
+
+  const profileComplete = RouteSessionSnapshot(
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
+    isTeacher: false,
+    isAdmin: false,
+    onboardingState: OnboardingStateValue.accessActiveProfileComplete,
   );
 
   testWidgets('unauthenticated users redirect to login with redirect query', (
@@ -147,6 +216,67 @@ void main() {
 
     final uri = router.routeInformationProvider.value.uri;
     expect(uri.path, RoutePath.home);
+  });
+
+  testWidgets('registered unverified users are routed to /verify', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, registeredUnverified);
+
+    router.go(RoutePath.home);
+    await tester.pump();
+
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.verifyEmail);
+  });
+
+  testWidgets('verified unpaid users are routed to /subscribe', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, verifiedUnpaid);
+
+    router.go(RoutePath.home);
+    await tester.pump();
+
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.subscribe);
+  });
+
+  testWidgets('active users with incomplete profile are routed to /create-profile', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, profileIncomplete);
+
+    router.go(RoutePath.home);
+    await tester.pump();
+
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      RoutePath.createProfile,
+    );
+  });
+
+  testWidgets('active users with completed profile are routed to /welcome', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, profileComplete);
+
+    router.go(RoutePath.home);
+    await tester.pump();
+
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
+  });
+
+  testWidgets('checkout success page is allowed while waiting on webhook', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, verifiedUnpaid);
+
+    router.go(RoutePath.checkoutSuccess);
+    await tester.pump();
+
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      RoutePath.checkoutSuccess,
+    );
   });
 
   testWidgets('non-teachers cannot access teacher dashboard routes', (

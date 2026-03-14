@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 from .. import models, repositories
 from ..config import settings
+from .onboarding_state import sync_onboarding_state
 from .email_service import send_email
 from .email_templates import render_template
 from .email_tokens import EmailTokenError, create_email_token, verify_email_token
@@ -56,11 +57,14 @@ async def verify_email_token_and_mark_user(token: str) -> dict[str, str]:
         raise InvalidEmailVerificationTokenError("invalid_or_expired_token")
 
     if _is_user_verified(user):
+        await sync_onboarding_state(str(user["id"]))
         return {"status": "already_verified", "email": email}
 
     updated = await repositories.mark_user_email_verified(email)
     if not updated:
         raise InvalidEmailVerificationTokenError("invalid_or_expired_token")
+
+    await sync_onboarding_state(str(updated["id"]))
 
     return {"status": "verified", "email": email}
 

@@ -111,5 +111,24 @@ void main() {
       expect(gate.allowed, isFalse);
       verify(() => repo.logout()).called(1);
     });
+
+    test('completeWelcome refreshes the hydrated profile', () async {
+      when(() => repo.completeWelcome()).thenAnswer((_) async {});
+      when(() => repo.currentToken()).thenAnswer((_) async => 'token');
+      when(() => repo.getCurrentProfile()).thenAnswer(
+        (_) async => profile.copyWith(
+          onboardingState: OnboardingStateValue.welcomed,
+        ),
+      );
+
+      await controller.completeWelcome();
+
+      expect(
+        controller.state.profile?.onboardingState,
+        OnboardingStateValue.welcomed,
+      );
+      verify(() => repo.completeWelcome()).called(1);
+      verify(() => repo.getCurrentProfile()).called(1);
+    });
   });
 }

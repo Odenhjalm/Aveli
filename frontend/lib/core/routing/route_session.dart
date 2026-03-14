@@ -12,6 +12,7 @@ class RouteSessionSnapshot {
     required this.hasTentativeSession,
     required this.isTeacher,
     required this.isAdmin,
+    this.onboardingState,
   });
 
   final bool isAuthenticated;
@@ -19,6 +20,7 @@ class RouteSessionSnapshot {
   final bool hasTentativeSession;
   final bool isTeacher;
   final bool isAdmin;
+  final String? onboardingState;
 }
 
 final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
@@ -30,5 +32,6 @@ final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
     hasTentativeSession: authState.claims != null,
     isTeacher: access.isTeacher,
     isAdmin: access.isAdmin,
+    onboardingState: authState.profile?.onboardingState,
   );
 });

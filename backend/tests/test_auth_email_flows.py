@@ -92,6 +92,13 @@ async def test_verify_email_is_idempotent(auth_client, monkeypatch):
         "app.services.email_verification.repositories.mark_user_email_verified",
         fake_mark_user_email_verified,
     )
+    async def fake_sync_onboarding_state(user_id: str):
+        return user_id
+
+    monkeypatch.setattr(
+        "app.services.email_verification.sync_onboarding_state",
+        fake_sync_onboarding_state,
+    )
 
     first_verify = await auth_client.get(
         "/auth/verify-email",

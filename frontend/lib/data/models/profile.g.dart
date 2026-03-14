@@ -20,6 +20,9 @@ Profile _$ProfileFromJson(Map<String, dynamic> json) => Profile(
   bio: json['bio'] as String?,
   photoUrl: json['photo_url'] as String?,
   avatarMediaId: json['avatar_media_id'] as String?,
+  onboardingState: json['onboarding_state'] as String?,
+  emailVerified: json['email_verified'] as bool? ?? false,
+  membershipActive: json['membership_active'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$ProfileToJson(Profile instance) => <String, dynamic>{
@@ -31,6 +34,9 @@ Map<String, dynamic> _$ProfileToJson(Profile instance) => <String, dynamic>{
   'bio': instance.bio,
   'photo_url': instance.photoUrl,
   'avatar_media_id': instance.avatarMediaId,
+  'onboarding_state': instance.onboardingState,
+  'email_verified': instance.emailVerified,
+  'membership_active': instance.membershipActive,
   'created_at': dateTimeToIsoString(instance.createdAt),
   'updated_at': dateTimeToIsoString(instance.updatedAt),
 };

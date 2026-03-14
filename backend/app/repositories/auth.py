@@ -53,14 +53,43 @@ async def create_user(
             await cur.execute(
                 """
                 INSERT INTO app.profiles (
-                    user_id, email, display_name, role, role_v2, is_admin, created_at, updated_at
+                    user_id,
+                    email,
+                    display_name,
+                    onboarding_state,
+                    role,
+                    role_v2,
+                    is_admin,
+                    created_at,
+                    updated_at
                 )
-                VALUES (%s, %s, %s, 'student', 'user', false, now(), now())
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    'registered_unverified',
+                    'student',
+                    'user',
+                    false,
+                    now(),
+                    now()
+                )
                 ON CONFLICT (user_id) DO UPDATE
                   SET email = excluded.email,
                       display_name = excluded.display_name,
+                      onboarding_state = COALESCE(
+                          app.profiles.onboarding_state,
+                          excluded.onboarding_state
+                      ),
                       updated_at = now()
-                RETURNING user_id, email, display_name, role_v2, is_admin, created_at, updated_at
+                RETURNING user_id,
+                          email,
+                          display_name,
+                          onboarding_state,
+                          role_v2,
+                          is_admin,
+                          created_at,
+                          updated_at
                 """,
                 (user_id, normalized_email, display_name),
             )
