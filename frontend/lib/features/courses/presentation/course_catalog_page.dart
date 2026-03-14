@@ -61,14 +61,18 @@ class _JourneyPage extends ConsumerWidget {
   final List<CourseSummary> courses;
   final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
+  static final RegExp _step1Pattern = RegExp(r'\bsteg\s*1\b');
+  static final RegExp _step2Pattern = RegExp(r'\bsteg\s*2\b');
+  static final RegExp _step3Pattern = RegExp(r'\bsteg\s*3\b');
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final published = courses
         .where((course) => (course.slug ?? '').trim().isNotEmpty)
         .toList(growable: false);
+    final ordered = _sortCoursesForProgression(published);
 
-    if (published.isEmpty) {
+    if (ordered.isEmpty) {
       final theme = Theme.of(context);
       return Center(
         child: Column(
@@ -104,7 +108,7 @@ class _JourneyPage extends ConsumerWidget {
     final step3Courses = <CourseSummary>[];
     final unclassified = <CourseSummary>[];
 
-    for (final course in published) {
+    for (final course in ordered) {
       switch (course.journeyStep) {
         case CourseJourneyStep.intro:
           introCourses.add(course);
@@ -168,6 +172,43 @@ class _JourneyPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  List<CourseSummary> _sortCoursesForProgression(List<CourseSummary> items) {
+    final indexed = items.indexed.toList(growable: false);
+    indexed.sort((a, b) {
+      final rankA = _progressionRank(a.$2);
+      final rankB = _progressionRank(b.$2);
+      if (rankA != rankB) return rankA.compareTo(rankB);
+      return a.$1.compareTo(b.$1);
+    });
+    return indexed.map((entry) => entry.$2).toList(growable: false);
+  }
+
+  int _progressionRank(CourseSummary course) {
+    if (course.isFreeIntro) return 0;
+    switch (course.journeyStep) {
+      case CourseJourneyStep.intro:
+      case CourseJourneyStep.step1:
+        return 0;
+      case CourseJourneyStep.step2:
+        return 1;
+      case CourseJourneyStep.step3:
+        return 2;
+      case null:
+        return _progressionRankFromTitle(course.title);
+    }
+  }
+
+  int _progressionRankFromTitle(String title) {
+    final normalized = title.toLowerCase();
+    if (normalized.contains('introduktion') ||
+        _step1Pattern.hasMatch(normalized)) {
+      return 0;
+    }
+    if (_step2Pattern.hasMatch(normalized)) return 1;
+    if (_step3Pattern.hasMatch(normalized)) return 2;
+    return 3;
   }
 }
 
