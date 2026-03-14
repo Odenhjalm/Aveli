@@ -15,6 +15,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
@@ -332,6 +333,25 @@ class CoursesShowcaseSection extends ConsumerWidget {
   static List<Map<String, dynamic>> _mapCourseSummaries(
     List<CourseSummary> courses,
   ) {
+    courses = courses.toList()
+      ..sort((a, b) {
+        int rank(CourseSummary c) {
+          switch (c.journeyStep) {
+            case CourseJourneyStep.intro:
+            case CourseJourneyStep.step1:
+              return 0;
+            case CourseJourneyStep.step2:
+              return 1;
+            case CourseJourneyStep.step3:
+              return 2;
+            default:
+              return 3;
+          }
+        }
+
+        return rank(a).compareTo(rank(b));
+      });
+
     return courses
         .map((course) {
           return {
