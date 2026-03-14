@@ -40,7 +40,7 @@ String? _resolveBrowserPlayableUrl(
     if (!isHttpUrl) {
       return null;
     }
-    final path = uri?.path ?? resolved;
+    final path = uri.path ?? resolved;
     if (_isAuthProtectedPlaybackPath(path)) {
       return null;
     }
