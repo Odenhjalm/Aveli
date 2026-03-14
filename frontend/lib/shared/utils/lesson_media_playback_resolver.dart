@@ -18,8 +18,28 @@ String? _resolveBrowserPlayableUrl(
   if (raw == null || raw.isEmpty) return null;
 
   try {
+    final rawUri = Uri.tryParse(raw);
+    final rawScheme = rawUri?.scheme.toLowerCase();
+    final hasUnsupportedScheme =
+        rawUri != null &&
+        rawUri.hasScheme &&
+        rawScheme != 'http' &&
+        rawScheme != 'https';
+    if (hasUnsupportedScheme) {
+      return null;
+    }
+
     final resolved = mediaRepository.resolvePlaybackUrl(raw);
     final uri = Uri.tryParse(resolved);
+    final scheme = uri?.scheme.toLowerCase();
+    final isHttpUrl =
+        uri != null &&
+        uri.hasScheme &&
+        (scheme == 'http' || scheme == 'https') &&
+        uri.host.isNotEmpty;
+    if (!isHttpUrl) {
+      return null;
+    }
     final path = uri?.path ?? resolved;
     if (_isAuthProtectedPlaybackPath(path)) {
       return null;

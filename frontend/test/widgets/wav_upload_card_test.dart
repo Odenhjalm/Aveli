@@ -16,10 +16,6 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   _FakeMediaPipelineRepository({
     required this.uploadTarget,
     required this.statuses,
-    this.completeStatus = const MediaStatus(
-      mediaId: 'media-1',
-      state: 'uploaded',
-    ),
   });
 
   final MediaUploadTarget uploadTarget;
