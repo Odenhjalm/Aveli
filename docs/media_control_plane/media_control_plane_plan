@@ -247,6 +247,18 @@ Detta behöver inte börja som en full grafiskt färdig enterprise dashboard, me
 Om det redan finns en intern adminyta i Flutter eller backend admin-struktur, integrera där.
 Om inte, implementera en minimal men korrekt lösning som kan byggas vidare på.
 
+## Workspace Initialization
+
+Backend module:
+`backend/app/media_control_plane/`
+
+Frontend module:
+`frontend/lib/features/media_control_plane/`
+
+Purpose:
+Provide isolated architecture for the Media Control Plane implementation without
+interfering with the current runtime pipeline.
+
 ---
 
 # REQUIRED IMPLEMENTATION PHASES
@@ -517,4 +529,3 @@ Prioritera:
 Om du måste välja mellan snabbhet och arkitektonisk sundhet, välj sundhet.
 
 ---
-
