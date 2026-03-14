@@ -31,9 +31,9 @@ void main() {
           return _jsonResponse(
             statusCode: 200,
             body: {
-              'media_id': 'media-1',
+              'media_asset_id': 'media-1',
               'upload_url': 'https://storage.test/upload',
-              'object_path': 'media/source/audio/demo.wav',
+              'storage_path': 'media/source/audio/demo.wav',
               'headers': const <String, String>{},
               'expires_at': DateTime.now().toUtc().toIso8601String(),
             },

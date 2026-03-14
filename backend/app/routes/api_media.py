@@ -301,20 +301,43 @@ async def request_upload_url(
             detail="Storage signing unavailable",
         ) from exc
 
-    media_asset = await media_assets_repo.create_media_asset(
-        owner_id=user_id,
-        course_id=course_id,
-        lesson_id=lesson_id,
-        media_type="audio",
-        purpose=purpose,
-        ingest_format=ingest_format,
-        original_object_path=upload.path,
-        original_content_type=mime_type,
-        original_filename=payload.filename,
-        original_size_bytes=payload.size_bytes,
-        storage_bucket=storage_service.storage_service.bucket,
-        state="uploaded",
+    media_asset_purpose = (
+        "home_player_audio" if purpose == "home_player_audio" else "lesson_audio"
     )
+    media_asset_payload = {
+        "owner_id": user_id,
+        "course_id": course_id,
+        "lesson_id": lesson_id,
+        "media_type": "audio",
+        "purpose": media_asset_purpose,
+        "ingest_format": ingest_format,
+        "original_object_path": upload.path,
+        "original_content_type": mime_type,
+        "original_filename": payload.filename,
+        "original_size_bytes": payload.size_bytes,
+        "storage_bucket": storage_service.storage_service.bucket,
+        "state": "uploaded",
+    }
+    logger.info(
+        "Creating audio media_asset lesson_id=%s course_id=%s purpose=%s media_type=%s content_type=%s",
+        media_asset_payload["lesson_id"],
+        media_asset_payload["course_id"],
+        media_asset_payload["purpose"],
+        media_asset_payload["media_type"],
+        media_asset_payload["original_content_type"],
+    )
+    try:
+        media_asset = await media_assets_repo.create_media_asset(**media_asset_payload)
+    except Exception:
+        logger.exception(
+            "Audio media_asset insert failed lesson_id=%s course_id=%s purpose=%s media_type=%s content_type=%s",
+            media_asset_payload["lesson_id"],
+            media_asset_payload["course_id"],
+            media_asset_payload["purpose"],
+            media_asset_payload["media_type"],
+            media_asset_payload["original_content_type"],
+        )
+        raise
     if not media_asset:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -355,8 +378,10 @@ async def request_upload_url(
         ingest_format,
     )
     return schemas.MediaUploadUrlResponse(
+        media_asset_id=media_asset["id"],
         media_id=media_asset["id"],
         upload_url=upload.url,
+        storage_path=upload.path,
         object_path=upload.path,
         headers=dict(upload.headers),
         expires_at=expires_at,
@@ -369,7 +394,7 @@ async def refresh_upload_url(
     current: TeacherUser,
 ):
     user_id = str(current["id"])
-    media_asset = await media_assets_repo.get_media_asset(str(payload.media_id))
+    media_asset = await media_assets_repo.get_media_asset(str(payload.media_asset_id))
     if not media_asset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
@@ -382,7 +407,7 @@ async def refresh_upload_url(
             logger.warning(
                 "Permission denied: media refresh requires owner user_id=%s media_id=%s course_id=%s",
                 user_id,
-                payload.media_id,
+                payload.media_asset_id,
                 course_id,
             )
             raise HTTPException(
@@ -464,8 +489,10 @@ async def refresh_upload_url(
         upload.path,
     )
     return schemas.MediaUploadUrlResponse(
+        media_asset_id=media_asset["id"],
         media_id=media_asset["id"],
         upload_url=upload.url,
+        storage_path=upload.path,
         object_path=upload.path,
         headers=dict(upload.headers),
         expires_at=expires_at,

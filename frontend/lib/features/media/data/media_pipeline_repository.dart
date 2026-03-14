@@ -18,9 +18,9 @@ class MediaUploadTarget {
 
   factory MediaUploadTarget.fromJson(Map<String, dynamic> json) =>
       MediaUploadTarget(
-        mediaId: json['media_id'] as String,
+        mediaId: (json['media_asset_id'] ?? json['media_id']) as String,
         uploadUrl: Uri.parse(json['upload_url'] as String),
-        objectPath: json['object_path'] as String,
+        objectPath: (json['storage_path'] ?? json['object_path']) as String,
         headers: Map<String, String>.from(
           json['headers'] as Map<String, dynamic>? ?? const {},
         ),

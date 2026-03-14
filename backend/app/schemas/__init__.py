@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from uuid import UUID
 
 from .billing import (
@@ -941,13 +941,25 @@ class MediaUploadUrlRequest(BaseModel):
 
 
 class MediaUploadUrlRefreshRequest(BaseModel):
-    media_id: UUID
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_asset_id: UUID = Field(
+        validation_alias=AliasChoices("media_asset_id", "media_id")
+    )
 
 
 class MediaUploadUrlResponse(BaseModel):
-    media_id: UUID
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_asset_id: UUID = Field(
+        validation_alias=AliasChoices("media_asset_id", "media_id")
+    )
+    media_id: UUID | None = None
     upload_url: str
-    object_path: str
+    storage_path: str = Field(
+        validation_alias=AliasChoices("storage_path", "object_path")
+    )
+    object_path: str | None = None
     headers: dict[str, str]
     expires_at: datetime
 

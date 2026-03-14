@@ -156,15 +156,15 @@ async def test_upload_url_allows_wav(async_client, monkeypatch):
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["upload_url"].startswith("https://storage.local/")
-        assert body["object_path"] == (
+        assert body["storage_path"] == (
             f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.wav"
         )
-        assert body.get("media_id")
+        assert body.get("media_asset_id")
         expires_at = datetime.fromisoformat(body["expires_at"])
         delta = (expires_at - now).total_seconds()
         assert 110 <= delta <= 130
 
-        asset = await media_assets_repo.get_media_asset(body["media_id"])
+        asset = await media_assets_repo.get_media_asset(body["media_asset_id"])
         assert asset is not None
         assert asset["ingest_format"] == "wav"
         assert asset["original_content_type"] == "audio/wav"
@@ -185,7 +185,7 @@ async def test_upload_url_allows_wav(async_client, monkeypatch):
             )
             lesson_media_rows = await cur.fetchall()
         assert len(lesson_media_rows) == 1
-        assert str(lesson_media_rows[0]["media_asset_id"]) == body["media_id"]
+        assert str(lesson_media_rows[0]["media_asset_id"]) == body["media_asset_id"]
     finally:
         await cleanup_user(user_id)
 
@@ -232,12 +232,12 @@ async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["upload_url"].startswith("https://storage.local/")
-        assert body["object_path"] == (
+        assert body["storage_path"] == (
             f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.m4a"
         )
-        assert body.get("media_id")
+        assert body.get("media_asset_id")
 
-        asset = await media_assets_repo.get_media_asset(body["media_id"])
+        asset = await media_assets_repo.get_media_asset(body["media_asset_id"])
         assert asset is not None
         assert asset["ingest_format"] == "m4a"
         assert asset["original_content_type"] == mime_type
@@ -256,7 +256,7 @@ async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
             )
             lesson_media_rows = await cur.fetchall()
         assert len(lesson_media_rows) == 1
-        assert str(lesson_media_rows[0]["media_asset_id"]) == body["media_id"]
+        assert str(lesson_media_rows[0]["media_asset_id"]) == body["media_asset_id"]
     finally:
         await cleanup_user(user_id)
 
@@ -301,11 +301,11 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["upload_url"].startswith("https://storage.local/")
-        assert f"home-player/{user_id}" in body["object_path"]
-        assert body["object_path"].endswith("/home.wav")
-        assert body.get("media_id")
+        assert f"home-player/{user_id}" in body["storage_path"]
+        assert body["storage_path"].endswith("/home.wav")
+        assert body.get("media_asset_id")
 
-        asset = await media_assets_repo.get_media_asset(body["media_id"])
+        asset = await media_assets_repo.get_media_asset(body["media_asset_id"])
         assert asset is not None
         assert asset["purpose"] == "home_player_audio"
     finally:
