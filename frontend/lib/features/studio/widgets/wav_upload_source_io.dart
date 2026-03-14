@@ -16,6 +16,9 @@ class WavUploadFile {
 
 String _mimeTypeForAudioSource(String filename) {
   final lower = filename.toLowerCase();
+  if (lower.endsWith('.mp3')) {
+    return 'audio/mpeg';
+  }
   if (lower.endsWith('.m4a')) {
     return 'audio/m4a';
   }
@@ -24,8 +27,8 @@ String _mimeTypeForAudioSource(String filename) {
 
 Future<WavUploadFile?> pickWavFile() async {
   final typeGroup = fs.XTypeGroup(
-    label: 'wav/m4a',
-    extensions: const ['wav', 'm4a'],
+    label: 'mp3/wav/m4a',
+    extensions: const ['mp3', 'wav', 'm4a'],
   );
   final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
   if (file == null) return null;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ from ..config import settings
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
+from ..repositories import storage_objects
 from ..services import lesson_playback_service, media_cleanup
 from ..services import storage_service
 from ..utils import media_paths
@@ -25,13 +27,14 @@ debug_router = APIRouter(prefix="/debug", tags=["debug"])
 
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
 _MP3_MIME_TYPES = {"audio/mpeg", "audio/mp3"}
-_MP3_DEPRECATED_DETAIL = "MP3 uploads are deprecated. Please upload WAV or M4A."
 _AUDIO_SOURCE_MIME_TYPES_BY_EXT = {
+    "mp3": _MP3_MIME_TYPES,
     "wav": {"audio/wav", "audio/x-wav"},
     "m4a": {"audio/m4a", "audio/mp4"},
 }
 _AUDIO_SOURCE_MIME_TYPES = frozenset().union(*_AUDIO_SOURCE_MIME_TYPES_BY_EXT.values())
 _COVER_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_AUDIO_SOURCE_SUPPORTED_DETAIL = "Only MP3, WAV, or M4A audio files are supported"
 
 
 class LessonPlaybackRequest(BaseModel):
@@ -55,25 +58,20 @@ def _normalize_mime(value: str) -> str:
 
 def _audio_ingest_format(filename: str, mime_type: str) -> str:
     ext = Path(filename).suffix.lower().lstrip(".")
-    if ext == "mp3" or mime_type in _MP3_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_MP3_DEPRECATED_DETAIL,
-        )
     if ext not in _AUDIO_SOURCE_MIME_TYPES_BY_EXT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only WAV or M4A audio files are supported",
+            detail=_AUDIO_SOURCE_SUPPORTED_DETAIL,
         )
     if mime_type not in _AUDIO_SOURCE_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only WAV or M4A audio files are supported",
+            detail=_AUDIO_SOURCE_SUPPORTED_DETAIL,
         )
     if mime_type not in _AUDIO_SOURCE_MIME_TYPES_BY_EXT[ext]:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only WAV or M4A audio files are supported",
+            detail=_AUDIO_SOURCE_SUPPORTED_DETAIL,
         )
     return ext
 
@@ -90,6 +88,8 @@ def _default_audio_content_type(
         Path(original_object_path or "").suffix.lower().lstrip("."),
     ]
     for candidate in candidates:
+        if candidate == "mp3":
+            return "audio/mpeg"
         if candidate == "m4a":
             return "audio/m4a"
         if candidate == "wav":
@@ -223,6 +223,87 @@ async def _authorize_course_upload(user_id: str, course_id: str) -> None:
         )
 
 
+async def _storage_object_exists(
+    *,
+    storage_bucket: str,
+    storage_path: str,
+) -> bool:
+    normalized_path = str(storage_path or "").strip().lstrip("/")
+    if not normalized_path:
+        return False
+
+    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
+        [(storage_bucket, normalized_path)]
+    )
+    if storage_table_available and existence.get((storage_bucket, normalized_path)):
+        return True
+
+    try:
+        await storage_service.get_storage_service(storage_bucket).get_presigned_url(
+            normalized_path,
+            ttl=60,
+            download=False,
+        )
+    except storage_service.StorageObjectNotFoundError:
+        return False
+    return True
+
+
+async def _wait_for_storage_object(
+    *,
+    storage_bucket: str,
+    storage_path: str,
+    attempts: int = 4,
+    delay_seconds: float = 0.35,
+) -> bool:
+    total_attempts = max(1, int(attempts))
+    for index in range(total_attempts):
+        if await _storage_object_exists(
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+        ):
+            return True
+        if index < total_attempts - 1:
+            await asyncio.sleep(delay_seconds)
+    return False
+
+
+async def _authorize_audio_media_asset(
+    *,
+    user_id: str,
+    media_asset_id: str,
+) -> dict[str, object]:
+    media_asset = await media_assets_repo.get_media_asset(media_asset_id)
+    if not media_asset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Media not found",
+        )
+
+    owner_id = media_asset.get("owner_id")
+    if owner_id and str(owner_id) != user_id:
+        course_id = media_asset.get("course_id")
+        if not course_id or not await models.is_course_owner(user_id, str(course_id)):
+            logger.warning(
+                "Permission denied: media finalize requires owner user_id=%s media_id=%s course_id=%s",
+                user_id,
+                media_asset_id,
+                course_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied",
+            )
+
+    media_type = (media_asset.get("media_type") or "").lower()
+    if media_type != "audio":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=_AUDIO_SOURCE_SUPPORTED_DETAIL,
+        )
+    return media_asset
+
+
 @router.post("/upload-url", response_model=schemas.MediaUploadUrlResponse)
 async def request_upload_url(
     payload: schemas.MediaUploadUrlRequest,
@@ -304,6 +385,7 @@ async def request_upload_url(
     media_asset_purpose = (
         "home_player_audio" if purpose == "home_player_audio" else "lesson_audio"
     )
+    initial_state = "pending_upload" if purpose == "lesson_audio" else "uploaded"
     media_asset_payload = {
         "owner_id": user_id,
         "course_id": course_id,
@@ -316,7 +398,7 @@ async def request_upload_url(
         "original_filename": payload.filename,
         "original_size_bytes": payload.size_bytes,
         "storage_bucket": storage_service.storage_service.bucket,
-        "state": "uploaded",
+        "state": initial_state,
     }
     logger.info(
         "Creating audio media_asset lesson_id=%s course_id=%s purpose=%s media_type=%s content_type=%s",
@@ -343,29 +425,6 @@ async def request_upload_url(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to create media record",
         )
-
-    if lesson_id:
-        try:
-            row = await models.add_lesson_media_entry_with_position_retry(
-                lesson_id=lesson_id,
-                kind="audio",
-                storage_path=None,
-                storage_bucket=storage_service.storage_service.bucket,
-                media_id=None,
-                media_asset_id=str(media_asset["id"]),
-                duration_seconds=None,
-                max_retries=10,
-            )
-        except Exception:
-            await media_assets_repo.delete_media_asset(str(media_asset["id"]))
-            raise
-
-        if not row:
-            await media_assets_repo.delete_media_asset(str(media_asset["id"]))
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Could not allocate lesson media position",
-            )
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
     logger.info(
@@ -418,7 +477,7 @@ async def refresh_upload_url(
     if media_type != "audio":
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only WAV or M4A audio files are supported",
+            detail=_AUDIO_SOURCE_SUPPORTED_DETAIL,
         )
 
     object_path = media_asset.get("original_object_path")
@@ -496,6 +555,116 @@ async def refresh_upload_url(
         object_path=upload.path,
         headers=dict(upload.headers),
         expires_at=expires_at,
+    )
+
+
+@router.post("/upload-url/complete", response_model=schemas.MediaStatusResponse)
+async def complete_upload_url(
+    payload: schemas.MediaUploadCompleteRequest,
+    current: TeacherUser,
+):
+    user_id = str(current["id"])
+    media_asset_id = str(payload.media_asset_id)
+    media_asset = await _authorize_audio_media_asset(
+        user_id=user_id,
+        media_asset_id=media_asset_id,
+    )
+
+    purpose = (media_asset.get("purpose") or "").strip().lower()
+    if purpose != "lesson_audio":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only lesson audio uploads can be completed here",
+        )
+
+    course_id = str(media_asset.get("course_id") or "").strip()
+    lesson_id = str(media_asset.get("lesson_id") or "").strip()
+    object_path = str(media_asset.get("original_object_path") or "").strip()
+    storage_bucket = str(
+        media_asset.get("storage_bucket") or storage_service.storage_service.bucket
+    ).strip()
+    if not course_id or not lesson_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Lesson audio is missing course or lesson context",
+        )
+    if not object_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Media missing storage path",
+        )
+    if not _is_canonical_lesson_audio_source_path(
+        object_path,
+        course_id=course_id,
+        lesson_id=lesson_id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Lesson audio must use the canonical pipeline source path",
+        )
+
+    try:
+        source_exists = await _wait_for_storage_object(
+            storage_bucket=storage_bucket,
+            storage_path=object_path,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning("Audio upload completion check failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    if not source_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Uploaded file is missing from storage",
+        )
+
+    lesson_media = await models.get_lesson_media_by_media_asset_id(media_asset_id)
+    if lesson_media is None:
+        try:
+            lesson_media = await models.add_lesson_media_entry_with_position_retry(
+                lesson_id=lesson_id,
+                kind="audio",
+                storage_path=None,
+                storage_bucket=storage_bucket,
+                media_id=None,
+                media_asset_id=media_asset_id,
+                duration_seconds=None,
+                max_retries=10,
+            )
+        except Exception:
+            logger.exception(
+                "Lesson audio attach failed media_id=%s lesson_id=%s",
+                media_asset_id,
+                lesson_id,
+            )
+            raise
+        if lesson_media is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Could not allocate lesson media position",
+            )
+
+    current_state = str(media_asset.get("state") or "").strip().lower()
+    if current_state in {"pending_upload", "failed"}:
+        updated = await media_assets_repo.mark_media_asset_uploaded(media_id=media_asset_id)
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Media not found",
+            )
+        media_asset = await media_assets_repo.get_media_asset(media_asset_id) or media_asset
+
+    return schemas.MediaStatusResponse(
+        media_id=UUID(media_asset_id),
+        state=str(media_asset.get("state") or "uploaded"),
+        error_message=media_asset.get("error_message"),
+        ingest_format=media_asset.get("ingest_format"),
+        streaming_format=media_asset.get("streaming_format"),
+        duration_seconds=media_asset.get("duration_seconds"),
+        codec=media_asset.get("codec"),
     )
 
 

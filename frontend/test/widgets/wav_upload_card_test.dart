@@ -16,10 +16,15 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   _FakeMediaPipelineRepository({
     required this.uploadTarget,
     required this.statuses,
+    this.completeStatus = const MediaStatus(
+      mediaId: 'media-1',
+      state: 'uploaded',
+    ),
   });
 
   final MediaUploadTarget uploadTarget;
   final List<MediaStatus> statuses;
+  final MediaStatus completeStatus;
   int _statusCalls = 0;
 
   @override
@@ -38,6 +43,19 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   @override
   Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) async {
     return uploadTarget;
+  }
+
+  @override
+  Future<MediaStatus> completeUpload({required String mediaId}) async {
+    return MediaStatus(
+      mediaId: mediaId,
+      state: completeStatus.state,
+      errorMessage: completeStatus.errorMessage,
+      ingestFormat: completeStatus.ingestFormat,
+      streamingFormat: completeStatus.streamingFormat,
+      durationSeconds: completeStatus.durationSeconds,
+      codec: completeStatus.codec,
+    );
   }
 
   @override
@@ -152,7 +170,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Ladda upp WAV/M4A'));
+    await tester.tap(find.text('Ladda upp ljud'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ge ljudet/videon ett namn'), findsOneWidget);
@@ -229,25 +247,25 @@ void main() {
       ),
     );
 
-    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
-    expect(find.text('Byt WAV/M4A'), findsNothing);
+    expect(find.text('Ladda upp ljud'), findsOneWidget);
+    expect(find.text('Byt ljud'), findsNothing);
 
-    await tester.tap(find.text('Ladda upp WAV/M4A'));
+    await tester.tap(find.text('Ladda upp ljud'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Demo');
     await tester.pump();
     await tester.tap(find.text('Fortsätt'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
-    expect(find.text('Byt WAV/M4A'), findsNothing);
+    expect(find.text('Ladda upp ljud'), findsOneWidget);
+    expect(find.text('Byt ljud'), findsNothing);
     expect(find.text('Uppladdning klar – bearbetas till MP3'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 10));
     await tester.pump();
 
-    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
-    expect(find.text('Byt WAV/M4A'), findsNothing);
+    expect(find.text('Ladda upp ljud'), findsOneWidget);
+    expect(find.text('Byt ljud'), findsNothing);
     expect(find.text('MP3 klar – ljudet kan spelas upp'), findsOneWidget);
   });
 
@@ -262,8 +280,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
-    expect(find.text('Byt WAV/M4A'), findsNothing);
+    expect(find.text('Ladda upp ljud'), findsOneWidget);
+    expect(find.text('Byt ljud'), findsNothing);
     expect(find.text('Uppladdning klar – bearbetas till MP3'), findsNothing);
   });
 
@@ -284,19 +302,17 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Ladda upp WAV/M4A'), findsOneWidget);
+    expect(find.text('Ladda upp ljud'), findsOneWidget);
     final button = tester.widget<ElevatedButton>(
       find.ancestor(
-        of: find.text('Ladda upp WAV/M4A'),
+        of: find.text('Ladda upp ljud'),
         matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
       ),
     );
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('rejects deprecated MP3 uploads before starting pipeline', (
-    tester,
-  ) async {
+  testWidgets('accepts MP3 uploads into the audio pipeline', (tester) async {
     final uploadTarget = MediaUploadTarget(
       mediaId: 'media-1',
       uploadUrl: Uri.parse('https://storage.test/upload'),
@@ -358,14 +374,20 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Ladda upp WAV/M4A'));
-    await tester.pump();
+    await tester.tap(find.text('Ladda upp ljud'));
+    await tester.pumpAndSettle();
 
+    expect(find.text('Ge ljudet/videon ett namn'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsOneWidget);
     expect(
-      find.text('MP3 uploads are deprecated. Please upload WAV or M4A.'),
-      findsWidgets,
+      find.text('Only MP3, WAV, or M4A files are supported.'),
+      findsNothing,
     );
-    expect(uploadRequested, isFalse);
-    expect(find.byType(AlertDialog), findsNothing);
+    await tester.enterText(find.byType(TextField), 'Demo');
+    await tester.pump();
+    await tester.tap(find.text('Fortsätt'));
+    await tester.pumpAndSettle();
+
+    expect(uploadRequested, isTrue);
   });
 }

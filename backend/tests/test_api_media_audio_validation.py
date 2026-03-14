@@ -7,26 +7,19 @@ from app.services import media_resolver
 from app.utils import media_paths
 
 
-def test_audio_ingest_format_allows_wav_and_m4a():
+def test_audio_ingest_format_allows_mp3_wav_and_m4a():
+    assert api_media._audio_ingest_format("demo.mp3", "audio/mpeg") == "mp3"
+    assert api_media._audio_ingest_format("demo.mp3", "audio/mp3") == "mp3"
     assert api_media._audio_ingest_format("demo.wav", "audio/wav") == "wav"
     assert api_media._audio_ingest_format("demo.wav", "audio/x-wav") == "wav"
     assert api_media._audio_ingest_format("demo.m4a", "audio/m4a") == "m4a"
     assert api_media._audio_ingest_format("demo.m4a", "audio/mp4") == "m4a"
 
 
-def test_audio_ingest_format_rejects_deprecated_mp3():
-    with pytest.raises(HTTPException) as exc_info:
-        api_media._audio_ingest_format("demo.mp3", "audio/mpeg")
-
-    assert exc_info.value.status_code == 400
-    assert (
-        exc_info.value.detail == "MP3 uploads are deprecated. Please upload WAV or M4A."
-    )
-
-
 @pytest.mark.parametrize(
     ("filename", "mime_type"),
     [
+        ("demo.mp3", "audio/wav"),
         ("demo.wav", "audio/mp4"),
         ("demo.m4a", "audio/wav"),
     ],
@@ -36,7 +29,20 @@ def test_audio_ingest_format_rejects_invalid_files(filename, mime_type):
         api_media._audio_ingest_format(filename, mime_type)
 
     assert exc_info.value.status_code == 415
-    assert exc_info.value.detail == "Only WAV or M4A audio files are supported"
+    assert (
+        exc_info.value.detail == "Only MP3, WAV, or M4A audio files are supported"
+    )
+
+
+def test_default_audio_content_type_prefers_mp3_metadata():
+    assert (
+        api_media._default_audio_content_type(
+            ingest_format="mp3",
+            original_filename="demo.wav",
+            original_object_path="media/source/audio/demo.wav",
+        )
+        == "audio/mpeg"
+    )
 
 
 def test_default_audio_content_type_prefers_m4a_metadata():

@@ -51,13 +51,17 @@ async def test_resolve_lesson_media_playback_prefers_media_asset(monkeypatch):
     assert result == {"url": "https://stream.test/asset.mp3", "media_id": "asset-1"}
 
 
-async def test_resolve_lesson_media_playback_falls_back_to_storage_path(monkeypatch):
+async def test_resolve_lesson_media_playback_does_not_fallback_for_pipeline_audio(
+    monkeypatch,
+):
     async def fake_get_media(_lesson_media_id: str):
         return {
             "id": "lesson-media-1",
+            "kind": "audio",
             "media_asset_id": "asset-1",
             "media_id": None,
             "storage_path": "courses/demo/legacy.mp3",
+            "content_type": "audio/wav",
         }
 
     async def fake_resolve_pipeline_playback(*, media_asset_id: str, user_id: str):
@@ -67,6 +71,51 @@ async def test_resolve_lesson_media_playback_falls_back_to_storage_path(monkeypa
             status_code=status.HTTP_409_CONFLICT,
             detail="Asset not ready",
         )
+
+    async def fail_legacy_fallback(**_kwargs):
+        raise AssertionError("legacy fallback must not run for pipeline audio rows")
+
+    monkeypatch.setattr(
+        lesson_playback_service.models,
+        "get_media",
+        fake_get_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        lesson_playback_service,
+        "resolve_pipeline_playback",
+        fake_resolve_pipeline_playback,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        lesson_playback_service,
+        "resolve_object_media_playback",
+        fail_legacy_fallback,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await lesson_playback_service.resolve_lesson_media_playback(
+            lesson_media_id="lesson-media-1",
+            user_id="user-1",
+        )
+
+    assert exc_info.value.status_code == status.HTTP_409_CONFLICT
+    assert exc_info.value.detail == "Asset not ready"
+
+
+async def test_resolve_lesson_media_playback_falls_back_to_storage_path_for_legacy_rows(
+    monkeypatch,
+):
+    async def fake_get_media(_lesson_media_id: str):
+        return {
+            "id": "lesson-media-1",
+            "kind": "audio",
+            "media_asset_id": None,
+            "media_id": None,
+            "storage_path": "courses/demo/legacy.mp3",
+            "content_type": "audio/mpeg",
+        }
 
     async def fake_resolve_object_media_playback(*, lesson_media_id: str, user_id: str):
         assert lesson_media_id == "lesson-media-1"
@@ -80,12 +129,6 @@ async def test_resolve_lesson_media_playback_falls_back_to_storage_path(monkeypa
         lesson_playback_service.models,
         "get_media",
         fake_get_media,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        lesson_playback_service,
-        "resolve_pipeline_playback",
-        fake_resolve_pipeline_playback,
         raising=True,
     )
     monkeypatch.setattr(

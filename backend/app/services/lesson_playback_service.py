@@ -239,6 +239,9 @@ async def resolve_lesson_media_playback(
 
     last_pipeline_error: HTTPException | None = None
     media_asset_id = row.get("media_asset_id")
+    kind = str(row.get("kind") or "").strip().lower()
+    content_type = str(row.get("content_type") or "").strip().lower()
+    is_audio_pipeline_row = kind == "audio" or content_type.startswith("audio/")
     if media_asset_id:
         try:
             return await resolve_pipeline_playback(
@@ -252,6 +255,8 @@ async def resolve_lesson_media_playback(
                 status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 status.HTTP_503_SERVICE_UNAVAILABLE,
             }:
+                raise
+            if is_audio_pipeline_row:
                 raise
             last_pipeline_error = exc
 

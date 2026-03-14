@@ -30,6 +30,7 @@ class ApiPaths {
   static const mediaSign = '/api/media/sign';
   static const mediaUploadUrl = '/api/media/upload-url';
   static const mediaUploadUrlRefresh = '/api/media/upload-url/refresh';
+  static const mediaUploadUrlComplete = '/api/media/upload-url/complete';
   static const mediaPlaybackUrl = '/api/media/playback-url';
   static const mediaLessonPlaybackUrl = '/api/media/lesson-playback';
   static const mediaCoverUploadUrl = '/api/media/cover-upload-url';

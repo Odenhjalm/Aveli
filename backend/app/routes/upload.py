@@ -610,6 +610,15 @@ async def upload_course_media(
     if effective_is_intro is None:
         effective_is_intro = False
 
+    detected_kind = _detect_kind(normalized_content_type)
+    if lesson_id and (
+        media_type == UploadMediaType.audio or detected_kind == "audio"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Lesson audio uploads must use /api/media/upload-url",
+        )
+
     storage_bucket = _COURSE_MEDIA_BUCKET
     if lesson_id:
         is_image_upload = (
@@ -638,7 +647,7 @@ async def upload_course_media(
             lesson_id=lesson_id_str,
             media_kind=media_type.value
             if media_type
-            else _detect_kind(normalized_content_type),
+            else detected_kind,
             filename=file.filename or "media",
         )
         storage_relative_path = Path(temp_storage_path)

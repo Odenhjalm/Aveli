@@ -218,6 +218,23 @@ async def release_processing_media_assets(*, stale_after_seconds: int = 1800) ->
     return len(rows)
 
 
+async def mark_media_asset_uploaded(*, media_id: str) -> bool:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            UPDATE app.media_assets
+            SET state = 'uploaded',
+                error_message = null,
+                next_retry_at = null,
+                processing_locked_at = null,
+                updated_at = now()
+            WHERE id = %s
+            """,
+            (media_id,),
+        )
+        return cur.rowcount > 0
+
+
 async def mark_media_asset_ready(
     *,
     media_id: str,

@@ -342,9 +342,11 @@ class StudioRepository {
       },
     );
 
+    final finalized = await pipeline.completeUpload(mediaId: upload.mediaId);
+
     return {
       'media_asset_id': upload.mediaId,
-      'media_state': 'uploaded',
+      'media_state': finalized.state,
       'ingest_format': _lessonAudioIngestFormat(contentType, filename) ?? 'wav',
       'original_name': filename,
       'content_type': contentType,
@@ -675,6 +677,12 @@ String? _detectUploadMediaType(String contentType) {
 String? _lessonAudioIngestFormat(String contentType, String filename) {
   final lower = contentType.toLowerCase();
   final lowerFilename = filename.toLowerCase();
+  if (lower == 'audio/mpeg' || lower == 'audio/mp3') {
+    return 'mp3';
+  }
+  if (lowerFilename.endsWith('.mp3')) {
+    return 'mp3';
+  }
   if (lower == 'audio/wav' ||
       lower == 'audio/x-wav' ||
       lower == 'audio/wave' ||
@@ -700,6 +708,11 @@ bool _isProcessedLessonAudioUpload(String contentType, String filename) {
 String _normalizeProcessedAudioMimeType(String contentType, String filename) {
   final lower = contentType.toLowerCase();
   switch (_lessonAudioIngestFormat(contentType, filename)) {
+    case 'mp3':
+      if (lower == 'audio/mpeg' || lower == 'audio/mp3') {
+        return lower;
+      }
+      return 'audio/mpeg';
     case 'wav':
       if (lower == 'audio/wav' || lower == 'audio/x-wav') {
         return lower;

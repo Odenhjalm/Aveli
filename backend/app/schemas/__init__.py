@@ -948,6 +948,14 @@ class MediaUploadUrlRefreshRequest(BaseModel):
     )
 
 
+class MediaUploadCompleteRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_asset_id: UUID = Field(
+        validation_alias=AliasChoices("media_asset_id", "media_id")
+    )
+
+
 class MediaUploadUrlResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -1009,7 +1017,7 @@ class MediaPlaybackUrlResponse(BaseModel):
 
 class MediaStatusResponse(BaseModel):
     media_id: UUID
-    state: Literal["uploaded", "processing", "ready", "failed"]
+    state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
     error_message: str | None = None
     ingest_format: str | None = None
     streaming_format: str | None = None

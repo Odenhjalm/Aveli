@@ -1087,11 +1087,15 @@ async def add_lesson_media_entry(
                   CASE
                     WHEN ma.id IS NOT NULL AND ma.state = 'ready'
                       THEN coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, i.storage_path)
+                    WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
+                      THEN coalesce(mo.storage_path, i.storage_path)
                     ELSE coalesce(mo.storage_path, i.storage_path, ma.original_object_path)
                   END AS storage_path,
                   CASE
                     WHEN ma.id IS NOT NULL AND ma.state = 'ready'
                       THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, i.storage_bucket, 'lesson-media')
+                    WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
+                      THEN coalesce(mo.storage_bucket, i.storage_bucket, 'lesson-media')
                     ELSE coalesce(mo.storage_bucket, i.storage_bucket, ma.storage_bucket, 'lesson-media')
                   END AS storage_bucket,
                   i.media_id,
@@ -1223,11 +1227,15 @@ async def get_media(media_id: str) -> dict | None:
               CASE
                 WHEN ma.id IS NOT NULL AND ma.state = 'ready'
                   THEN coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
+                WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
+                  THEN coalesce(mo.storage_path, lm.storage_path)
                 ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
               END AS storage_path,
               CASE
                 WHEN ma.id IS NOT NULL AND ma.state = 'ready'
                   THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+                WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
+                  THEN coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
                 ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
               END AS storage_bucket,
               lm.media_id,
@@ -1255,6 +1263,24 @@ async def get_media(media_id: str) -> dict | None:
             (media_id,),
         )
         return await _fetchone(cur)
+
+
+async def get_lesson_media_by_media_asset_id(media_asset_id: str) -> dict | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id
+            FROM app.lesson_media
+            WHERE media_asset_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (media_asset_id,),
+        )
+        row = await _fetchone(cur)
+    if not row:
+        return None
+    return await get_media(str(row["id"]))
 
 
 async def is_course_owner(user_id: str, course_id: str) -> bool:

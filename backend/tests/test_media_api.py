@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -114,84 +115,21 @@ async def _create_media_asset(
     return asset
 
 
-async def test_upload_url_allows_wav(async_client, monkeypatch):
-    headers, user_id = await register_teacher(async_client)
-    try:
-        course_id, lesson_id = await create_lesson(async_client, headers)
-
-        async def fake_create_upload_url(
-            self,
-            path,
-            *,
-            content_type,
-            upsert,
-            cache_seconds,
-        ):
-            return storage_module.PresignedUpload(
-                url=f"https://storage.local/{path}",
-                headers={"content-type": content_type},
-                path=path,
-                expires_in=120,
-            )
-
-        monkeypatch.setattr(
-            storage_module.StorageService,
-            "create_upload_url",
-            fake_create_upload_url,
-            raising=True,
-        )
-
-        now = datetime.now(timezone.utc)
-        resp = await async_client.post(
-            "/api/media/upload-url",
-            headers=headers,
-            json={
-                "filename": "demo.wav",
-                "mime_type": "audio/wav",
-                "size_bytes": 2048,
-                "media_type": "audio",
-                "lesson_id": lesson_id,
-            },
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["upload_url"].startswith("https://storage.local/")
-        assert body["storage_path"] == (
-            f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.wav"
-        )
-        assert body.get("media_asset_id")
-        expires_at = datetime.fromisoformat(body["expires_at"])
-        delta = (expires_at - now).total_seconds()
-        assert 110 <= delta <= 130
-
-        asset = await media_assets_repo.get_media_asset(body["media_asset_id"])
-        assert asset is not None
-        assert asset["ingest_format"] == "wav"
-        assert asset["original_content_type"] == "audio/wav"
-        # The transcode worker may pick up the asset immediately and briefly move
-        # it to "processing" before deferring back to "uploaded" when the source
-        # object isn't present yet. Accept either state to avoid flakiness.
-        assert asset["state"] in {"uploaded", "processing"}
-
-        async with db.get_conn() as cur:
-            await cur.execute(
-                """
-                SELECT media_asset_id
-                FROM app.lesson_media
-                WHERE lesson_id = %s
-                ORDER BY position
-                """,
-                (lesson_id,),
-            )
-            lesson_media_rows = await cur.fetchall()
-        assert len(lesson_media_rows) == 1
-        assert str(lesson_media_rows[0]["media_asset_id"]) == body["media_asset_id"]
-    finally:
-        await cleanup_user(user_id)
-
-
-@pytest.mark.parametrize("mime_type", ["audio/m4a", "audio/mp4"])
-async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
+@pytest.mark.parametrize(
+    ("filename", "mime_type", "ingest_format"),
+    [
+        ("demo.mp3", "audio/mpeg", "mp3"),
+        ("demo.wav", "audio/wav", "wav"),
+        ("demo.m4a", "audio/mp4", "m4a"),
+    ],
+)
+async def test_upload_url_allows_lesson_audio_sources(
+    async_client,
+    monkeypatch,
+    filename,
+    mime_type,
+    ingest_format,
+):
     headers, user_id = await register_teacher(async_client)
     try:
         course_id, lesson_id = await create_lesson(async_client, headers)
@@ -222,7 +160,7 @@ async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
             "/api/media/upload-url",
             headers=headers,
             json={
-                "filename": "demo.m4a",
+                "filename": filename,
                 "mime_type": mime_type,
                 "size_bytes": 2048,
                 "media_type": "audio",
@@ -233,16 +171,22 @@ async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
         body = resp.json()
         assert body["upload_url"].startswith("https://storage.local/")
         assert body["storage_path"] == (
-            f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.m4a"
+            f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/{filename}"
         )
         assert body.get("media_asset_id")
+        now = datetime.now(timezone.utc)
+        expires_at = datetime.fromisoformat(body["expires_at"])
+        delta = (expires_at - now).total_seconds()
+        assert -5 <= delta <= 130
 
         asset = await media_assets_repo.get_media_asset(body["media_asset_id"])
         assert asset is not None
-        assert asset["ingest_format"] == "m4a"
+        assert asset["media_type"] == "audio"
+        assert asset["purpose"] == "lesson_audio"
+        assert asset["ingest_format"] == ingest_format
         assert asset["original_content_type"] == mime_type
-        assert asset["original_filename"] == "demo.m4a"
-        assert asset["state"] in {"uploaded", "processing"}
+        assert asset["original_filename"] == filename
+        assert asset["state"] == "pending_upload"
 
         async with db.get_conn() as cur:
             await cur.execute(
@@ -255,8 +199,7 @@ async def test_upload_url_allows_m4a(async_client, monkeypatch, mime_type):
                 (lesson_id,),
             )
             lesson_media_rows = await cur.fetchall()
-        assert len(lesson_media_rows) == 1
-        assert str(lesson_media_rows[0]["media_asset_id"]) == body["media_asset_id"]
+        assert lesson_media_rows == []
     finally:
         await cleanup_user(user_id)
 
@@ -312,26 +255,115 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         await cleanup_user(user_id)
 
 
-async def test_upload_url_rejects_deprecated_mp3(async_client):
+@pytest.mark.parametrize(
+    ("filename", "mime_type"),
+    [
+        ("demo.mp3", "audio/mpeg"),
+        ("demo.wav", "audio/wav"),
+        ("demo.m4a", "audio/mp4"),
+    ],
+)
+async def test_complete_upload_attaches_lesson_media_and_advances_state(
+    async_client,
+    monkeypatch,
+    filename,
+    mime_type,
+):
     headers, user_id = await register_teacher(async_client)
     try:
-        _, lesson_id = await create_lesson(async_client, headers)
-        resp = await async_client.post(
+        course_id, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(*, storage_bucket: str, storage_path: str):
+            assert storage_bucket == storage_module.storage_service.bucket
+            assert storage_path == (
+                f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/{filename}"
+            )
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+
+        upload_resp = await async_client.post(
             "/api/media/upload-url",
             headers=headers,
             json={
-                "filename": "demo.mp3",
-                "mime_type": "audio/mpeg",
-                "size_bytes": 1024,
+                "filename": filename,
+                "mime_type": mime_type,
+                "size_bytes": 2048,
                 "media_type": "audio",
                 "lesson_id": lesson_id,
             },
         )
-        assert resp.status_code == 400, resp.text
-        assert (
-            resp.json()["detail"]
-            == "MP3 uploads are deprecated. Please upload WAV or M4A."
+        assert upload_resp.status_code == 200, upload_resp.text
+        media_id = upload_resp.json()["media_asset_id"]
+
+        pending_asset = await media_assets_repo.get_media_asset(media_id)
+        assert pending_asset is not None
+        assert pending_asset["state"] == "pending_upload"
+
+        complete_resp = await async_client.post(
+            "/api/media/upload-url/complete",
+            headers=headers,
+            json={"media_id": media_id},
         )
+        assert complete_resp.status_code == 200, complete_resp.text
+        assert complete_resp.json()["state"] == "uploaded"
+
+        uploaded_asset = await media_assets_repo.get_media_asset(media_id)
+        assert uploaded_asset is not None
+        assert uploaded_asset["media_type"] == "audio"
+        assert uploaded_asset["purpose"] == "lesson_audio"
+        assert uploaded_asset["state"] == "uploaded"
+
+        lesson_media = await models.get_lesson_media_by_media_asset_id(media_id)
+        assert lesson_media is not None
+        assert str(lesson_media["lesson_id"]) == lesson_id
+        assert str(lesson_media["media_asset_id"]) == media_id
+        assert lesson_media["storage_path"] is None
+
+        derived_path = Path(
+            str(uploaded_asset["original_object_path"]).replace(
+                "media/source/audio/",
+                "media/derived/audio/",
+                1,
+            )
+        ).with_suffix(".mp3").as_posix()
+        await media_assets_repo.mark_media_asset_ready(
+            media_id=media_id,
+            streaming_object_path=derived_path,
+            streaming_format="mp3",
+            duration_seconds=42,
+            codec="mp3",
+        )
+        ready_asset = await media_assets_repo.get_media_asset(media_id)
+        assert ready_asset is not None
+        assert ready_asset["state"] == "ready"
+        assert ready_asset["streaming_object_path"] == derived_path
+        assert ready_asset["streaming_format"] == "mp3"
     finally:
         await cleanup_user(user_id)
 
@@ -652,6 +684,7 @@ async def test_lesson_playback_pipeline_preserves_teacher_bypass(
             assert media_id == media_asset_id
             return {
                 "id": media_asset_id,
+                "lesson_id": str(uuid.uuid4()),
                 "media_type": "audio",
                 "state": "ready",
                 "purpose": "lesson_audio",
@@ -782,15 +815,15 @@ async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeyp
             raising=True,
         )
 
-        async def fake_resolve_lesson_media_playback_url(**_kwargs):
+        async def fake_resolve_storage_playback_url(**_kwargs):
             return (
                 "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3"
             )
 
         monkeypatch.setattr(
             lesson_playback_service.media_resolver,
-            "resolve_lesson_media_playback_url",
-            fake_resolve_lesson_media_playback_url,
+            "resolve_storage_playback_url",
+            fake_resolve_storage_playback_url,
             raising=True,
         )
 
@@ -1028,6 +1061,14 @@ async def test_wav_upload_position_allows_upload_after_deletion(
             fake_create_upload_url,
             raising=True,
         )
+        async def fake_wait_for_storage_object(**_kwargs):
+            return True
+
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
 
         async def issue_upload(filename: str) -> dict:
             resp = await async_client.post(
@@ -1042,6 +1083,12 @@ async def test_wav_upload_position_allows_upload_after_deletion(
                 },
             )
             assert resp.status_code == 200, resp.text
+            complete_resp = await async_client.post(
+                "/api/media/upload-url/complete",
+                headers=headers,
+                json={"media_id": resp.json()["media_asset_id"]},
+            )
+            assert complete_resp.status_code == 200, complete_resp.text
             return resp.json()
 
         await issue_upload("a.wav")

@@ -216,6 +216,14 @@ class MediaPipelineRepository {
     return MediaUploadTarget.fromJson(response);
   }
 
+  Future<MediaStatus> completeUpload({required String mediaId}) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      ApiPaths.mediaUploadUrlComplete,
+      body: {'media_id': mediaId},
+    );
+    return MediaStatus.fromJson(response);
+  }
+
   Future<MediaUploadTarget> requestCoverUploadUrl({
     required String filename,
     required String mimeType,

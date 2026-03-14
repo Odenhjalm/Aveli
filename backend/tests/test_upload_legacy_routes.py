@@ -71,7 +71,7 @@ async def create_lesson(async_client, headers, *, is_intro: bool = False):
     return course_id, lesson_id
 
 
-async def test_upload_course_media_legacy_route_accepts_audio(
+async def test_upload_course_media_legacy_route_rejects_lesson_audio(
     async_client, tmp_path, monkeypatch
 ):
     headers, _ = await register_teacher(async_client)
@@ -89,13 +89,8 @@ async def test_upload_course_media_legacy_route_accepts_audio(
         data={"course_id": course_id, "lesson_id": lesson_id, "type": "audio"},
         files={"file": ("demo.mp3", b"mp3-bytes", "audio/mpeg")},
     )
-    assert resp.status_code == 200, resp.text
-    payload = resp.json()
-    media = payload.get("media") or {}
-    assert isinstance(media, dict)
-    assert media.get("media_asset_id")
-    assert media.get("media_id") is None
-    assert (media.get("download_url") or "").startswith("/studio/media/")
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Lesson audio uploads must use /api/media/upload-url"
 
 
 async def test_upload_public_media_returns_public_url(

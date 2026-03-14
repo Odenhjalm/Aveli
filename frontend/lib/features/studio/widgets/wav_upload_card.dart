@@ -21,7 +21,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
     this.pickFileOverride,
     this.uploadFileOverride,
     this.pollInterval = const Duration(seconds: 5),
-    this.actionLabel = 'Ladda upp WAV/M4A',
+    this.actionLabel = 'Ladda upp ljud',
     this.onPipelineFinalState,
   });
 
@@ -60,8 +60,6 @@ class WavUploadCard extends ConsumerStatefulWidget {
 class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   static const _lessonRequiredText =
       'Spara lektionen för att kunna ladda upp ljud.';
-  static const _deprecatedMp3Text =
-      'MP3 uploads are deprecated. Please upload WAV or M4A.';
 
   WavUploadFile? _selectedFile;
   double _progress = 0.0;
@@ -128,13 +126,11 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   String? _validationMessageForSelectedFile(WavUploadFile file) {
     final lowerName = file.name.trim().toLowerCase();
     final normalizedMime = _normalizeWavMimeType(file.mimeType, file.name);
-    final isMp3 = lowerName.endsWith('.mp3') || normalizedMime == 'audio/mpeg';
-    if (isMp3) {
-      return _deprecatedMp3Text;
-    }
     final isSupported =
+        lowerName.endsWith('.mp3') ||
         lowerName.endsWith('.wav') ||
         lowerName.endsWith('.m4a') ||
+        normalizedMime == 'audio/mpeg' ||
         normalizedMime == 'audio/wav' ||
         normalizedMime == 'audio/x-wav' ||
         normalizedMime == 'audio/m4a' ||
@@ -142,7 +138,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     if (isSupported) {
       return null;
     }
-    return 'Only WAV or M4A files are supported.';
+    return 'Only MP3, WAV, or M4A files are supported.';
   }
 
   String _suggestMediaDisplayName(String filename) {
@@ -259,7 +255,10 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         dbState = null;
       }
 
-      final dbAllowsResume = dbState == 'uploaded' || dbState == 'processing';
+      final dbAllowsResume =
+          dbState == 'pending_upload' ||
+          dbState == 'uploaded' ||
+          dbState == 'processing';
       if (!dbAllowsResume) {
         if (dbState == 'failed') {
           clearResumableSession(resumableSession);
@@ -349,6 +348,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     _mediaId = mediaId;
 
     try {
+      final repo = ref.read(mediaPipelineRepositoryProvider);
       final uploader = widget.uploadFileOverride ?? uploadWavFile;
       await uploader(
         mediaId: mediaId,
@@ -398,16 +398,21 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         },
         resumableSession: resumableSession,
       );
+      final completed = await repo.completeUpload(mediaId: mediaId);
 
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = 'Uppladdning klar – bearbetas till MP3';
-        _mediaState = 'uploaded';
+        _status = _statusLabel(completed.state);
+        _mediaState = completed.state;
         _cancelToken = null;
       });
       await widget.onMediaUpdated?.call();
-      _startPolling();
+      if (completed.state == 'ready' || completed.state == 'failed') {
+        widget.onPipelineFinalState?.call(mediaId, completed.state);
+      } else {
+        _startPolling();
+      }
     } on WavUploadFailure catch (failure) {
       final message = _friendlyUploadFailure(failure.kind);
       if (!mounted) return;
@@ -469,6 +474,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
   String _statusLabel(String state) {
     switch (state) {
+      case 'pending_upload':
       case 'uploaded':
         return 'Uppladdning klar – bearbetas till MP3';
       case 'processing':
@@ -538,10 +544,10 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Ljud (WAV/M4A)', style: titleStyle),
+          Text('Ljud (MP3/WAV/M4A)', style: titleStyle),
           const SizedBox(height: 8),
           Text(
-            'Varje WAV- eller M4A-fil laddas upp och bearbetas till MP3 innan uppspelning.',
+            'Varje MP3-, WAV- eller M4A-fil laddas upp och bearbetas till MP3 innan uppspelning.',
             style: bodyStyle,
           ),
           if (actionRowChildren.isNotEmpty) ...[
