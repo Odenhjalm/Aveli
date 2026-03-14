@@ -134,19 +134,62 @@ def _cors_error_headers(request: Request) -> dict[str, str]:
     }
 
 
+def _configure_middleware(app: FastAPI) -> None:
+    # Starlette applies middleware in reverse registration order, so CORS is
+    # added last here to keep it outermost and let it answer browser preflights
+    # before other middleware or route matching runs.
+    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allow_origins,
+        allow_origin_regex=settings.cors_allow_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+def _include_routers(app: FastAPI) -> None:
+    app.include_router(api_auth.router)
+    app.include_router(api_ai.router)
+    app.include_router(api_context7.router)
+    app.include_router(api_services.router)
+    app.include_router(api_orders.router)
+    app.include_router(api_events.router)
+    app.include_router(api_notifications.router)
+    app.include_router(api_feed.router)
+    app.include_router(api_sfu.router)
+    app.include_router(api_profiles.router)
+    app.include_router(api_me.router)
+    app.include_router(api_media.router)
+    app.include_router(api_media.debug_router)
+    app.include_router(admin.router)
+    app.include_router(api_checkout.router)
+    app.include_router(billing.router)
+    app.include_router(connect.router)
+    app.include_router(community.router)
+    app.include_router(home.router)
+    app.include_router(courses.router)
+    app.include_router(courses.api_router)
+    app.include_router(course_bundles.router)
+    app.include_router(email_verification.router)
+    app.include_router(landing.router)
+    app.include_router(media.router)
+    app.include_router(profiles.router)
+    app.include_router(seminars.router)
+    app.include_router(session_slots.router)
+    app.include_router(studio.router)
+    app.include_router(studio_sessions.router)
+    app.include_router(stripe_webhooks.router)
+    app.include_router(livekit_webhooks.router)
+    app.include_router(upload.router)
+    app.include_router(upload.files_router)
+    app.include_router(upload.legacy_router)
+
+
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
 
-app.add_middleware(
-    RequestContextMiddleware
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_allow_origins,
-    allow_origin_regex=settings.cors_allow_origin_regex,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_configure_middleware(app)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -168,41 +211,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.mount("/assets", StaticFiles(directory=ASSETS_ROOT), name="assets")
 
-app.include_router(api_auth.router)
-app.include_router(api_ai.router)
-app.include_router(api_context7.router)
-app.include_router(api_services.router)
-app.include_router(api_orders.router)
-app.include_router(api_events.router)
-app.include_router(api_notifications.router)
-app.include_router(api_feed.router)
-app.include_router(api_sfu.router)
-app.include_router(api_profiles.router)
-app.include_router(api_me.router)
-app.include_router(api_media.router)
-app.include_router(api_media.debug_router)
-app.include_router(admin.router)
-app.include_router(api_checkout.router)
-app.include_router(billing.router)
-app.include_router(connect.router)
-app.include_router(community.router)
-app.include_router(home.router)
-app.include_router(courses.router)
-app.include_router(courses.api_router)
-app.include_router(course_bundles.router)
-app.include_router(email_verification.router)
-app.include_router(landing.router)
-app.include_router(media.router)
-app.include_router(profiles.router)
-app.include_router(seminars.router)
-app.include_router(session_slots.router)
-app.include_router(studio.router)
-app.include_router(studio_sessions.router)
-app.include_router(stripe_webhooks.router)
-app.include_router(livekit_webhooks.router)
-app.include_router(upload.router)
-app.include_router(upload.files_router)
-app.include_router(upload.legacy_router)
+_include_routers(app)
 
 
 @app.get("/healthz")
