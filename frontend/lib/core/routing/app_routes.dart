@@ -31,6 +31,7 @@ abstract class AppRoute {
   static const checkout = 'checkout';
   static const tarot = 'tarot';
   static const admin = 'admin';
+  static const adminMedia = 'admin-media';
   static const studio = 'studio';
   static const teacherHome = 'teacher-home';
   static const teacherEditor = 'teacher-editor';

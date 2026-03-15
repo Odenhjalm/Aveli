@@ -46,6 +46,18 @@ class LessonPlaybackResponse(BaseModel):
     url: str
 
 
+class RuntimePlaybackRequest(BaseModel):
+    runtime_media_id: UUID
+
+
+class RuntimePlaybackResponse(BaseModel):
+    runtime_media_id: UUID
+    playback_url: str
+    kind: str | None = None
+    content_type: str | None = None
+    duration_seconds: int | None = None
+
+
 class DebugMediaResponse(BaseModel):
     lesson_media_id: UUID
     storage_path: str
@@ -893,6 +905,24 @@ async def request_playback_url(
         playback_url=resolved["url"],
         expires_at=resolved["expires_at"],
         format=resolved["format"],
+    )
+
+
+@router.post("/playback", response_model=RuntimePlaybackResponse)
+async def request_runtime_playback(
+    payload: RuntimePlaybackRequest,
+    current: CurrentUser,
+):
+    playback = await lesson_playback_service.resolve_runtime_media_playback(
+        runtime_media_id=str(payload.runtime_media_id),
+        user_id=str(current["id"]),
+    )
+    return RuntimePlaybackResponse(
+        runtime_media_id=UUID(str(playback["runtime_media_id"])),
+        playback_url=playback["playback_url"],
+        kind=playback.get("kind"),
+        content_type=playback.get("content_type"),
+        duration_seconds=playback.get("duration_seconds"),
     )
 
 

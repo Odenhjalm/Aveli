@@ -42,6 +42,11 @@ final _testAppRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, _) => const SizedBox.shrink(),
       ),
       GoRoute(
+        path: RoutePath.adminMedia,
+        name: AppRoute.adminMedia,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
         path: RoutePath.teacherHome,
         name: AppRoute.teacherHome,
         builder: (context, _) => const SizedBox.shrink(),
@@ -124,6 +129,14 @@ void main() {
     isAdmin: false,
   );
 
+  const admin = RouteSessionSnapshot(
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
+    isTeacher: true,
+    isAdmin: true,
+  );
+
   testWidgets('unauthenticated users redirect to login with redirect query', (
     tester,
   ) async {
@@ -161,6 +174,16 @@ void main() {
     expect(uri.path, RoutePath.home);
   });
 
+  testWidgets('non-admins cannot access media control routes', (tester) async {
+    final router = await _pumpHarness(tester, authedUser);
+
+    router.go(RoutePath.adminMedia);
+    await tester.pump();
+
+    final uri = router.routeInformationProvider.value.uri;
+    expect(uri.path, RoutePath.home);
+  });
+
   testWidgets('teachers can stay on teacher routes', (tester) async {
     final router = await _pumpHarness(tester, teacher);
 
@@ -176,6 +199,18 @@ void main() {
     expect(
       router.routeInformationProvider.value.uri.path,
       RoutePath.teacherEditor,
+    );
+  });
+
+  testWidgets('admins can stay on media control routes', (tester) async {
+    final router = await _pumpHarness(tester, admin);
+
+    router.go(RoutePath.adminMedia);
+    await tester.pump();
+
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      RoutePath.adminMedia,
     );
   });
 

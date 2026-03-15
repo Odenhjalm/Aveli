@@ -576,9 +576,12 @@ class HomeAudioItem(BaseModel):
     id: UUID
     lesson_id: UUID
     lesson_title: str
+    title: Optional[str] = None
     course_id: UUID
     course_title: str
     course_slug: Optional[str] = None
+    teacher_id: Optional[UUID] = None
+    teacher_name: Optional[str] = None
     kind: str
     storage_path: Optional[str] = None
     storage_bucket: Optional[str] = None
@@ -597,6 +600,10 @@ class HomeAudioItem(BaseModel):
     media_state: Optional[str] = None
     streaming_format: Optional[str] = None
     codec: Optional[str] = None
+    runtime_media_id: Optional[UUID] = None
+    is_playable: Optional[bool] = None
+    playback_state: Optional[str] = None
+    failure_reason: Optional[str] = None
 
 
 class HomeAudioFeedResponse(BaseModel):

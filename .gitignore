@@ -138,3 +138,8 @@ supabase/.temp/
 supabase/.branches/
 applied
 Aveli.code-workspace
+
+# Mcp
+mcp.json
+config.json
+codex/config.toml

@@ -201,3 +201,37 @@ async def test_admin_teacher_request_endpoints(async_client):
     finally:
         await cleanup_user(admin_id)
         await cleanup_user(candidate_id)
+
+
+async def test_media_control_plane_health_requires_admin(async_client):
+    email = f"media_admin_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+
+    access_token, _, user_id = await register_user(
+        async_client, email, password, "Media Admin"
+    )
+
+    try:
+        forbidden = await async_client.get(
+            "/admin/media/health",
+            headers=auth_header(access_token),
+        )
+        assert forbidden.status_code == 403
+
+        await promote_to_admin(user_id)
+
+        allowed = await async_client.get(
+            "/admin/media/health",
+            headers=auth_header(access_token),
+        )
+        assert allowed.status_code == 200, allowed.text
+        payload = allowed.json()
+        assert payload["control_plane"] == "media"
+        assert payload["status"] == "ok"
+        assert payload["access"] == "admin_only"
+        assert payload["workspace"] == "media_control_plane"
+        assert payload["viewer_id"] == user_id
+        assert len(payload["capabilities"]) >= 1
+        assert len(payload["actions"]) >= 1
+    finally:
+        await cleanup_user(user_id)

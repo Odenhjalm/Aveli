@@ -11,7 +11,11 @@ from .media import _build_streaming_response
 router = APIRouter(prefix="/home", tags=["home"])
 
 
-@router.get("/audio", response_model=schemas.HomeAudioFeedResponse)
+@router.get(
+    "/audio",
+    response_model=schemas.HomeAudioFeedResponse,
+    response_model_exclude_none=True,
+)
 async def home_audio_feed(
     current: CurrentUser,
     limit: int = Query(default=12, ge=1, le=50),

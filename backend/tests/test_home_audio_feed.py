@@ -5,8 +5,44 @@ import pytest
 from psycopg import errors
 
 from app import db, models
+from app.media_control_plane.services.media_resolver_service import (
+    media_resolver_service as canonical_media_resolver,
+)
+from app.repositories import create_home_player_upload
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
+
+
+async def _runtime_media_id_for_lesson_media(lesson_media_id: str) -> str:
+    async with db.get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id
+            FROM app.runtime_media
+            WHERE lesson_media_id = %s
+            LIMIT 1
+            """,
+            (lesson_media_id,),
+        )
+        row = await cur.fetchone()
+    assert row
+    return str(row["id"])
+
+
+async def _runtime_media_id_for_home_upload(upload_id: str) -> str:
+    async with db.get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id
+            FROM app.runtime_media
+            WHERE home_player_upload_id = %s
+            LIMIT 1
+            """,
+            (upload_id,),
+        )
+        row = await cur.fetchone()
+    assert row
+    return str(row["id"])
 
 
 @pytest.mark.anyio("asyncio")
@@ -44,7 +80,22 @@ async def test_home_audio_returns_list(async_client):
 
 
 @pytest.mark.anyio("asyncio")
-async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_client):
+async def test_home_audio_returns_runtime_media_ids_and_playability_metadata(
+    async_client,
+    monkeypatch,
+):
+    async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+        assert storage_bucket
+        assert storage_path
+        return True
+
+    monkeypatch.setattr(
+        canonical_media_resolver,
+        "_storage_object_exists",
+        fake_storage_exists,
+        raising=True,
+    )
+
     email = f"home_audio_owner_{uuid.uuid4().hex[:6]}@example.org"
     password = "Passw0rd!"
     register_resp = await async_client.post(
@@ -153,7 +204,7 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     )
     assert lesson_media
     lesson_media_id = str(lesson_media["id"])
-    media_asset_id = str(media_asset["id"])
+    runtime_media_id = await _runtime_media_id_for_lesson_media(lesson_media_id)
 
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -184,11 +235,30 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     assert resp.status_code == 200, resp.text
     payload = resp.json()
     items = payload.get("items") or []
-    item = next((it for it in items if it.get("id") == lesson_media_id), None)
-    assert item is None, payload
+    item = next((it for it in items if it.get("id") == runtime_media_id), None)
+    assert item, payload
+    assert item.get("runtime_media_id") == runtime_media_id
+    assert item.get("lesson_id") == lesson_id
+    assert item.get("course_id") == course_id
+    assert item.get("lesson_title") == "Home track"
+    assert item.get("title") == "Home track"
+    assert item.get("is_playable") is False
+    assert item.get("playback_state") == "processing"
+    assert item.get("failure_reason") == "asset_not_ready"
+    assert item.get("media_state") == "processing"
+    assert item.get("content_type") == "audio/wav"
+    for removed_field in (
+        "media_asset_id",
+        "media_id",
+        "storage_bucket",
+        "storage_path",
+        "signed_url",
+        "download_url",
+    ):
+        assert removed_field not in item
 
     await media_assets_repo.mark_media_asset_ready(
-        media_id=media_asset_id,
+        media_id=str(media_asset["id"]),
         streaming_object_path="media/derived/audio/courses/test.mp3",
         streaming_format="mp3",
         duration_seconds=12,
@@ -203,12 +273,24 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     )
     assert resp_ready.status_code == 200, resp_ready.text
     items_ready = resp_ready.json().get("items") or []
-    item_ready = next((it for it in items_ready if it.get("id") == lesson_media_id), None)
+    item_ready = next((it for it in items_ready if it.get("id") == runtime_media_id), None)
     assert item_ready, resp_ready.json()
+    assert item_ready.get("runtime_media_id") == runtime_media_id
     assert item_ready.get("course_id") == course_id
-    assert item_ready.get("media_asset_id") == media_asset_id
+    assert item_ready.get("is_playable") is True
+    assert item_ready.get("playback_state") == "ready"
+    assert item_ready.get("failure_reason") == "ok_ready_asset"
     assert item_ready.get("media_state") == "ready"
-    assert item_ready.get("storage_path") == "media/derived/audio/courses/test.mp3"
+    assert item_ready.get("content_type") == "audio/mpeg"
+    for removed_field in (
+        "media_asset_id",
+        "media_id",
+        "storage_bucket",
+        "storage_path",
+        "signed_url",
+        "download_url",
+    ):
+        assert removed_field not in item_ready
 
     email2 = f"home_audio_other_{uuid.uuid4().hex[:6]}@example.com"
     register2 = await async_client.post(
@@ -228,7 +310,7 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     )
     assert resp2.status_code == 200, resp2.text
     items2 = resp2.json().get("items") or []
-    assert lesson_media_id not in {it.get("id") for it in items2}
+    assert runtime_media_id not in {it.get("id") for it in items2}
 
     me2_resp = await async_client.get(
         "/auth/me",
@@ -244,7 +326,94 @@ async def test_home_audio_excludes_processing_pipeline_audio_until_ready(async_c
     )
     assert resp2_enrolled.status_code == 200, resp2_enrolled.text
     items2_enrolled = resp2_enrolled.json().get("items") or []
-    assert lesson_media_id in {it.get("id") for it in items2_enrolled}
+    assert runtime_media_id in {it.get("id") for it in items2_enrolled}
+
+
+@pytest.mark.anyio("asyncio")
+async def test_home_audio_direct_upload_uses_runtime_media_id(async_client, monkeypatch):
+    async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+        assert storage_bucket
+        assert storage_path
+        return True
+
+    monkeypatch.setattr(
+        canonical_media_resolver,
+        "_storage_object_exists",
+        fake_storage_exists,
+        raising=True,
+    )
+
+    email = f"home_audio_direct_{uuid.uuid4().hex[:6]}@example.org"
+    password = "Passw0rd!"
+    register_resp = await async_client.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": password,
+            "display_name": "Home Audio Direct",
+        },
+    )
+    assert register_resp.status_code == 201, register_resp.text
+    tokens = register_resp.json()
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    me_resp = await async_client.get("/auth/me", headers=headers)
+    assert me_resp.status_code == 200, me_resp.text
+    teacher_id = me_resp.json()["user_id"]
+
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
+                (teacher_id,),
+            )
+            await conn.commit()
+
+    media_object = await models.create_media_object(
+        owner_id=teacher_id,
+        storage_path=f"home-player/{teacher_id}/{uuid.uuid4().hex}.mp3",
+        storage_bucket="course-media",
+        content_type="audio/mpeg",
+        byte_size=128,
+        checksum=None,
+        original_name="home-track.mp3",
+    )
+    assert media_object
+    upload = await create_home_player_upload(
+        teacher_id=teacher_id,
+        media_id=str(media_object["id"]),
+        media_asset_id=None,
+        title="Direct track",
+        kind="audio",
+        active=True,
+    )
+    assert upload
+    runtime_media_id = await _runtime_media_id_for_home_upload(str(upload["id"]))
+
+    resp = await async_client.get(
+        "/home/audio",
+        headers=headers,
+        params={"limit": 50},
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json().get("items") or []
+    item = next((it for it in items if it.get("id") == runtime_media_id), None)
+    assert item, resp.json()
+    assert item.get("runtime_media_id") == runtime_media_id
+    assert item.get("title") == "Direct track"
+    assert item.get("lesson_title") == "Direct track"
+    assert item.get("is_playable") is True
+    assert item.get("playback_state") == "ready"
+    assert item.get("failure_reason") == "ok_legacy_object"
+    assert item.get("content_type") == "audio/mpeg"
+    for removed_field in (
+        "media_asset_id",
+        "media_id",
+        "storage_bucket",
+        "storage_path",
+        "signed_url",
+        "download_url",
+    ):
+        assert removed_field not in item
 
 
 @pytest.mark.anyio("asyncio")
@@ -342,6 +511,7 @@ async def test_home_audio_course_link_marks_missing_source_when_deleted(async_cl
     )
     assert lesson_media
     lesson_media_id = str(lesson_media["id"])
+    runtime_media_id = await _runtime_media_id_for_lesson_media(lesson_media_id)
 
     create_link_resp = await async_client.post(
         "/studio/home-player/course-links",
@@ -363,7 +533,7 @@ async def test_home_audio_course_link_marks_missing_source_when_deleted(async_cl
 
     feed_before = await async_client.get("/home/audio", headers=headers, params={"limit": 50})
     assert feed_before.status_code == 200, feed_before.text
-    assert lesson_media_id in {it.get("id") for it in feed_before.json().get("items") or []}
+    assert runtime_media_id in {it.get("id") for it in feed_before.json().get("items") or []}
 
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -382,4 +552,4 @@ async def test_home_audio_course_link_marks_missing_source_when_deleted(async_cl
 
     feed_after = await async_client.get("/home/audio", headers=headers, params={"limit": 50})
     assert feed_after.status_code == 200, feed_after.text
-    assert lesson_media_id not in {it.get("id") for it in feed_after.json().get("items") or []}
+    assert runtime_media_id not in {it.get("id") for it in feed_after.json().get("items") or []}

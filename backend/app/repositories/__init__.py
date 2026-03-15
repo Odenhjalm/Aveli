@@ -85,6 +85,7 @@ from .home_player_library import (
     get_active_home_upload_by_media_id,
     get_active_home_upload_by_media_asset_id,
 )
+from .runtime_media import sync_home_player_upload_runtime_media
 from .memberships import (
     get_latest_subscription,
     get_membership,
@@ -209,6 +210,7 @@ __all__ = [
     "delete_home_player_course_link",
     "get_active_home_upload_by_media_id",
     "get_active_home_upload_by_media_asset_id",
+    "sync_home_player_upload_runtime_media",
     # Subscriptions
     "get_latest_subscription",
     "get_membership",

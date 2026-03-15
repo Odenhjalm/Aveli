@@ -41,6 +41,11 @@ class _AdminPageState extends ConsumerState<AdminPage> {
           title: 'Admin',
           actions: [
             IconButton(
+              tooltip: 'Öppna Media Control Plane',
+              icon: const Icon(Icons.perm_media_outlined),
+              onPressed: () => context.goNamed(AppRoute.adminMedia),
+            ),
+            IconButton(
               tooltip: 'Öppna inställningar',
               icon: const Icon(Icons.tune_outlined),
               onPressed: () => context.goNamed(AppRoute.adminSettings),
@@ -48,6 +53,20 @@ class _AdminPageState extends ConsumerState<AdminPage> {
           ],
           body: ListView(
             children: [
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.perm_media_outlined),
+                  title: const Text('Media Control Plane'),
+                  subtitle: const Text(
+                    'Öppna den adminlåsta ytan för runtime media, kontrollpunkter och driftstatus.',
+                  ),
+                  trailing: FilledButton(
+                    onPressed: () => context.goNamed(AppRoute.adminMedia),
+                    child: const Text('Öppna'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
               Text(
                 'Läraransökningar',
                 style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800),
