@@ -48,6 +48,8 @@ import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
+import 'package:aveli/shared/utils/pdf_link_editor_support.dart';
+import 'package:aveli/shared/utils/quill_embed_insertion.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
 String? _mediaUrl(Map<String, dynamic> media) {
@@ -1716,6 +1718,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             minHeight: 280,
             padding: const EdgeInsets.all(16),
             placeholder: 'Skriv eller klistra in lektionsinnehåll...',
+            onKeyPressed: _handleLessonEditorKeyPressed,
             embedBuilders: [
               ...FlutterQuillEmbeds.defaultEditorBuilders().where(
                 (builder) =>
@@ -2900,41 +2903,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (normalizedSrc == null) return;
     final controller = _lessonContentController;
     if (controller == null) return;
-    final docLength = controller.document.length;
-    TextSelection selection = targetSelection ?? controller.selection;
-    if (selection.start < 0 || selection.end < 0) {
-      selection = TextSelection.collapsed(offset: docLength);
-    }
-    final start = max(0, min(selection.start, selection.end));
-    final end = max(0, max(selection.start, selection.end));
-    final baseIndex = min(start, docLength);
-    final extentIndex = min(end, docLength);
-    final deleteLength = max(0, extentIndex - baseIndex);
-    final collapsedAfterDelete = TextSelection.collapsed(offset: baseIndex);
-    if (deleteLength > 0) {
-      controller.replaceText(baseIndex, deleteLength, '', collapsedAfterDelete);
-    } else {
-      controller.updateSelection(
-        collapsedAfterDelete,
-        quill.ChangeSource.local,
-      );
-    }
-
-    controller.replaceText(
-      baseIndex,
-      0,
-      quill.BlockEmbed.image(normalizedSrc),
-      TextSelection.collapsed(offset: baseIndex + 1),
+    final collapsed = replaceSelectionWithBlockEmbed(
+      controller: controller,
+      embed: quill.BlockEmbed.image(normalizedSrc),
+      selection: targetSelection ?? controller.selection,
     );
-    controller.replaceText(
-      baseIndex + 1,
-      0,
-      '\n',
-      TextSelection.collapsed(offset: baseIndex + 2),
-    );
-
-    final collapsed = TextSelection.collapsed(offset: baseIndex + 2);
-    controller.updateSelection(collapsed, quill.ChangeSource.local);
     _lastLessonSelection = collapsed;
     if (!_lessonContentFocusNode.hasFocus) {
       _lessonContentFocusNode.requestFocus();
@@ -2950,41 +2923,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }) {
     final controller = _lessonContentController;
     if (controller == null) return;
-    final docLength = controller.document.length;
-    TextSelection selection = targetSelection ?? controller.selection;
-    if (selection.start < 0 || selection.end < 0) {
-      selection = TextSelection.collapsed(offset: docLength);
-    }
-    final start = max(0, min(selection.start, selection.end));
-    final end = max(0, max(selection.start, selection.end));
-    final baseIndex = min(start, docLength);
-    final extentIndex = min(end, docLength);
-    final deleteLength = max(0, extentIndex - baseIndex);
-    final collapsedAfterDelete = TextSelection.collapsed(offset: baseIndex);
-    if (deleteLength > 0) {
-      controller.replaceText(baseIndex, deleteLength, '', collapsedAfterDelete);
-    } else {
-      controller.updateSelection(
-        collapsedAfterDelete,
-        quill.ChangeSource.local,
-      );
-    }
-
-    controller.replaceText(
-      baseIndex,
-      0,
-      quill.BlockEmbed.video(embedValue),
-      TextSelection.collapsed(offset: baseIndex + 1),
+    final collapsed = replaceSelectionWithBlockEmbed(
+      controller: controller,
+      embed: quill.BlockEmbed.video(embedValue),
+      selection: targetSelection ?? controller.selection,
     );
-    controller.replaceText(
-      baseIndex + 1,
-      0,
-      '\n',
-      TextSelection.collapsed(offset: baseIndex + 2),
-    );
-
-    final collapsed = TextSelection.collapsed(offset: baseIndex + 2);
-    controller.updateSelection(collapsed, quill.ChangeSource.local);
     _lastLessonSelection = collapsed;
     if (!_lessonContentFocusNode.hasFocus) {
       _lessonContentFocusNode.requestFocus();
@@ -3000,42 +2943,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }) {
     final controller = _lessonContentController;
     if (controller == null) return;
-
-    final docLength = controller.document.length;
-    TextSelection selection = targetSelection ?? controller.selection;
-    if (selection.start < 0 || selection.end < 0) {
-      selection = TextSelection.collapsed(offset: docLength);
-    }
-    final start = max(0, min(selection.start, selection.end));
-    final end = max(0, max(selection.start, selection.end));
-    final baseIndex = min(start, docLength);
-    final extentIndex = min(end, docLength);
-    final deleteLength = max(0, extentIndex - baseIndex);
-    final collapsedAfterDelete = TextSelection.collapsed(offset: baseIndex);
-    if (deleteLength > 0) {
-      controller.replaceText(baseIndex, deleteLength, '', collapsedAfterDelete);
-    } else {
-      controller.updateSelection(
-        collapsedAfterDelete,
-        quill.ChangeSource.local,
-      );
-    }
-
-    controller.replaceText(
-      baseIndex,
-      0,
-      embed,
-      TextSelection.collapsed(offset: baseIndex + 1),
+    final collapsed = replaceSelectionWithBlockEmbed(
+      controller: controller,
+      embed: embed,
+      selection: targetSelection ?? controller.selection,
     );
-    controller.replaceText(
-      baseIndex + 1,
-      0,
-      '\n',
-      TextSelection.collapsed(offset: baseIndex + 2),
-    );
-
-    final collapsed = TextSelection.collapsed(offset: baseIndex + 2);
-    controller.updateSelection(collapsed, quill.ChangeSource.local);
     _lastLessonSelection = collapsed;
     if (!_lessonContentFocusNode.hasFocus) {
       _lessonContentFocusNode.requestFocus();
@@ -3043,6 +2955,53 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!_lessonContentDirty) {
       setState(() => _lessonContentDirty = true);
     }
+  }
+
+  KeyEventResult? _handleLessonEditorKeyPressed(
+    KeyEvent event,
+    quill.Node? node,
+  ) {
+    if (event is! KeyDownEvent) return null;
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.backspace) {
+      final handled = _removePdfLinkLineAroundSelection(forward: false);
+      return handled ? KeyEventResult.handled : null;
+    }
+    if (key == LogicalKeyboardKey.delete) {
+      final handled = _removePdfLinkLineAroundSelection(forward: true);
+      return handled ? KeyEventResult.handled : null;
+    }
+    return null;
+  }
+
+  bool _removePdfLinkLineAroundSelection({required bool forward}) {
+    final controller = _lessonContentController;
+    if (controller == null) return false;
+
+    final selection = controller.selection;
+    if (!selection.isCollapsed || selection.baseOffset < 0) return false;
+
+    final plainText = controller.document.toPlainText();
+    final range = findPdfLinkDeletionRange(
+      plainText: plainText,
+      cursorOffset: selection.baseOffset,
+      forward: forward,
+    );
+    if (range == null || range.isCollapsed) return false;
+
+    final collapsed = TextSelection.collapsed(offset: range.start);
+    controller.replaceText(range.start, range.end - range.start, '', collapsed);
+    final maxOffset = max(0, controller.document.length - 1);
+    final normalizedCollapsed = TextSelection.collapsed(
+      offset: min(range.start, maxOffset),
+    );
+    controller.updateSelection(normalizedCollapsed, quill.ChangeSource.local);
+    _lastLessonSelection = normalizedCollapsed;
+    if (!_lessonContentDirty) {
+      setState(() => _lessonContentDirty = true);
+    }
+    return true;
   }
 
   void _insertDocumentLinkIntoLesson({
@@ -3054,16 +3013,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (controller == null) return;
 
     final label = '📄 $fileName';
-    final docLength = controller.document.length;
-    TextSelection selection = targetSelection ?? controller.selection;
-    if (selection.start < 0 || selection.end < 0) {
-      selection = TextSelection.collapsed(offset: docLength);
-    }
+    final selection = normalizeQuillInsertionSelection(
+      controller,
+      targetSelection ?? controller.selection,
+    );
 
     final start = max(0, min(selection.start, selection.end));
     final end = max(0, max(selection.start, selection.end));
-    final baseIndex = min(start, docLength);
-    final extentIndex = min(end, docLength);
+    final maxOffset = max(0, controller.document.length - 1);
+    final baseIndex = min(start, maxOffset);
+    final extentIndex = min(end, maxOffset);
     final deleteLength = max(0, extentIndex - baseIndex);
 
     controller.replaceText(
