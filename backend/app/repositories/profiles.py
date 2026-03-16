@@ -18,6 +18,7 @@ async def get_profile(user_id: str | UUID) -> dict[str, Any] | None:
                    bio,
                    photo_url,
                    avatar_media_id,
+                   onboarding_state,
                    role_v2,
                    is_admin,
                    created_at,
@@ -39,6 +40,7 @@ async def update_profile(
     bio: str | None = None,
     photo_url: str | None = None,
     avatar_media_id: str | None = None,
+    onboarding_state: str | None = None,
 ) -> dict[str, Any] | None:
     assignments: list[str] = []
     params: list[object] = []
@@ -55,6 +57,8 @@ async def update_profile(
         _append("photo_url", photo_url.strip() or None)
     if avatar_media_id is not None:
         _append("avatar_media_id", avatar_media_id)
+    if onboarding_state is not None:
+        _append("onboarding_state", onboarding_state)
 
     if not assignments:
         return await get_profile(user_id)
@@ -67,7 +71,8 @@ async def update_profile(
            SET {set_clause}
          WHERE user_id = %s
          RETURNING user_id, email, display_name, bio, photo_url,
-                   avatar_media_id, role_v2, is_admin, created_at, updated_at
+                   avatar_media_id, onboarding_state, role_v2, is_admin,
+                   created_at, updated_at
     """.format(set_clause=", ".join(assignments))
 
     async with pool.connection() as conn:  # type: ignore[attr-defined]
@@ -76,3 +81,10 @@ async def update_profile(
             row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None
+
+
+async def set_onboarding_state(
+    user_id: str | UUID,
+    onboarding_state: str,
+) -> dict[str, Any] | None:
+    return await update_profile(user_id, onboarding_state=onboarding_state)

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse
 from jose import JWTError
 
@@ -31,6 +31,8 @@ from ..services.email_verification import (
     send_verification_email,
     validate_invite_token,
 )
+from ..services.onboarding_state import sync_onboarding_state
+from ..utils.membership_status import is_membership_active
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -66,6 +68,41 @@ async def _claims_for_user(user_id: str, profile: dict | None = None) -> dict:
         "is_admin": is_admin,
         "is_teacher": bool(is_teacher),
     }
+
+
+async def _enqueue_verification_email(email: str) -> None:
+    try:
+        await send_verification_email(email)
+    except Exception:
+        logger.exception(
+            "Failed to send verification email after signup email=%s",
+            email,
+        )
+
+
+async def _profile_response(user_id: str) -> schemas.Profile:
+    profile = await repositories.get_profile(user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile missing",
+        )
+
+    onboarding_state = await sync_onboarding_state(user_id)
+    user = await repositories.get_user_by_id(user_id) or {}
+    membership = await repositories.get_membership(user_id)
+    membership_active = is_membership_active(
+        str((membership or {}).get("status") or ""),
+        (membership or {}).get("end_date"),
+    )
+
+    payload = dict(profile)
+    payload["onboarding_state"] = onboarding_state
+    payload["email_verified"] = bool(
+        user.get("email_confirmed_at") or user.get("confirmed_at")
+    )
+    payload["membership_active"] = bool(membership_active)
+    return schemas.Profile(**payload)
 
 
 def _consume_rate_limit(
@@ -126,7 +163,11 @@ async def oauth_legacy_disabled():
 @router.post(
     "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
 )
-async def register(payload: schemas.AuthRegisterRequest, request: Request):
+async def register(
+    payload: schemas.AuthRegisterRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     _require_valid_invite_token(payload.email, payload.invite_token)
 
     existing = await repositories.get_user_by_email(payload.email)
@@ -174,13 +215,7 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
         user_agent=request.headers.get("user-agent"),
         metadata={"refresh_jti": refresh_jti},
     )
-    try:
-        await send_verification_email(user["email"])
-    except Exception:
-        logger.exception(
-            "Failed to send verification email after signup email=%s",
-            user["email"],
-        )
+    background_tasks.add_task(_enqueue_verification_email, str(user["email"]))
     return schemas.Token(access_token=access_token, refresh_token=refresh_token)
 
 
@@ -382,12 +417,7 @@ async def refresh(payload: schemas.TokenRefreshRequest, request: Request):
 
 @router.get("/me", response_model=schemas.Profile)
 async def me(current: CurrentUser):
-    profile = await repositories.get_profile(current["id"])
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
-        )
-    return schemas.Profile(**profile)
+    return await _profile_response(str(current["id"]))
 
 
 @router.patch("/me", response_model=schemas.Profile)
@@ -402,7 +432,8 @@ async def update_me(payload: schemas.ProfileUpdate, current: CurrentUser):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
         )
-    return schemas.Profile(**updated)
+    await sync_onboarding_state(str(current["id"]))
+    return await _profile_response(str(current["id"]))
 
 
 @router.post("/me/avatar", response_model=schemas.Profile)
@@ -471,7 +502,7 @@ async def upload_avatar(current: CurrentUser, file: UploadFile = File(...)):
     if previous_media_id and previous_media_id != media_id:
         await models.cleanup_media_object(previous_media_id)
 
-    return schemas.Profile(**updated)
+    return await _profile_response(str(current["id"]))
 
 
 @router.get("/avatar/{media_id}")

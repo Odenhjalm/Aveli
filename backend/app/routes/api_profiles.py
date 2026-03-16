@@ -8,6 +8,8 @@ from fastapi.responses import FileResponse
 from .. import models, repositories, schemas
 from ..auth import CurrentUser
 from ..config import settings
+from ..services.onboarding_state import sync_onboarding_state
+from ..utils.membership_status import is_membership_active
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -17,14 +19,34 @@ _AVATAR_BUCKET = "profile-avatars"
 _AVATAR_ROOT = Path("avatars")
 
 
-@router.get("/me", response_model=schemas.Profile)
-async def get_me(current: CurrentUser):
-    profile = await repositories.get_profile(current["id"])
+async def _profile_response(user_id: str) -> schemas.Profile:
+    profile = await repositories.get_profile(user_id)
     if not profile:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile missing",
         )
-    return schemas.Profile(**profile)
+
+    onboarding_state = await sync_onboarding_state(user_id)
+    user = await repositories.get_user_by_id(user_id) or {}
+    membership = await repositories.get_membership(user_id)
+    membership_active = is_membership_active(
+        str((membership or {}).get("status") or ""),
+        (membership or {}).get("end_date"),
+    )
+
+    payload = dict(profile)
+    payload["onboarding_state"] = onboarding_state
+    payload["email_verified"] = bool(
+        user.get("email_confirmed_at") or user.get("confirmed_at")
+    )
+    payload["membership_active"] = bool(membership_active)
+    return schemas.Profile(**payload)
+
+
+@router.get("/me", response_model=schemas.Profile)
+async def get_me(current: CurrentUser):
+    return await _profile_response(str(current["id"]))
 
 
 @router.patch("/me", response_model=schemas.Profile)
@@ -39,7 +61,8 @@ async def update_me(payload: schemas.ProfileUpdate, current: CurrentUser):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
         )
-    return schemas.Profile(**updated)
+    await sync_onboarding_state(str(current["id"]))
+    return await _profile_response(str(current["id"]))
 
 
 @router.post("/me/avatar", response_model=schemas.Profile)
@@ -108,7 +131,7 @@ async def upload_avatar(current: CurrentUser, file: UploadFile = File(...)):
     if previous_media_id and previous_media_id != media_id:
         await models.cleanup_media_object(previous_media_id)
 
-    return schemas.Profile(**updated)
+    return await _profile_response(str(current["id"]))
 
 
 @router.get("/avatar/{media_id}")

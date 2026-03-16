@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 
 from .. import models, repositories, schemas
 from ..auth import CurrentUser
@@ -65,3 +65,17 @@ async def claim_purchase(
         str(current["id"]), str(payload.token)
     )
     return schemas.PurchaseClaimResponse(ok=ok)
+
+
+@router.post(
+    "/onboarding/welcome-complete",
+    response_model=schemas.OnboardingStateResponse,
+)
+async def complete_welcome(current: CurrentUser) -> schemas.OnboardingStateResponse:
+    updated = await repositories.set_onboarding_state(str(current["id"]), "welcomed")
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile missing",
+        )
+    return schemas.OnboardingStateResponse(onboarding_state="welcomed")

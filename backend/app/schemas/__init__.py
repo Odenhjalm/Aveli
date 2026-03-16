@@ -85,6 +85,9 @@ class Profile(BaseModel):
     bio: str | None = None
     photo_url: str | None = None
     avatar_media_id: UUID | None = None
+    onboarding_state: str | None = None
+    email_verified: bool = False
+    membership_active: bool = False
     role_v2: str
     is_admin: bool
     created_at: datetime
@@ -1239,6 +1242,10 @@ class PurchaseClaimRequest(BaseModel):
 
 class PurchaseClaimResponse(BaseModel):
     ok: bool
+
+
+class OnboardingStateResponse(BaseModel):
+    onboarding_state: str
 
 
 class EntitlementsMembership(BaseModel):

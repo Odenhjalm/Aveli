@@ -21,6 +21,7 @@ abstract class RoutePath {
   static const directMessage = '/messages/:uid';
   static const profile = '/profile';
   static const createProfile = '/create-profile';
+  static const welcome = '/welcome';
   static const profileSubscription = '/profile/subscription';
   static const profileSubscriptionPortal = '/profile/subscription/portal';
   static const checkout = '/checkout/web';

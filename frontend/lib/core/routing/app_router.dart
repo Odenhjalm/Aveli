@@ -14,6 +14,7 @@ import 'package:aveli/core/routing/route_manifest.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/core/routing/route_extras.dart';
+import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/auth/presentation/forgot_password_page.dart';
 import 'package:aveli/features/auth/presentation/invite_page.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
@@ -48,6 +49,7 @@ import 'package:aveli/features/payments/presentation/booking_page.dart';
 import 'package:aveli/features/payments/presentation/claim_purchase_page.dart';
 import 'package:aveli/features/payments/presentation/order_history_page.dart';
 import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
+import 'package:aveli/features/onboarding/welcome_page.dart';
 import 'package:aveli/features/paywall/presentation/checkout_result_page.dart';
 import 'package:aveli/features/paywall/presentation/checkout_webview_page.dart';
 import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
@@ -101,6 +103,10 @@ class AppRouterNotifier extends ChangeNotifier {
         return null;
       }
       if (isAuthed) {
+        final onboardingTarget = _resolveOnboardingTarget(session);
+        if (onboardingTarget != null) {
+          return onboardingTarget;
+        }
         return redirectTarget ?? state.namedLocation(AppRoute.home);
       }
 
@@ -147,7 +153,13 @@ class AppRouterNotifier extends ChangeNotifier {
     }
 
     if (meta.redirectAuthed) {
-      return state.namedLocation(AppRoute.home);
+      return _resolveOnboardingTarget(session) ??
+          state.namedLocation(AppRoute.home);
+    }
+
+    final onboardingRedirect = _handleOnboardingRedirect(state, session);
+    if (onboardingRedirect != null) {
+      return onboardingRedirect;
     }
 
     if (meta.level == RouteAccessLevel.admin && !session.isAdmin) {
@@ -170,6 +182,39 @@ class AppRouterNotifier extends ChangeNotifier {
   }
 }
 
+String? _handleOnboardingRedirect(
+  GoRouterState state,
+  RouteSessionSnapshot session,
+) {
+  final onboardingState = session.onboardingState;
+  if (onboardingState == null) {
+    return null;
+  }
+
+  if (_isCheckoutResultRoute(state)) {
+    if (onboardingState == OnboardingStateValue.verifiedUnpaid) {
+      return null;
+    }
+    return _resolveOnboardingTarget(session) ?? RoutePath.home;
+  }
+
+  if (onboardingState == OnboardingStateValue.welcomed &&
+      _isOnboardingOnlyRoute(state.uri.path)) {
+    return RoutePath.home;
+  }
+
+  final onboardingTarget = _resolveOnboardingTarget(session);
+  if (onboardingTarget == null) {
+    return null;
+  }
+
+  if (_isAllowedOnboardingRoute(state.uri.path, onboardingState)) {
+    return null;
+  }
+
+  return onboardingTarget;
+}
+
 const RouteAccessMeta _defaultPrivateMeta = RouteAccessMeta(
   level: RouteAccessLevel.authenticated,
 );
@@ -187,6 +232,53 @@ RouteAccessMeta _resolveRouteMeta(GoRouterState state) {
 String? _sanitizeRedirect(String? raw) {
   if (raw == null || raw.isEmpty) return null;
   return raw.startsWith('/') ? raw : null;
+}
+
+String? _resolveOnboardingTarget(RouteSessionSnapshot session) {
+  switch (session.onboardingState) {
+    case OnboardingStateValue.registeredUnverified:
+      return RoutePath.verifyEmail;
+    case OnboardingStateValue.verifiedUnpaid:
+      return RoutePath.subscribe;
+    case OnboardingStateValue.accessActiveProfileIncomplete:
+      return RoutePath.createProfile;
+    case OnboardingStateValue.accessActiveProfileComplete:
+      return RoutePath.welcome;
+    default:
+      return null;
+  }
+}
+
+bool _isAllowedOnboardingRoute(String path, String onboardingState) {
+  switch (onboardingState) {
+    case OnboardingStateValue.registeredUnverified:
+      return path == RoutePath.verifyEmail;
+    case OnboardingStateValue.verifiedUnpaid:
+      return path == RoutePath.subscribe || path == RoutePath.checkout;
+    case OnboardingStateValue.accessActiveProfileIncomplete:
+      return path == RoutePath.createProfile;
+    case OnboardingStateValue.accessActiveProfileComplete:
+      return path == RoutePath.welcome;
+    case OnboardingStateValue.welcomed:
+      return !_isOnboardingOnlyRoute(path);
+    default:
+      return true;
+  }
+}
+
+bool _isOnboardingOnlyRoute(String path) {
+  return path == RoutePath.verifyEmail ||
+      path == RoutePath.subscribe ||
+      path == RoutePath.createProfile ||
+      path == RoutePath.welcome ||
+      path == RoutePath.checkout ||
+      path == RoutePath.checkoutSuccess ||
+      path == RoutePath.checkoutCancel;
+}
+
+bool _isCheckoutResultRoute(GoRouterState state) {
+  return state.uri.path == RoutePath.checkoutSuccess ||
+      state.uri.path == RoutePath.checkoutCancel;
 }
 
 final Map<String, RouteAccessMeta> _routeAccessMeta = {
@@ -349,6 +441,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.createProfile,
         name: AppRoute.createProfile,
         builder: (context, state) => const community_profile.ProfilePage(),
+      ),
+      GoRoute(
+        path: RoutePath.welcome,
+        name: AppRoute.welcome,
+        builder: (context, state) => const WelcomePage(),
       ),
       GoRoute(
         path: RoutePath.profileSubscription,

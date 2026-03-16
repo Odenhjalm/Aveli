@@ -12,7 +12,7 @@ from .auth import (
     revoke_refresh_tokens_for_user,
     touch_refresh_token_as_rotated,
 )
-from .profiles import get_profile, update_profile
+from .profiles import get_profile, set_onboarding_state, update_profile
 from .services import list_services, get_service
 from .orders import (
     create_order,
@@ -136,6 +136,7 @@ __all__ = [
     "touch_refresh_token_as_rotated",
     # Profiles
     "get_profile",
+    "set_onboarding_state",
     "update_profile",
     # Services
     "list_services",

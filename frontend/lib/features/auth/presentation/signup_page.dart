@@ -269,7 +269,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
         context,
         'Konto skapat. Kontrollera din e-post för att verifiera kontot.',
       );
-      context.goNamed(AppRoute.landingRoot);
     } catch (error) {
       if (!mounted || !context.mounted) return;
       final message = error is AppFailure

@@ -213,7 +213,7 @@ async def upsert_membership_record(
     return _normalize_membership_row(row)
 
 
-async def insert_payment_event(event_id: str, payload: dict[str, Any]) -> None:
+async def insert_payment_event(event_id: str, payload: dict[str, Any]) -> bool:
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
@@ -222,13 +222,16 @@ async def insert_payment_event(event_id: str, payload: dict[str, Any]) -> None:
                     INSERT INTO app.payment_events (event_id, payload, processed_at)
                     VALUES (%s, %s, now())
                     ON CONFLICT (event_id) DO NOTHING
+                    RETURNING event_id
                     """,
                     (event_id, Jsonb(payload)),
                 )
             except errors.UndefinedTable:
                 await conn.rollback()
-                return
+                return True
+            row = await cur.fetchone()
             await conn.commit()
+    return row is not None
 
 
 async def insert_billing_log(

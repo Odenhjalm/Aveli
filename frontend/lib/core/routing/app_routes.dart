@@ -26,6 +26,7 @@ abstract class AppRoute {
   static const directMessage = 'dm';
   static const profile = 'profile';
   static const createProfile = 'create-profile';
+  static const welcome = 'welcome';
   static const profileSubscription = 'profile-subscription';
   static const profileSubscriptionPortal = 'profile-subscription-portal';
   static const checkout = 'checkout';

@@ -7,8 +7,6 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_claims.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/core/routing/route_access.dart';
-import 'package:aveli/core/routing/route_access_resolver.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/gate.dart';
 
@@ -164,6 +162,18 @@ class AuthController extends StateNotifier<AuthState> {
     state = const AuthState();
   }
 
+  Future<void> completeWelcome() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _repo.completeWelcome();
+      await loadSession();
+    } catch (err, stackTrace) {
+      final failure = AppFailure.from(err, stackTrace);
+      state = state.copyWith(isLoading: false, error: failure.message);
+      throw failure;
+    }
+  }
+
   void _handleAuthEvent(AuthHttpEvent event) {
     switch (event) {
       case AuthHttpEvent.sessionExpired:
@@ -191,30 +201,7 @@ final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
     final repo = ref.watch(authRepositoryProvider);
     final observer = ref.watch(authHttpObserverProvider);
     final controller = AuthController(repo, observer);
-    final shouldHydrateProfile = !kIsWeb
-        ? true
-        : resolveRouteAccessLevel(_initialBootstrapPath()) !=
-              RouteAccessLevel.public;
-    controller.loadSession(hydrateProfile: shouldHydrateProfile);
+    controller.loadSession();
     return controller;
   },
 );
-
-String _initialBootstrapPath() {
-  if (!kIsWeb) return Uri.base.path;
-  final uri = Uri.base;
-  final fragment = uri.fragment;
-  if (fragment.startsWith('/') && !_looksLikeOAuthFragment(fragment)) {
-    final cleaned = fragment.split('?').first;
-    return cleaned.isEmpty ? '/' : cleaned;
-  }
-  return uri.path;
-}
-
-bool _looksLikeOAuthFragment(String fragment) {
-  final lower = fragment.toLowerCase();
-  return lower.contains('access_token') ||
-      lower.contains('refresh_token') ||
-      lower.contains('token_type') ||
-      lower.contains('code=');
-}

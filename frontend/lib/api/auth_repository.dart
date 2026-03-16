@@ -157,6 +157,10 @@ class AuthRepository {
     return Profile.fromJson(data);
   }
 
+  Future<void> completeWelcome() async {
+    await _client.post<Map<String, dynamic>>(ApiPaths.meWelcomeComplete);
+  }
+
   Future<void> logout() => _tokens.clear();
 
   Future<String?> currentToken() => _tokens.readAccessToken();
