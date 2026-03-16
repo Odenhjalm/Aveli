@@ -21,3 +21,9 @@ Use:
 files.txt → locate files
 tags → locate functions
 tree.txt → understand structure
+
+Before searching the repository manually, always run semantic code search:
+
+tools/index/semantic_search.sh "<query>"
+
+Use the results to identify relevant files before reading code.
