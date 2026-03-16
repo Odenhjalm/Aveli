@@ -15,7 +15,7 @@ TextRange? findPdfLinkDeletionRange({
 }) {
   if (plainText.isEmpty) return null;
 
-  final normalizedOffset = cursorOffset.clamp(0, plainText.length) as int;
+  final normalizedOffset = cursorOffset.clamp(0, plainText.length);
   final candidateOffsets = <int>{
     min(normalizedOffset, max(0, plainText.length - 1)),
     max(0, normalizedOffset - 1),

@@ -166,7 +166,6 @@ class _LessonContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final lesson = detail.lesson;
     final mediaRepo = ref.watch(mediaRepositoryProvider);
-    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
     final screenWidth = MediaQuery.of(context).size.width;
     final safeScreenWidth = screenWidth.isFinite && screenWidth > 0
         ? screenWidth
@@ -224,35 +223,11 @@ class _LessonContent extends ConsumerWidget {
             sigmaY: 10,
             borderRadius: BorderRadius.circular(22),
             borderColor: Colors.white.withValues(alpha: 0.16),
-            child: FutureBuilder<String>(
-              future: prepareLessonMarkdownForRendering(
-                mediaRepo,
-                markdownContent,
-                lessonMedia: mediaItems,
-                pipelineRepository: pipelineRepo,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: LinearProgressIndicator(),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('Kunde inte rendera lektionsinnehållet.'),
-                  );
-                }
-
-                final prepared = (snapshot.data ?? markdownContent).trim();
-                return _LessonQuillContent(
-                  markdown: prepared.isEmpty ? 'Inget innehåll.' : prepared,
-                  onLaunchUrl: (url) =>
-                      unawaited(_handleLinkTap(context, ref, url)),
-                );
-              },
+            child: LessonPageRenderer(
+              markdown: markdownContent,
+              lessonMedia: mediaItems,
+              onLaunchUrl: (url) =>
+                  unawaited(_handleLinkTap(context, ref, url)),
             ),
           ),
           if (bundleLinks.isNotEmpty) ...[
@@ -341,6 +316,65 @@ class _BundleLink {
   const _BundleLink({required this.url, required this.bundleId});
   final String url;
   final String bundleId;
+}
+
+class LessonPageRenderer extends ConsumerWidget {
+  const LessonPageRenderer({
+    super.key,
+    required this.markdown,
+    this.lessonMedia = const <LessonMediaItem>[],
+    this.emptyText = 'Inget innehåll.',
+    this.onLaunchUrl,
+  });
+
+  final String markdown;
+  final List<LessonMediaItem> lessonMedia;
+  final String emptyText;
+  final ValueChanged<String>? onLaunchUrl;
+
+  String _normalizeMarkdown() {
+    if (markdown.trim().isEmpty) {
+      return emptyText;
+    }
+    return markdown;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mediaRepo = ref.watch(mediaRepositoryProvider);
+    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
+    final normalizedMarkdown = _normalizeMarkdown();
+
+    return FutureBuilder<String>(
+      future: prepareLessonMarkdownForRendering(
+        mediaRepo,
+        normalizedMarkdown,
+        lessonMedia: lessonMedia,
+        pipelineRepository: pipelineRepo,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Kunde inte rendera lektionsinnehållet.'),
+          );
+        }
+
+        final prepared = (snapshot.data ?? normalizedMarkdown).trim();
+        return _LessonQuillContent(
+          markdown: prepared.isEmpty ? emptyText : prepared,
+          onLaunchUrl: onLaunchUrl ?? (url) => unawaited(launchUrlString(url)),
+        );
+      },
+    );
+  }
 }
 
 final md.Document _lessonMarkdownDocument = md.Document(
