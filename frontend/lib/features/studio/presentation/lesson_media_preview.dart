@@ -6,55 +6,115 @@ import 'package:aveli/features/media/data/media_repository.dart';
 
 import 'lesson_media_preview_cache.dart';
 
-class LessonMediaPreview extends ConsumerWidget {
+class LessonMediaPreview extends ConsumerStatefulWidget {
   const LessonMediaPreview({
     super.key,
     required this.lessonMediaId,
     required this.mediaType,
     this.src,
+    this.hydrating = false,
+    this.hydrationRevision = 0,
   });
 
   final String lessonMediaId;
   final String mediaType;
   final String? src;
+  final bool hydrating;
+  final int hydrationRevision;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cache = ref.watch(lessonMediaPreviewCacheProvider);
-    final mediaRepository = ref.watch(mediaRepositoryProvider);
-    final normalizedType = mediaType.trim().toLowerCase();
-    final previewFuture = lessonMediaId.trim().isEmpty
-        ? Future<LessonMediaPreviewData?>.value(null)
-        : cache.getPreview(lessonMediaId);
+  ConsumerState<LessonMediaPreview> createState() => _LessonMediaPreviewState();
+}
 
-    return RepaintBoundary(
-      child: Focus(
-        canRequestFocus: false,
-        skipTraversal: true,
-        descendantsAreFocusable: false,
-        child: IgnorePointer(
-          ignoring: true,
-          child: FutureBuilder<LessonMediaPreviewData?>(
-            future: previewFuture,
-            builder: (context, snapshot) {
-              final preview = snapshot.data;
-              final visualUrl = _resolveVisualUrl(
-                mediaRepository: mediaRepository,
-                preferred: preview?.visualUrl,
-                fallback: src,
-              );
-              final isLoading =
-                  snapshot.connectionState == ConnectionState.waiting &&
-                  preview == null;
-              return _LessonMediaPreviewFrame(
-                mediaType: normalizedType,
-                visualUrl: preview?.previewBlocked == true ? null : visualUrl,
-                fileName: preview?.fileName,
-                durationSeconds: preview?.durationSeconds,
-                isLoading: isLoading,
-                isBlocked: preview?.previewBlocked == true,
-              );
-            },
+class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
+  late Future<LessonMediaPreviewData?> _previewFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _previewFuture = _createPreviewFuture();
+  }
+
+  @override
+  void didUpdateWidget(covariant LessonMediaPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lessonMediaId.trim() != widget.lessonMediaId.trim() ||
+        oldWidget.hydrationRevision != widget.hydrationRevision) {
+      _previewFuture = _createPreviewFuture();
+    }
+  }
+
+  Future<LessonMediaPreviewData?> _createPreviewFuture() {
+    final normalizedLessonMediaId = widget.lessonMediaId.trim();
+    if (normalizedLessonMediaId.isEmpty) {
+      return Future<LessonMediaPreviewData?>.value(null);
+    }
+    return ref
+        .read(lessonMediaPreviewCacheProvider)
+        .getPreview(normalizedLessonMediaId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaRepository = ref.watch(mediaRepositoryProvider);
+    final normalizedType = widget.mediaType.trim().toLowerCase();
+    final supportsVisualPreview =
+        normalizedType == 'image' || normalizedType == 'video';
+
+    return Semantics(
+      identifier: 'media-preview',
+      child: RepaintBoundary(
+        child: Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          descendantsAreFocusable: false,
+          child: IgnorePointer(
+            ignoring: true,
+            child: FutureBuilder<LessonMediaPreviewData?>(
+              future: _previewFuture,
+              builder: (context, snapshot) {
+                final preview = snapshot.data;
+                final previewVisualUrl = _resolveVisualUrl(
+                  mediaRepository: mediaRepository,
+                  preferred: preview?.visualUrl,
+                  fallback: null,
+                );
+                final fallbackVisualUrl = _resolveFallbackVisualUrl(
+                  mediaRepository: mediaRepository,
+                  mediaType: normalizedType,
+                  fallback: widget.src,
+                );
+                final visualUrl = preview?.previewBlocked == true
+                    ? null
+                    : previewVisualUrl ?? fallbackVisualUrl;
+                final isHydrating =
+                    widget.hydrating &&
+                    supportsVisualPreview &&
+                    preview?.previewBlocked != true &&
+                    visualUrl == null;
+                final isAsyncLoading =
+                    widget.hydrating &&
+                    snapshot.connectionState == ConnectionState.waiting &&
+                    preview == null &&
+                    visualUrl == null;
+                final isUnresolved =
+                    supportsVisualPreview &&
+                    !isHydrating &&
+                    !isAsyncLoading &&
+                    preview?.previewBlocked != true &&
+                    visualUrl == null;
+                final isLoading = isHydrating || isAsyncLoading;
+                return _LessonMediaPreviewFrame(
+                  mediaType: normalizedType,
+                  visualUrl: visualUrl,
+                  fileName: preview?.fileName,
+                  durationSeconds: preview?.durationSeconds,
+                  isLoading: isLoading,
+                  isBlocked: preview?.previewBlocked == true,
+                  isUnresolved: isUnresolved,
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -70,6 +130,7 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
     required this.durationSeconds,
     required this.isLoading,
     required this.isBlocked,
+    required this.isUnresolved,
   });
 
   final String mediaType;
@@ -78,6 +139,7 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
   final int? durationSeconds;
   final bool isLoading;
   final bool isBlocked;
+  final bool isUnresolved;
 
   static const double _imageAspectRatio = 4 / 3;
   static const double _videoAspectRatio = 16 / 9;
@@ -99,7 +161,9 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: visualUrl == null ? 0.0 : 0.08),
+                    Colors.black.withValues(
+                      alpha: visualUrl == null ? 0.0 : 0.08,
+                    ),
                     Colors.black.withValues(alpha: 0.34),
                   ],
                 ),
@@ -115,6 +179,7 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
                     fileName: fileName,
                     durationSeconds: durationSeconds,
                     isBlocked: isBlocked,
+                    isUnresolved: isUnresolved,
                   ),
           ),
         ],
@@ -177,12 +242,14 @@ class _PreviewLabel extends StatelessWidget {
     required this.fileName,
     required this.durationSeconds,
     required this.isBlocked,
+    required this.isUnresolved,
   });
 
   final String mediaType;
   final String? fileName;
   final int? durationSeconds;
   final bool isBlocked;
+  final bool isUnresolved;
 
   @override
   Widget build(BuildContext context) {
@@ -190,9 +257,14 @@ class _PreviewLabel extends StatelessWidget {
     final title = fileName ?? _defaultLabel();
     final detail = isBlocked
         ? 'Förhandsvisning otillgänglig i editorn'
+        : isUnresolved
+        ? 'Förhandsvisning kunde inte laddas'
         : _detailText();
 
     return Align(
+      key: isUnresolved
+          ? const ValueKey<String>('lesson_media_preview_unresolved')
+          : null,
       alignment: Alignment.bottomLeft,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -204,11 +276,7 @@ class _PreviewLabel extends StatelessWidget {
             ),
             child: Padding(
               padding: const EdgeInsets.all(10),
-              child: Icon(
-                _iconForType(),
-                color: Colors.white,
-                size: 20,
-              ),
+              child: Icon(_iconForType(), color: Colors.white, size: 20),
             ),
           ),
           const SizedBox(width: 10),
@@ -295,6 +363,7 @@ class _PreviewSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final baseColor = Colors.white.withValues(alpha: 0.18);
     return Align(
+      key: const ValueKey<String>('lesson_media_preview_loading'),
       alignment: Alignment.bottomLeft,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -352,6 +421,30 @@ String? _resolveVisualUrl({
   } catch (_) {
     return null;
   }
+}
+
+String? _resolveFallbackVisualUrl({
+  required MediaRepository mediaRepository,
+  required String mediaType,
+  required String? fallback,
+}) {
+  if (mediaType != 'image') return null;
+  final normalized = fallback?.trim();
+  if (normalized == null || normalized.isEmpty) return null;
+  if (_isStudioMediaPath(normalized)) return null;
+  return _resolveVisualUrl(
+    mediaRepository: mediaRepository,
+    preferred: normalized,
+    fallback: null,
+  );
+}
+
+bool _isStudioMediaPath(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) return false;
+  final uri = Uri.tryParse(normalized);
+  final path = uri?.path ?? normalized;
+  return path.startsWith('/studio/media/');
 }
 
 String _formatDuration(int totalSeconds) {

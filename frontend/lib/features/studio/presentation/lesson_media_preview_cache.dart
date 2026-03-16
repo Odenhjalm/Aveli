@@ -32,6 +32,17 @@ class LessonMediaPreviewData {
     return null;
   }
 
+  bool get requiresVisualResolution {
+    if (previewBlocked) return false;
+    switch (mediaType) {
+      case 'image':
+      case 'video':
+        return visualUrl == null;
+      default:
+        return false;
+    }
+  }
+
   factory LessonMediaPreviewData.fromJson(
     String lessonMediaId,
     Map<String, dynamic> json,
@@ -94,10 +105,22 @@ class LessonMediaPreviewData {
   }
 }
 
-final lessonMediaPreviewCacheProvider = Provider<LessonMediaPreviewCache>((ref) {
+final lessonMediaPreviewCacheProvider = Provider<LessonMediaPreviewCache>((
+  ref,
+) {
   final studioRepository = ref.watch(studioRepositoryProvider);
   return LessonMediaPreviewCache(studioRepository: studioRepository);
 });
+
+class LessonMediaPreviewHydrationBatch {
+  const LessonMediaPreviewHydrationBatch({
+    required this.hydratingIds,
+    required this.settled,
+  });
+
+  final Set<String> hydratingIds;
+  final Future<void> settled;
+}
 
 class LessonMediaPreviewCache {
   LessonMediaPreviewCache({required this.studioRepository});
@@ -108,7 +131,10 @@ class LessonMediaPreviewCache {
       <String, LessonMediaPreviewData>{};
   final Map<String, Completer<LessonMediaPreviewData?>> _pending =
       <String, Completer<LessonMediaPreviewData?>>{};
+  final Map<String, List<Completer<void>>> _batchWaiters =
+      <String, List<Completer<void>>>{};
   final Set<String> _queuedIds = <String>{};
+  final Set<String> _inFlightIds = <String>{};
 
   bool _flushScheduled = false;
 
@@ -119,7 +145,7 @@ class LessonMediaPreviewCache {
     }
 
     final cached = _cache[normalized];
-    if (cached != null) {
+    if (cached != null && !cached.requiresVisualResolution) {
       return Future<LessonMediaPreviewData?>.value(cached);
     }
 
@@ -128,11 +154,55 @@ class LessonMediaPreviewCache {
       return existing.future;
     }
 
+    if (_inFlightIds.contains(normalized)) {
+      final completer = Completer<LessonMediaPreviewData?>();
+      _pending[normalized] = completer;
+      return completer.future;
+    }
+
     final completer = Completer<LessonMediaPreviewData?>();
     _pending[normalized] = completer;
     _queuedIds.add(normalized);
     _scheduleFlush();
     return completer.future;
+  }
+
+  LessonMediaPreviewHydrationBatch beginHydrationBatch(
+    Iterable<String> lessonMediaIds,
+  ) {
+    final hydratingIds = <String>{};
+    final futures = <Future<void>>[];
+    var needsFlush = false;
+
+    for (final lessonMediaId in lessonMediaIds) {
+      final normalized = lessonMediaId.trim();
+      if (normalized.isEmpty) continue;
+      final cached = _cache[normalized];
+      if (cached != null && !cached.requiresVisualResolution) {
+        continue;
+      }
+
+      hydratingIds.add(normalized);
+      futures.add(_registerBatchWaiter(normalized));
+      if (!_inFlightIds.contains(normalized) &&
+          !_queuedIds.contains(normalized)) {
+        _queuedIds.add(normalized);
+        _pending.putIfAbsent(
+          normalized,
+          () => Completer<LessonMediaPreviewData?>(),
+        );
+        needsFlush = true;
+      }
+    }
+
+    if (needsFlush) {
+      _scheduleFlush();
+    }
+
+    return LessonMediaPreviewHydrationBatch(
+      hydratingIds: Set<String>.unmodifiable(hydratingIds),
+      settled: futures.isEmpty ? Future<void>.value() : Future.wait(futures),
+    );
   }
 
   Future<void> prefetch(Iterable<String> lessonMediaIds) async {
@@ -150,7 +220,11 @@ class LessonMediaPreviewCache {
     for (final preview in previews) {
       final lessonMediaId = preview.lessonMediaId.trim();
       if (lessonMediaId.isEmpty) continue;
-      _cache[lessonMediaId] = preview;
+      if (preview.requiresVisualResolution) {
+        _cache.remove(lessonMediaId);
+      } else {
+        _cache[lessonMediaId] = preview;
+      }
       final completer = _pending.remove(lessonMediaId);
       if (completer != null && !completer.isCompleted) {
         completer.complete(preview);
@@ -171,11 +245,32 @@ class LessonMediaPreviewCache {
     scheduleMicrotask(_flushQueued);
   }
 
+  Future<void> _registerBatchWaiter(String lessonMediaId) {
+    final completer = Completer<void>();
+    final waiters = _batchWaiters.putIfAbsent(
+      lessonMediaId,
+      () => <Completer<void>>[],
+    );
+    waiters.add(completer);
+    return completer.future;
+  }
+
+  void _completeBatchWaiters(String lessonMediaId) {
+    final waiters = _batchWaiters.remove(lessonMediaId);
+    if (waiters == null) return;
+    for (final completer in waiters) {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    }
+  }
+
   Future<void> _flushQueued() async {
     _flushScheduled = false;
     final ids = _queuedIds.toList(growable: false);
     _queuedIds.clear();
     if (ids.isEmpty) return;
+    _inFlightIds.addAll(ids);
 
     Map<String, LessonMediaPreviewData> previews =
         <String, LessonMediaPreviewData>{};
@@ -193,15 +288,20 @@ class LessonMediaPreviewCache {
 
     for (final lessonMediaId in ids) {
       final preview = previews[lessonMediaId];
-      if (preview != null) {
+      if (preview != null && !preview.requiresVisualResolution) {
         _cache[lessonMediaId] = preview;
+      } else if (preview == null || preview.requiresVisualResolution) {
+        _cache.remove(lessonMediaId);
       }
 
       final completer = _pending.remove(lessonMediaId);
       if (completer != null && !completer.isCompleted) {
         completer.complete(preview);
       }
+      _completeBatchWaiters(lessonMediaId);
     }
+
+    _inFlightIds.removeAll(ids);
 
     if (_queuedIds.isNotEmpty) {
       _scheduleFlush();
