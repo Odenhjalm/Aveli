@@ -1,33 +1,26 @@
 import 'dart:js_interop';
 import 'dart:js_util' as js_util;
-import 'dart:math' as math;
-
-import 'package:flutter/material.dart' show TextSelection;
-import 'package:flutter_quill/flutter_quill.dart' as quill;
 // ignore: depend_on_referenced_packages
 import 'package:web/web.dart' as web;
 
 Object? _bridgeObject;
 
-void registerAveliEditorTestBridge(
-  quill.QuillController? Function() controllerAccessor,
-) {
+void registerAveliEditorTestBridge({
+  required void Function(String text) insertText,
+  required void Function() backspace,
+  required void Function() deleteSelection,
+  required void Function(int offset) setCursor,
+  required void Function(int start, int end) setSelection,
+  required int Function() getCursor,
+  required String Function() getDocument,
+}) {
   final bridge = js_util.newObject();
 
   js_util.setProperty(
     bridge,
     'insertText',
     ((String text) {
-      final controller = controllerAccessor();
-      if (controller == null) return;
-
-      final replacementRange = _currentReplacementRange(controller);
-      controller.replaceText(
-        replacementRange.start,
-        replacementRange.length,
-        text,
-        TextSelection.collapsed(offset: replacementRange.start + text.length),
-      );
+      insertText(text);
     }).toJS,
   );
 
@@ -35,10 +28,7 @@ void registerAveliEditorTestBridge(
     bridge,
     'backspace',
     (() {
-      final controller = controllerAccessor();
-      if (controller == null) return;
-
-      _deleteBackward(controller);
+      backspace();
     }).toJS,
   );
 
@@ -46,10 +36,7 @@ void registerAveliEditorTestBridge(
     bridge,
     'deleteBackward',
     (() {
-      final controller = controllerAccessor();
-      if (controller == null) return;
-
-      _deleteBackward(controller);
+      backspace();
     }).toJS,
   );
 
@@ -57,18 +44,7 @@ void registerAveliEditorTestBridge(
     bridge,
     'deleteSelection',
     (() {
-      final controller = controllerAccessor();
-      if (controller == null) return;
-
-      final replacementRange = _currentReplacementRange(controller);
-      if (replacementRange.length <= 0) return;
-
-      controller.replaceText(
-        replacementRange.start,
-        replacementRange.length,
-        '',
-        TextSelection.collapsed(offset: replacementRange.start),
-      );
+      deleteSelection();
     }).toJS,
   );
 
@@ -76,14 +52,7 @@ void registerAveliEditorTestBridge(
     bridge,
     'setCursor',
     ((int offset) {
-      final controller = controllerAccessor();
-      if (controller == null) return;
-
-      final collapsedOffset = _clampOffset(controller, offset);
-      controller.updateSelection(
-        TextSelection.collapsed(offset: collapsedOffset),
-        quill.ChangeSource.local,
-      );
+      setCursor(offset);
     }).toJS,
   );
 
@@ -91,16 +60,7 @@ void registerAveliEditorTestBridge(
     bridge,
     'setSelection',
     ((int start, int end) {
-      final controller = controllerAccessor();
-      if (controller == null) return;
-
-      controller.updateSelection(
-        TextSelection(
-          baseOffset: _clampOffset(controller, start),
-          extentOffset: _clampOffset(controller, end),
-        ),
-        quill.ChangeSource.local,
-      );
+      setSelection(start, end);
     }).toJS,
   );
 
@@ -108,10 +68,7 @@ void registerAveliEditorTestBridge(
     bridge,
     'getCursor',
     (() {
-      final controller = controllerAccessor();
-      if (controller == null) return 0;
-
-      return _clampOffset(controller, controller.selection.baseOffset);
+      return getCursor();
     }).toJS,
   );
 
@@ -119,10 +76,7 @@ void registerAveliEditorTestBridge(
     bridge,
     'getDocument',
     (() {
-      final controller = controllerAccessor();
-      if (controller == null) return '';
-
-      return controller.document.toPlainText();
+      return getDocument();
     }).toJS,
   );
 
@@ -134,56 +88,4 @@ void unregisterAveliEditorTestBridge() {
   if (_bridgeObject == null) return;
   js_util.setProperty(web.window, 'aveliTestBridge', null);
   _bridgeObject = null;
-}
-
-_ReplacementRange _currentReplacementRange(quill.QuillController controller) {
-  final selection = controller.selection;
-  final documentExtent = _documentExtent(controller);
-
-  if (!selection.isValid) {
-    return _ReplacementRange(start: documentExtent, length: 0);
-  }
-
-  final start =
-      math.min(selection.start, selection.end).clamp(0, documentExtent) as int;
-  final end =
-      math.max(selection.start, selection.end).clamp(0, documentExtent) as int;
-  return _ReplacementRange(start: start, length: end - start);
-}
-
-void _deleteBackward(quill.QuillController controller) {
-  final replacementRange = _currentReplacementRange(controller);
-  if (replacementRange.length > 0) {
-    controller.replaceText(
-      replacementRange.start,
-      replacementRange.length,
-      '',
-      TextSelection.collapsed(offset: replacementRange.start),
-    );
-    return;
-  }
-
-  if (replacementRange.start <= 0) return;
-
-  controller.replaceText(
-    replacementRange.start - 1,
-    1,
-    '',
-    TextSelection.collapsed(offset: replacementRange.start - 1),
-  );
-}
-
-int _documentExtent(quill.QuillController controller) {
-  return math.max(controller.document.length - 1, 0);
-}
-
-int _clampOffset(quill.QuillController controller, int offset) {
-  return offset.clamp(0, _documentExtent(controller)) as int;
-}
-
-final class _ReplacementRange {
-  const _ReplacementRange({required this.start, required this.length});
-
-  final int start;
-  final int length;
 }

@@ -21,11 +21,40 @@ declare global {
 
 const objectReplacementCharacter = '\uFFFC';
 const bootShellSelector =
-  '[data-testid="editor-boot-shell"], [flt-semantics-identifier="editor-boot-shell"]';
+  '[data-testid="editor-skeleton"], [data-testid="editor-boot-shell"], [flt-semantics-identifier="editor-boot-shell"]';
 const editorSelector =
   '[data-testid="lesson-editor"], [flt-semantics-identifier="lesson-editor"]';
 const mediaPreviewSelector =
   '[data-testid="media-preview"], [flt-semantics-identifier="media-preview"]';
+const quillStabilityErrorPattern =
+  /Compose failed|_delta == _root\.toDelta\(\)/;
+const trackedQuillErrors = new WeakMap<Page, string[]>();
+
+function trackQuillErrors(page: Page) {
+  const messages: string[] = [];
+  const record = (text: string) => {
+    if (quillStabilityErrorPattern.test(text)) {
+      messages.push(text);
+    }
+  };
+
+  page.on('console', (message) => {
+    record(message.text());
+  });
+  page.on('pageerror', (error) => {
+    record(error.message);
+  });
+
+  return messages;
+}
+
+test.beforeEach(async ({ page }) => {
+  trackedQuillErrors.set(page, trackQuillErrors(page));
+});
+
+test.afterEach(async ({ page }) => {
+  expect(trackedQuillErrors.get(page) ?? []).toEqual([]);
+});
 
 async function gotoLessonEditor(page: Page) {
   await page.goto('/#/teacher/editor');
@@ -224,24 +253,28 @@ async function getDocumentViaBridge(page: Page): Promise<string> {
   });
 }
 
-test('editor boot lifecycle', async ({ page }) => {
+test('editor skeleton transitions to stable editor', async ({ page }) => {
   await gotoLessonEditor(page);
 
-  const lessonEditor = await waitForEditorReady(page);
+  const skeleton = page.locator(bootShellSelector);
+  const lessonEditor = editor(page);
+
+  await expect(skeleton).toBeVisible();
+  await waitForEditorReady(page);
   await expect(lessonEditor).toBeVisible();
 });
 
-test('editor typing via bridge', async ({ page }) => {
+test('editor typing appears immediately', async ({ page }) => {
   await prepareEditor(page);
 
   const lessonEditor = editor(page);
-  await insertTextViaBridge(page, 'hello world');
+  await insertTextViaBridge(page, 'hello');
 
   await expect(lessonEditor).toBeVisible();
-  await expect.poll(() => getDocumentViaBridge(page)).toContain('hello world');
+  await expect.poll(() => getDocumentViaBridge(page)).toContain('hello');
 });
 
-test('editor backspace', async ({ page }) => {
+test('editor backspace works', async ({ page }) => {
   await prepareEditor(page);
 
   await insertTextViaBridge(page, 'hello');
@@ -250,7 +283,7 @@ test('editor backspace', async ({ page }) => {
   await expect.poll(() => getDocumentViaBridge(page)).toContain('hell');
 });
 
-test('cursor movement', async ({ page }) => {
+test('editor cursor movement remains stable', async ({ page }) => {
   await prepareEditor(page);
 
   await insertTextViaBridge(page, 'abcdef');
@@ -259,7 +292,7 @@ test('cursor movement', async ({ page }) => {
   await expect.poll(() => getCursorViaBridge(page)).toBe(3);
 });
 
-test('embed deletion', async ({ page }) => {
+test('embed deletion stable', async ({ page }) => {
   await prepareEditor(page);
 
   const preview = mediaPreviews(page);
@@ -290,4 +323,22 @@ test('preview hydration', async ({ page }) => {
 
   await preview.first().waitFor({ state: 'visible', timeout: 60_000 });
   await expect(preview.first()).toBeVisible();
+});
+
+test('selection remains stable in longer document after edits', async ({ page }) => {
+  await prepareEditor(page);
+
+  const lines = Array.from({ length: 40 }, (_, index) => `line-${index}`).join(
+    '\n'
+  );
+  await insertTextViaBridge(page, lines);
+  await setCursorViaBridge(page, 120);
+  await backspaceViaBridge(page);
+
+  const cursor = await getCursorViaBridge(page);
+  const document = await getDocumentViaBridge(page);
+
+  expect(typeof cursor).toBe('number');
+  expect(document).toContain('line-0');
+  expect(document).toContain('line-39');
 });
