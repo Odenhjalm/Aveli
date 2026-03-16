@@ -14,3 +14,10 @@ Feature implementation protocol:
 4. Implement code
 5. Generate tests
 6. Run tests
+
+Before exploring the repository, read the repo index in .repo_index.
+
+Use:
+files.txt → locate files
+tags → locate functions
+tree.txt → understand structure

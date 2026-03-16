@@ -143,3 +143,6 @@ Aveli.code-workspace
 mcp.json
 config.json
 codex/config.toml
+
+# Indexing
+.repo_index
