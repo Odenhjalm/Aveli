@@ -764,9 +764,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void initState() {
     super.initState();
     _ensureLessonEditorWebTestIdSupport();
-    editor_test_bridge.registerAveliEditorTestBridge(
-      () => _lessonContentController,
-    );
+    _syncLessonEditorTestBridge();
     _studioRepo = widget.studioRepository ?? ref.read(studioRepositoryProvider);
     _markdownDocument = md.Document(
       encodeHtml: false,
@@ -1437,13 +1435,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     controller.addListener(_onLessonDocumentChanged);
     _lessonContentController = controller;
-    editor_test_bridge.registerAveliEditorTestBridge(
-      () => _lessonContentController,
-    );
+    _syncLessonEditorTestBridge();
     _lastLessonSelection = controller.selection;
     if (resetDirty) {
       _lessonContentDirty = false;
     }
+  }
+
+  void _syncLessonEditorTestBridge() {
+    editor_test_bridge.registerAveliEditorTestBridge(
+      () => _lessonContentController,
+    );
   }
 
   void _snapshotLessonSelection() {

@@ -1,9 +1,10 @@
 {
   "scripts": {
-    "e2e": "npx playwright test",
-    "e2e:ui": "npx playwright test --ui",
-    "e2e:debug": "PWDEBUG=1 npx playwright test",
-    "e2e:serve:web": "cd frontend && flutter build web --dart-define-from-file=.env.web && ../node_modules/.bin/serve -s build/web -l 3000"
+    "e2e:build": "cd frontend && flutter build web --dart-define-from-file=.env.web",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:debug": "PWDEBUG=1 playwright test",
+    "e2e:serve:web": "serve -s frontend/build/web -l 3000"
   },
   "dependencies": {
     "@figma/code-connect": "^1.4.1",
