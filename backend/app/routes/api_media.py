@@ -16,7 +16,7 @@ from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
 from ..repositories import storage_objects
-from ..services import lesson_playback_service, media_cleanup
+from ..services import courses_service, lesson_playback_service, media_cleanup
 from ..services import storage_service
 from ..utils import media_paths
 
@@ -62,6 +62,45 @@ class DebugMediaResponse(BaseModel):
     lesson_media_id: UUID
     storage_path: str
     signed_url: str
+
+
+def _normalized_preview_string(value: object | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _preview_file_name(item: dict[str, object]) -> str | None:
+    original_name = _normalized_preview_string(item.get("original_name"))
+    if original_name:
+        return original_name
+    storage_path = _normalized_preview_string(item.get("storage_path"))
+    if not storage_path:
+        return None
+    file_name = Path(storage_path).name.strip()
+    return file_name or None
+
+
+def _preview_thumbnail_url(item: dict[str, object]) -> str | None:
+    kind = _normalized_preview_string(item.get("kind")) or ""
+    if kind != "image":
+        return _normalized_preview_string(
+            item.get("thumbnail_url") or item.get("thumbnailUrl")
+        )
+    for candidate in (
+        item.get("thumbnail_url"),
+        item.get("thumbnailUrl"),
+        item.get("preferredUrl"),
+        item.get("preferred_url"),
+        item.get("download_url"),
+        item.get("signed_url"),
+        item.get("playback_url"),
+    ):
+        normalized = _normalized_preview_string(candidate)
+        if normalized:
+            return normalized
+    return None
 
 
 def _normalize_mime(value: str) -> str:
@@ -906,6 +945,75 @@ async def request_playback_url(
         expires_at=resolved["expires_at"],
         format=resolved["format"],
     )
+
+
+@router.post("/previews", response_model=schemas.MediaPreviewBatchResponse)
+async def request_media_previews(
+    payload: schemas.MediaPreviewBatchRequest,
+    current: TeacherUser,
+):
+    requested_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for media_id in payload.ids:
+        media_id_str = str(media_id)
+        if media_id_str in seen_ids:
+            continue
+        seen_ids.add(media_id_str)
+        requested_ids.append(media_id_str)
+
+    if not requested_ids:
+        return schemas.MediaPreviewBatchResponse(items={})
+
+    rows = await courses_repo.list_lesson_media_by_ids(requested_ids)
+    if not rows:
+        return schemas.MediaPreviewBatchResponse(items={})
+
+    requested_by_lesson: dict[str, set[str]] = {}
+    for row in rows:
+        lesson_id = _normalized_preview_string(row.get("lesson_id"))
+        lesson_media_id = _normalized_preview_string(row.get("id"))
+        if not lesson_id or not lesson_media_id:
+            continue
+        requested_by_lesson.setdefault(lesson_id, set()).add(lesson_media_id)
+
+    for lesson_id in requested_by_lesson:
+        _, course_id = await courses_service.lesson_course_ids(lesson_id)
+        if not course_id or not await models.is_course_owner(current["id"], course_id):
+            logger.warning(
+                "Permission denied: course owner required user_id=%s lesson_id=%s",
+                str(current["id"]),
+                lesson_id,
+            )
+            raise HTTPException(status_code=403, detail="Not course owner")
+
+    preview_items: dict[str, schemas.MediaPreviewItem] = {}
+    for lesson_id, lesson_media_ids in requested_by_lesson.items():
+        lesson_media = await courses_service.list_lesson_media(
+            lesson_id,
+            mode="editor_preview",
+        )
+        by_id = {str(item.get("id")): item for item in lesson_media}
+        for lesson_media_id in lesson_media_ids:
+            item = by_id.get(lesson_media_id)
+            if item is None:
+                continue
+            duration_seconds = item.get("duration_seconds")
+            preview_items[lesson_media_id] = schemas.MediaPreviewItem(
+                media_type=_normalized_preview_string(item.get("kind")) or "",
+                thumbnail_url=_preview_thumbnail_url(item),
+                poster_frame=_normalized_preview_string(
+                    item.get("poster_frame") or item.get("posterFrame")
+                ),
+                duration_seconds=(
+                    int(duration_seconds)
+                    if isinstance(duration_seconds, (int, float))
+                    else None
+                ),
+                file_name=_preview_file_name(item),
+                preview_blocked=item.get("preview_blocked") is True,
+            )
+
+    return schemas.MediaPreviewBatchResponse(items=preview_items)
 
 
 @router.post("/playback", response_model=RuntimePlaybackResponse)

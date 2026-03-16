@@ -1147,6 +1147,26 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             return await cur.fetchall()
 
 
+async def list_lesson_media_by_ids(
+    lesson_media_ids: Sequence[str],
+) -> Sequence[dict[str, Any]]:
+    ids = [lesson_media_id for lesson_media_id in lesson_media_ids if lesson_media_id]
+    if not ids:
+        return []
+
+    query = """
+        SELECT
+          lm.id,
+          lm.lesson_id
+        FROM app.lesson_media lm
+        WHERE lm.id = ANY(%s::uuid[])
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (ids,))
+            return await cur.fetchall()
+
+
 async def get_lesson_media_access_by_path(
     *,
     storage_path: str,
@@ -1820,6 +1840,7 @@ __all__ = [
     "delete_module",
     "list_lessons",
     "list_lesson_media",
+    "list_lesson_media_by_ids",
     "get_lesson_media_access_by_path",
     "list_home_audio_media",
     "list_course_lessons",

@@ -1067,6 +1067,23 @@ class LessonMediaUploadCompleteRequest(BaseModel):
     is_intro: bool | None = None
 
 
+class MediaPreviewBatchRequest(BaseModel):
+    ids: list[UUID]
+
+
+class MediaPreviewItem(BaseModel):
+    media_type: str
+    thumbnail_url: str | None = None
+    poster_frame: str | None = None
+    duration_seconds: int | None = None
+    file_name: str | None = None
+    preview_blocked: bool = False
+
+
+class MediaPreviewBatchResponse(BaseModel):
+    items: dict[str, MediaPreviewItem]
+
+
 class QuizSubmission(BaseModel):
     answers: dict
 

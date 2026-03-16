@@ -30,7 +30,6 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
-import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
@@ -46,11 +45,15 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
+import 'package:aveli/features/courses/presentation/lesson_page.dart'
+    show LessonPageRenderer;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 import 'package:aveli/shared/utils/pdf_link_editor_support.dart';
 import 'package:aveli/shared/utils/quill_embed_insertion.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
+import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
+import 'package:aveli/features/studio/presentation/lesson_media_preview_cache.dart';
 
 String? _mediaUrl(Map<String, dynamic> media) {
   final playback = media['playback_url'];
@@ -140,13 +143,15 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final node = embedContext.node;
     final dynamic value = node.value.data;
+    final lessonMediaId =
+        lesson_pipeline.lessonMediaIdFromEmbedValue(value) ?? '';
     final String url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    return AveliLessonMediaPlayer(
-      playbackUrl: url,
-      title: 'Ljud',
-      kind: 'audio',
+    return LessonMediaPreview(
+      lessonMediaId: lessonMediaId,
+      mediaType: 'audio',
+      src: url,
     );
   }
 }
@@ -173,28 +178,22 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final node = embedContext.node;
     final dynamic value = node.value.data;
+    final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(value);
     final url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    if (lesson_pipeline.isLegacyVideoEmbed(value)) {
+    if ((lessonMediaId == null || lessonMediaId.isEmpty) &&
+        lesson_pipeline.isLegacyVideoEmbed(value)) {
       return _LegacyVideoEmbedPlaceholder(
         onRemove: onRemoveLegacyVideoAt == null
             ? null
             : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
       );
     }
-    final normalizedUrl = _normalizeVideoPlaybackUrl(url);
-    if (normalizedUrl == null) {
-      return _LegacyVideoEmbedPlaceholder(
-        onRemove: onRemoveLegacyVideoAt == null
-            ? null
-            : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
-      );
-    }
-    return AveliLessonMediaPlayer(
-      playbackUrl: normalizedUrl,
-      title: 'Video',
-      kind: 'video',
+    return LessonMediaPreview(
+      lessonMediaId: lessonMediaId ?? '',
+      mediaType: 'video',
+      src: url,
     );
   }
 }
@@ -218,11 +217,16 @@ class _ImageEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
+    final lessonMediaId =
+        lesson_pipeline.lessonMediaIdFromEmbedValue(value) ?? '';
     final src =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString().trim());
-    final alt = lesson_pipeline.lessonMediaAltFromEmbedValue(value);
-    return AveliLessonImage(src: src, alt: alt);
+    return LessonMediaPreview(
+      lessonMediaId: lessonMediaId,
+      mediaType: 'image',
+      src: src,
+    );
   }
 }
 
@@ -344,6 +348,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   final ScrollController _lessonEditorScrollController = ScrollController();
   final ScrollController _panelScrollController = ScrollController();
   final TextEditingController _lessonTitleCtrl = TextEditingController();
+  bool _lessonPreviewMode = false;
   bool _lessonContentDirty = false;
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
@@ -700,16 +705,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           : firstValidId(lessons);
       final selectedLesson = _itemById(lessons, selected);
       final intro = safeBool(selectedLesson, 'is_intro') ?? false;
+      final selectedChanged = selected != _lessonMediaLessonId;
       setState(() {
         _lessons = lessons;
         _selectedLessonId = selected;
         _lessonIntro = intro;
         _lessonsLoadError = null;
+        _mediaLoadError = null;
+        if (selectedChanged) {
+          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMediaLessonId = selected;
+        }
       });
       _handleCoursePublishFieldsChanged();
       if (_selectedLessonId != null) {
-        await _loadLessonMedia();
         await _applySelectedLesson();
+        unawaited(_loadLessonMedia());
       } else if (mounted) {
         setState(() {
           _lessonMedia = <Map<String, dynamic>>[];
@@ -792,6 +803,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
+      ref.read(lessonMediaPreviewCacheProvider).primeFromLessonMedia(media);
       setState(() {
         _lessonMedia = media;
         _lessonMediaLessonId = lessonId;
@@ -887,6 +899,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
+      ref.read(lessonMediaPreviewCacheProvider).primeFromLessonMedia(media);
       if (!mounted) return;
 
       setState(() {
@@ -932,9 +945,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _selectedLessonId = lessonId;
       final match = _lessonById(lessonId);
       _lessonIntro = match?['is_intro'] == true;
+      _lessonMedia = <Map<String, dynamic>>[];
+      _lessonMediaLessonId = lessonId;
+      _mediaLoadError = null;
     });
-    await _loadLessonMedia();
     await _applySelectedLesson();
+    unawaited(_loadLessonMedia());
     if (needsRefresh && mounted) {
       setState(() => _mediaStatus = 'Media uppdaterad för lektionen.');
     }
@@ -1276,8 +1292,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<String> _prepareLessonMarkdownForEditing(String markdown) async {
     if (markdown.trim().isEmpty) return markdown;
-    final repo = ref.read(mediaRepositoryProvider);
-    final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
     var prepared = markdown;
     if (lesson_pipeline.apiFilesUrlPattern.hasMatch(prepared)) {
       final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
@@ -1288,30 +1302,78 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
       }
     }
-    final lessonMediaItems = () {
-      final selectedLessonId = _selectedLessonId;
-      if (selectedLessonId == null) return const <LessonMediaItem>[];
-      if (_lessonMediaLessonId != selectedLessonId) {
-        return const <LessonMediaItem>[];
-      }
-      if (_lessonMedia.isEmpty) return const <LessonMediaItem>[];
-      final items = <LessonMediaItem>[];
-      for (final raw in _lessonMedia) {
-        try {
-          items.add(LessonMediaItem.fromJson(raw));
-        } catch (_) {
-          // Skip malformed media entries.
-        }
-      }
-      return items;
-    }();
+    return prepared;
+  }
 
-    return lesson_pipeline.prepareLessonMarkdownForRendering(
-      repo,
-      prepared,
-      lessonMedia: lessonMediaItems,
-      pipelineRepository: pipelineRepo,
+  List<LessonMediaItem> _selectedLessonMediaItems() {
+    final selectedLessonId = _selectedLessonId;
+    if (selectedLessonId == null) return const <LessonMediaItem>[];
+    if (_lessonMediaLessonId != selectedLessonId) {
+      return const <LessonMediaItem>[];
+    }
+    if (_lessonMedia.isEmpty) return const <LessonMediaItem>[];
+
+    final items = <LessonMediaItem>[];
+    for (final raw in _lessonMedia) {
+      try {
+        items.add(LessonMediaItem.fromJson(raw));
+      } catch (_) {
+        // Skip malformed media entries.
+      }
+    }
+    return items;
+  }
+
+  String _serializeLessonMarkdownFromController(
+    quill.QuillController controller,
+  ) {
+    var rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
+    if (lesson_pipeline.apiFilesUrlPattern.hasMatch(rawMarkdown)) {
+      final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
+      if (mapping.isNotEmpty) {
+        rawMarkdown = lesson_pipeline.rewriteLessonMarkdownApiFilesUrls(
+          markdown: rawMarkdown,
+          apiFilesPathToStudioMediaUrl: mapping,
+        );
+      }
+    }
+    final lessonMediaUrlMapping =
+        _lessonMediaUrlToStudioMediaUrlForSelectedLesson();
+    if (lessonMediaUrlMapping.isNotEmpty) {
+      rawMarkdown = _rewriteKnownLessonMediaUrlsToStudioMediaUrls(
+        markdown: rawMarkdown,
+        urlToStudioMediaUrl: lessonMediaUrlMapping,
+      );
+    }
+    rawMarkdown = lesson_pipeline.convertHtmlMediaToTokens(rawMarkdown);
+    return lesson_pipeline.normalizeLessonMarkdownForStorage(rawMarkdown);
+  }
+
+  String _currentLessonPreviewMarkdown() {
+    final controller = _lessonContentController;
+    if (controller == null) {
+      return _lastSavedLessonMarkdown;
+    }
+    return _serializeLessonMarkdownFromController(controller);
+  }
+
+  Future<void> _launchLessonPreviewUrl(String url) async {
+    final opened = await launchUrlString(
+      url,
+      mode: LaunchMode.externalApplication,
     );
+    if (!opened && mounted && context.mounted) {
+      showSnack(context, 'Kunde inte öppna länken.');
+    }
+  }
+
+  void _scheduleLessonPreviewHydration(String markdown) {
+    final ids = lesson_pipeline.extractLessonEmbeddedMediaIds(markdown);
+    if (ids.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(lessonMediaPreviewCacheProvider).prefetch(ids));
+    });
   }
 
   String _visibleLessonTextForLog(String value) {
@@ -1374,6 +1436,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     _replaceLessonDocument(document);
+    _scheduleLessonPreviewHydration(prepared);
     if (mounted) {
       setState(() => _lessonContentDirty = false);
     }
@@ -1409,6 +1472,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonTitleCtrl.text = _lastSavedLessonTitle;
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
     _replaceLessonDocument(document);
+    _scheduleLessonPreviewHydration(prepared);
     setState(() => _lessonContentDirty = false);
   }
 
@@ -1432,28 +1496,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
     final uiPlainText = controller.document.toPlainText();
-    var rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
-    if (lesson_pipeline.apiFilesUrlPattern.hasMatch(rawMarkdown)) {
-      final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
-      if (mapping.isNotEmpty) {
-        rawMarkdown = lesson_pipeline.rewriteLessonMarkdownApiFilesUrls(
-          markdown: rawMarkdown,
-          apiFilesPathToStudioMediaUrl: mapping,
-        );
-      }
-    }
-    final lessonMediaUrlMapping =
-        _lessonMediaUrlToStudioMediaUrlForSelectedLesson();
-    if (lessonMediaUrlMapping.isNotEmpty) {
-      rawMarkdown = _rewriteKnownLessonMediaUrlsToStudioMediaUrls(
-        markdown: rawMarkdown,
-        urlToStudioMediaUrl: lessonMediaUrlMapping,
-      );
-    }
-    rawMarkdown = lesson_pipeline.convertHtmlMediaToTokens(rawMarkdown);
-    final markdown = lesson_pipeline.normalizeLessonMarkdownForStorage(
-      rawMarkdown,
-    );
+    final markdown = _serializeLessonMarkdownFromController(controller);
+    final rawMarkdown = markdown;
 
     if (kDebugMode) {
       debugPrint(
@@ -1827,6 +1871,52 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  Widget _buildLessonPreviewMode(BuildContext context) {
+    final theme = Theme.of(context);
+    final title = _lessonTitleCtrl.text.trim();
+    final previewTitle = title.isEmpty ? 'Lektion' : title;
+    final lessonMediaItems = _selectedLessonMediaItems();
+    final markdown = _currentLessonPreviewMarkdown();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          previewTitle,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        gap6,
+        Text(
+          'Read-only preview med samma renderingspipeline som elevvyn.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        gap12,
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.zero,
+            child: GlassCard(
+              padding: const EdgeInsets.all(16),
+              borderRadius: BorderRadius.circular(22),
+              opacity: 0.12,
+              sigmaX: 10,
+              sigmaY: 10,
+              borderColor: Colors.white.withValues(alpha: 0.16),
+              child: LessonPageRenderer(
+                markdown: markdown,
+                lessonMedia: lessonMediaItems,
+                onLaunchUrl: (url) => unawaited(_launchLessonPreviewUrl(url)),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildLessonEditorWorkspace(BuildContext context) {
     final theme = Theme.of(context);
     final titleStyle = theme.textTheme.titleLarge?.copyWith(
@@ -1841,7 +1931,45 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Texteditor', style: titleStyle),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  _lessonPreviewMode ? 'Förhandsgranskning' : 'Texteditor',
+                  style: titleStyle,
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Redigera'),
+                    selected: !_lessonPreviewMode,
+                    onSelected: _selectedLessonId == null
+                        ? null
+                        : (_) {
+                            if (_lessonPreviewMode) {
+                              setState(() => _lessonPreviewMode = false);
+                            }
+                          },
+                  ),
+                  ChoiceChip(
+                    label: const Text('Förhandsgranska'),
+                    selected: _lessonPreviewMode,
+                    onSelected: _selectedLessonId == null
+                        ? null
+                        : (_) {
+                            if (!_lessonPreviewMode) {
+                              setState(() => _lessonPreviewMode = true);
+                            }
+                          },
+                  ),
+                ],
+              ),
+            ],
+          ),
           gap12,
           Expanded(
             child: _selectedLessonId == null
@@ -1852,6 +1980,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       textAlign: TextAlign.center,
                     ),
                   )
+                : _lessonPreviewMode
+                ? _buildLessonPreviewMode(context)
                 : _buildLessonContentEditor(context, expandEditor: true),
           ),
         ],
