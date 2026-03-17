@@ -265,10 +265,19 @@ class _SignupPageState extends ConsumerState<SignupPage> {
         inviteToken: _inviteToken,
       );
       if (!mounted || !context.mounted) return;
-      showSnack(
-        context,
-        'Konto skapat. Kontrollera din e-post för att verifiera kontot.',
-      );
+      final verificationStatus = ref
+          .read(authControllerProvider)
+          .verificationEmailStatus;
+      showSnack(context, switch (verificationStatus) {
+        'sent' =>
+          'Konto skapat. Kontrollera din e-post för att verifiera kontot.',
+        'log_only' =>
+          'Konto skapat, men e-postleverans är inte konfigurerad i miljön ännu.',
+        'failed' =>
+          'Konto skapat, men verifieringsmejlet kunde inte skickas. Försök igen från inloggningen.',
+        _ => 'Konto skapat. Fortsätt med onboarding.',
+      });
+      context.goNamed(AppRoute.resumeOnboarding);
     } catch (error) {
       if (!mounted || !context.mounted) return;
       final message = error is AppFailure

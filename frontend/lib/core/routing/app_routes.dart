@@ -8,6 +8,7 @@ abstract class AppRoute {
   static const login = 'login';
   static const signup = 'signup';
   static const verifyEmail = 'verify-email';
+  static const resumeOnboarding = 'resume-onboarding';
   static const forgotPassword = 'forgot-password';
   static const resetPassword = 'reset-password';
   static const invite = 'invite';
@@ -26,12 +27,14 @@ abstract class AppRoute {
   static const directMessage = 'dm';
   static const profile = 'profile';
   static const createProfile = 'create-profile';
+  static const selectIntroCourse = 'select-intro-course';
   static const welcome = 'welcome';
   static const profileSubscription = 'profile-subscription';
   static const profileSubscriptionPortal = 'profile-subscription-portal';
   static const checkout = 'checkout';
   static const tarot = 'tarot';
   static const admin = 'admin';
+  static const adminMedia = 'admin-media';
   static const studio = 'studio';
   static const teacherHome = 'teacher-home';
   static const teacherEditor = 'teacher-editor';

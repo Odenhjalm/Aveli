@@ -42,6 +42,7 @@ RouteSessionSnapshot _session({required bool isAuthenticated}) =>
       hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
+      onboarding: null,
     );
 
 Future<void> _pumpPage(

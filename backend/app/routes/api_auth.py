@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse
 from jose import JWTError
 
@@ -31,8 +31,7 @@ from ..services.email_verification import (
     send_verification_email,
     validate_invite_token,
 )
-from ..services.onboarding_state import sync_onboarding_state
-from ..utils.membership_status import is_membership_active
+from ..services import onboarding_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -68,41 +67,6 @@ async def _claims_for_user(user_id: str, profile: dict | None = None) -> dict:
         "is_admin": is_admin,
         "is_teacher": bool(is_teacher),
     }
-
-
-async def _enqueue_verification_email(email: str) -> None:
-    try:
-        await send_verification_email(email)
-    except Exception:
-        logger.exception(
-            "Failed to send verification email after signup email=%s",
-            email,
-        )
-
-
-async def _profile_response(user_id: str) -> schemas.Profile:
-    profile = await repositories.get_profile(user_id)
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profile missing",
-        )
-
-    onboarding_state = await sync_onboarding_state(user_id)
-    user = await repositories.get_user_by_id(user_id) or {}
-    membership = await repositories.get_membership(user_id)
-    membership_active = is_membership_active(
-        str((membership or {}).get("status") or ""),
-        (membership or {}).get("end_date"),
-    )
-
-    payload = dict(profile)
-    payload["onboarding_state"] = onboarding_state
-    payload["email_verified"] = bool(
-        user.get("email_confirmed_at") or user.get("confirmed_at")
-    )
-    payload["membership_active"] = bool(membership_active)
-    return schemas.Profile(**payload)
 
 
 def _consume_rate_limit(
@@ -163,11 +127,7 @@ async def oauth_legacy_disabled():
 @router.post(
     "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
 )
-async def register(
-    payload: schemas.AuthRegisterRequest,
-    request: Request,
-    background_tasks: BackgroundTasks,
-):
+async def register(payload: schemas.AuthRegisterRequest, request: Request):
     _require_valid_invite_token(payload.email, payload.invite_token)
 
     existing = await repositories.get_user_by_email(payload.email)
@@ -197,6 +157,7 @@ async def register(
     user = result["user"]
     profile = result["profile"] or {}
     user_id = str(user["id"])
+    await onboarding_service.ensure_onboarding_row(user_id)
     claims = await _claims_for_user(user_id, profile)
     access_token = create_access_token(user_id, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id)
@@ -215,8 +176,20 @@ async def register(
         user_agent=request.headers.get("user-agent"),
         metadata={"refresh_jti": refresh_jti},
     )
-    background_tasks.add_task(_enqueue_verification_email, str(user["email"]))
-    return schemas.Token(access_token=access_token, refresh_token=refresh_token)
+    verification_email_status = "failed"
+    try:
+        delivery = await send_verification_email(user["email"])
+        verification_email_status = delivery.mode
+    except Exception:
+        logger.exception(
+            "Failed to send verification email after signup email=%s",
+            user["email"],
+        )
+    return schemas.Token(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        verification_email_status=verification_email_status,
+    )
 
 
 @router.post("/login", response_model=schemas.Token)
@@ -417,7 +390,12 @@ async def refresh(payload: schemas.TokenRefreshRequest, request: Request):
 
 @router.get("/me", response_model=schemas.Profile)
 async def me(current: CurrentUser):
-    return await _profile_response(str(current["id"]))
+    profile = await repositories.get_profile(current["id"])
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
+        )
+    return schemas.Profile(**profile)
 
 
 @router.patch("/me", response_model=schemas.Profile)
@@ -432,8 +410,8 @@ async def update_me(payload: schemas.ProfileUpdate, current: CurrentUser):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
         )
-    await sync_onboarding_state(str(current["id"]))
-    return await _profile_response(str(current["id"]))
+    await onboarding_service.mark_profile_completed_if_ready(str(current["id"]))
+    return schemas.Profile(**updated)
 
 
 @router.post("/me/avatar", response_model=schemas.Profile)
@@ -502,7 +480,8 @@ async def upload_avatar(current: CurrentUser, file: UploadFile = File(...)):
     if previous_media_id and previous_media_id != media_id:
         await models.cleanup_media_object(previous_media_id)
 
-    return await _profile_response(str(current["id"]))
+    await onboarding_service.mark_profile_completed_if_ready(str(current["id"]))
+    return schemas.Profile(**updated)
 
 
 @router.get("/avatar/{media_id}")

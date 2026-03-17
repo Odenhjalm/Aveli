@@ -1,30 +1,37 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
   <body style="margin:0;padding:0;background-color:#f6f1ea;font-family:Arial,sans-serif;color:#1f2933;">
     <div style="max-width:600px;margin:0 auto;padding:32px 20px;">
       <div style="background-color:#ffffff;border:1px solid #eadfce;border-radius:16px;padding:32px;">
         <p style="margin:0 0 16px;font-size:14px;letter-spacing:0.08em;text-transform:uppercase;color:#8c6840;">
-          Welcome to Aveli
+          Välkommen till Aveli
         </p>
         <h1 style="margin:0 0 16px;font-size:28px;line-height:1.2;color:#111827;">
-          Verify your email address
+          Bekräfta din e-postadress
         </h1>
         <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#374151;">
-          Confirm your email address to finish setting up your Aveli account.
+          Bekräfta din e-post för att fortsätta till medlemskap, profil och val av introduktionskurs.
+        </p>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#374151;">
+          Du startar med 30 dagars trial, får en ny lektion per vecka, och varje introduktionskurs innehåller fyra lektioner.
         </p>
         <p style="margin:0 0 24px;">
           <a
             href="{{ verify_url }}"
             style="display:inline-block;background-color:#111827;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:999px;font-size:16px;font-weight:700;"
           >
-            Verify my email
+            Bekräfta min e-post
           </a>
         </p>
         <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#6b7280;">
-          If the button does not work, copy and paste this link into your browser:
+          Länken gäller i {{ expiry_minutes }} minuter. Om knappen inte fungerar kan du klistra in länken i din webbläsare:
         </p>
         <p style="margin:0;font-size:14px;line-height:1.6;word-break:break-word;">
           <a href="{{ verify_url }}" style="color:#8c6840;text-decoration:underline;">{{ verify_url }}</a>
+        </p>
+        <p style="margin:16px 0 0;font-size:14px;line-height:1.6;color:#6b7280;">
+          Behöver du hjälp? Begär en ny länk från inloggningen eller kontakta
+          <a href="mailto:support@aveli.dev" style="color:#8c6840;text-decoration:underline;">support@aveli.dev</a>.
         </p>
       </div>
     </div>

@@ -94,7 +94,10 @@ async def test_verify_email_endpoint_returns_success(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "verified"}
+    payload = response.json()
+    assert payload["status"] == "verified"
+    assert payload["redirect_after_login"] == "/resume-onboarding"
+    assert payload["onboarding"] is None
 
 
 @pytest.mark.anyio("asyncio")
@@ -211,6 +214,9 @@ async def test_signup_triggers_verification_email_and_ignores_delivery_failure(
     async def fake_insert_auth_event(**_: object) -> None:
         return None
 
+    async def fake_ensure_onboarding_row(_: str) -> None:
+        return None
+
     async def fake_send_verification_email(email: str) -> None:
         delivery_attempts.append(email)
         raise EmailDeliveryError("Failed to send email")
@@ -241,6 +247,11 @@ async def test_signup_triggers_verification_email_and_ignores_delivery_failure(
         fake_insert_auth_event,
     )
     monkeypatch.setattr(
+        api_auth_routes.onboarding_service,
+        "ensure_onboarding_row",
+        fake_ensure_onboarding_row,
+    )
+    monkeypatch.setattr(
         api_auth_routes,
         "send_verification_email",
         fake_send_verification_email,
@@ -259,4 +270,5 @@ async def test_signup_triggers_verification_email_and_ignores_delivery_failure(
     payload = response.json()
     assert payload["access_token"]
     assert payload["refresh_token"]
+    assert payload["verification_email_status"] == "failed"
     assert delivery_attempts == [requested_email]

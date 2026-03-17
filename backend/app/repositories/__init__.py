@@ -12,7 +12,14 @@ from .auth import (
     revoke_refresh_tokens_for_user,
     touch_refresh_token_as_rotated,
 )
-from .profiles import get_profile, set_onboarding_state, update_profile
+from .profiles import get_profile, update_profile
+from .onboarding import (
+    ensure_user_onboarding,
+    get_user_onboarding,
+    mark_onboarding_completed,
+    mark_profile_completed,
+    set_selected_intro_course,
+)
 from .services import list_services, get_service
 from .orders import (
     create_order,
@@ -85,6 +92,7 @@ from .home_player_library import (
     get_active_home_upload_by_media_id,
     get_active_home_upload_by_media_asset_id,
 )
+from .runtime_media import sync_home_player_upload_runtime_media
 from .memberships import (
     get_latest_subscription,
     get_membership,
@@ -136,8 +144,12 @@ __all__ = [
     "touch_refresh_token_as_rotated",
     # Profiles
     "get_profile",
-    "set_onboarding_state",
     "update_profile",
+    "ensure_user_onboarding",
+    "get_user_onboarding",
+    "mark_onboarding_completed",
+    "mark_profile_completed",
+    "set_selected_intro_course",
     # Services
     "list_services",
     "get_service",
@@ -210,6 +222,7 @@ __all__ = [
     "delete_home_player_course_link",
     "get_active_home_upload_by_media_id",
     "get_active_home_upload_by_media_asset_id",
+    "sync_home_player_upload_runtime_media",
     # Subscriptions
     "get_latest_subscription",
     "get_membership",

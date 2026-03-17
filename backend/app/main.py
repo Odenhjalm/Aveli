@@ -27,6 +27,7 @@ except (
 from .config import settings
 from .db import pool
 from .logging_utils import setup_logging
+from .media_control_plane.routes import media_admin_router
 from .middleware.request_context import RequestContextMiddleware
 from .services import livekit_events, media_transcode_worker, membership_expiry_warnings
 from .routes import (
@@ -39,6 +40,7 @@ from .routes import (
     api_media,
     api_me,
     api_notifications,
+    api_onboarding,
     api_checkout,
     api_orders,
     api_profiles,
@@ -157,6 +159,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(api_orders.router)
     app.include_router(api_events.router)
     app.include_router(api_notifications.router)
+    app.include_router(api_onboarding.router)
     app.include_router(api_feed.router)
     app.include_router(api_sfu.router)
     app.include_router(api_profiles.router)
@@ -164,6 +167,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(api_media.router)
     app.include_router(api_media.debug_router)
     app.include_router(admin.router)
+    app.include_router(media_admin_router.router)
     app.include_router(api_checkout.router)
     app.include_router(billing.router)
     app.include_router(connect.router)
@@ -231,7 +235,12 @@ async def readyz():
             await cur.fetchone()
     except Exception as exc:  # pragma: no cover - surfaced in tests
         raise HTTPException(status_code=503, detail="database unavailable") from exc
-    return {"ok": True, "database": "ready"}
+    email_mode = (
+        "configured"
+        if settings.resend_api_key and settings.email_from
+        else "log_only"
+    )
+    return {"ok": True, "database": "ready", "email_delivery_mode": email_mode}
 
 
 @app.get("/metrics")

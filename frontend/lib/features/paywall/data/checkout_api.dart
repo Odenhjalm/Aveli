@@ -56,9 +56,7 @@ class CheckoutApi {
     return url;
   }
 
-  Future<String> _startSubscriptionCheckout({
-    required String interval,
-  }) async {
+  Future<String> _startSubscriptionCheckout({required String interval}) async {
     final token = await _accessToken();
     final response = await _client.post(
       Uri.parse('$_baseUrl${ApiPaths.billingCreateSubscription}'),
@@ -79,6 +77,26 @@ class CheckoutApi {
       throw Exception('Checkout-URL saknas');
     }
     return url;
+  }
+
+  Future<Map<String, dynamic>> fetchSessionStatus(String sessionId) async {
+    final token = await _accessToken();
+    final response = await _client.get(
+      Uri.parse(
+        '$_baseUrl${ApiPaths.billingSessionStatus}',
+      ).replace(queryParameters: {'session_id': sessionId}),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Failed to fetch session status (${response.statusCode}): ${response.body}',
+      );
+    }
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return body;
   }
 
   Future<String> _startCheckout(Map<String, dynamic> payload) async {

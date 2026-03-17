@@ -53,7 +53,10 @@ class DeepLinkService {
   bool _isCheckoutUri(Uri uri) {
     final schemeOk = uri.scheme == 'aveliapp' || uri.scheme == 'https';
     final hostOk =
-        uri.host == 'checkout' || uri.host.contains('aveli.app') == true;
+        uri.host == 'checkout' ||
+        uri.host == 'success' ||
+        uri.host == 'cancel' ||
+        uri.host.contains('aveli.app') == true;
     final pathOk = _isSuccessPath(uri) || _isCancelPath(uri);
     return schemeOk && hostOk && pathOk;
   }
@@ -70,7 +73,7 @@ class DeepLinkService {
 
   bool _isSuccessPath(Uri uri) {
     final path = uri.path.toLowerCase();
-    return path.contains('success');
+    return path.contains('success') || path.contains('checkout/return');
   }
 
   bool _isCancelPath(Uri uri) {
