@@ -24,6 +24,8 @@ import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/editor/session/editor_mutation_pipeline.dart';
+import 'package:aveli/editor/session/editor_session.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
@@ -340,6 +342,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   quill.QuillController? _lessonContentController;
   final FocusNode _lessonContentFocusNode = FocusNode();
   final ScrollController _lessonEditorScrollController = ScrollController();
+  late EditorSession _session;
+  late EditorMutationPipeline _pipeline;
   final ScrollController _panelScrollController = ScrollController();
   final TextEditingController _lessonTitleCtrl = TextEditingController();
   bool _lessonContentDirty = false;
@@ -415,6 +419,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (courseId != null && courseId != _selectedCourseId) return true;
     if (lessonId != null && lessonId != _selectedLessonId) return true;
     return false;
+  }
+
+  bool _isActiveSession({
+    required String sessionId,
+    required String lessonId,
+    required int revision,
+  }) {
+    return _session.sessionId == sessionId &&
+        _session.lessonId == lessonId &&
+        _session.revision == revision;
   }
 
   void _resetCoverState({bool clearPreview = false}) {
@@ -1121,6 +1135,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _replaceLessonDocument(
     quill.Document document, {
     bool resetDirty = true,
+    String canonicalMarkdown = '',
   }) {
     _lessonContentController?.removeListener(_onLessonDocumentChanged);
     _lessonContentController?.dispose();
@@ -1129,8 +1144,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       selection: const TextSelection.collapsed(offset: 0),
     );
     controller.addListener(_onLessonDocumentChanged);
-    _lessonContentController = controller;
-    _lastLessonSelection = controller.selection;
+    _session = EditorSession(
+      sessionId: _uuid.v4(),
+      lessonId: _selectedLessonId ?? '',
+      controller: controller,
+      focusNode: _lessonContentFocusNode,
+      scrollController: _lessonEditorScrollController,
+      canonicalMarkdown: canonicalMarkdown,
+    );
+    _pipeline = EditorMutationPipeline(_session);
+    _lessonContentController = _pipeline.session.controller;
+    _lastLessonSelection = _pipeline.session.controller.selection;
     if (resetDirty) {
       _lessonContentDirty = false;
     }
@@ -1343,8 +1367,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
 
     final requestId = ++_lessonContentRequestId;
+    final capturedSessionId = _session.sessionId;
+    final capturedLessonId = _session.lessonId;
+    final capturedRevision = _session.revision;
     final prepared = await _prepareLessonMarkdownForEditing(storedMarkdown);
     if (!mounted ||
+        !_isActiveSession(
+          sessionId: capturedSessionId,
+          lessonId: capturedLessonId,
+          revision: capturedRevision,
+        ) ||
         _isStaleRequest(
           requestId: requestId,
           currentId: _lessonContentRequestId,
@@ -1371,7 +1403,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _traceLessonString('load.document_plain_text', document.toPlainText());
     }
 
-    _replaceLessonDocument(document);
+    _replaceLessonDocument(document, canonicalMarkdown: storedMarkdown);
     if (mounted) {
       setState(() => _lessonContentDirty = false);
     }
@@ -1379,10 +1411,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _resetLessonEdits() async {
     final requestId = ++_lessonContentRequestId;
+    final capturedSessionId = _session.sessionId;
+    final capturedLessonId = _session.lessonId;
+    final capturedRevision = _session.revision;
     final prepared = await _prepareLessonMarkdownForEditing(
       _lastSavedLessonMarkdown,
     );
     if (!mounted ||
+        !_isActiveSession(
+          sessionId: capturedSessionId,
+          lessonId: capturedLessonId,
+          revision: capturedRevision,
+        ) ||
         _isStaleRequest(
           requestId: requestId,
           currentId: _lessonContentRequestId,
@@ -1406,7 +1446,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonTitleCtrl.removeListener(_handleLessonTitleChanged);
     _lessonTitleCtrl.text = _lastSavedLessonTitle;
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
-    _replaceLessonDocument(document);
+    _replaceLessonDocument(
+      document,
+      canonicalMarkdown: _lastSavedLessonMarkdown,
+    );
     setState(() => _lessonContentDirty = false);
   }
 
@@ -1501,6 +1544,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lastSavedLessonTitle = title;
         _lessonContentDirty = false;
       });
+      _session.canonicalMarkdown = markdown;
 
       if (mounted && context.mounted && showSuccessSnack) {
         showSnack(context, 'Lektion sparad.');
@@ -2766,17 +2810,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (mounted) {
         setState(() => _mediaStatus = 'Laddar upp $filename…');
       }
+      final capturedSessionId = _session.sessionId;
+      final capturedLessonId = _session.lessonId;
+      final capturedRevision = _session.revision;
       try {
         final uploadResult = await uploadImageAndResolvePublicUrl(
           bytes,
           filename,
           contentType,
         );
+        if (!mounted ||
+            !_isActiveSession(
+              sessionId: capturedSessionId,
+              lessonId: capturedLessonId,
+              revision: capturedRevision,
+            )) {
+          return;
+        }
         final media = Map<String, dynamic>.from(
           uploadResult['media'] as Map<String, dynamic>,
         );
         final resolved = uploadResult['public_url'] as String;
-        if (!mounted) return;
         setState(() {
           final id = media['id'];
           if (id is String) {
@@ -3537,9 +3591,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonsNeedingRefresh.add(job.lessonId);
       return;
     }
+    final capturedSessionId = _session.sessionId;
+    final capturedLessonId = _session.lessonId;
+    final capturedRevision = _session.revision;
     // Refresh media list first
     await _loadLessonMedia();
-    if (!mounted) return;
+    if (!mounted ||
+        !_isActiveSession(
+          sessionId: capturedSessionId,
+          lessonId: capturedLessonId,
+          revision: capturedRevision,
+        )) {
+      return;
+    }
     final filename = job.filename;
     final contentType = job.contentType.toLowerCase();
 
@@ -4219,7 +4283,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     setState(() {
-      _replaceLessonDocument(document, resetDirty: false);
+      _replaceLessonDocument(
+        document,
+        resetDirty: false,
+        canonicalMarkdown: rewritten,
+      );
       _lessonContentDirty = true;
     });
 
@@ -4256,6 +4324,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     final fileName = _fileNameFromMedia(media);
 
+    final capturedSessionId = _session.sessionId;
+    final capturedLessonId = _session.lessonId;
+    final capturedRevision = _session.revision;
     final newMediaAssetId = await showDialog<String?>(
       context: context,
       builder: (context) => WavReplaceDialog(
@@ -4265,14 +4336,28 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         onMediaUpdated: _loadLessonMedia,
       ),
     );
-    if (!mounted) return;
+    if (!mounted ||
+        !_isActiveSession(
+          sessionId: capturedSessionId,
+          lessonId: capturedLessonId,
+          revision: capturedRevision,
+        )) {
+      return;
+    }
     if (newMediaAssetId == null || newMediaAssetId.trim().isEmpty) return;
 
     setState(() => _mediaStatus = 'Ersätter ljud…');
 
     try {
       await _loadLessonMedia();
-      if (!mounted) return;
+      if (!mounted ||
+          !_isActiveSession(
+            sessionId: capturedSessionId,
+            lessonId: capturedLessonId,
+            revision: capturedRevision,
+          )) {
+        return;
+      }
 
       Map<String, dynamic>? newMedia;
       for (final item in _lessonMedia.cast<Map<String, dynamic>?>()) {
