@@ -945,6 +945,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final match = _lessonById(lessonId);
       _lessonIntro = match?['is_intro'] == true;
     });
+    debugPrint(
+      '[LESSON SWITCH] lesson=$_selectedLessonId session=${_session.sessionId}',
+    );
     await _loadLessonMedia();
     await _applySelectedLesson();
     if (needsRefresh && mounted) {
@@ -1370,19 +1373,34 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final capturedSessionId = _session.sessionId;
     final capturedLessonId = _session.lessonId;
     final capturedRevision = _session.revision;
+    debugPrint(
+      '[ASYNC START] session=$capturedSessionId lesson=$capturedLessonId rev=$capturedRevision',
+    );
     final prepared = await _prepareLessonMarkdownForEditing(storedMarkdown);
+    debugPrint(
+      '[ASYNC RETURN] capturedSession=$capturedSessionId currentSession=${_session.sessionId} '
+      'capturedRev=$capturedRevision currentRev=${_session.revision}',
+    );
+    final isActiveSession = _isActiveSession(
+      sessionId: capturedSessionId,
+      lessonId: capturedLessonId,
+      revision: capturedRevision,
+    );
+    final isStaleRequest = _isStaleRequest(
+      requestId: requestId,
+      currentId: _lessonContentRequestId,
+      courseId: _selectedCourseId,
+      lessonId: _selectedLessonId,
+    );
     if (!mounted ||
-        !_isActiveSession(
-          sessionId: capturedSessionId,
-          lessonId: capturedLessonId,
-          revision: capturedRevision,
-        ) ||
-        _isStaleRequest(
-          requestId: requestId,
-          currentId: _lessonContentRequestId,
-          courseId: _selectedCourseId,
-          lessonId: _selectedLessonId,
-        )) {
+        !isActiveSession ||
+        isStaleRequest) {
+      if (!isActiveSession) {
+        debugPrint(
+          '[ASYNC BLOCKED] stale_operation '
+          'capturedSession=$capturedSessionId current=${_session.sessionId}',
+        );
+      }
       return;
     }
 
@@ -1414,21 +1432,36 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final capturedSessionId = _session.sessionId;
     final capturedLessonId = _session.lessonId;
     final capturedRevision = _session.revision;
+    debugPrint(
+      '[ASYNC START] session=$capturedSessionId lesson=$capturedLessonId rev=$capturedRevision',
+    );
     final prepared = await _prepareLessonMarkdownForEditing(
       _lastSavedLessonMarkdown,
     );
+    debugPrint(
+      '[ASYNC RETURN] capturedSession=$capturedSessionId currentSession=${_session.sessionId} '
+      'capturedRev=$capturedRevision currentRev=${_session.revision}',
+    );
+    final isActiveSession = _isActiveSession(
+      sessionId: capturedSessionId,
+      lessonId: capturedLessonId,
+      revision: capturedRevision,
+    );
+    final isStaleRequest = _isStaleRequest(
+      requestId: requestId,
+      currentId: _lessonContentRequestId,
+      courseId: _selectedCourseId,
+      lessonId: _selectedLessonId,
+    );
     if (!mounted ||
-        !_isActiveSession(
-          sessionId: capturedSessionId,
-          lessonId: capturedLessonId,
-          revision: capturedRevision,
-        ) ||
-        _isStaleRequest(
-          requestId: requestId,
-          currentId: _lessonContentRequestId,
-          courseId: _selectedCourseId,
-          lessonId: _selectedLessonId,
-        )) {
+        !isActiveSession ||
+        isStaleRequest) {
+      if (!isActiveSession) {
+        debugPrint(
+          '[ASYNC BLOCKED] stale_operation '
+          'capturedSession=$capturedSessionId current=${_session.sessionId}',
+        );
+      }
       return;
     }
 
@@ -2813,18 +2846,32 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final capturedSessionId = _session.sessionId;
       final capturedLessonId = _session.lessonId;
       final capturedRevision = _session.revision;
+      debugPrint(
+        '[ASYNC START] session=$capturedSessionId lesson=$capturedLessonId rev=$capturedRevision',
+      );
       try {
         final uploadResult = await uploadImageAndResolvePublicUrl(
           bytes,
           filename,
           contentType,
         );
+        debugPrint(
+          '[ASYNC RETURN] capturedSession=$capturedSessionId currentSession=${_session.sessionId} '
+          'capturedRev=$capturedRevision currentRev=${_session.revision}',
+        );
+        final isActiveSession = _isActiveSession(
+          sessionId: capturedSessionId,
+          lessonId: capturedLessonId,
+          revision: capturedRevision,
+        );
         if (!mounted ||
-            !_isActiveSession(
-              sessionId: capturedSessionId,
-              lessonId: capturedLessonId,
-              revision: capturedRevision,
-            )) {
+            !isActiveSession) {
+          if (!isActiveSession) {
+            debugPrint(
+              '[ASYNC BLOCKED] stale_operation '
+              'capturedSession=$capturedSessionId current=${_session.sessionId}',
+            );
+          }
           return;
         }
         final media = Map<String, dynamic>.from(
@@ -2954,6 +3001,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (normalizedSrc == null) return;
     final controller = _lessonContentController;
     if (controller == null) return;
+    debugPrint(
+      '[MEDIA INSERT] lesson=${_session.lessonId} session=${_session.sessionId}',
+    );
     final docLength = controller.document.length;
     TextSelection selection = targetSelection ?? controller.selection;
     if (selection.start < 0 || selection.end < 0) {
@@ -3004,6 +3054,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }) {
     final controller = _lessonContentController;
     if (controller == null) return;
+    debugPrint(
+      '[MEDIA INSERT] lesson=${_session.lessonId} session=${_session.sessionId}',
+    );
     final docLength = controller.document.length;
     TextSelection selection = targetSelection ?? controller.selection;
     if (selection.start < 0 || selection.end < 0) {
@@ -3054,6 +3107,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }) {
     final controller = _lessonContentController;
     if (controller == null) return;
+    debugPrint(
+      '[MEDIA INSERT] lesson=${_session.lessonId} session=${_session.sessionId}',
+    );
 
     final docLength = controller.document.length;
     TextSelection selection = targetSelection ?? controller.selection;
@@ -3106,6 +3162,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }) {
     final controller = _lessonContentController;
     if (controller == null) return;
+    debugPrint(
+      '[MEDIA INSERT] lesson=${_session.lessonId} session=${_session.sessionId}',
+    );
 
     final label = '📄 $fileName';
     final docLength = controller.document.length;
@@ -3594,14 +3653,28 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final capturedSessionId = _session.sessionId;
     final capturedLessonId = _session.lessonId;
     final capturedRevision = _session.revision;
+    debugPrint(
+      '[ASYNC START] session=$capturedSessionId lesson=$capturedLessonId rev=$capturedRevision',
+    );
     // Refresh media list first
     await _loadLessonMedia();
+    debugPrint(
+      '[ASYNC RETURN] capturedSession=$capturedSessionId currentSession=${_session.sessionId} '
+      'capturedRev=$capturedRevision currentRev=${_session.revision}',
+    );
+    final isActiveSession = _isActiveSession(
+      sessionId: capturedSessionId,
+      lessonId: capturedLessonId,
+      revision: capturedRevision,
+    );
     if (!mounted ||
-        !_isActiveSession(
-          sessionId: capturedSessionId,
-          lessonId: capturedLessonId,
-          revision: capturedRevision,
-        )) {
+        !isActiveSession) {
+      if (!isActiveSession) {
+        debugPrint(
+          '[ASYNC BLOCKED] stale_operation '
+          'capturedSession=$capturedSessionId current=${_session.sessionId}',
+        );
+      }
       return;
     }
     final filename = job.filename;
@@ -4327,6 +4400,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final capturedSessionId = _session.sessionId;
     final capturedLessonId = _session.lessonId;
     final capturedRevision = _session.revision;
+    debugPrint(
+      '[ASYNC START] session=$capturedSessionId lesson=$capturedLessonId rev=$capturedRevision',
+    );
     final newMediaAssetId = await showDialog<String?>(
       context: context,
       builder: (context) => WavReplaceDialog(
@@ -4336,12 +4412,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         onMediaUpdated: _loadLessonMedia,
       ),
     );
+    debugPrint(
+      '[ASYNC RETURN] capturedSession=$capturedSessionId currentSession=${_session.sessionId} '
+      'capturedRev=$capturedRevision currentRev=${_session.revision}',
+    );
+    final isActiveAfterDialog = _isActiveSession(
+      sessionId: capturedSessionId,
+      lessonId: capturedLessonId,
+      revision: capturedRevision,
+    );
     if (!mounted ||
-        !_isActiveSession(
-          sessionId: capturedSessionId,
-          lessonId: capturedLessonId,
-          revision: capturedRevision,
-        )) {
+        !isActiveAfterDialog) {
+      if (!isActiveAfterDialog) {
+        debugPrint(
+          '[ASYNC BLOCKED] stale_operation '
+          'capturedSession=$capturedSessionId current=${_session.sessionId}',
+        );
+      }
       return;
     }
     if (newMediaAssetId == null || newMediaAssetId.trim().isEmpty) return;
@@ -4349,13 +4436,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     setState(() => _mediaStatus = 'Ersätter ljud…');
 
     try {
+      debugPrint(
+        '[ASYNC START] session=$capturedSessionId lesson=$capturedLessonId rev=$capturedRevision',
+      );
       await _loadLessonMedia();
+      debugPrint(
+        '[ASYNC RETURN] capturedSession=$capturedSessionId currentSession=${_session.sessionId} '
+        'capturedRev=$capturedRevision currentRev=${_session.revision}',
+      );
+      final isActiveAfterRefresh = _isActiveSession(
+        sessionId: capturedSessionId,
+        lessonId: capturedLessonId,
+        revision: capturedRevision,
+      );
       if (!mounted ||
-          !_isActiveSession(
-            sessionId: capturedSessionId,
-            lessonId: capturedLessonId,
-            revision: capturedRevision,
-          )) {
+          !isActiveAfterRefresh) {
+        if (!isActiveAfterRefresh) {
+          debugPrint(
+            '[ASYNC BLOCKED] stale_operation '
+            'capturedSession=$capturedSessionId current=${_session.sessionId}',
+          );
+        }
         return;
       }
 

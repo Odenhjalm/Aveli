@@ -9,7 +9,11 @@ class EditorSession {
     required this.focusNode,
     required this.scrollController,
     required this.canonicalMarkdown,
-  }) : revision = 0;
+  }) : revision = 0 {
+    debugPrint(
+      '[SESSION START] session=$sessionId lesson=$lessonId revision=$revision',
+    );
+  }
 
   final String sessionId;
   final String lessonId;

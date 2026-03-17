@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 
@@ -11,8 +12,26 @@ class EditorMutationPipeline {
   final EditorSession session;
 
   void apply(EditorOperation op) {
-    if (op.sessionId != session.sessionId) return;
-    if (op.baseRevision != session.revision) return;
+    debugPrint(
+      '[PIPELINE APPLY] op=${op.type} '
+      'session=${op.sessionId} '
+      'baseRev=${op.baseRevision} '
+      'currentRev=${session.revision}',
+    );
+    if (op.sessionId != session.sessionId) {
+      debugPrint(
+        '[PIPELINE BLOCKED] reason=session_mismatch '
+        'opSession=${op.sessionId} current=${session.sessionId}',
+      );
+      return;
+    }
+    if (op.baseRevision != session.revision) {
+      debugPrint(
+        '[PIPELINE BLOCKED] reason=revision_mismatch '
+        'base=${op.baseRevision} current=${session.revision}',
+      );
+      return;
+    }
 
     final applied = switch (op.type) {
       EditorOperationType.insertText => _insertText(op),
@@ -24,6 +43,9 @@ class EditorMutationPipeline {
 
     if (applied) {
       session.incrementRevision();
+      debugPrint(
+        '[PIPELINE SUCCESS] op=${op.type} newRev=${session.revision}',
+      );
     }
   }
 
