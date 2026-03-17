@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from ..auth import CurrentUser
 from .. import models, schemas
 from ..config import settings
+from ..services import onboarding_service
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -51,6 +52,9 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
         )
+    await onboarding_service.mark_profile_completed_if_ready(
+        str(current_user["id"])
+    )
     return schemas.Profile(**updated)
 
 
@@ -120,6 +124,9 @@ async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...))
     if previous_media_id and previous_media_id != media_id:
         await models.cleanup_media_object(previous_media_id)
 
+    await onboarding_service.mark_profile_completed_if_ready(
+        str(current_user["id"])
+    )
     return schemas.Profile(**updated)
 
 

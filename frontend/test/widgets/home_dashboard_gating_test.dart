@@ -37,20 +37,31 @@ class _StubAuthRepository implements AuthRepository {
       throw UnimplementedError();
 
   @override
-  Future<Profile> register({
+  Future<AuthRegisterResult> register({
     required String email,
     required String password,
     required String displayName,
+    String? inviteToken,
     String? referralCode,
   }) => throw UnimplementedError();
+
+  @override
+  Future<void> sendVerificationEmail(String email) async {}
+
+  @override
+  Future<String> validateInvite(String token) async => '';
+
+  @override
+  Future<VerifyEmailResult> verifyEmail(String token) async =>
+      VerifyEmailResult(status: 'verified');
 
   @override
   Future<void> requestPasswordReset(String email) async {}
 
   @override
   Future<void> resetPassword({
-    required String email,
     required String newPassword,
+    required String token,
   }) async {}
 
   @override

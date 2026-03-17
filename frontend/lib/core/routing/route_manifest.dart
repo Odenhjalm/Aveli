@@ -56,6 +56,11 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(
+    name: AppRoute.resumeOnboarding,
+    path: RoutePath.resumeOnboarding,
+    access: RouteAccessLevel.authenticated,
+  ),
+  RouteManifestEntry(
     name: AppRoute.forgotPassword,
     path: RoutePath.forgotPassword,
     access: RouteAccessLevel.public,
@@ -161,6 +166,11 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.authenticated,
   ),
   RouteManifestEntry(
+    name: AppRoute.selectIntroCourse,
+    path: RoutePath.selectIntroCourse,
+    access: RouteAccessLevel.authenticated,
+  ),
+  RouteManifestEntry(
     name: AppRoute.welcome,
     path: RoutePath.welcome,
     access: RouteAccessLevel.authenticated,
@@ -179,16 +189,6 @@ const List<RouteManifestEntry> routeManifest = [
     name: AppRoute.checkout,
     path: RoutePath.checkout,
     access: RouteAccessLevel.authenticated,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.checkoutSuccess,
-    path: RoutePath.checkoutSuccess,
-    access: RouteAccessLevel.public,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.checkoutCancel,
-    path: RoutePath.checkoutCancel,
-    access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(
     name: AppRoute.tarot,
@@ -223,6 +223,11 @@ const List<RouteManifestEntry> routeManifest = [
   RouteManifestEntry(
     name: AppRoute.admin,
     path: RoutePath.admin,
+    access: RouteAccessLevel.admin,
+  ),
+  RouteManifestEntry(
+    name: AppRoute.adminMedia,
+    path: RoutePath.adminMedia,
     access: RouteAccessLevel.admin,
   ),
   RouteManifestEntry(

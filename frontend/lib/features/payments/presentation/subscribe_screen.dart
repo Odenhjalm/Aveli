@@ -118,6 +118,12 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                       ),
                     ),
                     gap12,
+                    Text(
+                      'Starta med 30 dagars trial. Du får en lektion per vecka, '
+                      'och varje introduktionskurs innehåller fyra lektioner.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    gap12,
                     if (_errorMessage != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
@@ -184,7 +190,8 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
       final checkoutApi = ref.read(checkoutApiProvider);
       final url = await checkoutApi.startMembershipCheckout(interval: 'month');
       if (!mounted) return;
-      context.push(RoutePath.checkout, extra: url);
+      final uri = Uri(path: RoutePath.checkout, queryParameters: {'url': url});
+      context.push(uri.toString());
       _statusMessage = 'Öppnar betalning...';
     } catch (error, stackTrace) {
       final failure = AppFailure.from(error, stackTrace);

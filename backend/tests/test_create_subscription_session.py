@@ -42,17 +42,31 @@ async def test_create_subscription_session(async_client, monkeypatch):
     monkeypatch.setattr("stripe.Price.retrieve", fake_price_retrieve)
 
     resp = await async_client.post(
-        "/api/checkout/create",
+        "/api/billing/create-subscription",
         headers=headers,
-        json={"type": "subscription", "interval": "month"},
+        json={"interval": "month"},
     )
     assert resp.status_code == 201, resp.text
     payload = resp.json()
-    assert payload["url"] == "https://checkout.stripe.com/cs_test"
+    assert payload["checkout_url"] == "https://checkout.stripe.com/cs_test"
     assert captured_session.get("line_items")[0]["price"] == "price_month_test"
     assert captured_session.get("ui_mode") is None
+    assert captured_session.get("subscription_data", {}).get("trial_period_days") == 30
 
     membership = await repositories.get_membership(str(user_id))
     assert membership is not None
     assert membership["plan_interval"] == "month"
     assert membership["status"] == "incomplete"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_subscription_checkout_legacy_endpoint_is_gone(async_client):
+    headers, _, _ = await register_user(async_client)
+
+    resp = await async_client.post(
+        "/api/checkout/create",
+        headers=headers,
+        json={"type": "subscription", "interval": "month"},
+    )
+    assert resp.status_code == 410, resp.text
+    assert resp.json()["detail"] == "Membership checkout uses /api/billing/create-subscription"

@@ -57,15 +57,14 @@ class ProfileRepository {
     );
     final formData = FormData.fromMap({'file': multipart});
 
-    final uploadResponse = await _client.postForm<Map<String, dynamic>>(
-      '/api/upload/profile',
+    final data = await _client.postForm<Map<String, dynamic>>(
+      '/auth/me/avatar',
       formData,
     );
-    final url = uploadResponse?['url'] as String?;
-    if (url == null || url.isEmpty) {
+    if (data == null || data.isEmpty) {
       throw StateError('Failed to upload avatar');
     }
-    return updateMe(photoUrl: url);
+    return Profile.fromJson(data);
   }
 }
 

@@ -18,10 +18,10 @@ from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
 
-RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
-CANCEL_PATH = "checkout/cancel"
+RETURN_PATH = "success?session_id={CHECKOUT_SESSION_ID}"
+CANCEL_PATH = "cancel"
 RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
-CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
+CANCEL_DEEP_LINK = "aveliapp://cancel"
 
 
 class CheckoutError(Exception):
@@ -219,7 +219,7 @@ async def create_checkout_session(
     }
     if payload.type is schemas.CheckoutType.subscription:
         checkout_kwargs["subscription_data"] = {
-            "trial_period_days": 14,
+            "trial_period_days": 30,
             "metadata": metadata,
         }
     ui_mode = settings.stripe_checkout_ui_mode or "custom"

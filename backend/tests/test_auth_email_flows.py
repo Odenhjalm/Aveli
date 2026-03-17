@@ -92,27 +92,26 @@ async def test_verify_email_is_idempotent(auth_client, monkeypatch):
         "app.services.email_verification.repositories.mark_user_email_verified",
         fake_mark_user_email_verified,
     )
-    async def fake_sync_onboarding_state(user_id: str):
-        return user_id
-
-    monkeypatch.setattr(
-        "app.services.email_verification.sync_onboarding_state",
-        fake_sync_onboarding_state,
-    )
 
     first_verify = await auth_client.get(
         "/auth/verify-email",
         params={"token": token},
     )
     assert first_verify.status_code == 200, first_verify.text
-    assert first_verify.json() == {"status": "verified"}
+    first_payload = first_verify.json()
+    assert first_payload["status"] == "verified"
+    assert first_payload["redirect_after_login"] == "/resume-onboarding"
+    assert first_payload["onboarding"] is None
 
     second_verify = await auth_client.get(
         "/auth/verify-email",
         params={"token": token},
     )
     assert second_verify.status_code == 200, second_verify.text
-    assert second_verify.json() == {"status": "already_verified"}
+    second_payload = second_verify.json()
+    assert second_payload["status"] == "already_verified"
+    assert second_payload["redirect_after_login"] == "/resume-onboarding"
+    assert second_payload["onboarding"] is None
     assert state["user"]["email_confirmed_at"] is confirmed_at
     assert state["user"]["confirmed_at"] is confirmed_at
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
+import 'package:aveli/features/onboarding/domain/onboarding_status.dart';
 
 @immutable
 class RouteSessionSnapshot {
@@ -12,7 +13,7 @@ class RouteSessionSnapshot {
     required this.hasTentativeSession,
     required this.isTeacher,
     required this.isAdmin,
-    this.onboardingState,
+    required this.onboarding,
   });
 
   final bool isAuthenticated;
@@ -20,7 +21,7 @@ class RouteSessionSnapshot {
   final bool hasTentativeSession;
   final bool isTeacher;
   final bool isAdmin;
-  final String? onboardingState;
+  final OnboardingStatus? onboarding;
 }
 
 final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
@@ -32,6 +33,6 @@ final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
     hasTentativeSession: authState.claims != null,
     isTeacher: access.isTeacher,
     isAdmin: access.isAdmin,
-    onboardingState: authState.profile?.onboardingState,
+    onboarding: authState.onboarding,
   );
 });
