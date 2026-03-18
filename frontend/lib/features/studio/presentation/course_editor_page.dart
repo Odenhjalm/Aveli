@@ -655,27 +655,35 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  T _applyEditorOperation<T>(EditorOperation operation, T Function() apply) {
+  EditorOperationExecutionResult _applyEditorOperation(
+    EditorOperation operation,
+    VoidCallback apply,
+  ) {
     final previousFingerprint =
         _lastObservedDocumentFingerprint ?? _documentFingerprint();
-    final previousOperationApplying = _editorOperationApplying;
-    _editorOperationApplying = true;
-    try {
-      return apply();
-    } finally {
-      _editorOperationApplying = previousOperationApplying;
-      final nextFingerprint = _documentFingerprint();
-      if (nextFingerprint != previousFingerprint) {
-        _lastObservedDocumentFingerprint = nextFingerprint;
-        _editorSession.revision = operation.baseRevision + 1;
-      }
-      if (kDebugMode) {
-        debugPrint(
-          '[EditorOperation] type=${operation.type.name} '
-          'revision=${operation.baseRevision}->${_editorSession.revision}',
-        );
-      }
+    final result = applyGuardedEditorOperation(
+      currentSessionId: _editorSession.sessionId,
+      currentLessonId: _editorSession.lessonId,
+      currentRevision: _editorSession.revision,
+      setRevision: (revision) => _editorSession.revision = revision,
+      operation: operation,
+      previousFingerprint: previousFingerprint,
+      currentFingerprint: _documentFingerprint,
+      debugLog: debugPrint,
+      apply: () {
+        final previousOperationApplying = _editorOperationApplying;
+        _editorOperationApplying = true;
+        try {
+          apply();
+        } finally {
+          _editorOperationApplying = previousOperationApplying;
+        }
+      },
+    );
+    if (result.didMutate && result.nextFingerprint != null) {
+      _lastObservedDocumentFingerprint = result.nextFingerprint;
     }
+    return result;
   }
 
   int _clampEditorOffset(int offset, [quill.QuillController? controller]) {
@@ -5311,7 +5319,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     var contentChanged = false;
     _runEditorMutation(
       (controller) {
-        contentChanged = _applyEditorOperation(
+        var replacedEmbeds = false;
+        final result = _applyEditorOperation(
           _createEditorOperation(
             EditorOperationType.replaceEmbed,
             payload: <String, Object?>{
@@ -5319,37 +5328,40 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               'toLessonMediaId': toId,
             },
           ),
-          () => replaceLessonMediaEmbedsInPlace(
-            controller: controller,
-            fromLessonMediaId: fromId,
-            toLessonMediaId: toId,
-            replacementBuilder: (embed, _) {
-              switch (embed.value.type) {
-                case lesson_pipeline.AudioBlockEmbed.embedType:
-                  return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
-                    lessonMediaId: toId,
-                    src: replacementUrl,
-                  );
-                case quill.BlockEmbed.videoType:
-                  return quill.BlockEmbed.video(
-                    lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
+          () {
+            replacedEmbeds = replaceLessonMediaEmbedsInPlace(
+              controller: controller,
+              fromLessonMediaId: fromId,
+              toLessonMediaId: toId,
+              replacementBuilder: (embed, _) {
+                switch (embed.value.type) {
+                  case lesson_pipeline.AudioBlockEmbed.embedType:
+                    return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
                       lessonMediaId: toId,
                       src: replacementUrl,
-                    ),
-                  );
-                case quill.BlockEmbed.imageType:
-                  return quill.BlockEmbed.image(
-                    lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
-                      lessonMediaId: toId,
-                      src: replacementUrl,
-                    ),
-                  );
-                default:
-                  return null;
-              }
-            },
-          ),
+                    );
+                  case quill.BlockEmbed.videoType:
+                    return quill.BlockEmbed.video(
+                      lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
+                        lessonMediaId: toId,
+                        src: replacementUrl,
+                      ),
+                    );
+                  case quill.BlockEmbed.imageType:
+                    return quill.BlockEmbed.image(
+                      lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
+                        lessonMediaId: toId,
+                        src: replacementUrl,
+                      ),
+                    );
+                  default:
+                    return null;
+                }
+              },
+            );
+          },
         );
+        contentChanged = result.wasApplied && replacedEmbeds;
       },
       markDirty: false,
       requestFocus: true,
