@@ -434,6 +434,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _editorMutating = false;
   bool _editorOperationApplying = false;
   bool _selectionSyncScheduled = false;
+  bool _editorHydrationCommittedForSession = false;
+  bool _editorHydrationCommitScheduled = false;
 
   final TextEditingController _newCourseTitle = TextEditingController();
   final TextEditingController _newCourseDesc = TextEditingController();
@@ -576,6 +578,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }) {
     _documentReadyLessonId = null;
     _documentReadyRequestId = null;
+    _editorHydrationCommittedForSession = false;
+    _editorHydrationCommitScheduled = false;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
     _lessonEditorBootPhase = phase;
   }
@@ -1018,6 +1022,41 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       hydratingEmbedIds: batch.hydratingIds,
       settled: batch.settled,
     );
+  }
+
+  void _scheduleInitialEditorHydrationCommit({
+    required String lessonId,
+    required int requestId,
+  }) {
+    if (_editorHydrationCommittedForSession ||
+        _editorHydrationCommitScheduled) {
+      return;
+    }
+
+    _editorHydrationCommitScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _editorHydrationCommitScheduled = false;
+      if (!mounted ||
+          _editorHydrationCommittedForSession ||
+          !_matchesCurrentLessonRequest(
+            lessonId: lessonId,
+            requestId: requestId,
+          )) {
+        return;
+      }
+
+      final previousMutating = _editorMutating;
+      _editorMutating = true;
+      try {
+        _lessonContentController.updateSelection(
+          _lessonContentController.selection,
+          quill.ChangeSource.local,
+        );
+        _editorHydrationCommittedForSession = true;
+      } finally {
+        _editorMutating = previousMutating;
+      }
+    });
   }
 
   void _resetCoverState({bool clearPreview = false}) {
@@ -2085,6 +2124,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         initialHydrationIds: initialHydrationIds,
       );
     }
+    _scheduleInitialEditorHydrationCommit(
+      lessonId: lessonId,
+      requestId: requestId,
+    );
   }
 
   Future<void> _resetLessonEdits() async {
@@ -2141,6 +2184,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         initialHydrationIds: initialHydrationIds,
       );
     }
+    _scheduleInitialEditorHydrationCommit(
+      lessonId: lessonId,
+      requestId: requestId,
+    );
   }
 
   int _currentLessonPosition() {

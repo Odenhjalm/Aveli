@@ -213,6 +213,60 @@ int _editorControllerGenerationFromBridge() {
   return controllerGeneration!;
 }
 
+class _StyledTextSegment {
+  const _StyledTextSegment(this.text, this.style);
+
+  final String text;
+  final TextStyle? style;
+}
+
+void _collectStyledTextSegments(
+  InlineSpan span,
+  List<_StyledTextSegment> segments, {
+  TextStyle? inheritedStyle,
+}) {
+  if (span is! TextSpan) return;
+  final effectiveStyle = inheritedStyle?.merge(span.style) ?? span.style;
+  final text = span.text;
+  if (text != null && text.isNotEmpty) {
+    segments.add(_StyledTextSegment(text, effectiveStyle));
+  }
+  final children = span.children;
+  if (children == null || children.isEmpty) {
+    return;
+  }
+  for (final child in children) {
+    _collectStyledTextSegments(child, segments, inheritedStyle: effectiveStyle);
+  }
+}
+
+List<_StyledTextSegment> _editorStyledTextSegments(WidgetTester tester) {
+  final segments = <_StyledTextSegment>[];
+  final richTextFinder = find.descendant(
+    of: find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+    matching: find.byType(RichText),
+  );
+  for (final richText in tester.widgetList<RichText>(richTextFinder)) {
+    _collectStyledTextSegments(richText.text, segments);
+  }
+  return segments;
+}
+
+String _renderedEditorText(WidgetTester tester) {
+  final buffer = StringBuffer();
+  for (final segment in _editorStyledTextSegments(tester)) {
+    buffer.write(segment.text);
+  }
+  return buffer.toString();
+}
+
+List<TextStyle?> _editorTextStylesForText(WidgetTester tester, String target) {
+  return [
+    for (final segment in _editorStyledTextSegments(tester))
+      if (segment.text.contains(target)) segment.style,
+  ];
+}
+
 void _stubLessonSaveEcho(_MockStudioRepository studioRepo) {
   when(
     () => studioRepo.upsertLesson(
@@ -1888,6 +1942,156 @@ void main() {
     expect(patch['price_amount_cents'], 9900);
     expect(patch.containsKey('price_cents'), isFalse);
   });
+
+  testWidgets(
+    'CourseEditorScreen reflects loaded content edits without requiring an initial focus interaction',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final initialControllerIdentity = _editorControllerIdentityFromBridge();
+      final initialControllerGeneration =
+          _editorControllerGenerationFromBridge();
+
+      expect(_renderedEditorText(tester), contains('Introtext'));
+
+      editor_test_bridge.insertText('X');
+      await tester.pump();
+
+      expect(_editorDocumentFromBridge(), contains('XIntrotext'));
+      expect(_renderedEditorText(tester), contains('XIntrotext'));
+      expect(_editorControllerIdentityFromBridge(), initialControllerIdentity);
+      expect(
+        _editorControllerGenerationFromBridge(),
+        initialControllerGeneration,
+      );
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen renders bold and italic formatting immediately after load',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: '**Fet text**\n\n*Italic text*',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final boldStyles = _editorTextStylesForText(tester, 'Fet text');
+      final italicStyles = _editorTextStylesForText(tester, 'Italic text');
+
+      expect(_renderedEditorText(tester), contains('Fet text'));
+      expect(_renderedEditorText(tester), contains('Italic text'));
+      expect(
+        boldStyles.any((style) => style?.fontWeight == FontWeight.bold),
+        isTrue,
+      );
+      expect(
+        italicStyles.any((style) => style?.fontStyle == FontStyle.italic),
+        isTrue,
+      );
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen resolves hydrated media previews without replacing the controller',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\n!image(media-image-1)\n\nEftertext',
+        lessonMedia: [
+          {
+            'id': 'media-image-1',
+            'kind': 'image',
+            'storage_path': 'private-media/lesson-1/image.png',
+            'storage_bucket': 'private-media',
+            'original_name': 'image.png',
+            'position': 1,
+          },
+        ],
+        fetchLessonMediaPreviews: (_) => previewCompleter.future,
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        maxPumps: 30,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        maxPumps: 100,
+        step: const Duration(milliseconds: 1),
+      );
+
+      final initialControllerIdentity = _editorControllerIdentityFromBridge();
+      final initialControllerGeneration =
+          _editorControllerGenerationFromBridge();
+
+      previewCompleter.complete({
+        'media-image-1': {
+          'media_type': 'image',
+          'thumbnail_url': 'https://cdn.test/media-image-1-thumb.webp',
+          'file_name': 'image.png',
+        },
+      });
+      await _pumpUntilFound(
+        tester,
+        _networkImageFinder('https://cdn.test/media-image-1-thumb.webp'),
+        maxPumps: 100,
+        step: const Duration(milliseconds: 1),
+      );
+      await tester.pump();
+
+      expect(
+        _networkImageFinder('https://cdn.test/media-image-1-thumb.webp'),
+        findsOneWidget,
+      );
+      expect(_editorControllerIdentityFromBridge(), initialControllerIdentity);
+      expect(
+        _editorControllerGenerationFromBridge(),
+        initialControllerGeneration,
+      );
+
+      await _disposePumpedWidget(tester);
+    },
+  );
 
   testWidgets(
     'CourseEditorScreen renders image previews from batch preview metadata when lesson media rows lack direct URLs',
