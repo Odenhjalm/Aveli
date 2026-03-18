@@ -5,6 +5,10 @@ enum EditorOperationType {
   formatSelection,
   insertEmbed,
   replaceEmbed,
+  indentSelection,
+  setSelection,
+  undo,
+  redo,
 }
 
 class EditorOperation {

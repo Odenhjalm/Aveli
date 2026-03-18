@@ -10,6 +10,7 @@ import 'package:flutter/semantics.dart' show SemanticsBinding, SemanticsHandle;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
+import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http_parser/http_parser.dart';
@@ -25,6 +26,7 @@ import 'package:aveli/editor/adapter/editor_to_markdown.dart'
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/editor/session/editor_operation.dart';
+import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/editor/session/editor_session.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
@@ -482,13 +484,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String _qKind = 'single';
   List<Map<String, dynamic>> _questions = <Map<String, dynamic>>[];
 
-  quill.QuillController get _lessonContentController =>
-      _editorSession.controller;
+  EditorOperationQuillController get _lessonContentController =>
+      _editorSession.controller as EditorOperationQuillController;
 
   FocusNode get _lessonContentFocusNode => _editorSession.focusNode;
 
   ScrollController get _lessonEditorScrollController =>
       _editorSession.scrollController;
+
+  String _controllerTraceId(quill.QuillController controller) =>
+      '${controller.runtimeType}#${identityHashCode(controller)}';
 
   void _showFriendlyErrorSnack(
     String prefix,
@@ -654,6 +659,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     EditorOperation operation,
     VoidCallback apply,
   ) {
+    if (kDebugMode) {
+      debugPrint(
+        '[EDITOR FLOW] controller=${_controllerTraceId(_lessonContentController)} '
+        'operation=${operation.type.name} '
+        'session=${operation.sessionId} '
+        'lesson=${operation.lessonId ?? 'null'} '
+        'baseRevision=${operation.baseRevision} '
+        'payload=${operation.payload}',
+      );
+    }
     final previousFingerprint =
         _lastObservedDocumentFingerprint ?? _documentFingerprint();
     final result = applyGuardedEditorOperation(
@@ -679,6 +694,137 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lastObservedDocumentFingerprint = result.nextFingerprint;
     }
     return result;
+  }
+
+  Map<String, Object?> _selectionOperationPayload(TextSelection selection) {
+    return <String, Object?>{
+      'baseOffset': selection.baseOffset,
+      'extentOffset': selection.extentOffset,
+    };
+  }
+
+  Object? _describeEditorOperationData(Object? data) {
+    if (data == null || data is String || data is num || data is bool) {
+      return data;
+    }
+    if (data is quill.Attribute) {
+      return <String, Object?>{'key': data.key, 'value': data.value};
+    }
+    if (data is quill_delta.Delta) {
+      return data.toJson();
+    }
+    return data.toString();
+  }
+
+  void _bindEditorOperationController(
+    EditorOperationQuillController controller,
+  ) {
+    controller.onReplaceTextRequested = (request) {
+      _applyEditorReplaceTextRequest(controller, request);
+    };
+    controller.onReplaceTextWithEmbedsRequested = (request) {
+      _applyEditorReplaceTextRequest(controller, request);
+    };
+    controller.onFormatTextRequested = (request) {
+      _applyEditorFormatTextRequest(controller, request);
+    };
+    controller.onIndentSelectionRequested = (request) {
+      _applyEditorIndentSelectionRequest(controller, request);
+    };
+    controller.onSelectionRequested = (request) {
+      _applyEditorSelectionRequest(controller, request);
+    };
+    controller.onUndoRequested = () {
+      _applyEditorUndoRequest(controller);
+    };
+    controller.onRedoRequested = () {
+      _applyEditorRedoRequest(controller);
+    };
+  }
+
+  void _applyEditorReplaceTextRequest(
+    EditorOperationQuillController controller,
+    EditorOperationReplaceTextRequest request,
+  ) {
+    final operation = _createEditorOperation(
+      EditorOperationType.replaceText,
+      payload: <String, Object?>{
+        'index': request.index,
+        'length': request.length,
+        'data': _describeEditorOperationData(request.data),
+        'selection': request.selection == null
+            ? null
+            : _selectionOperationPayload(request.selection!),
+        'ignoreFocus': request.ignoreFocus,
+        'preserveEmbeds': request.preserveEmbeds,
+      },
+    );
+    _applyEditorOperation(operation, () {
+      controller.applyReplaceText(request);
+    });
+  }
+
+  void _applyEditorFormatTextRequest(
+    EditorOperationQuillController controller,
+    EditorOperationFormatTextRequest request,
+  ) {
+    final operation = _createEditorOperation(
+      EditorOperationType.formatSelection,
+      payload: <String, Object?>{
+        'start': request.index,
+        'length': request.length,
+        'attribute': request.attribute?.key,
+        'value': request.attribute?.value,
+      },
+    );
+    _applyEditorOperation(operation, () {
+      controller.applyFormatText(request);
+    });
+  }
+
+  void _applyEditorIndentSelectionRequest(
+    EditorOperationQuillController controller,
+    EditorOperationIndentSelectionRequest request,
+  ) {
+    final operation = _createEditorOperation(
+      EditorOperationType.indentSelection,
+      payload: <String, Object?>{'isIncrease': request.isIncrease},
+    );
+    _applyEditorOperation(operation, () {
+      controller.applyIndentSelection(request);
+    });
+  }
+
+  void _applyEditorSelectionRequest(
+    EditorOperationQuillController controller,
+    EditorOperationSelectionRequest request,
+  ) {
+    final normalizedSelection = _clampEditorSelection(
+      request.selection,
+      controller,
+    );
+    final operation = _createEditorOperation(
+      EditorOperationType.setSelection,
+      payload: _selectionOperationPayload(normalizedSelection),
+    );
+    _applyEditorOperation(operation, () {
+      controller.applySelection(
+        EditorOperationSelectionRequest(
+          selection: normalizedSelection,
+          source: request.source,
+        ),
+      );
+    });
+  }
+
+  void _applyEditorUndoRequest(EditorOperationQuillController controller) {
+    final operation = _createEditorOperation(EditorOperationType.undo);
+    _applyEditorOperation(operation, controller.applyUndo);
+  }
+
+  void _applyEditorRedoRequest(EditorOperationQuillController controller) {
+    final operation = _createEditorOperation(EditorOperationType.redo);
+    _applyEditorOperation(operation, controller.applyRedo);
   }
 
   int _clampEditorOffset(int offset, [quill.QuillController? controller]) {
@@ -751,9 +897,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final previousMutating = _editorMutating;
       _editorMutating = true;
       try {
-        _lessonContentController.updateSelection(
-          normalized,
-          quill.ChangeSource.local,
+        _setEditorSelectionLocally(
+          _lessonContentController,
+          selection: normalized,
         );
       } finally {
         _editorMutating = previousMutating;
@@ -777,7 +923,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _runEditorMutation(
-    void Function(quill.QuillController controller) mutation, {
+    void Function(EditorOperationQuillController controller) mutation, {
     bool markDirty = true,
     bool requestFocus = false,
     bool reconcileSelection = true,
@@ -813,62 +959,53 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _replaceEditorTextLocally(
-    quill.QuillController controller, {
+    EditorOperationQuillController controller, {
     required int index,
     required int length,
     required Object data,
     required TextSelection selection,
   }) {
-    final operation = _createEditorOperation(
-      EditorOperationType.replaceText,
-      payload: <String, Object?>{
-        'index': index,
-        'length': length,
-        'data': data is String ? data : data.toString(),
-      },
+    _applyEditorReplaceTextRequest(
+      controller,
+      EditorOperationReplaceTextRequest(
+        index: index,
+        length: length,
+        data: data,
+        selection: _clampEditorSelection(selection, controller),
+        ignoreFocus: false,
+        shouldNotifyListeners: true,
+        preserveEmbeds: false,
+      ),
     );
-    _applyEditorOperation(operation, () {
-      final previousToggledStyle = controller.toggledStyle;
-      controller.toggledStyle = const quill.Style();
-      try {
-        controller.replaceText(
-          index,
-          length,
-          data,
-          _clampEditorSelection(selection, controller),
-        );
-      } finally {
-        controller.toggledStyle = previousToggledStyle;
-      }
-    });
   }
 
   void _formatEditorRangeSelection(
-    quill.QuillController controller, {
+    EditorOperationQuillController controller, {
     required int start,
     required int length,
     required quill.Attribute attribute,
   }) {
     if (length <= 0) return;
-    final operation = _createEditorOperation(
-      EditorOperationType.formatSelection,
-      payload: <String, Object?>{
-        'start': start,
-        'length': length,
-        'attribute': attribute.key,
-        'value': attribute.value,
-      },
+    _applyEditorFormatTextRequest(
+      controller,
+      EditorOperationFormatTextRequest(
+        index: start,
+        length: length,
+        attribute: attribute,
+        shouldNotifyListeners: true,
+      ),
     );
-    _applyEditorOperation(operation, () {
-      controller.updateSelection(
-        _clampEditorSelection(
-          TextSelection(baseOffset: start, extentOffset: start + length),
-          controller,
-        ),
-        quill.ChangeSource.local,
-      );
-      controller.formatSelection(attribute);
-    });
+  }
+
+  void _setEditorSelectionLocally(
+    EditorOperationQuillController controller, {
+    required TextSelection selection,
+    quill.ChangeSource source = quill.ChangeSource.local,
+  }) {
+    _applyEditorSelectionRequest(
+      controller,
+      EditorOperationSelectionRequest(selection: selection, source: source),
+    );
   }
 
   void _handleInlineFormatToolbarPressed() {
@@ -930,9 +1067,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _setEditorCursorViaTestBridge(int offset) {
     _runEditorMutation(
       (controller) {
-        controller.updateSelection(
-          TextSelection.collapsed(offset: _clampEditorOffset(offset)),
-          quill.ChangeSource.local,
+        _setEditorSelectionLocally(
+          controller,
+          selection: TextSelection.collapsed(
+            offset: _clampEditorOffset(offset),
+          ),
         );
       },
       markDirty: false,
@@ -943,12 +1082,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _setEditorSelectionViaTestBridge(int start, int end) {
     _runEditorMutation(
       (controller) {
-        controller.updateSelection(
-          TextSelection(
+        _setEditorSelectionLocally(
+          controller,
+          selection: TextSelection(
             baseOffset: _clampEditorOffset(start),
             extentOffset: _clampEditorOffset(end),
           ),
-          quill.ChangeSource.local,
         );
       },
       markDirty: false,
@@ -1087,10 +1226,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final previousMutating = _editorMutating;
     _editorMutating = true;
     try {
-      _lessonContentController.updateSelection(
-        _lessonContentController.selection,
-        quill.ChangeSource.local,
+      _setEditorSelectionLocally(
+        _lessonContentController,
+        selection: _lessonContentController.selection,
       );
+      _lessonContentFocusNode.requestFocus();
       _editorHydrationCommittedForSession = true;
       _pendingEditorHydrationCommitLessonId = null;
       _pendingEditorHydrationCommitRequestId = null;
@@ -1846,10 +1986,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _detachControllerListener();
       _lessonContentController.dispose();
     }
-    final controller = quill.QuillController(
+    final controller = EditorOperationQuillController(
       document: document,
       selection: const TextSelection.collapsed(offset: 0),
     );
+    if (kDebugMode) {
+      debugPrint('CONTROLLER TYPE: ${_controllerTraceId(controller)}');
+    }
+    _bindEditorOperationController(controller);
     _editorSession = EditorSession(
       sessionId: _uuid.v4(),
       lessonId: _selectedLessonId,
@@ -2417,9 +2561,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         length: label.length,
         attribute: quill.LinkAttribute(url),
       );
-      controller.updateSelection(
-        TextSelection.collapsed(offset: baseOffset + label.length),
-        quill.ChangeSource.local,
+      _setEditorSelectionLocally(
+        controller,
+        selection: TextSelection.collapsed(offset: baseOffset + label.length),
       );
     }, requestFocus: true);
   }
@@ -4041,9 +4185,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         data: '',
         selection: TextSelection.collapsed(offset: documentOffset),
       );
-      controller.updateSelection(
-        TextSelection.collapsed(offset: _clampEditorOffset(documentOffset)),
-        quill.ChangeSource.local,
+      _setEditorSelectionLocally(
+        controller,
+        selection: TextSelection.collapsed(
+          offset: _clampEditorOffset(documentOffset),
+        ),
       );
     }, requestFocus: true);
   }
@@ -4178,9 +4324,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         data: '',
         selection: TextSelection.collapsed(offset: range.start),
       );
-      controller.updateSelection(
-        TextSelection.collapsed(offset: _clampEditorOffset(range.start)),
-        quill.ChangeSource.local,
+      _setEditorSelectionLocally(
+        controller,
+        selection: TextSelection.collapsed(
+          offset: _clampEditorOffset(range.start),
+        ),
       );
     });
     return true;
@@ -4229,9 +4377,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           offset: baseIndex + label.length + 1,
         ),
       );
-      controller.updateSelection(
-        TextSelection.collapsed(offset: baseIndex + label.length + 1),
-        quill.ChangeSource.local,
+      _setEditorSelectionLocally(
+        controller,
+        selection: TextSelection.collapsed(
+          offset: baseIndex + label.length + 1,
+        ),
       );
     }, requestFocus: true);
   }
@@ -5980,6 +6130,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ),
         ),
       );
+    }
+
+    final controller = _lessonContentController;
+    if (kDebugMode) {
+      debugPrint('UI CONTROLLER TYPE: ${_controllerTraceId(controller)}');
     }
 
     final uploadJobs = ref.watch(studioUploadQueueProvider);

@@ -2,18 +2,73 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 
+import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 import 'package:aveli/shared/utils/quill_embed_insertion.dart';
 
 void main() {
+  EditorOperationQuillController buildController() {
+    return EditorOperationQuillController(
+      document: quill.Document(),
+      selection: const TextSelection.collapsed(offset: 0),
+    );
+  }
+
+  void applyReplaceText(
+    EditorOperationQuillController controller, {
+    required int index,
+    required int length,
+    required Object data,
+    required TextSelection selection,
+  }) {
+    controller.applyReplaceText(
+      EditorOperationReplaceTextRequest(
+        index: index,
+        length: length,
+        data: data,
+        selection: selection,
+        ignoreFocus: false,
+        shouldNotifyListeners: true,
+        preserveEmbeds: false,
+      ),
+    );
+  }
+
+  void applySelection(
+    EditorOperationQuillController controller,
+    TextSelection selection,
+  ) {
+    controller.applySelection(
+      EditorOperationSelectionRequest(
+        selection: selection,
+        source: quill.ChangeSource.local,
+      ),
+    );
+  }
+
+  void applyFormatSelection(
+    EditorOperationQuillController controller,
+    quill.Attribute attribute,
+  ) {
+    controller.applyFormatText(
+      EditorOperationFormatTextRequest(
+        index: controller.selection.start,
+        length: controller.selection.end - controller.selection.start,
+        attribute: attribute,
+        shouldNotifyListeners: true,
+      ),
+    );
+  }
+
   test('replaceSelectionWithBlockEmbed clamps stale end selection safely', () {
-    final controller = quill.QuillController.basic();
-    controller.replaceText(
-      0,
-      0,
-      'Intro',
-      const TextSelection.collapsed(offset: 5),
+    final controller = buildController();
+    applyReplaceText(
+      controller,
+      index: 0,
+      length: 0,
+      data: 'Intro',
+      selection: const TextSelection.collapsed(offset: 5),
     );
 
     expect(
@@ -34,18 +89,16 @@ void main() {
   test(
     'replaceSelectionWithBlockEmbed ignores toggled inline styles for embeds',
     () {
-      final controller = quill.QuillController.basic();
-      controller.replaceText(
-        0,
-        0,
-        'Intro',
-        const TextSelection.collapsed(offset: 5),
+      final controller = buildController();
+      applyReplaceText(
+        controller,
+        index: 0,
+        length: 0,
+        data: 'Intro',
+        selection: const TextSelection.collapsed(offset: 5),
       );
-      controller.updateSelection(
-        const TextSelection.collapsed(offset: 5),
-        quill.ChangeSource.local,
-      );
-      controller.formatSelection(quill.Attribute.bold);
+      applySelection(controller, const TextSelection.collapsed(offset: 5));
+      applyFormatSelection(controller, quill.Attribute.bold);
 
       expect(
         () => replaceSelectionWithBlockEmbed(
@@ -65,12 +118,13 @@ void main() {
   );
 
   test('replaceLessonMediaEmbedsInPlace swaps audio embeds locally', () {
-    final controller = quill.QuillController.basic();
-    controller.replaceText(
-      0,
-      0,
-      'Intro\n',
-      const TextSelection.collapsed(offset: 6),
+    final controller = buildController();
+    applyReplaceText(
+      controller,
+      index: 0,
+      length: 0,
+      data: 'Intro\n',
+      selection: const TextSelection.collapsed(offset: 6),
     );
     replaceSelectionWithBlockEmbed(
       controller: controller,
@@ -80,16 +134,19 @@ void main() {
       ),
       selection: const TextSelection.collapsed(offset: 6),
     );
-    controller.replaceText(
-      controller.document.length - 1,
-      0,
-      'Eftertext',
-      TextSelection.collapsed(offset: controller.document.length - 1 + 9),
+    applyReplaceText(
+      controller,
+      index: controller.document.length - 1,
+      length: 0,
+      data: 'Eftertext',
+      selection: TextSelection.collapsed(
+        offset: controller.document.length - 1 + 9,
+      ),
     );
 
     final originalControllerIdentity = identityHashCode(controller);
     const preservedSelection = TextSelection.collapsed(offset: 2);
-    controller.updateSelection(preservedSelection, quill.ChangeSource.local);
+    applySelection(controller, preservedSelection);
 
     final changed = replaceLessonMediaEmbedsInPlace(
       controller: controller,
@@ -123,12 +180,13 @@ void main() {
   });
 
   test('replaceText keeps controller stable for mixed text and embeds', () {
-    final controller = quill.QuillController.basic();
-    controller.replaceText(
-      0,
-      0,
-      'Intro\n',
-      const TextSelection.collapsed(offset: 6),
+    final controller = buildController();
+    applyReplaceText(
+      controller,
+      index: 0,
+      length: 0,
+      data: 'Intro\n',
+      selection: const TextSelection.collapsed(offset: 6),
     );
     replaceSelectionWithBlockEmbed(
       controller: controller,
@@ -141,31 +199,34 @@ void main() {
       selection: const TextSelection.collapsed(offset: 6),
     );
     final appendOffset = controller.document.length - 1;
-    controller.replaceText(
-      appendOffset,
-      0,
-      'Eftertext',
-      TextSelection.collapsed(offset: appendOffset + 9),
+    applyReplaceText(
+      controller,
+      index: appendOffset,
+      length: 0,
+      data: 'Eftertext',
+      selection: TextSelection.collapsed(offset: appendOffset + 9),
     );
 
     final originalControllerIdentity = identityHashCode(controller);
     final insertOffset = controller.document.length - 1;
 
-    controller.replaceText(
-      insertOffset,
-      0,
-      ' hej',
-      TextSelection.collapsed(offset: insertOffset + 4),
+    applyReplaceText(
+      controller,
+      index: insertOffset,
+      length: 0,
+      data: ' hej',
+      selection: TextSelection.collapsed(offset: insertOffset + 4),
     );
 
     expect(identityHashCode(controller), originalControllerIdentity);
     expect(controller.document.toPlainText(), contains('Eftertext hej\n'));
 
-    controller.replaceText(
-      insertOffset,
-      4,
-      '',
-      TextSelection.collapsed(offset: insertOffset),
+    applyReplaceText(
+      controller,
+      index: insertOffset,
+      length: 4,
+      data: '',
+      selection: TextSelection.collapsed(offset: insertOffset),
     );
 
     expect(identityHashCode(controller), originalControllerIdentity);
@@ -181,12 +242,13 @@ void main() {
   test(
     'replaceLessonMediaEmbedsInPlace is a no-op when media id is absent',
     () {
-      final controller = quill.QuillController.basic();
-      controller.replaceText(
-        0,
-        0,
-        'Intro',
-        const TextSelection.collapsed(offset: 5),
+      final controller = buildController();
+      applyReplaceText(
+        controller,
+        index: 0,
+        length: 0,
+        data: 'Intro',
+        selection: const TextSelection.collapsed(offset: 5),
       );
       final originalDelta = controller.document.toDelta().toJson();
 
