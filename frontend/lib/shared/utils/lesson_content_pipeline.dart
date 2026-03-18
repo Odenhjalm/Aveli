@@ -747,7 +747,7 @@ String? _lessonMediaIdFromMediaAttributes(
 }
 
 final RegExp studioMediaUrlPattern = RegExp(
-  r'''(?:https?:\/\/[^\s"'()]+)?\/studio\/media\/([0-9a-fA-F-]{36})''',
+  r'''(?:https?:\/\/[^\s"'()]+)?\/studio\/media\/''' + _lessonMediaIdFragment,
   caseSensitive: false,
 );
 
@@ -884,7 +884,8 @@ Future<String> prepareLessonMarkdownForRendering(
     ids.map((id) async {
       try {
         final item = byId[id];
-        if (item != null && pipelineRepository != null) {
+        if (pipelineRepository != null) {
+          if (item == null) return;
           final url = await resolveLessonMediaPlaybackUrl(
             item: item,
             mediaRepository: mediaRepository,

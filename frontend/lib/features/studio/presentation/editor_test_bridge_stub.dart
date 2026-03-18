@@ -10,6 +10,7 @@ void registerAveliEditorTestBridge({
   required int Function() getSelectionEnd,
   required int Function() getControllerIdentity,
   required int Function() getControllerGeneration,
+  required void Function(bool enabled) setPreviewMode,
 }) {}
 
 void unregisterAveliEditorTestBridge() {}

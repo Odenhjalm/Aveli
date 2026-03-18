@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +6,7 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 
 import 'lesson_media_preview_cache.dart';
+import 'lesson_media_preview_hydration.dart';
 
 class LessonMediaPreview extends ConsumerStatefulWidget {
   const LessonMediaPreview({
@@ -14,6 +16,7 @@ class LessonMediaPreview extends ConsumerStatefulWidget {
     this.src,
     this.hydrating = false,
     this.hydrationRevision = 0,
+    this.hydrationListenable,
   });
 
   final String lessonMediaId;
@@ -21,6 +24,8 @@ class LessonMediaPreview extends ConsumerStatefulWidget {
   final String? src;
   final bool hydrating;
   final int hydrationRevision;
+  final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
+  hydrationListenable;
 
   @override
   ConsumerState<LessonMediaPreview> createState() => _LessonMediaPreviewState();
@@ -28,20 +33,34 @@ class LessonMediaPreview extends ConsumerStatefulWidget {
 
 class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   late Future<LessonMediaPreviewData?> _previewFuture;
+  late int _hydrationRevision;
 
   @override
   void initState() {
     super.initState();
+    _hydrationRevision = _effectiveHydrationRevision();
+    _attachHydrationListenable();
     _previewFuture = _createPreviewFuture();
   }
 
   @override
   void didUpdateWidget(covariant LessonMediaPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.hydrationListenable != widget.hydrationListenable) {
+      _detachHydrationListenable(oldWidget.hydrationListenable);
+      _attachHydrationListenable();
+    }
     if (oldWidget.lessonMediaId.trim() != widget.lessonMediaId.trim() ||
-        oldWidget.hydrationRevision != widget.hydrationRevision) {
+        _hydrationRevision != _effectiveHydrationRevision()) {
+      _hydrationRevision = _effectiveHydrationRevision();
       _previewFuture = _createPreviewFuture();
     }
+  }
+
+  @override
+  void dispose() {
+    _detachHydrationListenable(widget.hydrationListenable);
+    super.dispose();
   }
 
   Future<LessonMediaPreviewData?> _createPreviewFuture() {
@@ -52,6 +71,40 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
     return ref
         .read(lessonMediaPreviewCacheProvider)
         .getPreview(normalizedLessonMediaId);
+  }
+
+  int _effectiveHydrationRevision() {
+    return widget.hydrationListenable?.value.revision ??
+        widget.hydrationRevision;
+  }
+
+  bool _effectiveHydrating() {
+    final snapshot = widget.hydrationListenable?.value;
+    if (snapshot != null) {
+      return snapshot.isHydratingId(widget.lessonMediaId);
+    }
+    return widget.hydrating;
+  }
+
+  void _attachHydrationListenable() {
+    widget.hydrationListenable?.addListener(_handleHydrationStateChanged);
+  }
+
+  void _detachHydrationListenable(
+    ValueListenable<LessonMediaPreviewHydrationSnapshot>? listenable,
+  ) {
+    listenable?.removeListener(_handleHydrationStateChanged);
+  }
+
+  void _handleHydrationStateChanged() {
+    final nextRevision = _effectiveHydrationRevision();
+    if (_hydrationRevision != nextRevision) {
+      _hydrationRevision = nextRevision;
+      _previewFuture = _createPreviewFuture();
+    }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -74,6 +127,7 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
               future: _previewFuture,
               builder: (context, snapshot) {
                 final preview = snapshot.data;
+                final isHydrating = _effectiveHydrating();
                 final previewVisualUrl = _resolveVisualUrl(
                   mediaRepository: mediaRepository,
                   preferred: preview?.visualUrl,
@@ -87,23 +141,23 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
                 final visualUrl = preview?.previewBlocked == true
                     ? null
                     : previewVisualUrl ?? fallbackVisualUrl;
-                final isHydrating =
-                    widget.hydrating &&
+                final isHydratingVisible =
+                    isHydrating &&
                     supportsVisualPreview &&
                     preview?.previewBlocked != true &&
                     visualUrl == null;
                 final isAsyncLoading =
-                    widget.hydrating &&
+                    isHydrating &&
                     snapshot.connectionState == ConnectionState.waiting &&
                     preview == null &&
                     visualUrl == null;
                 final isUnresolved =
                     supportsVisualPreview &&
-                    !isHydrating &&
+                    !isHydratingVisible &&
                     !isAsyncLoading &&
                     preview?.previewBlocked != true &&
                     visualUrl == null;
-                final isLoading = isHydrating || isAsyncLoading;
+                final isLoading = isHydratingVisible || isAsyncLoading;
                 return _LessonMediaPreviewFrame(
                   mediaType: normalizedType,
                   visualUrl: visualUrl,

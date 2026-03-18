@@ -64,6 +64,7 @@ import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
     as editor_test_bridge;
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview_cache.dart';
+import 'package:aveli/features/studio/presentation/lesson_media_preview_hydration.dart';
 
 String? _mediaUrl(Map<String, dynamic> media) {
   final playback = media['playback_url'];
@@ -133,13 +134,7 @@ const _legacyVideoRemoveButtonKey = ValueKey<String>(
   'legacy_video_remove_button',
 );
 
-enum _LessonEditorBootPhase {
-  booting,
-  applyingLessonDocument,
-  readyForInput,
-  previewsHydrating,
-  fullyStable,
-}
+enum _LessonEditorBootPhase { booting, applyingLessonDocument, fullyStable }
 
 class _EditorRevisionToken {
   const _EditorRevisionToken({
@@ -154,13 +149,10 @@ class _EditorRevisionToken {
 }
 
 class _AudioEmbedBuilder implements quill.EmbedBuilder {
-  const _AudioEmbedBuilder({
-    required this.hydratingEmbedIds,
-    required this.hydrationRevision,
-  });
+  const _AudioEmbedBuilder({this.hydrationListenable});
 
-  final Set<String> hydratingEmbedIds;
-  final int hydrationRevision;
+  final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
+  hydrationListenable;
 
   @override
   String get key => 'audio';
@@ -181,7 +173,6 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
     final dynamic value = node.value.data;
     final lessonMediaId =
         lesson_pipeline.lessonMediaIdFromEmbedValue(value) ?? '';
-    final normalizedLessonMediaId = lessonMediaId.trim();
     final String url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
@@ -189,8 +180,8 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
       lessonMediaId: lessonMediaId,
       mediaType: 'audio',
       src: url,
-      hydrating: hydratingEmbedIds.contains(normalizedLessonMediaId),
-      hydrationRevision: hydrationRevision,
+      hydrating: false,
+      hydrationListenable: hydrationListenable,
     );
   }
 }
@@ -198,13 +189,14 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
 class _VideoEmbedBuilder implements quill.EmbedBuilder {
   const _VideoEmbedBuilder({
     this.onRemoveLegacyVideoAt,
-    required this.hydratingEmbedIds,
-    required this.hydrationRevision,
+    this.hydrationListenable,
+    this.knownLessonMediaIds = const <String>{},
   });
 
   final void Function(int documentOffset)? onRemoveLegacyVideoAt;
-  final Set<String> hydratingEmbedIds;
-  final int hydrationRevision;
+  final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
+  hydrationListenable;
+  final Set<String> knownLessonMediaIds;
 
   @override
   String get key => quill.BlockEmbed.videoType;
@@ -225,11 +217,13 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
     final dynamic value = node.value.data;
     final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(value);
     final normalizedLessonMediaId = lessonMediaId?.trim() ?? '';
+    final isKnownLessonMedia =
+        normalizedLessonMediaId.isNotEmpty &&
+        knownLessonMediaIds.contains(normalizedLessonMediaId);
     final url =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    if ((lessonMediaId == null || lessonMediaId.isEmpty) &&
-        lesson_pipeline.isLegacyVideoEmbed(value)) {
+    if (lesson_pipeline.isLegacyVideoEmbed(value) && !isKnownLessonMedia) {
       return _LegacyVideoEmbedPlaceholder(
         onRemove: onRemoveLegacyVideoAt == null
             ? null
@@ -240,20 +234,17 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
       lessonMediaId: lessonMediaId ?? '',
       mediaType: 'video',
       src: url,
-      hydrating: hydratingEmbedIds.contains(normalizedLessonMediaId),
-      hydrationRevision: hydrationRevision,
+      hydrating: false,
+      hydrationListenable: hydrationListenable,
     );
   }
 }
 
 class _ImageEmbedBuilder implements quill.EmbedBuilder {
-  const _ImageEmbedBuilder({
-    required this.hydratingEmbedIds,
-    required this.hydrationRevision,
-  });
+  const _ImageEmbedBuilder({this.hydrationListenable});
 
-  final Set<String> hydratingEmbedIds;
-  final int hydrationRevision;
+  final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
+  hydrationListenable;
 
   @override
   String get key => quill.BlockEmbed.imageType;
@@ -273,7 +264,6 @@ class _ImageEmbedBuilder implements quill.EmbedBuilder {
     final dynamic value = embedContext.node.value.data;
     final lessonMediaId =
         lesson_pipeline.lessonMediaIdFromEmbedValue(value) ?? '';
-    final normalizedLessonMediaId = lessonMediaId.trim();
     final src =
         lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString().trim());
@@ -281,8 +271,8 @@ class _ImageEmbedBuilder implements quill.EmbedBuilder {
       lessonMediaId: lessonMediaId,
       mediaType: 'image',
       src: src,
-      hydrating: hydratingEmbedIds.contains(normalizedLessonMediaId),
-      hydrationRevision: hydrationRevision,
+      hydrating: false,
+      hydrationListenable: hydrationListenable,
     );
   }
 }
@@ -425,18 +415,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   final ScrollController _panelScrollController = ScrollController();
   final TextEditingController _lessonTitleCtrl = TextEditingController();
   static const Duration _lessonPreviewHydrationTimeout = Duration(seconds: 5);
+  late final LessonMediaPreviewHydrationController _previewHydrationController;
   _LessonEditorBootPhase _lessonEditorBootPhase =
       _LessonEditorBootPhase.booting;
   String? _documentReadyLessonId;
   int? _documentReadyRequestId;
-  String? _previewHydrationLessonId;
-  int? _previewHydrationRequestId;
-  Set<String> _initialPreviewHydrationIds = <String>{};
-  Set<String> _hydratingEmbedIds = <String>{};
-  Timer? _previewHydrationTimeoutTimer;
-  int _previewHydrationRunId = 0;
-  int _previewHydrationRevision = 0;
   bool _lessonPreviewMode = false;
+  String _lessonPreviewMarkdown = '';
   bool _lessonContentDirty = false;
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
@@ -582,16 +567,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _resetLessonPreviewHydrationValues({bool bumpRevision = false}) {
-    _previewHydrationTimeoutTimer?.cancel();
-    _previewHydrationTimeoutTimer = null;
-    _previewHydrationRunId += 1;
-    _previewHydrationLessonId = null;
-    _previewHydrationRequestId = null;
-    _initialPreviewHydrationIds = <String>{};
-    _hydratingEmbedIds = <String>{};
-    if (bumpRevision) {
-      _previewHydrationRevision += 1;
-    }
+    _previewHydrationController.reset(bumpRevision: bumpRevision);
   }
 
   void _resetLessonEditorBootValues({
@@ -623,6 +599,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String _documentFingerprint([quill.QuillController? controller]) {
     final activeController = controller ?? _lessonContentController;
     return jsonEncode(activeController.document.toDelta().toJson());
+  }
+
+  void _syncLessonPreviewMarkdownFromController([
+    quill.QuillController? controller,
+  ]) {
+    _lessonPreviewMarkdown = _serializeLessonMarkdownFromController(
+      controller ?? _lessonContentController,
+    );
   }
 
   _EditorRevisionToken? _captureEditorToken() {
@@ -704,6 +688,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final fingerprint = _documentFingerprint();
       if (fingerprint != _lastObservedDocumentFingerprint) {
         _lastObservedDocumentFingerprint = fingerprint;
+        _syncLessonPreviewMarkdownFromController();
         if (!_editorOperationApplying) {
           _editorSession.revision += 1;
         }
@@ -984,6 +969,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return _lessonContentControllerGeneration;
   }
 
+  void _setPreviewModeViaTestBridge(bool enabled) {
+    final shouldEnable = enabled && _isSelectedLessonDocumentReady();
+    if (_lessonPreviewMode == shouldEnable) return;
+    if (!mounted) {
+      _lessonPreviewMode = shouldEnable;
+      return;
+    }
+    setState(() => _lessonPreviewMode = shouldEnable);
+  }
+
   bool _isSelectedLessonDocumentReady() {
     final selectedLessonId = _selectedLessonId;
     final documentReadyRequestId = _documentReadyRequestId;
@@ -1003,44 +998,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lessonContentRequestId == requestId;
   }
 
-  bool _matchesPreviewHydrationRun({
-    required String lessonId,
-    required int requestId,
-    required int runId,
-  }) {
-    return _matchesCurrentLessonRequest(
-          lessonId: lessonId,
-          requestId: requestId,
-        ) &&
-        _previewHydrationLessonId == lessonId &&
-        _previewHydrationRequestId == requestId &&
-        _previewHydrationRunId == runId;
-  }
-
-  void _finishInitialLessonPreviewHydration({
-    required String lessonId,
-    required int requestId,
-    required int runId,
-  }) {
-    if (!_matchesPreviewHydrationRun(
-      lessonId: lessonId,
-      requestId: requestId,
-      runId: runId,
-    )) {
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _previewHydrationTimeoutTimer?.cancel();
-      _previewHydrationTimeoutTimer = null;
-      _previewHydrationLessonId = null;
-      _previewHydrationRequestId = null;
-      _hydratingEmbedIds = <String>{};
-      _previewHydrationRevision += 1;
-      _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
-    });
-  }
-
   void _startInitialLessonPreviewHydration({
     required String lessonId,
     required int requestId,
@@ -1054,45 +1011,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     )) {
       return;
     }
-
-    if (batch.hydratingIds.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _previewHydrationLessonId = null;
-        _previewHydrationRequestId = null;
-        _hydratingEmbedIds = <String>{};
-        _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
-      });
-      return;
-    }
-
-    final runId = ++_previewHydrationRunId;
-    if (!mounted) return;
-    setState(() {
-      _previewHydrationTimeoutTimer?.cancel();
-      _previewHydrationTimeoutTimer = null;
-      _previewHydrationLessonId = lessonId;
-      _previewHydrationRequestId = requestId;
-      _hydratingEmbedIds = batch.hydratingIds;
-      _lessonEditorBootPhase = _LessonEditorBootPhase.previewsHydrating;
-    });
-
-    _previewHydrationTimeoutTimer = Timer(_lessonPreviewHydrationTimeout, () {
-      _finishInitialLessonPreviewHydration(
-        lessonId: lessonId,
-        requestId: requestId,
-        runId: runId,
-      );
-    });
-
-    unawaited(
-      batch.settled.then((_) {
-        _finishInitialLessonPreviewHydration(
-          lessonId: lessonId,
-          requestId: requestId,
-          runId: runId,
-        );
-      }),
+    _previewHydrationController.start(
+      lessonId: lessonId,
+      requestId: requestId,
+      initialHydrationIds: initialHydrationIds,
+      hydratingEmbedIds: batch.hydratingIds,
+      settled: batch.settled,
     );
   }
 
@@ -1179,10 +1103,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _ensureLessonEditorWebTestIdSupport();
     _lessonContentFocusNodeHandle = FocusNode();
     _lessonEditorScrollControllerHandle = ScrollController();
+    _previewHydrationController = LessonMediaPreviewHydrationController(
+      timeout: _lessonPreviewHydrationTimeout,
+    );
     _studioRepo = widget.studioRepository ?? ref.read(studioRepositoryProvider);
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
     _coursePriceCtrl.addListener(_onCoursePriceChanged);
-    _replaceLessonDocument(quill.Document());
+    _replaceLessonDocument(quill.Document(), previewMarkdown: '');
     _bootstrap();
     _uploadSubscription = ref.listenManual<List<UploadJob>>(
       studioUploadQueueProvider,
@@ -1214,9 +1141,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _coverPollTimer?.cancel();
     _lessonMediaPollTimer?.cancel();
     _lessonReorderDebounceTimer?.cancel();
-    _previewHydrationTimeoutTimer?.cancel();
     _lessonEditorTestIdRetryTimer?.cancel();
     _lessonEditorSemanticsHandle?.dispose();
+    _previewHydrationController.dispose();
     editor_test_bridge.unregisterAveliEditorTestBridge();
     super.dispose();
   }
@@ -1834,6 +1761,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _replaceLessonDocument(
     quill.Document document, {
     bool resetDirty = true,
+    String? previewMarkdown,
   }) {
     if (_lessonContentControllerInitialized) {
       _detachControllerListener();
@@ -1854,6 +1782,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonContentControllerInitialized = true;
     _lessonContentControllerGeneration += 1;
     _lastObservedDocumentFingerprint = _documentFingerprint(controller);
+    _lessonPreviewMarkdown =
+        previewMarkdown ?? _serializeLessonMarkdownFromController(controller);
     _attachControllerListener();
     _syncLessonEditorTestBridge();
     _lastLessonSelection = _clampEditorSelection(
@@ -1879,6 +1809,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       getSelectionEnd: _getEditorSelectionEndViaTestBridge,
       getControllerIdentity: _getEditorControllerIdentityViaTestBridge,
       getControllerGeneration: _getEditorControllerGenerationViaTestBridge,
+      setPreviewMode: _setPreviewModeViaTestBridge,
     );
   }
 
@@ -2035,7 +1966,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   String _currentLessonPreviewMarkdown() {
-    return _serializeLessonMarkdownFromController(_lessonContentController);
+    return _lessonPreviewMarkdown;
   }
 
   Set<String> _currentLessonEmbeddedMediaIds() {
@@ -2129,7 +2060,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _traceLessonString('load.document_plain_text', document.toPlainText());
     }
 
-    _replaceLessonDocument(document);
+    _replaceLessonDocument(document, previewMarkdown: storedMarkdown);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -2143,13 +2074,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setState(() {
         _documentReadyLessonId = lessonId;
         _documentReadyRequestId = requestId;
-        _initialPreviewHydrationIds = Set<String>.unmodifiable(
-          initialHydrationIds,
-        );
         _lessonContentDirty = false;
-        _lessonEditorBootPhase = initialHydrationIds.isEmpty
-            ? _LessonEditorBootPhase.fullyStable
-            : _LessonEditorBootPhase.readyForInput;
+        _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
       });
     }
     if (initialHydrationIds.isNotEmpty) {
@@ -2192,7 +2118,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonTitleCtrl.removeListener(_handleLessonTitleChanged);
     _lessonTitleCtrl.text = _lastSavedLessonTitle;
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
-    _replaceLessonDocument(document);
+    _replaceLessonDocument(document, previewMarkdown: _lastSavedLessonMarkdown);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -2205,13 +2131,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     setState(() {
       _documentReadyLessonId = lessonId;
       _documentReadyRequestId = requestId;
-      _initialPreviewHydrationIds = Set<String>.unmodifiable(
-        initialHydrationIds,
-      );
       _lessonContentDirty = false;
-      _lessonEditorBootPhase = initialHydrationIds.isEmpty
-          ? _LessonEditorBootPhase.fullyStable
-          : _LessonEditorBootPhase.readyForInput;
+      _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
     });
     if (initialHydrationIds.isNotEmpty) {
       _startInitialLessonPreviewHydration(
@@ -2460,13 +2381,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final canInsertLessonMedia =
         _selectedCourseId != null && _selectedLessonId != null;
-    final hydratingEmbedIds = _hydratingEmbedIds;
-    final hydrationRevision = _previewHydrationRevision;
-    final showPreviewHydrationBanner =
-        _lessonEditorBootPhase == _LessonEditorBootPhase.previewsHydrating &&
-        _previewHydrationLessonId == _selectedLessonId &&
-        _previewHydrationRequestId == _lessonContentRequestId &&
-        hydratingEmbedIds.isNotEmpty;
+    final knownLessonMediaIds = _selectedLessonMediaItems()
+        .map((item) => item.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
 
     final toolbarConfig = quill.QuillSimpleToolbarConfig(
       multiRowsDisplay: false,
@@ -2556,17 +2474,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         builder.key != quill.BlockEmbed.imageType,
                   ),
                   _ImageEmbedBuilder(
-                    hydratingEmbedIds: hydratingEmbedIds,
-                    hydrationRevision: hydrationRevision,
+                    hydrationListenable: _previewHydrationController,
                   ),
                   _VideoEmbedBuilder(
                     onRemoveLegacyVideoAt: _removeLegacyVideoEmbedAt,
-                    hydratingEmbedIds: hydratingEmbedIds,
-                    hydrationRevision: hydrationRevision,
+                    hydrationListenable: _previewHydrationController,
+                    knownLessonMediaIds: knownLessonMediaIds,
                   ),
                   _AudioEmbedBuilder(
-                    hydratingEmbedIds: hydratingEmbedIds,
-                    hydrationRevision: hydrationRevision,
+                    hydrationListenable: _previewHydrationController,
                   ),
                 ],
               ),
@@ -2590,10 +2506,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           gap8,
           Wrap(spacing: 8, runSpacing: 4, children: badges),
         ],
-        if (showPreviewHydrationBanner) ...[
-          gap12,
-          _buildPreviewHydrationBanner(context),
-        ],
+        _buildPreviewHydrationBanner(context),
         gap12,
         quill.QuillSimpleToolbar(controller: controller, config: toolbarConfig),
         gap12,
@@ -2672,58 +2585,87 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Widget _buildPreviewHydrationBanner(BuildContext context) {
-    final theme = Theme.of(context);
-    final pendingCount = _hydratingEmbedIds.length;
-    final totalCount = _initialPreviewHydrationIds.length;
-    final countLabel = pendingCount <= 0
-        ? ''
-        : totalCount > 0
-        ? ' ($pendingCount/$totalCount)'
-        : ' ($pendingCount)';
-    return DecoratedBox(
-      key: const ValueKey<String>('lesson_preview_hydration_banner'),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
+    final selectedLessonId = _selectedLessonId;
+    final requestId = _lessonContentRequestId;
+    if (selectedLessonId == null) {
+      return const SizedBox.shrink();
+    }
+
+    return ValueListenableBuilder<LessonMediaPreviewHydrationSnapshot>(
+      valueListenable: _previewHydrationController,
+      builder: (context, snapshot, _) {
+        if (!snapshot.matchesRequest(
+              lessonId: selectedLessonId,
+              requestId: requestId,
+            ) ||
+            snapshot.hydratingEmbedIds.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final theme = Theme.of(context);
+        final pendingCount = snapshot.hydratingEmbedIds.length;
+        final totalCount = snapshot.initialHydrationIds.length;
+        final countLabel = pendingCount <= 0
+            ? ''
+            : totalCount > 0
+            ? ' ($pendingCount/$totalCount)'
+            : ' ($pendingCount)';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.2,
-                color: theme.colorScheme.onSecondaryContainer,
+            gap12,
+            DecoratedBox(
+              key: const ValueKey<String>('lesson_preview_hydration_banner'),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Förhandsvisningar laddas$countLabel',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.onSecondaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
                     ),
-                  ),
-                  Text(
-                    'Du kan fortsätta skriva medan miniatyrerna hämtas.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSecondaryContainer,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Förhandsvisningar laddas$countLabel',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: theme.colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                          Text(
+                            'Du kan fortsätta skriva medan miniatyrerna hämtas.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2917,6 +2859,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 runSpacing: 8,
                 children: [
                   ChoiceChip(
+                    key: const ValueKey<String>('lesson_edit_mode_chip'),
                     label: const Text('Redigera'),
                     selected: !_lessonPreviewMode,
                     onSelected: !canSwitchModes
@@ -2928,6 +2871,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           },
                   ),
                   ChoiceChip(
+                    key: const ValueKey<String>('lesson_preview_mode_chip'),
                     label: const Text('Förhandsgranska'),
                     selected: _lessonPreviewMode,
                     onSelected: !canSwitchModes
@@ -5371,12 +5315,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (mounted) {
       setState(() {
         _resetLessonPreviewHydrationValues(bumpRevision: true);
-        _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
         _lessonContentDirty = true;
       });
     } else {
       _resetLessonPreviewHydrationValues(bumpRevision: true);
-      _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
       _lessonContentDirty = true;
     }
     return true;

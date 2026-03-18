@@ -14,6 +14,8 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
+import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
@@ -253,6 +255,7 @@ Future<void> _pumpCourseEditorScreen(
   required StudioRepository studioRepo,
   required CoursesRepository coursesRepo,
   ApiClient? apiClient,
+  MediaPipelineRepository? mediaPipelineRepository,
   UploadQueueNotifier? uploadQueueNotifier,
   CourseEditorWebFilePicker? webImagePicker,
 }) async {
@@ -274,6 +277,10 @@ Future<void> _pumpCourseEditorScreen(
         studioRepositoryProvider.overrideWithValue(studioRepo),
         coursesRepositoryProvider.overrideWithValue(coursesRepo),
         if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
+        if (mediaPipelineRepository != null)
+          mediaPipelineRepositoryProvider.overrideWithValue(
+            mediaPipelineRepository,
+          ),
         studioStatusProvider.overrideWith(
           (ref) async => const StudioStatus(
             isTeacher: true,
@@ -489,8 +496,10 @@ Future<void> _pumpEditorBootstrap(WidgetTester tester) async {
 }
 
 Future<void> _disposePumpedWidget(WidgetTester tester) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pump();
   await tester.pumpWidget(const SizedBox.shrink());
-  await tester.pump(const Duration(milliseconds: 1));
+  await tester.pump(const Duration(milliseconds: 600));
 }
 
 void main() {
@@ -1012,6 +1021,7 @@ void main() {
       findsNothing,
     );
     expect(tester.takeException(), isNull);
+    await _disposePumpedWidget(tester);
   });
 
   testWidgets('CourseEditorScreen opens with no courses without crashing', (
@@ -1728,6 +1738,7 @@ void main() {
       await tester.tap(insertButtonFinder);
       await tester.pump();
       expect(tester.takeException(), isNull);
+      await _disposePumpedWidget(tester);
     },
   );
 
@@ -2113,6 +2124,111 @@ void main() {
       );
 
       previewCompleter.complete(<String, Map<String, dynamic>>{});
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen cancels stale preview hydration timers when switching lessons',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      _stubMultiLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        lessons: [
+          {
+            'id': 'lesson-1',
+            'title': 'Välkommen',
+            'position': 1,
+            'is_intro': true,
+            'course_id': 'course-1',
+            'content_markdown':
+                'Introtext\n\n!image(media-image-1)\n\nEftertext',
+          },
+          {
+            'id': 'lesson-2',
+            'title': 'Fortsättning',
+            'position': 2,
+            'is_intro': false,
+            'course_id': 'course-1',
+            'content_markdown': 'Andra lektionen',
+          },
+        ],
+        lessonMediaByLessonId: {
+          'lesson-1': [
+            {
+              'id': 'media-image-1',
+              'kind': 'image',
+              'storage_path': 'private-media/lesson-1/image.png',
+              'storage_bucket': 'private-media',
+              'original_name': 'image.png',
+              'position': 1,
+            },
+          ],
+          'lesson-2': const <Map<String, dynamic>>[],
+        },
+        fetchLessonMediaPreviews: (_) => previewCompleter.future,
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        maxPumps: 100,
+        step: const Duration(milliseconds: 1),
+      );
+
+      final generationBeforeSwitch = _editorControllerGenerationFromBridge();
+
+      final lessonTileFinder = _lessonTileFinder('Fortsättning');
+      await tester.ensureVisible(lessonTileFinder);
+      await tester.tap(lessonTileFinder);
+      await tester.pump();
+
+      var generationAfterSwitch = _editorControllerGenerationFromBridge();
+      for (var i = 0; i < 80; i += 1) {
+        if (generationAfterSwitch > generationBeforeSwitch &&
+            _editorDocumentFromBridge().contains('Andra lektionen')) {
+          break;
+        }
+        await tester.pump(const Duration(milliseconds: 25));
+        generationAfterSwitch = _editorControllerGenerationFromBridge();
+      }
+
+      expect(generationAfterSwitch, greaterThan(generationBeforeSwitch));
+      expect(_editorDocumentFromBridge(), contains('Andra lektionen'));
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        findsNothing,
+      );
+
+      final documentBeforeEdit = _editorDocumentFromBridge();
+      editor_test_bridge.insertText('X');
+      await tester.pump();
+      final editedDocument = _editorDocumentFromBridge();
+      expect(editedDocument, isNot(documentBeforeEdit));
+
+      await tester.pump(const Duration(seconds: 5));
+
+      expect(_editorControllerGenerationFromBridge(), generationAfterSwitch);
+      expect(_editorDocumentFromBridge(), editedDocument);
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+
+      previewCompleter.complete(<String, Map<String, dynamic>>{});
+      await tester.pump();
       await _disposePumpedWidget(tester);
     },
   );

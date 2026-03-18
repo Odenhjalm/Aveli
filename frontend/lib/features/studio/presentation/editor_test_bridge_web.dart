@@ -18,6 +18,7 @@ void registerAveliEditorTestBridge({
   required int Function() getSelectionEnd,
   required int Function() getControllerIdentity,
   required int Function() getControllerGeneration,
+  required void Function(bool enabled) setPreviewMode,
 }) {
   final bridge = js_util.newObject();
 
@@ -114,6 +115,14 @@ void registerAveliEditorTestBridge({
     'getControllerGeneration',
     (() {
       return getControllerGeneration();
+    }).toJS,
+  );
+
+  js_util.setProperty(
+    bridge,
+    'setPreviewMode',
+    ((bool enabled) {
+      setPreviewMode(enabled);
     }).toJS,
   );
 

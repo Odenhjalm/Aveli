@@ -13,6 +13,7 @@ int Function()? _getSelectionStart;
 int Function()? _getSelectionEnd;
 int Function()? _getControllerIdentity;
 int Function()? _getControllerGeneration;
+void Function(bool enabled)? _setPreviewMode;
 
 void registerAveliEditorTestBridge({
   required void Function(String text) insertText,
@@ -26,6 +27,7 @@ void registerAveliEditorTestBridge({
   required int Function() getSelectionEnd,
   required int Function() getControllerIdentity,
   required int Function() getControllerGeneration,
+  required void Function(bool enabled) setPreviewMode,
 }) {
   _insertText = insertText;
   _backspace = backspace;
@@ -38,6 +40,7 @@ void registerAveliEditorTestBridge({
   _getSelectionEnd = getSelectionEnd;
   _getControllerIdentity = getControllerIdentity;
   _getControllerGeneration = getControllerGeneration;
+  _setPreviewMode = setPreviewMode;
   bridge.registerAveliEditorTestBridge(
     insertText: insertText,
     backspace: backspace,
@@ -50,6 +53,7 @@ void registerAveliEditorTestBridge({
     getSelectionEnd: getSelectionEnd,
     getControllerIdentity: getControllerIdentity,
     getControllerGeneration: getControllerGeneration,
+    setPreviewMode: setPreviewMode,
   );
 }
 
@@ -65,6 +69,7 @@ void unregisterAveliEditorTestBridge() {
   _getSelectionEnd = null;
   _getControllerIdentity = null;
   _getControllerGeneration = null;
+  _setPreviewMode = null;
   bridge.unregisterAveliEditorTestBridge();
 }
 
@@ -89,3 +94,5 @@ int? getSelectionEnd() => _getSelectionEnd?.call();
 int? getControllerIdentity() => _getControllerIdentity?.call();
 
 int? getControllerGeneration() => _getControllerGeneration?.call();
+
+void setPreviewMode(bool enabled) => _setPreviewMode?.call(enabled);

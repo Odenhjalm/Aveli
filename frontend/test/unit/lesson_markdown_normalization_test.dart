@@ -2,6 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:aveli/api/api_client.dart';
+import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/media/data/media_pipeline_repository.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
 
 String _jwtForSub(String sub) {
@@ -12,6 +18,59 @@ String _jwtForSub(String sub) {
       .encode(utf8.encode(jsonEncode({'sub': sub})))
       .replaceAll('=', '');
   return '$header.$payload.signature';
+}
+
+class _FakeTokenStorage implements TokenStorage {
+  @override
+  Future<void> clear() async {}
+
+  @override
+  Future<String?> readAccessToken() async => null;
+
+  @override
+  Future<String?> readRefreshToken() async => null;
+
+  @override
+  Future<void> saveTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {}
+
+  @override
+  Future<void> updateAccessToken(String accessToken) async {}
+}
+
+class _FakeMediaPipelineRepository extends MediaPipelineRepository {
+  _FakeMediaPipelineRepository(this._playbackUrl)
+    : super(
+        client: ApiClient(
+          baseUrl: 'https://api.example.com',
+          tokenStorage: _FakeTokenStorage(),
+        ),
+      );
+
+  final String _playbackUrl;
+
+  @override
+  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async =>
+      _playbackUrl;
+}
+
+MediaRepository _buildMediaRepository() {
+  final client = ApiClient(
+    baseUrl: 'https://api.example.com',
+    tokenStorage: _FakeTokenStorage(),
+  );
+  return MediaRepository(
+    client: client,
+    config: const AppConfig(
+      apiBaseUrl: 'https://api.example.com',
+      stripePublishableKey: 'pk_test_123',
+      stripeMerchantDisplayName: 'Aveli',
+      subscriptionsEnabled: true,
+      supabaseUrl: 'https://project.supabase.co',
+    ),
+  );
 }
 
 void main() {
@@ -119,6 +178,53 @@ void main() {
           'src': 'https://cdn.test/video.mp4',
         });
         expect(isLegacyVideoEmbed(payload), isFalse);
+      },
+    );
+
+    test(
+      'rendering preparation resolves canonical video tokens without rewriting legacy embeds',
+      () async {
+        final mediaRepository = _buildMediaRepository();
+        final pipelineRepository = _FakeMediaPipelineRepository(
+          'https://cdn.example.com/video.mp4',
+        );
+
+        const legacyMarkdown =
+            'Introtext\n\n<video src="ftp://cdn.test/legacy.mp4"></video>\n\nEftertext';
+        final preparedLegacy = await prepareLessonMarkdownForRendering(
+          mediaRepository,
+          legacyMarkdown,
+          pipelineRepository: pipelineRepository,
+        );
+
+        expect(preparedLegacy, contains('ftp://cdn.test/legacy.mp4'));
+        expect(preparedLegacy, isNot(contains('https://cdn.example.com')));
+
+        const canonicalMarkdown =
+            'Introtext\n\n!video(media-replacement)\n\nEftertext';
+        final preparedCanonical = await prepareLessonMarkdownForRendering(
+          mediaRepository,
+          canonicalMarkdown,
+          lessonMedia: const [
+            LessonMediaItem(
+              id: 'media-replacement',
+              kind: 'video',
+              storagePath: 'lesson-1/replacement.mp4',
+              originalName: 'replacement.mp4',
+              position: 1,
+            ),
+          ],
+          pipelineRepository: pipelineRepository,
+        );
+
+        expect(
+          preparedCanonical,
+          contains('https://cdn.example.com/video.mp4'),
+        );
+        expect(
+          preparedCanonical,
+          isNot(contains('/studio/media/media-replacement')),
+        );
       },
     );
   });
