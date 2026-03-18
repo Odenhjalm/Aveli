@@ -1,7 +1,13 @@
 Docs Overview
 
+- Architecture
 - Course Import (text + media)
 - SFU / LiveKit troubleshooting
+
+Architecture
+
+- Canonical text contract: `docs/architecture/text_contract.md`
+- Editor architecture v2 plan: `docs/architecture/aveli_editor_architecture_v2.md`
 
 Course Import
 
