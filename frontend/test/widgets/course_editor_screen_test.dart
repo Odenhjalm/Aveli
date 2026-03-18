@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,14 +9,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 
+import 'package:aveli/api/api_client.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/editor/widgets/file_picker_web.dart'
+    as web_picker;
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/data/models/profile.dart';
@@ -75,6 +80,39 @@ class _NoopUploadQueueNotifier extends UploadQueueNotifier {
   void removeJob(String id) {}
 }
 
+class _TestUploadQueueNotifier extends _NoopUploadQueueNotifier {
+  _TestUploadQueueNotifier(super.repo);
+
+  void setJobs(List<UploadJob> jobs) {
+    state = List<UploadJob>.unmodifiable(jobs);
+  }
+}
+
+class _TestApiClient extends ApiClient {
+  _TestApiClient({required this.onPostForm})
+    : super(
+        baseUrl: 'http://localhost:8080',
+        tokenStorage: const TokenStorage(),
+      );
+
+  final Future<Map<String, dynamic>?> Function(String path, FormData formData)
+  onPostForm;
+
+  @override
+  Future<T?> postForm<T>(
+    String path,
+    FormData formData, {
+    T Function(Map<String, dynamic> data)? parser,
+    ProgressCallback? onSendProgress,
+    CancelToken? cancelToken,
+    bool skipAuth = false,
+    Map<String, dynamic>? extra,
+  }) async {
+    final result = await onPostForm(path, formData);
+    return result as T?;
+  }
+}
+
 Finder _legacyInlineVideoPlayerFinder() {
   return find.byWidgetPredicate(
     (widget) => widget.runtimeType.toString() == 'InlineVideoPlayer',
@@ -124,6 +162,23 @@ Finder _filledButtonWithLabel(String label) {
   );
 }
 
+Finder _lessonTitleFieldFinder() {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is TextField && widget.decoration?.labelText == 'Lektionstitel',
+    description: 'Lektionstitel field',
+  );
+}
+
+Finder _lessonTileFinder(String title) {
+  return find.ancestor(of: find.text(title), matching: find.byType(ListTile));
+}
+
+String _lessonTitleFieldValue(WidgetTester tester) {
+  return tester.widget<TextField>(_lessonTitleFieldFinder()).controller?.text ??
+      '';
+}
+
 Future<void> _pumpUntilFound(
   WidgetTester tester,
   Finder finder, {
@@ -143,6 +198,9 @@ Future<void> _pumpCourseEditorScreen(
   WidgetTester tester, {
   required StudioRepository studioRepo,
   required CoursesRepository coursesRepo,
+  ApiClient? apiClient,
+  UploadQueueNotifier? uploadQueueNotifier,
+  CourseEditorWebFilePicker? webImagePicker,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -161,6 +219,7 @@ Future<void> _pumpCourseEditorScreen(
         authControllerProvider.overrideWith((ref) => _FakeAuthController()),
         studioRepositoryProvider.overrideWithValue(studioRepo),
         coursesRepositoryProvider.overrideWithValue(coursesRepo),
+        if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
         studioStatusProvider.overrideWith(
           (ref) async => const StudioStatus(
             isTeacher: true,
@@ -169,7 +228,7 @@ Future<void> _pumpCourseEditorScreen(
           ),
         ),
         studioUploadQueueProvider.overrideWith(
-          (ref) => _NoopUploadQueueNotifier(studioRepo),
+          (ref) => uploadQueueNotifier ?? _NoopUploadQueueNotifier(studioRepo),
         ),
       ],
       child: MaterialApp(
@@ -183,10 +242,98 @@ Future<void> _pumpCourseEditorScreen(
         home: CourseEditorScreen(
           studioRepository: studioRepo,
           coursesRepository: coursesRepo,
+          webImagePicker: webImagePicker,
         ),
       ),
     ),
   );
+}
+
+void _stubMultiLessonEditorData(
+  _MockStudioRepository studioRepo,
+  _MockCoursesRepository coursesRepo, {
+  required List<Map<String, dynamic>> lessons,
+  required Map<String, List<Map<String, dynamic>>> lessonMediaByLessonId,
+  Future<Map<String, Map<String, dynamic>>> Function(List<String> ids)?
+  fetchLessonMediaPreviews,
+}) {
+  when(() => studioRepo.myCourses()).thenAnswer(
+    (_) async => [
+      {'id': 'course-1', 'title': 'Tarot Basics'},
+    ],
+  );
+  when(() => studioRepo.fetchStatus()).thenAnswer(
+    (_) async => const StudioStatus(
+      isTeacher: true,
+      verifiedCertificates: 1,
+      hasApplication: false,
+    ),
+  );
+  when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+    (_) async => {
+      'title': 'Tarot Basics',
+      'slug': 'tarot-basics',
+      'description': 'Lär dig läsa korten',
+      'price_amount_cents': 1200,
+      'is_free_intro': true,
+      'is_published': false,
+    },
+  );
+  when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
+    (_) async =>
+        lessons.map((lesson) => Map<String, dynamic>.from(lesson)).toList(),
+  );
+  when(() => studioRepo.listLessonMedia(any())).thenAnswer((invocation) async {
+    final lessonId = invocation.positionalArguments.single as String;
+    final media =
+        lessonMediaByLessonId[lessonId] ?? const <Map<String, dynamic>>[];
+    return media.map((item) => Map<String, dynamic>.from(item)).toList();
+  });
+  when(() => studioRepo.fetchLessonMediaPreviews(any())).thenAnswer((
+    invocation,
+  ) {
+    final ids = List<String>.from(
+      invocation.positionalArguments.single as List,
+    );
+    if (fetchLessonMediaPreviews != null) {
+      return fetchLessonMediaPreviews(ids);
+    }
+    return Future<Map<String, Map<String, dynamic>>>.value(
+      <String, Map<String, dynamic>>{},
+    );
+  });
+
+  final lessonSummaries = lessons
+      .map(
+        (lesson) => LessonSummary(
+          id: lesson['id'] as String,
+          title: lesson['title'] as String,
+          position: lesson['position'] as int,
+          isIntro: lesson['is_intro'] as bool? ?? false,
+          contentMarkdown: lesson['content_markdown'] as String?,
+        ),
+      )
+      .toList(growable: false);
+  final courseDetail = CourseDetailData(
+    course: const CourseSummary(
+      id: 'course-1',
+      slug: 'tarot-basics',
+      title: 'Tarot Basics',
+      description: 'Lär dig läsa korten',
+      coverUrl: null,
+      videoUrl: null,
+      isFreeIntro: true,
+      isPublished: true,
+      priceCents: 1200,
+    ),
+    modules: const [CourseModule(id: 'module-1', title: 'Intro', position: 1)],
+    lessonsByModule: {'module-1': lessonSummaries},
+    isEnrolled: false,
+    latestOrder: null,
+  );
+  when(
+    () => coursesRepo.fetchCourseDetailBySlug(any()),
+  ).thenAnswer((_) async => courseDetail);
 }
 
 void _stubSingleLessonEditorData(
@@ -296,6 +443,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(const Duration());
     registerFallbackValue(<String, dynamic>{});
+    registerFallbackValue(FormData());
   });
 
   testWidgets('CourseEditorScreen renders provided course data', (
@@ -1912,6 +2060,312 @@ void main() {
 
       previewCompleter.complete(<String, Map<String, dynamic>>{});
       await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets('toolbar image upload result is ignored after lesson switch', (
+    tester,
+  ) async {
+    final studioRepo = _MockStudioRepository();
+    final coursesRepo = _MockCoursesRepository();
+    final uploadCompleter = Completer<Map<String, dynamic>>();
+    final apiClient = _TestApiClient(
+      onPostForm: (path, formData) async {
+        expect(path, '/api/upload/lesson-image');
+        return uploadCompleter.future;
+      },
+    );
+
+    _stubMultiLessonEditorData(
+      studioRepo,
+      coursesRepo,
+      lessons: const [
+        {
+          'id': 'lesson-1',
+          'title': 'Lesson One',
+          'position': 1,
+          'is_intro': true,
+          'course_id': 'course-1',
+          'content_markdown': 'Introtext',
+        },
+        {
+          'id': 'lesson-2',
+          'title': 'Lesson Two',
+          'position': 2,
+          'is_intro': false,
+          'course_id': 'course-1',
+          'content_markdown': 'Andra lektionen',
+        },
+      ],
+      lessonMediaByLessonId: const {
+        'lesson-1': <Map<String, dynamic>>[],
+        'lesson-2': <Map<String, dynamic>>[],
+      },
+    );
+    await _pumpCourseEditorScreen(
+      tester,
+      studioRepo: studioRepo,
+      coursesRepo: coursesRepo,
+      apiClient: apiClient,
+      webImagePicker:
+          ({
+            required allowedExtensions,
+            required allowMultiple,
+            String? accept,
+          }) async {
+            expect(allowedExtensions, ['png', 'jpg', 'jpeg', 'webp', 'svg']);
+            expect(allowMultiple, isFalse);
+            expect(accept, 'image/*');
+            return <web_picker.WebPickedFile>[
+              web_picker.WebPickedFile(
+                name: 'toolbar-image.png',
+                bytes: Uint8List.fromList('toolbar-bytes'.codeUnits),
+                mimeType: 'image/png',
+              ),
+            ];
+          },
+    );
+    await _pumpEditorBootstrap(tester);
+
+    final imageButton = find.byKey(
+      const Key('editor_media_controls_insert_image'),
+    );
+    await tester.ensureVisible(imageButton);
+    await tester.tap(imageButton);
+    await tester.pump();
+    await tester.pump();
+
+    final lessonTwoTile = _lessonTileFinder('Lesson Two');
+    await tester.ensureVisible(lessonTwoTile);
+    await tester.tap(lessonTwoTile);
+    await tester.pump();
+    await _pumpEditorBootstrap(tester);
+    expect(_lessonTitleFieldValue(tester), 'Lesson Two');
+
+    uploadCompleter.complete(<String, dynamic>{
+      'media': <String, dynamic>{
+        'id': 'media-upload-1',
+        'kind': 'image',
+        'storage_bucket': 'public-media',
+        'storage_path': 'lessons/lesson-1/images/media-upload-1.png',
+        'preferredUrl': 'https://cdn.test/toolbar-image.png',
+        'original_name': 'toolbar-image.png',
+        'content_type': 'image/png',
+      },
+      'preferredUrl': 'https://cdn.test/toolbar-image.png',
+    });
+    for (var i = 0; i < 150; i += 1) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(find.text('Inget media uppladdat ännu.'), findsOneWidget);
+    expect(_lessonTitleFieldValue(tester), 'Lesson Two');
+    verifyNever(
+      () => studioRepo.upsertLesson(
+        id: any(named: 'id'),
+        courseId: any(named: 'courseId'),
+        title: any(named: 'title'),
+        contentMarkdown: any(named: 'contentMarkdown'),
+        position: any(named: 'position'),
+        isIntro: any(named: 'isIntro'),
+      ),
+    );
+  });
+
+  testWidgets(
+    'queued upload success for previous lesson does not insert into current lesson',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final uploadQueue = _TestUploadQueueNotifier(studioRepo);
+
+      _stubMultiLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        lessons: const [
+          {
+            'id': 'lesson-1',
+            'title': 'Lesson One',
+            'position': 1,
+            'is_intro': true,
+            'course_id': 'course-1',
+            'content_markdown': 'Introtext',
+          },
+          {
+            'id': 'lesson-2',
+            'title': 'Lesson Two',
+            'position': 2,
+            'is_intro': false,
+            'course_id': 'course-1',
+            'content_markdown': 'Andra lektionen',
+          },
+        ],
+        lessonMediaByLessonId: const {
+          'lesson-1': <Map<String, dynamic>>[],
+          'lesson-2': <Map<String, dynamic>>[],
+        },
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        uploadQueueNotifier: uploadQueue,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final pendingJob = UploadJob(
+        id: 'job-1',
+        courseId: 'course-1',
+        lessonId: 'lesson-1',
+        filename: 'queued-audio.mp3',
+        contentType: 'audio/mpeg',
+        isIntro: true,
+        data: Uint8List(0),
+        createdAt: DateTime.utc(2026, 3, 18),
+      );
+      uploadQueue.setJobs(<UploadJob>[pendingJob]);
+      await tester.pump();
+
+      final lessonTwoTile = _lessonTileFinder('Lesson Two');
+      await tester.ensureVisible(lessonTwoTile);
+      await tester.tap(lessonTwoTile);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      uploadQueue.setJobs(<UploadJob>[
+        pendingJob.copyWith(status: UploadJobStatus.success, progress: 1),
+      ]);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(find.text('Inget media uppladdat ännu.'), findsOneWidget);
+      expect(_lessonTitleFieldValue(tester), 'Lesson Two');
+      verifyNever(
+        () => studioRepo.upsertLesson(
+          id: any(named: 'id'),
+          courseId: any(named: 'courseId'),
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+    },
+  );
+
+  testWidgets(
+    'stale save completion does not clear dirty state after switching lessons',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final saveCompleter = Completer<Map<String, dynamic>>();
+      var currentLessons = <Map<String, dynamic>>[
+        {
+          'id': 'lesson-1',
+          'title': 'Lesson One',
+          'position': 1,
+          'is_intro': true,
+          'course_id': 'course-1',
+          'content_markdown': 'Introtext',
+        },
+        {
+          'id': 'lesson-2',
+          'title': 'Lesson Two',
+          'position': 2,
+          'is_intro': false,
+          'course_id': 'course-1',
+          'content_markdown': 'Andra lektionen',
+        },
+      ];
+
+      _stubMultiLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        lessons: currentLessons,
+        lessonMediaByLessonId: const {
+          'lesson-1': <Map<String, dynamic>>[],
+          'lesson-2': <Map<String, dynamic>>[],
+        },
+      );
+      when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
+        (_) async => currentLessons
+            .map((lesson) => Map<String, dynamic>.from(lesson))
+            .toList(),
+      );
+      when(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      ).thenAnswer((_) => saveCompleter.future);
+      when(() => studioRepo.deleteLesson('lesson-1')).thenAnswer((_) async {
+        currentLessons = <Map<String, dynamic>>[
+          {
+            'id': 'lesson-2',
+            'title': 'Lesson Two',
+            'position': 2,
+            'is_intro': false,
+            'course_id': 'course-1',
+            'content_markdown': 'Andra lektionen',
+          },
+        ];
+      });
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      await tester.enterText(_lessonTitleFieldFinder(), 'Lesson One Draft');
+      await tester.pump();
+
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+      await tester.tap(saveButton);
+      await tester.pump();
+
+      final deleteLessonOne = find.descendant(
+        of: _lessonTileFinder('Lesson One'),
+        matching: find.byIcon(Icons.delete_outline),
+      );
+      await tester.ensureVisible(deleteLessonOne);
+      await tester.tap(deleteLessonOne);
+      await tester.pumpAndSettle();
+
+      final confirmDelete = find.ancestor(
+        of: find.text('Ta bort'),
+        matching: find.byType(FilledButton),
+      );
+      await tester.tap(confirmDelete.last);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(_lessonTitleFieldValue(tester), 'Lesson Two');
+      await tester.enterText(_lessonTitleFieldFinder(), 'Lesson Two Draft');
+      await tester.pump();
+      expect(_lessonTitleFieldValue(tester), 'Lesson Two Draft');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+
+      saveCompleter.complete(<String, dynamic>{
+        'id': 'lesson-1',
+        'title': 'Lesson One Draft',
+        'position': 1,
+        'is_intro': true,
+        'course_id': 'course-1',
+        'content_markdown': 'Introtext',
+      });
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(_lessonTitleFieldValue(tester), 'Lesson Two Draft');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
     },
   );
 }

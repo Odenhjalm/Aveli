@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
@@ -134,6 +135,18 @@ enum _LessonEditorBootPhase {
   readyForInput,
   previewsHydrating,
   fullyStable,
+}
+
+class _EditorRevisionToken {
+  const _EditorRevisionToken({
+    required this.sessionId,
+    required this.lessonId,
+    required this.revision,
+  });
+
+  final String sessionId;
+  final String lessonId;
+  final int revision;
 }
 
 class _AudioEmbedBuilder implements quill.EmbedBuilder {
@@ -329,16 +342,26 @@ class _LegacyVideoEmbedPlaceholder extends StatelessWidget {
 
 enum _UploadKind { image, video, audio, pdf }
 
+typedef CourseEditorWebFilePicker =
+    Future<List<web_picker.WebPickedFile>?> Function({
+      required List<String> allowedExtensions,
+      required bool allowMultiple,
+      String? accept,
+    });
+
 class CourseEditorScreen extends ConsumerStatefulWidget {
   final String? courseId;
   final StudioRepository? studioRepository;
   final CoursesRepository? coursesRepository;
+  @visibleForTesting
+  final CourseEditorWebFilePicker? webImagePicker;
 
   const CourseEditorScreen({
     super.key,
     this.courseId,
     this.studioRepository,
     this.coursesRepository,
+    this.webImagePicker,
   });
 
   @override
@@ -414,6 +437,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
   String _lastSavedLessonMarkdown = '';
+  String? _editorSessionId;
+  int _editorRevision = 0;
+  String? _lastObservedDocumentFingerprint;
   TextSelection? _lastLessonSelection;
   bool _lessonContentControllerInitialized = false;
   VoidCallback? _controllerListener;
@@ -579,6 +605,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return max((controller ?? _lessonContentController).document.length - 1, 0);
   }
 
+  String _documentFingerprint([quill.QuillController? controller]) {
+    final activeController = controller ?? _lessonContentController;
+    return jsonEncode(activeController.document.toDelta().toJson());
+  }
+
+  _EditorRevisionToken? _captureEditorToken() {
+    final sessionId = _editorSessionId;
+    final lessonId = _selectedLessonId;
+    if (sessionId == null || lessonId == null) return null;
+    return _EditorRevisionToken(
+      sessionId: sessionId,
+      lessonId: lessonId,
+      revision: _editorRevision,
+    );
+  }
+
+  bool _isEditorTokenValid(_EditorRevisionToken? token) {
+    if (token == null) return false;
+    return token.sessionId == _editorSessionId &&
+        token.lessonId == _selectedLessonId &&
+        token.revision == _editorRevision;
+  }
+
   int _clampEditorOffset(int offset, [quill.QuillController? controller]) {
     return min(max(offset, 0), _editorDocumentExtent(controller));
   }
@@ -596,6 +645,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _attachControllerListener() {
     _detachControllerListener();
     _controllerListener = () {
+      final fingerprint = _documentFingerprint();
+      if (fingerprint != _lastObservedDocumentFingerprint) {
+        _lastObservedDocumentFingerprint = fingerprint;
+        _editorRevision += 1;
+      }
       final selection = _lessonContentController.selection;
       if (selection.start >= 0 && selection.end >= 0) {
         _lastLessonSelection = _clampEditorSelection(selection);
@@ -1655,6 +1709,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     _lessonContentController = controller;
     _lessonContentControllerInitialized = true;
+    _editorSessionId = _uuid.v4();
+    _editorRevision = 0;
+    _lastObservedDocumentFingerprint = _documentFingerprint(controller);
     _attachControllerListener();
     _syncLessonEditorTestBridge();
     _lastLessonSelection = _clampEditorSelection(
@@ -2105,6 +2162,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     setState(() => _lessonContentSaving = true);
+    final token = _captureEditorToken();
     try {
       final updated = await _studioRepo.upsertLesson(
         id: lessonId,
@@ -2115,7 +2173,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         isIntro: _lessonIntro,
       );
 
-      if (!mounted) return false;
+      if (!mounted || !_isEditorTokenValid(token)) return false;
 
       setState(() {
         _lessons = _lessons
@@ -3607,6 +3665,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       showSnack(context, 'Välj kurs och lektion innan du laddar upp media.');
       return;
     }
+    final token = _captureEditorToken();
     _snapshotLessonSelection();
     final selectionBeforePicker = _lastLessonSelection;
     const extensions = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
@@ -3688,11 +3747,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           filename,
           contentType,
         );
+        if (!mounted || !_isEditorTokenValid(token)) return;
         final media = Map<String, dynamic>.from(
           uploadResult['media'] as Map<String, dynamic>,
         );
         final resolved = uploadResult['public_url'] as String;
-        if (!mounted) return;
         setState(() {
           final id = media['id'];
           if (id is String) {
@@ -3712,16 +3771,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           publicUrl: resolved,
           targetSelection: selectionBeforePicker,
         );
+        final postInsertToken = _captureEditorToken();
         unawaited(_refreshLessonMediaSilently());
         final saved = await _saveLessonContent(showSuccessSnack: false);
-        if (mounted) {
-          setState(
-            () => _mediaStatus = saved
-                ? 'Bild uppladdad och sparad: $filename'
-                : 'Bild uppladdad men kunde inte sparas: $filename',
-          );
+        if (!mounted ||
+            !context.mounted ||
+            !_isEditorTokenValid(postInsertToken)) {
+          return;
         }
-        if (mounted && context.mounted) {
+        setState(
+          () => _mediaStatus = saved
+              ? 'Bild uppladdad och sparad: $filename'
+              : 'Bild uppladdad men kunde inte sparas: $filename',
+        );
+        if (context.mounted) {
           showSnack(
             context,
             saved
@@ -3739,13 +3802,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     if (kIsWeb) {
-      final picked = await web_picker.pickFilesFromHtml(
-        allowedExtensions: extensions,
-        allowMultiple: false,
-        accept: 'image/*',
-      );
+      final picked =
+          await (widget.webImagePicker ?? web_picker.pickFilesFromHtml)(
+            allowedExtensions: extensions,
+            allowMultiple: false,
+            accept: 'image/*',
+          );
 
-      if (!mounted) return;
+      if (!mounted || !_isEditorTokenValid(token)) return;
 
       if (picked == null || picked.isEmpty) {
         setState(() => _mediaStatus = 'Ingen bild vald.');
@@ -3758,6 +3822,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     const typeGroup = fs.XTypeGroup(label: 'images', extensions: extensions);
     final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
+    if (!mounted || !_isEditorTokenValid(token)) return;
     if (file == null) {
       if (mounted) {
         setState(() => _mediaStatus = 'Ingen bild vald.');
@@ -3767,6 +3832,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     try {
       final bytes = await file.readAsBytes();
+      if (!mounted || !_isEditorTokenValid(token)) return;
       await uploadBytes(bytes, file.name);
     } catch (error, stackTrace) {
       final message = AppFailure.from(error, stackTrace).message;
@@ -4375,9 +4441,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonsNeedingRefresh.add(job.lessonId);
       return;
     }
+    final token = _captureEditorToken();
     // Refresh media list first
     await _loadLessonMedia();
-    if (!mounted) return;
+    if (!mounted || !_isEditorTokenValid(token)) return;
     final filename = job.filename;
     final contentType = job.contentType.toLowerCase();
 
@@ -4438,13 +4505,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _insertMediaIntoLesson(uploaded, showSaveHint: false);
       inserted = true;
     }
+    final postInsertToken = inserted ? _captureEditorToken() : token;
 
     final saved = inserted
         ? await _saveLessonContent(showSuccessSnack: false)
         : false;
 
-    if (!mounted) return;
-    if (!context.mounted) return;
+    if (!mounted || !context.mounted || !_isEditorTokenValid(postInsertToken)) {
+      return;
+    }
     final message = inserted
         ? (saved
               ? 'Media infogat och sparat i lektionen.'
@@ -5099,6 +5168,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     final fileName = _fileNameFromMedia(media);
+    var token = _captureEditorToken();
 
     final newMediaAssetId = await showDialog<String?>(
       context: context,
@@ -5109,14 +5179,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         onMediaUpdated: _loadLessonMedia,
       ),
     );
-    if (!mounted) return;
+    if (!mounted || !_isEditorTokenValid(token)) return;
     if (newMediaAssetId == null || newMediaAssetId.trim().isEmpty) return;
 
     setState(() => _mediaStatus = 'Ersätter ljud…');
 
     try {
       await _loadLessonMedia();
-      if (!mounted) return;
+      if (!mounted || !_isEditorTokenValid(token)) return;
 
       Map<String, dynamic>? newMedia;
       for (final item in _lessonMedia.cast<Map<String, dynamic>?>()) {
@@ -5141,6 +5211,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         toLessonMediaId: newLessonMediaId,
       );
       if (contentChanged) {
+        token = _captureEditorToken();
         final saved = await _saveLessonContent(showSuccessSnack: false);
         if (!saved) {
           if (mounted && context.mounted) {
@@ -5152,6 +5223,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           setState(() => _mediaStatus = null);
           return;
         }
+        if (!_isEditorTokenValid(token)) return;
       }
 
       final ids = _lessonMedia
@@ -5182,8 +5254,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
 
       await _studioRepo.reorderLessonMedia(lessonId, reordered);
+      if (!_isEditorTokenValid(token)) return;
       await _studioRepo.deleteLessonMedia(oldLessonMediaId);
+      if (!_isEditorTokenValid(token)) return;
       await _loadLessonMedia();
+      if (!mounted || !_isEditorTokenValid(token)) return;
 
       if (mounted && context.mounted) {
         showSnack(context, 'Ljud ersatt.');

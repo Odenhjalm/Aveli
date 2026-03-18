@@ -91,7 +91,15 @@ EditorOperation
     baseRevision
     sessionId
     origin
-    payload
+    payloadFiles changed: ￼course_editor_page.dart and ￼course_editor_screen_test.dart. No module files were added.
+
+Exact page-level hardening added: page-local session/revision state plus _EditorRevisionToken and fingerprint helpers at ￼course_editor_page.dart (line 345) and ￼course_editor_page.dart (line 608); revision tracking now lives in the existing controller listener and only bumps when the document delta fingerprint changes, so selection-only movement does not increment revision at ￼course_editor_page.dart (line 645). A fresh editor session is seeded on document replacement at ￼course_editor_page.dart (line 1702). Stale-token guards were added to _saveLessonContent() at ￼course_editor_page.dart (line 2164), _uploadImageFromToolbar() at ￼course_editor_page.dart (line 3661), _afterUploadSuccess() at ￼course_editor_page.dart (line 4444), and _replaceAudioMedia() at ￼course_editor_page.dart (line 5171). I also added a tiny @visibleForTesting web image-picker hook at ￼course_editor_page.dart (line 352) so the toolbar upload regression could be tested without a real browser file dialog.
+
+Exact donor lineage concepts used: the March 17-18 line’s sessionId + lessonId + revision token semantics and “capture before await, revalidate before applying state” pattern from 8d14471, 91a9647, and the dirty /home/rodenhjalm/aveli-editor-session page/session work. This is the architecture-aligned Phase 1/Phase 3 salvage: page-local session identity, revision integrity, and stale-async blocking.
+
+Exact donor lineage pieces left out: frontend/lib/editor/session/*, editor_mutation_pipeline.dart, editor_operation_payloads.dart, the dirty EditorSessionController, the dirty domain/session modules, the whole dirty course_editor_page.dart rewrite, preview shell changes, preview hydration changes, LessonMediaPreview changes, and March 16 embed helper rewrites. This stayed as controlled salvage, not a second editor architecture import.
+
+Test/analyze results: flutter analyze lib/features/studio/presentation/course_editor_page.dart test/widgets/course_editor_screen_test.dart reported only 4 pre-existing experimental warnings in ￼course_editor_page.dart (line 2367) and ￼course_editor_page.dart (line 2415). These passed: flutter test --platform chrome test/widgets/course_editor_screen_test.dart --plain-name 'toolbar image upload result is ignored after lesson switch', flutter test --platform chrome test/widgets/course_editor_screen_test.dart --plain-name 'queued upload success for previous lesson does not insert into current lesson', flutter test --platform chrome test/widgets/course_edi
 ```
 
 Operation types include:
