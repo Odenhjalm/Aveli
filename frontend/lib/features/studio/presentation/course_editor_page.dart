@@ -755,14 +755,61 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return (start: start, length: end - start);
   }
 
+  void _replaceEditorTextLocally(
+    quill.QuillController controller, {
+    required int index,
+    required int length,
+    required Object data,
+    required TextSelection selection,
+  }) {
+    final previousToggledStyle = controller.toggledStyle;
+    controller.toggledStyle = const quill.Style();
+    try {
+      controller.replaceText(
+        index,
+        length,
+        data,
+        _clampEditorSelection(selection, controller),
+      );
+    } finally {
+      controller.toggledStyle = previousToggledStyle;
+    }
+  }
+
+  void _formatEditorRangeSelection(
+    quill.QuillController controller, {
+    required int start,
+    required int length,
+    required quill.Attribute attribute,
+  }) {
+    if (length <= 0) return;
+    controller.updateSelection(
+      _clampEditorSelection(
+        TextSelection(baseOffset: start, extentOffset: start + length),
+        controller,
+      ),
+      quill.ChangeSource.local,
+    );
+    controller.formatSelection(attribute);
+  }
+
+  void _handleInlineFormatToolbarPressed() {
+    _snapshotLessonSelection();
+    _afterEditNormalize();
+    _ensureLessonEditorFocus();
+  }
+
   void _insertTextViaTestBridge(String text) {
     final replacementRange = _currentEditorReplacementRange();
     _runEditorMutation((controller) {
-      controller.replaceText(
-        replacementRange.start,
-        replacementRange.length,
-        text,
-        TextSelection.collapsed(offset: replacementRange.start + text.length),
+      _replaceEditorTextLocally(
+        controller,
+        index: replacementRange.start,
+        length: replacementRange.length,
+        data: text,
+        selection: TextSelection.collapsed(
+          offset: replacementRange.start + text.length,
+        ),
       );
     }, requestFocus: true);
   }
@@ -777,11 +824,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     final deleteOffset = replacementRange.start - 1;
     _runEditorMutation((controller) {
-      controller.replaceText(
-        deleteOffset,
-        1,
-        '',
-        TextSelection.collapsed(offset: deleteOffset),
+      _replaceEditorTextLocally(
+        controller,
+        index: deleteOffset,
+        length: 1,
+        data: '',
+        selection: TextSelection.collapsed(offset: deleteOffset),
       );
     }, requestFocus: true);
   }
@@ -791,11 +839,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (replacementRange.length <= 0) return;
 
     _runEditorMutation((controller) {
-      controller.replaceText(
-        replacementRange.start,
-        replacementRange.length,
-        '',
-        TextSelection.collapsed(offset: replacementRange.start),
+      _replaceEditorTextLocally(
+        controller,
+        index: replacementRange.start,
+        length: replacementRange.length,
+        data: '',
+        selection: TextSelection.collapsed(offset: replacementRange.start),
       );
     }, requestFocus: true);
   }
@@ -2260,13 +2309,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final length = extentOffset - baseOffset;
 
     _runEditorMutation((controller) {
-      controller.replaceText(
-        baseOffset,
-        length,
-        label,
-        TextSelection.collapsed(offset: baseOffset + label.length),
+      _replaceEditorTextLocally(
+        controller,
+        index: baseOffset,
+        length: length,
+        data: label,
+        selection: TextSelection.collapsed(offset: baseOffset + label.length),
       );
-      controller.formatText(baseOffset, label.length, quill.LinkAttribute(url));
+      _formatEditorRangeSelection(
+        controller,
+        start: baseOffset,
+        length: label.length,
+        attribute: quill.LinkAttribute(url),
+      );
       controller.updateSelection(
         TextSelection.collapsed(offset: baseOffset + label.length),
         quill.ChangeSource.local,
@@ -2356,8 +2411,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       showClipboardPaste: false,
       showClipboardCut: false,
       showSearchButton: false,
-      buttonOptions: const quill.QuillSimpleToolbarButtonOptions(
-        fontFamily: quill.QuillToolbarFontFamilyButtonOptions(
+      buttonOptions: quill.QuillSimpleToolbarButtonOptions(
+        bold: quill.QuillToolbarToggleStyleButtonOptions(
+          afterButtonPressed: _handleInlineFormatToolbarPressed,
+        ),
+        italic: quill.QuillToolbarToggleStyleButtonOptions(
+          afterButtonPressed: _handleInlineFormatToolbarPressed,
+        ),
+        fontFamily: const quill.QuillToolbarFontFamilyButtonOptions(
           items: _editorFontOptions,
           renderFontFamilies: true,
           overrideTooltipByFontFamily: true,
@@ -3851,11 +3912,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     _runEditorMutation((controller) {
-      controller.replaceText(
-        documentOffset,
-        deleteLength,
-        '',
-        TextSelection.collapsed(offset: documentOffset),
+      _replaceEditorTextLocally(
+        controller,
+        index: documentOffset,
+        length: deleteLength,
+        data: '',
+        selection: TextSelection.collapsed(offset: documentOffset),
       );
       controller.updateSelection(
         TextSelection.collapsed(offset: _clampEditorOffset(documentOffset)),
@@ -3958,11 +4020,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (range == null || range.isCollapsed) return false;
 
     _runEditorMutation((controller) {
-      controller.replaceText(
-        range.start,
-        range.end - range.start,
-        '',
-        TextSelection.collapsed(offset: range.start),
+      _replaceEditorTextLocally(
+        controller,
+        index: range.start,
+        length: range.end - range.start,
+        data: '',
+        selection: TextSelection.collapsed(offset: range.start),
       );
       controller.updateSelection(
         TextSelection.collapsed(offset: _clampEditorOffset(range.start)),
@@ -3993,22 +4056,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final deleteLength = max(0, extentIndex - baseIndex);
 
     _runEditorMutation((controller) {
-      controller.replaceText(
-        baseIndex,
-        deleteLength,
-        label,
-        TextSelection.collapsed(offset: baseIndex + label.length),
+      _replaceEditorTextLocally(
+        controller,
+        index: baseIndex,
+        length: deleteLength,
+        data: label,
+        selection: TextSelection.collapsed(offset: baseIndex + label.length),
       );
-      controller.formatText(
-        baseIndex,
-        label.length,
-        quill.LinkAttribute(resolvedUrl),
+      _formatEditorRangeSelection(
+        controller,
+        start: baseIndex,
+        length: label.length,
+        attribute: quill.LinkAttribute(resolvedUrl),
       );
-      controller.replaceText(
-        baseIndex + label.length,
-        0,
-        '\n',
-        TextSelection.collapsed(offset: baseIndex + label.length + 1),
+      _replaceEditorTextLocally(
+        controller,
+        index: baseIndex + label.length,
+        length: 0,
+        data: '\n',
+        selection: TextSelection.collapsed(
+          offset: baseIndex + label.length + 1,
+        ),
       );
       controller.updateSelection(
         TextSelection.collapsed(offset: baseIndex + label.length + 1),

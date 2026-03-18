@@ -211,6 +211,28 @@ int _editorControllerGenerationFromBridge() {
   return controllerGeneration!;
 }
 
+void _stubLessonSaveEcho(_MockStudioRepository studioRepo) {
+  when(
+    () => studioRepo.upsertLesson(
+      id: 'lesson-1',
+      courseId: 'course-1',
+      title: any(named: 'title'),
+      contentMarkdown: any(named: 'contentMarkdown'),
+      position: any(named: 'position'),
+      isIntro: any(named: 'isIntro'),
+    ),
+  ).thenAnswer(
+    (invocation) async => <String, dynamic>{
+      'id': 'lesson-1',
+      'title': invocation.namedArguments[#title] as String,
+      'position': invocation.namedArguments[#position] as int,
+      'is_intro': invocation.namedArguments[#isIntro] as bool,
+      'course_id': 'course-1',
+      'content_markdown': invocation.namedArguments[#contentMarkdown] as String,
+    },
+  );
+}
+
 Future<void> _pumpUntilFound(
   WidgetTester tester,
   Finder finder, {
@@ -2116,6 +2138,150 @@ void main() {
 
     expect(find.byIcon(Icons.format_underline), findsNothing);
   });
+
+  testWidgets(
+    'bold formatting keeps controller identity and selection stable',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+      _stubLessonSaveEcho(studioRepo);
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final document = _editorDocumentFromBridge();
+      final start = document.indexOf('Eftertext');
+      final end = start + 'Eftertext'.length;
+      expect(start, greaterThanOrEqualTo(0));
+
+      editor_test_bridge.setSelection(start, end);
+      await tester.pump();
+
+      final initialControllerIdentity = _editorControllerIdentityFromBridge();
+      final initialControllerGeneration =
+          _editorControllerGenerationFromBridge();
+
+      final boldButton = find.byIcon(Icons.format_bold);
+      expect(boldButton, findsOneWidget);
+      await tester.ensureVisible(boldButton);
+      await tester.tap(boldButton);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(_editorControllerIdentityFromBridge(), initialControllerIdentity);
+      expect(
+        _editorControllerGenerationFromBridge(),
+        initialControllerGeneration,
+      );
+      expect(_editorSelectionStartFromBridge(), start);
+      expect(_editorSelectionEndFromBridge(), end);
+
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      final verification = verify(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+      final capturedMarkdown = verification.captured.single as String;
+      expect(capturedMarkdown, contains('**Eftertext**'));
+
+      await tester.pump(const Duration(milliseconds: 600));
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'italic formatting keeps controller identity and selection stable',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+      _stubLessonSaveEcho(studioRepo);
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final document = _editorDocumentFromBridge();
+      final start = document.indexOf('Eftertext');
+      final end = start + 'Eftertext'.length;
+      expect(start, greaterThanOrEqualTo(0));
+
+      editor_test_bridge.setSelection(start, end);
+      await tester.pump();
+
+      final initialControllerIdentity = _editorControllerIdentityFromBridge();
+      final initialControllerGeneration =
+          _editorControllerGenerationFromBridge();
+
+      final italicButton = find.byIcon(Icons.format_italic);
+      expect(italicButton, findsOneWidget);
+      await tester.ensureVisible(italicButton);
+      await tester.tap(italicButton);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(_editorControllerIdentityFromBridge(), initialControllerIdentity);
+      expect(
+        _editorControllerGenerationFromBridge(),
+        initialControllerGeneration,
+      );
+      expect(_editorSelectionStartFromBridge(), start);
+      expect(_editorSelectionEndFromBridge(), end);
+
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      final verification = verify(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+      final capturedMarkdown = verification.captured.single as String;
+      expect(capturedMarkdown, contains('*Eftertext*'));
+
+      await tester.pump(const Duration(milliseconds: 600));
+      await _disposePumpedWidget(tester);
+    },
+  );
 
   testWidgets('duplicate image media is not inserted twice', (tester) async {
     final studioRepo = _MockStudioRepository();

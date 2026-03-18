@@ -122,6 +122,62 @@ void main() {
     );
   });
 
+  test('replaceText keeps controller stable for mixed text and embeds', () {
+    final controller = quill.QuillController.basic();
+    controller.replaceText(
+      0,
+      0,
+      'Intro\n',
+      const TextSelection.collapsed(offset: 6),
+    );
+    replaceSelectionWithBlockEmbed(
+      controller: controller,
+      embed: quill.BlockEmbed.image(
+        lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
+          lessonMediaId: 'media-image-1',
+          src: 'https://cdn.test/media-image-1.webp',
+        ),
+      ),
+      selection: const TextSelection.collapsed(offset: 6),
+    );
+    final appendOffset = controller.document.length - 1;
+    controller.replaceText(
+      appendOffset,
+      0,
+      'Eftertext',
+      TextSelection.collapsed(offset: appendOffset + 9),
+    );
+
+    final originalControllerIdentity = identityHashCode(controller);
+    final insertOffset = controller.document.length - 1;
+
+    controller.replaceText(
+      insertOffset,
+      0,
+      ' hej',
+      TextSelection.collapsed(offset: insertOffset + 4),
+    );
+
+    expect(identityHashCode(controller), originalControllerIdentity);
+    expect(controller.document.toPlainText(), contains('Eftertext hej\n'));
+
+    controller.replaceText(
+      insertOffset,
+      4,
+      '',
+      TextSelection.collapsed(offset: insertOffset),
+    );
+
+    expect(identityHashCode(controller), originalControllerIdentity);
+
+    final markdown = lesson_pipeline.createLessonDeltaToMarkdown().convert(
+      controller.document.toDelta(),
+    );
+    expect(markdown, contains('!image(media-image-1)'));
+    expect(markdown, contains('Eftertext'));
+    expect(markdown, isNot(contains('Eftertext hej')));
+  });
+
   test(
     'replaceLessonMediaEmbedsInPlace is a no-op when media id is absent',
     () {
