@@ -434,8 +434,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _editorMutating = false;
   bool _editorOperationApplying = false;
   bool _selectionSyncScheduled = false;
+  final GlobalKey _lessonEditorLiveSurfaceKey = GlobalKey(
+    debugLabel: 'lesson_editor_live_surface',
+  );
   bool _editorHydrationCommittedForSession = false;
   bool _editorHydrationCommitScheduled = false;
+  String? _pendingEditorHydrationCommitLessonId;
+  int? _pendingEditorHydrationCommitRequestId;
 
   final TextEditingController _newCourseTitle = TextEditingController();
   final TextEditingController _newCourseDesc = TextEditingController();
@@ -580,6 +585,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _documentReadyRequestId = null;
     _editorHydrationCommittedForSession = false;
     _editorHydrationCommitScheduled = false;
+    _pendingEditorHydrationCommitLessonId = null;
+    _pendingEditorHydrationCommitRequestId = null;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
     _lessonEditorBootPhase = phase;
   }
@@ -993,6 +1000,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         documentReadyRequestId == _lessonContentRequestId;
   }
 
+  bool _isLessonEditorLiveSurfaceMounted() {
+    final context = _lessonEditorLiveSurfaceKey.currentContext;
+    if (context == null || !context.mounted) return false;
+    final renderObject = context.findRenderObject();
+    return renderObject != null && renderObject.attached;
+  }
+
   bool _matchesCurrentLessonRequest({
     required String lessonId,
     required int requestId,
@@ -1028,35 +1042,61 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required String lessonId,
     required int requestId,
   }) {
+    if (_editorHydrationCommittedForSession) return;
+    _pendingEditorHydrationCommitLessonId = lessonId;
+    _pendingEditorHydrationCommitRequestId = requestId;
+    _schedulePendingEditorHydrationCommit();
+  }
+
+  void _schedulePendingEditorHydrationCommit() {
     if (_editorHydrationCommittedForSession ||
-        _editorHydrationCommitScheduled) {
+        _editorHydrationCommitScheduled ||
+        _pendingEditorHydrationCommitLessonId == null ||
+        _pendingEditorHydrationCommitRequestId == null) {
       return;
     }
 
     _editorHydrationCommitScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _editorHydrationCommitScheduled = false;
-      if (!mounted ||
-          _editorHydrationCommittedForSession ||
-          !_matchesCurrentLessonRequest(
-            lessonId: lessonId,
-            requestId: requestId,
-          )) {
-        return;
-      }
-
-      final previousMutating = _editorMutating;
-      _editorMutating = true;
-      try {
-        _lessonContentController.updateSelection(
-          _lessonContentController.selection,
-          quill.ChangeSource.local,
-        );
-        _editorHydrationCommittedForSession = true;
-      } finally {
-        _editorMutating = previousMutating;
-      }
+      _flushPendingEditorHydrationCommit();
     });
+  }
+
+  void _flushPendingEditorHydrationCommit() {
+    final lessonId = _pendingEditorHydrationCommitLessonId;
+    final requestId = _pendingEditorHydrationCommitRequestId;
+    if (lessonId == null ||
+        requestId == null ||
+        !mounted ||
+        _editorHydrationCommittedForSession) {
+      return;
+    }
+    if (!_matchesCurrentLessonRequest(
+      lessonId: lessonId,
+      requestId: requestId,
+    )) {
+      _pendingEditorHydrationCommitLessonId = null;
+      _pendingEditorHydrationCommitRequestId = null;
+      return;
+    }
+    if (!_isLessonEditorLiveSurfaceMounted()) {
+      return;
+    }
+
+    final previousMutating = _editorMutating;
+    _editorMutating = true;
+    try {
+      _lessonContentController.updateSelection(
+        _lessonContentController.selection,
+        quill.ChangeSource.local,
+      );
+      _editorHydrationCommittedForSession = true;
+      _pendingEditorHydrationCommitLessonId = null;
+      _pendingEditorHydrationCommitRequestId = null;
+    } finally {
+      _editorMutating = previousMutating;
+    }
   }
 
   void _resetCoverState({bool clearPreview = false}) {
@@ -2116,6 +2156,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lessonContentDirty = false;
         _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
       });
+      _scheduleInitialEditorHydrationCommit(
+        lessonId: lessonId,
+        requestId: requestId,
+      );
     }
     if (initialHydrationIds.isNotEmpty) {
       _startInitialLessonPreviewHydration(
@@ -2124,10 +2168,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         initialHydrationIds: initialHydrationIds,
       );
     }
-    _scheduleInitialEditorHydrationCommit(
-      lessonId: lessonId,
-      requestId: requestId,
-    );
   }
 
   Future<void> _resetLessonEdits() async {
@@ -2177,6 +2217,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonContentDirty = false;
       _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
     });
+    _scheduleInitialEditorHydrationCommit(
+      lessonId: lessonId,
+      requestId: requestId,
+    );
     if (initialHydrationIds.isNotEmpty) {
       _startInitialLessonPreviewHydration(
         lessonId: lessonId,
@@ -2184,10 +2228,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         initialHydrationIds: initialHydrationIds,
       );
     }
-    _scheduleInitialEditorHydrationCommit(
-      lessonId: lessonId,
-      requestId: requestId,
-    );
   }
 
   int _currentLessonPosition() {
@@ -2492,46 +2532,49 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
 
     _scheduleLessonEditorTestIdSync();
-    final editorSurface = Container(
-      key: const ValueKey<String>('lesson_editor_live_surface'),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
-        color: Colors.white.withValues(alpha: 0.92),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          key: const ValueKey<String>(_lessonEditorTestId),
-          child: Semantics(
-            identifier: _lessonEditorTestId,
-            child: quill.QuillEditor.basic(
-              controller: controller,
-              focusNode: _lessonContentFocusNode,
-              scrollController: _lessonEditorScrollController,
-              config: quill.QuillEditorConfig(
-                minHeight: 280,
-                padding: const EdgeInsets.all(16),
-                placeholder: 'Skriv eller klistra in lektionsinnehåll...',
-                onKeyPressed: _handleLessonEditorKeyPressed,
-                embedBuilders: [
-                  ...FlutterQuillEmbeds.defaultEditorBuilders().where(
-                    (builder) =>
-                        builder.key != quill.BlockEmbed.videoType &&
-                        builder.key != quill.BlockEmbed.imageType,
-                  ),
-                  _ImageEmbedBuilder(
-                    hydrationListenable: _previewHydrationController,
-                  ),
-                  _VideoEmbedBuilder(
-                    onRemoveLegacyVideoAt: _removeLegacyVideoEmbedAt,
-                    hydrationListenable: _previewHydrationController,
-                    knownLessonMediaIds: knownLessonMediaIds,
-                  ),
-                  _AudioEmbedBuilder(
-                    hydrationListenable: _previewHydrationController,
-                  ),
-                ],
+    final editorSurface = KeyedSubtree(
+      key: _lessonEditorLiveSurfaceKey,
+      child: Container(
+        key: const ValueKey<String>('lesson_editor_live_surface'),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
+          color: Colors.white.withValues(alpha: 0.92),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            key: const ValueKey<String>(_lessonEditorTestId),
+            child: Semantics(
+              identifier: _lessonEditorTestId,
+              child: quill.QuillEditor.basic(
+                controller: controller,
+                focusNode: _lessonContentFocusNode,
+                scrollController: _lessonEditorScrollController,
+                config: quill.QuillEditorConfig(
+                  minHeight: 280,
+                  padding: const EdgeInsets.all(16),
+                  placeholder: 'Skriv eller klistra in lektionsinnehåll...',
+                  onKeyPressed: _handleLessonEditorKeyPressed,
+                  embedBuilders: [
+                    ...FlutterQuillEmbeds.defaultEditorBuilders().where(
+                      (builder) =>
+                          builder.key != quill.BlockEmbed.videoType &&
+                          builder.key != quill.BlockEmbed.imageType,
+                    ),
+                    _ImageEmbedBuilder(
+                      hydrationListenable: _previewHydrationController,
+                    ),
+                    _VideoEmbedBuilder(
+                      onRemoveLegacyVideoAt: _removeLegacyVideoEmbedAt,
+                      hydrationListenable: _previewHydrationController,
+                      knownLessonMediaIds: knownLessonMediaIds,
+                    ),
+                    _AudioEmbedBuilder(
+                      hydrationListenable: _previewHydrationController,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2539,6 +2582,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       ),
     );
 
+    _schedulePendingEditorHydrationCommit();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

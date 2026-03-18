@@ -556,6 +556,14 @@ Future<void> _disposePumpedWidget(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 600));
 }
 
+void _drainExpectedRenderFlexOverflow(WidgetTester tester) {
+  while (true) {
+    final exception = tester.takeException();
+    if (exception == null) return;
+    expect(exception.toString(), contains('A RenderFlex overflowed by'));
+  }
+}
+
 void main() {
   setUpAll(() {
     registerFallbackValue(const Duration());
@@ -2088,6 +2096,143 @@ void main() {
         _editorControllerGenerationFromBridge(),
         initialControllerGeneration,
       );
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen renders bold text and resolved media when the editor first mounts after a preview-mode lesson switch',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1600, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      _stubMultiLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        lessons: [
+          {
+            'id': 'lesson-1',
+            'title': 'Välkommen',
+            'position': 1,
+            'is_intro': true,
+            'course_id': 'course-1',
+            'content_markdown': 'Introtext\n\nFörhandsläge',
+          },
+          {
+            'id': 'lesson-2',
+            'title': 'Fortsättning',
+            'position': 2,
+            'is_intro': false,
+            'course_id': 'course-1',
+            'content_markdown':
+                '**Fet text**\n\n!image(media-image-2)\n\nEftertext',
+          },
+        ],
+        lessonMediaByLessonId: {
+          'lesson-1': const <Map<String, dynamic>>[],
+          'lesson-2': [
+            {
+              'id': 'media-image-2',
+              'kind': 'image',
+              'storage_path': 'private-media/lesson-2/image.png',
+              'storage_bucket': 'private-media',
+              'original_name': 'image.png',
+              'position': 1,
+            },
+          ],
+        },
+        fetchLessonMediaPreviews: (ids) {
+          if (ids.contains('media-image-2')) {
+            return previewCompleter.future;
+          }
+          return Future<Map<String, Map<String, dynamic>>>.value(
+            <String, Map<String, dynamic>>{},
+          );
+        },
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final previewModeChip = find.byKey(
+        const ValueKey<String>('lesson_preview_mode_chip'),
+      );
+      await tester.ensureVisible(previewModeChip);
+      await tester.tap(previewModeChip);
+      await tester.pump();
+      _drainExpectedRenderFlexOverflow(tester);
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        findsNothing,
+      );
+
+      final lessonTileFinder = _lessonTileFinder('Fortsättning');
+      await tester.ensureVisible(lessonTileFinder);
+      await tester.tap(lessonTileFinder);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+      _drainExpectedRenderFlexOverflow(tester);
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        findsNothing,
+      );
+
+      previewCompleter.complete({
+        'media-image-2': {
+          'media_type': 'image',
+          'thumbnail_url': 'https://cdn.test/media-image-2-thumb.webp',
+          'file_name': 'image.png',
+        },
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 25));
+
+      final editModeChip = find.byKey(
+        const ValueKey<String>('lesson_edit_mode_chip'),
+      );
+      await tester.ensureVisible(editModeChip);
+      await tester.tap(editModeChip);
+      await tester.pump();
+      _drainExpectedRenderFlexOverflow(tester);
+
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        maxPumps: 30,
+      );
+      await _pumpUntilFound(
+        tester,
+        _networkImageFinder('https://cdn.test/media-image-2-thumb.webp'),
+        maxPumps: 100,
+        step: const Duration(milliseconds: 1),
+      );
+
+      final boldStyles = _editorTextStylesForText(tester, 'Fet text');
+
+      expect(_renderedEditorText(tester), contains('Fet text'));
+      expect(
+        boldStyles.any((style) => style?.fontWeight == FontWeight.bold),
+        isTrue,
+      );
+      expect(
+        _networkImageFinder('https://cdn.test/media-image-2-thumb.webp'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        findsNothing,
+      );
+      _drainExpectedRenderFlexOverflow(tester);
 
       await _disposePumpedWidget(tester);
     },
