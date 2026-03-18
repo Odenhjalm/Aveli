@@ -444,6 +444,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _lastObservedDocumentFingerprint;
   TextSelection? _lastLessonSelection;
   bool _lessonContentControllerInitialized = false;
+  int _lessonContentControllerGeneration = 0;
   VoidCallback? _controllerListener;
   bool _editorMutating = false;
   bool _selectionSyncScheduled = false;
@@ -634,10 +635,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     TextSelection selection, [
     quill.QuillController? controller,
   ]) {
-    return TextSelection(
-      baseOffset: _clampEditorOffset(selection.baseOffset, controller),
-      extentOffset: _clampEditorOffset(selection.extentOffset, controller),
-    );
+    final activeController = controller ?? _lessonContentController;
+    return clampQuillSelection(activeController, selection);
   }
 
   void _attachControllerListener() {
@@ -836,6 +835,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   String _getEditorDocumentViaTestBridge() {
     return _lessonContentController.document.toPlainText();
+  }
+
+  int _getEditorSelectionStartViaTestBridge() {
+    return _clampEditorOffset(_lessonContentController.selection.start);
+  }
+
+  int _getEditorSelectionEndViaTestBridge() {
+    return _clampEditorOffset(_lessonContentController.selection.end);
+  }
+
+  int _getEditorControllerIdentityViaTestBridge() {
+    return identityHashCode(_lessonContentController);
+  }
+
+  int _getEditorControllerGenerationViaTestBridge() {
+    return _lessonContentControllerGeneration;
   }
 
   bool _isSelectedLessonDocumentReady() {
@@ -1699,6 +1714,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     _lessonContentController = controller;
     _lessonContentControllerInitialized = true;
+    _lessonContentControllerGeneration += 1;
     _editorSessionId = _uuid.v4();
     _editorRevision = 0;
     _lastObservedDocumentFingerprint = _documentFingerprint(controller);
@@ -1723,6 +1739,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setSelection: _setEditorSelectionViaTestBridge,
       getCursor: _getEditorCursorViaTestBridge,
       getDocument: _getEditorDocumentViaTestBridge,
+      getSelectionStart: _getEditorSelectionStartViaTestBridge,
+      getSelectionEnd: _getEditorSelectionEndViaTestBridge,
+      getControllerIdentity: _getEditorControllerIdentityViaTestBridge,
+      getControllerGeneration: _getEditorControllerGenerationViaTestBridge,
     );
   }
 
@@ -5105,50 +5125,63 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   bool _replaceLessonMediaReferencesInEditor({
     required String fromLessonMediaId,
-    required String toLessonMediaId,
+    required Map<String, dynamic> replacementMedia,
   }) {
-    final controller = _lessonContentController;
+    final fromId = fromLessonMediaId.trim();
+    final toId = (replacementMedia['id'] as String?)?.trim() ?? '';
+    if (fromId.isEmpty || toId.isEmpty) return false;
 
-    final selection = controller.selection;
-    final rawMarkdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
-      delta: controller.document.toDelta(),
-      apiFilesPathToStudioMediaUrl:
-          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
-      lessonMediaUrlToStudioMediaUrl:
-          _lessonMediaUrlToStudioMediaUrlForSelectedLesson(),
-    );
-    if (!rawMarkdown.contains(fromLessonMediaId)) return false;
-
-    final rewritten = rawMarkdown.replaceAll(
-      fromLessonMediaId,
-      toLessonMediaId,
-    );
-    if (rewritten == rawMarkdown) return false;
-
-    final document = _documentFromLessonMarkdown(rewritten);
-
-    setState(() {
-      _resetLessonPreviewHydrationValues(bumpRevision: true);
-      _replaceLessonDocument(document, resetDirty: false);
-      final lessonId = _selectedLessonId;
-      if (lessonId != null) {
-        _documentReadyLessonId = lessonId;
-        _documentReadyRequestId = _lessonContentRequestId;
-      }
-      _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
-      _lessonContentDirty = true;
-    });
-
+    final replacementUrl = _resolveMediaDisplayUrl(replacementMedia);
+    var contentChanged = false;
     _runEditorMutation(
       (controller) {
-        controller.updateSelection(
-          _clampEditorSelection(selection, controller),
-          quill.ChangeSource.local,
+        contentChanged = replaceLessonMediaEmbedsInPlace(
+          controller: controller,
+          fromLessonMediaId: fromId,
+          toLessonMediaId: toId,
+          replacementBuilder: (embed, _) {
+            switch (embed.value.type) {
+              case lesson_pipeline.AudioBlockEmbed.embedType:
+                return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
+                  lessonMediaId: toId,
+                  src: replacementUrl,
+                );
+              case quill.BlockEmbed.videoType:
+                return quill.BlockEmbed.video(
+                  lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
+                    lessonMediaId: toId,
+                    src: replacementUrl,
+                  ),
+                );
+              case quill.BlockEmbed.imageType:
+                return quill.BlockEmbed.image(
+                  lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
+                    lessonMediaId: toId,
+                    src: replacementUrl,
+                  ),
+                );
+              default:
+                return null;
+            }
+          },
         );
       },
       markDirty: false,
-      reconcileSelection: true,
+      requestFocus: true,
     );
+    if (!contentChanged) return false;
+
+    if (mounted) {
+      setState(() {
+        _resetLessonPreviewHydrationValues(bumpRevision: true);
+        _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
+        _lessonContentDirty = true;
+      });
+    } else {
+      _resetLessonPreviewHydrationValues(bumpRevision: true);
+      _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
+      _lessonContentDirty = true;
+    }
     return true;
   }
 
@@ -5211,7 +5244,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
       final contentChanged = _replaceLessonMediaReferencesInEditor(
         fromLessonMediaId: oldLessonMediaId,
-        toLessonMediaId: newLessonMediaId,
+        replacementMedia: newMedia!,
       );
       if (contentChanged) {
         token = _captureEditorToken();

@@ -16,6 +16,8 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
+import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
+    as editor_test_bridge;
 import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
@@ -177,6 +179,36 @@ Finder _lessonTileFinder(String title) {
 String _lessonTitleFieldValue(WidgetTester tester) {
   return tester.widget<TextField>(_lessonTitleFieldFinder()).controller?.text ??
       '';
+}
+
+String _editorDocumentFromBridge() {
+  final document = editor_test_bridge.getDocument();
+  expect(document, isNotNull);
+  return document!;
+}
+
+int _editorSelectionStartFromBridge() {
+  final selectionStart = editor_test_bridge.getSelectionStart();
+  expect(selectionStart, isNotNull);
+  return selectionStart!;
+}
+
+int _editorSelectionEndFromBridge() {
+  final selectionEnd = editor_test_bridge.getSelectionEnd();
+  expect(selectionEnd, isNotNull);
+  return selectionEnd!;
+}
+
+int _editorControllerIdentityFromBridge() {
+  final controllerIdentity = editor_test_bridge.getControllerIdentity();
+  expect(controllerIdentity, isNotNull);
+  return controllerIdentity!;
+}
+
+int _editorControllerGenerationFromBridge() {
+  final controllerGeneration = editor_test_bridge.getControllerGeneration();
+  expect(controllerGeneration, isNotNull);
+  return controllerGeneration!;
 }
 
 Future<void> _pumpUntilFound(
@@ -2208,6 +2240,135 @@ void main() {
   });
 
   testWidgets(
+    'toolbar image upload keeps selection and controller while inserting locally',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final lessonMedia = <Map<String, dynamic>>[];
+      final apiClient = _TestApiClient(
+        onPostForm: (path, formData) async {
+          expect(path, '/api/upload/lesson-image');
+          final uploadedMedia = <String, dynamic>{
+            'id': 'media-upload-1',
+            'kind': 'image',
+            'storage_bucket': 'public-media',
+            'storage_path': 'lessons/lesson-1/images/media-upload-1.png',
+            'preferredUrl': 'https://cdn.test/toolbar-image.png',
+            'original_name': 'toolbar-image.png',
+            'content_type': 'image/png',
+          };
+          lessonMedia
+            ..clear()
+            ..add(uploadedMedia);
+          return <String, dynamic>{
+            'media': uploadedMedia,
+            'preferredUrl': 'https://cdn.test/toolbar-image.png',
+          };
+        },
+      );
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: lessonMedia,
+      );
+      when(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      ).thenAnswer(
+        (invocation) async => <String, dynamic>{
+          'id': 'lesson-1',
+          'title': invocation.namedArguments[#title] as String,
+          'position': invocation.namedArguments[#position] as int,
+          'is_intro': invocation.namedArguments[#isIntro] as bool,
+          'course_id': 'course-1',
+          'content_markdown':
+              invocation.namedArguments[#contentMarkdown] as String,
+        },
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        apiClient: apiClient,
+        webImagePicker:
+            ({
+              required allowedExtensions,
+              required allowMultiple,
+              String? accept,
+            }) async {
+              expect(allowedExtensions, ['png', 'jpg', 'jpeg', 'webp', 'svg']);
+              expect(allowMultiple, isFalse);
+              expect(accept, 'image/*');
+              return <web_picker.WebPickedFile>[
+                web_picker.WebPickedFile(
+                  name: 'toolbar-image.png',
+                  bytes: Uint8List.fromList('toolbar-bytes'.codeUnits),
+                  mimeType: 'image/png',
+                ),
+              ];
+            },
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final initialDocument = _editorDocumentFromBridge();
+      final insertionOffset = initialDocument.indexOf('Eftertext');
+      expect(insertionOffset, greaterThan(0));
+      editor_test_bridge.setCursor(insertionOffset);
+      await tester.pump();
+
+      final initialControllerIdentity = _editorControllerIdentityFromBridge();
+      final initialControllerGeneration =
+          _editorControllerGenerationFromBridge();
+      expect(_editorSelectionStartFromBridge(), insertionOffset);
+      expect(_editorSelectionEndFromBridge(), insertionOffset);
+
+      final imageButton = find.byKey(
+        const Key('editor_media_controls_insert_image'),
+      );
+      await tester.ensureVisible(imageButton);
+      await tester.tap(imageButton);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(_editorControllerIdentityFromBridge(), initialControllerIdentity);
+      expect(
+        _editorControllerGenerationFromBridge(),
+        initialControllerGeneration,
+      );
+      expect(_editorSelectionStartFromBridge(), insertionOffset + 2);
+      expect(_editorSelectionEndFromBridge(), insertionOffset + 2);
+
+      final verification = verify(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+      final capturedMarkdown = verification.captured.last as String;
+      expect(
+        capturedMarkdown,
+        contains('Introtext\n\n!image(media-upload-1)\n\nEftertext'),
+      );
+
+      await tester.pump(const Duration(milliseconds: 600));
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
     'queued upload success does not insert duplicate image already embedded in lesson',
     (tester) async {
       final studioRepo = _MockStudioRepository();
@@ -2270,6 +2431,116 @@ void main() {
           isIntro: any(named: 'isIntro'),
         ),
       );
+    },
+  );
+
+  testWidgets(
+    'queued upload success inserts locally without replacing the controller',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final uploadQueue = _TestUploadQueueNotifier(studioRepo);
+      final lessonMedia = <Map<String, dynamic>>[
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'storage_path': 'lessons/lesson-1/images/media-image-1.webp',
+          'storage_bucket': 'public-media',
+          'preferredUrl': 'https://cdn.test/media-image-1.webp',
+          'original_name': 'queued-image.webp',
+          'content_type': 'image/webp',
+          'position': 1,
+        },
+      ];
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: lessonMedia,
+      );
+      when(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      ).thenAnswer(
+        (invocation) async => <String, dynamic>{
+          'id': 'lesson-1',
+          'title': invocation.namedArguments[#title] as String,
+          'position': invocation.namedArguments[#position] as int,
+          'is_intro': invocation.namedArguments[#isIntro] as bool,
+          'course_id': 'course-1',
+          'content_markdown':
+              invocation.namedArguments[#contentMarkdown] as String,
+        },
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        uploadQueueNotifier: uploadQueue,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final initialDocument = _editorDocumentFromBridge();
+      final insertionOffset = initialDocument.indexOf('Eftertext');
+      expect(insertionOffset, greaterThan(0));
+      editor_test_bridge.setCursor(insertionOffset);
+      await tester.pump();
+
+      final initialControllerIdentity = _editorControllerIdentityFromBridge();
+      final initialControllerGeneration =
+          _editorControllerGenerationFromBridge();
+
+      final successJob = UploadJob(
+        id: 'job-1',
+        courseId: 'course-1',
+        lessonId: 'lesson-1',
+        filename: 'queued-image.webp',
+        contentType: 'image/webp',
+        isIntro: true,
+        data: Uint8List(0),
+        createdAt: DateTime.utc(2026, 3, 18),
+        status: UploadJobStatus.success,
+        progress: 1,
+      );
+
+      uploadQueue.setJobs(<UploadJob>[successJob]);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(_editorControllerIdentityFromBridge(), initialControllerIdentity);
+      expect(
+        _editorControllerGenerationFromBridge(),
+        initialControllerGeneration,
+      );
+      expect(_editorSelectionStartFromBridge(), insertionOffset + 2);
+      expect(_editorSelectionEndFromBridge(), insertionOffset + 2);
+
+      final verification = verify(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+      final capturedMarkdown = verification.captured.last as String;
+      expect(
+        capturedMarkdown,
+        contains('Introtext\n\n!image(media-image-1)\n\nEftertext'),
+      );
+
+      await tester.pump(const Duration(milliseconds: 600));
+      await _disposePumpedWidget(tester);
     },
   );
 

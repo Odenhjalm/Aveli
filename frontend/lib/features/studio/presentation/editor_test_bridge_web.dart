@@ -14,6 +14,10 @@ void registerAveliEditorTestBridge({
   required void Function(int start, int end) setSelection,
   required int Function() getCursor,
   required String Function() getDocument,
+  required int Function() getSelectionStart,
+  required int Function() getSelectionEnd,
+  required int Function() getControllerIdentity,
+  required int Function() getControllerGeneration,
 }) {
   final bridge = js_util.newObject();
 
@@ -78,6 +82,38 @@ void registerAveliEditorTestBridge({
     'getDocument',
     (() {
       return getDocument();
+    }).toJS,
+  );
+
+  js_util.setProperty(
+    bridge,
+    'getSelectionStart',
+    (() {
+      return getSelectionStart();
+    }).toJS,
+  );
+
+  js_util.setProperty(
+    bridge,
+    'getSelectionEnd',
+    (() {
+      return getSelectionEnd();
+    }).toJS,
+  );
+
+  js_util.setProperty(
+    bridge,
+    'getControllerIdentity',
+    (() {
+      return getControllerIdentity();
+    }).toJS,
+  );
+
+  js_util.setProperty(
+    bridge,
+    'getControllerGeneration',
+    (() {
+      return getControllerGeneration();
     }).toJS,
   );
 
