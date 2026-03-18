@@ -2063,6 +2063,216 @@ void main() {
     },
   );
 
+  testWidgets('editor toolbar does not expose underline control', (
+    tester,
+  ) async {
+    final studioRepo = _MockStudioRepository();
+    final coursesRepo = _MockCoursesRepository();
+    _stubSingleLessonEditorData(
+      studioRepo,
+      coursesRepo,
+      contentMarkdown: '**Fet text**',
+      lessonMedia: const <Map<String, dynamic>>[],
+    );
+
+    await _pumpCourseEditorScreen(
+      tester,
+      studioRepo: studioRepo,
+      coursesRepo: coursesRepo,
+    );
+    await _pumpEditorBootstrap(tester);
+
+    expect(find.byIcon(Icons.format_underline), findsNothing);
+  });
+
+  testWidgets('duplicate image media is not inserted twice', (tester) async {
+    final studioRepo = _MockStudioRepository();
+    final coursesRepo = _MockCoursesRepository();
+    _stubSingleLessonEditorData(
+      studioRepo,
+      coursesRepo,
+      contentMarkdown: 'Introtext\n\n!image(media-image-1)',
+      lessonMedia: const [
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'storage_path': 'lessons/lesson-1/images/media-image-1.webp',
+          'storage_bucket': 'public-media',
+          'preferredUrl': 'https://cdn.test/media-image-1.webp',
+          'original_name': 'media-image-1.webp',
+          'position': 1,
+        },
+      ],
+    );
+
+    await _pumpCourseEditorScreen(
+      tester,
+      studioRepo: studioRepo,
+      coursesRepo: coursesRepo,
+    );
+    await _pumpEditorBootstrap(tester);
+
+    final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+
+    final insertButton = find.byTooltip('Infoga i lektionen');
+    expect(insertButton, findsOneWidget);
+    await tester.ensureVisible(insertButton);
+    await tester.tap(insertButton);
+    await tester.pump();
+
+    expect(find.text('Media finns redan i lektionen.'), findsOneWidget);
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+  });
+
+  testWidgets('inserted image saves as canonical media token', (tester) async {
+    final studioRepo = _MockStudioRepository();
+    final coursesRepo = _MockCoursesRepository();
+    _stubSingleLessonEditorData(
+      studioRepo,
+      coursesRepo,
+      contentMarkdown: 'Introtext',
+      lessonMedia: const [
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'storage_path': 'lessons/lesson-1/images/media-image-1.webp',
+          'storage_bucket': 'public-media',
+          'preferredUrl': 'https://cdn.test/media-image-1.webp',
+          'original_name': 'media-image-1.webp',
+          'position': 1,
+        },
+      ],
+    );
+    when(
+      () => studioRepo.upsertLesson(
+        id: 'lesson-1',
+        courseId: 'course-1',
+        title: any(named: 'title'),
+        contentMarkdown: any(named: 'contentMarkdown'),
+        position: any(named: 'position'),
+        isIntro: any(named: 'isIntro'),
+      ),
+    ).thenAnswer(
+      (invocation) async => <String, dynamic>{
+        'id': 'lesson-1',
+        'title': invocation.namedArguments[#title] as String,
+        'position': invocation.namedArguments[#position] as int,
+        'is_intro': invocation.namedArguments[#isIntro] as bool,
+        'course_id': 'course-1',
+        'content_markdown':
+            invocation.namedArguments[#contentMarkdown] as String,
+      },
+    );
+
+    await _pumpCourseEditorScreen(
+      tester,
+      studioRepo: studioRepo,
+      coursesRepo: coursesRepo,
+    );
+    await _pumpEditorBootstrap(tester);
+
+    final insertButton = find.byTooltip('Infoga i lektionen');
+    expect(insertButton, findsOneWidget);
+    await tester.ensureVisible(insertButton);
+    await tester.tap(insertButton);
+    await tester.pump();
+
+    final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pump();
+    await _pumpEditorBootstrap(tester);
+
+    final verification = verify(
+      () => studioRepo.upsertLesson(
+        id: 'lesson-1',
+        courseId: 'course-1',
+        title: any(named: 'title'),
+        contentMarkdown: captureAny(named: 'contentMarkdown'),
+        position: any(named: 'position'),
+        isIntro: any(named: 'isIntro'),
+      ),
+    );
+    final capturedMarkdown = verification.captured.single as String;
+
+    expect(capturedMarkdown, contains('!image(media-image-1)'));
+    expect(
+      capturedMarkdown,
+      isNot(contains('https://cdn.test/media-image-1.webp')),
+    );
+
+    await tester.pump(const Duration(milliseconds: 600));
+    await _disposePumpedWidget(tester);
+  });
+
+  testWidgets(
+    'queued upload success does not insert duplicate image already embedded in lesson',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final uploadQueue = _TestUploadQueueNotifier(studioRepo);
+      final lessonMedia = <Map<String, dynamic>>[
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'storage_path': 'lessons/lesson-1/images/media-image-1.webp',
+          'storage_bucket': 'public-media',
+          'preferredUrl': 'https://cdn.test/media-image-1.webp',
+          'original_name': 'queued-image.webp',
+          'content_type': 'image/webp',
+          'position': 1,
+        },
+      ];
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\n!image(media-image-1)',
+        lessonMedia: lessonMedia,
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        uploadQueueNotifier: uploadQueue,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final successJob = UploadJob(
+        id: 'job-1',
+        courseId: 'course-1',
+        lessonId: 'lesson-1',
+        filename: 'queued-image.webp',
+        contentType: 'image/webp',
+        isIntro: true,
+        data: Uint8List(0),
+        createdAt: DateTime.utc(2026, 3, 18),
+        status: UploadJobStatus.success,
+        progress: 1,
+      );
+
+      uploadQueue.setJobs(<UploadJob>[successJob]);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+      verifyNever(
+        () => studioRepo.upsertLesson(
+          id: any(named: 'id'),
+          courseId: any(named: 'courseId'),
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+    },
+  );
+
   testWidgets('toolbar image upload result is ignored after lesson switch', (
     tester,
   ) async {

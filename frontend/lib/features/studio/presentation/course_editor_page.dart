@@ -13,8 +13,6 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http_parser/http_parser.dart';
-import 'package:markdown/markdown.dart' as md;
-import 'package:markdown_quill/markdown_quill.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 // ignore: depend_on_referenced_packages
 import 'package:web/web.dart' as web;
@@ -22,6 +20,10 @@ import 'package:web/web.dart' as web;
 import 'package:uuid/uuid.dart';
 
 import 'package:aveli/api/auth_repository.dart' show apiClientProvider;
+import 'package:aveli/editor/adapter/editor_to_markdown.dart'
+    as editor_to_markdown;
+import 'package:aveli/editor/adapter/markdown_to_editor.dart'
+    as markdown_to_editor;
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -445,10 +447,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   VoidCallback? _controllerListener;
   bool _editorMutating = false;
   bool _selectionSyncScheduled = false;
-
-  late final md.Document _markdownDocument;
-  late final MarkdownToDelta _markdownToDelta;
-  late final DeltaToMarkdown _deltaToMarkdown;
 
   final TextEditingController _newCourseTitle = TextEditingController();
   final TextEditingController _newCourseDesc = TextEditingController();
@@ -1036,14 +1034,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonContentFocusNode = FocusNode();
     _lessonEditorScrollController = ScrollController();
     _studioRepo = widget.studioRepository ?? ref.read(studioRepositoryProvider);
-    _markdownDocument = md.Document(
-      encodeHtml: false,
-      extensionSet: md.ExtensionSet.gitHubWeb,
-    );
-    _markdownToDelta = lesson_pipeline.createLessonMarkdownToDelta(
-      _markdownDocument,
-    );
-    _deltaToMarkdown = lesson_pipeline.createLessonDeltaToMarkdown();
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
     _coursePriceCtrl.addListener(_onCoursePriceChanged);
     _replaceLessonDocument(quill.Document());
@@ -1841,35 +1831,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return mapping;
   }
 
-  String _rewriteKnownLessonMediaUrlsToStudioMediaUrls({
-    required String markdown,
-    required Map<String, String> urlToStudioMediaUrl,
-  }) {
-    if (markdown.isEmpty || urlToStudioMediaUrl.isEmpty) return markdown;
-
-    final entries = urlToStudioMediaUrl.entries.toList(growable: false)
-      ..sort((left, right) => right.key.length.compareTo(left.key.length));
-
-    var rewritten = markdown;
-    for (final entry in entries) {
-      rewritten = rewritten.replaceAll(entry.key, entry.value);
-    }
-    return rewritten;
+  String _prepareLessonMarkdownForEditing(String markdown) {
+    return markdown_to_editor.canonicalizeMarkdownForEditor(
+      markdown: markdown,
+      apiFilesPathToStudioMediaUrl:
+          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+    );
   }
 
-  Future<String> _prepareLessonMarkdownForEditing(String markdown) async {
-    if (markdown.trim().isEmpty) return markdown;
-    var prepared = markdown;
-    if (lesson_pipeline.apiFilesUrlPattern.hasMatch(prepared)) {
-      final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
-      if (mapping.isNotEmpty) {
-        prepared = lesson_pipeline.rewriteLessonMarkdownApiFilesUrls(
-          markdown: prepared,
-          apiFilesPathToStudioMediaUrl: mapping,
-        );
-      }
-    }
-    return prepared;
+  quill.Document _documentFromLessonMarkdown(String markdown) {
+    return markdown_to_editor.markdownToEditorDocument(
+      markdown: markdown,
+      apiFilesPathToStudioMediaUrl:
+          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+    );
   }
 
   List<LessonMediaItem> _selectedLessonMediaItems() {
@@ -1894,30 +1869,28 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String _serializeLessonMarkdownFromController(
     quill.QuillController controller,
   ) {
-    var rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
-    if (lesson_pipeline.apiFilesUrlPattern.hasMatch(rawMarkdown)) {
-      final mapping = _apiFilesPathToStudioMediaUrlForSelectedLesson();
-      if (mapping.isNotEmpty) {
-        rawMarkdown = lesson_pipeline.rewriteLessonMarkdownApiFilesUrls(
-          markdown: rawMarkdown,
-          apiFilesPathToStudioMediaUrl: mapping,
-        );
-      }
-    }
-    final lessonMediaUrlMapping =
-        _lessonMediaUrlToStudioMediaUrlForSelectedLesson();
-    if (lessonMediaUrlMapping.isNotEmpty) {
-      rawMarkdown = _rewriteKnownLessonMediaUrlsToStudioMediaUrls(
-        markdown: rawMarkdown,
-        urlToStudioMediaUrl: lessonMediaUrlMapping,
-      );
-    }
-    rawMarkdown = lesson_pipeline.convertHtmlMediaToTokens(rawMarkdown);
-    return lesson_pipeline.normalizeLessonMarkdownForStorage(rawMarkdown);
+    return editor_to_markdown.editorDeltaToCanonicalMarkdown(
+      delta: controller.document.toDelta(),
+      apiFilesPathToStudioMediaUrl:
+          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+      lessonMediaUrlToStudioMediaUrl:
+          _lessonMediaUrlToStudioMediaUrlForSelectedLesson(),
+    );
   }
 
   String _currentLessonPreviewMarkdown() {
     return _serializeLessonMarkdownFromController(_lessonContentController);
+  }
+
+  Set<String> _currentLessonEmbeddedMediaIds() {
+    return lesson_pipeline.extractLessonEmbeddedMediaIds(
+      _currentLessonPreviewMarkdown(),
+    );
+  }
+
+  bool _lessonAlreadyContainsMediaId(String lessonMediaId) {
+    if (lessonMediaId.trim().isEmpty) return false;
+    return _currentLessonEmbeddedMediaIds().contains(lessonMediaId.trim());
   }
 
   Future<void> _launchLessonPreviewUrl(String url) async {
@@ -1978,7 +1951,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       });
     }
     await _awaitBootShellFrame();
-    final prepared = await _prepareLessonMarkdownForEditing(storedMarkdown);
+    final prepared = _prepareLessonMarkdownForEditing(storedMarkdown);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -1992,16 +1965,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       prepared,
     );
 
-    quill.Document document;
-    try {
-      final delta = lesson_pipeline.convertLessonMarkdownToDelta(
-        _markdownToDelta,
-        prepared,
-      );
-      document = quill.Document.fromDelta(delta);
-    } catch (_) {
-      document = quill.Document()..insert(0, prepared);
-    }
+    final document = _documentFromLessonMarkdown(prepared);
 
     if (kDebugMode) {
       _traceLessonString('load.stored_markdown', storedMarkdown);
@@ -2053,9 +2017,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       });
     }
     await _awaitBootShellFrame();
-    final prepared = await _prepareLessonMarkdownForEditing(
-      _lastSavedLessonMarkdown,
-    );
+    final prepared = _prepareLessonMarkdownForEditing(_lastSavedLessonMarkdown);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -2069,16 +2031,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       prepared,
     );
 
-    quill.Document document;
-    try {
-      final delta = lesson_pipeline.convertLessonMarkdownToDelta(
-        _markdownToDelta,
-        prepared,
-      );
-      document = quill.Document.fromDelta(delta);
-    } catch (_) {
-      document = quill.Document()..insert(0, prepared);
-    }
+    final document = _documentFromLessonMarkdown(prepared);
 
     _lessonTitleCtrl.removeListener(_handleLessonTitleChanged);
     _lessonTitleCtrl.text = _lastSavedLessonTitle;
@@ -2356,10 +2309,25 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final toolbarConfig = quill.QuillSimpleToolbarConfig(
       multiRowsDisplay: false,
       showDividers: false,
-      showFontFamily: true,
+      showFontFamily: false,
       showFontSize: false,
+      showBoldButton: true,
+      showItalicButton: true,
+      showUnderLineButton: false,
+      showStrikeThrough: false,
       showColorButton: false,
       showBackgroundColorButton: false,
+      showClearFormat: true,
+      showHeaderStyle: true,
+      showListNumbers: true,
+      showListBullets: true,
+      showListCheck: false,
+      showCodeBlock: false,
+      showQuote: false,
+      showIndent: false,
+      showLink: false,
+      showUndo: true,
+      showRedo: true,
       showSubscript: false,
       showSuperscript: false,
       showSmallButton: false,
@@ -3675,7 +3643,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       String filename,
       String contentType,
     ) async {
-      // Image uploads must return a stable public URL directly usable by Quill.
+      // Image uploads must resolve to a stable lesson media id plus a preview
+      // URL so the editor can persist canonical tokens while still rendering.
       final api = ref.read(apiClientProvider);
       final form = FormData.fromMap({
         'lesson_id': lessonId,
@@ -3767,10 +3736,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             _lessonMedia = [..._lessonMedia, media];
           }
         });
-        _insertImageIntoLesson(
+        final inserted = _insertImageIntoLesson(
           publicUrl: resolved,
+          lessonMediaId: media['id'] as String?,
           targetSelection: selectionBeforePicker,
         );
+        if (!inserted) {
+          setState(
+            () => _mediaStatus = 'Bild finns redan i lektionen: $filename',
+          );
+          return;
+        }
         final postInsertToken = _captureEditorToken();
         unawaited(_refreshLessonMediaSilently());
         final saved = await _saveLessonContent(showSuccessSnack: false);
@@ -3868,19 +3844,39 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }, requestFocus: true);
   }
 
-  void _insertImageIntoLesson({
+  bool _insertImageIntoLesson({
     required String publicUrl,
+    String? lessonMediaId,
     TextSelection? targetSelection,
   }) {
     final normalizedSrc = _asAbsoluteHttpUrl(publicUrl);
-    if (normalizedSrc == null) return;
+    if (normalizedSrc == null) return false;
+    final normalizedMediaId = lessonMediaId?.trim();
+    if (normalizedMediaId == null || normalizedMediaId.isEmpty) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Bild saknar media-ID och kan inte bäddas in.');
+      }
+      return false;
+    }
+    if (_lessonAlreadyContainsMediaId(normalizedMediaId)) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Media finns redan i lektionen.');
+      }
+      return false;
+    }
     _runEditorMutation((controller) {
       replaceSelectionWithBlockEmbed(
         controller: controller,
-        embed: quill.BlockEmbed.image(normalizedSrc),
+        embed: quill.BlockEmbed.image(
+          lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
+            lessonMediaId: normalizedMediaId,
+            src: normalizedSrc,
+          ),
+        ),
         selection: targetSelection ?? controller.selection,
       );
     }, requestFocus: true);
+    return true;
   }
 
   void _insertVideoIntoLesson(
@@ -4001,7 +3997,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }, requestFocus: true);
   }
 
-  void _insertMediaIntoLesson(
+  bool _insertMediaIntoLesson(
     Map<String, dynamic> media, {
     bool showSaveHint = true,
   }) {
@@ -4012,7 +4008,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           'WAV-filer kan inte bäddas in. De spelas upp via lektionens media.',
         );
       }
-      return;
+      return false;
     }
     final kind = (media['kind'] as String?) ?? '';
     final lessonMediaId = (media['id'] as String?)?.trim() ?? '';
@@ -4020,7 +4016,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (mounted && context.mounted) {
         showSnack(context, 'Media saknar ID och kan inte bäddas in.');
       }
-      return;
+      return false;
+    }
+    if (_lessonAlreadyContainsMediaId(lessonMediaId)) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Media finns redan i lektionen.');
+      }
+      return false;
     }
     final resolved = _resolveMediaDisplayUrl(media);
     debugPrint(
@@ -4033,12 +4035,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         if (mounted && context.mounted) {
           showSnack(context, 'Kunde inte resolveda en publik bildlänk.');
         }
-        return;
+        return false;
       }
-      _insertImageIntoLesson(
+      final inserted = _insertImageIntoLesson(
         publicUrl: imageSrc,
+        lessonMediaId: lessonMediaId,
         targetSelection: _lastLessonSelection,
       );
+      if (!inserted) {
+        return false;
+      }
       if (mounted && context.mounted) {
         showSnack(
           context,
@@ -4047,7 +4053,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               : 'Bild infogad i lektionen.',
         );
       }
-      return;
+      return true;
     }
     if (_isDocumentMedia(media)) {
       final documentUrl = resolved;
@@ -4055,7 +4061,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         if (mounted && context.mounted) {
           showSnack(context, 'Kunde inte resolveda en dokumentlänk.');
         }
-        return;
+        return false;
       }
       final fileName = _fileNameFromMedia(media);
       _insertDocumentLinkIntoLesson(
@@ -4071,7 +4077,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               : 'PDF-länk infogad i lektionen.',
         );
       }
-      return;
+      return true;
     }
     if (kind == 'video' ||
         ((media['content_type'] as String?) ?? '').startsWith('video/')) {
@@ -4092,7 +4098,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               : 'Video infogad i lektionen.',
         );
       }
-      return;
+      return true;
     }
     // Audio: inline player embed
     final audioEmbed = lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
@@ -4108,6 +4114,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             : 'Ljud infogat i lektionen.',
       );
     }
+    return true;
   }
 
   String _coverStatusLabel(String state) {
@@ -4502,8 +4509,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         contentType.startsWith('audio/') ||
         contentType.startsWith('image/') ||
         contentType == 'application/pdf') {
-      _insertMediaIntoLesson(uploaded, showSaveHint: false);
-      inserted = true;
+      inserted = _insertMediaIntoLesson(uploaded, showSaveHint: false);
     }
     final postInsertToken = inserted ? _captureEditorToken() : token;
 
@@ -5104,7 +5110,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final controller = _lessonContentController;
 
     final selection = controller.selection;
-    final rawMarkdown = _deltaToMarkdown.convert(controller.document.toDelta());
+    final rawMarkdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+      delta: controller.document.toDelta(),
+      apiFilesPathToStudioMediaUrl:
+          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+      lessonMediaUrlToStudioMediaUrl:
+          _lessonMediaUrlToStudioMediaUrlForSelectedLesson(),
+    );
     if (!rawMarkdown.contains(fromLessonMediaId)) return false;
 
     final rewritten = rawMarkdown.replaceAll(
@@ -5113,16 +5125,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     if (rewritten == rawMarkdown) return false;
 
-    quill.Document document;
-    try {
-      final delta = lesson_pipeline.convertLessonMarkdownToDelta(
-        _markdownToDelta,
-        rewritten,
-      );
-      document = quill.Document.fromDelta(delta);
-    } catch (_) {
-      document = quill.Document()..insert(0, rewritten);
-    }
+    final document = _documentFromLessonMarkdown(rewritten);
 
     setState(() {
       _resetLessonPreviewHydrationValues(bumpRevision: true);
@@ -5801,6 +5804,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         key: ValueKey(
                           'course-${selectedCourseValue ?? 'none'}',
                         ),
+                        isExpanded: true,
                         initialValue: selectedCourseValue,
                         items: courseItems,
                         onChanged: (value) async {

@@ -3,9 +3,10 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
-import 'package:markdown/markdown.dart' as md;
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aveli/editor/adapter/markdown_to_editor.dart'
+    as markdown_to_editor;
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
@@ -61,19 +62,8 @@ Finder _networkImageFinder(String url) {
 }
 
 quill.QuillController _buildController(String markdown) {
-  final markdownDocument = md.Document(
-    encodeHtml: false,
-    extensionSet: md.ExtensionSet.gitHubWeb,
-  );
-  final converter = lesson_pipeline.createLessonMarkdownToDelta(
-    markdownDocument,
-  );
-  final delta = lesson_pipeline.convertLessonMarkdownToDelta(
-    converter,
-    markdown,
-  );
   return quill.QuillController(
-    document: quill.Document.fromDelta(delta),
+    document: markdown_to_editor.markdownToEditorDocument(markdown: markdown),
     selection: const TextSelection.collapsed(offset: 0),
   );
 }
