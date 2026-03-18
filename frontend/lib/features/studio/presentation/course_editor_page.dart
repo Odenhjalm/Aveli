@@ -24,6 +24,7 @@ import 'package:aveli/editor/adapter/editor_to_markdown.dart'
     as editor_to_markdown;
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
+import 'package:aveli/editor/session/editor_session.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -417,9 +418,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonEditorTestIdSyncAttempts = 0;
   bool _lessonEditorTestIdSyncScheduled = false;
 
-  late quill.QuillController _lessonContentController;
-  late final FocusNode _lessonContentFocusNode;
-  late final ScrollController _lessonEditorScrollController;
+  late EditorSession _editorSession;
+  late final FocusNode _lessonContentFocusNodeHandle;
+  late final ScrollController _lessonEditorScrollControllerHandle;
   final ScrollController _panelScrollController = ScrollController();
   final TextEditingController _lessonTitleCtrl = TextEditingController();
   static const Duration _lessonPreviewHydrationTimeout = Duration(seconds: 5);
@@ -439,8 +440,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
   String _lastSavedLessonMarkdown = '';
-  String? _editorSessionId;
-  int _editorRevision = 0;
   String? _lastObservedDocumentFingerprint;
   TextSelection? _lastLessonSelection;
   bool _lessonContentControllerInitialized = false;
@@ -489,6 +488,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String _qKind = 'single';
   List<Map<String, dynamic>> _questions = <Map<String, dynamic>>[];
 
+  quill.QuillController get _lessonContentController =>
+      _editorSession.controller;
+
+  FocusNode get _lessonContentFocusNode => _editorSession.focusNode;
+
+  ScrollController get _lessonEditorScrollController =>
+      _editorSession.scrollController;
+
   void _showFriendlyErrorSnack(
     String prefix,
     Object error, [
@@ -512,6 +519,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (courseId != null && courseId != _selectedCourseId) return true;
     if (lessonId != null && lessonId != _selectedLessonId) return true;
     return false;
+  }
+
+  void _setSelectedLessonId(String? lessonId) {
+    _selectedLessonId = lessonId;
+    if (_lessonContentControllerInitialized) {
+      _editorSession.lessonId = lessonId;
+    }
   }
 
   void _ensureLessonEditorWebTestIdSupport() {
@@ -610,21 +624,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   _EditorRevisionToken? _captureEditorToken() {
-    final sessionId = _editorSessionId;
-    final lessonId = _selectedLessonId;
-    if (sessionId == null || lessonId == null) return null;
+    final lessonId = _editorSession.lessonId;
+    if (lessonId == null) return null;
     return _EditorRevisionToken(
-      sessionId: sessionId,
+      sessionId: _editorSession.sessionId,
       lessonId: lessonId,
-      revision: _editorRevision,
+      revision: _editorSession.revision,
     );
   }
 
   bool _isEditorTokenValid(_EditorRevisionToken? token) {
     if (token == null) return false;
-    return token.sessionId == _editorSessionId &&
-        token.lessonId == _selectedLessonId &&
-        token.revision == _editorRevision;
+    return token.sessionId == _editorSession.sessionId &&
+        token.lessonId == _editorSession.lessonId &&
+        token.revision == _editorSession.revision;
   }
 
   int _clampEditorOffset(int offset, [quill.QuillController? controller]) {
@@ -645,7 +658,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final fingerprint = _documentFingerprint();
       if (fingerprint != _lastObservedDocumentFingerprint) {
         _lastObservedDocumentFingerprint = fingerprint;
-        _editorRevision += 1;
+        _editorSession.revision += 1;
       }
       final selection = _lessonContentController.selection;
       if (selection.start >= 0 && selection.end >= 0) {
@@ -1057,7 +1070,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonsNeedingRefresh.clear();
     if (clearLists) {
       _lessons = <Map<String, dynamic>>[];
-      _selectedLessonId = null;
+      _setSelectedLessonId(null);
       _lessonIntro = false;
       _lessonMedia = <Map<String, dynamic>>[];
       _lessonMediaLessonId = null;
@@ -1095,8 +1108,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void initState() {
     super.initState();
     _ensureLessonEditorWebTestIdSupport();
-    _lessonContentFocusNode = FocusNode();
-    _lessonEditorScrollController = ScrollController();
+    _lessonContentFocusNodeHandle = FocusNode();
+    _lessonEditorScrollControllerHandle = ScrollController();
     _studioRepo = widget.studioRepository ?? ref.read(studioRepositoryProvider);
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
     _coursePriceCtrl.addListener(_onCoursePriceChanged);
@@ -1125,8 +1138,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _detachControllerListener();
       _lessonContentController.dispose();
     }
-    _lessonContentFocusNode.dispose();
-    _lessonEditorScrollController.dispose();
+    _lessonContentFocusNodeHandle.dispose();
+    _lessonEditorScrollControllerHandle.dispose();
     _panelScrollController.dispose();
     _lessonTitleCtrl.dispose();
     _coverPollTimer?.cancel();
@@ -1254,7 +1267,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (mounted) {
         setState(() {
           _lessons = <Map<String, dynamic>>[];
-          _selectedLessonId = null;
+          _setSelectedLessonId(null);
           _lessonIntro = false;
           _lessonMedia = <Map<String, dynamic>>[];
           _lessonMediaLessonId = null;
@@ -1301,7 +1314,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final selectedChanged = selected != _lessonMediaLessonId;
       setState(() {
         _lessons = lessons;
-        _selectedLessonId = selected;
+        _setSelectedLessonId(selected);
         _lessonIntro = intro;
         _lessonsLoadError = null;
         _mediaLoadError = null;
@@ -1553,7 +1566,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!canSwitch || !mounted) return;
     final needsRefresh = _lessonsNeedingRefresh.remove(lessonId);
     setState(() {
-      _selectedLessonId = lessonId;
+      _setSelectedLessonId(lessonId);
       final match = _lessonById(lessonId);
       _lessonIntro = match?['is_intro'] == true;
       _lessonMedia = <Map<String, dynamic>>[];
@@ -1761,11 +1774,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       document: document,
       selection: const TextSelection.collapsed(offset: 0),
     );
-    _lessonContentController = controller;
+    _editorSession = EditorSession(
+      sessionId: _uuid.v4(),
+      lessonId: _selectedLessonId,
+      revision: 0,
+      controller: controller,
+      focusNode: _lessonContentFocusNodeHandle,
+      scrollController: _lessonEditorScrollControllerHandle,
+    );
     _lessonContentControllerInitialized = true;
     _lessonContentControllerGeneration += 1;
-    _editorSessionId = _uuid.v4();
-    _editorRevision = 0;
     _lastObservedDocumentFingerprint = _documentFingerprint(controller);
     _attachControllerListener();
     _syncLessonEditorTestBridge();
@@ -3157,7 +3175,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) return;
       setState(() {
         _lessons = _sortByPosition(_mergeById(_lessons, [lesson]));
-        _selectedLessonId = safeString(lesson, 'id');
+        _setSelectedLessonId(safeString(lesson, 'id'));
         _lessonIntro = safeBool(lesson, 'is_intro') ?? false;
         _lessonMedia = <Map<String, dynamic>>[];
         _lessonMediaLessonId = null;
@@ -3208,7 +3226,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) return;
       setState(() {
         if (_selectedLessonId == id) {
-          _selectedLessonId = null;
+          _setSelectedLessonId(null);
           _lessonIntro = false;
         }
       });
