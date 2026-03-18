@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
@@ -318,7 +319,7 @@ class _BundleLink {
   final String bundleId;
 }
 
-class LessonPageRenderer extends ConsumerWidget {
+class LessonPageRenderer extends ConsumerStatefulWidget {
   const LessonPageRenderer({
     super.key,
     required this.markdown,
@@ -332,26 +333,58 @@ class LessonPageRenderer extends ConsumerWidget {
   final String emptyText;
   final ValueChanged<String>? onLaunchUrl;
 
-  String _normalizeMarkdown() {
-    if (markdown.trim().isEmpty) {
-      return emptyText;
-    }
-    return markdown;
+  @override
+  ConsumerState<LessonPageRenderer> createState() => _LessonPageRendererState();
+}
+
+class _LessonPageRendererState extends ConsumerState<LessonPageRenderer> {
+  late Future<String> _preparedMarkdownFuture;
+  late String _normalizedMarkdown;
+  late String _lessonMediaSignature;
+
+  @override
+  void initState() {
+    super.initState();
+    _normalizedMarkdown = _normalizeMarkdown(widget.markdown, widget.emptyText);
+    _lessonMediaSignature = _buildLessonMediaSignature(widget.lessonMedia);
+    _preparedMarkdownFuture = _createPreparedMarkdownFuture();
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mediaRepo = ref.watch(mediaRepositoryProvider);
-    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
-    final normalizedMarkdown = _normalizeMarkdown();
+  void didUpdateWidget(covariant LessonPageRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextMarkdown = _normalizeMarkdown(widget.markdown, widget.emptyText);
+    final nextSignature = _buildLessonMediaSignature(widget.lessonMedia);
+    if (_normalizedMarkdown == nextMarkdown &&
+        _lessonMediaSignature == nextSignature) {
+      return;
+    }
+    _normalizedMarkdown = nextMarkdown;
+    _lessonMediaSignature = nextSignature;
+    _preparedMarkdownFuture = _createPreparedMarkdownFuture();
+  }
 
+  Future<String> _createPreparedMarkdownFuture() {
+    final mediaRepo = ref.read(mediaRepositoryProvider);
+    final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
+    return prepareLessonMarkdownForRendering(
+      mediaRepo,
+      _normalizedMarkdown,
+      lessonMedia: widget.lessonMedia,
+      pipelineRepository: pipelineRepo,
+    );
+  }
+
+  void _retryPreparedMarkdown() {
+    setState(() {
+      _preparedMarkdownFuture = _createPreparedMarkdownFuture();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return FutureBuilder<String>(
-      future: prepareLessonMarkdownForRendering(
-        mediaRepo,
-        normalizedMarkdown,
-        lessonMedia: lessonMedia,
-        pipelineRepository: pipelineRepo,
-      ),
+      future: _preparedMarkdownFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
@@ -361,18 +394,77 @@ class LessonPageRenderer extends ConsumerWidget {
         }
 
         if (snapshot.hasError) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Kunde inte rendera lektionsinnehållet.'),
-          );
+          return _LessonRendererErrorState(onRetry: _retryPreparedMarkdown);
         }
 
-        final prepared = (snapshot.data ?? normalizedMarkdown).trim();
+        final prepared = (snapshot.data ?? _normalizedMarkdown).trim();
         return _LessonQuillContent(
-          markdown: prepared.isEmpty ? emptyText : prepared,
-          onLaunchUrl: onLaunchUrl ?? (url) => unawaited(launchUrlString(url)),
+          markdown: prepared.isEmpty ? widget.emptyText : prepared,
+          onLaunchUrl:
+              widget.onLaunchUrl ?? (url) => unawaited(launchUrlString(url)),
         );
       },
+    );
+  }
+}
+
+String _normalizeMarkdown(String markdown, String emptyText) {
+  if (markdown.trim().isEmpty) {
+    return emptyText;
+  }
+  return markdown;
+}
+
+String _buildLessonMediaSignature(Iterable<LessonMediaItem> items) {
+  final buffer = StringBuffer();
+  for (final item in items) {
+    buffer
+      ..write(item.id)
+      ..write('|')
+      ..write(item.kind)
+      ..write('|')
+      ..write(item.preferredUrlValue ?? '')
+      ..write('|')
+      ..write(item.playbackUrl ?? '')
+      ..write('|')
+      ..write(item.downloadUrl ?? '')
+      ..write('|')
+      ..write(item.signedUrl ?? '')
+      ..write('|')
+      ..write(item.mediaState ?? '')
+      ..write(';');
+  }
+  return buffer.toString();
+}
+
+class _LessonRendererErrorState extends StatelessWidget {
+  const _LessonRendererErrorState({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Kunde inte rendera lektionsinnehållet.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Försök igen'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -512,37 +604,6 @@ class _LessonGlassMediaWrapper extends StatelessWidget {
   }
 }
 
-class _MissingMediaFallback extends StatelessWidget {
-  const _MissingMediaFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.report_gmailerrorred_outlined,
-            size: 18,
-            color: theme.colorScheme.error,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Media saknas eller stöds inte längre',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _LegacyLessonVideoFallback extends StatelessWidget {
   const _LegacyLessonVideoFallback();
 
@@ -574,6 +635,249 @@ class _LegacyLessonVideoFallback extends StatelessWidget {
   }
 }
 
+typedef _LessonResolvedMediaBuilder =
+    Widget Function(BuildContext context, String resolvedUrl);
+
+typedef _LessonResolvedMediaPlaceholderBuilder =
+    Widget Function(
+      BuildContext context, {
+      required bool isLoading,
+      required VoidCallback onRetry,
+    });
+
+class _LessonResolvedMedia extends ConsumerStatefulWidget {
+  const _LessonResolvedMedia({
+    required this.initialUrl,
+    required this.lessonMediaId,
+    required this.builder,
+    required this.placeholderBuilder,
+  });
+
+  final String initialUrl;
+  final String? lessonMediaId;
+  final _LessonResolvedMediaBuilder builder;
+  final _LessonResolvedMediaPlaceholderBuilder placeholderBuilder;
+
+  @override
+  ConsumerState<_LessonResolvedMedia> createState() =>
+      _LessonResolvedMediaState();
+}
+
+class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
+  late Future<String?> _resolvedUrlFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolvedUrlFuture = _createResolvedUrlFuture();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LessonResolvedMedia oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldUrl = oldWidget.initialUrl.trim();
+    final nextUrl = widget.initialUrl.trim();
+    final oldMediaId = oldWidget.lessonMediaId?.trim() ?? '';
+    final nextMediaId = widget.lessonMediaId?.trim() ?? '';
+    if (oldUrl == nextUrl && oldMediaId == nextMediaId) {
+      return;
+    }
+    _resolvedUrlFuture = _createResolvedUrlFuture();
+  }
+
+  Future<String?> _createResolvedUrlFuture() {
+    final resolvedInitial = _normalizeResolvedLessonMediaUrl(widget.initialUrl);
+    if (resolvedInitial != null) {
+      return SynchronousFuture<String?>(resolvedInitial);
+    }
+
+    final lessonMediaId = widget.lessonMediaId?.trim() ?? '';
+    if (lessonMediaId.isEmpty) {
+      return SynchronousFuture<String?>(null);
+    }
+
+    final isAuthenticated = ref.read(authControllerProvider).isAuthenticated;
+    if (!isAuthenticated) {
+      return SynchronousFuture<String?>(null);
+    }
+
+    final mediaRepo = ref.read(mediaRepositoryProvider);
+    final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
+    return resolveLessonMediaSignedPlaybackUrl(
+      lessonMediaId: lessonMediaId,
+      mediaRepository: mediaRepo,
+      pipelineRepository: pipelineRepo,
+    );
+  }
+
+  void _retry() {
+    setState(() {
+      _resolvedUrlFuture = _createResolvedUrlFuture();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: _resolvedUrlFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return widget.placeholderBuilder(
+            context,
+            isLoading: true,
+            onRetry: _retry,
+          );
+        }
+
+        final resolvedUrl = _normalizeResolvedLessonMediaUrl(snapshot.data);
+        if (resolvedUrl == null) {
+          return widget.placeholderBuilder(
+            context,
+            isLoading: false,
+            onRetry: _retry,
+          );
+        }
+
+        return widget.builder(context, resolvedUrl);
+      },
+    );
+  }
+}
+
+String? _normalizeResolvedLessonMediaUrl(String? rawValue) {
+  final trimmed = rawValue?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) return null;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') return null;
+  if (uri.host.isEmpty) return null;
+  if (_isAuthProtectedLessonMediaPath(uri.path)) return null;
+  return uri.toString();
+}
+
+bool _isAuthProtectedLessonMediaPath(String path) {
+  final normalized = path.trim().toLowerCase();
+  if (normalized.isEmpty) return false;
+  return normalized.startsWith('/studio/media/') ||
+      normalized.startsWith('/api/media/') ||
+      normalized.startsWith('/media/sign');
+}
+
+class _LessonMediaResolvePlaceholder extends StatelessWidget {
+  const _LessonMediaResolvePlaceholder({
+    required this.mediaType,
+    required this.isLoading,
+    required this.onRetry,
+  });
+
+  final String mediaType;
+  final bool isLoading;
+  final VoidCallback onRetry;
+
+  bool get _isVideo => mediaType == 'video';
+  bool get _isImage => mediaType == 'image';
+
+  IconData _iconForType() {
+    switch (mediaType) {
+      case 'image':
+        return Icons.image_outlined;
+      case 'audio':
+        return Icons.audiotrack_outlined;
+      case 'video':
+        return Icons.movie_outlined;
+      default:
+        return Icons.insert_drive_file_outlined;
+    }
+  }
+
+  String _messageText() {
+    if (isLoading) {
+      switch (mediaType) {
+        case 'image':
+          return 'Laddar bild...';
+        case 'audio':
+          return 'Laddar ljud...';
+        case 'video':
+          return 'Laddar video...';
+        default:
+          return 'Laddar media...';
+      }
+    }
+    switch (mediaType) {
+      case 'image':
+        return 'Bilden kunde inte laddas.';
+      case 'audio':
+      case 'video':
+        return 'Media saknas eller stöds inte längre';
+      default:
+        return 'Mediet kunde inte laddas.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final content = Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isLoading)
+            const SizedBox.square(
+              dimension: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.6),
+            )
+          else
+            Icon(_iconForType(), color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(height: 12),
+          Text(
+            _messageText(),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: isLoading
+                  ? theme.colorScheme.onSurface
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (!isLoading) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Försök igen'),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    if (_isImage) {
+      return AspectRatio(
+        aspectRatio: 4 / 3,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: content,
+        ),
+      );
+    }
+
+    if (_isVideo) {
+      return AspectRatio(aspectRatio: 16 / 9, child: content);
+    }
+
+    return SizedBox(
+      height: isLoading ? 96 : 160,
+      child: Center(child: SingleChildScrollView(child: content)),
+    );
+  }
+}
+
 class _LessonImageEmbedBuilder implements quill.EmbedBuilder {
   const _LessonImageEmbedBuilder();
 
@@ -593,96 +897,86 @@ class _LessonImageEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
+    final lessonMediaId = lessonMediaIdFromEmbedValue(value);
     final src =
         lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
     final alt = lessonMediaAltFromEmbedValue(value);
-    return AveliLessonImage(src: src, alt: alt);
+    return _LessonResolvedMedia(
+      initialUrl: src,
+      lessonMediaId: lessonMediaId,
+      builder: (context, resolvedUrl) =>
+          AveliLessonImage(src: resolvedUrl, alt: alt),
+      placeholderBuilder: (context, {required isLoading, required onRetry}) =>
+          _LessonMediaResolvePlaceholder(
+            mediaType: 'image',
+            isLoading: isLoading,
+            onRetry: onRetry,
+          ),
+    );
   }
 }
 
-class _LessonResolvedAudioPlayer extends ConsumerWidget {
-  const _LessonResolvedAudioPlayer({required this.url});
+class _LessonResolvedAudioPlayer extends StatelessWidget {
+  const _LessonResolvedAudioPlayer({
+    required this.url,
+    required this.lessonMediaId,
+  });
 
   final String url;
+  final String? lessonMediaId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.watch(mediaRepositoryProvider);
-    try {
-      final resolved = repo.resolvePlaybackUrl(url);
-      final uri = Uri.tryParse(resolved);
-      if (uri != null && uri.path.startsWith('/studio/media/')) {
-        return const _MissingMediaFallback();
-      }
-
-      final playbackUrl = _normalizeInlinePlaybackUrl(resolved);
-      if (playbackUrl == null) return const _MissingMediaFallback();
-
-      return AveliLessonMediaPlayer(
-        playbackUrl: playbackUrl,
+  Widget build(BuildContext context) {
+    return _LessonResolvedMedia(
+      initialUrl: url,
+      lessonMediaId: lessonMediaId,
+      builder: (context, resolvedUrl) => AveliLessonMediaPlayer(
+        playbackUrl: resolvedUrl,
         title: 'Ljud',
         kind: 'audio',
-      );
-    } catch (_) {
-      return const _MissingMediaFallback();
-    }
+        preferLessonLayout: true,
+      ),
+      placeholderBuilder: (context, {required isLoading, required onRetry}) =>
+          _LessonMediaResolvePlaceholder(
+            mediaType: 'audio',
+            isLoading: isLoading,
+            onRetry: onRetry,
+          ),
+    );
   }
 }
 
-class _LessonResolvedVideoPlayer extends ConsumerWidget {
+class _LessonResolvedVideoPlayer extends StatelessWidget {
   const _LessonResolvedVideoPlayer({required this.url, this.lessonMediaId});
 
   final String url;
   final String? lessonMediaId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.watch(mediaRepositoryProvider);
-    final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
-    final isAuthenticated = ref.watch(authControllerProvider).isAuthenticated;
-    try {
-      final resolved = repo.resolvePlaybackUrl(url);
-      final uri = Uri.tryParse(resolved);
-      if (uri != null && uri.path.startsWith('/studio/media/')) {
-        return const _MissingMediaFallback();
-      }
-      final mediaId = lessonMediaId?.trim();
-      final playbackFuture =
-          !isAuthenticated || mediaId == null || mediaId.isEmpty
-          ? Future<String?>.value(resolved)
-          : resolveLessonMediaSignedPlaybackUrl(
-              lessonMediaId: mediaId,
-              mediaRepository: repo,
-              pipelineRepository: pipelineRepo,
-            );
-      return FutureBuilder<String?>(
-        future: playbackFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: LinearProgressIndicator(),
-            );
-          }
-          final normalizedUrl = _normalizeInlinePlaybackUrl(snapshot.data);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _LessonGlassMediaWrapper(
-              child: normalizedUrl == null
-                  ? const _MissingMediaFallback()
-                  : AveliLessonMediaPlayer(
-                      playbackUrl: normalizedUrl,
-                      title: 'Video',
-                      kind: 'video',
-                    ),
-            ),
-          );
-        },
-      );
-    } catch (_) {
-      return const _MissingMediaFallback();
-    }
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _LessonGlassMediaWrapper(
+        child: _LessonResolvedMedia(
+          initialUrl: url,
+          lessonMediaId: lessonMediaId,
+          builder: (context, resolvedUrl) => AveliLessonMediaPlayer(
+            playbackUrl: resolvedUrl,
+            title: 'Video',
+            kind: 'video',
+            preferLessonLayout: true,
+          ),
+          placeholderBuilder:
+              (context, {required isLoading, required onRetry}) =>
+                  _LessonMediaResolvePlaceholder(
+                    mediaType: 'video',
+                    isLoading: isLoading,
+                    onRetry: onRetry,
+                  ),
+        ),
+      ),
+    );
   }
 }
 
@@ -705,20 +999,17 @@ class _LessonAudioEmbedBuilder implements quill.EmbedBuilder {
   @override
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
+    final lessonMediaId = lessonMediaIdFromEmbedValue(value);
     final url =
         lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: _LessonGlassMediaWrapper(child: _MissingMediaFallback()),
-      );
-    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: _LessonGlassMediaWrapper(
-        child: _LessonResolvedAudioPlayer(url: trimmed),
+        child: _LessonResolvedAudioPlayer(
+          url: url.trim(),
+          lessonMediaId: lessonMediaId,
+        ),
       ),
     );
   }
@@ -753,15 +1044,8 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
     final url =
         lessonMediaUrlFromEmbedValue(value) ??
         (value == null ? '' : value.toString());
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: _LessonGlassMediaWrapper(child: _MissingMediaFallback()),
-      );
-    }
     return _LessonResolvedVideoPlayer(
-      url: trimmed,
+      url: url.trim(),
       lessonMediaId: lessonMediaId,
     );
   }

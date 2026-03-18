@@ -12,11 +12,13 @@ class AveliLessonMediaPlayer extends StatefulWidget {
     required this.playbackUrl,
     required this.title,
     required this.kind,
+    this.preferLessonLayout = false,
   });
 
   final String playbackUrl;
   final String title;
   final String kind;
+  final bool preferLessonLayout;
 
   @override
   State<AveliLessonMediaPlayer> createState() => _AveliLessonMediaPlayerState();
@@ -33,17 +35,30 @@ class _AveliLessonMediaPlayerState extends State<AveliLessonMediaPlayer> {
       return _MediaPlaceholder(
         kind: kind,
         message: 'Media saknas eller stöds inte längre',
+        showRetry: false,
       );
     }
 
     if (kind == 'video') {
-      return _VideoRenderer(playbackUrl: url, title: title);
+      return _VideoRenderer(
+        playbackUrl: url,
+        title: title,
+        preferLessonLayout: widget.preferLessonLayout,
+      );
     }
     if (kind == 'audio') {
-      return _AudioRenderer(playbackUrl: url, title: title);
+      return _AudioRenderer(
+        playbackUrl: url,
+        title: title,
+        preferLessonLayout: widget.preferLessonLayout,
+      );
     }
 
-    return _MediaPlaceholder(kind: kind, message: 'Mediaformat stöds inte');
+    return _MediaPlaceholder(
+      kind: kind,
+      message: 'Mediaformat stöds inte',
+      showRetry: false,
+    );
   }
 }
 
@@ -57,10 +72,15 @@ bool _isValidPlaybackUrl(String url) {
 }
 
 class _VideoRenderer extends StatefulWidget {
-  const _VideoRenderer({required this.playbackUrl, required this.title});
+  const _VideoRenderer({
+    required this.playbackUrl,
+    required this.title,
+    required this.preferLessonLayout,
+  });
 
   final String playbackUrl;
   final String title;
+  final bool preferLessonLayout;
 
   @override
   State<_VideoRenderer> createState() => _VideoRendererState();
@@ -84,7 +104,10 @@ class _VideoRendererState extends State<_VideoRenderer> {
   @override
   void didUpdateWidget(covariant _VideoRenderer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.playbackUrl == widget.playbackUrl) return;
+    if (oldWidget.playbackUrl == widget.playbackUrl &&
+        oldWidget.preferLessonLayout == widget.preferLessonLayout) {
+      return;
+    }
     _disposeController();
     _configureController();
   }
@@ -96,12 +119,16 @@ class _VideoRendererState extends State<_VideoRenderer> {
   }
 
   void _configureController() {
-    _initializing = true;
-    _hasError = false;
+    setState(() {
+      _initializing = true;
+      _hasError = false;
+    });
     final uri = Uri.tryParse(widget.playbackUrl);
     if (uri == null) {
-      _initializing = false;
-      _hasError = true;
+      setState(() {
+        _initializing = false;
+        _hasError = true;
+      });
       return;
     }
 
@@ -125,6 +152,11 @@ class _VideoRendererState extends State<_VideoRenderer> {
             });
           }),
     );
+  }
+
+  void _retry() {
+    _disposeController();
+    _configureController();
   }
 
   void _disposeController() {
@@ -156,15 +188,16 @@ class _VideoRendererState extends State<_VideoRenderer> {
   Widget build(BuildContext context) {
     final controller = _controller;
     if (_hasError) {
-      return const _MediaPlaceholder(
+      return _MediaPlaceholder(
         kind: 'video',
         message: 'Media saknas eller stöds inte längre',
+        onRetry: _retry,
       );
     }
     if (_initializing ||
         controller == null ||
         !controller.value.isInitialized) {
-      return _loading(context, aspectRatio: 16 / 9);
+      return _loading(context, aspectRatio: 16 / 9, label: 'Laddar video...');
     }
 
     final aspectRatio = controller.value.aspectRatio > 0
@@ -246,7 +279,11 @@ class _VideoRendererState extends State<_VideoRenderer> {
     );
   }
 
-  Widget _loading(BuildContext context, {required double aspectRatio}) {
+  Widget _loading(
+    BuildContext context, {
+    required double aspectRatio,
+    required String label,
+  }) {
     return AspectRatio(
       aspectRatio: aspectRatio,
       child: DecoratedBox(
@@ -257,17 +294,31 @@ class _VideoRendererState extends State<_VideoRenderer> {
             color: Theme.of(context).colorScheme.outlineVariant,
           ),
         ),
-        child: const Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 12),
+              Text(label, style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _AudioRenderer extends StatefulWidget {
-  const _AudioRenderer({required this.playbackUrl, required this.title});
+  const _AudioRenderer({
+    required this.playbackUrl,
+    required this.title,
+    required this.preferLessonLayout,
+  });
 
   final String playbackUrl;
   final String title;
+  final bool preferLessonLayout;
 
   @override
   State<_AudioRenderer> createState() => _AudioRendererState();
@@ -300,7 +351,10 @@ class _AudioRendererState extends State<_AudioRenderer> {
   @override
   void didUpdateWidget(covariant _AudioRenderer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.playbackUrl == widget.playbackUrl) return;
+    if (oldWidget.playbackUrl == widget.playbackUrl &&
+        oldWidget.preferLessonLayout == widget.preferLessonLayout) {
+      return;
+    }
     unawaited(_loadSource());
   }
 
@@ -374,16 +428,21 @@ class _AudioRendererState extends State<_AudioRenderer> {
     }
   }
 
+  void _retry() {
+    unawaited(_loadSource());
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_hasError) {
-      return const _MediaPlaceholder(
+      return _MediaPlaceholder(
         kind: 'audio',
         message: 'Media saknas eller stöds inte längre',
+        onRetry: _retry,
       );
     }
     if (_initializing) {
-      return _loading(context);
+      return _loading(context, label: 'Laddar ljud...');
     }
 
     final safeDurationMillis = _duration.inMilliseconds > 0
@@ -448,10 +507,19 @@ class _AudioRendererState extends State<_AudioRenderer> {
     );
   }
 
-  Widget _loading(BuildContext context) {
-    final loadingContent = const SizedBox(
+  Widget _loading(BuildContext context, {required String label}) {
+    final loadingContent = SizedBox(
       height: 84,
-      child: Center(child: CircularProgressIndicator()),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 10),
+            Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        ),
+      ),
     );
     if (_isLessonViewContext(context)) {
       return loadingContent;
@@ -467,15 +535,23 @@ class _AudioRendererState extends State<_AudioRenderer> {
   }
 
   bool _isLessonViewContext(BuildContext context) {
-    return ModalRoute.of(context)?.settings.name == AppRoute.lesson;
+    return widget.preferLessonLayout ||
+        ModalRoute.of(context)?.settings.name == AppRoute.lesson;
   }
 }
 
 class _MediaPlaceholder extends StatelessWidget {
-  const _MediaPlaceholder({required this.kind, required this.message});
+  const _MediaPlaceholder({
+    required this.kind,
+    required this.message,
+    this.onRetry,
+    this.showRetry = true,
+  });
 
   final String kind;
   final String message;
+  final VoidCallback? onRetry;
+  final bool showRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -497,6 +573,14 @@ class _MediaPlaceholder extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          if (showRetry && onRetry != null) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Försök igen'),
+            ),
+          ],
         ],
       ),
     );
