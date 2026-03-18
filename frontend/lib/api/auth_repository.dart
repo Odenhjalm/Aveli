@@ -8,29 +8,6 @@ import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/features/onboarding/domain/onboarding_status.dart';
-
-class AuthRegisterResult {
-  AuthRegisterResult({
-    required this.profile,
-    required this.verificationEmailStatus,
-  });
-
-  final Profile profile;
-  final String? verificationEmailStatus;
-}
-
-class VerifyEmailResult {
-  VerifyEmailResult({
-    required this.status,
-    this.onboarding,
-    this.redirectAfterLogin,
-  });
-
-  final String status;
-  final OnboardingStatus? onboarding;
-  final String? redirectAfterLogin;
-}
 
 class AuthRepository {
   AuthRepository(this._client, this._tokens);
@@ -64,7 +41,7 @@ class AuthRepository {
     }
   }
 
-  Future<AuthRegisterResult> register({
+  Future<Profile> register({
     required String email,
     required String password,
     required String displayName,
@@ -93,11 +70,7 @@ class AuthRepository {
       accessToken: accessToken,
       refreshToken: refreshToken,
     );
-    final profile = await getCurrentProfile();
-    return AuthRegisterResult(
-      profile: profile,
-      verificationEmailStatus: data['verification_email_status'] as String?,
-    );
+    return await getCurrentProfile();
   }
 
   Future<void> requestPasswordReset(String email) async {
@@ -130,21 +103,12 @@ class AuthRepository {
     }
   }
 
-  Future<VerifyEmailResult> verifyEmail(String token) async {
+  Future<void> verifyEmail(String token) async {
     try {
-      final data = await _client.get<Map<String, dynamic>>(
+      await _client.get<Map<String, dynamic>>(
         ApiPaths.authVerifyEmail,
         queryParameters: {'token': token},
-      );
-      final onboardingMap = data['onboarding'];
-      return VerifyEmailResult(
-        status: data['status']?.toString() ?? 'verified',
-        onboarding: onboardingMap is Map<String, dynamic>
-            ? OnboardingStatus.fromJson(onboardingMap)
-            : onboardingMap is Map
-            ? OnboardingStatus.fromJson(onboardingMap.cast<String, dynamic>())
-            : null,
-        redirectAfterLogin: data['redirect_after_login']?.toString(),
+        skipAuth: true,
       );
     } on DioException catch (e) {
       debugPrint('Email verification failed: ${e.response?.data ?? e.message}');
@@ -191,6 +155,10 @@ class AuthRepository {
   Future<Profile> getCurrentProfile() async {
     final data = await _client.get<Map<String, dynamic>>(ApiPaths.authMe);
     return Profile.fromJson(data);
+  }
+
+  Future<void> completeWelcome() async {
+    await _client.post<Map<String, dynamic>>(ApiPaths.meWelcomeComplete);
   }
 
   Future<void> logout() => _tokens.clear();

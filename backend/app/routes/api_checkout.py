@@ -18,11 +18,6 @@ async def create_checkout_handler(
     payload: CheckoutCreateRequest,
     current: CurrentUser,
 ) -> CheckoutCreateResponse:
-    if payload.type is CheckoutType.subscription:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Membership checkout uses /api/billing/create-subscription",
-        )
     if payload.type is CheckoutType.course:
         if not payload.slug:
             raise HTTPException(

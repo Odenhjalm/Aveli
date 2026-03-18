@@ -8,7 +8,6 @@ abstract class RoutePath {
   static const login = '/login';
   static const signup = '/signup';
   static const verifyEmail = '/verify';
-  static const resumeOnboarding = '/resume-onboarding';
   static const forgotPassword = '/forgot-password';
   static const resetPassword = '/reset-password';
   static const invite = '/invite';
@@ -22,7 +21,6 @@ abstract class RoutePath {
   static const directMessage = '/messages/:uid';
   static const profile = '/profile';
   static const createProfile = '/create-profile';
-  static const selectIntroCourse = '/select-intro-course';
   static const welcome = '/welcome';
   static const profileSubscription = '/profile/subscription';
   static const profileSubscriptionPortal = '/profile/subscription/portal';
@@ -32,7 +30,6 @@ abstract class RoutePath {
   static const serviceDetail = '/service/:id';
   static const tarot = '/tarot';
   static const admin = '/admin';
-  static const adminMedia = '/admin/media-control';
   static const adminSettings = '/admin/settings';
   static const studio = '/studio';
   static const teacherHome = '/teacher';

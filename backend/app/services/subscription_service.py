@@ -11,14 +11,15 @@ from ..config import settings
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
 from ..schemas.billing import SessionStatusResponse, SubscriptionCheckoutResponse, SubscriptionInterval
+from ..services.onboarding_state import sync_onboarding_state
 from .. import stripe_mode
 
 logger = logging.getLogger(__name__)
 
-RETURN_PATH = "success?session_id={CHECKOUT_SESSION_ID}"
-CANCEL_PATH = "cancel"
+RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
+CANCEL_PATH = "checkout/cancel"
 RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
-CANCEL_DEEP_LINK = "aveliapp://cancel"
+CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
 
 
 class SubscriptionError(Exception):
@@ -63,7 +64,6 @@ async def create_subscription_checkout(
             locale="sv",
             metadata={"user_id": user_id, "interval": interval.value},
             subscription_data={
-                "trial_period_days": 30,
                 "metadata": {"user_id": user_id, "interval": interval.value},
             },
         )
@@ -120,7 +120,7 @@ async def create_checkout_session(user: Mapping[str, Any], interval: Subscriptio
             mode="subscription",
             customer=customer_id,
             line_items=[{"price": price_config.price_id, "quantity": 1}],
-            subscription_data={"trial_period_days": 30},
+            subscription_data={"trial_period_days": 14},
             success_url=settings.checkout_success_url
             or _build_frontend_url(RETURN_PATH)
             or RETURN_DEEP_LINK,
@@ -319,7 +319,12 @@ async def handle_webhook(payload: bytes, signature: str | None) -> None:
 
 
 async def process_event(event: Mapping[str, Any]) -> None:
-    await memberships_repo.insert_payment_event(event.get("id", ""), event)
+    event_id = str(event.get("id") or "")
+    if event_id:
+        inserted = await memberships_repo.insert_payment_event(event_id, dict(event))
+        if not inserted:
+            logger.info("Skipping duplicate Stripe event %s", event_id)
+            return
 
     event_type = event.get("type", "")
     data_object = event.get("data", {}).get("object", {})
@@ -388,6 +393,7 @@ async def _handle_subscription_event(
         start_date=_to_datetime(payload.get("current_period_start")),
         end_date=_determine_end_date(payload, force_end=force_end),
     )
+    await sync_onboarding_state(user_id)
 
 
 async def _handle_invoice_payment_succeeded(payload: Mapping[str, Any]) -> None:
@@ -430,6 +436,7 @@ async def _handle_invoice_payment_succeeded(payload: Mapping[str, Any]) -> None:
         start_date=period.get("start"),
         end_date=period.get("end"),
     )
+    await sync_onboarding_state(user_id)
 
 
 def _price_missing_message(

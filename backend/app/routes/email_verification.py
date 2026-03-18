@@ -8,13 +8,11 @@ from fastapi import APIRouter, Query, status
 from fastapi.responses import JSONResponse
 
 from .. import repositories, schemas
-from ..auth import OptionalCurrentUser
 from ..services.email_verification import (
     InvalidEmailVerificationTokenError,
     send_verification_email,
     verify_email_token_and_mark_user,
 )
-from ..services import onboarding_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -58,11 +56,8 @@ async def send_verification(payload: schemas.AuthForgotPasswordRequest):
     return {"status": "ok"}
 
 
-@router.get("/verify-email", response_model=schemas.VerifyEmailResponse)
-async def verify_email(
-    token: str = Query(..., min_length=1),
-    current: OptionalCurrentUser = None,
-):
+@router.get("/verify-email")
+async def verify_email(token: str = Query(..., min_length=1)):
     try:
         result = await verify_email_token_and_mark_user(token)
     except InvalidEmailVerificationTokenError:
@@ -71,12 +66,4 @@ async def verify_email(
             content={"error": "invalid_or_expired_token"},
         )
 
-    current_email = str((current or {}).get("email") or "").strip().lower()
-    verified_email = str(result.get("email") or "").strip().lower()
-    if current and current_email and current_email == verified_email:
-        payload = await onboarding_service.get_onboarding_payload(str(current["id"]))
-        return schemas.VerifyEmailResponse(status=result["status"], onboarding=payload)
-    return schemas.VerifyEmailResponse(
-        status=result["status"],
-        redirect_after_login=onboarding_service.RESUME_ONBOARDING_ROUTE,
-    )
+    return {"status": result["status"]}

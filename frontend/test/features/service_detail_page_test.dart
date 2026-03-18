@@ -68,7 +68,6 @@ void main() {
       hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
-      onboarding: null,
     );
 
     await pumpPage(tester, session: session, certs: const []);
@@ -89,7 +88,6 @@ void main() {
       hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
-      onboarding: null,
     );
 
     await pumpPage(tester, session: session, certs: const []);
@@ -116,7 +114,6 @@ void main() {
       hasTentativeSession: false,
       isTeacher: false,
       isAdmin: false,
-      onboarding: null,
     );
     const certs = [
       Certificate(

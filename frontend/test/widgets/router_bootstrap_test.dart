@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,7 +22,76 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/main.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
-import '../helpers/test_assets.dart';
+
+const _transparentPng = <int>[
+  0x89,
+  0x50,
+  0x4E,
+  0x47,
+  0x0D,
+  0x0A,
+  0x1A,
+  0x0A,
+  0x00,
+  0x00,
+  0x00,
+  0x0D,
+  0x49,
+  0x48,
+  0x44,
+  0x52,
+  0x00,
+  0x00,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+  0x00,
+  0x01,
+  0x08,
+  0x06,
+  0x00,
+  0x00,
+  0x00,
+  0x1F,
+  0x15,
+  0xC4,
+  0x89,
+  0x00,
+  0x00,
+  0x00,
+  0x0A,
+  0x49,
+  0x44,
+  0x41,
+  0x54,
+  0x78,
+  0x9C,
+  0x63,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+  0x05,
+  0x00,
+  0x01,
+  0x0D,
+  0x0A,
+  0x2D,
+  0xB4,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x49,
+  0x45,
+  0x4E,
+  0x44,
+  0xAE,
+  0x42,
+  0x60,
+  0x82,
+];
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(AuthState initialState)
@@ -52,28 +123,12 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<AuthRegisterResult> register({
+  Future<Profile> register({
     required String email,
     required String password,
     required String displayName,
-    String? inviteToken,
     String? referralCode,
   }) {
-    throw UnsupportedError('Not implemented in tests');
-  }
-
-  @override
-  Future<void> sendVerificationEmail(String email) {
-    throw UnsupportedError('Not implemented in tests');
-  }
-
-  @override
-  Future<String> validateInvite(String token) {
-    throw UnsupportedError('Not implemented in tests');
-  }
-
-  @override
-  Future<VerifyEmailResult> verifyEmail(String token) {
     throw UnsupportedError('Not implemented in tests');
   }
 
@@ -84,8 +139,8 @@ class _FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> resetPassword({
+    required String email,
     required String newPassword,
-    required String token,
   }) {
     throw UnsupportedError('Not implemented in tests');
   }
@@ -124,16 +179,7 @@ List<Override> _commonOverrides(AuthState authState) {
     ),
     homeFeedProvider.overrideWith((ref) => Future.value(const <Activity>[])),
     homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
-    landing.introCoursesProvider.overrideWith(
-      (ref) => Future.value(const landing.LandingSectionState(items: [])),
-    ),
     landing.popularCoursesProvider.overrideWith(
-      (ref) => Future.value(const landing.LandingSectionState(items: [])),
-    ),
-    landing.teachersProvider.overrideWith(
-      (ref) => Future.value(const landing.LandingSectionState(items: [])),
-    ),
-    landing.recentServicesProvider.overrideWith(
       (ref) => Future.value(const landing.LandingSectionState(items: [])),
     ),
     communityServicesProvider.overrideWith(
@@ -143,20 +189,39 @@ List<Override> _commonOverrides(AuthState authState) {
 }
 
 void main() {
+  final transparentData = ByteData.view(
+    Uint8List.fromList(_transparentPng).buffer,
+  );
+
   setUpAll(() {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    registerTestAssetHandlers();
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    binding.defaultBinaryMessenger.setMockMessageHandler('flutter/assets', (
+      message,
+    ) async {
+      final key = const StringCodec().decodeMessage(message) ?? '';
+      if (key == 'AssetManifest.json') {
+        return ByteData.view(Uint8List.fromList(utf8.encode('{}')).buffer);
+      }
+      if (key == 'AssetManifest.bin') {
+        return const StandardMessageCodec().encodeMessage(<String, dynamic>{});
+      }
+      if (key == 'FontManifest.json') {
+        return ByteData.view(Uint8List.fromList(utf8.encode('[]')).buffer);
+      }
+      if (key == 'NOTICES' || key == 'LICENSES') {
+        return ByteData.view(Uint8List.fromList(utf8.encode('')).buffer);
+      }
+      return transparentData;
+    });
   });
 
   testWidgets('unauthenticated users land on the landing page first', (
     tester,
   ) async {
     await tester.pumpWidget(
-      wrapWithTestAssets(
-        ProviderScope(
-          overrides: _commonOverrides(const AuthState()),
-          child: const AveliApp(),
-        ),
+      ProviderScope(
+        overrides: _commonOverrides(const AuthState()),
+        child: const AveliApp(),
       ),
     );
 
@@ -183,11 +248,9 @@ void main() {
     final authedState = AuthState(profile: profile, isLoading: false);
 
     await tester.pumpWidget(
-      wrapWithTestAssets(
-        ProviderScope(
-          overrides: _commonOverrides(authedState),
-          child: const AveliApp(),
-        ),
+      ProviderScope(
+        overrides: _commonOverrides(authedState),
+        child: const AveliApp(),
       ),
     );
 

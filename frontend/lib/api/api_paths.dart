@@ -19,15 +19,11 @@ class ApiPaths {
   static const billingCustomerPortal = '/api/billing/customer-portal';
   static const billingSessionStatus = '/api/billing/session-status';
   static const billingCancelSubscription = '/api/billing/cancel-subscription';
-  static const onboardingMe = '/api/onboarding/me';
-  static const onboardingIntroCourses = '/api/onboarding/intro-courses';
-  static const onboardingSelectIntroCourse =
-      '/api/onboarding/select-intro-course';
-  static const onboardingComplete = '/api/onboarding/complete';
 
   static const meMembership = '/api/me/membership';
   static const meEntitlements = '/api/me/entitlements';
   static const meClaimPurchase = '/api/me/claim-purchase';
+  static const meWelcomeComplete = '/api/me/onboarding/welcome-complete';
 
   static const orders = '/orders';
   static String order(String orderId) => '/orders/$orderId';

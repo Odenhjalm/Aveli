@@ -3,11 +3,14 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
-import 'package:aveli/core/deeplinks/deep_link_service.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class CheckoutWebViewPage extends ConsumerStatefulWidget {
@@ -22,7 +25,9 @@ class CheckoutWebViewPage extends ConsumerStatefulWidget {
 
 class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
   late final WebViewController _controller;
+  bool _refreshed = false;
   bool _fallbackExternal = false;
+  bool _navigatedAway = false;
 
   @override
   void initState() {
@@ -40,11 +45,11 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
           onNavigationRequest: (request) {
             final url = request.url;
             if (_isSuccessUrl(url)) {
-              ref.read(deepLinkServiceProvider).handleUri(Uri.parse(url));
+              _handleCheckoutResult(success: true);
               return NavigationDecision.prevent;
             }
             if (_isCancelUrl(url)) {
-              ref.read(deepLinkServiceProvider).handleUri(Uri.parse(url));
+              _handleCheckoutResult(success: false);
               return NavigationDecision.prevent;
             }
             return NavigationDecision.navigate;
@@ -85,6 +90,23 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
         normalized.contains('checkout_cancel=true') ||
         normalized.contains('checkout_cancel') ||
         normalized.contains('checkout/cancel');
+  }
+
+  Future<void> _refreshEntitlements() async {
+    if (_refreshed) return;
+    _refreshed = true;
+    await ref.read(authControllerProvider.notifier).loadSession();
+    await ref.read(entitlementsNotifierProvider.notifier).refresh();
+  }
+
+  void _handleCheckoutResult({required bool success}) {
+    if (_navigatedAway) return;
+    _navigatedAway = true;
+    Future.microtask(() async {
+      await _refreshEntitlements();
+      if (!mounted || !context.mounted) return;
+      context.go(success ? RoutePath.checkoutSuccess : RoutePath.checkoutCancel);
+    });
   }
 
   void _ensureWebViewPlatform() {
@@ -130,8 +152,9 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
 
     return PopScope(
       onPopInvokedWithResult: (didPop, _) async {
+        await _refreshEntitlements();
         if (!context.mounted) return;
-        if (!didPop) {
+        if (!didPop && !_navigatedAway) {
           Navigator.of(context).pop();
         }
       },

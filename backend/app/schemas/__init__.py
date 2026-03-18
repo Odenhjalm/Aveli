@@ -19,12 +19,6 @@ from .memberships import (
     MembershipRecord as MembershipRecord,
     MembershipResponse as MembershipResponse,
 )
-from .onboarding import (
-    IntroCourseSelectionRequest as IntroCourseSelectionRequest,
-    OnboardingPayload as OnboardingPayload,
-    OnboardingState as OnboardingState,
-    VerifyEmailResponse as VerifyEmailResponse,
-)
 from .referrals import (
     ReferralCodeCreateRequest as ReferralCodeCreateRequest,
     ReferralCodeCreateResponse as ReferralCodeCreateResponse,
@@ -37,16 +31,12 @@ __all__ = [
     "CheckoutType",
     "MembershipRecord",
     "MembershipResponse",
-    "IntroCourseSelectionRequest",
-    "OnboardingPayload",
-    "OnboardingState",
     "ReferralCodeCreateRequest",
     "ReferralCodeCreateResponse",
     "ReferralCodeRecord",
     "SubscriptionCheckoutResponse",
     "SubscriptionInterval",
     "SubscriptionSessionRequest",
-    "VerifyEmailResponse",
 ]
 
 CourseJourneyStep = Literal["intro", "step1", "step2", "step3"]
@@ -56,7 +46,6 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     refresh_token: str
-    verification_email_status: str | None = None
 
 
 class TokenPayload(BaseModel):
@@ -96,6 +85,9 @@ class Profile(BaseModel):
     bio: str | None = None
     photo_url: str | None = None
     avatar_media_id: UUID | None = None
+    onboarding_state: str | None = None
+    email_verified: bool = False
+    membership_active: bool = False
     role_v2: str
     is_admin: bool
     created_at: datetime
@@ -587,12 +579,9 @@ class HomeAudioItem(BaseModel):
     id: UUID
     lesson_id: UUID
     lesson_title: str
-    title: Optional[str] = None
     course_id: UUID
     course_title: str
     course_slug: Optional[str] = None
-    teacher_id: Optional[UUID] = None
-    teacher_name: Optional[str] = None
     kind: str
     storage_path: Optional[str] = None
     storage_bucket: Optional[str] = None
@@ -611,10 +600,6 @@ class HomeAudioItem(BaseModel):
     media_state: Optional[str] = None
     streaming_format: Optional[str] = None
     codec: Optional[str] = None
-    runtime_media_id: Optional[UUID] = None
-    is_playable: Optional[bool] = None
-    playback_state: Optional[str] = None
-    failure_reason: Optional[str] = None
 
 
 class HomeAudioFeedResponse(BaseModel):
@@ -1078,23 +1063,6 @@ class LessonMediaUploadCompleteRequest(BaseModel):
     is_intro: bool | None = None
 
 
-class MediaPreviewBatchRequest(BaseModel):
-    ids: list[UUID]
-
-
-class MediaPreviewItem(BaseModel):
-    media_type: str
-    thumbnail_url: str | None = None
-    poster_frame: str | None = None
-    duration_seconds: int | None = None
-    file_name: str | None = None
-    preview_blocked: bool = False
-
-
-class MediaPreviewBatchResponse(BaseModel):
-    items: dict[str, MediaPreviewItem]
-
-
 class QuizSubmission(BaseModel):
     answers: dict
 
@@ -1274,6 +1242,10 @@ class PurchaseClaimRequest(BaseModel):
 
 class PurchaseClaimResponse(BaseModel):
     ok: bool
+
+
+class OnboardingStateResponse(BaseModel):
+    onboarding_state: str
 
 
 class EntitlementsMembership(BaseModel):

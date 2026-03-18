@@ -7,11 +7,7 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_claims.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/core/routing/route_access.dart';
-import 'package:aveli/core/routing/route_access_resolver.dart';
 import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/features/onboarding/data/onboarding_repository.dart';
-import 'package:aveli/features/onboarding/domain/onboarding_status.dart';
 import 'package:aveli/gate.dart';
 
 @immutable
@@ -19,36 +15,26 @@ class AuthState {
   const AuthState({
     this.profile,
     this.claims,
-    this.onboarding,
     this.isLoading = false,
     this.error,
-    this.verificationEmailStatus,
   });
 
   final Profile? profile;
   final AuthClaims? claims;
-  final OnboardingStatus? onboarding;
   final bool isLoading;
   final String? error;
-  final String? verificationEmailStatus;
 
   AuthState copyWith({
     Profile? profile,
     AuthClaims? claims,
-    OnboardingStatus? onboarding,
     bool? isLoading,
     String? error,
-    String? verificationEmailStatus,
     bool clearClaims = false,
-    bool clearOnboarding = false,
   }) => AuthState(
     profile: profile ?? this.profile,
     claims: clearClaims ? null : (claims ?? this.claims),
-    onboarding: clearOnboarding ? null : (onboarding ?? this.onboarding),
     isLoading: isLoading ?? this.isLoading,
     error: error,
-    verificationEmailStatus:
-        verificationEmailStatus ?? this.verificationEmailStatus,
   );
 
   /// Verified auth: JWT claims alone are *not* sufficient.
@@ -56,14 +42,12 @@ class AuthState {
 }
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this._repo, this._authObserver, [this._onboardingRepo])
-    : super(const AuthState()) {
+  AuthController(this._repo, this._authObserver) : super(const AuthState()) {
     _authSub = _authObserver.events.listen(_handleAuthEvent);
   }
 
   final AuthRepository _repo;
   final AuthHttpObserver _authObserver;
-  final OnboardingRepository? _onboardingRepo;
   late final StreamSubscription<AuthHttpEvent> _authSub;
 
   Future<void> loadSession({bool hydrateProfile = true}) async {
@@ -89,24 +73,19 @@ class AuthController extends StateNotifier<AuthState> {
       return;
     }
 
-    await _hydrateProfileAndOnboarding();
+    await _hydrateProfile();
   }
 
   Future<void> hydrateProfile() async {
     if (state.profile != null || state.isLoading) return;
-    await _hydrateProfileAndOnboarding();
+    await _hydrateProfile();
   }
 
-  Future<void> _hydrateProfileAndOnboarding() async {
+  Future<void> _hydrateProfile() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final profile = await _repo.getCurrentProfile();
-      final onboarding = await _fetchOnboarding();
-      state = state.copyWith(
-        profile: profile,
-        onboarding: onboarding,
-        isLoading: false,
-      );
+      state = state.copyWith(profile: profile, isLoading: false);
       gate.allow();
     } catch (err, stackTrace) {
       await _repo.logout();
@@ -115,7 +94,6 @@ class AuthController extends StateNotifier<AuthState> {
       state = AuthState(
         profile: null,
         claims: null,
-        onboarding: null,
         isLoading: false,
         error: failure.message,
       );
@@ -128,20 +106,13 @@ class AuthController extends StateNotifier<AuthState> {
       final profile = await _repo.login(email: email, password: password);
       final token = await _repo.currentToken();
       final claims = token != null ? AuthClaims.fromToken(token) : null;
-      final onboarding = await _fetchOnboarding();
-      state = AuthState(
-        profile: profile,
-        claims: claims,
-        onboarding: onboarding,
-        isLoading: false,
-      );
+      state = AuthState(profile: profile, claims: claims, isLoading: false);
       gate.allow();
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = AuthState(
         profile: null,
         claims: null,
-        onboarding: null,
         isLoading: false,
         error: failure.message,
       );
@@ -159,7 +130,7 @@ class AuthController extends StateNotifier<AuthState> {
   }) async {
     state = state.copyWith(isLoading: true, error: null, clearClaims: true);
     try {
-      final result = await _repo.register(
+      final profile = await _repo.register(
         email: email,
         password: password,
         displayName: displayName?.trim().isNotEmpty == true
@@ -170,21 +141,13 @@ class AuthController extends StateNotifier<AuthState> {
       );
       final token = await _repo.currentToken();
       final claims = token != null ? AuthClaims.fromToken(token) : null;
-      final onboarding = await _fetchOnboarding();
-      state = AuthState(
-        profile: result.profile,
-        claims: claims,
-        onboarding: onboarding,
-        isLoading: false,
-        verificationEmailStatus: result.verificationEmailStatus,
-      );
+      state = AuthState(profile: profile, claims: claims, isLoading: false);
       gate.allow();
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = AuthState(
         profile: null,
         claims: null,
-        onboarding: null,
         isLoading: false,
         error: failure.message,
       );
@@ -193,28 +156,22 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> refreshOnboarding() async {
-    if (state.profile == null || _onboardingRepo == null) return;
-    try {
-      final onboarding = await _fetchOnboarding();
-      state = state.copyWith(onboarding: onboarding, error: null);
-    } catch (_) {
-      // Keep the last known onboarding snapshot when refresh fails.
-    }
-  }
-
-  Future<OnboardingStatus?> _fetchOnboarding() async {
-    final onboardingRepo = _onboardingRepo;
-    if (onboardingRepo == null) {
-      return null;
-    }
-    return onboardingRepo.getMe();
-  }
-
   Future<void> logout() async {
     await _repo.logout();
     gate.reset();
     state = const AuthState();
+  }
+
+  Future<void> completeWelcome() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _repo.completeWelcome();
+      await loadSession();
+    } catch (err, stackTrace) {
+      final failure = AppFailure.from(err, stackTrace);
+      state = state.copyWith(isLoading: false, error: failure.message);
+      throw failure;
+    }
   }
 
   void _handleAuthEvent(AuthHttpEvent event) {
@@ -242,33 +199,9 @@ class AuthController extends StateNotifier<AuthState> {
 final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
   (ref) {
     final repo = ref.watch(authRepositoryProvider);
-    final onboardingRepo = ref.watch(onboardingRepositoryProvider);
     final observer = ref.watch(authHttpObserverProvider);
-    final controller = AuthController(repo, observer, onboardingRepo);
-    final shouldHydrateProfile = !kIsWeb
-        ? true
-        : resolveRouteAccessLevel(_initialBootstrapPath()) !=
-              RouteAccessLevel.public;
-    controller.loadSession(hydrateProfile: shouldHydrateProfile);
+    final controller = AuthController(repo, observer);
+    controller.loadSession();
     return controller;
   },
 );
-
-String _initialBootstrapPath() {
-  if (!kIsWeb) return Uri.base.path;
-  final uri = Uri.base;
-  final fragment = uri.fragment;
-  if (fragment.startsWith('/') && !_looksLikeOAuthFragment(fragment)) {
-    final cleaned = fragment.split('?').first;
-    return cleaned.isEmpty ? '/' : cleaned;
-  }
-  return uri.path;
-}
-
-bool _looksLikeOAuthFragment(String fragment) {
-  final lower = fragment.toLowerCase();
-  return lower.contains('access_token') ||
-      lower.contains('refresh_token') ||
-      lower.contains('token_type') ||
-      lower.contains('code=');
-}

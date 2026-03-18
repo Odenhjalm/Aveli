@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/customer_portal_api.dart';
+import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 
@@ -70,11 +71,9 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
       final api = ref.read(customerPortalApiProvider);
       final url = await api.createPortalUrl();
       if (!mounted) return;
-      final uri = Uri(
-        path: RoutePath.profileSubscriptionPortal,
-        queryParameters: {'url': url},
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => SubscriptionWebViewPage(url: url)),
       );
-      await context.push(uri.toString());
     } catch (e) {
       if (!mounted) return;
       final detail = _formatError(e);
@@ -174,7 +173,7 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '30 dagars trial',
+                    '14 dagars provperiod',
                     style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),

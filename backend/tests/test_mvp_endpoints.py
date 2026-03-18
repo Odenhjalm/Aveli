@@ -65,11 +65,9 @@ async def test_checkout_session_sets_custom_ui_mode(async_client, monkeypatch):
     monkeypatch.setattr("stripe.Customer.create", lambda **_: {"id": "cus_123"})
 
     session_resp = await async_client.post(
-        "/api/billing/create-subscription",
+        "/api/checkout/create",
         headers=headers,
-        json={"interval": "month"},
+        json={"type": "subscription", "interval": "month"},
     )
     assert session_resp.status_code == 201, session_resp.text
-    assert session_resp.json()["checkout_url"] == "https://stripe.test/cs_test"
     assert captured_kwargs.get("ui_mode") is None
-    assert captured_kwargs.get("subscription_data", {}).get("trial_period_days") == 30
