@@ -170,6 +170,9 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<void> completeWelcome() async {}
+
+  @override
   Future<void> logout() async {}
 
   @override
