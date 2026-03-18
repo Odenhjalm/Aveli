@@ -67,13 +67,16 @@ export interface ServiceEnvironment {
 
 export function loadServiceEnvironment(argv: string[], serviceName: string): ServiceEnvironment {
   const supabaseUrl = process.env.SUPABASE_URL?.trim() ?? "";
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+    || process.env.SUPABASE_SECRET_API_KEY?.trim()
+    || "";
 
   if (!supabaseUrl) {
     throw new Error("SUPABASE_URL is required");
   }
   if (!serviceRoleKey) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_API_KEY is required");
   }
 
   const outputDir = path.resolve(
@@ -120,7 +123,7 @@ export function printUsage(serviceName: string): void {
       "",
       "Environment:",
       "  SUPABASE_URL",
-      "  SUPABASE_SERVICE_ROLE_KEY",
+      "  SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_API_KEY",
       "  MEDIA_REMEDIATION_DRY_RUN=true|false",
       "  MEDIA_REMEDIATION_ACTIVE_ONLY=true|false  (legacy compatibility flag; inventory scope now covers all real lesson media rows)",
       `Fix strategies: ${FIX_STRATEGIES.join(", ")}`,

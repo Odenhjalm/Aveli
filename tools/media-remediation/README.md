@@ -64,6 +64,7 @@ Standalone phase entrypoints:
 - `node ./dist/src/post-repair-verifier.js`
 - `node ./dist/src/safety-report.js`
 - `node ./dist/src/backfill-media-asset-pilot.js --batch-size 5`
+- `node ./dist/src/storage-recovery-pilot.js --report-path <path-to-02-storage-recovery-report.json>`
 
 Constrain standalone repair execution to one strategy:
 
@@ -75,6 +76,15 @@ Run the controlled live BACKFILL_MEDIA_ASSET pilot:
 
 ```bash
 node ./dist/src/backfill-media-asset-pilot.js --apply --batch-size 5 --output-dir ../../reports/media-remediation-controlled-batch
+```
+
+Run the controlled live SAFE_AUTO_RECOVER recovery batch:
+
+```bash
+node ./dist/src/storage-recovery-pilot.js \
+  --apply \
+  --report-path ../../reports/media-remediation-forensics-dry-run/<timestamp>-pipeline/02-storage-recovery-report.json \
+  --output-dir ../../reports/media-remediation-storage-recovery-live
 ```
 
 Safety behavior:
