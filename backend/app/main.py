@@ -27,6 +27,7 @@ except (
 from .config import settings
 from .db import pool
 from .logging_utils import setup_logging
+from .media_control_plane.routes import media_admin_router
 from .middleware.request_context import RequestContextMiddleware
 from .services import livekit_events, media_transcode_worker, membership_expiry_warnings
 from .routes import (
@@ -164,6 +165,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(api_media.router)
     app.include_router(api_media.debug_router)
     app.include_router(admin.router)
+    app.include_router(media_admin_router.router)
     app.include_router(api_checkout.router)
     app.include_router(billing.router)
     app.include_router(connect.router)

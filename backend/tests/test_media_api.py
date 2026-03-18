@@ -7,6 +7,13 @@ from fastapi import HTTPException
 
 from app import db, models
 from app.config import settings
+from app.media_control_plane.services.media_resolver_service import (
+    LessonMediaPlaybackMode,
+    LessonMediaResolution,
+    LessonMediaResolutionReason,
+)
+from app.repositories import create_home_player_upload
+from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
 from app.services import lesson_playback_service
 from app.services import storage_service as storage_module
@@ -78,6 +85,70 @@ async def create_lesson(async_client, headers):
     assert lesson_resp.status_code == 200, lesson_resp.text
     lesson_id = str(lesson_resp.json()["id"])
     return course_id, lesson_id
+
+
+async def _publish_course(async_client, headers, course_id: str) -> None:
+    resp = await async_client.patch(
+        f"/studio/courses/{course_id}",
+        headers=headers,
+        json={"is_published": True},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def _runtime_media_id_for_home_upload(upload_id: str) -> str:
+    async with db.get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id
+            FROM app.runtime_media
+            WHERE home_player_upload_id = %s
+            LIMIT 1
+            """,
+            (upload_id,),
+        )
+        row = await cur.fetchone()
+    assert row
+    return str(row["id"])
+
+
+async def _runtime_media_id_for_lesson_media(lesson_media_id: str) -> str:
+    async with db.get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id
+            FROM app.runtime_media
+            WHERE lesson_media_id = %s
+            LIMIT 1
+            """,
+            (lesson_media_id,),
+        )
+        row = await cur.fetchone()
+    assert row
+    return str(row["id"])
+
+
+class _FakePlaybackStorageClient:
+    def __init__(self, url: str):
+        self._url = url
+
+    async def get_presigned_url(
+        self,
+        path,
+        ttl,
+        filename=None,
+        *,
+        download=False,
+    ):
+        assert path
+        assert ttl > 0
+        assert filename
+        assert download is False
+        return storage_module.PresignedUrl(
+            url=self._url,
+            expires_in=300,
+            headers={},
+        )
 
 
 async def _create_media_asset(
@@ -495,6 +566,374 @@ async def test_playback_url_authorized(async_client, monkeypatch):
         await cleanup_user(user_id)
 
 
+async def test_runtime_playback_success(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        runtime_media_id = str(uuid.uuid4())
+
+        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+            assert runtime_media_id
+            assert user_id
+            return {
+                "runtime_media_id": runtime_media_id,
+                "playback_url": "https://stream.local/media/derived/audio/demo.mp3",
+                "kind": "audio",
+                "content_type": "audio/mpeg",
+                "duration_seconds": 123,
+            }
+
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "resolve_runtime_media_playback",
+            fake_resolve_runtime_media_playback,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/playback",
+            headers=headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["runtime_media_id"] == runtime_media_id
+        assert body["playback_url"].startswith("https://stream.local/")
+        assert body["kind"] == "audio"
+        assert body["content_type"] == "audio/mpeg"
+        assert body["duration_seconds"] == 123
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_runtime_playback_returns_not_ready(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        runtime_media_id = str(uuid.uuid4())
+
+        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+            raise HTTPException(
+                status_code=409,
+                detail="Media is not ready",
+            )
+
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "resolve_runtime_media_playback",
+            fake_resolve_runtime_media_playback,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/playback",
+            headers=headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["detail"] == "Media is not ready"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_runtime_playback_denies_access(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        runtime_media_id = str(uuid.uuid4())
+
+        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied",
+            )
+
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "resolve_runtime_media_playback",
+            fake_resolve_runtime_media_playback,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/playback",
+            headers=headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"] == "Access denied"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_runtime_playback_returns_not_found(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        runtime_media_id = str(uuid.uuid4())
+
+        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+            raise HTTPException(
+                status_code=404,
+                detail="Media not found",
+            )
+
+        monkeypatch.setattr(
+            lesson_playback_service,
+            "resolve_runtime_media_playback",
+            fake_resolve_runtime_media_playback,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/playback",
+            headers=headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["detail"] == "Media not found"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    other_headers = None
+    other_user_id = None
+    try:
+        media_object = await models.create_media_object(
+            owner_id=user_id,
+            storage_path=f"home-player/{user_id}/{uuid.uuid4().hex}.mp3",
+            storage_bucket="course-media",
+            content_type="audio/mpeg",
+            byte_size=1024,
+            checksum=None,
+            original_name="home-object.mp3",
+        )
+        assert media_object
+        upload = await create_home_player_upload(
+            teacher_id=user_id,
+            media_id=str(media_object["id"]),
+            media_asset_id=None,
+            title="Legacy Home Upload",
+            kind="audio",
+            active=True,
+        )
+        assert upload
+        runtime_media_id = await _runtime_media_id_for_home_upload(str(upload["id"]))
+
+        async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+            assert storage_bucket == "course-media"
+            assert storage_path.endswith(".mp3")
+            return True
+
+        async def fake_resolve_storage_playback_url(**_kwargs):
+            return "https://stream.local/home-object.mp3"
+
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "_storage_object_exists",
+            fake_storage_exists,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.media_resolver,
+            "resolve_storage_playback_url",
+            fake_resolve_storage_playback_url,
+            raising=True,
+        )
+
+        teacher_resp = await async_client.post(
+            "/api/media/playback",
+            headers=headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert teacher_resp.status_code == 200, teacher_resp.text
+        assert teacher_resp.json()["runtime_media_id"] == runtime_media_id
+        assert teacher_resp.json()["playback_url"] == "https://stream.local/home-object.mp3"
+
+        other_headers, other_user_id, _ = await register_user(async_client)
+        denied_resp = await async_client.post(
+            "/api/media/playback",
+            headers=other_headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert denied_resp.status_code == 403, denied_resp.text
+        assert denied_resp.json()["detail"] == "Access denied"
+
+        course_id, _ = await create_lesson(async_client, headers)
+        await _publish_course(async_client, headers, course_id)
+        await courses_repo.ensure_course_enrollment(other_user_id, course_id)
+
+        allowed_resp = await async_client.post(
+            "/api/media/playback",
+            headers=other_headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert allowed_resp.status_code == 200, allowed_resp.text
+        assert allowed_resp.json()["runtime_media_id"] == runtime_media_id
+        assert allowed_resp.json()["playback_url"] == "https://stream.local/home-object.mp3"
+    finally:
+        if other_user_id is not None:
+            await cleanup_user(other_user_id)
+        await cleanup_user(user_id)
+
+
+async def test_runtime_playback_home_direct_upload_asset_backed(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=None,
+            lesson_id=None,
+            media_type="audio",
+            purpose="home_player_audio",
+            ingest_format="wav",
+            original_object_path=f"media/source/audio/home/{uuid.uuid4().hex}.wav",
+            original_content_type="audio/wav",
+            original_filename="home.wav",
+            original_size_bytes=2048,
+            storage_bucket="course-media",
+            state="processing",
+        )
+        assert asset
+        await media_assets_repo.mark_media_asset_ready(
+            media_id=str(asset["id"]),
+            streaming_object_path=f"media/derived/audio/home/{uuid.uuid4().hex}.mp3",
+            streaming_format="mp3",
+            duration_seconds=91,
+            codec="mp3",
+            streaming_storage_bucket="course-media",
+        )
+        upload = await create_home_player_upload(
+            teacher_id=user_id,
+            media_id=None,
+            media_asset_id=str(asset["id"]),
+            title="Asset Home Upload",
+            kind="audio",
+            active=True,
+        )
+        assert upload
+        runtime_media_id = await _runtime_media_id_for_home_upload(str(upload["id"]))
+
+        async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+            assert storage_bucket == "course-media"
+            assert storage_path.endswith(".mp3")
+            return True
+
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "_storage_object_exists",
+            fake_storage_exists,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.storage_service,
+            "get_storage_service",
+            lambda _bucket: _FakePlaybackStorageClient(
+                "https://stream.local/home-asset.mp3"
+            ),
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/playback",
+            headers=headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["runtime_media_id"] == runtime_media_id
+        assert body["playback_url"] == "https://stream.local/home-asset.mp3"
+        assert body["kind"] == "audio"
+        assert body["content_type"] == "audio/mpeg"
+        assert body["duration_seconds"] == 91
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_runtime_playback_home_course_linked_lesson_media(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    student_headers = None
+    student_user_id = None
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+        await _publish_course(async_client, headers, course_id)
+        asset = await _create_media_asset(
+            user_id=user_id,
+            course_id=course_id,
+            lesson_id=lesson_id,
+            state="ready",
+            source_path=f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/home.wav",
+            streaming_path=f"media/derived/audio/courses/{course_id}/lessons/{lesson_id}/home.mp3",
+        )
+        lesson_media = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="audio",
+            storage_path=None,
+            storage_bucket="course-media",
+            media_id=None,
+            media_asset_id=str(asset["id"]),
+            position=1,
+            duration_seconds=None,
+        )
+        assert lesson_media
+        lesson_media_id = str(lesson_media["id"])
+        runtime_media_id = await _runtime_media_id_for_lesson_media(lesson_media_id)
+
+        create_link_resp = await async_client.post(
+            "/studio/home-player/course-links",
+            headers=headers,
+            json={
+                "lesson_media_id": lesson_media_id,
+                "title": "Course-linked track",
+                "enabled": True,
+            },
+        )
+        assert create_link_resp.status_code == 201, create_link_resp.text
+
+        async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+            assert storage_bucket == "course-media"
+            assert storage_path.endswith(".mp3")
+            return True
+
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "_storage_object_exists",
+            fake_storage_exists,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.storage_service,
+            "get_storage_service",
+            lambda _bucket: _FakePlaybackStorageClient(
+                "https://stream.local/course-link.mp3"
+            ),
+            raising=True,
+        )
+
+        student_headers, student_user_id, _ = await register_user(async_client)
+        denied_resp = await async_client.post(
+            "/api/media/playback",
+            headers=student_headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert denied_resp.status_code == 403, denied_resp.text
+
+        await courses_repo.ensure_course_enrollment(student_user_id, course_id)
+        allowed_resp = await async_client.post(
+            "/api/media/playback",
+            headers=student_headers,
+            json={"runtime_media_id": runtime_media_id},
+        )
+        assert allowed_resp.status_code == 200, allowed_resp.text
+        assert allowed_resp.json()["runtime_media_id"] == runtime_media_id
+        assert allowed_resp.json()["playback_url"] == "https://stream.local/course-link.mp3"
+    finally:
+        if student_user_id is not None:
+            await cleanup_user(student_user_id)
+        await cleanup_user(user_id)
+
+
 async def test_lesson_playback_pipeline_row(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
@@ -619,6 +1058,17 @@ async def test_lesson_playback_derived_audio_adds_cache_version(
             fake_get_presigned_url,
             raising=True,
         )
+        async def fake_storage_exists(*, storage_bucket: str, storage_path: str):
+            assert storage_bucket == "course-media"
+            assert storage_path == derived_path
+            return True
+
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "_storage_object_exists",
+            fake_storage_exists,
+            raising=True,
+        )
 
         resp = await async_client.post(
             "/api/media/lesson-playback",
@@ -670,25 +1120,49 @@ async def test_lesson_playback_pipeline_preserves_teacher_bypass(
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
+        runtime_media_id = str(uuid.uuid4())
         media_asset_id = str(uuid.uuid4())
+        resolution = LessonMediaResolution(
+            lesson_media_id=lesson_media_id,
+            lesson_id=str(uuid.uuid4()),
+            media_asset_id=media_asset_id,
+            legacy_media_object_id=None,
+            kind="audio",
+            content_type="audio/mpeg",
+            media_state="ready",
+            duration_seconds=120,
+            storage_bucket="course-media",
+            storage_path="media/derived/audio/demo.mp3",
+            is_playable=True,
+            playback_mode=LessonMediaPlaybackMode.PIPELINE_ASSET,
+            failure_reason=LessonMediaResolutionReason.OK_READY_ASSET,
+            asset_purpose="lesson_audio",
+            runtime_media_id=runtime_media_id,
+            reference_type="lesson_media",
+            auth_scope="lesson_course",
+            teacher_id=user_id,
+            course_id=str(uuid.uuid4()),
+            active=True,
+            fallback_policy="never",
+        )
 
-        async def fake_get_media(media_id: str):
-            assert media_id == lesson_media_id
-            return {
-                "id": lesson_media_id,
-                "media_asset_id": media_asset_id,
-                "storage_path": None,
-            }
+        async def fake_lookup_runtime_media_id_for_lesson_media(candidate_lesson_media_id: str):
+            assert candidate_lesson_media_id == lesson_media_id
+            return runtime_media_id
+
+        async def fake_resolve_runtime_media(candidate_runtime_media_id: str):
+            assert candidate_runtime_media_id == runtime_media_id
+            return resolution
 
         async def fake_get_media_asset_access(media_id: str):
             assert media_id == media_asset_id
             return {
                 "id": media_asset_id,
-                "lesson_id": str(uuid.uuid4()),
+                "lesson_id": resolution.lesson_id,
                 "media_type": "audio",
                 "state": "ready",
                 "purpose": "lesson_audio",
-                "course_id": str(uuid.uuid4()),
+                "course_id": resolution.course_id,
                 "is_published": False,
                 "is_intro": False,
                 "is_free_intro": False,
@@ -724,7 +1198,18 @@ async def test_lesson_playback_pipeline_preserves_teacher_bypass(
                     headers={},
                 )
 
-        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "lookup_runtime_media_id_for_lesson_media",
+            fake_lookup_runtime_media_id_for_lesson_media,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "resolve_runtime_media",
+            fake_resolve_runtime_media,
+            raising=True,
+        )
         monkeypatch.setattr(
             lesson_playback_service.media_assets_repo,
             "get_media_asset_access",
@@ -765,15 +1250,37 @@ async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeyp
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
+        runtime_media_id = str(uuid.uuid4())
+        resolution = LessonMediaResolution(
+            lesson_media_id=lesson_media_id,
+            lesson_id=str(uuid.uuid4()),
+            media_asset_id=None,
+            legacy_media_object_id="legacy-object-1",
+            kind="audio",
+            content_type="audio/mpeg",
+            media_state="ready",
+            duration_seconds=None,
+            storage_bucket="course-media",
+            storage_path="courses/demo/lessons/demo/legacy.mp3",
+            is_playable=True,
+            playback_mode=LessonMediaPlaybackMode.LEGACY_STORAGE,
+            failure_reason=LessonMediaResolutionReason.OK_LEGACY_OBJECT,
+            runtime_media_id=runtime_media_id,
+            reference_type="lesson_media",
+            auth_scope="lesson_course",
+            teacher_id=user_id,
+            course_id=str(uuid.uuid4()),
+            active=True,
+            fallback_policy="legacy_only",
+        )
 
-        async def fake_get_media(media_id: str):
-            assert media_id == lesson_media_id
-            return {
-                "id": lesson_media_id,
-                "media_asset_id": None,
-                "storage_path": "courses/demo/lessons/demo/legacy.mp3",
-                "storage_bucket": "course-media",
-            }
+        async def fake_lookup_runtime_media_id_for_lesson_media(candidate_lesson_media_id: str):
+            assert candidate_lesson_media_id == lesson_media_id
+            return runtime_media_id
+
+        async def fake_resolve_runtime_media(candidate_runtime_media_id: str):
+            assert candidate_runtime_media_id == runtime_media_id
+            return resolution
 
         async def fake_get_lesson_media_access_by_path(
             *, storage_path: str, storage_bucket: str
@@ -795,7 +1302,18 @@ async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeyp
                 "course_access_snapshot must not be called for intro media"
             )
 
-        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "lookup_runtime_media_id_for_lesson_media",
+            fake_lookup_runtime_media_id_for_lesson_media,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "resolve_runtime_media",
+            fake_resolve_runtime_media,
+            raising=True,
+        )
         monkeypatch.setattr(
             lesson_playback_service.courses_repo,
             "get_lesson_media_access_by_path",
@@ -847,15 +1365,37 @@ async def test_lesson_playback_legacy_non_intro_requires_snapshot(
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
+        runtime_media_id = str(uuid.uuid4())
+        resolution = LessonMediaResolution(
+            lesson_media_id=lesson_media_id,
+            lesson_id=str(uuid.uuid4()),
+            media_asset_id=None,
+            legacy_media_object_id="legacy-object-1",
+            kind="audio",
+            content_type="audio/mpeg",
+            media_state="ready",
+            duration_seconds=None,
+            storage_bucket="course-media",
+            storage_path="courses/demo/lessons/demo/legacy.mp3",
+            is_playable=True,
+            playback_mode=LessonMediaPlaybackMode.LEGACY_STORAGE,
+            failure_reason=LessonMediaResolutionReason.OK_LEGACY_OBJECT,
+            runtime_media_id=runtime_media_id,
+            reference_type="lesson_media",
+            auth_scope="lesson_course",
+            teacher_id=user_id,
+            course_id=str(uuid.uuid4()),
+            active=True,
+            fallback_policy="legacy_only",
+        )
 
-        async def fake_get_media(media_id: str):
-            assert media_id == lesson_media_id
-            return {
-                "id": lesson_media_id,
-                "media_asset_id": None,
-                "storage_path": "courses/demo/lessons/demo/legacy.mp3",
-                "storage_bucket": "course-media",
-            }
+        async def fake_lookup_runtime_media_id_for_lesson_media(candidate_lesson_media_id: str):
+            assert candidate_lesson_media_id == lesson_media_id
+            return runtime_media_id
+
+        async def fake_resolve_runtime_media(candidate_runtime_media_id: str):
+            assert candidate_runtime_media_id == runtime_media_id
+            return resolution
 
         async def fake_get_lesson_media_access_by_path(
             *, storage_path: str, storage_bucket: str
@@ -875,7 +1415,18 @@ async def test_lesson_playback_legacy_non_intro_requires_snapshot(
         async def fake_snapshot(*_args, **_kwargs):
             return {"can_access": False}
 
-        monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "lookup_runtime_media_id_for_lesson_media",
+            fake_lookup_runtime_media_id_for_lesson_media,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.canonical_media_resolver,
+            "resolve_runtime_media",
+            fake_resolve_runtime_media,
+            raising=True,
+        )
         monkeypatch.setattr(
             lesson_playback_service.courses_repo,
             "get_lesson_media_access_by_path",

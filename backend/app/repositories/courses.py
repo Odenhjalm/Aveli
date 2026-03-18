@@ -1147,6 +1147,26 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             return await cur.fetchall()
 
 
+async def list_lesson_media_by_ids(
+    lesson_media_ids: Sequence[str],
+) -> Sequence[dict[str, Any]]:
+    ids = [lesson_media_id for lesson_media_id in lesson_media_ids if lesson_media_id]
+    if not ids:
+        return []
+
+    query = """
+        SELECT
+          lm.id,
+          lm.lesson_id
+        FROM app.lesson_media lm
+        WHERE lm.id = ANY(%s::uuid[])
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (ids,))
+            return await cur.fetchall()
+
+
 async def get_lesson_media_access_by_path(
     *,
     storage_path: str,
@@ -1239,7 +1259,6 @@ async def list_home_audio_media(
             OR c.is_free_intro = true
             OR e.user_id IS NOT NULL
           )
-          AND (lm.media_asset_id IS NULL OR ma.state = 'ready')
     """
     params.append(user_id)  # owner check
 
@@ -1268,25 +1287,17 @@ async def list_home_audio_media(
         SELECT *
         FROM (
           SELECT
-            lm.id,
+            rm.id,
             lm.lesson_id,
+            rm.id AS runtime_media_id,
+            coalesce(linked.home_title, l.title, '') AS title,
             coalesce(linked.home_title, l.title, '') AS lesson_title,
             c.id AS course_id,
             c.title AS course_title,
             c.slug AS course_slug,
-            lm.kind,
-            CASE
-              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
-                coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
-              ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
-            END AS storage_path,
-            CASE
-              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
-                coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
-              ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
-            END AS storage_bucket,
-            lm.media_id,
-            lm.media_asset_id,
+            c.created_by AS teacher_id,
+            coalesce(prof.display_name, prof.email, '') AS teacher_name,
+            rm.kind AS kind,
             coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
             linked.created_at AS created_at,
             coalesce(
@@ -1303,9 +1314,11 @@ async def list_home_audio_media(
             c.is_free_intro,
             ma.state AS media_state,
             ma.streaming_format,
-            ma.codec
+            ma.codec,
+            'course_link'::text AS source_type
           FROM linked
           JOIN app.lesson_media lm ON lm.id = linked.lesson_media_id
+          JOIN app.runtime_media rm ON rm.lesson_media_id = lm.id
           JOIN app.lessons l ON l.id = lm.lesson_id
           JOIN app.courses c ON c.id = l.course_id
           JOIN app.profiles prof ON prof.user_id = c.created_by
@@ -1321,25 +1334,17 @@ async def list_home_audio_media(
           UNION ALL
 
           SELECT
-            coalesce(ma.id, mo.id) AS id,
-            coalesce(ma.id, mo.id) AS lesson_id,
+            rm.id AS id,
+            rm.id AS lesson_id,
+            rm.id AS runtime_media_id,
+            hpu.title AS title,
             hpu.title AS lesson_title,
-            coalesce(ma.id, mo.id) AS course_id,
+            rm.id AS course_id,
             ''::text AS course_title,
             NULL::text AS course_slug,
-            hpu.kind AS kind,
-            CASE
-              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
-                coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path)
-              ELSE mo.storage_path
-            END AS storage_path,
-            CASE
-              WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
-                coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket)
-              ELSE mo.storage_bucket
-            END AS storage_bucket,
-            mo.id AS media_id,
-            ma.id AS media_asset_id,
+            hpu.teacher_id AS teacher_id,
+            coalesce(prof.display_name, prof.email, '') AS teacher_name,
+            rm.kind AS kind,
             ma.duration_seconds AS duration_seconds,
             hpu.created_at AS created_at,
             coalesce(
@@ -1356,8 +1361,10 @@ async def list_home_audio_media(
             NULL::boolean AS is_free_intro,
             ma.state AS media_state,
             ma.streaming_format AS streaming_format,
-            ma.codec AS codec
+            ma.codec AS codec,
+            'direct_upload'::text AS source_type
           FROM app.home_player_uploads hpu
+          JOIN app.runtime_media rm ON rm.home_player_upload_id = hpu.id
           LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
           LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
           JOIN app.profiles prof ON prof.user_id = hpu.teacher_id
@@ -1833,6 +1840,7 @@ __all__ = [
     "delete_module",
     "list_lessons",
     "list_lesson_media",
+    "list_lesson_media_by_ids",
     "get_lesson_media_access_by_path",
     "list_home_audio_media",
     "list_course_lessons",

@@ -17,7 +17,13 @@ from ..repositories import (
     get_latest_subscription,
     get_membership,
     get_profile,
+    runtime_media as runtime_media_repo,
     storage_objects,
+)
+from ..media_control_plane.services.media_resolver_service import (
+    RuntimeMediaPlaybackMode,
+    RuntimeMediaResolution,
+    media_resolver_service as canonical_media_resolver,
 )
 from . import media_cleanup
 from . import media_resolver
@@ -90,6 +96,60 @@ def _apply_audio_content_type_fallback(item: dict[str, Any]) -> None:
     )
     if resolved is not None:
         item["content_type"] = resolved
+
+
+def _home_playback_state(resolution: RuntimeMediaResolution) -> str:
+    if resolution.is_playable:
+        if (
+            resolution.playback_mode == RuntimeMediaPlaybackMode.LEGACY_STORAGE
+            and resolution.requires_legacy_fallback
+        ):
+            return "legacy_fallback"
+        return "ready"
+    if not resolution.active:
+        return "inactive"
+    if resolution.failure_reason.value == "asset_not_ready":
+        return str(resolution.media_state or "processing")
+    if resolution.failure_reason.value == "lesson_media_not_found":
+        return "missing"
+    if resolution.failure_reason.value in {
+        "missing_storage_identity",
+        "missing_storage_object",
+        "legacy_object_not_found",
+        "missing_asset_link",
+        "unsupported_media_contract",
+    }:
+        return "failed"
+    return "unavailable"
+
+
+async def _attach_home_playback_metadata(item: dict[str, Any]) -> None:
+    runtime_media_id = str(item["id"])
+    resolution = await canonical_media_resolver.resolve_runtime_media(runtime_media_id)
+    item["runtime_media_id"] = resolution.runtime_media_id or runtime_media_id
+    item["title"] = str(item.get("title") or item.get("lesson_title") or "").strip()
+    item["lesson_title"] = item["title"]
+    if resolution.kind:
+        item["kind"] = resolution.kind
+    if resolution.content_type:
+        item["content_type"] = resolution.content_type
+    if resolution.duration_seconds is not None:
+        item["duration_seconds"] = resolution.duration_seconds
+    item["is_playable"] = resolution.is_playable
+    item["playback_state"] = _home_playback_state(resolution)
+    item["failure_reason"] = resolution.failure_reason.value
+    item["media_state"] = resolution.media_state or item.get("playback_state")
+
+    for field in (
+        "storage_path",
+        "storage_bucket",
+        "media_id",
+        "media_asset_id",
+        "download_url",
+        "signed_url",
+        "signed_url_expires_at",
+    ):
+        item.pop(field, None)
 
 
 _KNOWN_BUCKET_PREFIXES: set[str] = {
@@ -614,19 +674,17 @@ async def list_home_audio_media(
     *,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
+    await runtime_media_repo.sync_home_player_upload_runtime_media()
     rows = await courses_repo.list_home_audio_media(
         user_id,
         include_all_courses=False,
         limit=limit,
     )
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        item = _materialize_mapping(row)
-        if not item.get("media_asset_id") and not item.get("storage_bucket"):
-            item["storage_bucket"] = "lesson-media"
+    items = [_materialize_mapping(row) for row in rows]
+    if items:
+        await asyncio.gather(*(_attach_home_playback_metadata(item) for item in items))
+    for item in items:
         _apply_audio_content_type_fallback(item)
-        media_signer.attach_media_links(item, purpose="student_render")
-        items.append(item)
     return items
 
 

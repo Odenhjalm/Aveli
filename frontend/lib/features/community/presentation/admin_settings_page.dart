@@ -137,6 +137,11 @@ class _AdminSettingsPageState extends ConsumerState<AdminSettingsPage> {
           title: 'Admininställningar',
           actions: [
             IconButton(
+              tooltip: 'Visa Media Control Plane',
+              icon: const Icon(Icons.perm_media_outlined),
+              onPressed: () => context.goNamed(AppRoute.adminMedia),
+            ),
+            IconButton(
               tooltip: 'Visa adminöversikt',
               icon: const Icon(Icons.task_alt_outlined),
               onPressed: () => context.goNamed(AppRoute.admin),

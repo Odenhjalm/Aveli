@@ -163,6 +163,31 @@ class StudioRepository {
         .toList(growable: false);
   }
 
+  Future<Map<String, Map<String, dynamic>>> fetchLessonMediaPreviews(
+    List<String> lessonMediaIds,
+  ) async {
+    final normalizedIds = lessonMediaIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (normalizedIds.isEmpty) {
+      return const <String, Map<String, dynamic>>{};
+    }
+
+    final res = await _client.post<Map<String, dynamic>>(
+      '/api/media/previews',
+      body: {'ids': normalizedIds},
+    );
+    final rawItems = res['items'] is Map ? res['items'] as Map : res;
+    final items = <String, Map<String, dynamic>>{};
+    rawItems.forEach((key, value) {
+      if (value is! Map) return;
+      items[key.toString()] = Map<String, dynamic>.from(value);
+    });
+    return items;
+  }
+
   Future<Map<String, dynamic>> uploadLessonMedia({
     required String courseId,
     required String lessonId,

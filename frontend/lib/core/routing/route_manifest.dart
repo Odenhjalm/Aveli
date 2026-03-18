@@ -226,6 +226,11 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.admin,
   ),
   RouteManifestEntry(
+    name: AppRoute.adminMedia,
+    path: RoutePath.adminMedia,
+    access: RouteAccessLevel.admin,
+  ),
+  RouteManifestEntry(
     name: AppRoute.adminSettings,
     path: RoutePath.adminSettings,
     access: RouteAccessLevel.admin,

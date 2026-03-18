@@ -302,4 +302,60 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('lesson renders branded PDF download card without raw URL', (
+    tester,
+  ) async {
+    final repo = _FakeMediaPipelineRepository(
+      Future.value('https://cdn.test/audio.mp3'),
+    );
+    final data = LessonDetailData(
+      lesson: const LessonDetail(
+        id: 'lesson-pdf',
+        title: 'PDF lesson',
+        contentMarkdown: 'Intro\n',
+        isIntro: false,
+        moduleId: null,
+        position: 1,
+      ),
+      media: const [
+        LessonMediaItem(
+          id: 'media-pdf',
+          kind: 'pdf',
+          storagePath: 'lesson-1/docs/guide.pdf',
+          preferredUrlValue: 'https://cdn.test/guide.pdf?download=1',
+          contentType: 'application/pdf',
+          originalName: 'guide.pdf',
+          position: 1,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: '',
+              stripeMerchantDisplayName: 'Test',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          lessonDetailProvider.overrideWith((ref, lessonId) async => data),
+          mediaPipelineRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: LessonPage(lessonId: 'lesson-pdf')),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('guide.pdf'), findsOneWidget);
+    expect(find.text('Ladda ner PDF'), findsOneWidget);
+    expect(find.textContaining('https://cdn.test/guide.pdf'), findsNothing);
+    expect(find.byIcon(Icons.download_rounded), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

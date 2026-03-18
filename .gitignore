@@ -138,3 +138,25 @@ supabase/.temp/
 supabase/.branches/
 applied
 Aveli.code-workspace
+
+# Mcp
+mcp.json
+config.json
+codex/config.toml
+playwright.config.ts
+
+# Indexing
+.repo_index
+
+# Node / Playwright
+node_modules/
+playwright-report/
+test-results/
+.playwright/
+playwright/.cache/
+
+# Playwright browser binaries
+ms-playwright/
+/playwright/auth.setup.ts
+
+playwright/.auth

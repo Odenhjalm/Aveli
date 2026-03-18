@@ -30,6 +30,7 @@ abstract class RoutePath {
   static const serviceDetail = '/service/:id';
   static const tarot = '/tarot';
   static const admin = '/admin';
+  static const adminMedia = '/admin/media-control';
   static const adminSettings = '/admin/settings';
   static const studio = '/studio';
   static const teacherHome = '/teacher';

@@ -127,8 +127,24 @@ class _FakeAuthRepository implements AuthRepository {
     required String email,
     required String password,
     required String displayName,
+    String? inviteToken,
     String? referralCode,
   }) {
+    throw UnsupportedError('Not implemented in tests');
+  }
+
+  @override
+  Future<void> sendVerificationEmail(String email) {
+    throw UnsupportedError('Not implemented in tests');
+  }
+
+  @override
+  Future<String> validateInvite(String token) {
+    throw UnsupportedError('Not implemented in tests');
+  }
+
+  @override
+  Future<void> verifyEmail(String token) {
     throw UnsupportedError('Not implemented in tests');
   }
 
@@ -139,8 +155,8 @@ class _FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> resetPassword({
-    required String email,
     required String newPassword,
+    required String token,
   }) {
     throw UnsupportedError('Not implemented in tests');
   }

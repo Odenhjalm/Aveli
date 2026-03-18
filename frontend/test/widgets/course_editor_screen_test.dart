@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -5,14 +6,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:flutter_quill/flutter_quill.dart'
-    show FlutterQuillLocalizations;
+import 'package:flutter_quill/flutter_quill.dart' as quill;
 
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
+import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/env/app_config.dart';
@@ -20,7 +21,6 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
-import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
@@ -115,6 +115,181 @@ Finder _networkImageFinder(String url) {
         (widget.image as NetworkImage).url == url,
     description: 'Image.network($url)',
   );
+}
+
+Finder _filledButtonWithLabel(String label) {
+  return find.ancestor(
+    of: find.text(label),
+    matching: find.byType(FilledButton),
+  );
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  int maxPumps = 20,
+  Duration step = const Duration(milliseconds: 1),
+}) async {
+  for (var i = 0; i < maxPumps; i += 1) {
+    await tester.pump(step);
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+  }
+  expect(finder, findsWidgets);
+}
+
+Future<void> _pumpCourseEditorScreen(
+  WidgetTester tester, {
+  required StudioRepository studioRepo,
+  required CoursesRepository coursesRepo,
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        appConfigProvider.overrideWithValue(
+          const AppConfig(
+            apiBaseUrl: 'http://localhost:8080',
+            stripePublishableKey: 'pk_test_stub',
+            stripeMerchantDisplayName: 'Test Merchant',
+            subscriptionsEnabled: false,
+          ),
+        ),
+        backendAssetResolverProvider.overrideWith(
+          (ref) => TestBackendAssetResolver(),
+        ),
+        authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+        studioRepositoryProvider.overrideWithValue(studioRepo),
+        coursesRepositoryProvider.overrideWithValue(coursesRepo),
+        studioStatusProvider.overrideWith(
+          (ref) async => const StudioStatus(
+            isTeacher: true,
+            verifiedCertificates: 1,
+            hasApplication: false,
+          ),
+        ),
+        studioUploadQueueProvider.overrideWith(
+          (ref) => _NoopUploadQueueNotifier(studioRepo),
+        ),
+      ],
+      child: MaterialApp(
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          quill.FlutterQuillLocalizations.delegate,
+        ],
+        supportedLocales: const [Locale('en'), Locale('sv')],
+        home: CourseEditorScreen(
+          studioRepository: studioRepo,
+          coursesRepository: coursesRepo,
+        ),
+      ),
+    ),
+  );
+}
+
+void _stubSingleLessonEditorData(
+  _MockStudioRepository studioRepo,
+  _MockCoursesRepository coursesRepo, {
+  required String contentMarkdown,
+  required List<Map<String, dynamic>> lessonMedia,
+  Future<Map<String, Map<String, dynamic>>> Function(List<String> ids)?
+  fetchLessonMediaPreviews,
+}) {
+  when(() => studioRepo.myCourses()).thenAnswer(
+    (_) async => [
+      {'id': 'course-1', 'title': 'Tarot Basics'},
+    ],
+  );
+  when(() => studioRepo.fetchStatus()).thenAnswer(
+    (_) async => const StudioStatus(
+      isTeacher: true,
+      verifiedCertificates: 1,
+      hasApplication: false,
+    ),
+  );
+  when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+    (_) async => {
+      'title': 'Tarot Basics',
+      'slug': 'tarot-basics',
+      'description': 'Lär dig läsa korten',
+      'price_amount_cents': 1200,
+      'is_free_intro': true,
+      'is_published': false,
+    },
+  );
+  when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
+    (_) async => [
+      {
+        'id': 'lesson-1',
+        'title': 'Välkommen',
+        'position': 1,
+        'is_intro': true,
+        'course_id': 'course-1',
+        'content_markdown': contentMarkdown,
+      },
+    ],
+  );
+  when(
+    () => studioRepo.listLessonMedia('lesson-1'),
+  ).thenAnswer((_) async => lessonMedia);
+  when(() => studioRepo.fetchLessonMediaPreviews(any())).thenAnswer((
+    invocation,
+  ) {
+    final ids = List<String>.from(
+      invocation.positionalArguments.single as List,
+    );
+    if (fetchLessonMediaPreviews != null) {
+      return fetchLessonMediaPreviews(ids);
+    }
+    return Future<Map<String, Map<String, dynamic>>>.value(
+      <String, Map<String, dynamic>>{},
+    );
+  });
+
+  final courseDetail = CourseDetailData(
+    course: const CourseSummary(
+      id: 'course-1',
+      slug: 'tarot-basics',
+      title: 'Tarot Basics',
+      description: 'Lär dig läsa korten',
+      coverUrl: null,
+      videoUrl: null,
+      isFreeIntro: true,
+      isPublished: true,
+      priceCents: 1200,
+    ),
+    modules: const [CourseModule(id: 'module-1', title: 'Intro', position: 1)],
+    lessonsByModule: {
+      'module-1': [
+        LessonSummary(
+          id: 'lesson-1',
+          title: 'Välkommen',
+          position: 1,
+          isIntro: true,
+          contentMarkdown: contentMarkdown,
+        ),
+      ],
+    },
+    isEnrolled: false,
+    latestOrder: null,
+  );
+  when(
+    () => coursesRepo.fetchCourseDetailBySlug(any()),
+  ).thenAnswer((_) async => courseDetail);
+}
+
+Future<void> _pumpEditorBootstrap(WidgetTester tester) async {
+  await tester.pump();
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 25));
+  }
+}
+
+Future<void> _disposePumpedWidget(WidgetTester tester) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump(const Duration(milliseconds: 1));
 }
 
 void main() {
@@ -259,7 +434,7 @@ void main() {
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
-            FlutterQuillLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: const [Locale('en'), Locale('sv')],
           home: CourseEditorScreen(
@@ -291,15 +466,8 @@ void main() {
     expect(_legacyInlineVideoPlayerFinder(), findsNothing);
     expect(_legacyInlineAudioPlayerFinder(), findsNothing);
     expect(_lessonMediaPlayerFinder(kind: 'video'), findsWidgets);
-    expect(_lessonMediaPlayerFinder(kind: 'audio'), findsWidgets);
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is AveliLessonImage &&
-            widget.src == 'https://cdn.test/editor-image.webp',
-      ),
-      findsOneWidget,
-    );
+    expect(_lessonMediaPlayerFinder(kind: 'audio'), findsNothing);
+    expect(find.byType(LessonMediaPreview), findsNWidgets(3));
     expect(
       _networkImageFinder('https://cdn.test/editor-image-thumb.webp'),
       findsOneWidget,
@@ -432,7 +600,7 @@ void main() {
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
-              FlutterQuillLocalizations.delegate,
+              quill.FlutterQuillLocalizations.delegate,
             ],
             supportedLocales: const [Locale('en'), Locale('sv')],
             home: CourseEditorScreen(
@@ -443,7 +611,7 @@ void main() {
         ),
       );
 
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
       for (var i = 0; i < 5; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
@@ -586,7 +754,7 @@ void main() {
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
-            FlutterQuillLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: const [Locale('en'), Locale('sv')],
           home: CourseEditorScreen(
@@ -634,8 +802,9 @@ void main() {
     await tester.ensureVisible(insertButtonFinder);
     await tester.tap(insertButtonFinder);
     await tester.pump();
+    await _pumpUntilFound(tester, find.byType(LessonMediaPreview));
 
-    expect(_lessonMediaPlayerFinder(kind: 'video'), findsOneWidget);
+    expect(find.byType(LessonMediaPreview), findsOneWidget);
     expect(
       find.text('Det här videoblocket använder ett äldre videoformat.'),
       findsNothing,
@@ -679,7 +848,7 @@ void main() {
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
-            FlutterQuillLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: const [Locale('en'), Locale('sv')],
           home: CourseEditorScreen(studioRepository: studioRepo),
@@ -757,7 +926,7 @@ void main() {
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
-              FlutterQuillLocalizations.delegate,
+              quill.FlutterQuillLocalizations.delegate,
             ],
             supportedLocales: const [Locale('en'), Locale('sv')],
             home: CourseEditorScreen(studioRepository: studioRepo),
@@ -765,7 +934,7 @@ void main() {
         ),
       );
 
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
       for (var i = 0; i < 5; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
@@ -885,7 +1054,7 @@ void main() {
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
-            FlutterQuillLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: const [Locale('en'), Locale('sv')],
           home: CourseEditorScreen(
@@ -980,7 +1149,7 @@ void main() {
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
-            FlutterQuillLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: const [Locale('en'), Locale('sv')],
           home: CourseEditorScreen(studioRepository: studioRepo),
@@ -1132,7 +1301,7 @@ void main() {
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
-              FlutterQuillLocalizations.delegate,
+              quill.FlutterQuillLocalizations.delegate,
             ],
             supportedLocales: const [Locale('en'), Locale('sv')],
             home: CourseEditorScreen(
@@ -1143,7 +1312,7 @@ void main() {
         ),
       );
 
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
       for (var i = 0; i < 5; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
@@ -1291,7 +1460,7 @@ void main() {
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
-              FlutterQuillLocalizations.delegate,
+              quill.FlutterQuillLocalizations.delegate,
             ],
             supportedLocales: const [Locale('en'), Locale('sv')],
             home: CourseEditorScreen(
@@ -1302,7 +1471,7 @@ void main() {
         ),
       );
 
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
       for (var i = 0; i < 5; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
@@ -1456,7 +1625,7 @@ void main() {
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
-            FlutterQuillLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: const [Locale('en'), Locale('sv')],
           home: CourseEditorScreen(
@@ -1506,4 +1675,243 @@ void main() {
     expect(patch['price_amount_cents'], 9900);
     expect(patch.containsKey('price_cents'), isFalse);
   });
+
+  testWidgets(
+    'CourseEditorScreen renders image previews from batch preview metadata when lesson media rows lack direct URLs',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\n!image(media-image-1)\n\nEftertext',
+        lessonMedia: [
+          {
+            'id': 'media-image-1',
+            'kind': 'image',
+            'storage_path': 'private-media/lesson-1/image.png',
+            'storage_bucket': 'private-media',
+            'original_name': 'image.png',
+            'position': 1,
+          },
+        ],
+        fetchLessonMediaPreviews: (ids) async => {
+          for (final id in ids)
+            id: {
+              'media_type': 'image',
+              'thumbnail_url': 'https://cdn.test/$id-thumb.webp',
+              'file_name': 'image.png',
+            },
+        },
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+      await tester.pump();
+
+      expect(
+        _networkImageFinder('https://cdn.test/media-image-1-thumb.webp'),
+        findsOneWidget,
+      );
+      verify(() => studioRepo.fetchLessonMediaPreviews(any())).called(1);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen does not mount the live editor before document-ready state',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const [],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        findsNothing,
+      );
+      expect(find.byType(quill.QuillEditor), findsNothing);
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen mounts the live editor once the lesson document is ready',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const [],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        maxPumps: 30,
+      );
+      await tester.pump(const Duration(milliseconds: 1));
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_editor_boot_shell')),
+        findsNothing,
+      );
+      expect(find.byType(quill.QuillEditor), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        findsNothing,
+      );
+
+      final insertImageButton = tester.widget<FilledButton>(
+        _filledButtonWithLabel('Infoga bild'),
+      );
+      expect(insertImageButton.onPressed, isNotNull);
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen shows a preview hydration banner while token image previews are pending',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\n!image(media-image-1)\n\nEftertext',
+        lessonMedia: [
+          {
+            'id': 'media-image-1',
+            'kind': 'image',
+            'storage_path': 'private-media/lesson-1/image.png',
+            'storage_bucket': 'private-media',
+            'original_name': 'image.png',
+            'position': 1,
+          },
+        ],
+        fetchLessonMediaPreviews: (_) => previewCompleter.future,
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        maxPumps: 30,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        maxPumps: 100,
+        step: const Duration(milliseconds: 1),
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_loading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        findsNothing,
+      );
+
+      previewCompleter.complete(<String, Map<String, dynamic>>{});
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen settles preview hydration after timeout and shows unresolved state',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\n!image(media-image-1)\n\nEftertext',
+        lessonMedia: [
+          {
+            'id': 'media-image-1',
+            'kind': 'image',
+            'storage_path': 'private-media/lesson-1/image.png',
+            'storage_bucket': 'private-media',
+            'original_name': 'image.png',
+            'position': 1,
+          },
+        ],
+        fetchLessonMediaPreviews: (_) => previewCompleter.future,
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        maxPumps: 30,
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        maxPumps: 100,
+        step: const Duration(milliseconds: 1),
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        findsOneWidget,
+      );
+
+      await tester.pump(const Duration(seconds: 5));
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        findsOneWidget,
+      );
+
+      previewCompleter.complete(<String, Map<String, dynamic>>{});
+      await _disposePumpedWidget(tester);
+    },
+  );
 }

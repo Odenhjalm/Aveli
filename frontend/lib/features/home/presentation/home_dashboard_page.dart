@@ -130,6 +130,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             onPressed: () => context.goNamed(AppRoute.studio),
             icon: const Icon(Icons.edit),
           ),
+        if (profile.isAdmin)
+          IconButton(
+            tooltip: 'Media Control Plane',
+            onPressed: () => context.goNamed(AppRoute.adminMedia),
+            icon: const Icon(Icons.perm_media_outlined),
+          ),
         IconButton(
           tooltip: 'Profil',
           onPressed: () => context.goNamed(AppRoute.profile),

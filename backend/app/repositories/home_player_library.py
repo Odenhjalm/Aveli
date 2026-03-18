@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ..db import get_conn
+from . import runtime_media as runtime_media_repo
 
 
 async def list_home_player_uploads(teacher_id: str) -> list[dict[str, Any]]:
@@ -92,6 +93,7 @@ async def create_home_player_upload(
         row = await cur.fetchone()
     if not row:
         return None
+    await runtime_media_repo.sync_home_player_upload_runtime_media(upload_id=str(row["id"]))
     return await get_home_player_upload(upload_id=str(row["id"]), teacher_id=teacher_id)
 
 
@@ -122,6 +124,7 @@ async def update_home_player_upload(
         row = await cur.fetchone()
     if not row:
         return None
+    await runtime_media_repo.sync_home_player_upload_runtime_media(upload_id=upload_id)
     return await get_home_player_upload(upload_id=upload_id, teacher_id=teacher_id)
 
 

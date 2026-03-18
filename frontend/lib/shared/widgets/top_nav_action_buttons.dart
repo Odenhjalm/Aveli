@@ -45,6 +45,12 @@ class TopNavActionButtons extends ConsumerWidget {
           ),
         if (isAdmin)
           IconButton(
+            tooltip: 'Media Control Plane',
+            icon: Icon(Icons.perm_media_outlined, color: color),
+            onPressed: () => context.goNamed(AppRoute.adminMedia),
+          ),
+        if (isAdmin)
+          IconButton(
             tooltip: 'Admininställningar',
             icon: Icon(Icons.tune_outlined, color: color),
             onPressed: () => context.goNamed(AppRoute.adminSettings),

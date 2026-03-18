@@ -331,6 +331,7 @@ class AveliApp extends ConsumerWidget {
           case AuthHttpEvent.forbidden:
             const restricted = {
               RoutePath.admin,
+              RoutePath.adminMedia,
               RoutePath.teacherHome,
               RoutePath.teacherEditor,
               RoutePath.studio,

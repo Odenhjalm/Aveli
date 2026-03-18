@@ -27,6 +27,7 @@ import 'package:aveli/features/community/presentation/admin_settings_page.dart';
 import 'package:aveli/features/community/presentation/community_page.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/home/presentation/livekit_demo_page.dart';
+import 'package:aveli/features/media_control_plane/admin/media_control_dashboard.dart';
 import 'package:aveli/features/community/presentation/profile_page.dart'
     as community_profile;
 import 'package:aveli/features/community/presentation/profile_view_page.dart';
@@ -511,6 +512,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.admin,
         name: AppRoute.admin,
         builder: (context, state) => const AdminPage(),
+      ),
+      GoRoute(
+        path: RoutePath.adminMedia,
+        name: AppRoute.adminMedia,
+        builder: (context, state) => const MediaControlDashboard(),
       ),
       GoRoute(
         path: RoutePath.adminSettings,
