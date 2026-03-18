@@ -24,6 +24,7 @@ import 'package:aveli/editor/adapter/editor_to_markdown.dart'
     as editor_to_markdown;
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
+import 'package:aveli/editor/session/editor_operation.dart';
 import 'package:aveli/editor/session/editor_session.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
@@ -446,6 +447,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonContentControllerGeneration = 0;
   VoidCallback? _controllerListener;
   bool _editorMutating = false;
+  bool _editorOperationApplying = false;
   bool _selectionSyncScheduled = false;
 
   final TextEditingController _newCourseTitle = TextEditingController();
@@ -640,6 +642,42 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         token.revision == _editorSession.revision;
   }
 
+  EditorOperation _createEditorOperation(
+    EditorOperationType type, {
+    Object? payload,
+  }) {
+    return EditorOperation(
+      type: type,
+      sessionId: _editorSession.sessionId,
+      lessonId: _editorSession.lessonId,
+      baseRevision: _editorSession.revision,
+      payload: payload,
+    );
+  }
+
+  T _applyEditorOperation<T>(EditorOperation operation, T Function() apply) {
+    final previousFingerprint =
+        _lastObservedDocumentFingerprint ?? _documentFingerprint();
+    final previousOperationApplying = _editorOperationApplying;
+    _editorOperationApplying = true;
+    try {
+      return apply();
+    } finally {
+      _editorOperationApplying = previousOperationApplying;
+      final nextFingerprint = _documentFingerprint();
+      if (nextFingerprint != previousFingerprint) {
+        _lastObservedDocumentFingerprint = nextFingerprint;
+        _editorSession.revision = operation.baseRevision + 1;
+      }
+      if (kDebugMode) {
+        debugPrint(
+          '[EditorOperation] type=${operation.type.name} '
+          'revision=${operation.baseRevision}->${_editorSession.revision}',
+        );
+      }
+    }
+  }
+
   int _clampEditorOffset(int offset, [quill.QuillController? controller]) {
     return min(max(offset, 0), _editorDocumentExtent(controller));
   }
@@ -658,7 +696,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final fingerprint = _documentFingerprint();
       if (fingerprint != _lastObservedDocumentFingerprint) {
         _lastObservedDocumentFingerprint = fingerprint;
-        _editorSession.revision += 1;
+        if (!_editorOperationApplying) {
+          _editorSession.revision += 1;
+        }
       }
       final selection = _lessonContentController.selection;
       if (selection.start >= 0 && selection.end >= 0) {
@@ -775,18 +815,28 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required Object data,
     required TextSelection selection,
   }) {
-    final previousToggledStyle = controller.toggledStyle;
-    controller.toggledStyle = const quill.Style();
-    try {
-      controller.replaceText(
-        index,
-        length,
-        data,
-        _clampEditorSelection(selection, controller),
-      );
-    } finally {
-      controller.toggledStyle = previousToggledStyle;
-    }
+    final operation = _createEditorOperation(
+      EditorOperationType.replaceText,
+      payload: <String, Object?>{
+        'index': index,
+        'length': length,
+        'data': data is String ? data : data.toString(),
+      },
+    );
+    _applyEditorOperation(operation, () {
+      final previousToggledStyle = controller.toggledStyle;
+      controller.toggledStyle = const quill.Style();
+      try {
+        controller.replaceText(
+          index,
+          length,
+          data,
+          _clampEditorSelection(selection, controller),
+        );
+      } finally {
+        controller.toggledStyle = previousToggledStyle;
+      }
+    });
   }
 
   void _formatEditorRangeSelection(
@@ -796,14 +846,25 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required quill.Attribute attribute,
   }) {
     if (length <= 0) return;
-    controller.updateSelection(
-      _clampEditorSelection(
-        TextSelection(baseOffset: start, extentOffset: start + length),
-        controller,
-      ),
-      quill.ChangeSource.local,
+    final operation = _createEditorOperation(
+      EditorOperationType.formatSelection,
+      payload: <String, Object?>{
+        'start': start,
+        'length': length,
+        'attribute': attribute.key,
+        'value': attribute.value,
+      },
     );
-    controller.formatSelection(attribute);
+    _applyEditorOperation(operation, () {
+      controller.updateSelection(
+        _clampEditorSelection(
+          TextSelection(baseOffset: start, extentOffset: start + length),
+          controller,
+        ),
+        quill.ChangeSource.local,
+      );
+      controller.formatSelection(attribute);
+    });
   }
 
   void _handleInlineFormatToolbarPressed() {
@@ -3965,15 +4026,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return false;
     }
     _runEditorMutation((controller) {
-      replaceSelectionWithBlockEmbed(
-        controller: controller,
-        embed: quill.BlockEmbed.image(
-          lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
-            lessonMediaId: normalizedMediaId,
-            src: normalizedSrc,
-          ),
+      _applyEditorOperation(
+        _createEditorOperation(
+          EditorOperationType.insertEmbed,
+          payload: <String, Object?>{
+            'embedType': quill.BlockEmbed.imageType,
+            'lessonMediaId': normalizedMediaId,
+          },
         ),
-        selection: targetSelection ?? controller.selection,
+        () {
+          replaceSelectionWithBlockEmbed(
+            controller: controller,
+            embed: quill.BlockEmbed.image(
+              lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
+                lessonMediaId: normalizedMediaId,
+                src: normalizedSrc,
+              ),
+            ),
+            selection: targetSelection ?? controller.selection,
+          );
+        },
       );
     }, requestFocus: true);
     return true;
@@ -3984,10 +4056,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     TextSelection? targetSelection,
   }) {
     _runEditorMutation((controller) {
-      replaceSelectionWithBlockEmbed(
-        controller: controller,
-        embed: quill.BlockEmbed.video(embedValue),
-        selection: targetSelection ?? controller.selection,
+      _applyEditorOperation(
+        _createEditorOperation(
+          EditorOperationType.insertEmbed,
+          payload: <String, Object?>{'embedType': quill.BlockEmbed.videoType},
+        ),
+        () {
+          replaceSelectionWithBlockEmbed(
+            controller: controller,
+            embed: quill.BlockEmbed.video(embedValue),
+            selection: targetSelection ?? controller.selection,
+          );
+        },
       );
     }, requestFocus: true);
   }
@@ -3997,10 +4077,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     TextSelection? targetSelection,
   }) {
     _runEditorMutation((controller) {
-      replaceSelectionWithBlockEmbed(
-        controller: controller,
-        embed: embed,
-        selection: targetSelection ?? controller.selection,
+      _applyEditorOperation(
+        _createEditorOperation(
+          EditorOperationType.insertEmbed,
+          payload: <String, Object?>{
+            'embedType': lesson_pipeline.AudioBlockEmbed.embedType,
+          },
+        ),
+        () {
+          replaceSelectionWithBlockEmbed(
+            controller: controller,
+            embed: embed,
+            selection: targetSelection ?? controller.selection,
+          );
+        },
       );
     }, requestFocus: true);
   }
@@ -5221,35 +5311,44 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     var contentChanged = false;
     _runEditorMutation(
       (controller) {
-        contentChanged = replaceLessonMediaEmbedsInPlace(
-          controller: controller,
-          fromLessonMediaId: fromId,
-          toLessonMediaId: toId,
-          replacementBuilder: (embed, _) {
-            switch (embed.value.type) {
-              case lesson_pipeline.AudioBlockEmbed.embedType:
-                return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
-                  lessonMediaId: toId,
-                  src: replacementUrl,
-                );
-              case quill.BlockEmbed.videoType:
-                return quill.BlockEmbed.video(
-                  lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
+        contentChanged = _applyEditorOperation(
+          _createEditorOperation(
+            EditorOperationType.replaceEmbed,
+            payload: <String, Object?>{
+              'fromLessonMediaId': fromId,
+              'toLessonMediaId': toId,
+            },
+          ),
+          () => replaceLessonMediaEmbedsInPlace(
+            controller: controller,
+            fromLessonMediaId: fromId,
+            toLessonMediaId: toId,
+            replacementBuilder: (embed, _) {
+              switch (embed.value.type) {
+                case lesson_pipeline.AudioBlockEmbed.embedType:
+                  return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
                     lessonMediaId: toId,
                     src: replacementUrl,
-                  ),
-                );
-              case quill.BlockEmbed.imageType:
-                return quill.BlockEmbed.image(
-                  lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
-                    lessonMediaId: toId,
-                    src: replacementUrl,
-                  ),
-                );
-              default:
-                return null;
-            }
-          },
+                  );
+                case quill.BlockEmbed.videoType:
+                  return quill.BlockEmbed.video(
+                    lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
+                      lessonMediaId: toId,
+                      src: replacementUrl,
+                    ),
+                  );
+                case quill.BlockEmbed.imageType:
+                  return quill.BlockEmbed.image(
+                    lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
+                      lessonMediaId: toId,
+                      src: replacementUrl,
+                    ),
+                  );
+                default:
+                  return null;
+              }
+            },
+          ),
         );
       },
       markDirty: false,
