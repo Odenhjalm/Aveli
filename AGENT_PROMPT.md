@@ -6,14 +6,24 @@ Development rules:
 4. After implementing UI features, run Playwright tests.
 5. Never guess APIs when Context7 is available.
 
-Feature implementation protocol:
+Workflow standard:
 
-1. Inspect Figma
-2. Inspect DB schema
-3. Fetch library docs
-4. Implement code
-5. Generate tests
-6. Run tests
+Phase A Plan
+- Inspect Figma
+- Inspect DB schema
+- Fetch library docs
+
+Phase B Implement
+- Implement code
+- Generate tests
+
+Phase C Integrate
+- Connect the feature to the existing app flow
+- Reconcile dependencies, routing, and data contracts
+
+Phase D Verify
+- Run Playwright tests after UI work
+- Run the best practical local verification before handoff
 
 Before exploring the repository, read the repo index in .repo_index.
 
