@@ -408,7 +408,13 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   Map<String, HomeAudioItem> _itemById = const <String, HomeAudioItem>{};
   String? _selectedId;
   String? _statusMessage;
+  String? _loadingTrackId;
+  String? _activeSourceTrackId;
+  DateTime? _activeSourceExpiresAt;
+  InlineAudioPlayerVolumeState _playerVolumeState =
+      const InlineAudioPlayerVolumeState();
   Timer? _errorSkipTimer;
+  int _playRequestToken = 0;
 
   @override
   void initState() {
@@ -481,10 +487,15 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
         playback.mediaType == MediaPlaybackType.audio;
     final activeUrl = playback.url?.trim() ?? '';
     final hasUrl = activeUrl.isNotEmpty;
-    final showLoading = isActive && playback.isLoading;
+    final isLoadingSelectedTrack = _loadingTrackId == selected.id;
+    final showLoading =
+        isLoadingSelectedTrack || (isActive && playback.isLoading);
     final canPlay = _canAttemptPlayback(selected);
     final statusMessage = _statusMessage ?? _statusMessageForItem(selected);
     final canSkip = _playlist.hasRemainingPlayableItems;
+    final sourceExpiresAt = _activeSourceTrackId == selected.id
+        ? _activeSourceExpiresAt
+        : null;
 
     return _NowPlayingShell(
       child: Column(
@@ -562,9 +573,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
               if (isActive)
                 IconButton.filled(
                   tooltip: 'Stoppa',
-                  onPressed: ref
-                      .read(mediaPlaybackControllerProvider.notifier)
-                      .stop,
+                  onPressed: _stopPlayback,
                   style: IconButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -574,7 +583,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
               else
                 IconButton.filled(
                   tooltip: 'Spela',
-                  onPressed: canPlay
+                  onPressed: canPlay && !isLoadingSelectedTrack
                       ? () => unawaited(_playItem(selected))
                       : null,
                   style: IconButton.styleFrom(
@@ -594,6 +603,10 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
             const SizedBox(height: 12),
             InlineAudioPlayer(
               url: activeUrl,
+              sourceExpiresAt: sourceExpiresAt,
+              sourceLoader: () => _resolvePlaybackSource(selected),
+              initialVolumeState: _playerVolumeState,
+              onVolumeStateChanged: _handleVolumeStateChanged,
               title: null,
               durationHint: durationHint,
               autoPlay: true,
@@ -702,6 +715,11 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     return Duration(seconds: seconds);
   }
 
+  void _handleVolumeStateChanged(InlineAudioPlayerVolumeState state) {
+    if (_playerVolumeState == state || !mounted) return;
+    setState(() => _playerVolumeState = state);
+  }
+
   void _alignQueueToItem(String itemId) {
     final index = _playlist.indexOf(itemId);
     if (index < 0) return;
@@ -710,16 +728,24 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   }
 
   Future<void> _playItem(HomeAudioItem item) async {
+    final requestToken = ++_playRequestToken;
     _errorSkipTimer?.cancel();
     _alignQueueToItem(item.id);
     _playlist.clearFailure(item.id);
     if (mounted) {
       setState(() {
         _statusMessage = null;
+        _loadingTrackId = item.id;
+        _activeSourceTrackId = null;
+        _activeSourceExpiresAt = null;
       });
     }
 
     if (!_canAttemptPlayback(item)) {
+      if (requestToken != _playRequestToken) return;
+      if (mounted) {
+        setState(() => _loadingTrackId = null);
+      }
       _handleTrackError(
         item.id,
         _statusMessageForItem(item) ?? 'Fel vid uppspelning.',
@@ -729,16 +755,32 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
 
     final durationHint = _durationHintFor(item);
     try {
-      final mediaAssetId = (item.mediaAssetId ?? '').trim();
-      if (mediaAssetId.isNotEmpty) {
-        await _playPipelineInline(item, durationHint: durationHint);
-      } else {
-        await _playLegacyInline(item, durationHint: durationHint);
-      }
+      ref.read(mediaPlaybackControllerProvider.notifier).stop();
+      final source = await _resolvePlaybackSource(item);
+      if (!mounted || requestToken != _playRequestToken) return;
+      await ref
+          .read(mediaPlaybackControllerProvider.notifier)
+          .play(
+            mediaId: item.id,
+            mediaType: MediaPlaybackType.audio,
+            url: source.url,
+            title: item.displayTitle,
+            durationHint: durationHint,
+          );
+      if (!mounted || requestToken != _playRequestToken) return;
       if (mounted) {
-        setState(() => _statusMessage = null);
+        setState(() {
+          _statusMessage = null;
+          _loadingTrackId = null;
+          _activeSourceTrackId = item.id;
+          _activeSourceExpiresAt = source.expiresAt?.toUtc();
+        });
       }
     } catch (error, stackTrace) {
+      if (!mounted || requestToken != _playRequestToken) return;
+      if (mounted) {
+        setState(() => _loadingTrackId = null);
+      }
       final failure = AppFailure.from(error, stackTrace);
       _handleTrackError(item.id, failure.message);
     }
@@ -807,66 +849,50 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
 
   void _stopWithUnavailableState() {
     _errorSkipTimer?.cancel();
-    ref.read(mediaPlaybackControllerProvider.notifier).stop();
+    _stopPlayback();
     if (!mounted) return;
     setState(() {
       _statusMessage = 'Kan inte spela upp just nu.';
     });
   }
 
-  Future<void> _restartIfCurrentTrack(String mediaId) async {
-    final playback = ref.read(mediaPlaybackControllerProvider);
-    if (playback.currentMediaId != mediaId || !playback.isPlaying) return;
+  void _stopPlayback() {
+    _playRequestToken++;
     ref.read(mediaPlaybackControllerProvider.notifier).stop();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    if (!mounted) return;
+    setState(() {
+      _loadingTrackId = null;
+      _activeSourceTrackId = null;
+      _activeSourceExpiresAt = null;
+    });
   }
 
-  Future<void> _playPipelineInline(
-    HomeAudioItem item, {
-    Duration? durationHint,
-  }) async {
+  Future<InlineAudioPlaybackSource> _resolvePlaybackSource(
+    HomeAudioItem item,
+  ) async {
     final mediaAssetId = (item.mediaAssetId ?? '').trim();
-    if (mediaAssetId.isEmpty) {
-      throw StateError('Saknar media_asset_id för uppspelning.');
+    if (mediaAssetId.isNotEmpty) {
+      final repo = ref.read(mediaPipelineRepositoryProvider);
+      final playback = await repo.fetchPlaybackUrl(mediaAssetId);
+      return InlineAudioPlaybackSource(
+        url: playback.playbackUrl.toString(),
+        expiresAt: playback.expiresAt.toUtc(),
+      );
     }
-    await _restartIfCurrentTrack(item.id);
-    final controller = ref.read(mediaPlaybackControllerProvider.notifier);
-    await controller.play(
-      mediaId: item.id,
-      mediaType: MediaPlaybackType.audio,
-      title: item.displayTitle,
-      durationHint: durationHint,
-      urlLoader: () async {
-        // Resolve a fresh playback URL per track hop; ApiClient performs a
-        // single refresh/retry cycle on 401 responses when available.
-        final repo = ref.read(mediaPipelineRepositoryProvider);
-        final playback = await repo.fetchPlaybackUrl(mediaAssetId);
-        return playback.playbackUrl.toString();
-      },
-    );
-  }
-
-  Future<void> _playLegacyInline(
-    HomeAudioItem item, {
-    Duration? durationHint,
-  }) async {
+    final repo = ref.read(mediaRepositoryProvider);
     final preferred = item.preferredUrl;
     if (preferred == null || preferred.trim().isEmpty) {
       throw StateError('Ljudlänken saknas för detta spår.');
     }
-    String url = preferred.trim();
-    final repo = ref.read(mediaRepositoryProvider);
-    url = repo.resolvePlaybackUrl(url);
-    await _restartIfCurrentTrack(item.id);
-    await ref
-        .read(mediaPlaybackControllerProvider.notifier)
-        .play(
-          mediaId: item.id,
-          mediaType: MediaPlaybackType.audio,
-          url: url,
-          title: item.displayTitle,
-          durationHint: durationHint,
-        );
+    final trimmedPreferred = preferred.trim();
+    final signed = item.signedUrl?.trim();
+    final expiresAt = signed != null && signed == trimmedPreferred
+        ? item.signedUrlExpiresAt?.toUtc()
+        : null;
+    return InlineAudioPlaybackSource(
+      url: repo.resolvePlaybackUrl(trimmedPreferred),
+      expiresAt: expiresAt,
+    );
   }
 
   void _openLibrary(BuildContext context, List<HomeAudioItem> items) {

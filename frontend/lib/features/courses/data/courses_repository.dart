@@ -449,6 +449,7 @@ class CourseSummary {
     this.coverMediaId,
     this.videoUrl,
     this.branch,
+    this.courseFamily,
     this.createdBy,
     this.isFreeIntro = false,
     this.journeyStep,
@@ -464,6 +465,7 @@ class CourseSummary {
   final String? coverMediaId;
   final String? videoUrl;
   final String? branch;
+  final String? courseFamily;
   final String? createdBy;
   final bool isFreeIntro;
   final CourseJourneyStep? journeyStep;
@@ -479,6 +481,7 @@ class CourseSummary {
     coverMediaId: json['cover_media_id'] as String?,
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
+    courseFamily: json['course_family'] as String?,
     createdBy: json['created_by'] as String?,
     isFreeIntro: json['is_free_intro'] == true,
     journeyStep: courseJourneyStepFromApi(json['journey_step']),
