@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 
-import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 
@@ -37,7 +36,7 @@ TextSelection normalizeQuillInsertionSelection(
 /// Inserts a block embed in a single replaceText step to avoid transient
 /// invalid document states during multi-step editor updates.
 TextSelection replaceSelectionWithBlockEmbed({
-  required EditorOperationQuillController controller,
+  required quill.QuillController controller,
   required Object embed,
   TextSelection? selection,
   bool ensureTrailingNewline = true,
@@ -54,40 +53,20 @@ TextSelection replaceSelectionWithBlockEmbed({
     extentOffset: start + (ensureTrailingNewline ? 2 : 1),
   );
   try {
-    controller.applyReplaceText(
-      EditorOperationReplaceTextRequest(
-        index: start,
-        length: end - start,
-        data: embed,
-        selection: TextSelection.collapsed(offset: start + 1),
-        ignoreFocus: false,
-        shouldNotifyListeners: true,
-        preserveEmbeds: false,
-      ),
+    controller.replaceText(
+      start,
+      end - start,
+      embed,
+      TextSelection.collapsed(offset: start + 1),
     );
     if (ensureTrailingNewline) {
-      controller.applyReplaceText(
-        EditorOperationReplaceTextRequest(
-          index: start + 1,
-          length: 0,
-          data: '\n',
-          selection: collapsed,
-          ignoreFocus: false,
-          shouldNotifyListeners: true,
-          preserveEmbeds: false,
-        ),
-      );
+      controller.replaceText(start + 1, 0, '\n', collapsed);
     }
   } finally {
     controller.toggledStyle = const quill.Style();
   }
 
-  controller.applySelection(
-    EditorOperationSelectionRequest(
-      selection: collapsed,
-      source: quill.ChangeSource.local,
-    ),
-  );
+  controller.updateSelection(collapsed, quill.ChangeSource.local);
   if (previousToggledStyle.isNotEmpty) {
     controller.toggledStyle = previousToggledStyle;
   }
@@ -130,7 +109,7 @@ Object? _defaultLessonMediaEmbedReplacement(
 /// Rewrites lesson media embeds in place so media swaps do not rebuild the
 /// entire document or recreate the controller.
 bool replaceLessonMediaEmbedsInPlace({
-  required EditorOperationQuillController controller,
+  required quill.QuillController controller,
   required String fromLessonMediaId,
   required String toLessonMediaId,
   TextSelection? selection,
@@ -190,24 +169,9 @@ bool replaceLessonMediaEmbedsInPlace({
   }
 
   for (final replacement in replacements) {
-    controller.applyReplaceText(
-      EditorOperationReplaceTextRequest(
-        index: replacement.offset,
-        length: 1,
-        data: replacement.embed,
-        selection: null,
-        ignoreFocus: false,
-        shouldNotifyListeners: true,
-        preserveEmbeds: false,
-      ),
-    );
+    controller.replaceText(replacement.offset, 1, replacement.embed, null);
   }
 
-  controller.applySelection(
-    EditorOperationSelectionRequest(
-      selection: preservedSelection,
-      source: quill.ChangeSource.local,
-    ),
-  );
+  controller.updateSelection(preservedSelection, quill.ChangeSource.local);
   return true;
 }

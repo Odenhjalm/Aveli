@@ -22,42 +22,24 @@ void main() {
     required Object data,
     required TextSelection selection,
   }) {
-    controller.applyReplaceText(
-      EditorOperationReplaceTextRequest(
-        index: index,
-        length: length,
-        data: data,
-        selection: selection,
-        ignoreFocus: false,
-        shouldNotifyListeners: true,
-        preserveEmbeds: false,
-      ),
-    );
+    controller.replaceText(index, length, data, selection);
   }
 
   void applySelection(
     EditorOperationQuillController controller,
     TextSelection selection,
   ) {
-    controller.applySelection(
-      EditorOperationSelectionRequest(
-        selection: selection,
-        source: quill.ChangeSource.local,
-      ),
-    );
+    controller.updateSelection(selection, quill.ChangeSource.local);
   }
 
   void applyFormatSelection(
     EditorOperationQuillController controller,
     quill.Attribute attribute,
   ) {
-    controller.applyFormatText(
-      EditorOperationFormatTextRequest(
-        index: controller.selection.start,
-        length: controller.selection.end - controller.selection.start,
-        attribute: attribute,
-        shouldNotifyListeners: true,
-      ),
+    controller.formatText(
+      controller.selection.start,
+      controller.selection.end - controller.selection.start,
+      attribute,
     );
   }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
@@ -6,6 +7,7 @@ import 'package:aveli/editor/adapter/editor_to_markdown.dart'
     as editor_to_markdown;
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
+import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 
@@ -35,6 +37,16 @@ String _roundtripMarkdown(String markdown) {
   );
   return editor_to_markdown.editorDeltaToCanonicalMarkdown(
     delta: document.toDelta(),
+  );
+}
+
+EditorOperationQuillController _buildLoadedController(String markdown) {
+  final document = markdown_to_editor.markdownToEditorDocument(
+    markdown: markdown,
+  );
+  return EditorOperationQuillController(
+    document: document,
+    selection: TextSelection.collapsed(offset: document.length - 1),
   );
 }
 
@@ -199,5 +211,71 @@ void main() {
 
       expect(markdown, 'underlined');
     });
+
+    test('loaded mixed media document is canonical before first edit', () {
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: 'Introtext\n\n!image(media-image-1)\n\nEftertext',
+      );
+
+      expect(document.toDelta(), equals(document.root.toDelta()));
+    });
+
+    test(
+      'loaded plain text document accepts first local insert without compose failure',
+      () {
+        final controller = _buildLoadedController('Introtext\n\nEftertext');
+
+        expect(
+          () => controller.replaceText(
+            0,
+            0,
+            'X',
+            const TextSelection.collapsed(offset: 1),
+          ),
+          returnsNormally,
+        );
+        expect(controller.document.toPlainText(), 'XIntrotext\nEftertext\n');
+      },
+    );
+
+    test(
+      'loaded mixed media document accepts first local insert without compose failure',
+      () {
+        final controller = _buildLoadedController(
+          'Introtext\n\n!image(media-image-1)\n\nEftertext',
+        );
+
+        expect(
+          () => controller.replaceText(
+            0,
+            0,
+            'X',
+            const TextSelection.collapsed(offset: 1),
+          ),
+          returnsNormally,
+        );
+        expect(controller.document.toPlainText(), startsWith('XIntrotext'));
+      },
+    );
+
+    test(
+      'loaded formatted media document accepts first local insert without compose failure',
+      () {
+        final controller = _buildLoadedController(
+          '**Introtext**\n\n!audio(media-audio-1)\n\n*Eftertext*',
+        );
+
+        expect(
+          () => controller.replaceText(
+            0,
+            0,
+            'X',
+            const TextSelection.collapsed(offset: 1),
+          ),
+          returnsNormally,
+        );
+        expect(controller.document.toPlainText(), startsWith('XIntrotext'));
+      },
+    );
   });
 }

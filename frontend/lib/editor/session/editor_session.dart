@@ -5,15 +5,13 @@ class EditorSession {
   EditorSession({
     required this.sessionId,
     required this.lessonId,
-    required this.revision,
     required this.controller,
     required this.focusNode,
     required this.scrollController,
   });
 
   final String sessionId;
-  String? lessonId;
-  int revision;
+  final String? lessonId;
   final quill.QuillController controller;
   final FocusNode focusNode;
   final ScrollController scrollController;

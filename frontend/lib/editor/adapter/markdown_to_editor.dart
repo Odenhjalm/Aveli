@@ -157,6 +157,15 @@ quill_delta.Delta markdownToEditorDelta({
   return lesson_pipeline.convertLessonMarkdownToDelta(converter, canonical);
 }
 
+quill_delta.Delta _canonicalizeDeltaForQuillDocument(quill_delta.Delta delta) {
+  if (delta.toList().isEmpty) {
+    return delta;
+  }
+
+  final document = quill.Document.fromDelta(delta);
+  return document.root.toDelta();
+}
+
 quill.Document markdownToEditorDocument({
   required String markdown,
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
@@ -170,5 +179,5 @@ quill.Document markdownToEditorDocument({
   if (delta.toList().isEmpty) {
     return quill.Document();
   }
-  return quill.Document.fromDelta(delta);
+  return quill.Document.fromDelta(_canonicalizeDeltaForQuillDocument(delta));
 }

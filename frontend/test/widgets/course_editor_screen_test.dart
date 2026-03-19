@@ -6,10 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
+import 'package:flutter_quill/quill_delta.dart' as quill_delta;
+import 'package:mocktail/mocktail.dart';
 
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/editor/debug/editor_debug.dart';
+import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/editor/widgets/file_picker_web.dart'
@@ -565,10 +568,20 @@ void _drainExpectedRenderFlexOverflow(WidgetTester tester) {
 }
 
 void main() {
+  final originalEditorDebug = kEditorDebug;
+
   setUpAll(() {
     registerFallbackValue(const Duration());
     registerFallbackValue(<String, dynamic>{});
     registerFallbackValue(FormData());
+  });
+
+  setUp(() {
+    kEditorDebug = false;
+  });
+
+  tearDown(() {
+    kEditorDebug = originalEditorDebug;
   });
 
   testWidgets('CourseEditorScreen renders provided course data', (
@@ -1992,6 +2005,110 @@ void main() {
   );
 
   testWidgets(
+    'CourseEditorScreen accepts the first IME-style edit after loading mixed media content',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\n!image(media-image-1)\n\nEftertext',
+        lessonMedia: const <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'media-image-1',
+            'kind': 'image',
+            'playback_url': 'https://cdn.test/media-image-1.webp',
+          },
+        ],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final editor = tester.widget<quill.QuillEditor>(
+        find.byType(quill.QuillEditor),
+      );
+      editor.focusNode.requestFocus();
+      await tester.pump();
+
+      final rawEditorState =
+          tester.state(find.byType(quill.QuillRawEditor)) as dynamic;
+      rawEditorState.requestKeyboard();
+      await tester.pump();
+
+      final initialEditingValue =
+          rawEditorState.currentTextEditingValue as TextEditingValue?;
+      expect(initialEditingValue, isNotNull);
+
+      rawEditorState.updateEditingValue(
+        initialEditingValue!.copyWith(
+          text: 'X${initialEditingValue.text}',
+          selection: const TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(_editorDocumentFromBridge(), startsWith('XIntrotext'));
+      expect(_renderedEditorText(tester), contains('XIntrotext'));
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen reflects applyDelta changes immediately without extra interaction',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final initialControllerIdentity = _editorControllerIdentityFromBridge();
+      final initialControllerGeneration =
+          _editorControllerGenerationFromBridge();
+      final editor = tester.widget<quill.QuillEditor>(
+        find.byType(quill.QuillEditor),
+      );
+      final controller = editor.controller as EditorOperationQuillController;
+
+      controller.applyDelta(
+        quill_delta.Delta()..insert('X'),
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+      await tester.pump();
+
+      expect(_editorDocumentFromBridge(), contains('XIntrotext'));
+      expect(_renderedEditorText(tester), contains('XIntrotext'));
+      expect(_editorSelectionStartFromBridge(), 0);
+      expect(_editorSelectionEndFromBridge(), 0);
+      expect(_editorControllerIdentityFromBridge(), initialControllerIdentity);
+      expect(
+        _editorControllerGenerationFromBridge(),
+        initialControllerGeneration,
+      );
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
     'CourseEditorScreen renders bold and italic formatting immediately after load',
     (tester) async {
       final studioRepo = _MockStudioRepository();
@@ -2280,6 +2397,49 @@ void main() {
         findsOneWidget,
       );
       verify(() => studioRepo.fetchLessonMediaPreviews(any())).called(1);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen waits for lesson media before mounting the live editor',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final mediaCompleter = Completer<List<Map<String, dynamic>>>();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+      when(
+        () => studioRepo.listLessonMedia('lesson-1'),
+      ).thenAnswer((_) => mediaCompleter.future);
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        findsNothing,
+      );
+      expect(find.byType(quill.QuillEditor), findsNothing);
+
+      mediaCompleter.complete(const <Map<String, dynamic>>[]);
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        maxPumps: 30,
+      );
+      await tester.pump();
+
+      expect(find.byType(quill.QuillEditor), findsOneWidget);
+
+      await _disposePumpedWidget(tester);
     },
   );
 
