@@ -15,6 +15,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/course_level_sort.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
@@ -137,7 +138,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
             mediaRepository,
           )
         : _mergePopularWithMyCourses(popular, myStudio, mediaRepository);
-    final visible = items;
+    final visible = _sortCoursesForDisplay(items);
 
     final sectionTextColor = tileTextColor;
     final cardsVisible = !loading && visible.isNotEmpty;
@@ -330,6 +331,14 @@ class CoursesShowcaseSection extends ConsumerWidget {
     return courses;
   }
 
+  static List<Map<String, dynamic>> _sortCoursesForDisplay(
+    List<Map<String, dynamic>> courses,
+  ) {
+    if (courses.length < 2) return courses;
+    sortCourseMapsByLevelThenTitle(courses);
+    return courses;
+  }
+
   static List<Map<String, dynamic>> _mapCourseSummaries(
     List<CourseSummary> courses,
   ) {
@@ -341,6 +350,8 @@ class CoursesShowcaseSection extends ConsumerWidget {
             'description': course.description ?? '',
             'slug': course.slug ?? '',
             'is_free_intro': course.isFreeIntro,
+            'journey_step': course.journeyStep?.name ?? course.stepLevel?.name,
+            'step_level': course.stepLevel?.name,
             'price_amount_cents': course.priceCents,
             'cover_url': course.coverUrl,
           };
@@ -463,7 +474,6 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
   late final Animation<double> _chevronNudgeX;
   bool _showHint = false;
   bool _didScrollOnce = false;
-  static const String _introFlagKey = 'is_free_intro';
   static const double _peekFraction = 0.07;
   static const double _chevronNudgeDistance = 7.0;
   static const Duration _chevronNudgeDelay = Duration(milliseconds: 1400);
@@ -565,48 +575,11 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
     return position.pixels < (position.maxScrollExtent - 2);
   }
 
-  List<Map<String, dynamic>?> _buildSlots() {
-    final pageSize = widget.pageSize;
-    final items = widget.items;
-    if (pageSize <= 0 || items.isEmpty) {
-      return items.cast<Map<String, dynamic>?>();
-    }
-
-    final introFirst = <Map<String, dynamic>>[];
-    for (final item in items) {
-      if (item[_introFlagKey] == true) {
-        introFirst.add(item);
-        if (introFirst.length >= pageSize) break;
-      }
-    }
-
-    if (introFirst.isEmpty) {
-      return items.cast<Map<String, dynamic>?>();
-    }
-
-    final introSet = introFirst.toSet();
-    final remaining = <Map<String, dynamic>>[];
-    for (final item in items) {
-      if (introSet.contains(item)) continue;
-      remaining.add(item);
-    }
-
-    final slots = List<Map<String, dynamic>?>.filled(
-      pageSize,
-      null,
-      growable: true,
-    );
-    for (var i = 0; i < introFirst.length; i++) {
-      slots[i] = introFirst[i];
-    }
-    slots.addAll(remaining);
-    return slots;
-  }
-
   @override
   Widget build(BuildContext context) {
     final items = widget.items;
-    final slots = _buildSlots();
+    // Keep the incoming order intact so rebuilds and pagination stay stable.
+    final slots = items.cast<Map<String, dynamic>?>();
     final pages = (slots.length / widget.pageSize).ceil().clamp(1, 9999);
     if (pages <= 1) {
       return GridView.builder(
