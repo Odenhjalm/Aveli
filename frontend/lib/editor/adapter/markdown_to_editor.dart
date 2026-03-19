@@ -28,6 +28,16 @@ final RegExp _inlineUnderlineTagPattern = RegExp(
   caseSensitive: false,
 );
 
+final RegExp _escapedBoldItalicPattern = RegExp(
+  r'\\\*\\\*\\\*(?=\S)([^\n]+?)(?<=\S)\\\*\\\*\\\*',
+  multiLine: true,
+);
+
+final RegExp _escapedBoldPattern = RegExp(
+  r'\\\*\\\*(?=\S)([^\n]+?)(?<=\S)\\\*\\\*',
+  multiLine: true,
+);
+
 final RegExp _boldItalicBoldWrappedPattern = RegExp(
   r'\*\*_\s*([^\n]+?)\s*_\*\*',
   multiLine: true,
@@ -74,6 +84,16 @@ String canonicalizeSupportedMarkdown(String markdown) {
   if (markdown.isEmpty) return markdown;
 
   var canonical = markdown.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+  canonical = canonical.replaceAllMapped(_escapedBoldItalicPattern, (match) {
+    final body = match.group(1) ?? '';
+    return body.isEmpty ? '' : '***$body***';
+  });
+
+  canonical = canonical.replaceAllMapped(_escapedBoldPattern, (match) {
+    final body = match.group(1) ?? '';
+    return body.isEmpty ? '' : '**$body**';
+  });
 
   canonical = canonical.replaceAllMapped(_strongHtmlPattern, (match) {
     final body = (match.group(2) ?? '').trim();

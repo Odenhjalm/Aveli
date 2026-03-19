@@ -240,6 +240,12 @@ List<TextStyle?> _previewTextStylesForText(WidgetTester tester, String target) {
   ];
 }
 
+String _renderedPreviewText(WidgetTester tester) {
+  return _previewStyledTextSegments(
+    tester,
+  ).map((segment) => segment.text).join();
+}
+
 LessonMediaItem _lessonMediaItem(String id, String kind) {
   return LessonMediaItem(
     id: id,
@@ -391,6 +397,35 @@ void main() {
       );
     },
   );
+
+  testWidgets('preview renders escaped bold markers as bold text', (
+    tester,
+  ) async {
+    final mediaRepository = _MockMediaRepository();
+    final pipelineRepository = _FakeMediaPipelineRepository(const {});
+
+    await _pumpPreviewHarness(
+      tester,
+      mediaRepository: mediaRepository,
+      pipelineRepository: pipelineRepository,
+      markdown: r'\*\*Should have been bold\*\*',
+      lessonMedia: const <LessonMediaItem>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final boldStyles = _previewTextStylesForText(
+      tester,
+      'Should have been bold',
+    );
+
+    expect(_renderedPreviewText(tester), contains('Should have been bold'));
+    expect(_renderedPreviewText(tester), isNot(contains('**')));
+    expect(
+      boldStyles.any((style) => style?.fontWeight == FontWeight.bold),
+      isTrue,
+    );
+  });
 
   testWidgets('broken preview media shows retry without breaking valid media', (
     tester,

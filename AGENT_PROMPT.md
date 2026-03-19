@@ -25,6 +25,20 @@ Phase D Verify
 - Run Playwright tests after UI work
 - Run the best practical local verification before handoff
 
+## Editor Observability
+
+The editor includes a built-in observability layer:
+
+- EditorDebugOverlay (UI)
+- logEditor() tracing
+- controller/session/revision tracking
+
+Agents must:
+
+- use this system before debugging
+- rely on runtime logs instead of guessing
+- never debug editor behavior without enabling kEditorDebug
+
 Before exploring the repository, read the repo index in .repo_index.
 
 Use:

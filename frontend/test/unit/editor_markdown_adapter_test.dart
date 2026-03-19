@@ -71,6 +71,21 @@ void main() {
       expect(_attributesForText(reloaded.toDelta(), 'text')['bold'], isTrue);
     });
 
+    test('escaped bold markers normalize into canonical bold on load', () {
+      const markdown = r'\*\*Should have been bold\*\*';
+
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
+      );
+
+      expect(document.toPlainText(), 'Should have been bold\n');
+      expect(
+        _attributesForText(document.toDelta(), 'Should have been bold')['bold'],
+        isTrue,
+      );
+      expect(_roundtripMarkdown(markdown), '**Should have been bold**');
+    });
+
     test('italic roundtrip survives save and load', () {
       const markdown = '*text*';
 

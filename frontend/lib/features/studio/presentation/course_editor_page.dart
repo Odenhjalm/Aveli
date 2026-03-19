@@ -52,6 +52,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
+import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
@@ -489,6 +490,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Timer? _coverPollTimer;
 
   ProviderSubscription<List<UploadJob>>? _uploadSubscription;
+  bool _lessonEditorFocusRestoreScheduled = false;
   final Set<String> _lessonsNeedingRefresh = <String>{};
   int _courseMetaRequestId = 0;
   int _lessonsRequestId = 0;
@@ -787,15 +789,36 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _controllerListener = null;
   }
 
-  void _ensureLessonEditorFocus() {
-    if (!_lessonContentFocusNode.hasFocus) {
+  bool _canRequestLessonEditorFocus() {
+    return mounted &&
+        !_lessonPreviewMode &&
+        _isSelectedLessonDocumentReady() &&
+        _lessonEditorBootPhase == _LessonEditorBootPhase.fullyStable &&
+        _selectedLessonId != null;
+  }
+
+  void _ensureLessonEditorFocus({String reason = 'mutation'}) {
+    if (!_canRequestLessonEditorFocus()) return;
+    if (_lessonContentFocusNode.hasFocus ||
+        _lessonEditorFocusRestoreScheduled) {
+      return;
+    }
+    _lessonEditorFocusRestoreScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _lessonEditorFocusRestoreScheduled = false;
+      if (!_canRequestLessonEditorFocus()) return;
+      if (_lessonContentFocusNode.hasFocus ||
+          !_lessonContentFocusNode.canRequestFocus) {
+        return;
+      }
       _logEditorPageEvent(
         event: 'warning',
         controller: _lessonContentController,
-        extraContext: 'warning=editor_not_focused action=request_focus',
+        extraContext:
+            'warning=editor_not_focused action=request_focus reason=$reason',
       );
       _lessonContentFocusNode.requestFocus();
-    }
+    });
   }
 
   void _markLessonContentDirty() {
@@ -878,7 +901,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   void _handleInlineFormatToolbarPressed() {
     _snapshotLessonSelection();
-    _ensureLessonEditorFocus();
+    _ensureLessonEditorFocus(reason: 'toolbar_format');
   }
 
   void _insertTextViaTestBridge(String text) {
@@ -1005,12 +1028,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_lessonPreviewMode == shouldEnable) return;
     if (shouldEnable) {
       _syncLessonPreviewMarkdownFromController();
+      if (_lessonContentFocusNode.hasFocus) {
+        _lessonContentFocusNode.unfocus();
+      }
     }
     if (!mounted) {
       _lessonPreviewMode = shouldEnable;
       return;
     }
     setState(() => _lessonPreviewMode = shouldEnable);
+    if (!shouldEnable) {
+      _ensureLessonEditorFocus(reason: 'preview_mode_disabled');
+    }
   }
 
   bool _matchesCurrentLessonRequest({
@@ -2175,6 +2204,105 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  bool _isEditorAuthProtectedMediaPath(String path) {
+    final normalized = path.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+    return normalized.startsWith('/studio/media/') ||
+        normalized.startsWith('/api/media/') ||
+        normalized.startsWith('/media/sign');
+  }
+
+  String? _normalizeBrowserOpenableMediaUrl(String? rawUrl) {
+    final trimmed = rawUrl?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+
+    final resolved = _resolveMediaUrl(trimmed) ?? trimmed;
+    final uri = Uri.tryParse(resolved);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') return null;
+    if (_isEditorAuthProtectedMediaPath(uri.path)) return null;
+    return uri.toString();
+  }
+
+  String? _browserOpenableLessonMediaUrl(Map<String, dynamic> media) {
+    final candidates = <String?>[
+      _resolveMediaListThumbnailUrl(media),
+      _resolveMediaDisplayUrl(media),
+      safeString(media, 'preferredUrl'),
+      safeString(media, 'preferred_url'),
+      safeString(media, 'playback_url'),
+      safeString(media, 'signed_url'),
+      safeString(media, 'download_url'),
+      safeString(media, 'url'),
+      _apiFilesDownloadPathForMedia(media),
+    ];
+    for (final candidate in candidates) {
+      final normalized = _normalizeBrowserOpenableMediaUrl(candidate);
+      if (normalized != null && normalized.isNotEmpty) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _resolveLessonEditorLaunchUrl(String rawUrl) async {
+    final direct = _normalizeBrowserOpenableMediaUrl(rawUrl);
+    if (direct != null) {
+      return direct;
+    }
+
+    final studioMatch = lesson_pipeline.studioMediaUrlPattern.firstMatch(
+      rawUrl.trim(),
+    );
+    final lessonMediaId = studioMatch?.group(1)?.trim();
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      return null;
+    }
+
+    for (final media in _lessonMedia) {
+      if (safeString(media, 'id') != lessonMediaId) continue;
+      final preferred = _browserOpenableLessonMediaUrl(media);
+      if (preferred != null && preferred.isNotEmpty) {
+        return preferred;
+      }
+      break;
+    }
+
+    try {
+      final signed = await ref
+          .read(mediaRepositoryProvider)
+          .signMedia(lessonMediaId, mode: MediaResolutionMode.editorPreview);
+      return _normalizeBrowserOpenableMediaUrl(signed.signedUrl);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _launchLessonEditorUrl(String url) async {
+    final rawUrl = url.trim();
+    if (rawUrl.isEmpty) return;
+
+    final rawUri = Uri.tryParse(rawUrl);
+    final rawPath = rawUri?.path ?? rawUrl;
+    final resolved = await _resolveLessonEditorLaunchUrl(rawUrl);
+    if (resolved == null && _isEditorAuthProtectedMediaPath(rawPath)) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Kunde inte öppna medielänken.');
+      }
+      return;
+    }
+
+    final target = resolved ?? rawUrl;
+    final opened = await launchUrlString(
+      target,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted && context.mounted) {
+      showSnack(context, 'Kunde inte öppna länken.');
+    }
+  }
+
   String _visibleLessonTextForLog(String value) {
     return value
         .replaceAll('\\', r'\\')
@@ -2680,6 +2808,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         placeholder:
                             'Skriv eller klistra in lektionsinnehåll...',
                         onKeyPressed: _handleLessonEditorKeyPressed,
+                        onLaunchUrl: (url) =>
+                            unawaited(_launchLessonEditorUrl(url)),
                         embedBuilders: [
                           ...FlutterQuillEmbeds.defaultEditorBuilders().where(
                             (builder) =>
@@ -2738,7 +2868,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ],
         _buildPreviewHydrationBanner(context),
         gap12,
-        quill.QuillSimpleToolbar(controller: controller, config: toolbarConfig),
+        TooltipVisibility(
+          visible: false,
+          child: quill.QuillSimpleToolbar(
+            controller: controller,
+            config: toolbarConfig,
+          ),
+        ),
         gap12,
         Wrap(
           spacing: 8,
@@ -5050,10 +5186,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                for (final action in actions) ...[
-                  const SizedBox(width: 8),
-                  action,
-                ],
+                if (actions.isNotEmpty)
+                  TooltipVisibility(
+                    visible: false,
+                    child: Wrap(
+                      spacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: actions,
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -6760,113 +6901,121 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                     ),
                                                 ],
                                               ),
-                                              trailing: Wrap(
-                                                spacing: 4,
-                                                crossAxisAlignment:
-                                                    WrapCrossAlignment.center,
-                                                children: [
-                                                  if (_isImageMedia(media)) ...[
-                                                    IconButton(
-                                                      tooltip:
-                                                          'Använd som kursbild',
-                                                      icon: const Icon(
-                                                        Icons.star,
+                                              trailing: TooltipVisibility(
+                                                visible: false,
+                                                child: Wrap(
+                                                  spacing: 4,
+                                                  crossAxisAlignment:
+                                                      WrapCrossAlignment.center,
+                                                  children: [
+                                                    if (_isImageMedia(
+                                                      media,
+                                                    )) ...[
+                                                      IconButton(
+                                                        tooltip:
+                                                            'Använd som kursbild',
+                                                        icon: const Icon(
+                                                          Icons.star,
+                                                        ),
+                                                        onPressed:
+                                                            _updatingCourseCover
+                                                            ? null
+                                                            : () {
+                                                                _suppressMediaPreviewOnce();
+                                                                unawaited(
+                                                                  _selectCourseCoverFromMedia(
+                                                                    media,
+                                                                  ),
+                                                                );
+                                                              },
                                                       ),
-                                                      onPressed:
-                                                          _updatingCourseCover
+                                                      IconButton(
+                                                        tooltip:
+                                                            'Infoga i lektionen',
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .add_photo_alternate_outlined,
+                                                        ),
+                                                        onPressed:
+                                                            canInsertIntoLesson
+                                                            ? () =>
+                                                                  _insertMediaIntoLesson(
+                                                                    media,
+                                                                  )
+                                                            : null,
+                                                      ),
+                                                    ] else ...[
+                                                      IconButton(
+                                                        tooltip:
+                                                            'Infoga i lektionen',
+                                                        icon: Icon(
+                                                          isDocument
+                                                              ? Icons
+                                                                    .picture_as_pdf_outlined
+                                                              : kind ==
+                                                                        'video' ||
+                                                                    contentType
+                                                                        .startsWith(
+                                                                          'video/',
+                                                                        )
+                                                              ? Icons
+                                                                    .movie_creation_outlined
+                                                              : Icons
+                                                                    .audiotrack_outlined,
+                                                        ),
+                                                        onPressed:
+                                                            canInsertIntoLesson
+                                                            ? () =>
+                                                                  _insertMediaIntoLesson(
+                                                                    media,
+                                                                  )
+                                                            : null,
+                                                      ),
+                                                    ],
+                                                    if (isAudio)
+                                                      IconButton(
+                                                        tooltip: 'Byt ljud',
+                                                        icon: const Icon(
+                                                          Icons.sync,
+                                                        ),
+                                                        onPressed: () =>
+                                                            _replaceAudioMedia(
+                                                              media,
+                                                              index,
+                                                            ),
+                                                      ),
+                                                    IconButton(
+                                                      tooltip: 'Ladda ner',
+                                                      icon: const Icon(
+                                                        Icons.download_outlined,
+                                                      ),
+                                                      onPressed: canDownload
+                                                          ? () =>
+                                                                _downloadMedia(
+                                                                  media,
+                                                                )
+                                                          : null,
+                                                    ),
+                                                    IconButton(
+                                                      tooltip: 'Ta bort',
+                                                      icon: const Icon(
+                                                        Icons.delete_outline,
+                                                      ),
+                                                      onPressed: mediaId == null
                                                           ? null
-                                                          : () {
-                                                              _suppressMediaPreviewOnce();
-                                                              unawaited(
-                                                                _selectCourseCoverFromMedia(
-                                                                  media,
-                                                                ),
-                                                              );
-                                                            },
+                                                          : () => _deleteMedia(
+                                                              mediaId,
+                                                            ),
                                                     ),
-                                                    IconButton(
-                                                      tooltip:
-                                                          'Infoga i lektionen',
-                                                      icon: const Icon(
+                                                    ReorderableDragStartListener(
+                                                      index: index,
+                                                      child: const Icon(
                                                         Icons
-                                                            .add_photo_alternate_outlined,
+                                                            .drag_handle_rounded,
                                                       ),
-                                                      onPressed:
-                                                          canInsertIntoLesson
-                                                          ? () =>
-                                                                _insertMediaIntoLesson(
-                                                                  media,
-                                                                )
-                                                          : null,
-                                                    ),
-                                                  ] else ...[
-                                                    IconButton(
-                                                      tooltip:
-                                                          'Infoga i lektionen',
-                                                      icon: Icon(
-                                                        isDocument
-                                                            ? Icons
-                                                                  .picture_as_pdf_outlined
-                                                            : kind == 'video' ||
-                                                                  contentType
-                                                                      .startsWith(
-                                                                        'video/',
-                                                                      )
-                                                            ? Icons
-                                                                  .movie_creation_outlined
-                                                            : Icons
-                                                                  .audiotrack_outlined,
-                                                      ),
-                                                      onPressed:
-                                                          canInsertIntoLesson
-                                                          ? () =>
-                                                                _insertMediaIntoLesson(
-                                                                  media,
-                                                                )
-                                                          : null,
                                                     ),
                                                   ],
-                                                  if (isAudio)
-                                                    IconButton(
-                                                      tooltip: 'Byt ljud',
-                                                      icon: const Icon(
-                                                        Icons.sync,
-                                                      ),
-                                                      onPressed: () =>
-                                                          _replaceAudioMedia(
-                                                            media,
-                                                            index,
-                                                          ),
-                                                    ),
-                                                  IconButton(
-                                                    tooltip: 'Ladda ner',
-                                                    icon: const Icon(
-                                                      Icons.download_outlined,
-                                                    ),
-                                                    onPressed: canDownload
-                                                        ? () => _downloadMedia(
-                                                            media,
-                                                          )
-                                                        : null,
-                                                  ),
-                                                  IconButton(
-                                                    tooltip: 'Ta bort',
-                                                    icon: const Icon(
-                                                      Icons.delete_outline,
-                                                    ),
-                                                    onPressed: mediaId == null
-                                                        ? null
-                                                        : () => _deleteMedia(
-                                                            mediaId,
-                                                          ),
-                                                  ),
-                                                  ReorderableDragStartListener(
-                                                    index: index,
-                                                    child: const Icon(
-                                                      Icons.drag_handle_rounded,
-                                                    ),
-                                                  ),
-                                                ],
+                                                ),
                                               ),
                                             ),
                                           ),

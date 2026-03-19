@@ -167,3 +167,4 @@ pipeline-summary.json
 storage-catalog.json
 *-report.json
 *-report.md
+*.deb

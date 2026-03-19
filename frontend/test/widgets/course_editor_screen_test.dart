@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
@@ -19,6 +19,8 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
+import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
@@ -42,6 +44,8 @@ class _MockStudioRepository extends Mock implements StudioRepository {}
 class _MockCoursesRepository extends Mock implements CoursesRepository {}
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
+
+class _MockMediaRepository extends Mock implements MediaRepository {}
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController() : super(_MockAuthRepository(), AuthHttpObserver()) {
@@ -312,6 +316,7 @@ Future<void> _pumpCourseEditorScreen(
   required StudioRepository studioRepo,
   required CoursesRepository coursesRepo,
   ApiClient? apiClient,
+  MediaRepository? mediaRepository,
   MediaPipelineRepository? mediaPipelineRepository,
   UploadQueueNotifier? uploadQueueNotifier,
   CourseEditorWebFilePicker? webImagePicker,
@@ -334,6 +339,8 @@ Future<void> _pumpCourseEditorScreen(
         studioRepositoryProvider.overrideWithValue(studioRepo),
         coursesRepositoryProvider.overrideWithValue(coursesRepo),
         if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
+        if (mediaRepository != null)
+          mediaRepositoryProvider.overrideWithValue(mediaRepository),
         if (mediaPipelineRepository != null)
           mediaPipelineRepositoryProvider.overrideWithValue(
             mediaPipelineRepository,
@@ -2146,6 +2153,41 @@ void main() {
   );
 
   testWidgets(
+    'CourseEditorScreen renders escaped bold markers as bold immediately after load',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: r'\*\*Should have been bold\*\*',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final boldStyles = _editorTextStylesForText(
+        tester,
+        'Should have been bold',
+      );
+
+      expect(_renderedEditorText(tester), contains('Should have been bold'));
+      expect(_renderedEditorText(tester), isNot(contains('**')));
+      expect(
+        boldStyles.any((style) => style?.fontWeight == FontWeight.bold),
+        isTrue,
+      );
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
     'CourseEditorScreen renders underline formatting immediately after load',
     (tester) async {
       final studioRepo = _MockStudioRepository();
@@ -3687,6 +3729,104 @@ void main() {
 
       expect(_lessonTitleFieldValue(tester), 'Lesson Two Draft');
       expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    },
+  );
+
+  testWidgets(
+    'editor launches canonical lesson media links via a browser-openable signed URL',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final mediaRepository = _MockMediaRepository();
+      final launchCalls = <MethodCall>[];
+      const urlLauncherChannel = MethodChannel(
+        'plugins.flutter.io/url_launcher',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(urlLauncherChannel, (call) async {
+            launchCalls.add(call);
+            if (call.method == 'canLaunch' ||
+                call.method == 'launch' ||
+                call.method == 'launchUrl') {
+              return true;
+            }
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(urlLauncherChannel, null),
+      );
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: '[📄 material.pdf](/studio/media/media-pdf-1)',
+        lessonMedia: [
+          {
+            'id': 'media-pdf-1',
+            'kind': 'pdf',
+            'original_name': 'material.pdf',
+            'position': 1,
+          },
+        ],
+      );
+
+      when(() => mediaRepository.resolveDownloadUrl(any())).thenAnswer((
+        invocation,
+      ) {
+        final raw = invocation.positionalArguments.single as String;
+        if (raw.startsWith('http://') || raw.startsWith('https://')) {
+          return raw;
+        }
+        return 'http://localhost:8080$raw';
+      });
+      when(
+        () => mediaRepository.signMedia(
+          'media-pdf-1',
+          mode: MediaResolutionMode.editorPreview,
+        ),
+      ).thenAnswer(
+        (_) async => MediaSignedUrl(
+          mediaId: 'media-pdf-1',
+          signedUrl: '/media/stream/editor-pdf-token',
+          expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 5)),
+        ),
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        mediaRepository: mediaRepository,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final editor = tester.widget<quill.QuillEditor>(
+        find.byType(quill.QuillEditor).first,
+      );
+      final onLaunchUrl = editor.config.onLaunchUrl;
+      expect(onLaunchUrl, isNotNull);
+
+      onLaunchUrl!('/studio/media/media-pdf-1');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+
+      expect(
+        launchCalls.any(
+          (call) =>
+              call.method.toLowerCase().contains('launch') &&
+              call.arguments.toString().contains(
+                'http://localhost:8080/media/stream/editor-pdf-token',
+              ),
+        ),
+        isTrue,
+      );
+      verify(
+        () => mediaRepository.signMedia(
+          'media-pdf-1',
+          mode: MediaResolutionMode.editorPreview,
+        ),
+      ).called(1);
     },
   );
 }
