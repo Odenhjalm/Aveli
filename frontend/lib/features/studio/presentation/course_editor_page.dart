@@ -415,13 +415,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     milliseconds: 250,
   );
   static const int _lessonEditorTestIdMaxSyncAttempts = 40;
-  static const Set<String> _publicStorageBuckets = <String>{
-    'public-media',
-    'users',
-    'avatars',
-    'hero',
-    'logos',
-  };
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
@@ -1938,31 +1931,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return path.substring(index);
   }
 
-  String? _apiFilesDownloadPathForMedia(Map<String, dynamic> media) {
-    final rawPath = (media['storage_path'] as String?)?.trim();
-    if (rawPath == null || rawPath.isEmpty) return null;
-    final normalized = rawPath
-        .replaceAll('\\', '/')
-        .replaceFirst(RegExp(r'^/+'), '');
-    if (normalized.isEmpty) return null;
-
-    var bucket = (media['storage_bucket'] as String?)?.trim();
-    if (bucket == null || bucket.isEmpty) {
-      final parts = normalized.split('/');
-      if (parts.isNotEmpty) {
-        bucket = parts[0];
-      }
-    }
-    final resolvedBucket = (bucket ?? '').trim();
-    if (resolvedBucket.isEmpty) return null;
-    final relativePath = normalized.startsWith('$resolvedBucket/')
-        ? normalized.substring(resolvedBucket.length + 1)
-        : normalized;
-    return ref
-        .read(mediaRepositoryProvider)
-        .buildMediaUrl(resolvedBucket, relativePath);
-  }
-
   Map<String, String> _apiFilesPathToStudioMediaUrlForSelectedLesson() {
     final lessonId = _selectedLessonId;
     if (lessonId == null) return const <String, String>{};
@@ -1977,7 +1945,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final candidates = <String?>[
         _mediaUrl(media),
         media['url'] as String?,
-        _apiFilesDownloadPathForMedia(media),
+        media['download_url'] as String?,
+        media['signed_url'] as String?,
+        media['playback_url'] as String?,
       ];
       for (final candidate in candidates) {
         final apiPath = _apiFilesPathFromUrl(candidate);
@@ -2004,7 +1974,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         safeString(media, 'url'),
         safeString(media, 'preferredUrl'),
         safeString(media, 'preferred_url'),
-        _apiFilesDownloadPathForMedia(media),
+        safeString(media, 'download_url'),
+        safeString(media, 'signed_url'),
+        safeString(media, 'playback_url'),
         _resolveMediaDisplayUrl(media),
         _resolveMediaListThumbnailUrl(media),
       ];
@@ -2083,7 +2055,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       safeString(media, 'download_url'),
       safeString(media, 'signed_url'),
       safeString(media, 'url'),
-      _apiFilesDownloadPathForMedia(media),
     ];
     for (final candidate in candidates) {
       final resolved = _asAbsoluteHttpUrl(candidate) ?? candidate?.trim();
@@ -2247,7 +2218,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       safeString(media, 'signed_url'),
       safeString(media, 'download_url'),
       safeString(media, 'url'),
-      _apiFilesDownloadPathForMedia(media),
     ];
     for (final candidate in candidates) {
       final normalized = _normalizeBrowserOpenableMediaUrl(candidate);
@@ -2504,10 +2474,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
     final uiPlainText = _lessonContentController.document.toPlainText();
-    final markdown = _serializeLessonMarkdownFromController(
-      _lessonContentController,
-    );
-    final rawMarkdown = markdown;
+    late final String markdown;
+    late final String rawMarkdown;
+    try {
+      markdown = _serializeLessonMarkdownFromController(
+        _lessonContentController,
+      );
+      rawMarkdown = markdown;
+    } catch (error, stackTrace) {
+      _showFriendlyErrorSnack('Kunde inte spara lektion', error, stackTrace);
+      return false;
+    }
 
     if (kDebugMode) {
       debugPrint(
@@ -3972,50 +3949,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  bool _isPublicBucket(String? bucket) {
-    if (bucket == null) return false;
-    final normalized = bucket.trim();
-    if (normalized.isEmpty) return false;
-    return _publicStorageBuckets.contains(normalized);
-  }
-
-  String? _publicDownloadPathForMedia(Map<String, dynamic> media) {
-    final rawPath = (media['storage_path'] as String?)?.trim();
-    if (rawPath == null || rawPath.isEmpty) return null;
-    final normalized = rawPath
-        .replaceAll('\\', '/')
-        .replaceFirst(RegExp(r'^/+'), '');
-    if (normalized.isEmpty) return null;
-
-    var bucket = (media['storage_bucket'] as String?)?.trim();
-    if (bucket == null || bucket.isEmpty) {
-      final parts = normalized.split('/');
-      if (parts.isNotEmpty) {
-        bucket = parts[0];
-      }
-    }
-    final resolvedBucket = (bucket ?? '').trim();
-    if (!_isPublicBucket(resolvedBucket)) return null;
-    final relativePath = normalized.startsWith('$resolvedBucket/')
-        ? normalized.substring(resolvedBucket.length + 1)
-        : normalized;
-    return ref
-        .read(mediaRepositoryProvider)
-        .buildMediaUrl(resolvedBucket, relativePath);
-  }
-
   String? _resolveMediaDisplayUrl(Map<String, dynamic> media) {
-    final direct = _mediaUrl(media);
-    if (direct != null && direct.isNotEmpty) {
-      return _resolveMediaUrl(direct);
-    }
-    final rawUrl = media['url'];
-    if (rawUrl is String && rawUrl.trim().isNotEmpty) {
-      return _resolveMediaUrl(rawUrl.trim());
-    }
-    final publicPath = _publicDownloadPathForMedia(media);
-    if (publicPath != null) {
-      return _resolveMediaUrl(publicPath);
+    final candidates = <String?>[
+      _mediaUrl(media),
+      safeString(media, 'url'),
+      safeString(media, 'download_url'),
+      safeString(media, 'playback_url'),
+      safeString(media, 'signed_url'),
+    ];
+    for (final candidate in candidates) {
+      final resolved = _resolveMediaUrl(candidate);
+      if (resolved != null && resolved.trim().isNotEmpty) {
+        return resolved;
+      }
     }
     return null;
   }
@@ -4171,7 +4117,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         media['preferred_url'] as String?,
         media['url'] as String?,
         media['download_url'] as String?,
-        _publicDownloadPathForMedia(media),
       ];
       for (final candidate in urlCandidates) {
         final absolute = _asAbsoluteHttpUrl(_resolveMediaUrl(candidate));
@@ -4947,57 +4892,50 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonsNeedingRefresh.add(job.lessonId);
       return;
     }
-    final token = _captureEditorToken();
-    // Refresh media list first
-    await _loadLessonMedia();
-    if (!mounted || !_isEditorTokenValid(token)) return;
-    final filename = job.filename;
-    final contentType = job.contentType.toLowerCase();
-
-    // Find the uploaded media by original_name; choose the last match
-    Map<String, dynamic>? uploaded;
-    for (final m in _lessonMedia) {
-      if ((m['original_name'] as String?) == filename) {
-        debugPrint('[CourseEditor] matched media by original_name: ${m["id"]}');
-        uploaded = m; // keep last match
+    final authoritativeUpload = job.uploadedMedia == null
+        ? null
+        : Map<String, dynamic>.from(job.uploadedMedia!);
+    final authoritativeUploadId = safeString(authoritativeUpload, 'id');
+    if (authoritativeUpload == null || authoritativeUploadId == null) {
+      if (context.mounted) {
+        showSnack(
+          context,
+          'Uppladdningen saknade canonical media-identitet. Uppdatera listan.',
+        );
       }
+      if (mounted) {
+        setState(
+          () => _mediaStatus =
+              'Uppladdning klar men canonical media saknas: ${job.filename}',
+        );
+      }
+      return;
     }
 
-    // Fallback: pick most recent item if no name match
-    if (uploaded == null && _lessonMedia.isNotEmpty) {
-      Map<String, dynamic>? newest;
-      DateTime? newestTime;
-      for (final item in _lessonMedia) {
-        final created = item['created_at'];
-        DateTime? parsed;
-        if (created is DateTime) {
-          parsed = created;
-        } else if (created is String) {
-          parsed = DateTime.tryParse(created);
-        }
-        if (parsed != null &&
-            (newestTime == null || parsed.isAfter(newestTime))) {
-          newest = item;
-          newestTime = parsed;
-        }
+    final token = _captureEditorToken();
+    await _loadLessonMedia();
+    if (!mounted || !_isEditorTokenValid(token)) return;
+    final contentType = job.contentType.toLowerCase();
+
+    Map<String, dynamic>? uploaded;
+    for (final media in _lessonMedia) {
+      if (safeString(media, 'id') == authoritativeUploadId) {
+        uploaded = {...authoritativeUpload, ...media};
+        break;
       }
-      uploaded = newest ?? _lessonMedia.last;
-      debugPrint(
-        '[CourseEditor] fallback media id=${uploaded["id"]} name=${uploaded["original_name"]} createdAt=$newestTime',
-      );
     }
 
     if (uploaded == null) {
       if (context.mounted) {
         showSnack(
           context,
-          'Uppladdningen lyckades men hittade inte media. Uppdatera listan.',
+          'Uppladdningen är klar men media saknas i lektionens backend-lista.',
         );
       }
       if (mounted) {
         setState(
           () => _mediaStatus =
-              'Uppladdning klar men media saknas: ${job.filename}',
+              'Uppladdning klar men backend-listan saknar media: ${job.filename}',
         );
       }
       return;

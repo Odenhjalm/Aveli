@@ -32,6 +32,7 @@ from ..services import (
 from ..services import media_cleanup
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 from ..utils import media_signer
+from ..utils.media_urls import absolutize_media_url_items, absolutize_media_urls
 from ..utils.profile_media import (
     lesson_media_source_from_row,
     profile_media_item_from_row,
@@ -300,6 +301,7 @@ async def presign_lesson_media_upload(
 
 @router.post("/lessons/{lesson_id}/media/complete")
 async def complete_lesson_media_upload(
+    request: Request,
     lesson_id: UUID,
     payload: schemas.LessonMediaUploadCompleteRequest,
     current: TeacherUser,
@@ -357,11 +359,12 @@ async def complete_lesson_media_upload(
     if kind in {"document", "pdf"}:
         row["media_state"] = "ready"
     media_signer.attach_media_links(row)
+    absolutize_media_urls(row, base_url=str(request.base_url))
     return row
 
 
 @router.get("/lessons/{lesson_id}/media")
-async def list_lesson_media(lesson_id: UUID, current: TeacherUser):
+async def list_lesson_media(request: Request, lesson_id: UUID, current: TeacherUser):
     lesson_id_str = str(lesson_id)
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
@@ -375,6 +378,7 @@ async def list_lesson_media(lesson_id: UUID, current: TeacherUser):
             mode="editor_preview",
         )
     )
+    absolutize_media_url_items(items, base_url=str(request.base_url))
     return {"items": items}
 
 
@@ -1576,14 +1580,17 @@ async def create_lesson(
         )
         raise HTTPException(status_code=403, detail="Not course owner")
     lesson_id = str(payload.id) if payload.id else None
-    row = await courses_service.create_lesson(
-        course_id,
-        title=payload.title,
-        content_markdown=payload.content_markdown,
-        position=payload.position,
-        is_intro=payload.is_intro,
-        lesson_id=lesson_id,
-    )
+    try:
+        row = await courses_service.create_lesson(
+            course_id,
+            title=payload.title,
+            content_markdown=payload.content_markdown,
+            position=payload.position,
+            is_intro=payload.is_intro,
+            lesson_id=lesson_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create lesson")
     return row
@@ -1624,7 +1631,10 @@ async def update_lesson(
         )
 
     lesson_payload = {"id": lesson_id, **patch}
-    row = await courses_service.upsert_lesson(str(course_id), lesson_payload)
+    try:
+        row = await courses_service.upsert_lesson(str(course_id), lesson_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=400, detail="Failed to update lesson")
 

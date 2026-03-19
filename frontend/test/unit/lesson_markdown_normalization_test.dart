@@ -140,13 +140,22 @@ void main() {
       expect(normalized, isNot(contains('<video')));
     });
 
-    test('removes unsupported HTML media tags before storage', () {
+    test('rejects unsupported HTML media tags before storage', () {
       const markdown = '<video src="https://cdn.test/legacy.mp4"></video>';
 
-      final normalized = normalizeLessonMarkdownForStorage(markdown);
+      expect(
+        () => normalizeLessonMarkdownForStorage(markdown),
+        throwsA(isA<StateError>()),
+      );
+    });
 
-      expect(normalized, isNot(contains('<video')));
-      expect(normalized.trim(), isEmpty);
+    test('rejects raw markdown image URLs before storage', () {
+      const markdown = '![alt](https://cdn.test/legacy.png)';
+
+      expect(
+        () => normalizeLessonMarkdownForStorage(markdown),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('legacy video detection: empty and invalid URLs are legacy', () {

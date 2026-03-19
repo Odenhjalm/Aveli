@@ -3209,6 +3209,7 @@ void main() {
         createdAt: DateTime.utc(2026, 3, 18),
         status: UploadJobStatus.success,
         progress: 1,
+        uploadedMedia: Map<String, dynamic>.from(lessonMedia.first),
       );
 
       uploadQueue.setJobs(<UploadJob>[successJob]);
@@ -3305,6 +3306,7 @@ void main() {
         createdAt: DateTime.utc(2026, 3, 18),
         status: UploadJobStatus.success,
         progress: 1,
+        uploadedMedia: Map<String, dynamic>.from(lessonMedia.first),
       );
 
       uploadQueue.setJobs(<UploadJob>[successJob]);
@@ -3393,6 +3395,7 @@ void main() {
         createdAt: DateTime.utc(2026, 3, 18),
         status: UploadJobStatus.success,
         progress: 1,
+        uploadedMedia: Map<String, dynamic>.from(lessonMedia.first),
       );
 
       uploadQueue.setJobs(<UploadJob>[successJob]);
@@ -3470,6 +3473,7 @@ void main() {
         createdAt: DateTime.utc(2026, 3, 18),
         status: UploadJobStatus.success,
         progress: 1,
+        uploadedMedia: Map<String, dynamic>.from(lessonMedia.first),
       );
 
       uploadQueue.setJobs(<UploadJob>[successJob]);

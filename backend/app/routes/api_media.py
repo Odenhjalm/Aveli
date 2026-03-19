@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi import Request
 from pydantic import BaseModel
 
 from .. import models, schemas
@@ -19,6 +20,7 @@ from ..repositories import storage_objects
 from ..services import courses_service, lesson_playback_service, media_cleanup
 from ..services import storage_service
 from ..utils import media_paths
+from ..utils.media_urls import absolutize_media_urls
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,25 @@ def _preview_thumbnail_url(item: dict[str, object]) -> str | None:
         normalized = _normalized_preview_string(candidate)
         if normalized:
             return normalized
+    return None
+
+
+async def _canonical_lesson_media_row(
+    *,
+    lesson_id: str,
+    lesson_media_id: str,
+    base_url: str,
+) -> dict[str, object] | None:
+    lesson_media_items = await courses_service.list_lesson_media(
+        lesson_id,
+        mode="editor_preview",
+    )
+    for item in lesson_media_items:
+        if str(item.get("id") or "").strip() != lesson_media_id:
+            continue
+        canonical = dict(item)
+        absolutize_media_urls(canonical, base_url=base_url)
+        return canonical
     return None
 
 
@@ -611,6 +632,7 @@ async def refresh_upload_url(
 
 @router.post("/upload-url/complete", response_model=schemas.MediaStatusResponse)
 async def complete_upload_url(
+    request: Request,
     payload: schemas.MediaUploadCompleteRequest,
     current: TeacherUser,
 ):
@@ -708,6 +730,11 @@ async def complete_upload_url(
             )
         media_asset = await media_assets_repo.get_media_asset(media_asset_id) or media_asset
 
+    canonical_lesson_media = await _canonical_lesson_media_row(
+        lesson_id=lesson_id,
+        lesson_media_id=str(lesson_media["id"]),
+        base_url=str(request.base_url),
+    )
     return schemas.MediaStatusResponse(
         media_id=UUID(media_asset_id),
         state=str(media_asset.get("state") or "uploaded"),
@@ -716,6 +743,8 @@ async def complete_upload_url(
         streaming_format=media_asset.get("streaming_format"),
         duration_seconds=media_asset.get("duration_seconds"),
         codec=media_asset.get("codec"),
+        lesson_media_id=UUID(str(lesson_media["id"])),
+        lesson_media=canonical_lesson_media,
     )
 
 
@@ -949,6 +978,7 @@ async def request_playback_url(
 
 @router.post("/previews", response_model=schemas.MediaPreviewBatchResponse)
 async def request_media_previews(
+    request: Request,
     payload: schemas.MediaPreviewBatchRequest,
     current: TeacherUser,
 ):
@@ -997,6 +1027,8 @@ async def request_media_previews(
             item = by_id.get(lesson_media_id)
             if item is None:
                 continue
+            item = dict(item)
+            absolutize_media_urls(item, base_url=str(request.base_url))
             duration_seconds = item.get("duration_seconds")
             preview_items[lesson_media_id] = schemas.MediaPreviewItem(
                 media_type=_normalized_preview_string(item.get("kind")) or "",

@@ -44,17 +44,6 @@ MediaRepository _buildRepository() {
 
 void main() {
   group('MediaRepository URL resolver', () {
-    test('buildMediaUrl returns backend files path', () {
-      final repository = _buildRepository();
-
-      final resolved = repository.buildMediaUrl(
-        'public-media',
-        'course/lesson/file.png',
-      );
-
-      expect(resolved, '/api/files/public-media/course/lesson/file.png');
-    });
-
     test('resolveDownloadUrl resolves backend-relative path', () {
       final repository = _buildRepository();
 

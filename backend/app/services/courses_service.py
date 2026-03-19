@@ -29,7 +29,11 @@ from . import media_cleanup
 from . import media_resolver
 from ..services import storage_service
 from ..utils.audio_content_types import resolve_runtime_audio_content_type
-from ..utils.lesson_content import serialize_audio_embeds
+from ..utils.lesson_content import (
+    build_lesson_media_write_contract,
+    normalize_lesson_markdown_for_storage,
+    serialize_audio_embeds,
+)
 from ..utils import media_signer
 from ..utils import media_robustness
 from ..utils.membership_status import is_membership_active
@@ -477,6 +481,28 @@ async def list_lessons(module_id: str) -> Sequence[dict[str, Any]]:
     return _materialize_rows(rows)
 
 
+async def _normalize_lesson_content_markdown(
+    content_markdown: str,
+    *,
+    lesson_id: str | None,
+) -> str:
+    lesson_media_kinds: dict[str, str] = {}
+    media_url_aliases: dict[str, str] = {}
+
+    normalized_lesson_id = str(lesson_id or "").strip() or None
+    if normalized_lesson_id is not None:
+        lesson_media_rows = await courses_repo.list_lesson_media(normalized_lesson_id)
+        lesson_media_kinds, media_url_aliases = build_lesson_media_write_contract(
+            lesson_media_rows
+        )
+
+    return normalize_lesson_markdown_for_storage(
+        content_markdown,
+        lesson_media_kinds=lesson_media_kinds,
+        media_url_aliases=media_url_aliases,
+    )
+
+
 async def create_lesson(
     course_id: str,
     *,
@@ -487,8 +513,12 @@ async def create_lesson(
     lesson_id: str | None = None,
 ) -> dict[str, Any]:
     content_value = content_markdown
-    if isinstance(content_value, str) and content_value:
-        content_value = serialize_audio_embeds(content_value)
+    if isinstance(content_value, str):
+        serialized = serialize_audio_embeds(content_value)
+        content_value = await _normalize_lesson_content_markdown(
+            serialized,
+            lesson_id=lesson_id,
+        )
 
     row = await courses_repo.create_lesson(
         course_id,
@@ -694,10 +724,14 @@ async def upsert_lesson(
 ) -> dict[str, Any]:
     """Create or update lesson data."""
     lesson_payload: dict[str, Any] = dict(payload)
+    lesson_id = str(lesson_payload.get("id") or "").strip() or None
     content_value = lesson_payload.get("content_markdown")
-    if isinstance(content_value, str) and content_value:
+    if isinstance(content_value, str):
         serialized = serialize_audio_embeds(content_value)
-        lesson_payload["content_markdown"] = serialized
+        lesson_payload["content_markdown"] = await _normalize_lesson_content_markdown(
+            serialized,
+            lesson_id=lesson_id,
+        )
 
     row = await courses_repo.upsert_lesson(course_id, lesson_payload)
     materialized = _materialize_optional_row(row)

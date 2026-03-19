@@ -27,6 +27,7 @@ class UploadJob {
     this.maxAttempts = 3,
     this.error,
     this.scheduledAt,
+    this.uploadedMedia,
   });
 
   final String id;
@@ -44,6 +45,7 @@ class UploadJob {
   final int maxAttempts;
   final String? error;
   final DateTime? scheduledAt;
+  final Map<String, dynamic>? uploadedMedia;
 
   bool get hasData => data.isNotEmpty;
 
@@ -58,6 +60,8 @@ class UploadJob {
     bool clearData = false,
     bool? isIntro,
     DateTime? scheduledAt,
+    Map<String, dynamic>? uploadedMedia,
+    bool clearUploadedMedia = false,
   }) {
     return UploadJob(
       id: id,
@@ -75,6 +79,9 @@ class UploadJob {
       maxAttempts: maxAttempts ?? this.maxAttempts,
       error: clearError ? null : (error ?? this.error),
       scheduledAt: scheduledAt,
+      uploadedMedia: clearUploadedMedia
+          ? null
+          : (uploadedMedia ?? this.uploadedMedia),
     );
   }
 }
@@ -230,7 +237,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     );
 
     try {
-      await _repo.uploadLessonMedia(
+      final uploadedMedia = await _repo.uploadLessonMedia(
         courseId: job.courseId,
         lessonId: job.lessonId,
         data: job.data,
@@ -251,6 +258,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
           progress: 1,
           clearData: true,
           scheduledAt: null,
+          uploadedMedia: Map<String, dynamic>.from(uploadedMedia),
         ),
       );
     } on DioException catch (e) {

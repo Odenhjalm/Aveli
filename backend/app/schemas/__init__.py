@@ -1033,6 +1033,8 @@ class MediaStatusResponse(BaseModel):
     streaming_format: str | None = None
     duration_seconds: int | None = None
     codec: str | None = None
+    lesson_media_id: UUID | None = None
+    lesson_media: dict[str, Any] | None = None
 
 
 class MediaPresignRequest(BaseModel):

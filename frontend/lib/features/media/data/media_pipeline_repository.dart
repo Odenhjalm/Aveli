@@ -56,6 +56,8 @@ class MediaStatus {
     this.streamingFormat,
     this.durationSeconds,
     this.codec,
+    this.lessonMediaId,
+    this.lessonMedia,
   });
 
   final String mediaId;
@@ -65,6 +67,8 @@ class MediaStatus {
   final String? streamingFormat;
   final int? durationSeconds;
   final String? codec;
+  final String? lessonMediaId;
+  final Map<String, dynamic>? lessonMedia;
 
   factory MediaStatus.fromJson(Map<String, dynamic> json) => MediaStatus(
     mediaId: json['media_id'] as String,
@@ -74,6 +78,10 @@ class MediaStatus {
     streamingFormat: json['streaming_format'] as String?,
     durationSeconds: json['duration_seconds'] as int?,
     codec: json['codec'] as String?,
+    lessonMediaId: json['lesson_media_id'] as String?,
+    lessonMedia: json['lesson_media'] is Map
+        ? Map<String, dynamic>.from(json['lesson_media'] as Map)
+        : null,
   );
 }
 

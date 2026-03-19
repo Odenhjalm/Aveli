@@ -222,6 +222,13 @@ String _lessonMediaToken({
   required String lessonMediaId,
 }) => '!$kind($lessonMediaId)';
 
+Never _throwCanonicalMediaWriteViolation(String raw) {
+  throw StateError(
+    'Canonical text contract violation: media refs must use typed '
+    'lesson_media ids. Could not normalize ${raw.trim()}.',
+  );
+}
+
 DeltaToMarkdown createLessonDeltaToMarkdown() {
   return DeltaToMarkdown(
     customEmbedHandlers: {
@@ -437,7 +444,9 @@ String convertHtmlMediaToTokens(String markdown) {
     final attrs = _parseHtmlAttributes(raw);
     final src = _normalizeMediaSourceAttribute(attrs);
     final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) return '';
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      _throwCanonicalMediaWriteViolation(raw);
+    }
     return _lessonMediaToken(kind: 'audio', lessonMediaId: lessonMediaId);
   });
   converted = converted.replaceAllMapped(_videoHtmlElementPattern, (match) {
@@ -446,7 +455,9 @@ String convertHtmlMediaToTokens(String markdown) {
     final attrs = _parseHtmlAttributes(raw);
     final src = _normalizeMediaSourceAttribute(attrs);
     final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) return '';
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      _throwCanonicalMediaWriteViolation(raw);
+    }
     return _lessonMediaToken(kind: 'video', lessonMediaId: lessonMediaId);
   });
   converted = converted.replaceAllMapped(_imgHtmlTagPattern, (match) {
@@ -458,10 +469,7 @@ String convertHtmlMediaToTokens(String markdown) {
     if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
       return _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId);
     }
-    if (src.isNotEmpty) {
-      return '![]($src)';
-    }
-    return '';
+    _throwCanonicalMediaWriteViolation(raw);
   });
   return converted;
 }
@@ -948,7 +956,7 @@ String normalizeLessonMarkdownForStorage(String markdown) {
     if (url == null || url.isEmpty) return match.group(0) ?? '';
     final lessonMediaId = _lessonMediaIdFromEmbedValue(url);
     if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      return match.group(0) ?? '';
+      _throwCanonicalMediaWriteViolation(match.group(0) ?? url);
     }
     return _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId);
   });

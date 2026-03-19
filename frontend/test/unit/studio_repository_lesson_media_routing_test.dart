@@ -35,7 +35,7 @@ void main() {
       harness.adapter.clear();
       uploadServer.putPaths.clear();
 
-      await repo.uploadLessonMedia(
+      final uploaded = await repo.uploadLessonMedia(
         courseId: 'course-1',
         lessonId: 'lesson-1',
         data: Uint8List.fromList(List<int>.generate(16, (index) => index)),
@@ -71,6 +71,9 @@ void main() {
         completeRequests.single.data as Map,
       );
       expect(completePayload['media_id'], 'media-1');
+      expect(uploaded['id'], 'lesson-media-audio-1');
+      expect(uploaded['kind'], 'audio');
+      expect(uploaded['original_name'], filename);
 
       expect(uploadServer.putPaths, contains(expectedObjectPath));
     }
@@ -178,10 +181,12 @@ class _Harness {
       baseUrl: 'http://127.0.0.1:1',
       tokenStorage: tokens,
     );
+    var lastAudioFilename = 'lesson.mp3';
     final adapter = _RecordingAdapter((options) {
       if (options.path == ApiPaths.mediaUploadUrl) {
         final payload = Map<String, dynamic>.from(options.data as Map);
         final filename = payload['filename'] as String;
+        lastAudioFilename = filename;
         return _jsonResponse(
           statusCode: 200,
           body: {
@@ -197,7 +202,23 @@ class _Harness {
       if (options.path == ApiPaths.mediaUploadUrlComplete) {
         return _jsonResponse(
           statusCode: 200,
-          body: {'media_id': 'media-1', 'state': 'uploaded'},
+          body: {
+            'media_id': 'media-1',
+            'state': 'uploaded',
+            'lesson_media_id': 'lesson-media-audio-1',
+            'lesson_media': {
+              'id': 'lesson-media-audio-1',
+              'kind': 'audio',
+              'storage_path':
+                  'media/derived/audio/courses/course-1/lessons/lesson-1/$lastAudioFilename',
+              'storage_bucket': 'course-media',
+              'original_name': lastAudioFilename,
+              'content_type': 'audio/mpeg',
+              'media_state': 'uploaded',
+              'playback_url':
+                  'https://api.example.test/media/stream/audio-token',
+            },
+          },
         );
       }
       if (options.path == '/studio/lessons/lesson-1/media/presign') {

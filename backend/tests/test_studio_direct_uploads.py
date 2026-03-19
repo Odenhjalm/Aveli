@@ -166,7 +166,8 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
         items = list_resp.json()["items"]
         assert any(item["id"] == body["id"] for item in items)
         listed = next(item for item in items if item["id"] == body["id"])
-        assert listed["signed_url"].startswith("/media/stream/")
+        assert listed["signed_url"].startswith("http")
+        assert "/media/stream/" in listed["signed_url"]
         assert "signed_url_expires_at" in listed
         assert "download_url" not in listed
     finally:

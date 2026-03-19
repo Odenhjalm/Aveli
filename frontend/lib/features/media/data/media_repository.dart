@@ -112,38 +112,6 @@ class MediaRepository {
     return dir;
   }
 
-  String buildMediaUrl(String bucket, String path) {
-    final normalizedBucket = bucket
-        .trim()
-        .replaceAll('\\', '/')
-        .replaceAll(RegExp(r'^/+'), '')
-        .replaceAll(RegExp(r'/+$'), '');
-    if (normalizedBucket.isEmpty) {
-      throw ArgumentError('bucket may not be empty');
-    }
-
-    var normalizedPath = path
-        .trim()
-        .replaceAll('\\', '/')
-        .replaceAll(RegExp(r'^/+'), '');
-    if (normalizedPath.isEmpty) {
-      throw ArgumentError('path may not be empty');
-    }
-
-    assert(
-      !normalizedPath.startsWith('$normalizedBucket/'),
-      'storage_path must not contain bucket prefix',
-    );
-    if (normalizedPath.startsWith('$normalizedBucket/')) {
-      normalizedPath = normalizedPath.substring(normalizedBucket.length + 1);
-    }
-    if (normalizedPath.isEmpty) {
-      throw ArgumentError('path may not be empty');
-    }
-
-    return '/api/files/$normalizedBucket/$normalizedPath';
-  }
-
   bool _isSupabasePublicUrl(String url) {
     final normalized = url.toLowerCase();
     return normalized.contains('/storage/v1/object/public/');
@@ -341,10 +309,6 @@ class MediaRepository {
           uri.host == base.host &&
           uri.port == base.port;
       if (!sameOrigin) {
-        final converted = _tryConvertSupabasePublicUrl(uri);
-        if (converted != null) {
-          return _DownloadTarget(path: converted, skipAuth: false);
-        }
         return _DownloadTarget(
           path: uri.toString(),
           skipAuth: true,
@@ -357,40 +321,7 @@ class MediaRepository {
     }
 
     final normalized = input.startsWith('/') ? input : '/$input';
-    final uri = Uri.tryParse(normalized);
-    if (uri != null) {
-      final converted = _tryConvertSupabasePublicUrl(uri);
-      if (converted != null) {
-        return _DownloadTarget(path: converted, skipAuth: false);
-      }
-    }
-
     return _DownloadTarget(path: normalized, skipAuth: false);
-  }
-
-  String? _tryConvertSupabasePublicUrl(Uri uri) {
-    final segments = uri.pathSegments;
-    if (segments.length < 6) return null;
-    if (segments[0] != 'storage' ||
-        segments[1] != 'v1' ||
-        segments[2] != 'object' ||
-        segments[3] != 'public') {
-      return null;
-    }
-    final bucket = segments[4].trim();
-    final objectSegments = segments
-        .sublist(5)
-        .where((segment) => segment.trim().isNotEmpty)
-        .toList(growable: false);
-    if (bucket.isEmpty || objectSegments.isEmpty) {
-      throw ArgumentError(
-        'Supabase public URL is missing bucket or object path.',
-      );
-    }
-    final objectPath = objectSegments.join('/');
-    final resolvedPath = buildMediaUrl(bucket, objectPath);
-    final query = uri.hasQuery ? '?${uri.query}' : '';
-    return '$resolvedPath$query';
   }
 
   String? _sanitizeExtension(String? input) {

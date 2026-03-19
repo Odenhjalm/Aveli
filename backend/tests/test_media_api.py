@@ -402,7 +402,19 @@ async def test_complete_upload_attaches_lesson_media_and_advances_state(
             json={"media_id": media_id},
         )
         assert complete_resp.status_code == 200, complete_resp.text
-        assert complete_resp.json()["state"] == "uploaded"
+        complete_body = complete_resp.json()
+        assert complete_body["state"] == "uploaded"
+        assert complete_body["lesson_media_id"]
+        assert complete_body["lesson_media"]["id"] == complete_body["lesson_media_id"]
+        assert complete_body["lesson_media"]["kind"] == "audio"
+
+        list_resp = await async_client.get(
+            f"/studio/lessons/{lesson_id}/media",
+            headers=headers,
+        )
+        assert list_resp.status_code == 200, list_resp.text
+        listed_ids = {item["id"] for item in list_resp.json()["items"]}
+        assert complete_body["lesson_media_id"] in listed_ids
 
         uploaded_asset = await media_assets_repo.get_media_asset(media_id)
         assert uploaded_asset is not None

@@ -368,14 +368,13 @@ class StudioRepository {
     );
 
     final finalized = await pipeline.completeUpload(mediaId: upload.mediaId);
-
-    return {
-      'media_asset_id': upload.mediaId,
-      'media_state': finalized.state,
-      'ingest_format': _lessonAudioIngestFormat(contentType, filename) ?? 'wav',
-      'original_name': filename,
-      'content_type': contentType,
-    };
+    final canonicalLessonMedia = finalized.lessonMedia;
+    if (canonicalLessonMedia == null || canonicalLessonMedia.isEmpty) {
+      throw StateError(
+        'Media-pipeline completion saknade canonical lesson_media payload.',
+      );
+    }
+    return Map<String, dynamic>.from(canonicalLessonMedia);
   }
 
   Future<void> deleteLessonMedia(String mediaId) async {
