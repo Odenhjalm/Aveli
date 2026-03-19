@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$FRONTEND_ROOT/.." && pwd -P)"
 CANONICAL_BUILD_DIR="$FRONTEND_ROOT/build/web"
 EXPECTED_MAIN_BRANCH="main"
 EXPECTED_PROD_API_BASE_URL="https://aveli.fly.dev"
-KNOWN_MAIN_MARKER="Ta bort video"
+KNOWN_MAIN_MARKER="resolvable_for_editor"
 
 cd "$FRONTEND_ROOT"
 if [[ "$(pwd -P)" != "$FRONTEND_ROOT" ]]; then
