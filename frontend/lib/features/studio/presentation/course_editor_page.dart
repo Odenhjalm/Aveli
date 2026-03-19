@@ -6836,17 +6836,45 @@ class _SectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final titleText = Text(
                 title,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const Spacer(),
-              if (sectionActions != null) ...sectionActions,
-            ],
+              );
+              if (sectionActions == null || sectionActions.isEmpty) {
+                return titleText;
+              }
+
+              final actionsWrap = Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: sectionActions,
+              );
+              final stackHeader = constraints.maxWidth < 520;
+              if (stackHeader) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [titleText, gap8, actionsWrap],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: titleText),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: actionsWrap,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           gap12,
           child,

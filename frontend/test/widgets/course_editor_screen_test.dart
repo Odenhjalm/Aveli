@@ -583,14 +583,6 @@ Future<void> _disposePumpedWidget(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 600));
 }
 
-void _drainExpectedRenderFlexOverflow(WidgetTester tester) {
-  while (true) {
-    final exception = tester.takeException();
-    if (exception == null) return;
-    expect(exception.toString(), contains('A RenderFlex overflowed by'));
-  }
-}
-
 void main() {
   final originalEditorDebug = kEditorDebug;
 
@@ -832,7 +824,12 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+          matching: find.byKey(
+            const ValueKey<String>('lesson_media_preview_unresolved'),
+          ),
+        ),
         findsOneWidget,
       );
       expect(
@@ -848,7 +845,7 @@ void main() {
       await tester.tap(previewModeChip);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      _drainExpectedRenderFlexOverflow(tester);
+      expect(tester.takeException(), isNull);
 
       expect(find.text('Äldre media blockerat'), findsOneWidget);
       expect(
@@ -903,6 +900,53 @@ void main() {
           isIntro: any(named: 'isIntro'),
         ),
       );
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen preview mode stays stable near the wide-layout breakpoint without changing placeholder states',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1260, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown:
+            'Introtext\n\n'
+            '![](https://cdn.test/raw-image.webp)\n\n'
+            '<video src="/studio/media/legacy-video"></video>\n\n'
+            'Eftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final previewModeChip = find.byKey(
+        const ValueKey<String>('lesson_preview_mode_chip'),
+      );
+      await _pumpUntilFound(tester, previewModeChip, maxPumps: 30);
+      await tester.ensureVisible(previewModeChip);
+      await tester.tap(previewModeChip);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Äldre media blockerat'), findsOneWidget);
+      expect(
+        find.text('Den här lektionen innehåller äldre videoformat.'),
+        findsOneWidget,
+      );
+
+      await _disposePumpedWidget(tester);
     },
   );
 
@@ -2424,7 +2468,7 @@ void main() {
       await tester.ensureVisible(previewModeChip);
       await tester.tap(previewModeChip);
       await tester.pump();
-      _drainExpectedRenderFlexOverflow(tester);
+      expect(tester.takeException(), isNull);
 
       expect(
         find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
@@ -2436,7 +2480,7 @@ void main() {
       await tester.tap(lessonTileFinder);
       await tester.pump();
       await _pumpEditorBootstrap(tester);
-      _drainExpectedRenderFlexOverflow(tester);
+      expect(tester.takeException(), isNull);
 
       expect(
         find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
@@ -2459,7 +2503,7 @@ void main() {
       await tester.ensureVisible(editModeChip);
       await tester.tap(editModeChip);
       await tester.pump();
-      _drainExpectedRenderFlexOverflow(tester);
+      expect(tester.takeException(), isNull);
 
       await _pumpUntilFound(
         tester,
@@ -2481,14 +2525,19 @@ void main() {
         isTrue,
       );
       expect(
-        _networkImageFinder('https://cdn.test/media-image-2-thumb.webp'),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+          matching: _networkImageFinder(
+            'https://cdn.test/media-image-2-thumb.webp',
+          ),
+        ),
         findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey<String>('lesson_preview_hydration_banner')),
         findsNothing,
       );
-      _drainExpectedRenderFlexOverflow(tester);
+      expect(tester.takeException(), isNull);
 
       await _disposePumpedWidget(tester);
     },
@@ -2763,7 +2812,12 @@ void main() {
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+          matching: find.byKey(
+            const ValueKey<String>('lesson_media_preview_unresolved'),
+          ),
+        ),
         findsOneWidget,
       );
       expect(
