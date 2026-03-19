@@ -423,6 +423,15 @@ async def resolve_runtime_media_playback(
             user_id=user_id,
         )
     elif resolution.playback_mode == LessonMediaPlaybackMode.LEGACY_STORAGE:
+        if resolution.reference_type == "lesson_media":
+            logger.warning(
+                "LEGACY_LESSON_MEDIA_PLAYBACK_BLOCKED",
+                extra=resolution.log_fields(),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lesson media has no playable source",
+            )
         playback = await _resolve_legacy_storage_playback_from_resolution(
             resolution=resolution,
             user_id=user_id,

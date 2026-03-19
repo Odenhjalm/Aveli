@@ -679,13 +679,11 @@ async def list_lesson_media(
 
     if editor_mode:
         for item in items:
-            # In editor mode we must never attempt to preview media that we cannot
-            # verify as resolvable. Keep the row visible for delete/diagnostics,
-            # but strip playback_url so the UI cannot accidentally auto-preview.
-            preview_blocked = item.get("resolvable_for_editor") is not True
-            item["preview_blocked"] = preview_blocked
-            if preview_blocked:
-                item.pop("playback_url", None)
+            item.pop("playback_url", None)
+            item.pop("download_url", None)
+            item.pop("signed_url", None)
+            item.pop("thumbnail_url", None)
+            item.pop("poster_frame", None)
     else:
         for item in items:
             item.pop("storage_path", None)

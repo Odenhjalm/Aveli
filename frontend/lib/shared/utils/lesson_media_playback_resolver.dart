@@ -7,7 +7,8 @@ bool _isAuthProtectedPlaybackPath(String path) {
   if (normalized.isEmpty) return false;
   return normalized.startsWith('/studio/media/') ||
       normalized.startsWith('/api/media/') ||
-      normalized.startsWith('/media/sign');
+      normalized.startsWith('/media/sign') ||
+      normalized.startsWith('/media/stream/');
 }
 
 String? _resolveBrowserPlayableUrl(
@@ -64,8 +65,8 @@ Future<String?> resolveLessonMediaSignedPlaybackUrl({
 /// Single source of truth for resolving lesson media playback URLs.
 ///
 /// - Always resolves lesson media via `POST /api/media/lesson-playback`.
-/// - Backend prefers pipeline (`media_asset_id`) rows and only signs legacy
-///   audio when it already points at canonical derived storage.
+/// - Legacy lesson-media fallback is blocked; unresolved media stays blocked
+///   until the backend can resolve it canonically.
 Future<String?> resolveLessonMediaPlaybackUrl({
   required LessonMediaItem item,
   required MediaRepository mediaRepository,

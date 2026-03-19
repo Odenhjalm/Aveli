@@ -78,19 +78,16 @@ Object? _defaultLessonMediaEmbedReplacement(
   String toLessonMediaId,
 ) {
   final currentValue = embed.value.data;
-  final currentUrl = lesson_pipeline.lessonMediaUrlFromEmbedValue(currentValue);
 
   switch (embed.value.type) {
     case lesson_pipeline.AudioBlockEmbed.embedType:
       return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
         lessonMediaId: toLessonMediaId,
-        src: currentUrl,
       );
     case quill.BlockEmbed.imageType:
       return quill.BlockEmbed.image(
         lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
           lessonMediaId: toLessonMediaId,
-          src: currentUrl,
           alt: lesson_pipeline.lessonMediaAltFromEmbedValue(currentValue),
         ),
       );
@@ -98,7 +95,6 @@ Object? _defaultLessonMediaEmbedReplacement(
       return quill.BlockEmbed.video(
         lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
           lessonMediaId: toLessonMediaId,
-          src: currentUrl,
         ),
       );
     default:

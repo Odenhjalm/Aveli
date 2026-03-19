@@ -12,6 +12,7 @@ from app.media_control_plane.services.media_resolver_service import (
     LessonMediaResolution,
     LessonMediaResolutionReason,
 )
+from app.routes import api_media
 from app.repositories import create_home_player_upload
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
@@ -980,20 +981,124 @@ async def test_lesson_playback_pipeline_row(async_client, monkeypatch):
         await cleanup_user(user_id)
 
 
-async def test_lesson_playback_legacy_row(async_client, monkeypatch):
+async def test_previews_and_lesson_playback_share_backend_resolution(
+    async_client, monkeypatch
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_id = str(uuid.uuid4())
+        course_id = str(uuid.uuid4())
+        image_id = str(uuid.uuid4())
+        video_id = str(uuid.uuid4())
+        audio_id = str(uuid.uuid4())
+
+        async def fake_lesson_course_ids(candidate_lesson_id: str):
+            assert candidate_lesson_id == lesson_id
+            return None, course_id
+
+        async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
+            assert candidate_user_id == user_id
+            assert candidate_course_id == course_id
+            return True
+
+        async def fake_list_lesson_media(candidate_lesson_id: str, mode: str = "editor_preview"):
+            assert candidate_lesson_id == lesson_id
+            assert mode == "editor_preview"
+            return [
+                {
+                    "id": image_id,
+                    "lesson_id": lesson_id,
+                    "kind": "image",
+                    "original_name": "image.png",
+                },
+                {
+                    "id": video_id,
+                    "lesson_id": lesson_id,
+                    "kind": "video",
+                    "original_name": "video.mp4",
+                },
+                {
+                    "id": audio_id,
+                    "lesson_id": lesson_id,
+                    "kind": "audio",
+                    "original_name": "audio.mp3",
+                },
+            ]
+
+        async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+            assert user_id
+            return {
+                "url": f"https://stream.local/{lesson_media_id}.bin",
+                "playback_url": f"https://stream.local/{lesson_media_id}.bin",
+            }
+
+        monkeypatch.setattr(
+            api_media.courses_service,
+            "lesson_course_ids",
+            fake_lesson_course_ids,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.models,
+            "is_course_owner",
+            fake_is_course_owner,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.courses_service,
+            "list_lesson_media",
+            fake_list_lesson_media,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.lesson_playback_service,
+            "resolve_lesson_media_playback",
+            fake_resolve_lesson_media_playback,
+            raising=True,
+        )
+
+        preview_resp = await async_client.post(
+            "/api/media/previews",
+            headers=headers,
+            json={"ids": [image_id, video_id, audio_id]},
+        )
+        assert preview_resp.status_code == 200, preview_resp.text
+        preview_items = preview_resp.json()["items"]
+        assert preview_items[image_id]["resolved_preview_url"] == (
+            f"https://stream.local/{image_id}.bin"
+        )
+        assert preview_items[video_id]["resolved_preview_url"] == (
+            f"https://stream.local/{video_id}.bin"
+        )
+        assert preview_items[audio_id]["resolved_preview_url"] is None
+        assert "thumbnail_url" not in preview_items[image_id]
+        assert "poster_frame" not in preview_items[image_id]
+
+        playback_resp = await async_client.post(
+            "/api/media/lesson-playback",
+            headers=headers,
+            json={"lesson_media_id": image_id},
+        )
+        assert playback_resp.status_code == 200, playback_resp.text
+        assert (
+            preview_items[image_id]["resolved_preview_url"]
+            == playback_resp.json()["playback_url"]
+        )
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_playback_legacy_row_is_blocked(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
         async def fake_resolve_lesson_media_playback(
             *, lesson_media_id: str, user_id: str
         ):
-            assert lesson_media_id
-            assert user_id
-            return {
-                "media_id": lesson_media_id,
-                "url": "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3",
-                "playback_url": "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3",
-            }
+            raise HTTPException(
+                status_code=404,
+                detail="Lesson media has no playable source",
+            )
 
         monkeypatch.setattr(
             lesson_playback_service,
@@ -1007,10 +1112,8 @@ async def test_lesson_playback_legacy_row(async_client, monkeypatch):
             headers=headers,
             json={"lesson_media_id": lesson_media_id},
         )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["url"].startswith("https://stream.local/")
-        assert body["playback_url"] == body["url"]
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["detail"] == "Lesson media has no playable source"
     finally:
         await cleanup_user(user_id)
 

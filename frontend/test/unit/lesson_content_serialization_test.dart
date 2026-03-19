@@ -22,10 +22,7 @@ void main() {
       final delta = quill_delta.Delta()
         ..insert('Intro\n')
         ..insert(
-          AudioBlockEmbed.fromLessonMedia(
-            lessonMediaId: sampleLessonMediaId,
-            src: sampleUrl,
-          ),
+          AudioBlockEmbed.fromLessonMedia(lessonMediaId: sampleLessonMediaId),
         )
         ..insert('\n');
 
@@ -41,10 +38,7 @@ void main() {
       final delta = quill_delta.Delta()
         ..insert('Intro\n')
         ..insert(
-          AudioBlockEmbed.fromLessonMedia(
-            lessonMediaId: sampleLessonMediaId,
-            src: playbackUrl,
-          ),
+          AudioBlockEmbed.fromLessonMedia(lessonMediaId: sampleLessonMediaId),
         )
         ..insert('\n');
 
@@ -63,7 +57,6 @@ void main() {
           quill.BlockEmbed.video(
             videoBlockEmbedValueFromLessonMedia(
               lessonMediaId: sampleLessonMediaId,
-              src: playbackUrl,
             ),
           ),
         )
@@ -83,7 +76,6 @@ void main() {
           quill.BlockEmbed.image(
             imageBlockEmbedValueFromLessonMedia(
               lessonMediaId: sampleLessonMediaId,
-              src: sampleImageUrl,
             ),
           ),
           {quill.Attribute.style.key: style},
@@ -213,7 +205,7 @@ Intro
           try {
             final decoded = jsonDecode(data) as Map;
             return decoded['lesson_media_id'] == sampleLessonMediaId &&
-                decoded['src'] == playbackUrl;
+                decoded.containsKey('src') == false;
           } catch (_) {
             return false;
           }
@@ -256,7 +248,7 @@ Intro
           try {
             final decoded = jsonDecode(data) as Map;
             return decoded['lesson_media_id'] == sampleLessonMediaId &&
-                decoded['src'] == playbackUrl;
+                decoded.containsKey('src') == false;
           } catch (_) {
             return false;
           }

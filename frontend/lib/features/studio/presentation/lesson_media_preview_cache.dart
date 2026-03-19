@@ -4,36 +4,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
+import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
 
 class LessonMediaPreviewData {
   const LessonMediaPreviewData({
     required this.lessonMediaId,
     required this.mediaType,
-    this.thumbnailUrl,
-    this.posterFrameUrl,
+    this.resolvedPreviewUrl,
     this.durationSeconds,
     this.fileName,
-    this.previewBlocked = false,
   });
 
   final String lessonMediaId;
   final String mediaType;
-  final String? thumbnailUrl;
-  final String? posterFrameUrl;
+  final String? resolvedPreviewUrl;
   final int? durationSeconds;
   final String? fileName;
-  final bool previewBlocked;
 
   String? get visualUrl {
-    final poster = posterFrameUrl?.trim();
-    if (poster != null && poster.isNotEmpty) return poster;
-    final thumbnail = thumbnailUrl?.trim();
-    if (thumbnail != null && thumbnail.isNotEmpty) return thumbnail;
+    final preview = resolvedPreviewUrl?.trim();
+    if (preview != null && preview.isNotEmpty) return preview;
     return null;
   }
 
   bool get requiresVisualResolution {
-    if (previewBlocked) return false;
     switch (mediaType) {
       case 'image':
       case 'video':
@@ -55,15 +49,11 @@ class LessonMediaPreviewData {
     return LessonMediaPreviewData(
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
-      thumbnailUrl: _normalizedString(
-        json['thumbnail_url'] ?? json['thumbnailUrl'],
-      ),
-      posterFrameUrl: _normalizedString(
-        json['poster_frame'] ?? json['posterFrame'],
+      resolvedPreviewUrl: _normalizedString(
+        json['resolved_preview_url'] ?? json['resolvedPreviewUrl'],
       ),
       durationSeconds: duration is num ? duration.toInt() : null,
       fileName: _normalizedString(json['file_name'] ?? json['fileName']),
-      previewBlocked: json['preview_blocked'] == true,
     );
   }
 
@@ -78,22 +68,21 @@ class LessonMediaPreviewData {
     final fileName =
         _normalizedString(media['file_name'] ?? media['fileName']) ??
         _normalizedString(media['original_name']);
-    final previewBlocked =
-        media['preview_blocked'] == true ||
-        media['resolvable_for_editor'] == false;
 
     return LessonMediaPreviewData(
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
-      thumbnailUrl: mediaType == 'image'
-          ? _normalizedString(media['thumbnail_url'] ?? media['thumbnailUrl'])
-          : null,
-      posterFrameUrl: mediaType == 'video'
-          ? _normalizedString(media['poster_frame'] ?? media['posterFrame'])
-          : null,
       durationSeconds: duration is num ? duration.toInt() : null,
       fileName: fileName,
-      previewBlocked: previewBlocked,
+    );
+  }
+
+  LessonMediaPreviewData asNonAuthoritativeCacheEntry() {
+    return LessonMediaPreviewData(
+      lessonMediaId: lessonMediaId,
+      mediaType: mediaType,
+      durationSeconds: durationSeconds,
+      fileName: fileName,
     );
   }
 }
@@ -137,9 +126,12 @@ class LessonMediaPreviewCache {
       return Future<LessonMediaPreviewData?>.value(null);
     }
 
-    final cached = _cache[normalized];
-    if (cached != null && !cached.requiresVisualResolution) {
-      return Future<LessonMediaPreviewData?>.value(cached);
+    if (_cache.containsKey(normalized)) {
+      logLessonMediaPreviewCacheEvent(
+        event: 'LESSON_MEDIA_PREVIEW_CACHE_METADATA_USED',
+        lessonMediaId: normalized,
+        mediaType: _cache[normalized]?.mediaType,
+      );
     }
 
     final existing = _pending[normalized];
@@ -156,6 +148,10 @@ class LessonMediaPreviewCache {
     final completer = Completer<LessonMediaPreviewData?>();
     _pending[normalized] = completer;
     _queuedIds.add(normalized);
+    logLessonMediaPreviewCacheEvent(
+      event: 'LESSON_MEDIA_PREVIEW_BACKEND_RESOLUTION',
+      lessonMediaId: normalized,
+    );
     _scheduleFlush();
     return completer.future;
   }
@@ -170,10 +166,6 @@ class LessonMediaPreviewCache {
     for (final lessonMediaId in lessonMediaIds) {
       final normalized = lessonMediaId.trim();
       if (normalized.isEmpty) continue;
-      final cached = _cache[normalized];
-      if (cached != null && !cached.requiresVisualResolution) {
-        continue;
-      }
 
       hydratingIds.add(normalized);
       futures.add(_registerBatchWaiter(normalized));
@@ -213,11 +205,7 @@ class LessonMediaPreviewCache {
     for (final preview in previews) {
       final lessonMediaId = preview.lessonMediaId.trim();
       if (lessonMediaId.isEmpty) continue;
-      if (preview.requiresVisualResolution) {
-        _cache.remove(lessonMediaId);
-      } else {
-        _cache[lessonMediaId] = preview;
-      }
+      _cache[lessonMediaId] = preview.asNonAuthoritativeCacheEntry();
       final completer = _pending.remove(lessonMediaId);
       if (completer != null && !completer.isCompleted) {
         completer.complete(preview);
@@ -281,9 +269,9 @@ class LessonMediaPreviewCache {
 
     for (final lessonMediaId in ids) {
       final preview = previews[lessonMediaId];
-      if (preview != null && !preview.requiresVisualResolution) {
-        _cache[lessonMediaId] = preview;
-      } else if (preview == null || preview.requiresVisualResolution) {
+      if (preview != null) {
+        _cache[lessonMediaId] = preview.asNonAuthoritativeCacheEntry();
+      } else {
         _cache.remove(lessonMediaId);
       }
 

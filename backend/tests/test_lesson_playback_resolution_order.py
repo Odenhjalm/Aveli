@@ -139,7 +139,7 @@ async def test_resolve_runtime_media_playback_returns_not_ready_for_unplayable_a
     assert exc_info.value.detail == "Media is not ready"
 
 
-async def test_resolve_runtime_media_playback_uses_legacy_storage_when_resolver_requires_fallback(
+async def test_resolve_runtime_media_playback_blocks_legacy_storage_for_lesson_media(
     monkeypatch,
 ):
     resolution = _resolution(
@@ -161,14 +161,8 @@ async def test_resolve_runtime_media_playback_uses_legacy_storage_when_resolver_
     async def fail_pipeline_resolution(**_kwargs):
         raise AssertionError("pipeline playback should not run when resolver chose legacy storage")
 
-    async def fake_legacy_resolution(*, resolution: LessonMediaResolution, user_id: str):
-        assert resolution.failure_reason == LessonMediaResolutionReason.LEGACY_FALLBACK_REQUIRED
-        assert resolution.storage_path == "courses/demo/legacy.mp4"
-        assert user_id == "user-1"
-        return {
-            "url": "https://stream.test/legacy.mp4",
-            "media_id": resolution.lesson_media_id,
-        }
+    async def fail_legacy_resolution(**_kwargs):
+        raise AssertionError("legacy playback should be blocked for lesson media")
 
     monkeypatch.setattr(
         lesson_playback_service.canonical_media_resolver,
@@ -185,17 +179,18 @@ async def test_resolve_runtime_media_playback_uses_legacy_storage_when_resolver_
     monkeypatch.setattr(
         lesson_playback_service,
         "_resolve_legacy_storage_playback_from_resolution",
-        fake_legacy_resolution,
+        fail_legacy_resolution,
         raising=True,
     )
 
-    result = await lesson_playback_service.resolve_runtime_media_playback(
-        runtime_media_id="runtime-media-1",
-        user_id="user-1",
-    )
+    with pytest.raises(HTTPException) as exc_info:
+        await lesson_playback_service.resolve_runtime_media_playback(
+            runtime_media_id="runtime-media-1",
+            user_id="user-1",
+        )
 
-    assert result["runtime_media_id"] == "runtime-media-1"
-    assert result["playback_url"] == "https://stream.test/legacy.mp4"
+    assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+    assert exc_info.value.detail == "Lesson media has no playable source"
 
 
 async def test_resolve_lesson_media_playback_looks_up_runtime_media_and_delegates(monkeypatch):

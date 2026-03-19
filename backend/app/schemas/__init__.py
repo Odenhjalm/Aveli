@@ -1078,11 +1078,9 @@ class MediaPreviewBatchRequest(BaseModel):
 
 class MediaPreviewItem(BaseModel):
     media_type: str
-    thumbnail_url: str | None = None
-    poster_frame: str | None = None
+    resolved_preview_url: str | None = None
     duration_seconds: int | None = None
     file_name: str | None = None
-    preview_blocked: bool = False
 
 
 class MediaPreviewBatchResponse(BaseModel):

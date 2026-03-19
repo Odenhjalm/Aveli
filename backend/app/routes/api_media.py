@@ -83,8 +83,45 @@ def _preview_file_name(item: dict[str, object]) -> str | None:
     return None
 
 
-def _preview_thumbnail_url(item: dict[str, object]) -> str | None:
-    return _normalized_preview_string(item.get("thumbnail_url") or item.get("thumbnailUrl"))
+async def _resolve_preview_url(
+    *,
+    lesson_media_id: str,
+    kind: str,
+    user_id: str,
+) -> str | None:
+    if kind not in {"image", "video"}:
+        return None
+    try:
+        resolved = await lesson_playback_service.resolve_lesson_media_playback(
+            lesson_media_id=lesson_media_id,
+            user_id=user_id,
+        )
+    except HTTPException as exc:
+        logger.warning(
+            "LESSON_MEDIA_PREVIEW_UNRESOLVED lesson_media_id=%s kind=%s status_code=%s",
+            lesson_media_id,
+            kind,
+            exc.status_code,
+        )
+        return None
+
+    resolved_url = _normalized_preview_string(
+        resolved.get("playback_url") or resolved.get("url")
+    )
+    if resolved_url is None:
+        logger.warning(
+            "LESSON_MEDIA_PREVIEW_UNRESOLVED lesson_media_id=%s kind=%s status_code=200",
+            lesson_media_id,
+            kind,
+        )
+        return None
+
+    logger.info(
+        "LESSON_MEDIA_PREVIEW_BACKEND_RESOLUTION lesson_media_id=%s kind=%s",
+        lesson_media_id,
+        kind,
+    )
+    return resolved_url
 
 
 async def _canonical_lesson_media_row(
@@ -1010,34 +1047,22 @@ async def request_media_previews(
             if item is None:
                 continue
             item = dict(item)
-            absolutize_media_urls(item, base_url=str(request.base_url))
-            thumbnail_url = _preview_thumbnail_url(item)
             kind = (_normalized_preview_string(item.get("kind")) or "").lower()
-            if kind == "image" and not thumbnail_url:
-                try:
-                    resolved = await lesson_playback_service.resolve_lesson_media_playback(
-                        lesson_media_id=lesson_media_id,
-                        user_id=str(current["id"]),
-                    )
-                    thumbnail_url = _normalized_preview_string(
-                        resolved.get("playback_url") or resolved.get("url")
-                    )
-                except HTTPException:
-                    thumbnail_url = None
+            resolved_preview_url = await _resolve_preview_url(
+                lesson_media_id=lesson_media_id,
+                kind=kind,
+                user_id=str(current["id"]),
+            )
             duration_seconds = item.get("duration_seconds")
             preview_items[lesson_media_id] = schemas.MediaPreviewItem(
                 media_type=_normalized_preview_string(item.get("kind")) or "",
-                thumbnail_url=thumbnail_url,
-                poster_frame=_normalized_preview_string(
-                    item.get("poster_frame") or item.get("posterFrame")
-                ),
+                resolved_preview_url=resolved_preview_url,
                 duration_seconds=(
                     int(duration_seconds)
                     if isinstance(duration_seconds, (int, float))
                     else None
                 ),
                 file_name=_preview_file_name(item),
-                preview_blocked=item.get("preview_blocked") is True,
             )
 
     return schemas.MediaPreviewBatchResponse(items=preview_items)

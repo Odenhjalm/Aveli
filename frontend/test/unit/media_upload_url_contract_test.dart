@@ -188,52 +188,70 @@ void main() {
     expect(adapter.requestsFor(ApiPaths.mediaUploadUrl), isEmpty);
   });
 
-  test(
-    'lesson playback parsing supports legacy and asset-first fields',
-    () async {
-      final storage = _MemoryFlutterSecureStorage();
-      final tokens = TokenStorage(storage: storage);
-      await tokens.saveTokens(
-        accessToken: _jwtWithExpSeconds(4102444800),
-        refreshToken: 'rt-1',
-      );
+  test('lesson playback parsing requires canonical playback_url', () async {
+    final storage = _MemoryFlutterSecureStorage();
+    final tokens = TokenStorage(storage: storage);
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(4102444800),
+      refreshToken: 'rt-1',
+    );
 
-      final client = ApiClient(
-        baseUrl: 'http://127.0.0.1:1',
-        tokenStorage: tokens,
-      );
-      final responses = <Map<String, dynamic>>[
-        {'url': 'https://cdn.example.com/legacy.mp3'},
-        {'stream_url': 'https://cdn.example.com/stream.mp3'},
-        {'media_url': 'https://cdn.example.com/media.mp3'},
-      ];
-      var responseIndex = 0;
-      final adapter = _RecordingAdapter((options) {
-        if (options.path == ApiPaths.mediaLessonPlaybackUrl) {
-          return _jsonResponse(
-            statusCode: 200,
-            body: responses[responseIndex++],
-          );
-        }
-        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-      });
-      client.raw.httpClientAdapter = adapter;
-      final repo = MediaPipelineRepository(client: client);
+    final client = ApiClient(
+      baseUrl: 'http://127.0.0.1:1',
+      tokenStorage: tokens,
+    );
+    final adapter = _RecordingAdapter((options) {
+      if (options.path == ApiPaths.mediaLessonPlaybackUrl) {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {'playback_url': 'https://cdn.example.com/canonical.mp3'},
+        );
+      }
+      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+    });
+    client.raw.httpClientAdapter = adapter;
+    final repo = MediaPipelineRepository(client: client);
 
-      expect(
-        await repo.fetchLessonPlaybackUrl('lesson-media-1'),
-        'https://cdn.example.com/legacy.mp3',
+    expect(
+      await repo.fetchLessonPlaybackUrl('lesson-media-1'),
+      'https://cdn.example.com/canonical.mp3',
+    );
+  });
+
+  test('lesson playback parsing rejects legacy URL fields', () async {
+    final storage = _MemoryFlutterSecureStorage();
+    final tokens = TokenStorage(storage: storage);
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(4102444800),
+      refreshToken: 'rt-1',
+    );
+
+    final client = ApiClient(
+      baseUrl: 'http://127.0.0.1:1',
+      tokenStorage: tokens,
+    );
+    final responses = <Map<String, dynamic>>[
+      {'url': 'https://cdn.example.com/legacy.mp3'},
+      {'stream_url': 'https://cdn.example.com/stream.mp3'},
+      {'media_url': 'https://cdn.example.com/media.mp3'},
+    ];
+    var responseIndex = 0;
+    final adapter = _RecordingAdapter((options) {
+      if (options.path == ApiPaths.mediaLessonPlaybackUrl) {
+        return _jsonResponse(statusCode: 200, body: responses[responseIndex++]);
+      }
+      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+    });
+    client.raw.httpClientAdapter = adapter;
+    final repo = MediaPipelineRepository(client: client);
+
+    for (var i = 0; i < responses.length; i += 1) {
+      await expectLater(
+        () => repo.fetchLessonPlaybackUrl('lesson-media-$i'),
+        throwsA(isA<FormatException>()),
       );
-      expect(
-        await repo.fetchLessonPlaybackUrl('lesson-media-2'),
-        'https://cdn.example.com/stream.mp3',
-      );
-      expect(
-        await repo.fetchLessonPlaybackUrl('lesson-media-3'),
-        'https://cdn.example.com/media.mp3',
-      );
-    },
-  );
+    }
+  });
 }
 
 ResponseBody _jsonResponse({

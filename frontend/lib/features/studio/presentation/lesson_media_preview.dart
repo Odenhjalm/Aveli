@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
+import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
 
 import 'lesson_media_preview_cache.dart';
 import 'lesson_media_preview_hydration.dart';
@@ -34,6 +35,7 @@ class LessonMediaPreview extends ConsumerStatefulWidget {
 class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   late Future<LessonMediaPreviewData?> _previewFuture;
   late int _hydrationRevision;
+  bool _loggedUnresolvedPreview = false;
 
   @override
   void initState() {
@@ -66,8 +68,25 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   Future<LessonMediaPreviewData?> _createPreviewFuture() {
     final normalizedLessonMediaId = widget.lessonMediaId.trim();
     if (normalizedLessonMediaId.isEmpty) {
+      _loggedUnresolvedPreview = false;
+      final rawSource = widget.src?.trim();
+      if (rawSource != null && rawSource.isNotEmpty) {
+        logMissingLessonMediaIdRender(
+          surface: 'studio_editor_preview',
+          mediaType: widget.mediaType,
+          rawSource: rawSource,
+        );
+        if (_isLegacyLessonMediaPath(rawSource)) {
+          logLegacyLessonMediaPathUsage(
+            event: 'LEGACY_LESSON_MEDIA_URL_USAGE',
+            surface: 'studio_editor_preview',
+            url: rawSource,
+          );
+        }
+      }
       return Future<LessonMediaPreviewData?>.value(null);
     }
+    _loggedUnresolvedPreview = false;
     return ref
         .read(lessonMediaPreviewCacheProvider)
         .getPreview(normalizedLessonMediaId);
@@ -131,21 +150,10 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
                 final previewVisualUrl = _resolveVisualUrl(
                   mediaRepository: mediaRepository,
                   preferred: preview?.visualUrl,
-                  fallback: null,
                 );
-                final fallbackVisualUrl = _resolveFallbackVisualUrl(
-                  mediaRepository: mediaRepository,
-                  mediaType: normalizedType,
-                  fallback: widget.src,
-                );
-                final visualUrl = preview?.previewBlocked == true
-                    ? null
-                    : previewVisualUrl ?? fallbackVisualUrl;
+                final visualUrl = previewVisualUrl;
                 final isHydratingVisible =
-                    isHydrating &&
-                    supportsVisualPreview &&
-                    preview?.previewBlocked != true &&
-                    visualUrl == null;
+                    isHydrating && supportsVisualPreview && visualUrl == null;
                 final isAsyncLoading =
                     isHydrating &&
                     snapshot.connectionState == ConnectionState.waiting &&
@@ -155,8 +163,18 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
                     supportsVisualPreview &&
                     !isHydratingVisible &&
                     !isAsyncLoading &&
-                    preview?.previewBlocked != true &&
                     visualUrl == null;
+                if (isUnresolved && !_loggedUnresolvedPreview) {
+                  _loggedUnresolvedPreview = true;
+                  logUnresolvedLessonMediaRender(
+                    event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
+                    surface: 'studio_editor_preview',
+                    mediaType: normalizedType,
+                    lessonMediaId: widget.lessonMediaId,
+                  );
+                } else if (!isUnresolved) {
+                  _loggedUnresolvedPreview = false;
+                }
                 final isLoading = isHydratingVisible || isAsyncLoading;
                 return _LessonMediaPreviewFrame(
                   mediaType: normalizedType,
@@ -164,7 +182,6 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
                   fileName: preview?.fileName,
                   durationSeconds: preview?.durationSeconds,
                   isLoading: isLoading,
-                  isBlocked: preview?.previewBlocked == true,
                   isUnresolved: isUnresolved,
                 );
               },
@@ -183,7 +200,6 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
     required this.fileName,
     required this.durationSeconds,
     required this.isLoading,
-    required this.isBlocked,
     required this.isUnresolved,
   });
 
@@ -192,7 +208,6 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
   final String? fileName;
   final int? durationSeconds;
   final bool isLoading;
-  final bool isBlocked;
   final bool isUnresolved;
 
   static const double _imageAspectRatio = 4 / 3;
@@ -232,7 +247,6 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
                     mediaType: mediaType,
                     fileName: fileName,
                     durationSeconds: durationSeconds,
-                    isBlocked: isBlocked,
                     isUnresolved: isUnresolved,
                   ),
           ),
@@ -295,23 +309,19 @@ class _PreviewLabel extends StatelessWidget {
     required this.mediaType,
     required this.fileName,
     required this.durationSeconds,
-    required this.isBlocked,
     required this.isUnresolved,
   });
 
   final String mediaType;
   final String? fileName;
   final int? durationSeconds;
-  final bool isBlocked;
   final bool isUnresolved;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final title = fileName ?? _defaultLabel();
-    final detail = isBlocked
-        ? 'Förhandsvisning otillgänglig i editorn'
-        : isUnresolved
+    final detail = isUnresolved
         ? 'Förhandsvisning kunde inte laddas'
         : _detailText();
 
@@ -458,12 +468,19 @@ class _PreviewSkeleton extends StatelessWidget {
 String? _resolveVisualUrl({
   required MediaRepository mediaRepository,
   required String? preferred,
-  required String? fallback,
 }) {
-  final candidate = preferred?.trim().isNotEmpty == true ? preferred : fallback;
+  final candidate = preferred;
   if (candidate == null) return null;
   final normalized = candidate.trim();
   if (normalized.isEmpty) return null;
+  if (_isLegacyLessonMediaPath(normalized)) {
+    logLegacyLessonMediaPathUsage(
+      event: 'LEGACY_LESSON_MEDIA_URL_USAGE',
+      surface: 'studio_editor_preview',
+      url: normalized,
+    );
+    return null;
+  }
 
   final uri = Uri.tryParse(normalized);
   if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
@@ -477,28 +494,14 @@ String? _resolveVisualUrl({
   }
 }
 
-String? _resolveFallbackVisualUrl({
-  required MediaRepository mediaRepository,
-  required String mediaType,
-  required String? fallback,
-}) {
-  if (mediaType != 'image') return null;
-  final normalized = fallback?.trim();
-  if (normalized == null || normalized.isEmpty) return null;
-  if (_isStudioMediaPath(normalized)) return null;
-  return _resolveVisualUrl(
-    mediaRepository: mediaRepository,
-    preferred: normalized,
-    fallback: null,
-  );
-}
-
-bool _isStudioMediaPath(String value) {
+bool _isLegacyLessonMediaPath(String value) {
   final normalized = value.trim();
   if (normalized.isEmpty) return false;
   final uri = Uri.tryParse(normalized);
   final path = uri?.path ?? normalized;
-  return path.startsWith('/studio/media/');
+  final lowered = path.toLowerCase();
+  return lowered.startsWith('/studio/media/') ||
+      lowered.startsWith('/media/stream/');
 }
 
 String _formatDuration(int totalSeconds) {

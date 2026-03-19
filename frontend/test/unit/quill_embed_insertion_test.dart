@@ -112,7 +112,6 @@ void main() {
       controller: controller,
       embed: lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
         lessonMediaId: 'audio-old',
-        src: 'https://cdn.test/audio-old.mp3',
       ),
       selection: const TextSelection.collapsed(offset: 6),
     );
@@ -138,7 +137,6 @@ void main() {
       replacementBuilder: (embed, _) =>
           lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
             lessonMediaId: 'audio-new',
-            src: 'https://cdn.test/audio-new.mp3',
           ),
     );
 
@@ -155,10 +153,7 @@ void main() {
     final embedNode = controller.queryNode(6);
     expect(embedNode, isA<quill.Embed>());
     final embedValue = (embedNode! as quill.Embed).value.data;
-    expect(
-      lesson_pipeline.lessonMediaUrlFromEmbedValue(embedValue),
-      'https://cdn.test/audio-new.mp3',
-    );
+    expect(lesson_pipeline.lessonMediaUrlFromEmbedValue(embedValue), isNull);
   });
 
   test('replaceText keeps controller stable for mixed text and embeds', () {
@@ -175,7 +170,6 @@ void main() {
       embed: quill.BlockEmbed.image(
         lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
           lessonMediaId: 'media-image-1',
-          src: 'https://cdn.test/media-image-1.webp',
         ),
       ),
       selection: const TextSelection.collapsed(offset: 6),

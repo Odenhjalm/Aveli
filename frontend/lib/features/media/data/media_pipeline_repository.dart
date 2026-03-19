@@ -304,7 +304,7 @@ class MediaPipelineRepository {
       data: {'lesson_media_id': lessonMediaId},
     );
     final data = _jsonObject(response.data);
-    final rawUrlValue = data['url'] ?? data['stream_url'] ?? data['media_url'];
+    final rawUrlValue = data['playback_url'];
     final rawUrl = rawUrlValue is String ? rawUrlValue.trim() : '';
     if (rawUrl.isEmpty) {
       throw const FormatException('Playback URL saknas');

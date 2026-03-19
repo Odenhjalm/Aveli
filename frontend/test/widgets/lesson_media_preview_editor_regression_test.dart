@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -213,7 +214,7 @@ void main() {
             for (final id in ids)
               id: {
                 'media_type': 'image',
-                'thumbnail_url': 'https://cdn.test/$id-thumb.webp',
+                'resolved_preview_url': 'https://cdn.test/$id-thumb.webp',
                 'file_name': 'image.png',
               },
           },
@@ -258,7 +259,7 @@ void main() {
             for (final id in ids)
               id: {
                 'media_type': 'image',
-                'thumbnail_url': 'https://cdn.test/$id-thumb.webp',
+                'resolved_preview_url': 'https://cdn.test/$id-thumb.webp',
                 'file_name': 'image.png',
               },
           },
@@ -306,7 +307,7 @@ void main() {
           for (final id in ids)
             id: {
               'media_type': 'image',
-              'thumbnail_url': 'https://cdn.test/$id-thumb.webp',
+              'resolved_preview_url': 'https://cdn.test/$id-thumb.webp',
               'file_name': 'image.png',
             },
         },
@@ -325,6 +326,54 @@ void main() {
         findsOneWidget,
       );
       verify(() => studioRepo.fetchLessonMediaPreviews(any())).called(1);
+    },
+  );
+
+  testWidgets(
+    'LessonMediaPreview ignores raw image URLs without lesson_media_id and shows placeholder',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final mediaRepo = _MockMediaRepository();
+      final telemetry = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) {
+          telemetry.add(message);
+        }
+      };
+      addTearDown(() => debugPrint = originalDebugPrint);
+
+      _stubPreviewDependencies(
+        studioRepo,
+        mediaRepo,
+        fetchLessonMediaPreviews: (_) async => <String, Map<String, dynamic>>{},
+      );
+
+      await _pumpEditorHarness(
+        tester,
+        studioRepo: studioRepo,
+        mediaRepo: mediaRepo,
+        initialMarkdown:
+            'Introtext\n\n![](https://cdn.test/raw-image.webp)\n\nEftertext',
+      );
+      await tester.pump();
+
+      expect(
+        _networkImageFinder('https://cdn.test/raw-image.webp'),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        findsOneWidget,
+      );
+      verifyNever(() => studioRepo.fetchLessonMediaPreviews(any()));
+      expect(
+        telemetry.any(
+          (entry) => entry.contains('MISSING_LESSON_MEDIA_ID_RENDER'),
+        ),
+        isTrue,
+      );
+      debugPrint = originalDebugPrint;
     },
   );
 }

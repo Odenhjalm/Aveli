@@ -257,20 +257,26 @@ void main() {
   testWidgets('lesson renders image embed via AveliLessonImage', (
     tester,
   ) async {
-    final repo = _FakeMediaPipelineRepository(
-      Future.value('https://cdn.test/audio.mp3'),
-    );
     const imageUrl = 'https://cdn.test/lesson-image.webp';
+    final repo = _FakeMediaPipelineRepository(Future.value(imageUrl));
     final data = LessonDetailData(
       lesson: const LessonDetail(
         id: 'lesson-image',
         title: 'Image lesson',
-        contentMarkdown: 'Intro\n\n![](https://cdn.test/lesson-image.webp)\n',
+        contentMarkdown: 'Intro\n',
         isIntro: false,
         moduleId: null,
         position: 1,
       ),
-      media: const [],
+      media: const [
+        LessonMediaItem(
+          id: 'media-image-1',
+          kind: 'image',
+          storagePath: 'lesson-1/lesson-image.webp',
+          originalName: 'lesson-image.webp',
+          position: 1,
+        ),
+      ],
     );
 
     await tester.pumpWidget(
@@ -300,6 +306,53 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(repo.lessonPlaybackCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lesson does not render raw image URLs without lesson_media_id', (
+    tester,
+  ) async {
+    final repo = _FakeMediaPipelineRepository(
+      Future.value('https://cdn.test/audio.mp3'),
+    );
+    final data = LessonDetailData(
+      lesson: const LessonDetail(
+        id: 'lesson-raw-image',
+        title: 'Raw image lesson',
+        contentMarkdown: 'Intro\n\n![](https://cdn.test/raw-image.webp)\n',
+        isIntro: false,
+        moduleId: null,
+        position: 1,
+      ),
+      media: const [],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: '',
+              stripeMerchantDisplayName: 'Test',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          lessonDetailProvider.overrideWith((ref, lessonId) async => data),
+          mediaPipelineRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(
+          home: LessonPage(lessonId: 'lesson-raw-image'),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(AveliLessonImage), findsNothing);
+    expect(find.text('Bilden kunde inte laddas.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

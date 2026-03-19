@@ -2216,7 +2216,7 @@ void main() {
       previewCompleter.complete({
         'media-image-1': {
           'media_type': 'image',
-          'thumbnail_url': 'https://cdn.test/media-image-1-thumb.webp',
+          'resolved_preview_url': 'https://cdn.test/media-image-1-thumb.webp',
           'file_name': 'image.png',
         },
       });
@@ -2331,7 +2331,7 @@ void main() {
       previewCompleter.complete({
         'media-image-2': {
           'media_type': 'image',
-          'thumbnail_url': 'https://cdn.test/media-image-2-thumb.webp',
+          'resolved_preview_url': 'https://cdn.test/media-image-2-thumb.webp',
           'file_name': 'image.png',
         },
       });
@@ -2402,7 +2402,7 @@ void main() {
           for (final id in ids)
             id: {
               'media_type': 'image',
-              'thumbnail_url': 'https://cdn.test/$id-thumb.webp',
+              'resolved_preview_url': 'https://cdn.test/$id-thumb.webp',
               'file_name': 'image.png',
             },
         },

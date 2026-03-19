@@ -60,6 +60,7 @@ import 'package:aveli/features/courses/presentation/lesson_page.dart'
     show LessonPageRenderer;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
+import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
 import 'package:aveli/shared/utils/pdf_link_editor_support.dart';
 import 'package:aveli/shared/utils/quill_embed_insertion.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
@@ -68,16 +69,6 @@ import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview_cache.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview_hydration.dart';
-
-String? _mediaUrl(Map<String, dynamic> media) {
-  final playback = media['playback_url'];
-  if (playback is String && playback.isNotEmpty) return playback;
-  final signed = media['signed_url'];
-  if (signed is String && signed.isNotEmpty) return signed;
-  final download = media['download_url'];
-  if (download is String && download.isNotEmpty) return download;
-  return null;
-}
 
 String? _normalizeVideoPlaybackUrl(String? raw) {
   return lesson_pipeline.normalizeVideoPlaybackUrl(raw);
@@ -152,14 +143,10 @@ class _EditorSessionToken {
 }
 
 class _AudioEmbedBuilder implements quill.EmbedBuilder {
-  const _AudioEmbedBuilder({
-    this.hydrationListenable,
-    this.lessonMediaSrcById = const <String, String>{},
-  });
+  const _AudioEmbedBuilder({this.hydrationListenable});
 
   final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
   hydrationListenable;
-  final Map<String, String> lessonMediaSrcById;
 
   @override
   String get key => 'audio';
@@ -180,10 +167,7 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
     final dynamic value = node.value.data;
     final lessonMediaId =
         lesson_pipeline.lessonMediaIdFromEmbedValue(value) ?? '';
-    final String url = _resolvedEditorEmbedSrc(
-      value,
-      lessonMediaSrcById: lessonMediaSrcById,
-    );
+    final String url = _resolvedEditorEmbedSrc(value);
     return LessonMediaPreview(
       lessonMediaId: lessonMediaId,
       mediaType: 'audio',
@@ -197,13 +181,11 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
 class _VideoEmbedBuilder implements quill.EmbedBuilder {
   const _VideoEmbedBuilder({
     this.hydrationListenable,
-    this.lessonMediaSrcById = const <String, String>{},
     this.knownLessonMediaIds = const <String>{},
   });
 
   final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
   hydrationListenable;
-  final Map<String, String> lessonMediaSrcById;
   final Set<String> knownLessonMediaIds;
 
   @override
@@ -228,10 +210,7 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
     final isKnownLessonMedia =
         normalizedLessonMediaId.isNotEmpty &&
         knownLessonMediaIds.contains(normalizedLessonMediaId);
-    final url = _resolvedEditorEmbedSrc(
-      value,
-      lessonMediaSrcById: lessonMediaSrcById,
-    );
+    final url = _resolvedEditorEmbedSrc(value);
     if (lesson_pipeline.isLegacyVideoEmbed(value) && !isKnownLessonMedia) {
       return const _StaleVideoEmbedPlaceholder();
     }
@@ -246,14 +225,10 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
 }
 
 class _ImageEmbedBuilder implements quill.EmbedBuilder {
-  const _ImageEmbedBuilder({
-    this.hydrationListenable,
-    this.lessonMediaSrcById = const <String, String>{},
-  });
+  const _ImageEmbedBuilder({this.hydrationListenable});
 
   final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
   hydrationListenable;
-  final Map<String, String> lessonMediaSrcById;
 
   @override
   String get key => quill.BlockEmbed.imageType;
@@ -273,10 +248,7 @@ class _ImageEmbedBuilder implements quill.EmbedBuilder {
     final dynamic value = embedContext.node.value.data;
     final lessonMediaId =
         lesson_pipeline.lessonMediaIdFromEmbedValue(value) ?? '';
-    final src = _resolvedEditorEmbedSrc(
-      value,
-      lessonMediaSrcById: lessonMediaSrcById,
-    );
+    final src = _resolvedEditorEmbedSrc(value);
     return LessonMediaPreview(
       lessonMediaId: lessonMediaId,
       mediaType: 'image',
@@ -287,20 +259,8 @@ class _ImageEmbedBuilder implements quill.EmbedBuilder {
   }
 }
 
-String _resolvedEditorEmbedSrc(
-  dynamic value, {
-  required Map<String, String> lessonMediaSrcById,
-}) {
-  final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(value);
-  final resolvedById = lessonMediaId == null
-      ? null
-      : lessonMediaSrcById[lessonMediaId.trim()];
-  if (resolvedById != null && resolvedById.trim().isNotEmpty) {
-    return resolvedById.trim();
-  }
-  return lesson_pipeline.lessonMediaUrlFromEmbedValue(value) ??
-      (value == null ? '' : value.toString().trim());
-}
+String _resolvedEditorEmbedSrc(dynamic value) =>
+    lesson_pipeline.rawLessonMediaSourceFromEmbedValue(value) ?? '';
 
 class _StaleVideoEmbedPlaceholder extends StatelessWidget {
   const _StaleVideoEmbedPlaceholder();
@@ -360,8 +320,7 @@ class _StaleVideoEmbedPlaceholder extends StatelessWidget {
 }
 
 bool _isEditorPreviewBlocked(Map<String, dynamic> media) {
-  return safeBool(media, 'preview_blocked') == true ||
-      safeBool(media, 'resolvable_for_editor') == false;
+  return safeString(media, 'id') == null;
 }
 
 bool _isVideoMedia(Map<String, dynamic> media) {
@@ -374,7 +333,9 @@ bool _isVideoMedia(Map<String, dynamic> media) {
 }
 
 bool _isVideoInsertBlockedForEditor(Map<String, dynamic> media) {
-  return _isVideoMedia(media) && _isEditorPreviewBlocked(media);
+  return _isVideoMedia(media) &&
+      (_isEditorPreviewBlocked(media) ||
+          safeBool(media, 'resolvable_for_editor') == false);
 }
 
 enum _UploadKind { image, video, audio, pdf }
@@ -1930,69 +1891,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return path.substring(index);
   }
 
-  Map<String, String> _apiFilesPathToStudioMediaUrlForSelectedLesson() {
-    final lessonId = _selectedLessonId;
-    if (lessonId == null) return const <String, String>{};
-    if (_lessonMediaLessonId != lessonId) return const <String, String>{};
-    if (_lessonMedia.isEmpty) return const <String, String>{};
-
-    final mapping = <String, String>{};
-    for (final media in _lessonMedia) {
-      final mediaId = (media['id'] as String?)?.trim();
-      if (mediaId == null || mediaId.isEmpty) continue;
-      final replacement = '/studio/media/$mediaId';
-      final candidates = <String?>[
-        _mediaUrl(media),
-        media['url'] as String?,
-        media['download_url'] as String?,
-        media['signed_url'] as String?,
-        media['playback_url'] as String?,
-      ];
-      for (final candidate in candidates) {
-        final apiPath = _apiFilesPathFromUrl(candidate);
-        if (apiPath == null || apiPath.isEmpty) continue;
-        mapping[apiPath.toLowerCase()] = replacement;
-      }
-    }
-    return mapping;
-  }
-
-  Map<String, String> _lessonMediaUrlToStudioMediaUrlForSelectedLesson() {
-    final lessonId = _selectedLessonId;
-    if (lessonId == null) return const <String, String>{};
-    if (_lessonMediaLessonId != lessonId) return const <String, String>{};
-    if (_lessonMedia.isEmpty) return const <String, String>{};
-
-    final mapping = <String, String>{};
-    for (final media in _lessonMedia) {
-      final mediaId = safeString(media, 'id');
-      if (mediaId == null) continue;
-      final replacement = '/studio/media/$mediaId';
-      final candidates = <String?>[
-        _mediaUrl(media),
-        safeString(media, 'url'),
-        safeString(media, 'preferredUrl'),
-        safeString(media, 'preferred_url'),
-        safeString(media, 'download_url'),
-        safeString(media, 'signed_url'),
-        safeString(media, 'playback_url'),
-        _resolveMediaDisplayUrl(media),
-        _resolveMediaListThumbnailUrl(media),
-      ];
-      for (final candidate in candidates) {
-        final normalized = candidate?.trim();
-        if (normalized == null || normalized.isEmpty) continue;
-        mapping[normalized] = replacement;
-      }
-    }
-    return mapping;
-  }
-
   String _prepareLessonMarkdownForEditing(String markdown) {
     return markdown_to_editor.canonicalizeMarkdownForEditor(
       markdown: markdown,
-      apiFilesPathToStudioMediaUrl:
-          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+      apiFilesPathToStudioMediaUrl: const <String, String>{},
       lessonMediaDocumentLabelsById:
           _lessonMediaDocumentLabelsByIdForSelectedLesson(),
     );
@@ -2001,8 +1903,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   quill.Document _documentFromLessonMarkdown(String markdown) {
     return markdown_to_editor.markdownToEditorDocument(
       markdown: markdown,
-      apiFilesPathToStudioMediaUrl:
-          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+      apiFilesPathToStudioMediaUrl: const <String, String>{},
       lessonMediaDocumentLabelsById:
           _lessonMediaDocumentLabelsByIdForSelectedLesson(),
     );
@@ -2042,34 +1943,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return items;
   }
 
-  Map<String, String> _editorRenderableLessonMediaSrcByIdForSelectedLesson() {
-    final lessonId = _selectedLessonId;
-    if (lessonId == null) return const <String, String>{};
-    if (_lessonMediaLessonId != lessonId) return const <String, String>{};
-    if (_lessonMedia.isEmpty) return const <String, String>{};
-
-    final mapping = <String, String>{};
-    for (final media in _lessonMedia) {
-      final mediaId = safeString(media, 'id');
-      if (mediaId == null) continue;
-      final src = _resolveEditorRenderableLessonMediaSrc(media);
-      if (src == null || src.isEmpty) continue;
-      mapping[mediaId] = src;
-    }
-    return mapping;
-  }
-
-  String? _resolveEditorRenderableLessonMediaSrc(Map<String, dynamic> media) {
-    final candidates = <String?>[_resolveMediaListThumbnailUrl(media)];
-    for (final candidate in candidates) {
-      final resolved = _asAbsoluteHttpUrl(candidate) ?? candidate?.trim();
-      if (resolved != null && resolved.isNotEmpty) {
-        return resolved;
-      }
-    }
-    return null;
-  }
-
   bool _didLessonMediaPreviewStateChange(
     List<Map<String, dynamic>> previousMedia,
     List<Map<String, dynamic>> nextMedia,
@@ -2088,16 +1961,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return <String>[
       safeString(media, 'id') ?? '',
       safeString(media, 'kind') ?? '',
-      safeString(media, 'thumbnail_url') ?? '',
-      safeString(media, 'thumbnailUrl') ?? '',
-      safeString(media, 'poster_frame') ?? '',
-      safeString(media, 'posterFrame') ?? '',
       safeString(media, 'file_name') ?? '',
       safeString(media, 'fileName') ?? '',
       safeString(media, 'original_name') ?? '',
       safeString(media, 'media_state') ?? '',
-      _resolveEditorRenderableLessonMediaSrc(media) ?? '',
-      '${safeBool(media, 'preview_blocked') ?? false}',
       '${safeBool(media, 'resolvable_for_editor') ?? true}',
     ].join('|');
   }
@@ -2117,10 +1984,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   ) {
     return editor_to_markdown.editorDeltaToCanonicalMarkdown(
       delta: controller.document.toDelta(),
-      apiFilesPathToStudioMediaUrl:
-          _apiFilesPathToStudioMediaUrlForSelectedLesson(),
-      lessonMediaUrlToStudioMediaUrl:
-          _lessonMediaUrlToStudioMediaUrlForSelectedLesson(),
+      apiFilesPathToStudioMediaUrl: const <String, String>{},
+      lessonMediaUrlToStudioMediaUrl: const <String, String>{},
     );
   }
 
@@ -2187,11 +2052,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _isEditorAuthProtectedMediaPath(String path) {
-    final normalized = path.trim().toLowerCase();
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return false;
+    final uri = Uri.tryParse(trimmed);
+    final normalized = (uri?.path ?? trimmed).trim().toLowerCase();
     if (normalized.isEmpty) return false;
     return normalized.startsWith('/studio/media/') ||
         normalized.startsWith('/api/media/') ||
-        normalized.startsWith('/media/sign');
+        normalized.startsWith('/media/sign') ||
+        normalized.startsWith('/media/stream/');
   }
 
   String? _normalizeBrowserOpenableMediaUrl(String? rawUrl) {
@@ -2257,6 +2126,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final rawPath = rawUri?.path ?? rawUrl;
     final resolved = await _resolveLessonEditorLaunchUrl(rawUrl);
     if (resolved == null && _isEditorAuthProtectedMediaPath(rawPath)) {
+      logLegacyLessonMediaPathUsage(
+        event: 'LEGACY_LESSON_MEDIA_URL_USAGE',
+        surface: 'studio_editor_link',
+        url: rawUrl,
+      );
       if (mounted && context.mounted) {
         showSnack(context, 'Kunde inte öppna medielänken.');
       }
@@ -2695,8 +2569,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         .map((item) => item.id.trim())
         .where((id) => id.isNotEmpty)
         .toSet();
-    final lessonMediaSrcById =
-        _editorRenderableLessonMediaSrcByIdForSelectedLesson();
 
     final toolbarConfig = quill.QuillSimpleToolbarConfig(
       multiRowsDisplay: false,
@@ -2795,16 +2667,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           ),
                           _ImageEmbedBuilder(
                             hydrationListenable: _previewHydrationController,
-                            lessonMediaSrcById: lessonMediaSrcById,
                           ),
                           _VideoEmbedBuilder(
                             hydrationListenable: _previewHydrationController,
-                            lessonMediaSrcById: lessonMediaSrcById,
                             knownLessonMediaIds: knownLessonMediaIds,
                           ),
                           _AudioEmbedBuilder(
                             hydrationListenable: _previewHydrationController,
-                            lessonMediaSrcById: lessonMediaSrcById,
                           ),
                         ],
                       ),
@@ -3943,44 +3812,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  String? _resolveMediaDisplayUrl(Map<String, dynamic> media) {
-    // Legacy read compatibility only. Active editor delivery must resolve
-    // through lesson_media_id via /api/media/lesson-playback.
-    final candidates = <String?>[
-      _mediaUrl(media),
-      safeString(media, 'url'),
-      safeString(media, 'download_url'),
-      safeString(media, 'playback_url'),
-      safeString(media, 'signed_url'),
-    ];
-    for (final candidate in candidates) {
-      final resolved = _resolveMediaUrl(candidate);
-      if (resolved != null && resolved.trim().isNotEmpty) {
-        return resolved;
-      }
-    }
-    return null;
-  }
-
-  String? _resolveMediaListThumbnailUrl(Map<String, dynamic> media) {
-    final candidates = <String?>[
-      safeString(media, 'thumbnail_url'),
-      safeString(media, 'thumbnailUrl'),
-      safeString(media, 'poster_frame'),
-      safeString(media, 'posterFrame'),
-    ];
-    for (final candidate in candidates) {
-      if (candidate == null || candidate.trim().isEmpty) {
-        continue;
-      }
-      final resolved = _resolveMediaUrl(candidate);
-      if (resolved != null && resolved.trim().isNotEmpty) {
-        return resolved;
-      }
-    }
-    return null;
-  }
-
   String? _asAbsoluteHttpUrl(String? candidate) {
     if (candidate == null) return null;
     final trimmed = candidate.trim();
@@ -4057,8 +3888,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       String filename,
       String contentType,
     ) async {
-      // Image uploads must resolve to a stable lesson media id plus a preview
-      // URL so the editor can persist canonical tokens while still rendering.
+      // Image uploads must produce a stable lesson media id so the editor can
+      // render exclusively through backend preview authority.
       final api = ref.read(apiClientProvider);
       final form = FormData.fromMap({
         'lesson_id': lessonId,
@@ -4081,29 +3912,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ? Map<String, dynamic>.from(nestedMedia)
           : Map<String, dynamic>.from(payload);
 
-      String? resolvedPublicUrl;
-      final urlCandidates = <String?>[
-        payload['preferredUrl'] as String?,
-        payload['url'] as String?,
-        media['preferredUrl'] as String?,
-        media['preferred_url'] as String?,
-        media['url'] as String?,
-        media['download_url'] as String?,
-      ];
-      for (final candidate in urlCandidates) {
-        final absolute = _asAbsoluteHttpUrl(_resolveMediaUrl(candidate));
-        if (absolute != null) {
-          resolvedPublicUrl = absolute;
-          break;
-        }
-      }
-      if (resolvedPublicUrl == null) {
-        throw StateError('Uppladdningen returnerade ingen publik bildlänk.');
+      final lessonMediaId = safeString(media, 'id');
+      if (lessonMediaId == null) {
+        throw StateError('Uppladdningen returnerade inget lesson_media_id.');
       }
 
-      if ((media['url'] as String?)?.trim().isEmpty ?? true) {
-        media['url'] = resolvedPublicUrl;
-      }
       if ((media['kind'] as String?)?.trim().isEmpty ?? true) {
         media['kind'] = 'image';
       }
@@ -4113,9 +3926,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if ((media['content_type'] as String?)?.trim().isEmpty ?? true) {
         media['content_type'] = contentType;
       }
-      media['preferredUrl'] = resolvedPublicUrl;
+      media['id'] = lessonMediaId;
 
-      return <String, dynamic>{'media': media, 'public_url': resolvedPublicUrl};
+      return <String, dynamic>{'media': media};
     }
 
     Future<void> uploadBytes(Uint8List bytes, String filename) async {
@@ -4680,19 +4493,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final previousPreview = _courseCoverPreviewUrl;
     final previousPipelineId = _coverPipelineMediaId;
     final previousPipelineState = _coverPipelineState;
-    final previewSource = _resolveMediaListThumbnailUrl(media);
-    final previewUrl = _asAbsoluteHttpUrl(previewSource);
 
-    // Covers are now processed into public storage; we never reuse lesson URLs directly.
     if (mounted) {
       setState(() {
         _updatingCourseCover = true;
         _coverPipelineState = 'uploaded';
         _coverPipelineError = null;
-        if (previewUrl != null && previewUrl.isNotEmpty) {
-          _courseCoverPath = previewSource;
-          _courseCoverPreviewUrl = previewUrl;
-        }
       });
     }
 
@@ -5366,6 +5172,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _previewMedia(Map<String, dynamic> media) async {
     final kind = media['kind'] as String? ?? 'other';
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null) {
+      logMissingLessonMediaIdRender(
+        surface: 'studio_media_list_preview',
+        mediaType: kind,
+      );
+      if (mounted && context.mounted) {
+        showSnack(context, 'Media saknar lesson_media_id och kan inte visas.');
+      }
+      return;
+    }
     if (_isWavMedia(media)) {
       return;
     }
@@ -5399,7 +5216,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         playbackUrl: _normalizeVideoPlaybackUrl(url),
       );
     } else {
-      await _downloadMedia(media);
+      logUnresolvedLessonMediaRender(
+        event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
+        surface: 'studio_media_list_preview',
+        mediaType: kind,
+        lessonMediaId: lessonMediaId,
+      );
+      if (mounted && context.mounted) {
+        showSnack(context, 'Förhandsvisning kunde inte laddas.');
+      }
     }
   }
 
@@ -5447,7 +5272,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final toId = (replacementMedia['id'] as String?)?.trim() ?? '';
     if (fromId.isEmpty || toId.isEmpty) return false;
 
-    final replacementUrl = _resolveMediaListThumbnailUrl(replacementMedia);
     var contentChanged = false;
     _runEditorMutation((controller) {
       contentChanged = replaceLessonMediaEmbedsInPlace(
@@ -5459,20 +5283,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             case lesson_pipeline.AudioBlockEmbed.embedType:
               return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
                 lessonMediaId: toId,
-                src: replacementUrl,
               );
             case quill.BlockEmbed.videoType:
               return quill.BlockEmbed.video(
                 lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
                   lessonMediaId: toId,
-                  src: replacementUrl,
                 ),
               );
             case quill.BlockEmbed.imageType:
               return quill.BlockEmbed.image(
                 lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
                   lessonMediaId: toId,
-                  src: replacementUrl,
                 ),
               );
             default:
@@ -6513,19 +6334,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             !hasInvalidPipelineReference &&
                                             pipelineState == 'ready' &&
                                             isAudio;
-                                        final previewBlocked =
-                                            _isEditorPreviewBlocked(media);
+                                        final mediaId = safeString(media, 'id');
                                         final canPreview =
-                                            !previewBlocked &&
+                                            mediaId != null &&
                                             !hasInvalidPipelineReference &&
                                             !isWavMedia &&
+                                            safeBool(
+                                                  media,
+                                                  'resolvable_for_editor',
+                                                ) !=
+                                                false &&
                                             (!isPipeline || canPipelinePlay);
-                                        final downloadUrl = isWavMedia
-                                            ? null
-                                            : _resolveMediaListThumbnailUrl(
-                                                media,
-                                              );
-                                        final mediaId = safeString(media, 'id');
                                         final fileName = _fileNameFromMedia(
                                           media,
                                         );
@@ -6550,8 +6369,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             size: 32,
                                             color: theme.colorScheme.error,
                                           );
-                                        } else if (kind == 'image' &&
-                                            downloadUrl != null) {
+                                        } else if (mediaId != null) {
                                           leading = GestureDetector(
                                             onTap: _updatingCourseCover
                                                 ? null
@@ -6568,18 +6386,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   const BorderRadius.all(
                                                     Radius.circular(8),
                                                   ),
-                                              child: Image.network(
-                                                downloadUrl,
-                                                fit: BoxFit.cover,
-                                                errorBuilder:
-                                                    (
-                                                      context,
-                                                      error,
-                                                      stackTrace,
-                                                    ) => Icon(
-                                                      _iconForMedia(kind),
-                                                      size: 32,
-                                                    ),
+                                              child: SizedBox.square(
+                                                dimension: 48,
+                                                child: LessonMediaPreview(
+                                                  lessonMediaId: mediaId,
+                                                  mediaType: kind,
+                                                ),
                                               ),
                                             ),
                                           );

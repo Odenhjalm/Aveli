@@ -1,15 +1,12 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_quill/markdown_quill.dart';
 
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
-import 'package:aveli/shared/utils/lesson_media_playback_resolver.dart';
 
 /// Lesson content is stored as canonical Markdown (`content_markdown`).
 ///
@@ -28,42 +25,27 @@ class AudioBlockEmbed extends quill.CustomBlockEmbed {
   static AudioBlockEmbed fromUrl(String url) => AudioBlockEmbed(url);
 
   /// Stable embed marker for lesson media audio.
-  ///
-  /// The optional `src` is only used for immediate playback while rendering
-  /// (editor/student view). It is never persisted to `content_markdown`.
-  static AudioBlockEmbed fromLessonMedia({
-    required String lessonMediaId,
-    String? src,
-  }) => AudioBlockEmbed(
-    jsonEncode(<String, dynamic>{
-      'lesson_media_id': lessonMediaId,
-      'kind': 'audio',
-      if (src != null && src.trim().isNotEmpty) 'src': src.trim(),
-    }),
-  );
+  static AudioBlockEmbed fromLessonMedia({required String lessonMediaId}) =>
+      AudioBlockEmbed(
+        jsonEncode(<String, dynamic>{
+          'lesson_media_id': lessonMediaId,
+          'kind': 'audio',
+        }),
+      );
 }
 
-/// Stable video embed marker for lesson media video.
-///
-/// The optional `src` is a render-time hint only. During persistence we always
-/// normalize to the lesson media id.
-String videoBlockEmbedValueFromLessonMedia({
-  required String lessonMediaId,
-  String? src,
-}) => jsonEncode(<String, dynamic>{
-  'lesson_media_id': lessonMediaId,
-  'kind': 'video',
-  if (src != null && src.trim().isNotEmpty) 'src': src.trim(),
-});
+String videoBlockEmbedValueFromLessonMedia({required String lessonMediaId}) =>
+    jsonEncode(<String, dynamic>{
+      'lesson_media_id': lessonMediaId,
+      'kind': 'video',
+    });
 
 String imageBlockEmbedValueFromLessonMedia({
   required String lessonMediaId,
-  String? src,
   String? alt,
 }) => jsonEncode(<String, dynamic>{
   'lesson_media_id': lessonMediaId,
   'kind': 'image',
-  if (src != null && src.trim().isNotEmpty) 'src': src.trim(),
   if (alt != null && alt.trim().isNotEmpty) 'alt': alt.trim(),
 });
 
@@ -76,15 +58,15 @@ String? lessonMediaUrlFromEmbedValue(dynamic value) {
       try {
         final decoded = json.decode(trimmed);
         if (decoded is Map) {
+          final lessonMediaId = decoded['lesson_media_id'];
+          if (lessonMediaId is String && lessonMediaId.trim().isNotEmpty) {
+            return null;
+          }
           for (final key in const ['source', 'src', 'url', 'download_url']) {
             final dynamic nested = decoded[key];
             if (nested is String && nested.trim().isNotEmpty) {
               return nested.trim();
             }
-          }
-          final lessonMediaId = decoded['lesson_media_id'];
-          if (lessonMediaId is String && lessonMediaId.trim().isNotEmpty) {
-            return '/studio/media/${lessonMediaId.trim()}';
           }
         }
       } catch (_) {
@@ -94,15 +76,15 @@ String? lessonMediaUrlFromEmbedValue(dynamic value) {
     return trimmed;
   }
   if (value is Map) {
+    final lessonMediaId = value['lesson_media_id'];
+    if (lessonMediaId is String && lessonMediaId.trim().isNotEmpty) {
+      return null;
+    }
     for (final key in const ['source', 'src', 'url', 'download_url']) {
       final dynamic nested = value[key];
       if (nested is String && nested.trim().isNotEmpty) {
         return nested.trim();
       }
-    }
-    final lessonMediaId = value['lesson_media_id'];
-    if (lessonMediaId is String && lessonMediaId.trim().isNotEmpty) {
-      return '/studio/media/${lessonMediaId.trim()}';
     }
   }
   return null;
@@ -125,17 +107,6 @@ String? _lessonMediaIdFromEmbedValue(dynamic value) {
         }
       } catch (_) {}
     }
-
-    final studioMatch = studioMediaUrlPattern.firstMatch(trimmed);
-    final id = studioMatch?.group(1);
-    if (id != null && id.isNotEmpty) return id;
-
-    final streamMatch = mediaStreamUrlPattern.firstMatch(trimmed);
-    final token = streamMatch?.group(1);
-    if (token != null && token.isNotEmpty) {
-      final extracted = _extractMediaIdFromToken(token);
-      if (extracted != null && extracted.isNotEmpty) return extracted;
-    }
   }
 
   return null;
@@ -143,6 +114,21 @@ String? _lessonMediaIdFromEmbedValue(dynamic value) {
 
 String? lessonMediaIdFromEmbedValue(dynamic value) =>
     _lessonMediaIdFromEmbedValue(value);
+
+String? rawLessonMediaSourceFromEmbedValue(dynamic value) {
+  final explicitUrl = lessonMediaUrlFromEmbedValue(value);
+  if (explicitUrl != null && explicitUrl.isNotEmpty) {
+    return explicitUrl;
+  }
+  final lessonMediaId = lessonMediaIdFromEmbedValue(value);
+  if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
+    return null;
+  }
+  if (value is String && value.trim().isNotEmpty) {
+    return value.trim();
+  }
+  return null;
+}
 
 String? lessonMediaAltFromEmbedValue(dynamic value) {
   if (value is Map) {
@@ -183,10 +169,15 @@ bool _isStudioMediaUrl(String value) {
     return false;
   }
   final uri = Uri.tryParse(trimmed);
-  if (uri != null && uri.path.startsWith('/studio/media/')) {
+  final path = uri?.path ?? trimmed;
+  final normalizedPath = path.toLowerCase();
+  if (normalizedPath.startsWith('/studio/media/') ||
+      normalizedPath.startsWith('/media/stream/')) {
     return true;
   }
-  return trimmed.toLowerCase().contains('/studio/media/');
+  final normalized = trimmed.toLowerCase();
+  return normalized.contains('/studio/media/') ||
+      normalized.contains('/media/stream/');
 }
 
 /// Legacy video embeds cannot be rendered safely by the current player.
@@ -260,7 +251,7 @@ String? lessonMediaIdFromDocumentLinkUrl(String? rawUrl) {
     }
   }
 
-  return _lessonMediaIdFromEmbedValue(normalized);
+  return null;
 }
 
 String _documentLinkLabel({String? rawLabel, String? fileName}) {
@@ -325,18 +316,18 @@ MarkdownToDelta createLessonMarkdownToDelta(md.Document markdownDocument) {
     customElementToEmbeddable: {
       'audio': (attrs) {
         final src = _normalizeMediaSourceAttribute(attrs);
-        final id = _lessonMediaIdFromMediaAttributes(attrs, src);
+        final id = _lessonMediaIdFromMediaAttributes(attrs);
         if (id != null && id.isNotEmpty) {
-          return AudioBlockEmbed.fromLessonMedia(lessonMediaId: id, src: src);
+          return AudioBlockEmbed.fromLessonMedia(lessonMediaId: id);
         }
         return AudioBlockEmbed.fromUrl(src);
       },
       'video': (attrs) {
         final src = _normalizeMediaSourceAttribute(attrs);
-        final id = _lessonMediaIdFromMediaAttributes(attrs, src);
+        final id = _lessonMediaIdFromMediaAttributes(attrs);
         if (id != null && id.isNotEmpty) {
           return quill.BlockEmbed.video(
-            videoBlockEmbedValueFromLessonMedia(lessonMediaId: id, src: src),
+            videoBlockEmbedValueFromLessonMedia(lessonMediaId: id),
           );
         }
         return quill.BlockEmbed.video(src);
@@ -675,7 +666,7 @@ quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
       final raw = match.group(0) ?? '';
       final attrs = _parseHtmlAttributes(raw);
       final src = _normalizeMediaSourceAttribute(attrs);
-      final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
+      final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs);
       if (src.isEmpty && (lessonMediaId == null || lessonMediaId.isEmpty)) {
         if (raw.isNotEmpty) {
           result.insert(raw, operation.attributes);
@@ -703,7 +694,6 @@ quill_delta.Delta _replaceHtmlImgTagsWithEmbeds(quill_delta.Delta source) {
         final imageValue = lessonMediaId != null && lessonMediaId.isNotEmpty
             ? imageBlockEmbedValueFromLessonMedia(
                 lessonMediaId: lessonMediaId,
-                src: src.isEmpty ? null : src,
                 alt: alt,
               )
             : src;
@@ -793,9 +783,9 @@ quill_delta.Delta convertLessonMarkdownToDelta(
     final raw = match.group(0) ?? '';
     final attrs = _parseHtmlAttributes(raw);
     final src = _normalizeMediaSourceAttribute(attrs);
-    final id = _lessonMediaIdFromMediaAttributes(attrs, src);
+    final id = _lessonMediaIdFromMediaAttributes(attrs);
     if (id != null && id.isNotEmpty) {
-      return AudioBlockEmbed.fromLessonMedia(lessonMediaId: id, src: src);
+      return AudioBlockEmbed.fromLessonMedia(lessonMediaId: id);
     }
     final extractedSrc = match.group(1)?.trim() ?? '';
     if (extractedSrc.isNotEmpty) {
@@ -812,10 +802,10 @@ quill_delta.Delta convertLessonMarkdownToDelta(
     final raw = match.group(0) ?? '';
     final attrs = _parseHtmlAttributes(raw);
     final src = _normalizeMediaSourceAttribute(attrs);
-    final id = _lessonMediaIdFromMediaAttributes(attrs, src);
+    final id = _lessonMediaIdFromMediaAttributes(attrs);
     if (id != null && id.isNotEmpty) {
       return quill.BlockEmbed.video(
-        videoBlockEmbedValueFromLessonMedia(lessonMediaId: id, src: src),
+        videoBlockEmbedValueFromLessonMedia(lessonMediaId: id),
       );
     }
     final extractedSrc = match.group(1)?.trim() ?? '';
@@ -851,27 +841,11 @@ quill_delta.Delta convertLessonMarkdownToDelta(
   return withImageTokens;
 }
 
-String? _lessonMediaIdFromMediaAttributes(
-  Map<String, String> attrs,
-  String src, {
-  String? explicitId,
-}) {
-  if (explicitId != null && explicitId.trim().isNotEmpty) {
-    return explicitId.trim();
-  }
+String? _lessonMediaIdFromMediaAttributes(Map<String, String> attrs) {
   final explicit =
       attrs['data-lesson-media-id'] ?? attrs['data-lesson_media_id'];
   if (explicit != null && explicit.trim().isNotEmpty) return explicit.trim();
-  if (src.isEmpty) return null;
-
-  final studioMatch = studioMediaUrlPattern.firstMatch(src);
-  final studioId = studioMatch?.group(1);
-  if (studioId != null && studioId.isNotEmpty) return studioId;
-
-  final streamMatch = mediaStreamUrlPattern.firstMatch(src);
-  final token = streamMatch?.group(1);
-  if (token == null || token.isEmpty) return null;
-  return _extractMediaIdFromToken(token);
+  return null;
 }
 
 final RegExp studioMediaUrlPattern = RegExp(
@@ -893,40 +867,10 @@ final RegExp lessonMediaIdAttributePattern = RegExp(
   caseSensitive: false,
 );
 
-String? _extractMediaIdFromToken(String token) {
-  final parts = token.split('.');
-  if (parts.length != 3) return null;
-  try {
-    final payloadRaw = utf8.decode(
-      base64Url.decode(base64Url.normalize(parts[1])),
-    );
-    final jsonValue = json.decode(payloadRaw);
-    if (jsonValue is! Map<String, dynamic>) return null;
-    final sub = jsonValue['sub'];
-    return sub is String && sub.isNotEmpty ? sub : null;
-  } catch (_) {
-    return null;
-  }
-}
-
 Set<String> extractLessonEmbeddedMediaIds(String markdown) {
   final ids = <String>{};
   for (final match in lessonMediaIdAttributePattern.allMatches(markdown)) {
     final id = match.group(1);
-    if (id != null && id.isNotEmpty) {
-      ids.add(id);
-    }
-  }
-  for (final match in studioMediaUrlPattern.allMatches(markdown)) {
-    final id = match.group(1);
-    if (id != null && id.isNotEmpty) {
-      ids.add(id);
-    }
-  }
-  for (final match in mediaStreamUrlPattern.allMatches(markdown)) {
-    final token = match.group(1);
-    if (token == null || token.isEmpty) continue;
-    final id = _extractMediaIdFromToken(token);
     if (id != null && id.isNotEmpty) {
       ids.add(id);
     }
@@ -988,123 +932,25 @@ String rewriteLegacyLessonMediaUrlsForReadCompatibility({
   required String markdown,
   Iterable<LessonMediaItem> lessonMedia = const <LessonMediaItem>[],
 }) {
-  if (markdown.isEmpty) return markdown;
-
-  // Legacy absolute delivery URLs are retained only as a read-compat shim so
-  // previously-authored lessons can still upgrade to lesson_media ids.
-  final urlToStudioMediaUrl = <String, String>{};
-  for (final item in lessonMedia) {
-    final lessonMediaId = item.id.trim();
-    if (lessonMediaId.isEmpty) continue;
-    final replacement = '/studio/media/$lessonMediaId';
-    for (final candidate in <String?>[
-      item.preferredUrlValue,
-      item.playbackUrl,
-      item.downloadUrl,
-      item.signedUrl,
-    ]) {
-      final normalized = candidate?.trim();
-      if (normalized == null || normalized.isEmpty) continue;
-      urlToStudioMediaUrl[normalized] = replacement;
-    }
-  }
-  if (urlToStudioMediaUrl.isEmpty) {
-    return markdown;
-  }
-  return urlToStudioMediaUrl.entries.fold<String>(markdown, (current, entry) {
-    return current.replaceAll(entry.key, entry.value);
-  });
+  return markdown;
 }
 
 Future<String> prepareLessonMarkdownForRendering(
   MediaRepository mediaRepository,
   String markdown, {
   Iterable<LessonMediaItem> lessonMedia = const <LessonMediaItem>[],
-  MediaPipelineRepository? pipelineRepository,
+  Object? pipelineRepository,
 }) async {
   markdown = _stripBlankLineSentinelForDisplay(markdown);
   if (markdown.trim().isEmpty) return markdown;
-  markdown = rewriteLegacyLessonMediaUrlsForReadCompatibility(
-    markdown: markdown,
-    lessonMedia: lessonMedia,
-  );
-  final byId = <String, LessonMediaItem>{
-    for (final item in lessonMedia) item.id: item,
+  final documentLabelsById = <String, String>{
+    for (final item in lessonMedia)
+      if (item.id.trim().isNotEmpty) item.id.trim(): item.fileName,
   };
-  markdown = markdown
-      .replaceAllMapped(_lessonImageTokenPattern, (match) {
-        final id = match.group(1)?.trim();
-        if (id == null || id.isEmpty) return match.group(0) ?? '';
-        final escapedId = _htmlAttributeEscape.convert(id);
-        return '<img data-lesson-media-id="$escapedId" src="/studio/media/$escapedId" />';
-      })
-      .replaceAllMapped(_lessonAudioTokenPattern, (match) {
-        final id = match.group(1)?.trim();
-        if (id == null || id.isEmpty) return match.group(0) ?? '';
-        final escapedId = _htmlAttributeEscape.convert(id);
-        return '<audio controls data-lesson-media-id="$escapedId" src="/studio/media/$escapedId"></audio>';
-      })
-      .replaceAllMapped(_lessonVideoTokenPattern, (match) {
-        final id = match.group(1)?.trim();
-        if (id == null || id.isEmpty) return match.group(0) ?? '';
-        final escapedId = _htmlAttributeEscape.convert(id);
-        return '<video controls data-lesson-media-id="$escapedId" src="/studio/media/$escapedId"></video>';
-      })
-      .replaceAllMapped(_lessonDocumentTokenPattern, (match) {
-        final id = match.group(1)?.trim();
-        if (id == null || id.isEmpty) return match.group(0) ?? '';
-        final escapedId = _htmlAttributeEscape.convert(id);
-        final label = _documentLinkLabel(
-          fileName: byId[id]?.fileName,
-        ).replaceAll('[', '(').replaceAll(']', ')');
-        return '[$label](/studio/media/$escapedId)';
-      });
-
-  final ids = extractLessonEmbeddedMediaIds(markdown);
-  if (ids.isEmpty || pipelineRepository == null) return markdown;
-
-  final resolvedUrls = <String, String>{};
-  await Future.wait(
-    ids.map((id) async {
-      try {
-        final item = byId[id];
-        if (item == null) {
-          return;
-        }
-        final url = await resolveLessonMediaSignedPlaybackUrl(
-          lessonMediaId: id,
-          mediaRepository: mediaRepository,
-          pipelineRepository: pipelineRepository,
-        );
-        if (url != null && url.trim().isNotEmpty) {
-          resolvedUrls[id] = url.trim();
-        }
-      } catch (error, stackTrace) {
-        if (kDebugMode) {
-          debugPrint(
-            '[lesson_content_pipeline] Failed to resolve embedded media id=$id error=$error',
-          );
-          debugPrint(stackTrace.toString());
-        }
-      }
-    }),
+  return rewriteLessonMarkdownDocumentLinksForEditor(
+    markdown: markdown,
+    lessonMediaDocumentLabelsById: documentLabelsById,
   );
-  if (resolvedUrls.isEmpty) return markdown;
-
-  var resolved = markdown;
-  resolved = resolved.replaceAllMapped(studioMediaUrlPattern, (match) {
-    final id = match.group(1);
-    if (id == null || id.isEmpty) return match.group(0) ?? '';
-    return resolvedUrls[id] ?? (match.group(0) ?? '');
-  });
-  resolved = resolved.replaceAllMapped(mediaStreamUrlPattern, (match) {
-    final token = match.group(1);
-    if (token == null || token.isEmpty) return match.group(0) ?? '';
-    final id = _extractMediaIdFromToken(token);
-    if (id == null || id.isEmpty) return match.group(0) ?? '';
-    return resolvedUrls[id] ?? (match.group(0) ?? '');
-  });
-  return resolved;
 }
 
 String normalizeLessonMarkdownForStorage(String markdown) {
