@@ -775,7 +775,7 @@ void main() {
   });
 
   testWidgets(
-    'CourseEditorScreen renders legacy video placeholder and keeps media controls visible',
+    'CourseEditorScreen renders a passive stale video placeholder and keeps media controls visible',
     (tester) async {
       final studioRepo = _MockStudioRepository();
       final coursesRepo = _MockCoursesRepository();
@@ -915,196 +915,108 @@ void main() {
       expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
       expect(find.byType(EditorMediaControls), findsOneWidget);
       expect(
-        find.text('Det här videoblocket använder ett äldre videoformat.'),
+        find.text('Videoblocket kan inte laddas i editorn.'),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('legacy_video_remove_button')),
+        find.byKey(const ValueKey('stale_video_embed_placeholder')),
         findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('stale_video_embed_placeholder')),
+          matching: find.byType(TextButton),
+        ),
+        findsNothing,
       );
     },
   );
 
-  testWidgets('CourseEditorScreen can remove legacy video and insert new video', (
-    tester,
-  ) async {
-    final studioRepo = _MockStudioRepository();
-    final coursesRepo = _MockCoursesRepository();
+  testWidgets(
+    'CourseEditorScreen keeps stale video tokens editable and savable',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\n!video(media-stale)\n\nEftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+      _stubLessonSaveEcho(studioRepo);
 
-    when(() => studioRepo.myCourses()).thenAnswer(
-      (_) async => [
-        {'id': 'course-1', 'title': 'Tarot Basics'},
-      ],
-    );
-    when(() => studioRepo.fetchStatus()).thenAnswer(
-      (_) async => const StudioStatus(
-        isTeacher: true,
-        verifiedCertificates: 1,
-        hasApplication: false,
-      ),
-    );
-    when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
-      (_) async => {
-        'title': 'Tarot Basics',
-        'slug': 'tarot-basics',
-        'description': 'Lär dig läsa korten',
-        'price_amount_cents': 1200,
-        'is_free_intro': true,
-        'is_published': false,
-      },
-    );
-    when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
-      (_) async => [
-        {
-          'id': 'lesson-1',
-          'title': 'Välkommen',
-          'position': 1,
-          'is_intro': true,
-          'course_id': 'course-1',
-          'content_markdown':
-              'Introtext\n\n<video src="/studio/media/legacy-path"></video>\n\nEftertext',
-        },
-      ],
-    );
-    when(() => studioRepo.listLessonMedia('lesson-1')).thenAnswer(
-      (_) async => [
-        {
-          'id': 'media-replacement',
-          'kind': 'video',
-          'position': 1,
-          'original_name': 'replacement.mp4',
-          'download_url': 'https://cdn.test/replacement.mp4',
-          'preview_blocked': true,
-          'resolvable_for_editor': false,
-        },
-      ],
-    );
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
 
-    final courseDetail = CourseDetailData(
-      course: const CourseSummary(
-        id: 'course-1',
-        slug: 'tarot-basics',
-        title: 'Tarot Basics',
-        description: 'Lär dig läsa korten',
-        coverUrl: null,
-        videoUrl: null,
-        isFreeIntro: true,
-        isPublished: true,
-        priceCents: 1200,
-      ),
-      modules: const [
-        CourseModule(id: 'module-1', title: 'Intro', position: 1),
-      ],
-      lessonsByModule: {
-        'module-1': const [
-          LessonSummary(
-            id: 'lesson-1',
-            title: 'Välkommen',
-            position: 1,
-            isIntro: true,
-            contentMarkdown:
-                'Introtext\n\n<video src="/studio/media/legacy-path"></video>\n\nEftertext',
-          ),
-        ],
-      },
-      isEnrolled: false,
-      latestOrder: null,
-    );
-    when(
-      () => coursesRepo.fetchCourseDetailBySlug(any()),
-    ).thenAnswer((_) async => courseDetail);
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              stripePublishableKey: 'pk_test_stub',
-              stripeMerchantDisplayName: 'Test Merchant',
-              subscriptionsEnabled: false,
-            ),
-          ),
-          backendAssetResolverProvider.overrideWith(
-            (ref) => TestBackendAssetResolver(),
-          ),
-          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
-          studioRepositoryProvider.overrideWithValue(studioRepo),
-          coursesRepositoryProvider.overrideWithValue(coursesRepo),
-          studioStatusProvider.overrideWith(
-            (ref) async => const StudioStatus(
-              isTeacher: true,
-              verifiedCertificates: 1,
-              hasApplication: false,
-            ),
-          ),
-          studioUploadQueueProvider.overrideWith(
-            (ref) => _NoopUploadQueueNotifier(studioRepo),
-          ),
-        ],
-        child: MaterialApp(
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-            quill.FlutterQuillLocalizations.delegate,
-          ],
-          supportedLocales: const [Locale('en'), Locale('sv')],
-          home: CourseEditorScreen(
-            studioRepository: studioRepo,
-            coursesRepository: coursesRepo,
-          ),
+      expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+      expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('stale_video_embed_placeholder')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('stale_video_embed_placeholder')),
+          matching: find.byType(TextButton),
         ),
-      ),
-    );
+        findsNothing,
+      );
 
-    await tester.pump();
-    for (var i = 0; i < 5; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
+      editor_test_bridge.setCursor(0);
+      await tester.pump();
+      editor_test_bridge.insertText('X');
+      await tester.pump();
+      expect(_editorDocumentFromBridge(), startsWith('XIntrotext'));
 
-    expect(_legacyInlineAudioPlayerFinder(), findsNothing);
-    expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
-    expect(
-      find.text('Det här videoblocket använder ett äldre videoformat.'),
-      findsOneWidget,
-    );
+      final staleDocument = _editorDocumentFromBridge();
+      final staleEmbedOffset = staleDocument.indexOf(
+        quill.Embed.kObjectReplacementCharacter,
+      );
+      expect(staleEmbedOffset, greaterThanOrEqualTo(0));
 
-    final removeLegacyFinder = find.byKey(
-      const ValueKey('legacy_video_remove_button'),
-    );
-    await tester.ensureVisible(removeLegacyFinder);
-    await tester.tap(removeLegacyFinder);
-    await tester.pump();
+      editor_test_bridge.setSelection(staleEmbedOffset, staleEmbedOffset + 1);
+      await tester.pump();
+      editor_test_bridge.deleteSelection();
+      await tester.pump();
 
-    expect(
-      find.text('Det här videoblocket använder ett äldre videoformat.'),
-      findsNothing,
-    );
-    expect(_lessonMediaPlayerFinder(kind: 'video'), findsNothing);
+      expect(
+        _editorDocumentFromBridge(),
+        isNot(contains(quill.Embed.kObjectReplacementCharacter)),
+      );
+      expect(
+        find.byKey(const ValueKey('stale_video_embed_placeholder')),
+        findsNothing,
+      );
 
-    final insertButtonFinder = find.descendant(
-      of: find
-          .ancestor(
-            of: find.text('replacement.mp4'),
-            matching: find.byType(ListTile),
-          )
-          .first,
-      matching: find.widgetWithIcon(IconButton, Icons.movie_creation_outlined),
-    );
-    await tester.ensureVisible(insertButtonFinder);
-    await tester.tap(insertButtonFinder);
-    await tester.pump();
-    await _pumpUntilFound(tester, find.byType(LessonMediaPreview));
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
 
-    expect(find.byType(LessonMediaPreview), findsOneWidget);
-    expect(
-      find.text('Det här videoblocket använder ett äldre videoformat.'),
-      findsNothing,
-    );
-    expect(tester.takeException(), isNull);
-    await _disposePumpedWidget(tester);
-  });
+      final verification = verify(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+      final capturedMarkdown = verification.captured.single as String;
+      expect(capturedMarkdown, contains('XIntrotext'));
+      expect(capturedMarkdown, contains('Eftertext'));
+      expect(capturedMarkdown, isNot(contains('!video(media-stale)')));
+      expect(tester.takeException(), isNull);
+      await _disposePumpedWidget(tester);
+    },
+  );
 
   testWidgets('CourseEditorScreen opens with no courses without crashing', (
     tester,
@@ -1618,7 +1530,7 @@ void main() {
   );
 
   testWidgets(
-    'CourseEditorScreen blocks preview for broken media without disabling valid inserts',
+    'CourseEditorScreen disables blocked video inserts without disabling valid image inserts',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1802,24 +1714,26 @@ void main() {
           ),
         ),
       );
-      expect(insertButton.onPressed, isNotNull);
+      expect(insertButton.onPressed, isNull);
 
-      final insertButtonFinder = find.descendant(
-        of: find
-            .ancestor(
-              of: find.text('broken.mp4'),
-              matching: find.byType(ListTile),
-            )
-            .first,
-        matching: find.widgetWithIcon(
-          IconButton,
-          Icons.movie_creation_outlined,
+      final validImageInsertButton = tester.widget<IconButton>(
+        find.descendant(
+          of: find
+              .ancestor(
+                of: find.text('ok.png'),
+                matching: find.byType(ListTile),
+              )
+              .first,
+          matching: find.widgetWithIcon(
+            IconButton,
+            Icons.add_photo_alternate_outlined,
+          ),
         ),
       );
-      await tester.ensureVisible(insertButtonFinder);
-      await tester.tap(insertButtonFinder);
-      await tester.pump();
-      expect(tester.takeException(), isNull);
+      expect(validImageInsertButton.onPressed, isNotNull);
+
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
       await _disposePumpedWidget(tester);
     },
   );
@@ -3422,6 +3336,159 @@ void main() {
       );
 
       await tester.pump(const Duration(milliseconds: 600));
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'queued blocked MP4 upload does not auto-insert into the lesson',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final uploadQueue = _TestUploadQueueNotifier(studioRepo);
+      final lessonMedia = <Map<String, dynamic>>[
+        {
+          'id': 'media-video-blocked',
+          'kind': 'video',
+          'storage_path': 'lessons/lesson-1/video/blocked.mp4',
+          'storage_bucket': 'public-media',
+          'original_name': 'queued-video.mp4',
+          'content_type': 'video/mp4',
+          'download_url': 'https://cdn.test/blocked.mp4',
+          'preview_blocked': true,
+          'resolvable_for_editor': false,
+          'position': 1,
+        },
+      ];
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: lessonMedia,
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        uploadQueueNotifier: uploadQueue,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final initialDocument = _editorDocumentFromBridge();
+      final insertionOffset = initialDocument.indexOf('Eftertext');
+      expect(insertionOffset, greaterThan(0));
+      editor_test_bridge.setCursor(insertionOffset);
+      await tester.pump();
+
+      final successJob = UploadJob(
+        id: 'job-blocked-video',
+        courseId: 'course-1',
+        lessonId: 'lesson-1',
+        filename: 'queued-video.mp4',
+        contentType: 'video/mp4',
+        isIntro: true,
+        data: Uint8List(0),
+        createdAt: DateTime.utc(2026, 3, 18),
+        status: UploadJobStatus.success,
+        progress: 1,
+      );
+
+      uploadQueue.setJobs(<UploadJob>[successJob]);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      expect(_editorDocumentFromBridge(), initialDocument);
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+      verifyNever(
+        () => studioRepo.upsertLesson(
+          id: any(named: 'id'),
+          courseId: any(named: 'courseId'),
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'queued resolvable MP4 upload still auto-inserts and saves canonically',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final uploadQueue = _TestUploadQueueNotifier(studioRepo);
+      final lessonMedia = <Map<String, dynamic>>[
+        {
+          'id': 'media-video-1',
+          'kind': 'video',
+          'storage_path': 'lessons/lesson-1/video/video.mp4',
+          'storage_bucket': 'public-media',
+          'original_name': 'queued-video.mp4',
+          'content_type': 'video/mp4',
+          'download_url': 'https://cdn.test/video.mp4',
+          'preview_blocked': false,
+          'resolvable_for_editor': true,
+          'position': 1,
+        },
+      ];
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: lessonMedia,
+      );
+      _stubLessonSaveEcho(studioRepo);
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        uploadQueueNotifier: uploadQueue,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final initialDocument = _editorDocumentFromBridge();
+      final insertionOffset = initialDocument.indexOf('Eftertext');
+      expect(insertionOffset, greaterThan(0));
+      editor_test_bridge.setCursor(insertionOffset);
+      await tester.pump();
+
+      final successJob = UploadJob(
+        id: 'job-video',
+        courseId: 'course-1',
+        lessonId: 'lesson-1',
+        filename: 'queued-video.mp4',
+        contentType: 'video/mp4',
+        isIntro: true,
+        data: Uint8List(0),
+        createdAt: DateTime.utc(2026, 3, 18),
+        status: UploadJobStatus.success,
+        progress: 1,
+      );
+
+      uploadQueue.setJobs(<UploadJob>[successJob]);
+      await tester.pump();
+      await _pumpEditorBootstrap(tester);
+
+      final verification = verify(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+      final capturedMarkdown = verification.captured.last as String;
+      expect(capturedMarkdown, contains('!video(media-video-1)'));
+      expect(capturedMarkdown, contains('Eftertext'));
       await _disposePumpedWidget(tester);
     },
   );

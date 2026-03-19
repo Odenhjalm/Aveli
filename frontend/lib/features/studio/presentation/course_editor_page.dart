@@ -134,8 +134,8 @@ const Map<String, String> _editorFontOptions = <String, String>{
   'Lora (serif)': 'Lora',
   'Playfair Display (rubrik)': 'PlayfairDisplay',
 };
-const _legacyVideoRemoveButtonKey = ValueKey<String>(
-  'legacy_video_remove_button',
+const _staleVideoPlaceholderKey = ValueKey<String>(
+  'stale_video_embed_placeholder',
 );
 
 enum _LessonEditorBootPhase { booting, applyingLessonDocument, fullyStable }
@@ -197,13 +197,11 @@ class _AudioEmbedBuilder implements quill.EmbedBuilder {
 
 class _VideoEmbedBuilder implements quill.EmbedBuilder {
   const _VideoEmbedBuilder({
-    this.onRemoveLegacyVideoAt,
     this.hydrationListenable,
     this.lessonMediaSrcById = const <String, String>{},
     this.knownLessonMediaIds = const <String>{},
   });
 
-  final void Function(int documentOffset)? onRemoveLegacyVideoAt;
   final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
   hydrationListenable;
   final Map<String, String> lessonMediaSrcById;
@@ -236,11 +234,7 @@ class _VideoEmbedBuilder implements quill.EmbedBuilder {
       lessonMediaSrcById: lessonMediaSrcById,
     );
     if (lesson_pipeline.isLegacyVideoEmbed(value) && !isKnownLessonMedia) {
-      return _LegacyVideoEmbedPlaceholder(
-        onRemove: onRemoveLegacyVideoAt == null
-            ? null
-            : () => onRemoveLegacyVideoAt!(embedContext.node.documentOffset),
-      );
+      return const _StaleVideoEmbedPlaceholder();
     }
     return LessonMediaPreview(
       lessonMediaId: lessonMediaId ?? '',
@@ -309,61 +303,79 @@ String _resolvedEditorEmbedSrc(
       (value == null ? '' : value.toString().trim());
 }
 
-class _LegacyVideoEmbedPlaceholder extends StatelessWidget {
-  const _LegacyVideoEmbedPlaceholder({this.onRemove});
-
-  final VoidCallback? onRemove;
+class _StaleVideoEmbedPlaceholder extends StatelessWidget {
+  const _StaleVideoEmbedPlaceholder();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: br16,
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.history_toggle_off_rounded,
-                color: theme.colorScheme.onSurfaceVariant,
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      descendantsAreFocusable: false,
+      child: IgnorePointer(
+        ignoring: true,
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: DecoratedBox(
+            key: _staleVideoPlaceholderKey,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: br16,
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.history_toggle_off_rounded,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Videoblocket kan inte laddas i editorn.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Dokumentet är fortfarande redigerbart. Ta bort blocket och spara lektionen.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Det här videoblocket använder ett äldre videoformat.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Ta bort videon och lägg till en ny.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextButton.icon(
-                key: _legacyVideoRemoveButtonKey,
-                onPressed: onRemove,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Ta bort video'),
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+bool _isEditorPreviewBlocked(Map<String, dynamic> media) {
+  return safeBool(media, 'preview_blocked') == true ||
+      safeBool(media, 'resolvable_for_editor') == false;
+}
+
+bool _isVideoMedia(Map<String, dynamic> media) {
+  final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
+  if (kind == 'video') return true;
+  final contentType = ((media['content_type'] as String?) ?? '')
+      .trim()
+      .toLowerCase();
+  return contentType.startsWith('video/');
+}
+
+bool _isVideoInsertBlockedForEditor(Map<String, dynamic> media) {
+  return _isVideoMedia(media) && _isEditorPreviewBlocked(media);
 }
 
 enum _UploadKind { image, video, audio, pdf }
@@ -2821,7 +2833,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             lessonMediaSrcById: lessonMediaSrcById,
                           ),
                           _VideoEmbedBuilder(
-                            onRemoveLegacyVideoAt: _removeLegacyVideoEmbedAt,
                             hydrationListenable: _previewHydrationController,
                             lessonMediaSrcById: lessonMediaSrcById,
                             knownLessonMediaIds: knownLessonMediaIds,
@@ -3475,9 +3486,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final media = video;
     if (media == null) return null;
-    final previewBlocked =
-        media['preview_blocked'] == true ||
-        media['resolvable_for_editor'] == false;
+    final previewBlocked = _isEditorPreviewBlocked(media);
     final url = previewBlocked ? null : _resolveMediaDisplayUrl(media);
     final normalizedUrl = _normalizeVideoPlaybackUrl(url);
     final label = safeString(media, 'title') ?? _fileNameFromMedia(media);
@@ -4316,34 +4325,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _removeLegacyVideoEmbedAt(int documentOffset) {
-    final controller = _lessonContentController;
-    final plainText = controller.document.toPlainText();
-    if (documentOffset < 0 || documentOffset >= plainText.length) return;
-
-    var deleteLength = 1;
-    final nextOffset = documentOffset + 1;
-    if (nextOffset < plainText.length && plainText[nextOffset] == '\n') {
-      deleteLength = 2;
-    }
-
-    _runEditorMutation((controller) {
-      _replaceEditorTextLocally(
-        controller,
-        index: documentOffset,
-        length: deleteLength,
-        data: '',
-        selection: TextSelection.collapsed(offset: documentOffset),
-      );
-      _setEditorSelectionLocally(
-        controller,
-        selection: TextSelection.collapsed(
-          offset: _clampEditorOffset(documentOffset),
-        ),
-      );
-    }, requestFocus: true);
-  }
-
   bool _insertImageIntoLesson({
     required String publicUrl,
     String? lessonMediaId,
@@ -4534,6 +4515,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return false;
     }
+    if (_isVideoInsertBlockedForEditor(media)) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Videon kan inte bäddas in eftersom den inte kan laddas i editorn.',
+        );
+      }
+      return false;
+    }
     final resolved = _resolveMediaDisplayUrl(media);
     debugPrint(
       '[CourseEditor] insert media kind=$kind lessonMediaId=$lessonMediaId url=$resolved',
@@ -4589,8 +4579,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return true;
     }
-    if (kind == 'video' ||
-        ((media['content_type'] as String?) ?? '').startsWith('video/')) {
+    if (_isVideoMedia(media)) {
       final videoEmbedValue = lesson_pipeline
           .videoBlockEmbedValueFromLessonMedia(
             lessonMediaId: lessonMediaId,
@@ -6697,9 +6686,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             pipelineState == 'ready' &&
                                             isAudio;
                                         final previewBlocked =
-                                            media['preview_blocked'] == true ||
-                                            media['resolvable_for_editor'] ==
-                                                false;
+                                            _isEditorPreviewBlocked(media);
                                         final canPreview =
                                             !previewBlocked &&
                                             !hasInvalidPipelineReference &&
@@ -6718,7 +6705,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             !hasInvalidPipelineReference &&
                                             !isWavMedia &&
                                             downloadUrl != null &&
-                                            downloadUrl.isNotEmpty;
+                                            downloadUrl.isNotEmpty &&
+                                            !_isVideoInsertBlockedForEditor(
+                                              media,
+                                            );
                                         final isDocument = _isDocumentMedia(
                                           media,
                                         );
