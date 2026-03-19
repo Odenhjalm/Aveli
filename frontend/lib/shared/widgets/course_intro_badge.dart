@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/widgets/gradient_text.dart';
 
 enum CourseIntroBadgeVariant { badge, link }
 
@@ -50,7 +49,7 @@ class CourseIntroBadge extends StatelessWidget {
         final style = baseStyle.merge(buttonStyle);
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: GradientText(label, style: style, gradient: gradient),
+          child: Text(label, style: style.copyWith(color: textColor)),
         );
     }
   }

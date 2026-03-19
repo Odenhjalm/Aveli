@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:aveli/shared/theme/app_text_colors.dart';
+
 class HeroTitleText extends StatelessWidget {
   const HeroTitleText(
     this.text, {
@@ -27,7 +29,7 @@ class HeroTitleText extends StatelessWidget {
       maxLines: maxLines,
       overflow: overflow,
       style: baseStyle.copyWith(
-        color: Colors.white,
+        color: AppTextColor.body,
         fontWeight: baseStyle.fontWeight ?? FontWeight.w800,
       ),
     );
@@ -61,7 +63,7 @@ class AppHeaderText extends StatelessWidget {
       maxLines: maxLines,
       overflow: overflow,
       style: baseStyle.copyWith(
-        color: Colors.white,
+        color: AppTextColor.body,
         fontWeight: baseStyle.fontWeight ?? FontWeight.w700,
       ),
     );

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:aveli/core/bootstrap/effects_policy.dart';
-import 'package:aveli/shared/theme/ui_consts.dart';
-
-/// Simple helper for rendering text with the Aveli gradient palette.
+/// Simple helper for preserving call sites while keeping auth/link text legible
+/// on light surfaces.
 class GradientText extends StatelessWidget {
   const GradientText(
     this.text, {
@@ -16,22 +14,8 @@ class GradientText extends StatelessWidget {
   final TextStyle style;
   final Gradient? gradient;
 
-  static const Gradient _defaultGradient = LinearGradient(
-    colors: [kBrandTurquoise, kBrandLilac],
-  );
-
   @override
   Widget build(BuildContext context) {
-    if (EffectsPolicyController.isSafe) {
-      return Text(text, style: style);
-    }
-    final resolvedGradient = gradient ?? _defaultGradient;
-    return ShaderMask(
-      blendMode: BlendMode.srcIn,
-      shaderCallback: (bounds) => resolvedGradient.createShader(
-        Rect.fromLTWH(0, 0, bounds.width, bounds.height),
-      ),
-      child: Text(text, style: style),
-    );
+    return Text(text, style: style.copyWith(color: Colors.black));
   }
 }

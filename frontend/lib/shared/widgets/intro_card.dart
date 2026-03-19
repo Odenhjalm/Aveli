@@ -1,6 +1,8 @@
 // lib/ui/widgets/intro_card.dart
 import 'package:flutter/material.dart';
 
+import 'package:aveli/shared/theme/app_text_colors.dart';
+
 class IntroCard extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -36,7 +38,7 @@ class IntroCard extends StatelessWidget {
                 color: Colors.white.withValues(alpha: .16),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: Colors.white, size: 28),
+              child: Icon(icon, color: AppTextColor.body, size: 28),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -47,7 +49,7 @@ class IntroCard extends StatelessWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
+                      color: AppTextColor.body,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -55,14 +57,14 @@ class IntroCard extends StatelessWidget {
                   Text(
                     subtitle,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white,
+                      color: AppTextColor.body,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Colors.white70),
+            const Icon(Icons.chevron_right_rounded, color: AppTextColor.body),
           ],
         ),
       ),

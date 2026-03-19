@@ -349,20 +349,13 @@ class AveliApp extends ConsumerWidget {
 
     final router = ref.watch(appRouterProvider);
     final baseTheme = buildLightTheme();
-    final brandedTheme = buildLightTheme(forLanding: true);
-    final baseThemeData = baseTheme.copyWith(
+    final themeData = baseTheme.copyWith(
       radioTheme: cleanRadioThemeForScheme(baseTheme.colorScheme),
-    );
-    final brandedThemeData = brandedTheme.copyWith(
-      radioTheme: cleanRadioThemeForScheme(brandedTheme.colorScheme),
     );
 
     return ValueListenableBuilder<RouteInformation>(
       valueListenable: router.routeInformationProvider,
       builder: (context, routeInfo, _) {
-        final path = _normalizeThemePath(_resolveThemePath(routeInfo.uri));
-        final isBrandedSurface = _isBrandedSurfacePath(path);
-        final themeData = isBrandedSurface ? brandedThemeData : baseThemeData;
         final guardContext = GuardContextResolver.fromUri(routeInfo.uri);
         final envInfo = ref.watch(envInfoProvider);
 
@@ -435,28 +428,4 @@ class AveliScrollBehavior extends MaterialScrollBehavior {
     PointerDeviceKind.trackpad,
     PointerDeviceKind.stylus,
   };
-}
-
-String _normalizeThemePath(String path) {
-  if (path.isEmpty) return RoutePath.landingRoot;
-  if (path.length > 1 && path.endsWith('/')) {
-    return path.substring(0, path.length - 1);
-  }
-  return path;
-}
-
-String _resolveThemePath(Uri uri) {
-  // Hash-based routing encodes the "real" location inside the fragment.
-  // Example: https://app.aveli.app/#/home
-  if (uri.fragment.startsWith('/')) {
-    return Uri.tryParse(uri.fragment)?.path ?? uri.fragment;
-  }
-  return uri.path;
-}
-
-bool _isBrandedSurfacePath(String path) {
-  return path == RoutePath.landingRoot ||
-      path == RoutePath.landing ||
-      path == RoutePath.privacy ||
-      path == RoutePath.terms;
 }

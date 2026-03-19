@@ -314,14 +314,14 @@ class _LandingPageState extends ConsumerState<LandingPage>
         TextButton(
           onPressed: () => _openAppPath(RoutePath.home),
           style: TextButton.styleFrom(
-            foregroundColor: DesignTokens.headingTextColor,
+            foregroundColor: DesignTokens.heroTextColor,
           ),
           child: const Text('Hem'),
         ),
         TextButton(
           onPressed: () => _openAppPath(RoutePath.profile),
           style: TextButton.styleFrom(
-            foregroundColor: DesignTokens.headingTextColor,
+            foregroundColor: DesignTokens.heroTextColor,
           ),
           child: const Text('Profil'),
         ),
@@ -329,14 +329,14 @@ class _LandingPageState extends ConsumerState<LandingPage>
         TextButton(
           onPressed: hasEnvIssues ? null : () => _openAppPath(RoutePath.login),
           style: TextButton.styleFrom(
-            foregroundColor: DesignTokens.headingTextColor,
+            foregroundColor: DesignTokens.heroTextColor,
           ),
           child: const Text('Logga in'),
         ),
         TextButton(
           onPressed: hasEnvIssues ? null : () => _openAppPath(RoutePath.signup),
           style: TextButton.styleFrom(
-            foregroundColor: DesignTokens.headingTextColor,
+            foregroundColor: DesignTokens.heroTextColor,
           ),
           child: const Text('Skapa konto'),
         ),
@@ -725,7 +725,7 @@ class _PrimaryGradientButton extends StatelessWidget {
               label,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: DesignTokens.headingTextColor,
+                color: DesignTokens.heroTextColor,
                 fontWeight: FontWeight.w800,
                 letterSpacing: .2,
               ),
@@ -775,7 +775,7 @@ class _GradientOutlineButton extends StatelessWidget {
             label,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: DesignTokens.headingTextColor,
+              color: DesignTokens.heroTextColor,
               fontWeight: FontWeight.w700,
               letterSpacing: .15,
             ),

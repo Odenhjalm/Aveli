@@ -449,6 +449,7 @@ class CourseSummary {
     this.coverMediaId,
     this.videoUrl,
     this.branch,
+    this.stepLevel,
     this.courseFamily,
     this.createdBy,
     this.isFreeIntro = false,
@@ -465,6 +466,7 @@ class CourseSummary {
   final String? coverMediaId;
   final String? videoUrl;
   final String? branch;
+  final CourseJourneyStep? stepLevel;
   final String? courseFamily;
   final String? createdBy;
   final bool isFreeIntro;
@@ -481,10 +483,13 @@ class CourseSummary {
     coverMediaId: json['cover_media_id'] as String?,
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
+    stepLevel: courseJourneyStepFromApi(json['step_level']),
     courseFamily: json['course_family'] as String?,
     createdBy: json['created_by'] as String?,
     isFreeIntro: json['is_free_intro'] == true,
-    journeyStep: courseJourneyStepFromApi(json['journey_step']),
+    journeyStep:
+        courseJourneyStepFromApi(json['journey_step']) ??
+        courseJourneyStepFromApi(json['step_level']),
     isPublished: json['is_published'] == true,
     // Prefer the newer price_amount_cents field when present; fallback to price_cents.
     priceCents:

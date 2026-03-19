@@ -1,30 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:aveli/shared/theme/app_text_colors.dart';
 
 abstract class DesignTokens {
   DesignTokens._();
 
-  // THEME CONTRACT (Landing + Home branded surfaces)
+  // TEXT CONTRACT
   //
-  // - Default body text from ThemeData (`Theme.textTheme.body*`) must be light
-  //   (white / gray-white) on branded surfaces. No view should rely on black
-  //   defaults there.
-  // - Black text is ONLY allowed via `CourseDescriptionText`, which uses
-  //   `DesignTokens.bodyTextColor` for course descriptions rendered on light
-  //   cards.
-  // - Views must never use `Colors.black*` directly in Landing/Home UI.
-  // - Use semantic wrappers for typography intent:
-  //   `SectionHeading` (headings), `NameText` (names), `MetaText` (meta).
+  // - App text defaults to black everywhere.
+  // - The landing hero phrase is the only allowed non-black exception and
+  //   must be styled explicitly where it is rendered.
+  // - Shared widgets should consume these semantic colors rather than
+  //   introducing their own light-text defaults.
 
   // Text colors
-  static const Color headingTextColor = Colors.white;
-  static const Color nameTextColor = Colors.white;
-  static const Color bodyTextColor = Colors.black;
-  // Muted text on dark branded surfaces (gray-white, not black).
-  static const Color mutedTextColor = Color(0xB3FFFFFF);
+  static const Color headingTextColor = AppTextColor.body;
+  static const Color nameTextColor = AppTextColor.body;
+  static const Color bodyTextColor = AppTextColor.body;
+  static const Color mutedTextColor = AppTextColor.body;
+  static const Color heroTextColor = Colors.white;
 
-  /// True when the current [ThemeData] represents a branded/hero surface where
-  /// text defaults should be light (landing / glass overlays).
+  /// No route should switch the app back to a light-text contract.
   static bool isBrandedSurface(ThemeData theme) {
-    return theme.colorScheme.onSurface == headingTextColor;
+    return false;
   }
 }

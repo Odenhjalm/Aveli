@@ -22,9 +22,7 @@ class CourseTitleText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.titleMedium)?.copyWith(
-      color: isBrandedSurface ? DesignTokens.headingTextColor : null,
       fontWeight: fontWeight,
     );
     return Text(
@@ -94,9 +92,8 @@ class TeacherNameText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.titleMedium)?.copyWith(
-      color: color ?? (isBrandedSurface ? DesignTokens.nameTextColor : null),
+      color: color,
       fontWeight: fontWeight,
     );
     return Text(

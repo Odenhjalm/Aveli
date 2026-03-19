@@ -1,28 +1,24 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/app_text_colors.dart';
-import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 const Color kPrimary = Color(0xFF7AA8F7);
 const Color kSecondary = Color(0xFF63C7D6);
 
 ThemeData buildLightTheme({bool forLanding = false}) {
-  final baseScheme = ColorScheme.fromSeed(
-    seedColor: kPrimary,
-    brightness: Brightness.light,
-    primary: kPrimary,
-    secondary: kSecondary,
-  );
-  final scheme = forLanding
-      ? baseScheme.copyWith(
-          onSurface: DesignTokens.headingTextColor,
-          onSurfaceVariant: DesignTokens.headingTextColor,
-        )
-      : baseScheme.copyWith(
-          onSurface: AppTextColor.body,
-          onSurfaceVariant: AppTextColor.meta,
-        );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: kPrimary,
+        brightness: Brightness.light,
+        primary: kPrimary,
+        secondary: kSecondary,
+      ).copyWith(
+        onPrimary: Colors.white,
+        onPrimaryContainer: Colors.white,
+        onSurface: AppTextColor.body,
+        onSurfaceVariant: AppTextColor.meta,
+      );
 
   final buttonShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.circular(14),
@@ -33,48 +29,17 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     displayColor: scheme.onSurface,
     bodyColor: scheme.onSurface,
   );
-  final brandedTextTheme = baseTextTheme.copyWith(
-    bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-      color: DesignTokens.headingTextColor.withValues(alpha: 0.92),
-    ),
-    bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-      color: DesignTokens.headingTextColor.withValues(alpha: 0.90),
-    ),
-    bodySmall: baseTextTheme.bodySmall?.copyWith(
-      color: DesignTokens.headingTextColor.withValues(alpha: 0.78),
-    ),
+  final textTheme = baseTextTheme.copyWith(
+    titleLarge: baseTextTheme.titleLarge?.copyWith(color: AppTextColor.body),
+    titleMedium: baseTextTheme.titleMedium?.copyWith(color: AppTextColor.body),
+    titleSmall: baseTextTheme.titleSmall?.copyWith(color: AppTextColor.body),
+    bodyLarge: baseTextTheme.bodyLarge?.copyWith(color: AppTextColor.body),
+    bodyMedium: baseTextTheme.bodyMedium?.copyWith(color: AppTextColor.body),
+    bodySmall: baseTextTheme.bodySmall?.copyWith(color: AppTextColor.body),
+    labelLarge: baseTextTheme.labelLarge?.copyWith(color: AppTextColor.body),
+    labelMedium: baseTextTheme.labelMedium?.copyWith(color: AppTextColor.body),
+    labelSmall: baseTextTheme.labelSmall?.copyWith(color: AppTextColor.body),
   );
-  final textTheme = forLanding
-      ? brandedTextTheme
-      : baseTextTheme.copyWith(
-          titleLarge: baseTextTheme.titleLarge?.copyWith(
-            color: AppTextColor.body,
-          ),
-          titleMedium: baseTextTheme.titleMedium?.copyWith(
-            color: AppTextColor.body,
-          ),
-          titleSmall: baseTextTheme.titleSmall?.copyWith(
-            color: AppTextColor.body,
-          ),
-          bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-            color: AppTextColor.body,
-          ),
-          bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-            color: AppTextColor.body,
-          ),
-          bodySmall: baseTextTheme.bodySmall?.copyWith(
-            color: AppTextColor.body,
-          ),
-          labelLarge: baseTextTheme.labelLarge?.copyWith(
-            color: AppTextColor.body,
-          ),
-          labelMedium: baseTextTheme.labelMedium?.copyWith(
-            color: AppTextColor.body,
-          ),
-          labelSmall: baseTextTheme.labelSmall?.copyWith(
-            color: AppTextColor.body,
-          ),
-        );
   final navLabelStyle = TextStyle(
     fontWeight: FontWeight.w500,
     color: AppTextColor.body,
@@ -89,9 +54,7 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     scaffoldBackgroundColor: Colors.transparent,
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.white,
-      foregroundColor: forLanding
-          ? DesignTokens.headingTextColor
-          : AppTextColor.body,
+      foregroundColor: AppTextColor.body,
       elevation: 0,
       centerTitle: false,
     ),
@@ -124,7 +87,7 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: scheme.primary,
+        foregroundColor: AppTextColor.body,
         side: BorderSide(color: scheme.primary),
         minimumSize: const Size(64, 48),
         padding: px16,
@@ -133,9 +96,7 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: forLanding
-            ? DesignTokens.headingTextColor
-            : scheme.primary,
+        foregroundColor: AppTextColor.body,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         textStyle: const TextStyle(fontWeight: FontWeight.w600),
         shape: buttonShape,
@@ -144,7 +105,9 @@ ThemeData buildLightTheme({bool forLanding = false}) {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: Colors.grey.shade100,
-      hintStyle: forLanding ? null : const TextStyle(color: AppTextColor.meta),
+      hintStyle: const TextStyle(color: AppTextColor.meta),
+      labelStyle: const TextStyle(color: AppTextColor.body),
+      floatingLabelStyle: const TextStyle(color: AppTextColor.body),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -156,7 +119,7 @@ ThemeData buildLightTheme({bool forLanding = false}) {
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       indicatorColor: scheme.primary.withValues(alpha: 0.12),
-      labelTextStyle: forLanding ? null : WidgetStatePropertyAll(navLabelStyle),
+      labelTextStyle: WidgetStatePropertyAll(navLabelStyle),
     ),
     textTheme: textTheme,
   );

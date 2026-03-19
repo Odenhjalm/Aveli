@@ -3,15 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:aveli/core/bootstrap/boot_log.dart';
 import 'package:aveli/core/bootstrap/effects_policy.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
-import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/app_images.dart';
-
-const LinearGradient kAveliBrandGradient = LinearGradient(
-  colors: [kBrandTurquoise, kBrandLilac],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
 
 class BrandLogo extends StatelessWidget {
   const BrandLogo({super.key, required this.height});
@@ -19,15 +12,35 @@ class BrandLogo extends StatelessWidget {
   final double height;
 
   static Widget _placeholder(double height) {
+    final placeholder = Text(
+      'A',
+      style: TextStyle(
+        fontWeight: FontWeight.w900,
+        fontSize: height * 0.70,
+        color: Colors.white,
+      ),
+    );
+    if (EffectsPolicyController.isSafe) {
+      return ExcludeSemantics(
+        child: Center(
+          child: Text(
+            'A',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: height * 0.70,
+              color: kBrandAzure,
+            ),
+          ),
+        ),
+      );
+    }
     return ExcludeSemantics(
       child: Center(
-        child: Text(
-          'A',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: height * 0.70,
-            color: DesignTokens.headingTextColor.withValues(alpha: 0.72),
-          ),
+        child: ShaderMask(
+          shaderCallback: (bounds) =>
+              kBrandBluePurpleGradient.createShader(bounds),
+          blendMode: BlendMode.srcIn,
+          child: placeholder,
         ),
       ),
     );
@@ -43,11 +56,7 @@ class BrandLogo extends StatelessWidget {
         child: Image(
           image: SafeMedia.resizedProvider(
             AppImages.logo,
-            cacheWidth: SafeMedia.cacheDimension(
-              context,
-              height * 3,
-              max: 900,
-            ),
+            cacheWidth: SafeMedia.cacheDimension(context, height * 3, max: 900),
             cacheHeight: SafeMedia.cacheDimension(context, height, max: 300),
           ),
           fit: BoxFit.contain,
@@ -77,17 +86,18 @@ class BrandWordmark extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final resolvedStyle = (style ?? theme.textTheme.titleMedium)?.copyWith(
-      color: DesignTokens.headingTextColor,
+      color: Colors.white,
       fontWeight: FontWeight.w900,
       letterSpacing: .25,
     );
+    final wordmark = Text('Aveli', style: resolvedStyle);
     if (EffectsPolicyController.isSafe) {
-      return Text('Aveli', style: resolvedStyle);
+      return Text('Aveli', style: resolvedStyle?.copyWith(color: kBrandAzure));
     }
     return ShaderMask(
-      shaderCallback: (bounds) => kAveliBrandGradient.createShader(bounds),
+      shaderCallback: (bounds) => kBrandBluePurpleGradient.createShader(bounds),
       blendMode: BlendMode.srcIn,
-      child: Text('Aveli', style: resolvedStyle),
+      child: wordmark,
     );
   }
 }

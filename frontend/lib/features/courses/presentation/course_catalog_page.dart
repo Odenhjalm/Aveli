@@ -158,7 +158,7 @@ class _JourneyPage extends ConsumerWidget {
           ),
           const SizedBox(height: 22),
           _ActJourneySection(
-            rows: buildCourseJourneyRows(journeyCourses),
+            rows: buildCourseJourneySeriesRows(journeyCourses),
             assets: assets,
             mediaRepository: mediaRepository,
           ),
@@ -294,9 +294,10 @@ class _ActJourneySection extends StatelessWidget {
     required this.mediaRepository,
   });
 
-  final List<CourseJourneyRow> rows;
+  final List<CourseJourneySeriesRow> rows;
   final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
+  static const _seriesRowGap = 16.0;
 
   @override
   Widget build(BuildContext context) {
@@ -323,7 +324,7 @@ class _ActJourneySection extends StatelessWidget {
             const minColumnWidth = 320.0;
             final available = constraints.maxWidth;
             final columnWidth = isWide
-                ? (available - interColumnSpacing) / 3
+                ? ((available - interColumnSpacing) / 3).floorToDouble()
                 : minColumnWidth;
             final contentWidth = (columnWidth * 3) + interColumnSpacing;
 
@@ -354,14 +355,13 @@ class _ActJourneySection extends StatelessWidget {
                     Column(
                       children: [
                         for (var index = 0; index < rows.length; index++) ...[
-                          _JourneyProgressRow(
+                          _JourneySeriesBand(
                             row: rows[index],
-                            columnWidth: columnWidth,
                             assets: assets,
                             mediaRepository: mediaRepository,
                           ),
                           if (index != rows.length - 1)
-                            const SizedBox(height: 12),
+                            const SizedBox(height: _seriesRowGap),
                         ],
                       ],
                     ),
@@ -482,56 +482,69 @@ class _JourneyStepHeaderCard extends StatelessWidget {
   }
 }
 
-class _JourneyProgressRow extends StatelessWidget {
-  const _JourneyProgressRow({
+class _JourneySeriesBand extends StatelessWidget {
+  const _JourneySeriesBand({
     required this.row,
-    required this.columnWidth,
     required this.assets,
     required this.mediaRepository,
   });
 
-  final CourseJourneyRow row;
-  final double columnWidth;
+  final CourseJourneySeriesRow row;
   final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
+  static const _slotMinHeight = 292.0;
 
   @override
   Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            width: columnWidth,
-            child: _JourneyStepSlot(
-              course: row.step1,
-              assets: assets,
-              mediaRepository: mediaRepository,
+    return GlassCard(
+      key: ValueKey('journey-series-row:${row.seriesKey}'),
+      opacity: 0.06,
+      sigmaX: 10,
+      sigmaY: 10,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      borderColor: Colors.white.withValues(alpha: 0.1),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: _JourneyStepSlot(
+                seriesKey: row.seriesKey,
+                stepLabel: 'step1',
+                minHeight: _slotMinHeight,
+                course: row.step1,
+                assets: assets,
+                mediaRepository: mediaRepository,
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          const SizedBox(width: 24),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: columnWidth,
-            child: _JourneyStepSlot(
-              course: row.step2,
-              assets: assets,
-              mediaRepository: mediaRepository,
+            const SizedBox(width: 12),
+            const SizedBox(width: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _JourneyStepSlot(
+                seriesKey: row.seriesKey,
+                stepLabel: 'step2',
+                minHeight: _slotMinHeight,
+                course: row.step2,
+                assets: assets,
+                mediaRepository: mediaRepository,
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          const SizedBox(width: 24),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: columnWidth,
-            child: _JourneyStepSlot(
-              course: row.step3,
-              assets: assets,
-              mediaRepository: mediaRepository,
+            const SizedBox(width: 12),
+            const SizedBox(width: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _JourneyStepSlot(
+                seriesKey: row.seriesKey,
+                stepLabel: 'step3',
+                minHeight: _slotMinHeight,
+                course: row.step3,
+                assets: assets,
+                mediaRepository: mediaRepository,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -539,32 +552,49 @@ class _JourneyProgressRow extends StatelessWidget {
 
 class _JourneyStepSlot extends StatelessWidget {
   const _JourneyStepSlot({
+    required this.seriesKey,
+    required this.stepLabel,
+    required this.minHeight,
     required this.course,
     required this.assets,
     required this.mediaRepository,
   });
 
+  final String seriesKey;
+  final String stepLabel;
+  final double minHeight;
   final CourseSummary? course;
   final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
   @override
   Widget build(BuildContext context) {
+    final slotKey = ValueKey('journey-slot:$seriesKey:$stepLabel');
+
     if (course != null) {
-      return _JourneyCourseCard(
-        course: course!,
-        assets: assets,
-        mediaRepository: mediaRepository,
+      return ConstrainedBox(
+        key: slotKey,
+        constraints: BoxConstraints(minHeight: minHeight),
+        child: _JourneyCourseCard(
+          course: course!,
+          assets: assets,
+          mediaRepository: mediaRepository,
+        ),
       );
     }
 
-    return GlassCard(
-      padding: EdgeInsets.zero,
-      opacity: 0.04,
-      sigmaX: 12,
-      sigmaY: 12,
-      borderColor: Colors.white.withValues(alpha: 0.12),
-      child: const SizedBox.expand(),
+    return ConstrainedBox(
+      key: slotKey,
+      constraints: BoxConstraints(minHeight: minHeight),
+      child: GlassCard(
+        key: ValueKey('journey-empty-slot:$seriesKey:$stepLabel'),
+        padding: EdgeInsets.zero,
+        opacity: 0.05,
+        sigmaX: 12,
+        sigmaY: 12,
+        borderColor: Colors.white.withValues(alpha: 0.14),
+        child: const SizedBox.expand(),
+      ),
     );
   }
 }

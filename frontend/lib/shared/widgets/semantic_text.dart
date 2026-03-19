@@ -25,9 +25,7 @@ class SectionHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.headlineSmall)?.copyWith(
-      color: isBrandedSurface ? DesignTokens.headingTextColor : null,
       fontWeight: fontWeight,
     );
     return Text(
@@ -61,9 +59,7 @@ class NameText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final style = (baseStyle ?? theme.textTheme.titleMedium)?.copyWith(
-      color: isBrandedSurface ? DesignTokens.nameTextColor : null,
       fontWeight: fontWeight,
     );
     return Text(
@@ -95,10 +91,7 @@ class MetaText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
-    final style = (baseStyle ?? theme.textTheme.bodyMedium)?.copyWith(
-      color: isBrandedSurface ? DesignTokens.mutedTextColor : null,
-    );
+    final style = (baseStyle ?? theme.textTheme.bodyMedium)?.copyWith();
     return Text(
       text,
       style: style,
@@ -147,10 +140,9 @@ class _HeroHeadingState extends State<HeroHeading>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isBrandedSurface = DesignTokens.isBrandedSurface(theme);
     final base = theme.textTheme.displayLarge?.copyWith(
       fontWeight: FontWeight.w900,
-      color: isBrandedSurface ? DesignTokens.headingTextColor : null,
+      color: DesignTokens.heroTextColor,
       height: 1.04,
       letterSpacing: -.5,
     );
@@ -162,13 +154,7 @@ class _HeroHeadingState extends State<HeroHeading>
       children: [
         Text(widget.leading, textAlign: TextAlign.center, style: base),
         if (EffectsPolicyController.isSafe)
-          Text(
-            widget.gradientWord,
-            textAlign: TextAlign.center,
-            style: base?.copyWith(
-              color: isBrandedSurface ? DesignTokens.headingTextColor : null,
-            ),
-          )
+          Text(widget.gradientWord, textAlign: TextAlign.center, style: base)
         else
           AnimatedBuilder(
             animation: _controller!,
@@ -189,9 +175,7 @@ class _HeroHeadingState extends State<HeroHeading>
             child: Text(
               widget.gradientWord,
               textAlign: TextAlign.center,
-              style: base?.copyWith(
-                color: isBrandedSurface ? DesignTokens.headingTextColor : null,
-              ),
+              style: base,
             ),
           ),
       ],
