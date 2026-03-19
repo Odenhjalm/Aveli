@@ -2227,7 +2227,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     _setLessonTitleFieldValue(storedTitle);
-    _replaceLessonDocument(document, previewMarkdown: storedMarkdown);
+    _replaceLessonDocument(document, previewMarkdown: prepared);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -2600,7 +2600,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       showFontSize: false,
       showBoldButton: true,
       showItalicButton: true,
-      showUnderLineButton: false,
+      showUnderLineButton: true,
       showStrikeThrough: false,
       showColorButton: false,
       showBackgroundColorButton: false,

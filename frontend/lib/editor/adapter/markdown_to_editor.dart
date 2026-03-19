@@ -17,6 +17,17 @@ final RegExp _emphasisHtmlPattern = RegExp(
   dotAll: true,
 );
 
+final RegExp _underlineHtmlPattern = RegExp(
+  r'<\s*(u|ins)\s*>(.*?)<\s*/\s*(u|ins)\s*>',
+  caseSensitive: false,
+  dotAll: true,
+);
+
+final RegExp _inlineUnderlineTagPattern = RegExp(
+  r'<\s*(/?)\s*(u|ins)\s*>',
+  caseSensitive: false,
+);
+
 final RegExp _boldItalicBoldWrappedPattern = RegExp(
   r'\*\*_\s*([^\n]+?)\s*_\*\*',
   multiLine: true,
@@ -72,6 +83,11 @@ String canonicalizeSupportedMarkdown(String markdown) {
   canonical = canonical.replaceAllMapped(_emphasisHtmlPattern, (match) {
     final body = (match.group(2) ?? '').trim();
     return body.isEmpty ? '' : '*$body*';
+  });
+
+  canonical = canonical.replaceAllMapped(_underlineHtmlPattern, (match) {
+    final body = (match.group(2) ?? '').trim();
+    return body.isEmpty ? '' : '<u>$body</u>';
   });
 
   canonical = canonical.replaceAllMapped(_boldItalicBoldWrappedPattern, (
@@ -154,7 +170,75 @@ quill_delta.Delta markdownToEditorDelta({
   final converter = lesson_pipeline.createLessonMarkdownToDelta(
     markdownDocument ?? createEditorMarkdownDocument(),
   );
-  return lesson_pipeline.convertLessonMarkdownToDelta(converter, canonical);
+  final delta = lesson_pipeline.convertLessonMarkdownToDelta(
+    converter,
+    canonical,
+  );
+  return _applySupportedInlineHtml(delta);
+}
+
+quill_delta.Delta _applySupportedInlineHtml(quill_delta.Delta source) {
+  final result = quill_delta.Delta();
+  var underlineDepth = 0;
+
+  void insertText(String text, Map<String, dynamic>? attributes) {
+    if (text.isEmpty) return;
+    final nextAttributes = attributes == null
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(attributes);
+    if (underlineDepth > 0) {
+      nextAttributes[quill.Attribute.underline.key] = true;
+    }
+    result.insert(text, nextAttributes.isEmpty ? null : nextAttributes);
+  }
+
+  for (final operation in source.toList()) {
+    if (!operation.isInsert) {
+      result.push(operation);
+      continue;
+    }
+
+    final attributes = operation.attributes == null
+        ? null
+        : Map<String, dynamic>.from(operation.attributes!);
+    final value = operation.value;
+    if (value is! String) {
+      result.insert(value, attributes);
+      continue;
+    }
+
+    final matches = _inlineUnderlineTagPattern.allMatches(value).toList();
+    if (matches.isEmpty) {
+      insertText(value, attributes);
+      continue;
+    }
+
+    var cursor = 0;
+    for (final match in matches) {
+      if (match.start > cursor) {
+        insertText(value.substring(cursor, match.start), attributes);
+      }
+
+      final rawTag = match.group(0) ?? '';
+      final isClosing = (match.group(1) ?? '').isNotEmpty;
+      if (isClosing) {
+        if (underlineDepth > 0) {
+          underlineDepth -= 1;
+        } else {
+          insertText(rawTag, attributes);
+        }
+      } else {
+        underlineDepth += 1;
+      }
+      cursor = match.end;
+    }
+
+    if (cursor < value.length) {
+      insertText(value.substring(cursor), attributes);
+    }
+  }
+
+  return result;
 }
 
 quill_delta.Delta _canonicalizeDeltaForQuillDocument(quill_delta.Delta delta) {

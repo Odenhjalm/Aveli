@@ -1,3 +1,4 @@
+import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
@@ -8,11 +9,22 @@ import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
 const Set<String> _allowedInlineAttributeKeys = <String>{
   'bold',
   'italic',
+  'underline',
   'link',
 };
 
+final RegExp _escapedUnderlineTagPattern = RegExp(r'\\<(/?)u\\>');
+
 String _stripTerminalDocumentNewline(String markdown) {
   return markdown.replaceFirst(RegExp(r'\n+$'), '');
+}
+
+String _restoreSupportedInlineHtml(String markdown) {
+  if (!markdown.contains(r'\<')) return markdown;
+  return markdown.replaceAllMapped(_escapedUnderlineTagPattern, (match) {
+    final slash = match.group(1) ?? '';
+    return '<${slash}u>';
+  });
 }
 
 String rewriteMarkdownUrls({
@@ -97,15 +109,77 @@ quill_delta.Delta sanitizeEditorDeltaForCanonicalMarkdown(
   return result;
 }
 
+quill_delta.Delta _expandUnderlineAttributesForMarkdown(
+  quill_delta.Delta source,
+) {
+  final result = quill_delta.Delta();
+
+  void insertValue(Object value, Map<String, dynamic>? attributes) {
+    result.insert(
+      value,
+      attributes == null || attributes.isEmpty ? null : attributes,
+    );
+  }
+
+  void insertUnderlinedText(String text, Map<String, dynamic>? attributes) {
+    if (text.isEmpty) return;
+
+    var cursor = 0;
+    while (cursor <= text.length) {
+      final newlineIndex = text.indexOf('\n', cursor);
+      final end = newlineIndex == -1 ? text.length : newlineIndex;
+      final chunk = text.substring(cursor, end);
+      if (chunk.isNotEmpty) {
+        insertValue('<u>', attributes);
+        insertValue(chunk, attributes);
+        insertValue('</u>', attributes);
+      }
+      if (newlineIndex == -1) {
+        break;
+      }
+      insertValue('\n', attributes);
+      cursor = newlineIndex + 1;
+    }
+  }
+
+  for (final operation in source.toList()) {
+    if (!operation.isInsert) {
+      result.push(operation);
+      continue;
+    }
+
+    final rawAttributes = operation.attributes == null
+        ? null
+        : Map<String, dynamic>.from(operation.attributes!);
+    final isUnderlined = rawAttributes?[quill.Attribute.underline.key] == true;
+    rawAttributes?.remove(quill.Attribute.underline.key);
+    final attributes = rawAttributes == null || rawAttributes.isEmpty
+        ? null
+        : rawAttributes;
+
+    final value = operation.value;
+    if (!isUnderlined || value is! String || value.isEmpty) {
+      insertValue(value, attributes);
+      continue;
+    }
+
+    insertUnderlinedText(value, attributes);
+  }
+
+  return result;
+}
+
 String editorDeltaToCanonicalMarkdown({
   required quill_delta.Delta delta,
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
   Map<String, String> lessonMediaUrlToStudioMediaUrl = const <String, String>{},
 }) {
   final sanitized = sanitizeEditorDeltaForCanonicalMarkdown(delta);
+  final markdownReady = _expandUnderlineAttributesForMarkdown(sanitized);
   var markdown = lesson_pipeline.createLessonDeltaToMarkdown().convert(
-    sanitized,
+    markdownReady,
   );
+  markdown = _restoreSupportedInlineHtml(markdown);
 
   if (lesson_pipeline.apiFilesUrlPattern.hasMatch(markdown) &&
       apiFilesPathToStudioMediaUrl.isNotEmpty) {

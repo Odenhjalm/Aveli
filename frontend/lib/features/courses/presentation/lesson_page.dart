@@ -6,12 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:go_router/go_router.dart';
-import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/editor/adapter/markdown_to_editor.dart'
+    as markdown_to_editor;
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_access_gate.dart';
@@ -469,15 +470,6 @@ class _LessonRendererErrorState extends StatelessWidget {
   }
 }
 
-final md.Document _lessonMarkdownDocument = md.Document(
-  encodeHtml: false,
-  extensionSet: md.ExtensionSet.gitHubWeb,
-);
-
-final _lessonMarkdownToDelta = createLessonMarkdownToDelta(
-  _lessonMarkdownDocument,
-);
-
 class _LessonQuillContent extends StatefulWidget {
   const _LessonQuillContent({
     required this.markdown,
@@ -519,11 +511,9 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
 
   quill.QuillController _buildController(String markdown) {
     try {
-      final delta = convertLessonMarkdownToDelta(
-        _lessonMarkdownToDelta,
-        markdown,
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
       );
-      final document = quill.Document.fromDelta(delta);
       return quill.QuillController(
         document: document,
         selection: const TextSelection.collapsed(offset: 0),

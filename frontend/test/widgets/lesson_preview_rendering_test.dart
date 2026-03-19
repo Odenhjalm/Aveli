@@ -175,6 +175,33 @@ class _PreviewHarnessState extends State<_PreviewHarness> {
   }
 }
 
+class _StyledTextSegment {
+  const _StyledTextSegment(this.text, this.style);
+
+  final String text;
+  final TextStyle? style;
+}
+
+void _collectStyledTextSegments(
+  InlineSpan span,
+  List<_StyledTextSegment> segments, {
+  TextStyle? inheritedStyle,
+}) {
+  if (span is! TextSpan) return;
+  final effectiveStyle = inheritedStyle?.merge(span.style) ?? span.style;
+  final text = span.text;
+  if (text != null && text.isNotEmpty) {
+    segments.add(_StyledTextSegment(text, effectiveStyle));
+  }
+  final children = span.children;
+  if (children == null || children.isEmpty) {
+    return;
+  }
+  for (final child in children) {
+    _collectStyledTextSegments(child, segments, inheritedStyle: effectiveStyle);
+  }
+}
+
 Finder _lessonMediaPlayerFinder(String kind) {
   return find.byWidgetPredicate(
     (widget) =>
@@ -192,6 +219,25 @@ Finder _networkImageFinder(String url) {
         (widget.image as NetworkImage).url == url,
     description: 'Image.network($url)',
   );
+}
+
+List<_StyledTextSegment> _previewStyledTextSegments(WidgetTester tester) {
+  final segments = <_StyledTextSegment>[];
+  final richTextFinder = find.descendant(
+    of: find.byType(LessonPageRenderer),
+    matching: find.byType(RichText),
+  );
+  for (final richText in tester.widgetList<RichText>(richTextFinder)) {
+    _collectStyledTextSegments(richText.text, segments);
+  }
+  return segments;
+}
+
+List<TextStyle?> _previewTextStylesForText(WidgetTester tester, String target) {
+  return [
+    for (final segment in _previewStyledTextSegments(tester))
+      if (segment.text.contains(target)) segment.style,
+  ];
 }
 
 LessonMediaItem _lessonMediaItem(String id, String kind) {
@@ -294,6 +340,55 @@ void main() {
 
       expect(pipelineRepository.lessonPlaybackCalls, 3);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'preview canonicalizes bold and underline with the same contract as the editor',
+    (tester) async {
+      final mediaRepository = _MockMediaRepository();
+      final pipelineRepository = _FakeMediaPipelineRepository(const {});
+
+      await _pumpPreviewHarness(
+        tester,
+        mediaRepository: mediaRepository,
+        pipelineRepository: pipelineRepository,
+        markdown:
+            '<strong>Fet text</strong>\n\n<u>Understruken text</u>\n\n**<u>Fet understruken</u>**',
+        lessonMedia: const <LessonMediaItem>[],
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final boldHtmlStyles = _previewTextStylesForText(tester, 'Fet text');
+      final underlineStyles = _previewTextStylesForText(
+        tester,
+        'Understruken text',
+      );
+      final boldUnderlineStyles = _previewTextStylesForText(
+        tester,
+        'Fet understruken',
+      );
+
+      expect(
+        boldHtmlStyles.any((style) => style?.fontWeight == FontWeight.bold),
+        isTrue,
+      );
+      expect(
+        underlineStyles.any(
+          (style) =>
+              style?.decoration?.contains(TextDecoration.underline) ?? false,
+        ),
+        isTrue,
+      );
+      expect(
+        boldUnderlineStyles.any(
+          (style) =>
+              style?.fontWeight == FontWeight.bold &&
+              (style?.decoration?.contains(TextDecoration.underline) ?? false),
+        ),
+        isTrue,
+      );
     },
   );
 

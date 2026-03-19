@@ -2146,6 +2146,57 @@ void main() {
   );
 
   testWidgets(
+    'CourseEditorScreen renders underline formatting immediately after load',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown:
+            '<u>Understruken text</u>\n\n**<u>Fet understruken</u>**',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      final underlineStyles = _editorTextStylesForText(
+        tester,
+        'Understruken text',
+      );
+      final boldUnderlineStyles = _editorTextStylesForText(
+        tester,
+        'Fet understruken',
+      );
+
+      expect(_renderedEditorText(tester), contains('Understruken text'));
+      expect(_renderedEditorText(tester), contains('Fet understruken'));
+      expect(
+        underlineStyles.any(
+          (style) =>
+              style?.decoration?.contains(TextDecoration.underline) ?? false,
+        ),
+        isTrue,
+      );
+      expect(
+        boldUnderlineStyles.any(
+          (style) =>
+              style?.fontWeight == FontWeight.bold &&
+              (style?.decoration?.contains(TextDecoration.underline) ?? false),
+        ),
+        isTrue,
+      );
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
     'CourseEditorScreen resolves hydrated media previews without replacing the controller',
     (tester) async {
       final studioRepo = _MockStudioRepository();
@@ -2742,9 +2793,7 @@ void main() {
     },
   );
 
-  testWidgets('editor toolbar does not expose underline control', (
-    tester,
-  ) async {
+  testWidgets('editor toolbar exposes underline control', (tester) async {
     final studioRepo = _MockStudioRepository();
     final coursesRepo = _MockCoursesRepository();
     _stubSingleLessonEditorData(
@@ -2761,7 +2810,7 @@ void main() {
     );
     await _pumpEditorBootstrap(tester);
 
-    expect(find.byIcon(Icons.format_underline), findsNothing);
+    expect(find.byIcon(Icons.format_underline), findsOneWidget);
   });
 
   testWidgets(

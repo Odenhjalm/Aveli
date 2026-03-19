@@ -83,6 +83,31 @@ void main() {
       expect(_roundtripMarkdown(markdown), markdown);
     });
 
+    test('underline html roundtrip survives save and load', () {
+      const markdown = '<u>text</u>';
+
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
+      );
+
+      expect(document.toPlainText(), 'text\n');
+      expect(
+        _attributesForText(document.toDelta(), 'text')['underline'],
+        isTrue,
+      );
+
+      final saved = _roundtripMarkdown(markdown);
+      expect(saved, markdown);
+
+      final reloaded = markdown_to_editor.markdownToEditorDocument(
+        markdown: saved,
+      );
+      expect(
+        _attributesForText(reloaded.toDelta(), 'text')['underline'],
+        isTrue,
+      );
+    });
+
     test('bold and italic roundtrip survives save and load', () {
       const markdown = '***text***';
 
@@ -94,6 +119,20 @@ void main() {
       expect(document.toPlainText(), 'text\n');
       expect(attrs['bold'], isTrue);
       expect(attrs['italic'], isTrue);
+      expect(_roundtripMarkdown(markdown), markdown);
+    });
+
+    test('bold and underline roundtrip survives save and load', () {
+      const markdown = '**<u>text</u>**';
+
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
+      );
+      final attrs = _attributesForText(document.toDelta(), 'text');
+
+      expect(document.toPlainText(), 'text\n');
+      expect(attrs['bold'], isTrue);
+      expect(attrs['underline'], isTrue);
       expect(_roundtripMarkdown(markdown), markdown);
     });
 
@@ -175,6 +214,12 @@ void main() {
           ),
           '***text***',
         );
+        expect(
+          markdown_to_editor.canonicalizeMarkdownForEditor(
+            markdown: '<ins>text</ins>',
+          ),
+          '<u>text</u>',
+        );
         expect(_roundtripMarkdown('* text *'), '*text*');
         expect(_roundtripMarkdown('** text **'), '**text**');
         expect(_roundtripMarkdown('*** text ***'), '***text***');
@@ -200,7 +245,7 @@ void main() {
       expect(markdown, '!image(media-image-1)');
     });
 
-    test('underline is stripped before persistence', () {
+    test('underline persists as canonical html before persistence', () {
       final delta = quill_delta.Delta()
         ..insert('underlined', quill.Attribute.underline.toJson())
         ..insert('\n');
@@ -209,7 +254,7 @@ void main() {
         delta: delta,
       );
 
-      expect(markdown, 'underlined');
+      expect(markdown, '<u>underlined</u>');
     });
 
     test('loaded mixed media document is canonical before first edit', () {
