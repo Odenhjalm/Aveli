@@ -18,7 +18,6 @@ class HeroCTA extends StatelessWidget {
           onPressed: () => context.pushNamed(AppRoute.courseCatalog),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF34D399),
-            foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
             textStyle: const TextStyle(
               fontWeight: FontWeight.w800,
@@ -33,7 +32,7 @@ class HeroCTA extends StatelessWidget {
         OutlinedButton(
           onPressed: () => context.pushNamed(AppRoute.courseCatalog),
           style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white,
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
             side: const BorderSide(color: Colors.transparent),
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
             textStyle: const TextStyle(

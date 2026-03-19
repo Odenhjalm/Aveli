@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 enum CourseIntroBadgeVariant { badge, link }
@@ -8,7 +9,7 @@ class CourseIntroBadge extends StatelessWidget {
   const CourseIntroBadge({
     super.key,
     this.label = 'Introduktion',
-    this.textColor = Colors.white,
+    this.textColor = DesignTokens.infoAccentTextColor,
     this.variant = CourseIntroBadgeVariant.badge,
     this.gradient = kBrandBluePurpleGradient,
   });

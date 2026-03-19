@@ -1,6 +1,7 @@
 // lib/ui/widgets/hero_badge.dart
 import 'package:flutter/material.dart';
 
+import 'package:aveli/shared/theme/app_text_colors.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 
 class HeroBadge extends StatelessWidget {
@@ -27,7 +28,7 @@ class HeroBadge extends StatelessWidget {
               const Icon(
                 Icons.auto_awesome_rounded,
                 size: 16,
-                color: Colors.white,
+                color: AppTextColor.body,
               ),
               const SizedBox(width: 8),
               Flexible(
@@ -38,7 +39,7 @@ class HeroBadge extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppTextColor.body,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

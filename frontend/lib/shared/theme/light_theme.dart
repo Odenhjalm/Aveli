@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/app_text_colors.dart';
+import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 
 const Color kPrimary = Color(0xFF7AA8F7);
 const Color kSecondary = Color(0xFF63C7D6);
 
-ThemeData buildLightTheme({bool forLanding = false}) {
+ThemeData buildLightTheme() {
   final scheme =
       ColorScheme.fromSeed(
         seedColor: kPrimary,
@@ -14,8 +15,8 @@ ThemeData buildLightTheme({bool forLanding = false}) {
         primary: kPrimary,
         secondary: kSecondary,
       ).copyWith(
-        onPrimary: Colors.white,
-        onPrimaryContainer: Colors.white,
+        onPrimary: DesignTokens.buttonForegroundColor,
+        onPrimaryContainer: DesignTokens.buttonForegroundColor,
         onSurface: AppTextColor.body,
         onSurfaceVariant: AppTextColor.meta,
       );

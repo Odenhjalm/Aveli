@@ -36,7 +36,7 @@ class EnvBanner extends ConsumerWidget {
                 child: Text(
                   message,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white,
+                    color: const Color(0xFF111111),
                     fontWeight: FontWeight.w600,
                   ),
                 ),

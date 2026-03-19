@@ -75,7 +75,6 @@ class _HeroButton extends StatelessWidget {
       onPressed: onTap,
       style: ElevatedButton.styleFrom(
         backgroundColor: kBrandAzure,
-        foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -94,7 +93,7 @@ class _HeroOutlineButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
         backgroundColor: Colors.black.withValues(alpha: 0.10),
         side: const BorderSide(color: Colors.white),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),

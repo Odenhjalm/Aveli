@@ -203,6 +203,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
                         onPressed: () =>
                             context.pushNamed(AppRoute.courseCatalog),
                         style: TextButton.styleFrom(
+                          foregroundColor: DesignTokens.infoAccentTextColor,
                           padding: EdgeInsets.zero,
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,

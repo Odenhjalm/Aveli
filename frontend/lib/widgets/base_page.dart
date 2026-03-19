@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:aveli/shared/theme/design_tokens.dart';
 import 'app_logo.dart';
 
 /// Baslayout som sätter stor logga högst upp på varje sida.
@@ -35,11 +36,13 @@ class BasePage extends StatelessWidget {
 class _LegalLinks extends StatelessWidget {
   const _LegalLinks();
 
-  static final Uri _termsUri =
-      Uri.parse('https://aveli.app/aveli-terms-of-service/');
+  static final Uri _termsUri = Uri.parse(
+    'https://aveli.app/aveli-terms-of-service/',
+  );
   static final Uri _privacyUri = Uri.parse('https://aveli.app/privacy-policy/');
-  static final Uri _dataDeletionUri =
-      Uri.parse('https://aveli.app/user-data-deletion-instructions/');
+  static final Uri _dataDeletionUri = Uri.parse(
+    'https://aveli.app/user-data-deletion-instructions/',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +75,9 @@ class _LegalLinkButton extends StatelessWidget {
       onPressed: () async {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       },
+      style: TextButton.styleFrom(
+        foregroundColor: DesignTokens.infoAccentTextColor,
+      ),
       child: Text(label),
     );
   }

@@ -70,12 +70,8 @@ class _TextColorContractHarnessState extends State<_TextColorContractHarness> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = _showLanding
-        ? buildLightTheme(forLanding: true)
-        : buildLightTheme();
-
     return MaterialApp(
-      theme: theme,
+      theme: buildLightTheme(),
       home: Navigator(
         pages: [
           MaterialPage<void>(
@@ -106,32 +102,40 @@ class _NormalContractPage extends StatelessWidget {
     final style = Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SectionHeading('Vanlig sida'),
-            const SizedBox(height: 12),
-            GradientText('Lanktext', style: style),
-            const SizedBox(height: 12),
-            const CourseIntroBadge(
-              label: 'Introduktion lank',
-              variant: CourseIntroBadgeVariant.link,
-            ),
-            const SizedBox(height: 12),
-            const BrandWordmark(),
-            const SizedBox(height: 12),
-            FilledButton(onPressed: () {}, child: const Text('Hemknapp')),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () {},
-              child: const Text('Outline knapp'),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: onOpenLanding,
-              child: const Text('Oppna landing'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SectionHeading('Vanlig sida'),
+              const SizedBox(height: 12),
+              GradientText('Lanktext', style: style),
+              const SizedBox(height: 12),
+              const CourseIntroBadge(label: 'Introduktion badge'),
+              const SizedBox(height: 12),
+              const BrandWordmark(),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: () {}, child: const Text('Hemknapp')),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () {},
+                child: const Text('Outline knapp'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {},
+                style: TextButton.styleFrom(
+                  foregroundColor: DesignTokens.infoAccentTextColor,
+                ),
+                child: const Text('Visa alla'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: onOpenLanding,
+                child: const Text('Oppna landing'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -145,37 +149,58 @@ class _LandingContractPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const HeroHeading(
-              leading: 'Upptack din andliga',
-              gradientWord: 'resa',
-            ),
-            const SizedBox(height: 12),
-            const SectionHeading('Larare'),
-            const SizedBox(height: 12),
-            const MetaText('Mot certifierade larare.'),
-            const SizedBox(height: 12),
-            const HeroBadge(text: 'Sveriges ledande plattform'),
-            const SizedBox(height: 12),
-            const BrandWordmark(),
-            const SizedBox(height: 12),
-            const CourseIntroBadge(label: 'Introduktion badge'),
-            const SizedBox(height: 12),
-            FilledButton(onPressed: () {}, child: const Text('Bli medlem')),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () {},
-              style: TextButton.styleFrom(foregroundColor: Colors.white),
-              child: const Text('Logga in'),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Tillbaka'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const HeroHeading(
+                leading: 'Upptack din andliga',
+                gradientWord: 'resa',
+              ),
+              const SizedBox(height: 12),
+              const SectionHeading('Larare'),
+              const SizedBox(height: 12),
+              const MetaText('Mot certifierade larare.'),
+              const SizedBox(height: 12),
+              const HeroBadge(text: 'Sveriges ledande plattform'),
+              const SizedBox(height: 12),
+              const BrandWordmark(),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {},
+                style: TextButton.styleFrom(
+                  foregroundColor: DesignTokens.buttonForegroundColor,
+                ),
+                child: const Text('Hem'),
+              ),
+              const SizedBox(height: 12),
+              const CourseIntroBadge(label: 'Introduktion badge'),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: () {}, child: const Text('Bli medlem')),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {},
+                style: TextButton.styleFrom(
+                  foregroundColor: DesignTokens.buttonForegroundColor,
+                ),
+                child: const Text('Logga in'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {},
+                style: TextButton.styleFrom(
+                  foregroundColor: DesignTokens.infoAccentTextColor,
+                ),
+                child: const Text('Terms of Service'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Tillbaka'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -197,23 +222,28 @@ void main() {
         _hasTextColor(AppTextColor.body),
       );
       expect(
-        _textStylesForText(tester, 'Introduktion lank'),
-        _hasTextColor(Colors.white),
+        _textStylesForText(tester, 'Introduktion badge'),
+        _hasTextColor(DesignTokens.infoAccentTextColor),
       );
       expect(find.byType(ShaderMask), findsOneWidget);
       expect(
         _textStylesForText(tester, 'Hemknapp'),
-        _hasTextColor(DesignTokens.heroTextColor),
+        _hasTextColor(DesignTokens.buttonForegroundColor),
       );
       expect(
         _textStylesForText(tester, 'Outline knapp'),
         _hasTextColor(AppTextColor.body),
       );
       expect(
+        _textStylesForText(tester, 'Visa alla'),
+        _hasTextColor(DesignTokens.infoAccentTextColor),
+      );
+      expect(
         _textStylesForText(tester, 'Oppna landing'),
         _hasTextColor(AppTextColor.body),
       );
 
+      await tester.ensureVisible(find.text('Oppna landing'));
       await tester.tap(find.text('Oppna landing'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -228,19 +258,27 @@ void main() {
       );
       expect(
         _textStylesForText(tester, 'Sveriges ledande plattform'),
-        _hasTextColor(Colors.white),
+        _hasTextColor(AppTextColor.body),
+      );
+      expect(
+        _textStylesForText(tester, 'Hem'),
+        _hasTextColor(DesignTokens.buttonForegroundColor),
       );
       expect(
         _textStylesForText(tester, 'Introduktion badge'),
-        _hasTextColor(Colors.white),
+        _hasTextColor(DesignTokens.infoAccentTextColor),
       );
       expect(
         _textStylesForText(tester, 'Bli medlem'),
-        _hasTextColor(DesignTokens.heroTextColor),
+        _hasTextColor(DesignTokens.buttonForegroundColor),
       );
       expect(
         _textStylesForText(tester, 'Logga in'),
-        _hasTextColor(Colors.white),
+        _hasTextColor(DesignTokens.buttonForegroundColor),
+      );
+      expect(
+        _textStylesForText(tester, 'Terms of Service'),
+        _hasTextColor(DesignTokens.infoAccentTextColor),
       );
 
       final heroLeadingStyles = _textStylesForText(
@@ -254,6 +292,7 @@ void main() {
       expect(heroLeadingStyles, _hasTextColor(DesignTokens.heroTextColor));
       expect(heroGradientStyles, _hasTextColor(DesignTokens.heroTextColor));
 
+      await tester.ensureVisible(find.text('Tillbaka'));
       await tester.tap(find.text('Tillbaka'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -267,16 +306,20 @@ void main() {
         _hasTextColor(AppTextColor.body),
       );
       expect(
-        _textStylesForText(tester, 'Introduktion lank'),
-        _hasTextColor(Colors.white),
+        _textStylesForText(tester, 'Introduktion badge'),
+        _hasTextColor(DesignTokens.infoAccentTextColor),
       );
       expect(
         _textStylesForText(tester, 'Hemknapp'),
-        _hasTextColor(DesignTokens.heroTextColor),
+        _hasTextColor(DesignTokens.buttonForegroundColor),
       );
       expect(
         _textStylesForText(tester, 'Outline knapp'),
         _hasTextColor(AppTextColor.body),
+      );
+      expect(
+        _textStylesForText(tester, 'Visa alla'),
+        _hasTextColor(DesignTokens.infoAccentTextColor),
       );
       expect(
         _textStylesForText(tester, 'Oppna landing'),
