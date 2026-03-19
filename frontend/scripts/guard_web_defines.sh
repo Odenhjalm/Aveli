@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Validate and sanitize allowed web build define keys.
+# Mutates state: No (validation-only guard script).
+# Run context: CI and local preflight checks before web builds.
 set -euo pipefail
 
 ENV_FILE="${1:-}"

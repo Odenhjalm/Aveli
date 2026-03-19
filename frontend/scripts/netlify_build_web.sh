@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Run guarded Netlify-compatible Flutter web builds.
+# Mutates state: Yes (writes build artifacts and build metadata files).
+# Run context: CI/Netlify pipeline and controlled local reproduction.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Manage local Postgres container lifecycle and helper DB operations.
+# Mutates state: Yes (creates/stops/removes containers/volumes and related data).
+# Run context: Local development only; not for CI.
 set -euo pipefail
 
 CMD="${1:-}"

@@ -68,14 +68,17 @@ void main() {
       );
     });
 
-    test('absolute Supabase public URLs are not rewritten', () {
+    test('resolveDownloadUrl rewrites Supabase public URL to backend resolver', () {
       final repository = _buildRepository();
-      const url =
-          'https://example.supabase.co/storage/v1/object/public/public-media/x.jpg';
 
-      final resolved = repository.resolveDownloadUrl(url);
+      final resolved = repository.resolveDownloadUrl(
+        'https://project.supabase.co/storage/v1/object/public/public-media/course/lesson/file.png',
+      );
 
-      expect(resolved, url);
+      expect(
+        resolved,
+        'https://api.example.com/api/files/public-media/course/lesson/file.png',
+      );
     });
 
     test('resolvePlaybackUrl resolves signed backend stream path', () {
@@ -88,12 +91,12 @@ void main() {
       expect(resolved, 'https://api.example.com/media/stream/signed-token');
     });
 
-    test('blocks relative Supabase public URL usage', () {
+    test('blocks unresolved direct Supabase public URL usage', () {
       final repository = _buildRepository();
 
       expect(
         () => repository.resolveDownloadUrl(
-          '/storage/v1/object/public/public-media/course/lesson/file.png',
+          'https://cdn.test/storage/v1/object/public',
         ),
         throwsA(anyOf(isA<AssertionError>(), isA<ArgumentError>())),
       );

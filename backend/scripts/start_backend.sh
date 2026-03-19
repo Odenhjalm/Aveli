@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Start backend services with environment safety guards.
+# Mutates state: Yes (starts local processes and may run database checks/actions).
+# Run context: Local development and controlled CI smoke environments.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"

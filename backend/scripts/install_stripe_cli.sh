@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# Purpose: Install the Stripe CLI binary into a local bin directory.
+# Mutates state: Yes (downloads archive and writes executable to install location).
+# Run context: Local setup only; not for CI.
 set -euo pipefail
 
-# Simple helper to install the Stripe CLI locally.
-# Usage: ./scripts/install_stripe_cli.sh [install_dir]
-# Defaults to ~/.local/bin
+# Usage: ./scripts/install_stripe_cli.sh [install_dir] (default: ~/.local/bin)
 
 INSTALL_DIR="${1:-$HOME/.local/bin}"
 TMP_DIR="$(mktemp -d)"

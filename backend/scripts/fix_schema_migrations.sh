@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Repair supabase_migrations.schema_migrations to match repo migration files.
+# Mutates state: Yes (executes DELETE/INSERT statements against target database).
+# Run context: Controlled local operations only; not for CI by default.
 set -euo pipefail
 
 if [[ -z "${SUPABASE_DB_URL:-}" ]]; then

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Purpose: Dump, restore, and verify cloud-to-local Postgres clone workflows.
+# Mutates state: Yes (reads/writes database data and local dump files).
+# Run context: Controlled local operations only; not for default CI.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
