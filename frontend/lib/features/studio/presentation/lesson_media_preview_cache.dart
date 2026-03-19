@@ -76,28 +76,21 @@ class LessonMediaPreviewData {
 
     final duration = media['duration_seconds'];
     final fileName =
-        _normalizedString(media['original_name']) ??
-        _fileNameFromStoragePath(_normalizedString(media['storage_path']));
+        _normalizedString(media['file_name'] ?? media['fileName']) ??
+        _normalizedString(media['original_name']);
     final previewBlocked =
         media['preview_blocked'] == true ||
         media['resolvable_for_editor'] == false;
 
-    final preferredUrl = _firstNonEmpty(<Object?>[
-      media['preferredUrl'],
-      media['preferred_url'],
-      media['thumbnail_url'],
-      media['thumbnailUrl'],
-      media['download_url'],
-      media['downloadUrl'],
-      media['playback_url'],
-      media['playbackUrl'],
-    ]);
-
     return LessonMediaPreviewData(
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
-      thumbnailUrl: mediaType == 'image' ? preferredUrl : null,
-      posterFrameUrl: mediaType == 'video' ? preferredUrl : null,
+      thumbnailUrl: mediaType == 'image'
+          ? _normalizedString(media['thumbnail_url'] ?? media['thumbnailUrl'])
+          : null,
+      posterFrameUrl: mediaType == 'video'
+          ? _normalizedString(media['poster_frame'] ?? media['posterFrame'])
+          : null,
       durationSeconds: duration is num ? duration.toInt() : null,
       fileName: fileName,
       previewBlocked: previewBlocked,
@@ -309,24 +302,8 @@ class LessonMediaPreviewCache {
   }
 }
 
-String? _firstNonEmpty(Iterable<Object?> values) {
-  for (final value in values) {
-    final normalized = _normalizedString(value);
-    if (normalized != null) return normalized;
-  }
-  return null;
-}
-
 String? _normalizedString(Object? value) {
   if (value == null) return null;
   final normalized = value.toString().trim();
   return normalized.isEmpty ? null : normalized;
-}
-
-String? _fileNameFromStoragePath(String? storagePath) {
-  if (storagePath == null || storagePath.isEmpty) return null;
-  final parts = storagePath.split('/');
-  if (parts.isEmpty) return null;
-  final fileName = parts.last.trim();
-  return fileName.isEmpty ? null : fileName;
 }

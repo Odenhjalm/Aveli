@@ -307,7 +307,7 @@ void main() {
     tester,
   ) async {
     final repo = _FakeMediaPipelineRepository(
-      Future.value('https://cdn.test/audio.mp3'),
+      Future.value('https://cdn.test/guide.pdf?download=1'),
     );
     final data = LessonDetailData(
       lesson: const LessonDetail(
@@ -321,9 +321,8 @@ void main() {
       media: const [
         LessonMediaItem(
           id: 'media-pdf',
-          kind: 'pdf',
+          kind: 'document',
           storagePath: 'lesson-1/docs/guide.pdf',
-          preferredUrlValue: 'https://cdn.test/guide.pdf?download=1',
           contentType: 'application/pdf',
           originalName: 'guide.pdf',
           position: 1,
@@ -356,6 +355,71 @@ void main() {
     expect(find.text('Ladda ner PDF'), findsOneWidget);
     expect(find.textContaining('https://cdn.test/guide.pdf'), findsNothing);
     expect(find.byIcon(Icons.download_rounded), findsOneWidget);
+    expect(repo.lessonPlaybackCalls, 1);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'lesson media list image does not fall back to direct row URL when resolver fails',
+    (tester) async {
+      final repo = _FakeMediaPipelineRepository(
+        Future.value('/studio/media/media-image'),
+      );
+      final data = LessonDetailData(
+        lesson: const LessonDetail(
+          id: 'lesson-image-row',
+          title: 'Image row lesson',
+          contentMarkdown: 'Intro\n',
+          isIntro: false,
+          moduleId: null,
+          position: 1,
+        ),
+        media: const [
+          LessonMediaItem(
+            id: 'media-image',
+            kind: 'image',
+            storagePath: 'lesson-1/image.webp',
+            preferredUrlValue: 'https://cdn.test/raw-row-image.webp',
+            originalName: 'row-image.webp',
+            position: 1,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost',
+                stripePublishableKey: '',
+                stripeMerchantDisplayName: 'Test',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            lessonDetailProvider.overrideWith((ref, lessonId) async => data),
+            mediaPipelineRepositoryProvider.overrideWithValue(repo),
+          ],
+          child: const MaterialApp(
+            home: LessonPage(lessonId: 'lesson-image-row'),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(repo.lessonPlaybackCalls, 1);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is AveliLessonImage &&
+              widget.src == 'https://cdn.test/raw-row-image.webp',
+        ),
+        findsNothing,
+      );
+      expect(find.byType(AveliLessonImage), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -31,6 +31,7 @@ from ..services import storage_service
 from ..utils.audio_content_types import resolve_runtime_audio_content_type
 from ..utils.lesson_content import (
     build_lesson_media_write_contract,
+    markdown_contains_legacy_document_media_links,
     normalize_lesson_markdown_for_storage,
     serialize_audio_embeds,
 )
@@ -780,7 +781,16 @@ async def list_my_courses(user_id: str) -> Sequence[dict[str, Any]]:
 async def fetch_lesson(lesson_id: str) -> dict[str, Any] | None:
     """Return a lesson by its id."""
     row = await courses_repo.get_lesson(lesson_id)
-    return _materialize_optional_row(row)
+    materialized = _materialize_optional_row(row)
+    content_markdown = materialized.get("content_markdown") if materialized else None
+    if isinstance(content_markdown, str) and markdown_contains_legacy_document_media_links(
+        content_markdown
+    ):
+        logger.warning(
+            "LESSON_MEDIA_LEGACY_DOCUMENT_READ_COMPAT lesson_id=%s",
+            lesson_id,
+        )
+    return materialized
 
 
 async def lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:

@@ -562,6 +562,12 @@ async def _build_streaming_response(
 
 @router.post("/sign", response_model=schemas.MediaSignResponse)
 async def sign_media(payload: schemas.MediaSignRequest, current: CurrentUser):
+    logger.info(
+        "LEGACY_MEDIA_SIGN_HIT media_id=%s user_id=%s mode=%s",
+        payload.media_id,
+        current["id"],
+        payload.mode,
+    )
     resolved = await lesson_playback_service.resolve_legacy_playback(
         lesson_media_id=payload.media_id,
         user_id=str(current["id"]),
@@ -589,6 +595,11 @@ async def stream_signed_media(token: str, request: Request):
         raise HTTPException(status_code=400, detail="Malformed media token")
 
     normalized_mode = media_resolution_failures.normalize_mode(payload.get("purpose"))
+    logger.info(
+        "LEGACY_MEDIA_STREAM_HIT media_id=%s mode=%s",
+        media_id,
+        normalized_mode,
+    )
 
     row = await models.get_media(media_id)
     lesson_media_id: str | None = None

@@ -1912,6 +1912,11 @@ async def media_file(
             snapshot = await models.course_access_snapshot(user_id, str(course_id))
             if snapshot.get("can_access") is not True:
                 raise HTTPException(status_code=403, detail="Access denied")
+    logger.info(
+        "LEGACY_MEDIA_ROUTE_HIT route=/studio/media/%s user_id=%s",
+        media_id,
+        user_id,
+    )
     return await _build_streaming_response(row, request)
 
 

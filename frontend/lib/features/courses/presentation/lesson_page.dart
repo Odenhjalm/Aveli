@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
@@ -167,7 +166,6 @@ class _LessonContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lesson = detail.lesson;
-    final mediaRepo = ref.watch(mediaRepositoryProvider);
     final screenWidth = MediaQuery.of(context).size.width;
     final safeScreenWidth = screenWidth.isFinite && screenWidth > 0
         ? screenWidth
@@ -191,21 +189,17 @@ class _LessonContent extends ConsumerWidget {
 
     final markdownContent = _normalizeMarkdown(lesson.contentMarkdown);
     final bundleLinks = _extractBundleLinks(markdownContent);
-    final embeddedMediaIds = extractLessonEmbeddedMediaIds(markdownContent);
+    final embeddedMediaIds = extractLessonEmbeddedMediaIds(
+      rewriteLegacyLessonMediaUrlsForReadCompatibility(
+        markdown: markdownContent,
+        lessonMedia: mediaItems,
+      ),
+    );
 
     bool isEmbedded(LessonMediaItem item) {
       final mediaId = item.mediaId;
       if (mediaId != null && embeddedMediaIds.contains(mediaId)) return true;
       if (embeddedMediaIds.contains(item.id)) return true;
-      final candidateUrls = <String?>[item.downloadUrl, item.signedUrl];
-      for (final url in candidateUrls) {
-        if (url == null || url.isEmpty) continue;
-        if (markdownContent.contains(url)) return true;
-        try {
-          final resolved = mediaRepo.resolveDownloadUrl(url);
-          if (markdownContent.contains(resolved)) return true;
-        } catch (_) {}
-      }
       return false;
     }
 
@@ -424,13 +418,7 @@ String _buildLessonMediaSignature(Iterable<LessonMediaItem> items) {
       ..write('|')
       ..write(item.kind)
       ..write('|')
-      ..write(item.preferredUrlValue ?? '')
-      ..write('|')
-      ..write(item.playbackUrl ?? '')
-      ..write('|')
-      ..write(item.downloadUrl ?? '')
-      ..write('|')
-      ..write(item.signedUrl ?? '')
+      ..write(item.originalName ?? '')
       ..write('|')
       ..write(item.mediaState ?? '')
       ..write(';');
@@ -677,18 +665,9 @@ class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
 
   Future<String?> _createResolvedUrlFuture() {
     final resolvedInitial = _normalizeResolvedLessonMediaUrl(widget.initialUrl);
-    if (resolvedInitial != null) {
-      return SynchronousFuture<String?>(resolvedInitial);
-    }
-
     final lessonMediaId = widget.lessonMediaId?.trim() ?? '';
     if (lessonMediaId.isEmpty) {
-      return SynchronousFuture<String?>(null);
-    }
-
-    final isAuthenticated = ref.read(authControllerProvider).isAuthenticated;
-    if (!isAuthenticated) {
-      return SynchronousFuture<String?>(null);
+      return SynchronousFuture<String?>(resolvedInitial);
     }
 
     final mediaRepo = ref.read(mediaRepositoryProvider);
@@ -1070,10 +1049,21 @@ class _MediaItem extends ConsumerWidget {
     final pipelineRepo = ref.watch(mediaPipelineRepositoryProvider);
 
     if (item.kind == 'image') {
-      final src = item.preferredUrl ?? '';
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
-        child: AveliLessonImage(src: src, alt: _fileName),
+        child: _LessonResolvedMedia(
+          initialUrl: item.preferredUrl ?? '',
+          lessonMediaId: item.id,
+          builder: (context, resolvedUrl) =>
+              AveliLessonImage(src: resolvedUrl, alt: _fileName),
+          placeholderBuilder:
+              (context, {required isLoading, required onRetry}) =>
+                  _LessonMediaResolvePlaceholder(
+                    mediaType: 'image',
+                    isLoading: isLoading,
+                    onRetry: onRetry,
+                  ),
+        ),
       );
     }
 
@@ -1202,36 +1192,42 @@ class _MediaItem extends ConsumerWidget {
       );
     }
 
-    String? downloadUrl;
-    if (item.preferredUrl != null) {
-      final preferredUrl = item.preferredUrl;
-      if (preferredUrl == null || preferredUrl.trim().isEmpty) {
-        return ListTile(leading: Icon(_iconForKind()), title: Text(_fileName));
-      }
-      try {
-        downloadUrl = mediaRepo.resolveDownloadUrl(preferredUrl);
-      } catch (_) {
-        downloadUrl = null;
-      }
-    }
-
-    if (downloadUrl == null) {
-      return ListTile(leading: Icon(_iconForKind()), title: Text(_fileName));
-    }
-
-    final url = downloadUrl;
+    final future = resolveLessonMediaPlaybackUrl(
+      item: item,
+      mediaRepository: mediaRepo,
+      pipelineRepository: pipelineRepo,
+    );
     final isPdf =
         item.kind == 'pdf' ||
+        item.kind == 'document' ||
         item.contentType == 'application/pdf' ||
         _fileName.toLowerCase().endsWith('.pdf');
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: _LessonDownloadCard(
-        fileName: _fileName,
-        isPdf: isPdf,
-        onTap: () => launchUrlString(url),
-      ),
+    return FutureBuilder<String?>(
+      future: future,
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+        if (url == null || url.trim().isEmpty) {
+          return ListTile(
+            leading: Icon(_iconForKind()),
+            title: Text(_fileName),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _LessonDownloadCard(
+            fileName: _fileName,
+            isPdf: isPdf,
+            onTap: () => launchUrlString(url),
+          ),
+        );
+      },
     );
   }
 }

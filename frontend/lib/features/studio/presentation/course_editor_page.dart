@@ -52,7 +52,6 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
-import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
@@ -1994,6 +1993,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       markdown: markdown,
       apiFilesPathToStudioMediaUrl:
           _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+      lessonMediaDocumentLabelsById:
+          _lessonMediaDocumentLabelsByIdForSelectedLesson(),
     );
   }
 
@@ -2002,7 +2003,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       markdown: markdown,
       apiFilesPathToStudioMediaUrl:
           _apiFilesPathToStudioMediaUrlForSelectedLesson(),
+      lessonMediaDocumentLabelsById:
+          _lessonMediaDocumentLabelsByIdForSelectedLesson(),
     );
+  }
+
+  Map<String, String> _lessonMediaDocumentLabelsByIdForSelectedLesson() {
+    final lessonId = _selectedLessonId;
+    if (lessonId == null) return const <String, String>{};
+    if (_lessonMediaLessonId != lessonId) return const <String, String>{};
+    if (_lessonMedia.isEmpty) return const <String, String>{};
+
+    final labels = <String, String>{};
+    for (final media in _lessonMedia) {
+      final mediaId = safeString(media, 'id');
+      if (mediaId == null) continue;
+      labels[mediaId] = _fileNameFromMedia(media);
+    }
+    return labels;
   }
 
   List<LessonMediaItem> _selectedLessonMediaItems() {
@@ -2042,20 +2060,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   String? _resolveEditorRenderableLessonMediaSrc(Map<String, dynamic> media) {
-    final kind = safeString(media, 'kind')?.toLowerCase();
-    final candidates = <String?>[
-      if (kind == 'image') _resolveMediaListThumbnailUrl(media),
-      if (kind == 'image') _resolveImageEmbedSrc(media),
-      _resolveMediaListThumbnailUrl(media),
-      _resolveMediaDisplayUrl(media),
-      _mediaUrl(media),
-      safeString(media, 'preferredUrl'),
-      safeString(media, 'preferred_url'),
-      safeString(media, 'playback_url'),
-      safeString(media, 'download_url'),
-      safeString(media, 'signed_url'),
-      safeString(media, 'url'),
-    ];
+    final candidates = <String?>[_resolveMediaListThumbnailUrl(media)];
     for (final candidate in candidates) {
       final resolved = _asAbsoluteHttpUrl(candidate) ?? candidate?.trim();
       if (resolved != null && resolved.isNotEmpty) {
@@ -2083,18 +2088,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return <String>[
       safeString(media, 'id') ?? '',
       safeString(media, 'kind') ?? '',
-      safeString(media, 'storage_bucket') ?? '',
-      safeString(media, 'storage_path') ?? '',
-      safeString(media, 'preferredUrl') ?? '',
-      safeString(media, 'preferred_url') ?? '',
       safeString(media, 'thumbnail_url') ?? '',
       safeString(media, 'thumbnailUrl') ?? '',
       safeString(media, 'poster_frame') ?? '',
       safeString(media, 'posterFrame') ?? '',
-      safeString(media, 'playback_url') ?? '',
-      safeString(media, 'download_url') ?? '',
-      safeString(media, 'signed_url') ?? '',
-      safeString(media, 'url') ?? '',
+      safeString(media, 'file_name') ?? '',
+      safeString(media, 'fileName') ?? '',
+      safeString(media, 'original_name') ?? '',
       safeString(media, 'media_state') ?? '',
       _resolveEditorRenderableLessonMediaSrc(media) ?? '',
       '${safeBool(media, 'preview_blocked') ?? false}',
@@ -2132,32 +2132,31 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     quill.QuillController controller,
   ) {
     final ids = <String>{};
-    final documentExtent = max(controller.document.length - 1, 0);
-    var offset = 0;
-
-    while (offset < documentExtent) {
-      final node = controller.queryNode(offset);
-      if (node == null) {
-        offset += 1;
+    for (final operation in controller.document.toDelta().toList()) {
+      if (!operation.isInsert) {
         continue;
       }
-
-      final nodeOffset = node.documentOffset;
-      if (nodeOffset < offset) {
-        offset += 1;
-        continue;
-      }
-
-      if (node is quill.Embed) {
+      final value = operation.value;
+      if (value is quill.Embeddable) {
         final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(
-          node.value.data,
+          value.data,
         );
         if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
           ids.add(lessonMediaId);
         }
+        continue;
       }
-
-      offset = max(offset + 1, nodeOffset + node.length);
+      if (value is! String) continue;
+      final attributes = operation.attributes;
+      if (attributes == null) continue;
+      final rawLink = attributes[quill.Attribute.link.key];
+      if (rawLink is! String) continue;
+      final lessonMediaId = lesson_pipeline.lessonMediaIdFromDocumentLinkUrl(
+        rawLink,
+      );
+      if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
+        ids.add(lessonMediaId);
+      }
     }
 
     return ids;
@@ -2208,24 +2207,30 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return uri.toString();
   }
 
-  String? _browserOpenableLessonMediaUrl(Map<String, dynamic> media) {
-    final candidates = <String?>[
-      _resolveMediaListThumbnailUrl(media),
-      _resolveMediaDisplayUrl(media),
-      safeString(media, 'preferredUrl'),
-      safeString(media, 'preferred_url'),
-      safeString(media, 'playback_url'),
-      safeString(media, 'signed_url'),
-      safeString(media, 'download_url'),
-      safeString(media, 'url'),
-    ];
-    for (final candidate in candidates) {
-      final normalized = _normalizeBrowserOpenableMediaUrl(candidate);
-      if (normalized != null && normalized.isNotEmpty) {
-        return normalized;
-      }
+  Future<String?> _resolveLessonMediaDeliveryUrl(String lessonMediaId) async {
+    final normalizedLessonMediaId = lessonMediaId.trim();
+    if (normalizedLessonMediaId.isEmpty) {
+      return null;
     }
-    return null;
+
+    try {
+      final playbackUrl = await ref
+          .read(mediaPipelineRepositoryProvider)
+          .fetchLessonPlaybackUrl(normalizedLessonMediaId);
+      return _normalizeBrowserOpenableMediaUrl(playbackUrl);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _resolveLessonMediaDeliveryUrlForMedia(
+    Map<String, dynamic> media,
+  ) async {
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null) {
+      return null;
+    }
+    return _resolveLessonMediaDeliveryUrl(lessonMediaId);
   }
 
   Future<String?> _resolveLessonEditorLaunchUrl(String rawUrl) async {
@@ -2234,31 +2239,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return direct;
     }
 
-    final studioMatch = lesson_pipeline.studioMediaUrlPattern.firstMatch(
-      rawUrl.trim(),
-    );
-    final lessonMediaId = studioMatch?.group(1)?.trim();
+    final lessonMediaId = lesson_pipeline
+        .lessonMediaIdFromDocumentLinkUrl(rawUrl)
+        ?.trim();
     if (lessonMediaId == null || lessonMediaId.isEmpty) {
       return null;
     }
 
-    for (final media in _lessonMedia) {
-      if (safeString(media, 'id') != lessonMediaId) continue;
-      final preferred = _browserOpenableLessonMediaUrl(media);
-      if (preferred != null && preferred.isNotEmpty) {
-        return preferred;
-      }
-      break;
-    }
-
-    try {
-      final signed = await ref
-          .read(mediaRepositoryProvider)
-          .signMedia(lessonMediaId, mode: MediaResolutionMode.editorPreview);
-      return _normalizeBrowserOpenableMediaUrl(signed.signedUrl);
-    } catch (_) {
-      return null;
-    }
+    return _resolveLessonMediaDeliveryUrl(lessonMediaId);
   }
 
   Future<void> _launchLessonEditorUrl(String url) async {
@@ -3464,12 +3452,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final media = video;
     if (media == null) return null;
     final previewBlocked = _isEditorPreviewBlocked(media);
-    final url = previewBlocked ? null : _resolveMediaDisplayUrl(media);
-    final normalizedUrl = _normalizeVideoPlaybackUrl(url);
     final label = safeString(media, 'title') ?? _fileNameFromMedia(media);
-    final isIntro =
-        media['is_intro'] == true ||
-        (media['storage_bucket'] as String?) == 'public-media';
+    final isIntro = media['is_intro'] == true || _lessonIntro;
+    final playbackUrlFuture = previewBlocked
+        ? SynchronousFuture<String?>(null)
+        : _resolveLessonMediaDeliveryUrlForMedia(media);
 
     return _SectionCard(
       title: 'Lektionsvideo',
@@ -3478,13 +3465,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         children: [
           ClipRRect(
             borderRadius: br16,
-            child: normalizedUrl == null
-                ? _buildInvalidVideoPlaceholder(context)
-                : AveliLessonMediaPlayer(
-                    playbackUrl: normalizedUrl,
-                    title: label,
-                    kind: 'video',
-                  ),
+            child: FutureBuilder<String?>(
+              future: playbackUrlFuture,
+              builder: (context, snapshot) {
+                final normalizedUrl = _normalizeVideoPlaybackUrl(snapshot.data);
+                if (normalizedUrl == null) {
+                  return _buildInvalidVideoPlaceholder(context);
+                }
+                return AveliLessonMediaPlayer(
+                  playbackUrl: normalizedUrl,
+                  title: label,
+                  kind: 'video',
+                );
+              },
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -3950,6 +3944,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   String? _resolveMediaDisplayUrl(Map<String, dynamic> media) {
+    // Legacy read compatibility only. Active editor delivery must resolve
+    // through lesson_media_id via /api/media/lesson-playback.
     final candidates = <String?>[
       _mediaUrl(media),
       safeString(media, 'url'),
@@ -3967,18 +3963,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   String? _resolveMediaListThumbnailUrl(Map<String, dynamic> media) {
-    String? preferredFromItem;
-    try {
-      preferredFromItem = LessonMediaItem.fromJson(media).preferredUrl;
-    } catch (_) {
-      preferredFromItem = null;
-    }
-
     final candidates = <String?>[
-      preferredFromItem,
-      safeString(media, 'preferredUrl'),
-      safeString(media, 'preferred_url'),
-      _resolveMediaDisplayUrl(media),
+      safeString(media, 'thumbnail_url'),
+      safeString(media, 'thumbnailUrl'),
+      safeString(media, 'poster_frame'),
+      safeString(media, 'posterFrame'),
     ];
     for (final candidate in candidates) {
       if (candidate == null || candidate.trim().isEmpty) {
@@ -4001,10 +3990,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final scheme = uri.scheme.toLowerCase();
     if (scheme != 'http' && scheme != 'https') return null;
     return uri.toString();
-  }
-
-  String? _resolveImageEmbedSrc(Map<String, dynamic> media) {
-    return _asAbsoluteHttpUrl(_resolveMediaDisplayUrl(media));
   }
 
   bool _isWavMedia(Map<String, dynamic> media) {
@@ -4053,19 +4038,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         nextMedia: copy,
       );
     }
-  }
-
-  Future<String?> _fetchPlaybackUrl(Map<String, dynamic> media) async {
-    final mediaAssetId = media['media_asset_id'];
-    if (mediaAssetId == null) return null;
-    final repo = ref.read(mediaPipelineRepositoryProvider);
-    final playback = await repo.fetchPlaybackUrl(mediaAssetId.toString());
-    final url = playback.playbackUrl.toString();
-    final id = media['id'];
-    if (id is String) {
-      _patchLessonMedia(id, {'playback_url': url});
-    }
-    return url;
   }
 
   Future<void> _uploadImageFromToolbar() async {
@@ -4161,7 +4133,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         final media = Map<String, dynamic>.from(
           uploadResult['media'] as Map<String, dynamic>,
         );
-        final resolved = uploadResult['public_url'] as String;
         final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
         List<Map<String, dynamic>> nextMedia = const <Map<String, dynamic>>[];
         ref.read(lessonMediaPreviewCacheProvider).primeFromLessonMedia([media]);
@@ -4188,7 +4159,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           nextMedia: nextMedia,
         );
         final inserted = _insertImageIntoLesson(
-          publicUrl: resolved,
           lessonMediaId: media['id'] as String?,
           targetSelection: selectionBeforePicker,
         );
@@ -4271,12 +4241,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _insertImageIntoLesson({
-    required String publicUrl,
     String? lessonMediaId,
     TextSelection? targetSelection,
   }) {
-    final normalizedSrc = _asAbsoluteHttpUrl(publicUrl);
-    if (normalizedSrc == null) return false;
     final normalizedMediaId = lessonMediaId?.trim();
     if (normalizedMediaId == null || normalizedMediaId.isEmpty) {
       if (mounted && context.mounted) {
@@ -4296,7 +4263,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         embed: quill.BlockEmbed.image(
           lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
             lessonMediaId: normalizedMediaId,
-            src: normalizedSrc,
           ),
         ),
         selection: targetSelection ?? controller.selection,
@@ -4382,7 +4348,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _insertDocumentLinkIntoLesson({
-    required String resolvedUrl,
+    required String lessonMediaId,
     required String fileName,
     TextSelection? targetSelection,
   }) {
@@ -4413,7 +4379,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         controller,
         start: baseIndex,
         length: label.length,
-        attribute: quill.LinkAttribute(resolvedUrl),
+        attribute: quill.LinkAttribute(
+          lesson_pipeline.lessonMediaDocumentLinkUrl(lessonMediaId),
+        ),
       );
       _replaceEditorTextLocally(
         controller,
@@ -4469,21 +4437,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return false;
     }
-    final resolved = _resolveMediaDisplayUrl(media);
     debugPrint(
-      '[CourseEditor] insert media kind=$kind lessonMediaId=$lessonMediaId url=$resolved',
+      '[CourseEditor] insert media kind=$kind lessonMediaId=$lessonMediaId',
     );
     _snapshotLessonSelection();
     if (_isImageMedia(media) || kind == 'image') {
-      final imageSrc = _resolveImageEmbedSrc(media);
-      if (imageSrc == null) {
-        if (mounted && context.mounted) {
-          showSnack(context, 'Kunde inte resolveda en publik bildlänk.');
-        }
-        return false;
-      }
       final inserted = _insertImageIntoLesson(
-        publicUrl: imageSrc,
         lessonMediaId: lessonMediaId,
         targetSelection: _lastLessonSelection,
       );
@@ -4501,16 +4460,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return true;
     }
     if (_isDocumentMedia(media)) {
-      final documentUrl = resolved;
-      if (documentUrl == null || documentUrl.trim().isEmpty) {
-        if (mounted && context.mounted) {
-          showSnack(context, 'Kunde inte resolveda en dokumentlänk.');
-        }
-        return false;
-      }
       final fileName = _fileNameFromMedia(media);
       _insertDocumentLinkIntoLesson(
-        resolvedUrl: documentUrl,
+        lessonMediaId: lessonMediaId,
         fileName: fileName,
         targetSelection: _lastLessonSelection,
       );
@@ -4526,10 +4478,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     if (_isVideoMedia(media)) {
       final videoEmbedValue = lesson_pipeline
-          .videoBlockEmbedValueFromLessonMedia(
-            lessonMediaId: lessonMediaId,
-            src: resolved,
-          );
+          .videoBlockEmbedValueFromLessonMedia(lessonMediaId: lessonMediaId);
       _insertVideoIntoLesson(
         videoEmbedValue,
         targetSelection: _lastLessonSelection,
@@ -4547,7 +4496,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     // Audio: inline player embed
     final audioEmbed = lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
       lessonMediaId: lessonMediaId,
-      src: resolved,
     );
     _insertAudioIntoLesson(audioEmbed, targetSelection: _lastLessonSelection);
     if (mounted && context.mounted) {
@@ -4732,11 +4680,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final previousPreview = _courseCoverPreviewUrl;
     final previousPipelineId = _coverPipelineMediaId;
     final previousPipelineState = _coverPipelineState;
-    final storagePath = (media['storage_path'] as String?)?.trim();
-    final previewSource = storagePath?.isNotEmpty == true
-        ? storagePath
-        : _mediaUrl(media);
-    final previewUrl = _resolveMediaUrl(previewSource);
+    final previewSource = _resolveMediaListThumbnailUrl(media);
+    final previewUrl = _asAbsoluteHttpUrl(previewSource);
 
     // Covers are now processed into public storage; we never reuse lesson URLs directly.
     if (mounted) {
@@ -5148,42 +5093,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final state = _pipelineState(media);
       if (state != 'ready') {
         if (mounted && context.mounted) {
-          showSnack(context, 'Ljudet bearbetas fortfarande.');
+          showSnack(context, 'Mediet bearbetas fortfarande.');
         }
         return;
       }
-      final playbackUrl = await _fetchPlaybackUrl(media);
-      if (playbackUrl == null || playbackUrl.isEmpty) {
-        if (mounted && context.mounted) {
-          showSnack(context, 'Kunde inte hämta uppspelningslänk.');
-        }
-        return;
-      }
+    }
+
+    final resolved = await _resolveLessonMediaDeliveryUrlForMedia(media);
+    if (resolved == null || resolved.isEmpty) {
       if (mounted) {
-        setState(() => _downloadStatus = 'Öppnar ljud i ny flik…');
+        setState(
+          () => _downloadStatus = 'Ladda ner stöds inte för detta media.',
+        );
       }
-      if (!mounted) return;
-      if (!context.mounted) return;
-      showSnack(context, 'Ljud öppnas i en ny flik.');
-      unawaited(launchUrlString(playbackUrl));
-      if (mounted) {
-        setState(() => _downloadStatus = null);
+      if (context.mounted) {
+        showSnack(context, 'Kunde inte hämta leveranslänk för mediet.');
       }
       return;
     }
+
     if (kIsWeb) {
-      final resolved = _resolveMediaDisplayUrl(media);
-      if (resolved == null) {
-        if (mounted) {
-          setState(
-            () => _downloadStatus = 'Ladda ner stöds inte för detta media.',
-          );
-        }
-        if (context.mounted) {
-          showSnack(context, 'Kunde inte hitta en nedladdningslänk.');
-        }
-        return;
-      }
       if (mounted) {
         setState(() => _downloadStatus = 'Öppnar fil i ny flik…');
       }
@@ -5201,26 +5130,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _downloadingMedia = true;
       _downloadStatus = 'Hämtar $name…';
     });
-    final mediaId = safeString(media, 'id');
     try {
-      Uint8List bytes;
-      final downloadPath = _mediaUrl(media);
-      if (downloadPath != null && downloadPath.isNotEmpty) {
-        final cacheKey = (media['media_id'] ?? media['id']).toString();
-        final extension = _extensionFromFileName(name);
-        bytes = await ref
-            .read(mediaRepositoryProvider)
-            .cacheMediaBytes(
-              cacheKey: cacheKey,
-              downloadPath: downloadPath,
-              fileExtension: extension,
-            );
-      } else {
-        if (mediaId == null) {
-          throw StateError('Media saknar id.');
-        }
-        bytes = await _studioRepo.downloadMedia(mediaId);
+      final response = await Dio().get<List<int>>(
+        resolved,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final responseBytes = response.data;
+      if (responseBytes == null || responseBytes.isEmpty) {
+        throw StateError('Tomt svar från medieleverans.');
       }
+      final bytes = Uint8List.fromList(responseBytes);
       final location = await fs.getSaveLocation(suggestedName: name);
       if (location == null) {
         if (mounted) {
@@ -5272,17 +5191,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (originalName != null && originalName.isNotEmpty) {
       return originalName;
     }
-    final storagePath = media['storage_path'] as String?;
-    if (storagePath != null && storagePath.isNotEmpty) {
-      final segments = storagePath.split('/');
-      return segments.isNotEmpty ? segments.last : storagePath;
-    }
-    final download = _mediaUrl(media);
-    if (download != null && download.isNotEmpty) {
-      final uri = Uri.parse(download);
-      if (uri.pathSegments.isNotEmpty) {
-        return uri.pathSegments.last;
-      }
+    final previewName =
+        safeString(media, 'file_name') ?? safeString(media, 'fileName');
+    if (previewName != null) {
+      return previewName;
     }
     final id = media['id'];
     return id != null ? 'media_$id' : 'media.bin';
@@ -5465,27 +5377,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         }
         return;
       }
-      final playbackUrl = await _fetchPlaybackUrl(media);
-      if (playbackUrl == null || playbackUrl.isEmpty) {
-        if (mounted && context.mounted) {
-          showSnack(context, 'Kunde inte hämta uppspelningslänk.');
-        }
-        return;
-      }
-      final normalizedVideoUrl = _normalizeVideoPlaybackUrl(playbackUrl);
-      final isVideo =
-          kind == 'video' ||
-          ((media['content_type'] as String?) ?? '').toLowerCase().startsWith(
-            'video/',
-          );
-      if (isVideo) {
-        await _showVideoPreviewSheet(media, playbackUrl: normalizedVideoUrl);
-      } else {
-        await _showAudioPreviewSheet(media, playbackUrl: playbackUrl);
-      }
-      return;
     }
-    final url = _resolveMediaDisplayUrl(media);
+
+    final url = await _resolveLessonMediaDeliveryUrlForMedia(media);
     if (!mounted) return;
     if (kind == 'image' && url != null) {
       await showDialog<void>(
@@ -5553,7 +5447,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final toId = (replacementMedia['id'] as String?)?.trim() ?? '';
     if (fromId.isEmpty || toId.isEmpty) return false;
 
-    final replacementUrl = _resolveMediaDisplayUrl(replacementMedia);
+    final replacementUrl = _resolveMediaListThumbnailUrl(replacementMedia);
     var contentChanged = false;
     _runEditorMutation((controller) {
       contentChanged = replaceLessonMediaEmbedsInPlace(
@@ -6566,13 +6460,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       itemBuilder: (context, index) {
                                         final media = _lessonMedia[index];
                                         final theme = Theme.of(context);
-                                        final bucket =
-                                            (media['storage_bucket']
-                                                as String?) ??
-                                            '';
                                         final intro =
                                             media['is_intro'] == true ||
-                                            bucket == 'public-media';
+                                            _lessonIntro;
                                         final kind =
                                             (media['kind'] as String?) ??
                                             'other';
@@ -6642,8 +6532,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final canInsertIntoLesson =
                                             !hasInvalidPipelineReference &&
                                             !isWavMedia &&
-                                            downloadUrl != null &&
-                                            downloadUrl.isNotEmpty &&
                                             !_isVideoInsertBlockedForEditor(
                                               media,
                                             );
@@ -6792,9 +6680,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                     ],
                                                   ),
                                                   Text(
-                                                    bucket.isEmpty
-                                                        ? 'Intern lagring'
-                                                        : bucket,
+                                                    'Lektionsmedia',
                                                     style: Theme.of(
                                                       context,
                                                     ).textTheme.labelSmall,

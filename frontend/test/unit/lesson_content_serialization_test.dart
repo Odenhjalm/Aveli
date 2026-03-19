@@ -5,6 +5,10 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 import 'package:markdown/markdown.dart' as md;
 
+import 'package:aveli/editor/adapter/editor_to_markdown.dart'
+    as editor_to_markdown;
+import 'package:aveli/editor/adapter/markdown_to_editor.dart'
+    as markdown_to_editor;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
 
 void main() {
@@ -298,6 +302,26 @@ Intro
 
       expect(hasStructured, isTrue);
     });
+
+    test(
+      'document token round-trips through editor links as canonical token',
+      () {
+        final document = markdown_to_editor.markdownToEditorDocument(
+          markdown: '!document($sampleLessonMediaId)',
+          lessonMediaDocumentLabelsById: const {
+            sampleLessonMediaId: 'guide.pdf',
+          },
+        );
+
+        expect(document.toPlainText(), contains('📄 guide.pdf'));
+
+        final markdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+          delta: document.toDelta(),
+        );
+
+        expect(markdown, '!document($sampleLessonMediaId)');
+      },
+    );
 
     test(
       'img HTML converts back to image embed with style on markdown import',

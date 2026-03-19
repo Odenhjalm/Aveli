@@ -160,6 +160,7 @@ String canonicalizeSupportedMarkdown(String markdown) {
 String canonicalizeMarkdownForEditor({
   required String markdown,
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
 }) {
   if (markdown.trim().isEmpty) {
     return markdown.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
@@ -175,17 +176,23 @@ String canonicalizeMarkdownForEditor({
   }
 
   canonical = canonicalizeSupportedMarkdown(canonical);
+  canonical = lesson_pipeline.rewriteLessonMarkdownDocumentLinksForEditor(
+    markdown: canonical,
+    lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+  );
   return canonical;
 }
 
 quill_delta.Delta markdownToEditorDelta({
   required String markdown,
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
   md.Document? markdownDocument,
 }) {
   final canonical = canonicalizeMarkdownForEditor(
     markdown: markdown,
     apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
+    lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
   );
   final converter = lesson_pipeline.createLessonMarkdownToDelta(
     markdownDocument ?? createEditorMarkdownDocument(),
@@ -273,11 +280,13 @@ quill_delta.Delta _canonicalizeDeltaForQuillDocument(quill_delta.Delta delta) {
 quill.Document markdownToEditorDocument({
   required String markdown,
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
   md.Document? markdownDocument,
 }) {
   final delta = markdownToEditorDelta(
     markdown: markdown,
     apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
+    lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
     markdownDocument: markdownDocument,
   );
   if (delta.toList().isEmpty) {

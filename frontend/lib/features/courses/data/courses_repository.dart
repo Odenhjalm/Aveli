@@ -671,50 +671,33 @@ class LessonMediaItem {
 
   bool get isPublicBucket => (storageBucket ?? '').startsWith('public');
 
-  String get fileName => (originalName == null || originalName!.isEmpty)
-      ? storagePath.split('/').last
-      : originalName!;
+  String get fileName {
+    final normalizedOriginalName = originalName?.trim();
+    if (normalizedOriginalName != null && normalizedOriginalName.isNotEmpty) {
+      return normalizedOriginalName;
+    }
+    return 'media_$id';
+  }
 
   String? get preferredUrl {
     final explicit = preferredUrlValue?.trim();
     if (explicit != null && explicit.isNotEmpty) {
       return explicit;
     }
-
-    final playback = playbackUrl?.trim();
-    if (playback != null && playback.isNotEmpty) {
-      final signed = signedUrl?.trim();
-      if (signed != null && signed.isNotEmpty && playback == signed) {
-        final expiresAt = signedUrlExpiresAt;
-        if (expiresAt == null) return playback;
-        final now = DateTime.now().toUtc();
-        if (now.isBefore(expiresAt.subtract(const Duration(seconds: 30)))) {
-          return playback;
-        }
-      } else {
-        return playback;
+    for (final candidate in <String?>[playbackUrl, downloadUrl, signedUrl]) {
+      final normalized = candidate?.trim();
+      if (normalized == null || normalized.isEmpty) {
+        continue;
+      }
+      final uri = Uri.tryParse(normalized);
+      final scheme = uri?.scheme.toLowerCase();
+      if (uri != null &&
+          uri.hasScheme &&
+          (scheme == 'http' || scheme == 'https') &&
+          uri.host.isNotEmpty) {
+        return normalized;
       }
     }
-
-    final download = downloadUrl?.trim();
-    if (download != null &&
-        download.isNotEmpty &&
-        download.toLowerCase().startsWith('/api/files/')) {
-      return download;
-    }
-
-    final signed = signedUrl?.trim();
-    if (signed != null && signed.isNotEmpty) {
-      final expiresAt = signedUrlExpiresAt;
-      if (expiresAt == null) return signed;
-      final now = DateTime.now().toUtc();
-      if (now.isBefore(expiresAt.subtract(const Duration(seconds: 30)))) {
-        return signed;
-      }
-    }
-
-    if (download != null && download.isNotEmpty) return download;
-    if (signed != null && signed.isNotEmpty) return signed;
     return null;
   }
 }

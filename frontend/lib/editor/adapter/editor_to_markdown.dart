@@ -197,7 +197,6 @@ String editorDeltaToCanonicalMarkdown({
   }
 
   markdown = canonicalizeSupportedMarkdown(markdown);
-  markdown = lesson_pipeline.convertHtmlMediaToTokens(markdown);
   final normalized = lesson_pipeline.normalizeLessonMarkdownForStorage(
     markdown,
   );

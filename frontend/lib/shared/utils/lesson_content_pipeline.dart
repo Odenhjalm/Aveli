@@ -14,9 +14,11 @@ import 'package:aveli/shared/utils/lesson_media_playback_resolver.dart';
 /// Lesson content is stored as canonical Markdown (`content_markdown`).
 ///
 /// Lesson media persists as canonical tokens (`!image(id)`, `!audio(id)`,
-/// `!video(id)`) while the editor continues to use Quill Delta internally.
-/// Legacy HTML media is still accepted on import/render so both Studio and
+/// `!video(id)`, `!document(id)`) while the editor continues to use Quill
+/// Delta internally.
+/// Legacy HTML media is accepted on import/render only so both Studio and
 /// lesson presentation can share this single Markdown ↔ Delta pipeline.
+/// Storage writes remain strict: only typed lesson_media tokens are allowed.
 
 class AudioBlockEmbed extends quill.CustomBlockEmbed {
   static const String embedType = 'audio';
@@ -222,6 +224,56 @@ String _lessonMediaToken({
   required String lessonMediaId,
 }) => '!$kind($lessonMediaId)';
 
+const String _lessonMediaDocumentLinkScheme = 'aveli-document';
+
+String lessonMediaDocumentLinkUrl(String lessonMediaId) =>
+    '$_lessonMediaDocumentLinkScheme://$lessonMediaId';
+
+bool _isInternalLessonMediaDocumentLinkUrl(String? rawUrl) {
+  final normalized = rawUrl?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return false;
+  }
+  final uri = Uri.tryParse(normalized);
+  if (uri == null) {
+    return false;
+  }
+  return uri.scheme.toLowerCase() == _lessonMediaDocumentLinkScheme;
+}
+
+String? lessonMediaIdFromDocumentLinkUrl(String? rawUrl) {
+  final normalized = rawUrl?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+
+  final uri = Uri.tryParse(normalized);
+  if (uri != null &&
+      uri.scheme.toLowerCase() == _lessonMediaDocumentLinkScheme) {
+    final host = uri.host.trim();
+    if (host.isNotEmpty) {
+      return host;
+    }
+    final path = uri.path.replaceAll('/', '').trim();
+    if (path.isNotEmpty) {
+      return path;
+    }
+  }
+
+  return _lessonMediaIdFromEmbedValue(normalized);
+}
+
+String _documentLinkLabel({String? rawLabel, String? fileName}) {
+  final preferred = rawLabel?.trim();
+  final resolved = preferred != null && preferred.isNotEmpty
+      ? preferred
+      : (fileName?.trim().isNotEmpty == true ? fileName!.trim() : 'Dokument');
+  if (resolved.startsWith('📄 ')) {
+    return resolved;
+  }
+  return '📄 $resolved';
+}
+
 Never _throwCanonicalMediaWriteViolation(String raw) {
   throw StateError(
     'Canonical text contract violation: media refs must use typed '
@@ -346,8 +398,18 @@ final RegExp _lessonVideoTokenPattern = RegExp(
   caseSensitive: false,
 );
 
+final RegExp _lessonDocumentTokenPattern = RegExp(
+  '!document\\($_lessonMediaIdFragment\\)',
+  caseSensitive: false,
+);
+
 final RegExp _markdownImagePattern = RegExp(
   r'''!\[[^\]]*]\((?:<)?([^)>\s]+)(?:>)?(?:\s+"[^"]*")?\)''',
+  caseSensitive: false,
+);
+
+final RegExp _markdownLinkPattern = RegExp(
+  r'''(?<!!)\[([^\]]*)]\((?:<)?([^)>\s]+)(?:>)?(?:\s+"[^"]*")?\)''',
   caseSensitive: false,
 );
 
@@ -429,49 +491,107 @@ void assertNoHtmlMedia(String markdown) {
   if (_forbiddenHtmlMediaPattern.hasMatch(markdown)) {
     throw StateError(
       'Canonical text contract violation: HTML media tags are forbidden. '
-      'Use !video(id), !audio(id), or !image(id).',
+      'Use !video(id), !audio(id), !image(id), or !document(id).',
     );
   }
 }
 
-String convertHtmlMediaToTokens(String markdown) {
+void assertNoRawMarkdownMediaRefs(String markdown) {
+  if (markdown.isEmpty) return;
+
+  for (final match in _markdownImagePattern.allMatches(markdown)) {
+    final raw = match.group(0)?.trim();
+    if (raw == null || raw.isEmpty) {
+      continue;
+    }
+    throw StateError(
+      'Canonical text contract violation: media refs must use typed '
+      'lesson_media ids. Raw image URLs are not allowed.',
+    );
+  }
+
+  for (final match in _markdownLinkPattern.allMatches(markdown)) {
+    final raw = match.group(0)?.trim();
+    final source = match.group(2)?.trim();
+    if (raw == null || raw.isEmpty || source == null || source.isEmpty) {
+      continue;
+    }
+    final isLegacyMediaLink =
+        studioMediaUrlPattern.hasMatch(source) ||
+        mediaStreamUrlPattern.hasMatch(source) ||
+        apiFilesUrlPattern.hasMatch(source);
+    if (!isLegacyMediaLink) {
+      continue;
+    }
+    throw StateError(
+      'Canonical text contract violation: media refs must use typed '
+      'lesson_media ids. Raw document/media links are not allowed.',
+    );
+  }
+}
+
+String rewriteLessonMarkdownDocumentLinksForEditor({
+  required String markdown,
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
+}) {
   if (markdown.isEmpty) return markdown;
 
-  var converted = markdown;
-  converted = converted.replaceAllMapped(_audioHtmlElementPattern, (match) {
+  final normalizedLabels = <String, String>{
+    for (final entry in lessonMediaDocumentLabelsById.entries)
+      if (entry.key.trim().isNotEmpty) entry.key.trim(): entry.value.trim(),
+  };
+
+  String buildInternalDocumentLink({
+    required String lessonMediaId,
+    String? rawLabel,
+  }) {
+    final label = _documentLinkLabel(
+      rawLabel: rawLabel,
+      fileName: normalizedLabels[lessonMediaId],
+    ).replaceAll('[', '(').replaceAll(']', ')');
+    return '[$label](${lessonMediaDocumentLinkUrl(lessonMediaId)})';
+  }
+
+  var rewritten = markdown.replaceAllMapped(_lessonDocumentTokenPattern, (
+    match,
+  ) {
+    final lessonMediaId = match.group(1)?.trim();
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      return match.group(0) ?? '';
+    }
+    return buildInternalDocumentLink(lessonMediaId: lessonMediaId);
+  });
+
+  rewritten = rewritten.replaceAllMapped(_markdownLinkPattern, (match) {
     final raw = match.group(0) ?? '';
-    if (raw.isEmpty) return raw;
-    final attrs = _parseHtmlAttributes(raw);
-    final src = _normalizeMediaSourceAttribute(attrs);
-    final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
+    final lessonMediaId = lessonMediaIdFromDocumentLinkUrl(match.group(2));
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      return raw;
+    }
+    return buildInternalDocumentLink(
+      lessonMediaId: lessonMediaId,
+      rawLabel: match.group(1),
+    );
+  });
+
+  return rewritten;
+}
+
+String normalizeDocumentMarkdownLinksToTokens(String markdown) {
+  if (markdown.isEmpty) return markdown;
+
+  return markdown.replaceAllMapped(_markdownLinkPattern, (match) {
+    final raw = match.group(0) ?? '';
+    final rawUrl = match.group(2);
+    if (!_isInternalLessonMediaDocumentLinkUrl(rawUrl)) {
+      return raw;
+    }
+    final lessonMediaId = lessonMediaIdFromDocumentLinkUrl(rawUrl);
     if (lessonMediaId == null || lessonMediaId.isEmpty) {
       _throwCanonicalMediaWriteViolation(raw);
     }
-    return _lessonMediaToken(kind: 'audio', lessonMediaId: lessonMediaId);
+    return _lessonMediaToken(kind: 'document', lessonMediaId: lessonMediaId);
   });
-  converted = converted.replaceAllMapped(_videoHtmlElementPattern, (match) {
-    final raw = match.group(0) ?? '';
-    if (raw.isEmpty) return raw;
-    final attrs = _parseHtmlAttributes(raw);
-    final src = _normalizeMediaSourceAttribute(attrs);
-    final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      _throwCanonicalMediaWriteViolation(raw);
-    }
-    return _lessonMediaToken(kind: 'video', lessonMediaId: lessonMediaId);
-  });
-  converted = converted.replaceAllMapped(_imgHtmlTagPattern, (match) {
-    final raw = match.group(0) ?? '';
-    if (raw.isEmpty) return raw;
-    final attrs = _parseHtmlAttributes(raw);
-    final src = _normalizeMediaSourceAttribute(attrs);
-    final lessonMediaId = _lessonMediaIdFromMediaAttributes(attrs, src);
-    if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
-      return _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId);
-    }
-    _throwCanonicalMediaWriteViolation(raw);
-  });
-  return converted;
 }
 
 quill_delta.Delta _replaceHtmlTagWithEmbed(
@@ -829,6 +949,18 @@ Set<String> extractLessonEmbeddedMediaIds(String markdown) {
       ids.add(id);
     }
   }
+  for (final match in _lessonDocumentTokenPattern.allMatches(markdown)) {
+    final id = match.group(1);
+    if (id != null && id.isNotEmpty) {
+      ids.add(id);
+    }
+  }
+  for (final match in _markdownLinkPattern.allMatches(markdown)) {
+    final id = lessonMediaIdFromDocumentLinkUrl(match.group(2));
+    if (id != null && id.isNotEmpty) {
+      ids.add(id);
+    }
+  }
   return ids;
 }
 
@@ -852,6 +984,38 @@ String rewriteLessonMarkdownApiFilesUrls({
   });
 }
 
+String rewriteLegacyLessonMediaUrlsForReadCompatibility({
+  required String markdown,
+  Iterable<LessonMediaItem> lessonMedia = const <LessonMediaItem>[],
+}) {
+  if (markdown.isEmpty) return markdown;
+
+  // Legacy absolute delivery URLs are retained only as a read-compat shim so
+  // previously-authored lessons can still upgrade to lesson_media ids.
+  final urlToStudioMediaUrl = <String, String>{};
+  for (final item in lessonMedia) {
+    final lessonMediaId = item.id.trim();
+    if (lessonMediaId.isEmpty) continue;
+    final replacement = '/studio/media/$lessonMediaId';
+    for (final candidate in <String?>[
+      item.preferredUrlValue,
+      item.playbackUrl,
+      item.downloadUrl,
+      item.signedUrl,
+    ]) {
+      final normalized = candidate?.trim();
+      if (normalized == null || normalized.isEmpty) continue;
+      urlToStudioMediaUrl[normalized] = replacement;
+    }
+  }
+  if (urlToStudioMediaUrl.isEmpty) {
+    return markdown;
+  }
+  return urlToStudioMediaUrl.entries.fold<String>(markdown, (current, entry) {
+    return current.replaceAll(entry.key, entry.value);
+  });
+}
+
 Future<String> prepareLessonMarkdownForRendering(
   MediaRepository mediaRepository,
   String markdown, {
@@ -860,6 +1024,13 @@ Future<String> prepareLessonMarkdownForRendering(
 }) async {
   markdown = _stripBlankLineSentinelForDisplay(markdown);
   if (markdown.trim().isEmpty) return markdown;
+  markdown = rewriteLegacyLessonMediaUrlsForReadCompatibility(
+    markdown: markdown,
+    lessonMedia: lessonMedia,
+  );
+  final byId = <String, LessonMediaItem>{
+    for (final item in lessonMedia) item.id: item,
+  };
   markdown = markdown
       .replaceAllMapped(_lessonImageTokenPattern, (match) {
         final id = match.group(1)?.trim();
@@ -878,35 +1049,36 @@ Future<String> prepareLessonMarkdownForRendering(
         if (id == null || id.isEmpty) return match.group(0) ?? '';
         final escapedId = _htmlAttributeEscape.convert(id);
         return '<video controls data-lesson-media-id="$escapedId" src="/studio/media/$escapedId"></video>';
+      })
+      .replaceAllMapped(_lessonDocumentTokenPattern, (match) {
+        final id = match.group(1)?.trim();
+        if (id == null || id.isEmpty) return match.group(0) ?? '';
+        final escapedId = _htmlAttributeEscape.convert(id);
+        final label = _documentLinkLabel(
+          fileName: byId[id]?.fileName,
+        ).replaceAll('[', '(').replaceAll(']', ')');
+        return '[$label](/studio/media/$escapedId)';
       });
 
   final ids = extractLessonEmbeddedMediaIds(markdown);
-  if (ids.isEmpty) return markdown;
-
-  final byId = <String, LessonMediaItem>{
-    for (final item in lessonMedia) item.id: item,
-  };
+  if (ids.isEmpty || pipelineRepository == null) return markdown;
 
   final resolvedUrls = <String, String>{};
   await Future.wait(
     ids.map((id) async {
       try {
         final item = byId[id];
-        if (pipelineRepository != null) {
-          if (item == null) return;
-          final url = await resolveLessonMediaPlaybackUrl(
-            item: item,
-            mediaRepository: mediaRepository,
-            pipelineRepository: pipelineRepository,
-          );
-          if (url != null && url.trim().isNotEmpty) {
-            resolvedUrls[id] = url.trim();
-          }
+        if (item == null) {
           return;
         }
-
-        final signed = await mediaRepository.signMedia(id);
-        resolvedUrls[id] = mediaRepository.resolvePlaybackUrl(signed.signedUrl);
+        final url = await resolveLessonMediaSignedPlaybackUrl(
+          lessonMediaId: id,
+          mediaRepository: mediaRepository,
+          pipelineRepository: pipelineRepository,
+        );
+        if (url != null && url.trim().isNotEmpty) {
+          resolvedUrls[id] = url.trim();
+        }
       } catch (error, stackTrace) {
         if (kDebugMode) {
           debugPrint(
@@ -938,29 +1110,9 @@ Future<String> prepareLessonMarkdownForRendering(
 String normalizeLessonMarkdownForStorage(String markdown) {
   if (markdown.isEmpty) return markdown;
 
-  var normalized = convertHtmlMediaToTokens(markdown);
-  normalized = normalized.replaceAllMapped(studioMediaUrlPattern, (match) {
-    final id = match.group(1);
-    if (id == null || id.isEmpty) return match.group(0) ?? '';
-    return '/studio/media/$id';
-  });
-  normalized = normalized.replaceAllMapped(mediaStreamUrlPattern, (match) {
-    final token = match.group(1);
-    if (token == null || token.isEmpty) return match.group(0) ?? '';
-    final id = _extractMediaIdFromToken(token);
-    if (id == null || id.isEmpty) return match.group(0) ?? '';
-    return '/studio/media/$id';
-  });
-  normalized = normalized.replaceAllMapped(_markdownImagePattern, (match) {
-    final url = match.group(1)?.trim();
-    if (url == null || url.isEmpty) return match.group(0) ?? '';
-    final lessonMediaId = _lessonMediaIdFromEmbedValue(url);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      _throwCanonicalMediaWriteViolation(match.group(0) ?? url);
-    }
-    return _lessonMediaToken(kind: 'image', lessonMediaId: lessonMediaId);
-  });
+  var normalized = normalizeDocumentMarkdownLinksToTokens(markdown);
   normalized = normalized.replaceAll(_blankLineSentinel, '');
   assertNoHtmlMedia(normalized);
+  assertNoRawMarkdownMediaRefs(normalized);
   return normalized;
 }

@@ -20,7 +20,6 @@ import 'package:aveli/features/editor/widgets/file_picker_web.dart'
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
-import 'package:aveli/features/media/data/media_resolution_mode.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
@@ -46,6 +45,9 @@ class _MockCoursesRepository extends Mock implements CoursesRepository {}
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
 class _MockMediaRepository extends Mock implements MediaRepository {}
+
+class _MockMediaPipelineRepository extends Mock
+    implements MediaPipelineRepository {}
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController() : super(_MockAuthRepository(), AuthHttpObserver()) {
@@ -170,6 +172,13 @@ Finder _filledButtonWithLabel(String label) {
   return find.ancestor(
     of: find.text(label),
     matching: find.byType(FilledButton),
+  );
+}
+
+Finder _iconButtonWithTooltip(String tooltip) {
+  return find.byWidgetPredicate(
+    (widget) => widget is IconButton && widget.tooltip == tooltip,
+    description: 'IconButton(tooltip: $tooltip)',
   );
 }
 
@@ -554,8 +563,16 @@ void _stubSingleLessonEditorData(
 
 Future<void> _pumpEditorBootstrap(WidgetTester tester) async {
   await tester.pump();
-  for (var i = 0; i < 6; i++) {
-    await tester.pump(const Duration(milliseconds: 25));
+  for (var i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    final editorReady = editor_test_bridge.getDocument() != null;
+    final mediaStillLoading = find
+        .byType(CircularProgressIndicator)
+        .evaluate()
+        .isNotEmpty;
+    if (editorReady && !mediaStillLoading) {
+      break;
+    }
   }
 }
 
@@ -2943,7 +2960,7 @@ void main() {
     final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
     expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
 
-    final insertButton = find.byTooltip('Infoga i lektionen');
+    final insertButton = _iconButtonWithTooltip('Infoga i lektionen');
     expect(insertButton, findsOneWidget);
     await tester.ensureVisible(insertButton);
     await tester.tap(insertButton);
@@ -3000,7 +3017,7 @@ void main() {
     );
     await _pumpEditorBootstrap(tester);
 
-    final insertButton = find.byTooltip('Infoga i lektionen');
+    final insertButton = _iconButtonWithTooltip('Infoga i lektionen');
     expect(insertButton, findsOneWidget);
     await tester.ensureVisible(insertButton);
     await tester.tap(insertButton);
@@ -3163,6 +3180,68 @@ void main() {
       await _disposePumpedWidget(tester);
     },
   );
+
+  testWidgets('document insertion saves canonical !document tokens only', (
+    tester,
+  ) async {
+    final studioRepo = _MockStudioRepository();
+    final coursesRepo = _MockCoursesRepository();
+
+    _stubSingleLessonEditorData(
+      studioRepo,
+      coursesRepo,
+      contentMarkdown: 'Introtext\n\nEftertext',
+      lessonMedia: [
+        {
+          'id': 'media-pdf-1',
+          'kind': 'document',
+          'original_name': 'guide.pdf',
+          'content_type': 'application/pdf',
+          'position': 1,
+        },
+      ],
+    );
+    _stubLessonSaveEcho(studioRepo);
+
+    await _pumpCourseEditorScreen(
+      tester,
+      studioRepo: studioRepo,
+      coursesRepo: coursesRepo,
+    );
+    await _pumpEditorBootstrap(tester);
+
+    final insertButton = _iconButtonWithTooltip('Infoga i lektionen');
+    expect(insertButton, findsOneWidget);
+    await tester.ensureVisible(insertButton);
+    await tester.tap(insertButton);
+    await tester.pump();
+
+    final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pump();
+    await _pumpEditorBootstrap(tester);
+
+    final verification = verify(
+      () => studioRepo.upsertLesson(
+        id: 'lesson-1',
+        courseId: 'course-1',
+        title: any(named: 'title'),
+        contentMarkdown: captureAny(named: 'contentMarkdown'),
+        position: any(named: 'position'),
+        isIntro: any(named: 'isIntro'),
+      ),
+    );
+    final capturedMarkdown = verification.captured.single as String;
+
+    expect(capturedMarkdown, contains('!document(media-pdf-1)'));
+    expect(capturedMarkdown, isNot(contains('/studio/media/media-pdf-1')));
+    expect(capturedMarkdown, isNot(contains('guide.pdf](')));
+
+    await tester.pump(const Duration(milliseconds: 600));
+    await _disposePumpedWidget(tester);
+  });
 
   testWidgets(
     'queued upload success does not insert duplicate image already embedded in lesson',
@@ -3804,11 +3883,12 @@ void main() {
   );
 
   testWidgets(
-    'editor launches canonical lesson media links via a browser-openable signed URL',
+    'editor launches canonical lesson media links via lesson playback resolution',
     (tester) async {
       final studioRepo = _MockStudioRepository();
       final coursesRepo = _MockCoursesRepository();
       final mediaRepository = _MockMediaRepository();
+      final mediaPipelineRepository = _MockMediaPipelineRepository();
       final launchCalls = <MethodCall>[];
       const urlLauncherChannel = MethodChannel(
         'plugins.flutter.io/url_launcher',
@@ -3831,11 +3911,11 @@ void main() {
       _stubSingleLessonEditorData(
         studioRepo,
         coursesRepo,
-        contentMarkdown: '[📄 material.pdf](/studio/media/media-pdf-1)',
+        contentMarkdown: '!document(media-pdf-1)',
         lessonMedia: [
           {
             'id': 'media-pdf-1',
-            'kind': 'pdf',
+            'kind': 'document',
             'original_name': 'material.pdf',
             'position': 1,
           },
@@ -3852,16 +3932,9 @@ void main() {
         return 'http://localhost:8080$raw';
       });
       when(
-        () => mediaRepository.signMedia(
-          'media-pdf-1',
-          mode: MediaResolutionMode.editorPreview,
-        ),
+        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-pdf-1'),
       ).thenAnswer(
-        (_) async => MediaSignedUrl(
-          mediaId: 'media-pdf-1',
-          signedUrl: '/media/stream/editor-pdf-token',
-          expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 5)),
-        ),
+        (_) async => 'https://cdn.test/material.pdf?token=editor-open',
       );
 
       await _pumpCourseEditorScreen(
@@ -3869,6 +3942,7 @@ void main() {
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
         mediaRepository: mediaRepository,
+        mediaPipelineRepository: mediaPipelineRepository,
       );
       await _pumpEditorBootstrap(tester);
 
@@ -3878,7 +3952,7 @@ void main() {
       final onLaunchUrl = editor.config.onLaunchUrl;
       expect(onLaunchUrl, isNotNull);
 
-      onLaunchUrl!('/studio/media/media-pdf-1');
+      onLaunchUrl!('aveli-document://media-pdf-1');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 10));
 
@@ -3887,16 +3961,77 @@ void main() {
           (call) =>
               call.method.toLowerCase().contains('launch') &&
               call.arguments.toString().contains(
-                'http://localhost:8080/media/stream/editor-pdf-token',
+                'https://cdn.test/material.pdf',
               ),
         ),
         isTrue,
       );
       verify(
-        () => mediaRepository.signMedia(
-          'media-pdf-1',
-          mode: MediaResolutionMode.editorPreview,
-        ),
+        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-pdf-1'),
+      ).called(1);
+    },
+  );
+
+  testWidgets(
+    'editor preview resolves lesson video via lesson playback authority',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final mediaRepository = _MockMediaRepository();
+      final mediaPipelineRepository = _MockMediaPipelineRepository();
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: [
+          {
+            'id': 'media-video-1',
+            'kind': 'video',
+            'original_name': 'lesson-preview.mp4',
+            'content_type': 'video/mp4',
+            'download_url': 'https://cdn.test/raw-row-preview.mp4',
+            'preview_blocked': false,
+            'position': 1,
+          },
+        ],
+      );
+
+      when(() => mediaRepository.resolvePlaybackUrl(any())).thenAnswer((
+        invocation,
+      ) {
+        final raw = invocation.positionalArguments.single as String;
+        if (raw.startsWith('http://') || raw.startsWith('https://')) {
+          return raw;
+        }
+        return 'http://localhost:8080$raw';
+      });
+      when(
+        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-video-1'),
+      ).thenAnswer(
+        (_) async => 'https://cdn.test/resolved-preview.mp4?token=preview',
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+        mediaRepository: mediaRepository,
+        mediaPipelineRepository: mediaPipelineRepository,
+      );
+      await _pumpEditorBootstrap(tester);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final player = tester.widget<AveliLessonMediaPlayer>(
+        _lessonMediaPlayerFinder(kind: 'video').first,
+      );
+      expect(
+        player.playbackUrl,
+        'https://cdn.test/resolved-preview.mp4?token=preview',
+      );
+      expect(player.playbackUrl, isNot('https://cdn.test/raw-row-preview.mp4'));
+      verify(
+        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-video-1'),
       ).called(1);
     },
   );

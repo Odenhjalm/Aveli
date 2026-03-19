@@ -75,14 +75,14 @@ MediaRepository _buildMediaRepository() {
 
 void main() {
   group('Lesson markdown normalization', () {
-    test('normalizes absolute /studio/media URLs to relative', () {
+    test('rejects raw /studio/media image URLs on write', () {
       const id = '123e4567-e89b-12d3-a456-426614174000';
       final markdown = '![alt](https://api.example.com/studio/media/$id)';
 
-      final normalized = normalizeLessonMarkdownForStorage(markdown);
-
-      expect(normalized, contains('!image($id)'));
-      expect(normalized, isNot(contains('https://api.example.com')));
+      expect(
+        () => normalizeLessonMarkdownForStorage(markdown),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test(
@@ -103,21 +103,27 @@ void main() {
       },
     );
 
-    test(
-      'replaces /media/stream token URLs with stable /studio/media/{id}',
-      () {
-        const id = '123e4567-e89b-12d3-a456-426614174000';
-        final token = _jwtForSub(id);
-        final markdown = '<img src="/media/stream/$token" />';
+    test('rejects raw /media/stream token URLs on write', () {
+      const id = '123e4567-e89b-12d3-a456-426614174000';
+      final token = _jwtForSub(id);
+      final markdown = '![alt](/media/stream/$token)';
 
-        final normalized = normalizeLessonMarkdownForStorage(markdown);
+      expect(
+        () => normalizeLessonMarkdownForStorage(markdown),
+        throwsA(isA<StateError>()),
+      );
+    });
 
-        expect(normalized, contains('!image($id)'));
-        expect(normalized, isNot(contains('/media/stream/$token')));
-      },
-    );
+    test('normalizes internal document links into canonical tokens', () {
+      const id = '123e4567-e89b-12d3-a456-426614174010';
+      final markdown = '[📄 guide.pdf](${lessonMediaDocumentLinkUrl(id)})';
 
-    test('converts legacy HTML media tags into canonical tokens', () {
+      final normalized = normalizeLessonMarkdownForStorage(markdown);
+
+      expect(normalized, '!document($id)');
+    });
+
+    test('rejects HTML media tags even when they target lesson media', () {
       const imageId = '123e4567-e89b-12d3-a456-426614174001';
       const audioId = '123e4567-e89b-12d3-a456-426614174002';
       const videoId = '123e4567-e89b-12d3-a456-426614174003';
@@ -130,14 +136,10 @@ void main() {
 <video src="/studio/media/$videoId"></video>
 ''';
 
-      final normalized = normalizeLessonMarkdownForStorage(markdown);
-
-      expect(normalized, contains('!image($imageId)'));
-      expect(normalized, contains('!audio($audioId)'));
-      expect(normalized, contains('!video($videoId)'));
-      expect(normalized, isNot(contains('<img')));
-      expect(normalized, isNot(contains('<audio')));
-      expect(normalized, isNot(contains('<video')));
+      expect(
+        () => normalizeLessonMarkdownForStorage(markdown),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('rejects unsupported HTML media tags before storage', () {
@@ -151,6 +153,16 @@ void main() {
 
     test('rejects raw markdown image URLs before storage', () {
       const markdown = '![alt](https://cdn.test/legacy.png)';
+
+      expect(
+        () => normalizeLessonMarkdownForStorage(markdown),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('rejects raw lesson document links before storage', () {
+      const id = '123e4567-e89b-12d3-a456-426614174011';
+      const markdown = '[📄 guide.pdf](/studio/media/$id)';
 
       expect(
         () => normalizeLessonMarkdownForStorage(markdown),
@@ -234,6 +246,38 @@ void main() {
           preparedCanonical,
           isNot(contains('/studio/media/media-replacement')),
         );
+      },
+    );
+
+    test(
+      'rendering preparation resolves canonical document tokens via lesson playback authority',
+      () async {
+        final mediaRepository = _buildMediaRepository();
+        final pipelineRepository = _FakeMediaPipelineRepository(
+          'https://cdn.example.com/guide.pdf',
+        );
+
+        const markdown = 'Introtext\n\n!document(media-document)\n';
+        final prepared = await prepareLessonMarkdownForRendering(
+          mediaRepository,
+          markdown,
+          lessonMedia: const [
+            LessonMediaItem(
+              id: 'media-document',
+              kind: 'document',
+              storagePath: 'lesson-1/docs/guide.pdf',
+              originalName: 'guide.pdf',
+              position: 1,
+            ),
+          ],
+          pipelineRepository: pipelineRepository,
+        );
+
+        expect(
+          prepared,
+          contains('[📄 guide.pdf](https://cdn.example.com/guide.pdf)'),
+        );
+        expect(prepared, isNot(contains('/studio/media/media-document')));
       },
     );
   });

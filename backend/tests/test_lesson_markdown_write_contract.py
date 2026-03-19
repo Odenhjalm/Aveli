@@ -113,13 +113,14 @@ async def _attach_legacy_lesson_media(
     return str(lesson_media["id"])
 
 
-async def test_update_lesson_normalizes_supported_legacy_media_refs(async_client):
+async def test_update_lesson_accepts_canonical_typed_media_refs(async_client):
     headers, user_id = await _register_teacher(async_client)
     try:
         course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
         image_path = f"courses/{course_id}/lessons/{lesson_id}/images/diagram.png"
         audio_path = f"courses/{course_id}/lessons/{lesson_id}/audio/voice.mp3"
         video_path = f"courses/{course_id}/lessons/{lesson_id}/video/clip.mp4"
+        document_path = f"courses/{course_id}/lessons/{lesson_id}/docs/material.pdf"
 
         image_id = await _attach_legacy_lesson_media(
             owner_id=user_id,
@@ -151,15 +152,26 @@ async def test_update_lesson_normalizes_supported_legacy_media_refs(async_client
             original_name="clip.mp4",
             position=3,
         )
+        document_id = await _attach_legacy_lesson_media(
+            owner_id=user_id,
+            lesson_id=lesson_id,
+            storage_bucket="course-media",
+            storage_path=document_path,
+            kind="pdf",
+            content_type="application/pdf",
+            original_name="material.pdf",
+            position=4,
+        )
 
         update_resp = await async_client.patch(
             f"/studio/lessons/{lesson_id}",
             headers=headers,
             json={
                 "content_markdown": (
-                    f'![Diagram](/api/files/course-media/{image_path})\n\n'
-                    f'<audio controls src="/studio/media/{audio_id}"></audio>\n\n'
-                    f'<video controls src="/studio/media/{video_id}"></video>'
+                    f"!image({image_id})\n\n"
+                    f"!audio({audio_id})\n\n"
+                    f"!video({video_id})\n\n"
+                    f"!document({document_id})"
                 )
             },
         )
@@ -171,11 +183,9 @@ async def test_update_lesson_normalizes_supported_legacy_media_refs(async_client
         assert content == (
             f"!image({image_id})\n\n"
             f"!audio({audio_id})\n\n"
-            f"!video({video_id})"
+            f"!video({video_id})\n\n"
+            f"!document({document_id})"
         )
-        assert "/api/files/" not in content
-        assert "<audio" not in content
-        assert "<video" not in content
     finally:
         await _cleanup_user(user_id)
 
@@ -193,6 +203,35 @@ async def test_update_lesson_rejects_unresolved_raw_media_refs(async_client):
             },
         )
         assert update_resp.status_code == 422, update_resp.text
-        assert "canonical lesson_media ids" in str(update_resp.json()["detail"])
+        assert "raw image URLs are not allowed" in str(update_resp.json()["detail"])
+    finally:
+        await _cleanup_user(user_id)
+
+
+async def test_update_lesson_rejects_raw_document_media_links(async_client):
+    headers, user_id = await _register_teacher(async_client)
+    try:
+        course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
+        document_path = f"courses/{course_id}/lessons/{lesson_id}/docs/material.pdf"
+        document_id = await _attach_legacy_lesson_media(
+            owner_id=user_id,
+            lesson_id=lesson_id,
+            storage_bucket="course-media",
+            storage_path=document_path,
+            kind="pdf",
+            content_type="application/pdf",
+            original_name="material.pdf",
+            position=1,
+        )
+
+        update_resp = await async_client.patch(
+            f"/studio/lessons/{lesson_id}",
+            headers=headers,
+            json={
+                "content_markdown": f"[📄 material.pdf](/studio/media/{document_id})"
+            },
+        )
+        assert update_resp.status_code == 422, update_resp.text
+        assert "raw document links are not allowed" in str(update_resp.json()["detail"])
     finally:
         await _cleanup_user(user_id)
