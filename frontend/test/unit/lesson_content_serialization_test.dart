@@ -68,6 +68,14 @@ void main() {
       expect(markdown, isNot(contains(playbackUrl)));
     });
 
+    test('structured lesson media video embeds are not treated as legacy', () {
+      final embedValue = videoBlockEmbedValueFromLessonMedia(
+        lessonMediaId: sampleLessonMediaId,
+      );
+
+      expect(isLegacyVideoEmbed(embedValue), isFalse);
+    });
+
     test('lesson media image embed exports as canonical token', () {
       const style = 'width: 200; height: 100;';
       final delta = quill_delta.Delta()

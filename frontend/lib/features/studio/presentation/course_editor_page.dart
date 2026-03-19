@@ -15,8 +15,6 @@ import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:url_launcher/url_launcher_string.dart';
-// ignore: depend_on_referenced_packages
-import 'package:web/web.dart' as web;
 
 import 'package:uuid/uuid.dart';
 
@@ -69,6 +67,8 @@ import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview_cache.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview_hydration.dart';
+import 'package:aveli/features/studio/presentation/lesson_editor_test_id_dom.dart'
+    as lesson_editor_test_id_dom;
 
 String? _normalizeVideoPlaybackUrl(String? raw) {
   return lesson_pipeline.normalizeVideoPlaybackUrl(raw);
@@ -609,19 +609,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _syncLessonEditorTestId() {
     if (!kIsWeb) return false;
     _lessonEditorTestIdSyncAttempts += 1;
-    final semanticsElement = web.document.querySelector(
-      '[flt-semantics-identifier="$_lessonEditorTestId"]',
+    return lesson_editor_test_id_dom.syncLessonEditorTestId(
+      testId: _lessonEditorTestId,
     );
-    if (semanticsElement != null) {
-      semanticsElement.setAttribute('data-testid', _lessonEditorTestId);
-      return true;
-    }
-    final keyedElement = web.document.querySelector(
-      '[key="$_lessonEditorTestId"]',
-    );
-    if (keyedElement == null) return false;
-    keyedElement.setAttribute('data-testid', _lessonEditorTestId);
-    return true;
   }
 
   void _resetLessonPreviewHydrationValues({bool bumpRevision = false}) {
@@ -657,7 +647,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _syncLessonPreviewMarkdownFromController([
     quill.QuillController? controller,
   ]) {
-    _lessonPreviewMarkdown = _serializeLessonMarkdownFromController(
+    _lessonPreviewMarkdown = _serializeLessonPreviewMarkdownFromController(
       controller ?? _lessonContentController,
     );
   }
@@ -1816,7 +1806,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonContentControllerInitialized = true;
     _lessonContentControllerGeneration += 1;
     _lessonPreviewMarkdown =
-        previewMarkdown ?? _serializeLessonMarkdownFromController(controller);
+        previewMarkdown ??
+        _serializeLessonPreviewMarkdownFromController(controller);
     _attachControllerListener();
     _syncLessonEditorTestBridge();
     _lastLessonSelection = _clampEditorSelection(
@@ -1989,6 +1980,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  String _serializeLessonPreviewMarkdownFromController(
+    quill.QuillController controller,
+  ) {
+    return editor_to_markdown.editorDeltaToPassivePreviewMarkdown(
+      delta: controller.document.toDelta(),
+      apiFilesPathToStudioMediaUrl: const <String, String>{},
+      lessonMediaUrlToStudioMediaUrl: const <String, String>{},
+    );
+  }
+
   String _currentLessonPreviewMarkdown() {
     return _lessonPreviewMarkdown;
   }
@@ -2042,13 +2043,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _launchLessonPreviewUrl(String url) async {
-    final opened = await launchUrlString(
-      url,
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted && context.mounted) {
-      showSnack(context, 'Kunde inte öppna länken.');
-    }
+    await _launchLessonEditorUrl(url);
   }
 
   bool _isEditorAuthProtectedMediaPath(String path) {
@@ -2126,10 +2121,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final rawPath = rawUri?.path ?? rawUrl;
     final resolved = await _resolveLessonEditorLaunchUrl(rawUrl);
     if (resolved == null && _isEditorAuthProtectedMediaPath(rawPath)) {
-      logLegacyLessonMediaPathUsage(
-        event: 'LEGACY_LESSON_MEDIA_URL_USAGE',
+      logLegacyMediaBlocked(
         surface: 'studio_editor_link',
-        url: rawUrl,
+        mediaType: 'document',
+        rawSource: rawUrl,
+        reason: 'legacy_path',
       );
       if (mounted && context.mounted) {
         showSnack(context, 'Kunde inte öppna medielänken.');
@@ -3056,16 +3052,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  _lessonPreviewMode ? 'Förhandsgranskning' : 'Texteditor',
-                  style: titleStyle,
-                ),
-              ),
-              Wrap(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final modeChips = Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
@@ -3094,8 +3083,41 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           },
                   ),
                 ],
-              ),
-            ],
+              );
+              final stackHeader = constraints.maxWidth < 720;
+              if (stackHeader) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _lessonPreviewMode ? 'Förhandsgranskning' : 'Texteditor',
+                      style: titleStyle,
+                    ),
+                    const SizedBox(height: 8),
+                    modeChips,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _lessonPreviewMode ? 'Förhandsgranskning' : 'Texteditor',
+                      style: titleStyle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: modeChips,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           gap12,
           Expanded(

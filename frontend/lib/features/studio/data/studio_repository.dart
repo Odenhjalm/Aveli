@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
@@ -176,7 +177,7 @@ class StudioRepository {
     }
 
     final res = await _client.post<Map<String, dynamic>>(
-      '/api/media/previews',
+      ApiPaths.mediaPreviews,
       body: {'ids': normalizedIds},
     );
     final rawItems = res['items'] is Map ? res['items'] as Map : res;

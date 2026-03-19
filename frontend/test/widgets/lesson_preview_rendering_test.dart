@@ -462,10 +462,52 @@ void main() {
       _networkImageFinder('https://cdn.test/valid-image.webp'),
       findsOneWidget,
     );
-    expect(find.text('Media saknas eller stöds inte längre'), findsOneWidget);
+    expect(find.text('Media saknas eller kunde inte lösas'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Försök igen'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'unresolved lesson media settles into a stable placeholder without refetching on rebuild',
+    (tester) async {
+      final mediaRepository = _MockMediaRepository();
+      final pipelineRepository = _FakeMediaPipelineRepository({
+        'media-video-broken': () async =>
+            Future<String>.error(StateError('missing')),
+      });
+
+      when(() => mediaRepository.resolvePlaybackUrl(any())).thenAnswer(
+        (invocation) => invocation.positionalArguments.single as String,
+      );
+
+      await _pumpPreviewHarness(
+        tester,
+        mediaRepository: mediaRepository,
+        pipelineRepository: pipelineRepository,
+        markdown: 'Intro\n\n!video(media-video-broken)\n',
+        lessonMedia: [_lessonMediaItem('media-video-broken', 'video')],
+      );
+
+      await tester.pump();
+      for (var i = 0; i < 8; i += 1) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Media saknas eller kunde inte lösas'), findsOneWidget);
+      expect(pipelineRepository.lessonPlaybackCalls, 1);
+
+      final harnessState = tester.state<_PreviewHarnessState>(
+        find.byType(_PreviewHarness),
+      );
+      harnessState.rebuildSame();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Media saknas eller kunde inte lösas'), findsOneWidget);
+      expect(pipelineRepository.lessonPlaybackCalls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('switching preview lessons ignores stale media resolution work', (
     tester,

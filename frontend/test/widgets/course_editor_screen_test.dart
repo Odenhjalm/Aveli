@@ -792,6 +792,121 @@ void main() {
   });
 
   testWidgets(
+    'CourseEditorScreen keeps legacy raw media readable in preview mode while save stays strict',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1600, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      final telemetry = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) {
+          telemetry.add(message);
+        }
+      };
+      addTearDown(() => debugPrint = originalDebugPrint);
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown:
+            'Introtext\n\n'
+            '![](https://cdn.test/raw-image.webp)\n\n'
+            '<video src="/studio/media/legacy-video"></video>\n\n'
+            'Eftertext',
+        lessonMedia: const <Map<String, dynamic>>[],
+      );
+      _stubLessonSaveEcho(studioRepo);
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('stale_video_embed_placeholder')),
+        findsOneWidget,
+      );
+
+      final previewModeChip = find.byKey(
+        const ValueKey<String>('lesson_preview_mode_chip'),
+      );
+      await _pumpUntilFound(tester, previewModeChip, maxPumps: 30);
+      await tester.ensureVisible(previewModeChip);
+      await tester.tap(previewModeChip);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      _drainExpectedRenderFlexOverflow(tester);
+
+      expect(find.text('Äldre media blockerat'), findsOneWidget);
+      expect(
+        find.text('Den här lektionen innehåller äldre videoformat.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      expect(
+        telemetry.any((entry) => entry.contains('LEGACY_MEDIA_BLOCKED')),
+        isTrue,
+      );
+      expect(
+        telemetry.any(
+          (entry) => entry.contains('MISSING_LESSON_MEDIA_ID_RENDER'),
+        ),
+        isTrue,
+      );
+      debugPrint = originalDebugPrint;
+
+      final editModeChip = find.byKey(
+        const ValueKey<String>('lesson_edit_mode_chip'),
+      );
+      await tester.ensureVisible(editModeChip);
+      await tester.tap(editModeChip);
+      await tester.pump();
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+      );
+
+      editor_test_bridge.setCursor(0);
+      await tester.pump();
+      editor_test_bridge.insertText('X');
+      await tester.pump();
+
+      final saveButton = _filledButtonWithLabel('Spara lektionsinnehåll');
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pump();
+
+      expect(
+        find.textContaining('Canonical text contract violation'),
+        findsOneWidget,
+      );
+      verifyNever(
+        () => studioRepo.upsertLesson(
+          id: 'lesson-1',
+          courseId: 'course-1',
+          title: any(named: 'title'),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          position: any(named: 'position'),
+          isIntro: any(named: 'isIntro'),
+        ),
+      );
+    },
+  );
+
+  testWidgets(
     'CourseEditorScreen renders a passive stale video placeholder and keeps media controls visible',
     (tester) async {
       final studioRepo = _MockStudioRepository();

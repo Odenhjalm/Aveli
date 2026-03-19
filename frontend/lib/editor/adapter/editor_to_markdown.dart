@@ -173,6 +173,7 @@ String editorDeltaToCanonicalMarkdown({
   required quill_delta.Delta delta,
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
   Map<String, String> lessonMediaUrlToStudioMediaUrl = const <String, String>{},
+  bool enforceStorageContract = true,
 }) {
   final sanitized = sanitizeEditorDeltaForCanonicalMarkdown(delta);
   final markdownReady = _expandUnderlineAttributesForMarkdown(sanitized);
@@ -197,8 +198,24 @@ String editorDeltaToCanonicalMarkdown({
   }
 
   markdown = canonicalizeSupportedMarkdown(markdown);
-  final normalized = lesson_pipeline.normalizeLessonMarkdownForStorage(
-    markdown,
+  if (enforceStorageContract) {
+    final normalized = lesson_pipeline.normalizeLessonMarkdownForStorage(
+      markdown,
+    );
+    return _stripTerminalDocumentNewline(normalized);
+  }
+  return _stripTerminalDocumentNewline(markdown);
+}
+
+String editorDeltaToPassivePreviewMarkdown({
+  required quill_delta.Delta delta,
+  Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
+  Map<String, String> lessonMediaUrlToStudioMediaUrl = const <String, String>{},
+}) {
+  return editorDeltaToCanonicalMarkdown(
+    delta: delta,
+    apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
+    lessonMediaUrlToStudioMediaUrl: lessonMediaUrlToStudioMediaUrl,
+    enforceStorageContract: false,
   );
-  return _stripTerminalDocumentNewline(normalized);
 }

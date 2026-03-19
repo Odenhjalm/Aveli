@@ -561,27 +561,30 @@ class _MediaPlaceholder extends StatelessWidget {
         ? Icons.ondemand_video_outlined
         : Icons.audiotrack_outlined;
     final content = Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-          if (showRetry && onRetry != null) ...[
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Försök igen'),
-            ),
+            if (showRetry && onRetry != null) ...[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Försök igen'),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
 
@@ -605,7 +608,10 @@ class _MediaPlaceholder extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      child: SizedBox(height: 84, child: content),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 84),
+        child: content,
+      ),
     );
   }
 }

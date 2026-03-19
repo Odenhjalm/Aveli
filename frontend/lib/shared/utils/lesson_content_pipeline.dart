@@ -43,10 +43,12 @@ String videoBlockEmbedValueFromLessonMedia({required String lessonMediaId}) =>
 String imageBlockEmbedValueFromLessonMedia({
   required String lessonMediaId,
   String? alt,
+  String? src,
 }) => jsonEncode(<String, dynamic>{
   'lesson_media_id': lessonMediaId,
   'kind': 'image',
   if (alt != null && alt.trim().isNotEmpty) 'alt': alt.trim(),
+  if (src != null && src.trim().isNotEmpty) 'src': src.trim(),
 });
 
 const HtmlEscape _htmlAttributeEscape = HtmlEscape(HtmlEscapeMode.attribute);
@@ -186,6 +188,10 @@ bool _isStudioMediaUrl(String value) {
 /// source content. Callers can use this to render placeholders and allow
 /// manual replacement in the editor.
 bool isLegacyVideoEmbed(dynamic value) {
+  final lessonMediaId = lessonMediaIdFromEmbedValue(value);
+  if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
+    return false;
+  }
   final url =
       lessonMediaUrlFromEmbedValue(value) ??
       (value == null ? '' : value.toString());
@@ -283,6 +289,10 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
           );
           return;
         }
+        final url = lessonMediaUrlFromEmbedValue(embed.value.data);
+        if (url == null || url.isEmpty) return;
+        final escapedUrl = _htmlAttributeEscape.convert(url);
+        out.write('<audio src="$escapedUrl"></audio>');
       },
       quill.BlockEmbed.imageType: (embed, out) {
         final lessonMediaId = _lessonMediaIdFromEmbedValue(embed.value.data);
@@ -305,6 +315,10 @@ DeltaToMarkdown createLessonDeltaToMarkdown() {
           );
           return;
         }
+        final url = lessonMediaUrlFromEmbedValue(embed.value.data);
+        if (url == null || url.isEmpty) return;
+        final escapedUrl = _htmlAttributeEscape.convert(url);
+        out.write('<video src="$escapedUrl"></video>');
       },
     },
   );

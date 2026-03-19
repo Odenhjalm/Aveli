@@ -206,10 +206,11 @@ class _LessonContent extends ConsumerWidget {
 
     final parsedPath = parsed?.path ?? url;
     if (_isAuthProtectedLessonMediaPath(parsedPath)) {
-      logLegacyLessonMediaPathUsage(
-        event: 'LEGACY_LESSON_MEDIA_URL_USAGE',
+      logLegacyMediaBlocked(
         surface: 'lesson_page_link',
-        url: url,
+        mediaType: 'document',
+        rawSource: url,
+        reason: 'legacy_path',
       );
       if (context.mounted) {
         showSnack(context, 'Kunde inte öppna medielänken.');
@@ -676,8 +677,11 @@ typedef _LessonResolvedMediaPlaceholderBuilder =
     Widget Function(
       BuildContext context, {
       required bool isLoading,
+      required _LessonMediaResolveFailureState failureState,
       required VoidCallback onRetry,
     });
+
+enum _LessonMediaResolveFailureState { missingId, legacyBlocked, unresolved }
 
 class _LessonResolvedMedia extends ConsumerStatefulWidget {
   const _LessonResolvedMedia({
@@ -702,6 +706,8 @@ class _LessonResolvedMedia extends ConsumerStatefulWidget {
 class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
   late Future<String?> _resolvedUrlFuture;
   bool _loggedUnresolvedRender = false;
+  _LessonMediaResolveFailureState _failureState =
+      _LessonMediaResolveFailureState.unresolved;
 
   @override
   void initState() {
@@ -728,23 +734,28 @@ class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
     final lessonMediaId = widget.lessonMediaId?.trim() ?? '';
     if (lessonMediaId.isEmpty) {
       final rawSource = widget.initialUrl.trim();
+      _failureState = rawSource.isNotEmpty
+          ? _LessonMediaResolveFailureState.legacyBlocked
+          : _LessonMediaResolveFailureState.missingId;
+      logMissingLessonMediaIdRender(
+        surface: 'lesson_page_render',
+        mediaType: widget.mediaType,
+        rawSource: rawSource,
+      );
       if (rawSource.isNotEmpty) {
-        logMissingLessonMediaIdRender(
+        logLegacyMediaBlocked(
           surface: 'lesson_page_render',
           mediaType: widget.mediaType,
           rawSource: rawSource,
+          reason: _isAuthProtectedLessonMediaPath(rawSource)
+              ? 'legacy_path'
+              : 'raw_media_url',
         );
-        if (_isAuthProtectedLessonMediaPath(rawSource)) {
-          logLegacyLessonMediaPathUsage(
-            event: 'LEGACY_LESSON_MEDIA_URL_USAGE',
-            surface: 'lesson_page_render',
-            url: rawSource,
-          );
-        }
       }
       return SynchronousFuture<String?>(null);
     }
 
+    _failureState = _LessonMediaResolveFailureState.unresolved;
     final mediaRepo = ref.read(mediaRepositoryProvider);
     final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
     return resolveLessonMediaSignedPlaybackUrl(
@@ -778,6 +789,7 @@ class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
           return widget.placeholderBuilder(
             context,
             isLoading: true,
+            failureState: _failureState,
             onRetry: _retry,
           );
         }
@@ -799,6 +811,7 @@ class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
           return widget.placeholderBuilder(
             context,
             isLoading: false,
+            failureState: _failureState,
             onRetry: _retry,
           );
         }
@@ -838,11 +851,13 @@ class _LessonMediaResolvePlaceholder extends StatelessWidget {
   const _LessonMediaResolvePlaceholder({
     required this.mediaType,
     required this.isLoading,
+    required this.failureState,
     required this.onRetry,
   });
 
   final String mediaType;
   final bool isLoading;
+  final _LessonMediaResolveFailureState failureState;
   final VoidCallback onRetry;
 
   bool get _isVideo => mediaType == 'video';
@@ -874,14 +889,20 @@ class _LessonMediaResolvePlaceholder extends StatelessWidget {
           return 'Laddar media...';
       }
     }
+    if (failureState == _LessonMediaResolveFailureState.missingId) {
+      return 'Media saknar ID och kan inte visas';
+    }
+    if (failureState == _LessonMediaResolveFailureState.legacyBlocked) {
+      return 'Äldre media blockerat';
+    }
     switch (mediaType) {
       case 'image':
-        return 'Bilden kunde inte laddas.';
+        return 'Bilden kunde inte laddas';
       case 'audio':
       case 'video':
-        return 'Media saknas eller stöds inte längre';
+        return 'Media saknas eller kunde inte lösas';
       default:
-        return 'Mediet kunde inte laddas.';
+        return 'Mediet kunde inte laddas';
     }
   }
 
@@ -911,7 +932,8 @@ class _LessonMediaResolvePlaceholder extends StatelessWidget {
                   : theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          if (!isLoading) ...[
+          if (!isLoading &&
+              failureState == _LessonMediaResolveFailureState.unresolved) ...[
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: onRetry,
@@ -976,10 +998,16 @@ class _LessonImageEmbedBuilder implements quill.EmbedBuilder {
       mediaType: 'image',
       builder: (context, resolvedUrl) =>
           AveliLessonImage(src: resolvedUrl, alt: alt),
-      placeholderBuilder: (context, {required isLoading, required onRetry}) =>
-          _LessonMediaResolvePlaceholder(
+      placeholderBuilder:
+          (
+            context, {
+            required isLoading,
+            required failureState,
+            required onRetry,
+          }) => _LessonMediaResolvePlaceholder(
             mediaType: 'image',
             isLoading: isLoading,
+            failureState: failureState,
             onRetry: onRetry,
           ),
     );
@@ -1007,10 +1035,16 @@ class _LessonResolvedAudioPlayer extends StatelessWidget {
         kind: 'audio',
         preferLessonLayout: true,
       ),
-      placeholderBuilder: (context, {required isLoading, required onRetry}) =>
-          _LessonMediaResolvePlaceholder(
+      placeholderBuilder:
+          (
+            context, {
+            required isLoading,
+            required failureState,
+            required onRetry,
+          }) => _LessonMediaResolvePlaceholder(
             mediaType: 'audio',
             isLoading: isLoading,
+            failureState: failureState,
             onRetry: onRetry,
           ),
     );
@@ -1039,12 +1073,17 @@ class _LessonResolvedVideoPlayer extends StatelessWidget {
             preferLessonLayout: true,
           ),
           placeholderBuilder:
-              (context, {required isLoading, required onRetry}) =>
-                  _LessonMediaResolvePlaceholder(
-                    mediaType: 'video',
-                    isLoading: isLoading,
-                    onRetry: onRetry,
-                  ),
+              (
+                context, {
+                required isLoading,
+                required failureState,
+                required onRetry,
+              }) => _LessonMediaResolvePlaceholder(
+                mediaType: 'video',
+                isLoading: isLoading,
+                failureState: failureState,
+                onRetry: onRetry,
+              ),
         ),
       ),
     );
@@ -1150,6 +1189,17 @@ class _MediaItem extends ConsumerWidget {
         mediaType: item.kind,
         rawSource: item.preferredUrl,
       );
+      final rawSource = item.preferredUrl?.trim();
+      if (rawSource != null && rawSource.isNotEmpty) {
+        logLegacyMediaBlocked(
+          surface: 'lesson_page_trailing_media',
+          mediaType: item.kind,
+          rawSource: rawSource,
+          reason: _isAuthProtectedLessonMediaPath(rawSource)
+              ? 'legacy_path'
+              : 'raw_media_url',
+        );
+      }
       return ListTile(
         leading: Icon(_iconForKind()),
         title: Text(_fileName),
@@ -1170,12 +1220,17 @@ class _MediaItem extends ConsumerWidget {
           builder: (context, resolvedUrl) =>
               AveliLessonImage(src: resolvedUrl, alt: _fileName),
           placeholderBuilder:
-              (context, {required isLoading, required onRetry}) =>
-                  _LessonMediaResolvePlaceholder(
-                    mediaType: 'image',
-                    isLoading: isLoading,
-                    onRetry: onRetry,
-                  ),
+              (
+                context, {
+                required isLoading,
+                required failureState,
+                required onRetry,
+              }) => _LessonMediaResolvePlaceholder(
+                mediaType: 'image',
+                isLoading: isLoading,
+                failureState: failureState,
+                onRetry: onRetry,
+              ),
         ),
       );
     }

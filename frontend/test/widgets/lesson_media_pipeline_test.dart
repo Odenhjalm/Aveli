@@ -352,7 +352,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(AveliLessonImage), findsNothing);
-    expect(find.text('Bilden kunde inte laddas.'), findsOneWidget);
+    expect(find.text('Äldre media blockerat'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

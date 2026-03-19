@@ -26,7 +26,7 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final contractViolation = _mediaUploadUrlContractViolation(options);
+          final contractViolation = _mediaRequestContractViolation(options);
           if (contractViolation != null) {
             handler.reject(
               _contractViolationException(options, contractViolation),
@@ -259,6 +259,75 @@ class ApiClient {
       }
     }
 
+    return null;
+  }
+
+  static String? _mediaRequestContractViolation(RequestOptions options) {
+    return _mediaUploadUrlContractViolation(options) ??
+        _mediaPreviewContractViolation(options);
+  }
+
+  static String? _mediaPreviewContractViolation(RequestOptions options) {
+    final path = options.path;
+    final isLessonPlayback = path == ApiPaths.mediaLessonPlaybackUrl;
+    final isPreviewBatch = path == ApiPaths.mediaPreviews;
+    if (!isLessonPlayback && !isPreviewBatch) {
+      return null;
+    }
+
+    final method = options.method.toUpperCase();
+    if (method != 'POST') {
+      return 'Media preview contract violation: expected POST for $path (got $method).';
+    }
+
+    final headerContentType = options.headers[Headers.contentTypeHeader]
+        ?.toString();
+    final contentTypeRaw = (options.contentType ?? headerContentType ?? '')
+        .trim();
+    final contentType = contentTypeRaw.toLowerCase();
+    final isJson = contentType.startsWith('application/json');
+    if (!isJson) {
+      return 'Media preview contract violation: expected application/json for $path (got "$contentTypeRaw").';
+    }
+
+    final data = options.data;
+    if (data is FormData) {
+      return 'Media preview contract violation: FormData is not allowed for $path (expected JSON body).';
+    }
+    if (data is! Map) {
+      return 'Media preview contract violation: expected JSON object body for $path (got ${data.runtimeType}).';
+    }
+
+    final payload = Map<String, dynamic>.from(data);
+    if (isLessonPlayback) {
+      const allowedKeys = {'lesson_media_id'};
+      final extraKeys = payload.keys.where((key) => !allowedKeys.contains(key));
+      if (extraKeys.isNotEmpty) {
+        return 'Media preview contract violation: unexpected keys for $path: ${extraKeys.join(", ")}.';
+      }
+      final lessonMediaId = payload['lesson_media_id'];
+      if (lessonMediaId is! String || lessonMediaId.trim().isEmpty) {
+        return 'Media preview contract violation: lesson_media_id must be a non-empty string for $path.';
+      }
+      return null;
+    }
+
+    const allowedKeys = {'ids'};
+    final extraKeys = payload.keys.where((key) => !allowedKeys.contains(key));
+    if (extraKeys.isNotEmpty) {
+      return 'Media preview contract violation: unexpected keys for $path: ${extraKeys.join(", ")}.';
+    }
+
+    final ids = payload['ids'];
+    if (ids is! List) {
+      return 'Media preview contract violation: ids must be a JSON array for $path.';
+    }
+    final hasInvalidId = ids.any(
+      (value) => value is! String || value.trim().isEmpty,
+    );
+    if (hasInvalidId) {
+      return 'Media preview contract violation: ids must contain only non-empty strings for $path.';
+    }
     return null;
   }
 

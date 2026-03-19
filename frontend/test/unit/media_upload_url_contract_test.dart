@@ -9,6 +9,7 @@ import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
 
 void main() {
   test(
@@ -216,6 +217,17 @@ void main() {
       await repo.fetchLessonPlaybackUrl('lesson-media-1'),
       'https://cdn.example.com/canonical.mp3',
     );
+
+    final requests = adapter.requestsFor(ApiPaths.mediaLessonPlaybackUrl);
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'POST');
+    expect(
+      requests.single.contentType.toLowerCase().startsWith('application/json'),
+      true,
+    );
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'lesson_media_id': 'lesson-media-1',
+    });
   });
 
   test('lesson playback parsing rejects legacy URL fields', () async {
@@ -252,6 +264,62 @@ void main() {
       );
     }
   });
+
+  test(
+    'lesson preview batch requests use POST + JSON and match payloads',
+    () async {
+      final storage = _MemoryFlutterSecureStorage();
+      final tokens = TokenStorage(storage: storage);
+      await tokens.saveTokens(
+        accessToken: _jwtWithExpSeconds(4102444800),
+        refreshToken: 'rt-1',
+      );
+
+      final client = ApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        tokenStorage: tokens,
+      );
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == ApiPaths.mediaPreviews) {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'items': {
+                'lesson-media-1': {
+                  'media_type': 'image',
+                  'resolved_preview_url':
+                      'https://cdn.example.com/preview.webp',
+                },
+              },
+            },
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      client.raw.httpClientAdapter = adapter;
+      final repo = StudioRepository(client: client);
+
+      final previews = await repo.fetchLessonMediaPreviews([
+        'lesson-media-1',
+        'lesson-media-1',
+        'lesson-media-2',
+      ]);
+
+      expect(previews.keys, contains('lesson-media-1'));
+      final requests = adapter.requestsFor(ApiPaths.mediaPreviews);
+      expect(requests, hasLength(1));
+      expect(requests.single.method, 'POST');
+      expect(
+        requests.single.contentType.toLowerCase().startsWith(
+          'application/json',
+        ),
+        true,
+      );
+      expect(Map<String, dynamic>.from(requests.single.data as Map), {
+        'ids': <String>['lesson-media-1', 'lesson-media-2'],
+      });
+    },
+  );
 }
 
 ResponseBody _jsonResponse({
