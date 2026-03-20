@@ -1,4 +1,5 @@
-drop extension if exists "pg_net";
+supabase migration repair --status reverted 20260320075057
+supabase migration repair --status reverted 20260320075542drop extension if exists "pg_net";
 
 create schema if not exists "app";
 
@@ -2592,7 +2593,7 @@ begin
     raise exception 'Invalid event status transition';
   end if;
 
-  
+
   if new.status = 'cancelled' then
     return new;
   end if;
