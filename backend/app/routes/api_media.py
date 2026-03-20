@@ -88,9 +88,9 @@ async def _resolve_preview_url(
     lesson_media_id: str,
     kind: str,
     user_id: str,
-) -> str | None:
-    if kind not in {"image", "video"}:
-        return None
+) -> tuple[str | None, str | None]:
+    if kind not in {"image", "video", "audio"}:
+        return None, "unsupported_media_type"
     try:
         resolved = await lesson_playback_service.resolve_lesson_media_playback(
             lesson_media_id=lesson_media_id,
@@ -103,7 +103,7 @@ async def _resolve_preview_url(
             kind,
             exc.status_code,
         )
-        return None
+        return None, "unresolvable"
 
     resolved_url = _normalized_preview_string(
         resolved.get("playback_url") or resolved.get("url")
@@ -114,14 +114,67 @@ async def _resolve_preview_url(
             lesson_media_id,
             kind,
         )
-        return None
+        return None, "unresolvable"
 
     logger.info(
         "LESSON_MEDIA_PREVIEW_BACKEND_RESOLUTION lesson_media_id=%s kind=%s",
         lesson_media_id,
         kind,
     )
-    return resolved_url
+    return resolved_url, None
+
+
+def _preview_duration_seconds(item: dict[str, object]) -> int | None:
+    duration_seconds = item.get("duration_seconds")
+    if isinstance(duration_seconds, (int, float)):
+        return int(duration_seconds)
+    return None
+
+
+def _preview_failure_item(
+    *,
+    media_type: str = "",
+    duration_seconds: int | None = None,
+    file_name: str | None = None,
+    failure_reason: str,
+) -> schemas.MediaPreviewItem:
+    return schemas.MediaPreviewItem(
+        media_type=media_type,
+        authoritative_editor_ready=False,
+        resolved_preview_url=None,
+        duration_seconds=duration_seconds,
+        file_name=file_name,
+        failure_reason=failure_reason,
+    )
+
+
+async def _build_preview_item(
+    *,
+    lesson_media_id: str,
+    item: dict[str, object],
+    user_id: str,
+) -> schemas.MediaPreviewItem:
+    kind = (_normalized_preview_string(item.get("kind")) or "").lower()
+    duration_seconds = _preview_duration_seconds(item)
+    file_name = _preview_file_name(item)
+
+    resolved_preview_url, failure_reason = await _resolve_preview_url(
+        lesson_media_id=lesson_media_id,
+        kind=kind,
+        user_id=user_id,
+    )
+    authoritative_editor_ready = failure_reason is None
+
+    return schemas.MediaPreviewItem(
+        media_type=kind,
+        authoritative_editor_ready=authoritative_editor_ready,
+        resolved_preview_url=(
+            resolved_preview_url if kind in {"image", "video"} else None
+        ),
+        duration_seconds=duration_seconds,
+        file_name=file_name,
+        failure_reason=failure_reason,
+    )
 
 
 async def _canonical_lesson_media_row(
@@ -1002,41 +1055,75 @@ async def request_media_previews(
     current: TeacherUser,
 ):
     requested_ids: list[str] = []
+    valid_requested_ids: list[str] = []
     seen_ids: set[str] = set()
+    preview_items: dict[str, schemas.MediaPreviewItem] = {}
     for media_id in payload.ids:
-        media_id_str = str(media_id)
-        if media_id_str in seen_ids:
+        media_id_str = _normalized_preview_string(media_id)
+        if media_id_str is None or media_id_str in seen_ids:
             continue
         seen_ids.add(media_id_str)
         requested_ids.append(media_id_str)
+        try:
+            UUID(media_id_str)
+        except (TypeError, ValueError):
+            preview_items[media_id_str] = _preview_failure_item(
+                failure_reason="invalid_id"
+            )
+            continue
+        valid_requested_ids.append(media_id_str)
 
     if not requested_ids:
         return schemas.MediaPreviewBatchResponse(items={})
 
-    rows = await courses_repo.list_lesson_media_by_ids(requested_ids)
-    if not rows:
-        return schemas.MediaPreviewBatchResponse(items={})
+    if not valid_requested_ids:
+        return schemas.MediaPreviewBatchResponse(items=preview_items)
+
+    rows = await courses_repo.list_lesson_media_by_ids(valid_requested_ids)
+    rows_by_id = {
+        lesson_media_id: row
+        for row in rows
+        if (lesson_media_id := _normalized_preview_string(row.get("id"))) is not None
+    }
 
     requested_by_lesson: dict[str, set[str]] = {}
-    for row in rows:
+    for lesson_media_id in valid_requested_ids:
+        row = rows_by_id.get(lesson_media_id)
+        if row is None:
+            preview_items[lesson_media_id] = _preview_failure_item(
+                failure_reason="not_found"
+            )
+            continue
         lesson_id = _normalized_preview_string(row.get("lesson_id"))
-        lesson_media_id = _normalized_preview_string(row.get("id"))
         if not lesson_id or not lesson_media_id:
+            preview_items[lesson_media_id] = _preview_failure_item(
+                failure_reason="not_found"
+            )
             continue
         requested_by_lesson.setdefault(lesson_id, set()).add(lesson_media_id)
 
     for lesson_id in requested_by_lesson:
         _, course_id = await courses_service.lesson_course_ids(lesson_id)
         if not course_id or not await models.is_course_owner(current["id"], course_id):
-            logger.warning(
-                "Permission denied: course owner required user_id=%s lesson_id=%s",
-                str(current["id"]),
-                lesson_id,
-            )
-            raise HTTPException(status_code=403, detail="Not course owner")
+            for lesson_media_id in requested_by_lesson[lesson_id]:
+                preview_items[lesson_media_id] = _preview_failure_item(
+                    failure_reason="unavailable"
+                )
+            continue
 
-    preview_items: dict[str, schemas.MediaPreviewItem] = {}
     for lesson_id, lesson_media_ids in requested_by_lesson.items():
+        if any(
+            preview_items.get(lesson_media_id) is not None
+            for lesson_media_id in lesson_media_ids
+        ):
+            unresolved_ids = {
+                lesson_media_id
+                for lesson_media_id in lesson_media_ids
+                if lesson_media_id not in preview_items
+            }
+            if not unresolved_ids:
+                continue
+            lesson_media_ids = unresolved_ids
         lesson_media = await courses_service.list_lesson_media(
             lesson_id,
             mode="editor_preview",
@@ -1045,27 +1132,22 @@ async def request_media_previews(
         for lesson_media_id in lesson_media_ids:
             item = by_id.get(lesson_media_id)
             if item is None:
+                preview_items[lesson_media_id] = _preview_failure_item(
+                    failure_reason="not_found"
+                )
                 continue
-            item = dict(item)
-            kind = (_normalized_preview_string(item.get("kind")) or "").lower()
-            resolved_preview_url = await _resolve_preview_url(
+            preview_items[lesson_media_id] = await _build_preview_item(
                 lesson_media_id=lesson_media_id,
-                kind=kind,
+                item=dict(item),
                 user_id=str(current["id"]),
             )
-            duration_seconds = item.get("duration_seconds")
-            preview_items[lesson_media_id] = schemas.MediaPreviewItem(
-                media_type=_normalized_preview_string(item.get("kind")) or "",
-                resolved_preview_url=resolved_preview_url,
-                duration_seconds=(
-                    int(duration_seconds)
-                    if isinstance(duration_seconds, (int, float))
-                    else None
-                ),
-                file_name=_preview_file_name(item),
-            )
 
-    return schemas.MediaPreviewBatchResponse(items=preview_items)
+    ordered_items = {
+        lesson_media_id: preview_items[lesson_media_id]
+        for lesson_media_id in requested_ids
+        if lesson_media_id in preview_items
+    }
+    return schemas.MediaPreviewBatchResponse(items=ordered_items)
 
 
 @router.post("/playback", response_model=RuntimePlaybackResponse)

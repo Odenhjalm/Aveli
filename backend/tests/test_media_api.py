@@ -992,6 +992,13 @@ async def test_previews_and_lesson_playback_share_backend_resolution(
         video_id = str(uuid.uuid4())
         audio_id = str(uuid.uuid4())
 
+        async def fake_list_lesson_media_by_ids(candidate_ids: list[str]):
+            return [
+                {"id": image_id, "lesson_id": lesson_id},
+                {"id": video_id, "lesson_id": lesson_id},
+                {"id": audio_id, "lesson_id": lesson_id},
+            ]
+
         async def fake_lesson_course_ids(candidate_lesson_id: str):
             assert candidate_lesson_id == lesson_id
             return None, course_id
@@ -1033,6 +1040,12 @@ async def test_previews_and_lesson_playback_share_backend_resolution(
             }
 
         monkeypatch.setattr(
+            api_media.courses_repo,
+            "list_lesson_media_by_ids",
+            fake_list_lesson_media_by_ids,
+            raising=True,
+        )
+        monkeypatch.setattr(
             api_media.courses_service,
             "lesson_course_ids",
             fake_lesson_course_ids,
@@ -1064,12 +1077,15 @@ async def test_previews_and_lesson_playback_share_backend_resolution(
         )
         assert preview_resp.status_code == 200, preview_resp.text
         preview_items = preview_resp.json()["items"]
+        assert preview_items[image_id]["authoritative_editor_ready"] is True
         assert preview_items[image_id]["resolved_preview_url"] == (
             f"https://stream.local/{image_id}.bin"
         )
+        assert preview_items[video_id]["authoritative_editor_ready"] is True
         assert preview_items[video_id]["resolved_preview_url"] == (
             f"https://stream.local/{video_id}.bin"
         )
+        assert preview_items[audio_id]["authoritative_editor_ready"] is True
         assert preview_items[audio_id]["resolved_preview_url"] is None
         assert "thumbnail_url" not in preview_items[image_id]
         assert "poster_frame" not in preview_items[image_id]
@@ -1084,6 +1100,101 @@ async def test_previews_and_lesson_playback_share_backend_resolution(
             preview_items[image_id]["resolved_preview_url"]
             == playback_resp.json()["playback_url"]
         )
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_media_previews_isolate_malformed_and_missing_ids(
+    async_client, monkeypatch
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        lesson_id = str(uuid.uuid4())
+        course_id = str(uuid.uuid4())
+        valid_id = str(uuid.uuid4())
+        missing_id = str(uuid.uuid4())
+        malformed_id = "not-a-uuid"
+
+        async def fake_list_lesson_media_by_ids(candidate_ids: list[str]):
+            assert valid_id in candidate_ids
+            assert missing_id in candidate_ids
+            return [{"id": valid_id, "lesson_id": lesson_id}]
+
+        async def fake_lesson_course_ids(candidate_lesson_id: str):
+            assert candidate_lesson_id == lesson_id
+            return None, course_id
+
+        async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
+            assert candidate_user_id == user_id
+            assert candidate_course_id == course_id
+            return True
+
+        async def fake_list_lesson_media(candidate_lesson_id: str, mode: str = "editor_preview"):
+            assert candidate_lesson_id == lesson_id
+            assert mode == "editor_preview"
+            return [
+                {
+                    "id": valid_id,
+                    "lesson_id": lesson_id,
+                    "kind": "image",
+                    "original_name": "valid.png",
+                }
+            ]
+
+        async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+            assert lesson_media_id == valid_id
+            assert user_id
+            return {
+                "url": f"https://stream.local/{lesson_media_id}.bin",
+                "playback_url": f"https://stream.local/{lesson_media_id}.bin",
+            }
+
+        monkeypatch.setattr(
+            api_media.courses_repo,
+            "list_lesson_media_by_ids",
+            fake_list_lesson_media_by_ids,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.courses_service,
+            "lesson_course_ids",
+            fake_lesson_course_ids,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.models,
+            "is_course_owner",
+            fake_is_course_owner,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.courses_service,
+            "list_lesson_media",
+            fake_list_lesson_media,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.lesson_playback_service,
+            "resolve_lesson_media_playback",
+            fake_resolve_lesson_media_playback,
+            raising=True,
+        )
+
+        preview_resp = await async_client.post(
+            "/api/media/previews",
+            headers=headers,
+            json={"ids": [valid_id, malformed_id, missing_id]},
+        )
+        assert preview_resp.status_code == 200, preview_resp.text
+        preview_items = preview_resp.json()["items"]
+        assert preview_items[valid_id]["authoritative_editor_ready"] is True
+        assert preview_items[valid_id]["resolved_preview_url"] == (
+            f"https://stream.local/{valid_id}.bin"
+        )
+        assert preview_items[malformed_id]["authoritative_editor_ready"] is False
+        assert preview_items[malformed_id]["failure_reason"] == "invalid_id"
+        assert preview_items[missing_id]["authoritative_editor_ready"] is False
+        assert preview_items[missing_id]["failure_reason"] == "not_found"
     finally:
         await cleanup_user(user_id)
 

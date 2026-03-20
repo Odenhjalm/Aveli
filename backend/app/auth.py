@@ -12,9 +12,24 @@ from .config import settings
 from .utils.supabase_jwt import SupabaseJwtError, verify_supabase_access_token
 from .db import get_conn
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt_sha256", "bcrypt"],
+    deprecated="auto",
+)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_optional_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+
+def _configure_password_backends() -> None:
+    # Prefer os_crypt when available so long passwords remain safe even if the
+    # pyca/bcrypt backend rejects >72-byte secrets.
+    for scheme in ("bcrypt_sha256", "bcrypt"):
+        handler = pwd_context.handler(scheme)
+        if handler.has_backend("os_crypt"):
+            handler.set_backend("os_crypt")
+
+
+_configure_password_backends()
 
 
 def hash_password(password: str) -> str:

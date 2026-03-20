@@ -669,14 +669,16 @@ class MediaSignResponse(BaseModel):
 
 
 class MediaPreviewBatchRequest(BaseModel):
-    ids: list[UUID]
+    ids: list[str]
 
 
 class MediaPreviewItem(BaseModel):
     media_type: str
+    authoritative_editor_ready: bool = False
     resolved_preview_url: str | None = None
     duration_seconds: int | None = None
     file_name: str | None = None
+    failure_reason: str | None = None
 
 
 class MediaPreviewBatchResponse(BaseModel):
