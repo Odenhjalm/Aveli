@@ -120,4 +120,56 @@ void main() {
       );
     },
   );
+
+  test(
+    'preview cache preserves successful ids when a sibling id fails in the same batch',
+    () async {
+      final studioRepository = _MockStudioRepository();
+      when(() => studioRepository.fetchLessonMediaPreviews(any())).thenAnswer((
+        _,
+      ) async {
+        return {
+          'media-valid': {
+            'media_type': 'image',
+            'authoritative_editor_ready': true,
+            'resolved_preview_url': 'https://cdn.test/media-valid.webp',
+            'file_name': 'valid.png',
+          },
+          'media-invalid': {
+            'media_type': 'image',
+            'authoritative_editor_ready': false,
+            'file_name': 'broken.png',
+            'failure_reason': 'not_found',
+          },
+        };
+      });
+
+      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      cache.primeFromLessonMedia([
+        {'id': 'media-valid', 'kind': 'image', 'original_name': 'valid.png'},
+        {'id': 'media-invalid', 'kind': 'image', 'original_name': 'broken.png'},
+      ]);
+
+      final previews = await Future.wait([
+        cache.getPreview('media-valid'),
+        cache.getPreview('media-invalid'),
+      ]);
+
+      expect(previews[0]?.visualUrl, 'https://cdn.test/media-valid.webp');
+      expect(previews[0]?.authoritativeEditorReady, isTrue);
+      expect(previews[1]?.visualUrl, isNull);
+      expect(previews[1]?.authoritativeEditorReady, isFalse);
+      expect(
+        cache.peek('media-valid')?.visualUrl,
+        'https://cdn.test/media-valid.webp',
+      );
+      expect(cache.peek('media-invalid')?.authoritativeEditorReady, isFalse);
+      verify(
+        () => studioRepository.fetchLessonMediaPreviews([
+          'media-valid',
+          'media-invalid',
+        ]),
+      ).called(1);
+    },
+  );
 }

@@ -319,10 +319,6 @@ class _StaleVideoEmbedPlaceholder extends StatelessWidget {
   }
 }
 
-bool _isEditorPreviewBlocked(Map<String, dynamic> media) {
-  return safeString(media, 'id') == null;
-}
-
 bool _isVideoMedia(Map<String, dynamic> media) {
   final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
   if (kind == 'video') return true;
@@ -330,12 +326,6 @@ bool _isVideoMedia(Map<String, dynamic> media) {
       .trim()
       .toLowerCase();
   return contentType.startsWith('video/');
-}
-
-bool _isVideoInsertBlockedForEditor(Map<String, dynamic> media) {
-  return _isVideoMedia(media) &&
-      (_isEditorPreviewBlocked(media) ||
-          safeBool(media, 'resolvable_for_editor') == false);
 }
 
 enum _UploadKind { image, video, audio, pdf }
@@ -1424,7 +1414,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return;
       }
       final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
-      ref.read(lessonMediaPreviewCacheProvider).primeFromLessonMedia(media);
+      _syncLessonMediaPreviewCache(
+        previousMedia: previousMedia,
+        nextMedia: media,
+      );
       setState(() {
         _lessonMedia = media;
         _lessonMediaLessonId = selectedLessonId;
@@ -1437,6 +1430,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         lessonId: selectedLessonId,
         previousMedia: previousMedia,
         nextMedia: media,
+      );
+      unawaited(
+        _refreshLessonMediaAuthoritativeState(
+          lessonId: selectedLessonId,
+          requestId: requestId,
+          mediaItems: media,
+        ),
       );
     } catch (e, stackTrace) {
       if (_isStaleRequest(
@@ -1526,7 +1526,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return;
       }
       final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
-      ref.read(lessonMediaPreviewCacheProvider).primeFromLessonMedia(media);
       if (!mounted) return;
 
       List<Map<String, dynamic>> merged = const <Map<String, dynamic>>[];
@@ -1554,10 +1553,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lessonMediaLessonId = lessonId;
         _mediaLoadError = null;
       });
+      _syncLessonMediaPreviewCache(
+        previousMedia: previousMedia,
+        nextMedia: merged,
+      );
       _invalidateCurrentLessonEditorMediaHydration(
         lessonId: lessonId,
         previousMedia: previousMedia,
         nextMedia: merged,
+      );
+      unawaited(
+        _refreshLessonMediaAuthoritativeState(
+          lessonId: lessonId,
+          requestId: requestId,
+          mediaItems: merged,
+        ),
       );
     } catch (_) {
       // Silent refresh failures shouldn't block the editor.
@@ -1934,6 +1944,130 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return items;
   }
 
+  bool _requiresAuthoritativeEditorReadiness(Map<String, dynamic> media) {
+    final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
+    if (kind == 'image' || kind == 'video' || kind == 'audio') {
+      return true;
+    }
+    final contentType = ((media['content_type'] as String?) ?? '')
+        .trim()
+        .toLowerCase();
+    return contentType.startsWith('image/') ||
+        contentType.startsWith('video/') ||
+        contentType.startsWith('audio/');
+  }
+
+  LessonMediaPreviewData? _authoritativePreviewForMedia(
+    Map<String, dynamic> media,
+  ) {
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null) return null;
+    return ref.read(lessonMediaPreviewCacheProvider).peek(lessonMediaId);
+  }
+
+  bool _isAuthoritativelyReadyForEditor(Map<String, dynamic> media) {
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null) return false;
+    if (!_requiresAuthoritativeEditorReadiness(media)) {
+      return true;
+    }
+    return _authoritativePreviewForMedia(media)?.authoritativeEditorReady ==
+        true;
+  }
+
+  bool _canInsertLessonMedia(Map<String, dynamic> media) {
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null || lessonMediaId.trim().isEmpty) {
+      return false;
+    }
+    if (_isWavMedia(media)) {
+      return false;
+    }
+    if (_isDocumentMedia(media)) {
+      return true;
+    }
+    return _isAuthoritativelyReadyForEditor(media);
+  }
+
+  bool _canPreviewLessonMedia({
+    required Map<String, dynamic> media,
+    required bool hasInvalidPipelineReference,
+    required bool isWavMedia,
+    required bool canPipelinePlay,
+  }) {
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null || lessonMediaId.trim().isEmpty) {
+      return false;
+    }
+    if (hasInvalidPipelineReference || isWavMedia) {
+      return false;
+    }
+    if (_requiresAuthoritativeEditorReadiness(media) &&
+        !_isAuthoritativelyReadyForEditor(media)) {
+      return false;
+    }
+    if (_isPipelineMedia(media) && !canPipelinePlay) {
+      return false;
+    }
+    return true;
+  }
+
+  Set<String> _lessonMediaIdsFromRows(
+    Iterable<Map<String, dynamic>> mediaItems,
+  ) {
+    return mediaItems
+        .map((media) => safeString(media, 'id'))
+        .whereType<String>()
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  void _syncLessonMediaPreviewCache({
+    required List<Map<String, dynamic>> previousMedia,
+    required List<Map<String, dynamic>> nextMedia,
+  }) {
+    final cache = ref.read(lessonMediaPreviewCacheProvider);
+    if (_didLessonMediaPreviewStateChange(previousMedia, nextMedia)) {
+      cache.invalidate(
+        _lessonMediaIdsFromRows(<Map<String, dynamic>>[
+          ...previousMedia,
+          ...nextMedia,
+        ]),
+      );
+    }
+    cache.primeFromLessonMedia(nextMedia);
+  }
+
+  Future<void> _refreshLessonMediaAuthoritativeState({
+    required String lessonId,
+    required int requestId,
+    required Iterable<Map<String, dynamic>> mediaItems,
+  }) async {
+    final ids = mediaItems
+        .where(_requiresAuthoritativeEditorReadiness)
+        .map((media) => safeString(media, 'id'))
+        .whereType<String>()
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (ids.isEmpty) return;
+
+    await ref.read(lessonMediaPreviewCacheProvider).prefetch(ids);
+    if (_isStaleRequest(
+      requestId: requestId,
+      currentId: _lessonMediaRequestId,
+      courseId: _selectedCourseId,
+      lessonId: lessonId,
+    )) {
+      return;
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   bool _didLessonMediaPreviewStateChange(
     List<Map<String, dynamic>> previousMedia,
     List<Map<String, dynamic>> nextMedia,
@@ -1956,7 +2090,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       safeString(media, 'fileName') ?? '',
       safeString(media, 'original_name') ?? '',
       safeString(media, 'media_state') ?? '',
-      '${safeBool(media, 'resolvable_for_editor') ?? true}',
     ].join('|');
   }
 
@@ -3342,12 +3475,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final media = video;
     if (media == null) return null;
-    final previewBlocked = _isEditorPreviewBlocked(media);
     final label = safeString(media, 'title') ?? _fileNameFromMedia(media);
     final isIntro = media['is_intro'] == true || _lessonIntro;
-    final playbackUrlFuture = previewBlocked
-        ? SynchronousFuture<String?>(null)
-        : _resolveLessonMediaDeliveryUrlForMedia(media);
+    final playbackUrl = _normalizeVideoPlaybackUrl(
+      _authoritativePreviewForMedia(media)?.visualUrl,
+    );
 
     return _SectionCard(
       title: 'Lektionsvideo',
@@ -3356,20 +3488,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         children: [
           ClipRRect(
             borderRadius: br16,
-            child: FutureBuilder<String?>(
-              future: playbackUrlFuture,
-              builder: (context, snapshot) {
-                final normalizedUrl = _normalizeVideoPlaybackUrl(snapshot.data);
-                if (normalizedUrl == null) {
-                  return _buildInvalidVideoPlaceholder(context);
-                }
-                return AveliLessonMediaPlayer(
-                  playbackUrl: normalizedUrl,
-                  title: label,
-                  kind: 'video',
-                );
-              },
-            ),
+            child: playbackUrl == null
+                ? _buildInvalidVideoPlaceholder(context)
+                : AveliLessonMediaPlayer(
+                    playbackUrl: playbackUrl,
+                    title: label,
+                    kind: 'video',
+                  ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -3881,7 +4006,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final updated = {..._lessonMedia[index], ...patch};
     final copy = [..._lessonMedia];
     copy[index] = updated;
-    ref.read(lessonMediaPreviewCacheProvider).primeFromLessonMedia(copy);
+    _syncLessonMediaPreviewCache(previousMedia: previousMedia, nextMedia: copy);
     setState(() => _lessonMedia = copy);
     final lessonId = _selectedLessonId;
     if (lessonId != null) {
@@ -3970,7 +4095,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
         final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
         List<Map<String, dynamic>> nextMedia = const <Map<String, dynamic>>[];
-        ref.read(lessonMediaPreviewCacheProvider).primeFromLessonMedia([media]);
         setState(() {
           final id = media['id'];
           if (id is String) {
@@ -3988,6 +4112,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             _lessonMedia = nextMedia;
           }
         });
+        _syncLessonMediaPreviewCache(
+          previousMedia: previousMedia,
+          nextMedia: nextMedia,
+        );
         _invalidateCurrentLessonEditorMediaHydration(
           lessonId: lessonId,
           previousMedia: previousMedia,
@@ -4263,11 +4391,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return false;
     }
-    if (_isVideoInsertBlockedForEditor(media)) {
+    if (!_canInsertLessonMedia(media)) {
       if (mounted && context.mounted) {
         showSnack(
           context,
-          'Videon kan inte bäddas in eftersom den inte kan laddas i editorn.',
+          'Mediet kan inte bäddas in eftersom det inte är redo i editorn.',
         );
       }
       return false;
@@ -4712,6 +4840,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
       }
       return;
+    }
+
+    final requiresAuthoritativeReadiness =
+        contentType.startsWith('video/') ||
+        contentType.startsWith('audio/') ||
+        contentType.startsWith('image/');
+    if (requiresAuthoritativeReadiness) {
+      await ref.read(lessonMediaPreviewCacheProvider).prefetch([
+        authoritativeUploadId,
+      ]);
+      if (!mounted || !_isEditorTokenValid(token)) return;
+      setState(() {});
     }
 
     var inserted = false;
@@ -6336,9 +6476,33 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             isPipeline &&
                                             (pipelineStateFromDb == null ||
                                                 pipelineStateFromDb.isEmpty);
+                                        final authoritativePreview =
+                                            _authoritativePreviewForMedia(
+                                              media,
+                                            );
+                                        final authoritativeReady =
+                                            authoritativePreview
+                                                ?.authoritativeEditorReady;
+                                        final usesAuthoritativeStatus =
+                                            _requiresAuthoritativeEditorReadiness(
+                                              media,
+                                            );
                                         final statusKey =
                                             hasInvalidPipelineReference
                                             ? 'failed'
+                                            : usesAuthoritativeStatus
+                                            ? authoritativeReady == true
+                                                  ? 'ready'
+                                                  : authoritativeReady == false
+                                                  ? 'failed'
+                                                  : isPipeline &&
+                                                        pipelineState != null &&
+                                                        pipelineState !=
+                                                            'ready' &&
+                                                        pipelineState !=
+                                                            'failed'
+                                                  ? 'processing'
+                                                  : 'checking'
                                             : isPipeline
                                             ? pipelineState == 'ready'
                                                   ? 'ready'
@@ -6358,24 +6522,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             isAudio;
                                         final mediaId = safeString(media, 'id');
                                         final canPreview =
-                                            mediaId != null &&
-                                            !hasInvalidPipelineReference &&
-                                            !isWavMedia &&
-                                            safeBool(
-                                                  media,
-                                                  'resolvable_for_editor',
-                                                ) !=
-                                                false &&
-                                            (!isPipeline || canPipelinePlay);
+                                            _canPreviewLessonMedia(
+                                              media: media,
+                                              hasInvalidPipelineReference:
+                                                  hasInvalidPipelineReference,
+                                              isWavMedia: isWavMedia,
+                                              canPipelinePlay: canPipelinePlay,
+                                            );
                                         final fileName = _fileNameFromMedia(
                                           media,
                                         );
                                         final canInsertIntoLesson =
                                             !hasInvalidPipelineReference &&
                                             !isWavMedia &&
-                                            !_isVideoInsertBlockedForEditor(
-                                              media,
-                                            );
+                                            _canInsertLessonMedia(media);
                                         final isDocument = _isDocumentMedia(
                                           media,
                                         );

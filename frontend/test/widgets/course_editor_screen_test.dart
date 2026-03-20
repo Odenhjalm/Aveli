@@ -433,7 +433,10 @@ void _stubMultiLessonEditorData(
       return fetchLessonMediaPreviews(ids);
     }
     return Future<Map<String, Map<String, dynamic>>>.value(
-      <String, Map<String, dynamic>>{},
+      _defaultPreviewBatchForLessonMedia(
+        ids,
+        lessonMediaByLessonId.values.expand((items) => items),
+      ),
     );
   });
 
@@ -525,7 +528,7 @@ void _stubSingleLessonEditorData(
       return fetchLessonMediaPreviews(ids);
     }
     return Future<Map<String, Map<String, dynamic>>>.value(
-      <String, Map<String, dynamic>>{},
+      _defaultPreviewBatchForLessonMedia(ids, lessonMedia),
     );
   });
 
@@ -559,6 +562,37 @@ void _stubSingleLessonEditorData(
   when(
     () => coursesRepo.fetchCourseDetailBySlug(any()),
   ).thenAnswer((_) async => courseDetail);
+}
+
+Map<String, Map<String, dynamic>> _defaultPreviewBatchForLessonMedia(
+  List<String> ids,
+  Iterable<Map<String, dynamic>> lessonMedia,
+) {
+  final byId = <String, Map<String, dynamic>>{
+    for (final media in lessonMedia)
+      if (media['id'] is String) media['id'] as String: media,
+  };
+  final batch = <String, Map<String, dynamic>>{};
+  for (final id in ids) {
+    final media = byId[id];
+    if (media == null) continue;
+    final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
+    final previewUrl =
+        media['resolved_preview_url'] as String? ??
+        media['preferredUrl'] as String? ??
+        media['download_url'] as String? ??
+        media['downloadUrl'] as String?;
+    batch[id] = {
+      'media_type': kind,
+      'authoritative_editor_ready':
+          kind == 'image' || kind == 'video' || kind == 'audio',
+      if ((kind == 'image' || kind == 'video') && previewUrl != null)
+        'resolved_preview_url': previewUrl,
+      'file_name':
+          media['file_name'] ?? media['fileName'] ?? media['original_name'],
+    };
+  }
+  return batch;
 }
 
 Future<void> _pumpEditorBootstrap(WidgetTester tester) async {
@@ -3413,6 +3447,85 @@ void main() {
   });
 
   testWidgets(
+    'studio blocks image audio and video insertion until backend authority resolves them',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: const [
+          {
+            'id': 'media-image-1',
+            'kind': 'image',
+            'storage_path': 'lessons/lesson-1/images/media-image-1.webp',
+            'storage_bucket': 'public-media',
+            'download_url': 'https://cdn.test/media-image-1.webp',
+            'original_name': 'media-image-1.webp',
+            'position': 1,
+            'resolvable_for_editor': true,
+          },
+          {
+            'id': 'media-audio-1',
+            'kind': 'audio',
+            'storage_path': 'lessons/lesson-1/audio/media-audio-1.mp3',
+            'storage_bucket': 'public-media',
+            'download_url': 'https://cdn.test/media-audio-1.mp3',
+            'original_name': 'media-audio-1.mp3',
+            'position': 2,
+            'resolvable_for_editor': true,
+          },
+          {
+            'id': 'media-video-1',
+            'kind': 'video',
+            'storage_path': 'lessons/lesson-1/video/media-video-1.mp4',
+            'storage_bucket': 'public-media',
+            'download_url': 'https://cdn.test/media-video-1.mp4',
+            'original_name': 'media-video-1.mp4',
+            'content_type': 'video/mp4',
+            'position': 3,
+            'resolvable_for_editor': true,
+          },
+        ],
+        fetchLessonMediaPreviews: (ids) async => {
+          for (final id in ids)
+            id: {
+              'media_type': id.contains('image')
+                  ? 'image'
+                  : id.contains('audio')
+                  ? 'audio'
+                  : 'video',
+              'authoritative_editor_ready': false,
+              'failure_reason': 'unresolvable',
+            },
+        },
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+      await tester.pump();
+      await tester.pump();
+
+      final insertButtons = tester
+          .widgetList<IconButton>(_iconButtonWithTooltip('Infoga i lektionen'))
+          .toList(growable: false);
+      expect(insertButtons, hasLength(3));
+      for (final button in insertButtons) {
+        expect(button.onPressed, isNull);
+      }
+      verify(() => studioRepo.fetchLessonMediaPreviews(any())).called(1);
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
     'queued upload success does not insert duplicate image already embedded in lesson',
     (tester) async {
       final studioRepo = _MockStudioRepository();
@@ -4142,12 +4255,11 @@ void main() {
   );
 
   testWidgets(
-    'editor preview resolves lesson video via lesson playback authority',
+    'editor preview resolves lesson video from cached authority without replaying on rebuilds',
     (tester) async {
       final studioRepo = _MockStudioRepository();
       final coursesRepo = _MockCoursesRepository();
-      final mediaRepository = _MockMediaRepository();
-      final mediaPipelineRepository = _MockMediaPipelineRepository();
+      var previewCallCount = 0;
 
       _stubSingleLessonEditorData(
         studioRepo,
@@ -4164,32 +4276,31 @@ void main() {
             'position': 1,
           },
         ],
-      );
-
-      when(() => mediaRepository.resolvePlaybackUrl(any())).thenAnswer((
-        invocation,
-      ) {
-        final raw = invocation.positionalArguments.single as String;
-        if (raw.startsWith('http://') || raw.startsWith('https://')) {
-          return raw;
-        }
-        return 'http://localhost:8080$raw';
-      });
-      when(
-        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-video-1'),
-      ).thenAnswer(
-        (_) async => 'https://cdn.test/resolved-preview.mp4?token=preview',
+        fetchLessonMediaPreviews: (ids) async {
+          previewCallCount += 1;
+          return {
+            for (final id in ids)
+              id: {
+                'media_type': 'video',
+                'authoritative_editor_ready': true,
+                'resolved_preview_url':
+                    'https://cdn.test/resolved-preview.mp4?token=preview',
+                'file_name': 'lesson-preview.mp4',
+              },
+          };
+        },
       );
 
       await _pumpCourseEditorScreen(
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
-        mediaRepository: mediaRepository,
-        mediaPipelineRepository: mediaPipelineRepository,
       );
       await _pumpEditorBootstrap(tester);
       await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(_lessonTitleFieldFinder(), 'Välkommen igen');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
       final player = tester.widget<AveliLessonMediaPlayer>(
         _lessonMediaPlayerFinder(kind: 'video').first,
@@ -4199,9 +4310,8 @@ void main() {
         'https://cdn.test/resolved-preview.mp4?token=preview',
       );
       expect(player.playbackUrl, isNot('https://cdn.test/raw-row-preview.mp4'));
-      verify(
-        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-video-1'),
-      ).called(1);
+      expect(previewCallCount, 1);
+      verify(() => studioRepo.fetchLessonMediaPreviews(any())).called(1);
     },
   );
 }

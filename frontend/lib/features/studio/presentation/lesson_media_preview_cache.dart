@@ -12,27 +12,34 @@ class LessonMediaPreviewData {
     required this.lessonMediaId,
     required this.mediaType,
     this.resolvedPreviewUrl,
+    this.authoritativeEditorReady,
     this.durationSeconds,
     this.fileName,
+    this.failureReason,
   });
 
   final String lessonMediaId;
   final String mediaType;
   final String? resolvedPreviewUrl;
+  final bool? authoritativeEditorReady;
   final int? durationSeconds;
   final String? fileName;
+  final String? failureReason;
 
   factory LessonMediaPreviewData.unresolved({
     required String lessonMediaId,
     String mediaType = '',
     int? durationSeconds,
     String? fileName,
+    String? failureReason,
   }) {
     return LessonMediaPreviewData(
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
+      authoritativeEditorReady: false,
       durationSeconds: durationSeconds,
       fileName: fileName,
+      failureReason: failureReason,
     );
   }
 
@@ -52,6 +59,45 @@ class LessonMediaPreviewData {
     }
   }
 
+  bool get hasSettledAuthority =>
+      authoritativeEditorReady != null || visualUrl != null;
+
+  LessonMediaPreviewData mergeMetadata(LessonMediaPreviewData metadata) {
+    return LessonMediaPreviewData(
+      lessonMediaId: metadata.lessonMediaId,
+      mediaType: metadata.mediaType.isEmpty ? mediaType : metadata.mediaType,
+      resolvedPreviewUrl: resolvedPreviewUrl,
+      authoritativeEditorReady: authoritativeEditorReady,
+      durationSeconds: metadata.durationSeconds ?? durationSeconds,
+      fileName: metadata.fileName ?? fileName,
+      failureReason: failureReason,
+    );
+  }
+
+  LessonMediaPreviewData mergeFallback(LessonMediaPreviewData? fallback) {
+    if (fallback == null) {
+      return this;
+    }
+    return LessonMediaPreviewData(
+      lessonMediaId: lessonMediaId,
+      mediaType: mediaType.isEmpty ? fallback.mediaType : mediaType,
+      resolvedPreviewUrl: resolvedPreviewUrl,
+      authoritativeEditorReady: authoritativeEditorReady,
+      durationSeconds: durationSeconds ?? fallback.durationSeconds,
+      fileName: fileName ?? fallback.fileName,
+      failureReason: failureReason ?? fallback.failureReason,
+    );
+  }
+
+  LessonMediaPreviewData withoutAuthority() {
+    return LessonMediaPreviewData(
+      lessonMediaId: lessonMediaId,
+      mediaType: mediaType,
+      durationSeconds: durationSeconds,
+      fileName: fileName,
+    );
+  }
+
   factory LessonMediaPreviewData.fromJson(
     String lessonMediaId,
     Map<String, dynamic> json,
@@ -67,8 +113,12 @@ class LessonMediaPreviewData {
       resolvedPreviewUrl: _normalizedString(
         json['resolved_preview_url'] ?? json['resolvedPreviewUrl'],
       ),
+      authoritativeEditorReady: json['authoritative_editor_ready'] as bool?,
       durationSeconds: duration is num ? duration.toInt() : null,
       fileName: _normalizedString(json['file_name'] ?? json['fileName']),
+      failureReason: _normalizedString(
+        json['failure_reason'] ?? json['failureReason'],
+      ),
     );
   }
 
@@ -96,8 +146,11 @@ class LessonMediaPreviewData {
     return LessonMediaPreviewData(
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
+      resolvedPreviewUrl: resolvedPreviewUrl,
+      authoritativeEditorReady: authoritativeEditorReady,
       durationSeconds: durationSeconds,
       fileName: fileName,
+      failureReason: failureReason,
     );
   }
 }
@@ -135,6 +188,35 @@ class LessonMediaPreviewCache {
   final Set<String> _inFlightIds = <String>{};
 
   bool _flushScheduled = false;
+
+  LessonMediaPreviewData? peek(String lessonMediaId) {
+    final normalized = lessonMediaId.trim();
+    if (normalized.isEmpty) return null;
+    return _cache[normalized];
+  }
+
+  bool isSettled(String lessonMediaId) {
+    final normalized = lessonMediaId.trim();
+    if (normalized.isEmpty) return false;
+    if (_stabilizedPlaceholderIds.contains(normalized)) {
+      return true;
+    }
+    return _cache[normalized]?.hasSettledAuthority == true;
+  }
+
+  Future<LessonMediaPreviewData?> getSettledOrFetch(String lessonMediaId) {
+    final normalized = lessonMediaId.trim();
+    if (normalized.isEmpty) {
+      return Future<LessonMediaPreviewData?>.value(null);
+    }
+    if (isSettled(normalized)) {
+      return Future<LessonMediaPreviewData?>.value(
+        _cache[normalized] ??
+            LessonMediaPreviewData.unresolved(lessonMediaId: normalized),
+      );
+    }
+    return getPreview(normalized);
+  }
 
   Future<LessonMediaPreviewData?> getPreview(String lessonMediaId) {
     final normalized = lessonMediaId.trim();
@@ -192,7 +274,7 @@ class LessonMediaPreviewCache {
     for (final lessonMediaId in lessonMediaIds) {
       final normalized = lessonMediaId.trim();
       if (normalized.isEmpty) continue;
-      if (_stabilizedPlaceholderIds.contains(normalized)) {
+      if (isSettled(normalized)) {
         continue;
       }
 
@@ -224,45 +306,45 @@ class LessonMediaPreviewCache {
     for (final lessonMediaId in lessonMediaIds) {
       final normalized = lessonMediaId.trim();
       if (normalized.isEmpty) continue;
-      futures.add(getPreview(normalized));
+      futures.add(getSettledOrFetch(normalized));
     }
     if (futures.isEmpty) return;
     await Future.wait(futures);
+  }
+
+  void invalidate(Iterable<String> lessonMediaIds) {
+    for (final lessonMediaId in lessonMediaIds) {
+      final normalized = lessonMediaId.trim();
+      if (normalized.isEmpty) continue;
+      _stabilizedPlaceholderIds.remove(normalized);
+      final cached = _cache[normalized];
+      if (cached == null) continue;
+      _cache[normalized] = cached.withoutAuthority();
+    }
   }
 
   void prime(Iterable<LessonMediaPreviewData> previews) {
     for (final preview in previews) {
       final lessonMediaId = preview.lessonMediaId.trim();
       if (lessonMediaId.isEmpty) continue;
-      _stabilizedPlaceholderIds.remove(lessonMediaId);
-      _cache[lessonMediaId] = preview.asNonAuthoritativeCacheEntry();
-      final completer = _pending.remove(lessonMediaId);
-      if (completer != null && !completer.isCompleted) {
-        completer.complete(preview);
+      final existing = _cache[lessonMediaId];
+      final metadataOnly = preview.withoutAuthority();
+      if (existing == null) {
+        _cache[lessonMediaId] = metadataOnly;
+        continue;
       }
+      _cache[lessonMediaId] = existing.mergeMetadata(metadataOnly);
     }
   }
 
   void primeFromLessonMedia(Iterable<Map<String, dynamic>> mediaItems) {
     final previews = <LessonMediaPreviewData>[];
-    final blockedPreviews = <LessonMediaPreviewData>[];
     for (final media in mediaItems) {
       final preview = LessonMediaPreviewData.maybeFromLessonMedia(media);
       if (preview == null) continue;
       previews.add(preview);
-      if (media['resolvable_for_editor'] == false &&
-          (preview.mediaType == 'image' || preview.mediaType == 'video')) {
-        blockedPreviews.add(preview);
-      }
     }
     prime(previews);
-    for (final preview in blockedPreviews) {
-      _stabilizeFailedPreview(
-        lessonMediaId: preview.lessonMediaId,
-        preview: preview,
-        reason: 'row_marked_unresolvable',
-      );
-    }
   }
 
   void _scheduleFlush() {
@@ -329,6 +411,7 @@ class LessonMediaPreviewCache {
       mediaType: source.mediaType,
       durationSeconds: source.durationSeconds,
       fileName: source.fileName,
+      failureReason: source.failureReason,
     );
     _cache[lessonMediaId] = unresolved.asNonAuthoritativeCacheEntry();
     _stabilizedPlaceholderIds.add(lessonMediaId);
@@ -361,7 +444,10 @@ class LessonMediaPreviewCache {
       previews = payload.map(
         (lessonMediaId, value) => MapEntry(
           lessonMediaId,
-          LessonMediaPreviewData.fromJson(lessonMediaId, value),
+          LessonMediaPreviewData.fromJson(
+            lessonMediaId,
+            value,
+          ).mergeFallback(_cache[lessonMediaId]),
         ),
       );
     } catch (error) {
@@ -372,10 +458,16 @@ class LessonMediaPreviewCache {
 
     for (final lessonMediaId in ids) {
       final preview = previews[lessonMediaId];
+      final effectiveMediaType = preview?.mediaType.isNotEmpty == true
+          ? preview!.mediaType
+          : (_cache[lessonMediaId]?.mediaType ?? '');
+      final requiresVisualResolution =
+          (effectiveMediaType == 'image' || effectiveMediaType == 'video') &&
+          (preview?.visualUrl == null);
       final needsPlaceholderStabilization =
-          preview == null || preview.requiresVisualResolution;
+          preview == null || requiresVisualResolution;
       LessonMediaPreviewData? result = preview;
-      if (preview != null && !preview.requiresVisualResolution) {
+      if (preview != null && !requiresVisualResolution) {
         _stabilizedPlaceholderIds.remove(lessonMediaId);
         _cache[lessonMediaId] = preview.asNonAuthoritativeCacheEntry();
       } else if (needsPlaceholderStabilization) {

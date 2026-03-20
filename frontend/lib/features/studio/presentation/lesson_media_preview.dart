@@ -90,7 +90,7 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
     _loggedUnresolvedPreview = false;
     return ref
         .read(lessonMediaPreviewCacheProvider)
-        .getPreview(normalizedLessonMediaId);
+        .getSettledOrFetch(normalizedLessonMediaId);
   }
 
   int _effectiveHydrationRevision() {
