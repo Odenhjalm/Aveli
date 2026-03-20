@@ -41,6 +41,12 @@ def _playback_format(*, media: dict[str, Any], storage_path: str) -> str:
     return "bin"
 
 
+def _resolution_is_image(resolution: LessonMediaResolution) -> bool:
+    kind = str(resolution.kind or "").strip().lower()
+    content_type = str(resolution.content_type or "").strip().lower()
+    return kind == "image" or content_type.startswith("image/")
+
+
 async def _authorize_lesson_playback(user_id: str, row: dict[str, Any]) -> None:
     course_id = row.get("course_id")
     if course_id and await courses_service.is_course_teacher_or_instructor(
@@ -411,19 +417,23 @@ async def _resolve_legacy_storage_playback_from_resolution(
     }
 
 
-async def resolve_runtime_media_playback(
+async def _resolve_playback_from_resolution(
     *,
-    runtime_media_id: str,
+    resolution: LessonMediaResolution,
     user_id: str,
 ) -> dict[str, Any]:
-    resolution = await canonical_media_resolver.resolve_runtime_media(runtime_media_id)
     if resolution.playback_mode == LessonMediaPlaybackMode.PIPELINE_ASSET:
-        playback = await _resolve_pipeline_playback_from_resolution(
+        return await _resolve_pipeline_playback_from_resolution(
             resolution=resolution,
             user_id=user_id,
         )
-    elif resolution.playback_mode == LessonMediaPlaybackMode.LEGACY_STORAGE:
-        if resolution.reference_type == "lesson_media":
+
+    if resolution.playback_mode == LessonMediaPlaybackMode.LEGACY_STORAGE:
+        allow_lesson_media_passthrough = (
+            resolution.reference_type == "lesson_media"
+            and _resolution_is_image(resolution)
+        )
+        if resolution.reference_type == "lesson_media" and not allow_lesson_media_passthrough:
             logger.warning(
                 "LEGACY_LESSON_MEDIA_PLAYBACK_BLOCKED",
                 extra=resolution.log_fields(),
@@ -432,12 +442,24 @@ async def resolve_runtime_media_playback(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Lesson media has no playable source",
             )
-        playback = await _resolve_legacy_storage_playback_from_resolution(
+        return await _resolve_legacy_storage_playback_from_resolution(
             resolution=resolution,
             user_id=user_id,
         )
-    else:
-        raise _resolution_http_exception(resolution)
+
+    raise _resolution_http_exception(resolution)
+
+
+async def resolve_runtime_media_playback(
+    *,
+    runtime_media_id: str,
+    user_id: str,
+) -> dict[str, Any]:
+    resolution = await canonical_media_resolver.resolve_runtime_media(runtime_media_id)
+    playback = await _resolve_playback_from_resolution(
+        resolution=resolution,
+        user_id=user_id,
+    )
 
     playback_url = str(playback["url"])
     return {
@@ -462,7 +484,10 @@ async def resolve_lesson_media_playback(
     )
     if runtime_media_id is None:
         resolution = await canonical_media_resolver.resolve_lesson_media(lesson_media_id)
-        raise _resolution_http_exception(resolution)
+        return await _resolve_playback_from_resolution(
+            resolution=resolution,
+            user_id=user_id,
+        )
     return await resolve_runtime_media_playback(
         runtime_media_id=runtime_media_id,
         user_id=user_id,

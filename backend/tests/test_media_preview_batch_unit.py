@@ -194,3 +194,83 @@ async def test_request_media_previews_isolates_unresolvable_sibling(monkeypatch)
     assert response.items[stale_id].authoritative_editor_ready is False
     assert response.items[stale_id].resolved_preview_url is None
     assert response.items[stale_id].failure_reason == "unresolvable"
+
+
+async def test_request_media_previews_falls_back_to_public_image_url(monkeypatch):
+    user_id = str(uuid.uuid4())
+    lesson_id = str(uuid.uuid4())
+    course_id = str(uuid.uuid4())
+    image_id = str(uuid.uuid4())
+
+    async def fake_list_lesson_media_by_ids(candidate_ids: list[str]):
+        assert candidate_ids == [image_id]
+        return [{"id": image_id, "lesson_id": lesson_id}]
+
+    async def fake_lesson_course_ids(candidate_lesson_id: str):
+        assert candidate_lesson_id == lesson_id
+        return None, course_id
+
+    async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
+        assert candidate_user_id == user_id
+        assert candidate_course_id == course_id
+        return True
+
+    async def fake_list_lesson_media(candidate_lesson_id: str, mode: str = "editor_preview"):
+        assert candidate_lesson_id == lesson_id
+        assert mode == "editor_preview"
+        return [
+            {
+                "id": image_id,
+                "lesson_id": lesson_id,
+                "kind": "image",
+                "original_name": "cover.png",
+                "preferredUrl": "https://cdn.public.test/course-images/cover.png",
+            }
+        ]
+
+    async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+        assert lesson_media_id == image_id
+        raise HTTPException(status_code=404, detail="Lesson media has no playable source")
+
+    monkeypatch.setattr(
+        api_media.courses_repo,
+        "list_lesson_media_by_ids",
+        fake_list_lesson_media_by_ids,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        api_media.courses_service,
+        "lesson_course_ids",
+        fake_lesson_course_ids,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        api_media.models,
+        "is_course_owner",
+        fake_is_course_owner,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        api_media.courses_service,
+        "list_lesson_media",
+        fake_list_lesson_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        api_media.lesson_playback_service,
+        "resolve_lesson_media_playback",
+        fake_resolve_lesson_media_playback,
+        raising=True,
+    )
+
+    response = await api_media.request_media_previews(
+        request=None,
+        payload=schemas.MediaPreviewBatchRequest(ids=[image_id]),
+        current={"id": user_id},
+    )
+
+    assert response.items[image_id].authoritative_editor_ready is True
+    assert response.items[image_id].resolved_preview_url == (
+        "https://cdn.public.test/course-images/cover.png"
+    )
+    assert response.items[image_id].failure_reason is None
