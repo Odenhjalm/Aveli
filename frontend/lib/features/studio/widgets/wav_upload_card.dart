@@ -17,6 +17,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
     super.key,
     required this.courseId,
     required this.lessonId,
+    this.replacementLessonMediaId,
     this.onMediaUpdated,
     this.pickFileOverride,
     this.uploadFileOverride,
@@ -27,6 +28,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
 
   final String? courseId;
   final String? lessonId;
+  final String? replacementLessonMediaId;
   final Future<void> Function()? onMediaUpdated;
   final void Function(String mediaAssetId, String finalState)?
   onPipelineFinalState;
@@ -398,18 +400,24 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         },
         resumableSession: resumableSession,
       );
-      final completed = await repo.completeUpload(mediaId: mediaId);
+      await repo.completeUpload(mediaId: mediaId);
+      final attached = await repo.attachUpload(
+        mediaId: mediaId,
+        linkScope: 'lesson',
+        lessonId: lessonId,
+        lessonMediaId: widget.replacementLessonMediaId,
+      );
 
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = _statusLabel(completed.state);
-        _mediaState = completed.state;
+        _status = _statusLabel(attached.state);
+        _mediaState = attached.state;
         _cancelToken = null;
       });
       await widget.onMediaUpdated?.call();
-      if (completed.state == 'ready' || completed.state == 'failed') {
-        widget.onPipelineFinalState?.call(mediaId, completed.state);
+      if (attached.state == 'ready' || attached.state == 'failed') {
+        widget.onPipelineFinalState?.call(mediaId, attached.state);
       } else {
         _startPolling();
       }

@@ -64,6 +64,41 @@ async def get_home_player_upload(*, upload_id: str, teacher_id: str) -> Optional
     return dict(row) if row else None
 
 
+async def get_home_player_upload_by_media_asset_id(
+    *,
+    media_asset_id: str,
+    teacher_id: str,
+) -> Optional[dict[str, Any]]:
+    query = """
+        SELECT
+          hpu.id,
+          hpu.teacher_id,
+          hpu.media_id,
+          hpu.media_asset_id,
+          hpu.title,
+          hpu.kind,
+          hpu.active,
+          hpu.created_at,
+          hpu.updated_at,
+          coalesce(mo.content_type, ma.original_content_type) AS content_type,
+          coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
+          coalesce(mo.original_name, ma.original_filename) AS original_name,
+          ma.state AS media_state,
+          ma.error_message AS media_error_message
+        FROM app.home_player_uploads hpu
+        LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
+        LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
+        WHERE hpu.media_asset_id = %s
+          AND hpu.teacher_id = %s
+        ORDER BY hpu.active DESC, hpu.updated_at DESC, hpu.created_at DESC
+        LIMIT 1
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (media_asset_id, teacher_id))
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 async def create_home_player_upload(
     *,
     teacher_id: str,

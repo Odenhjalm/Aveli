@@ -101,10 +101,10 @@ async def test_pipeline_audio_becomes_editor_resolvable_after_processing(
             original_filename="demo.wav",
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
-            state="ready",
+            state="uploaded",
         )
         assert asset_ok
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=str(asset_ok["id"]),
             streaming_object_path=derived_ok,
             streaming_format="mp3",
@@ -136,10 +136,10 @@ async def test_pipeline_audio_becomes_editor_resolvable_after_processing(
             original_filename="demo.wav",
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
-            state="ready",
+            state="uploaded",
         )
         assert asset_missing
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=str(asset_missing["id"]),
             streaming_object_path=derived_missing,
             streaming_format="mp3",
@@ -204,7 +204,7 @@ async def test_pipeline_audio_becomes_editor_resolvable_after_processing(
         ok_item = next(it for it in items if it["id"] == str(lesson_media_ok["id"]))
         assert ok_item["media_state"] == "ready"
         assert ok_item["resolvable_for_editor"] is True
-        assert ok_item.get("playback_url", "").startswith("https://stream.local/")
+        assert ok_item.get("playback_url") in {None, ""}
 
         missing_item = next(
             it for it in items if it["id"] == str(lesson_media_missing["id"])

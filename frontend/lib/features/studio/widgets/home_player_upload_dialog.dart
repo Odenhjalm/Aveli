@@ -298,6 +298,8 @@ class _HomePlayerUploadDialogState
     });
 
     try {
+      final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
+      await pipelineRepo.completeUpload(mediaId: mediaId);
       final repo = ref.read(studioRepositoryProvider);
       await repo.uploadHomePlayerUpload(
         title: widget.title,
@@ -320,7 +322,9 @@ class _HomePlayerUploadDialogState
     }
   }
 
-  Future<void> _uploadViaHomeStorage({required String normalizedMimeType}) async {
+  Future<void> _uploadViaHomeStorage({
+    required String normalizedMimeType,
+  }) async {
     final mimeType = normalizedMimeType.trim().toLowerCase();
     WavResumableSession? resumableSession;
     try {

@@ -19,7 +19,6 @@ from .. import models
 from ..auth import CurrentUser
 from ..config import settings
 from ..permissions import TeacherUser
-from ..repositories import media_assets as media_assets_repo
 from ..repositories import storage_objects
 from ..services import courses_service
 from ..services import storage_service
@@ -148,80 +147,6 @@ async def _assert_storage_object_exists(
         status_code=status.HTTP_409_CONFLICT,
         detail="Uploaded file is missing from storage",
     )
-
-
-def _asset_media_type(kind: str) -> str:
-    normalized = str(kind or "").strip().lower()
-    if normalized in {"document", "pdf"}:
-        return "document"
-    if normalized in {"image", "video", "audio"}:
-        return normalized
-    return "document"
-
-
-def _asset_streaming_format(*, content_type: str, storage_path: str) -> str:
-    suffix = Path(storage_path).suffix.lower().lstrip(".")
-    if suffix:
-        return suffix
-    normalized_type = (content_type or "").strip().lower()
-    if normalized_type == "application/pdf":
-        return "pdf"
-    if "/" in normalized_type:
-        return normalized_type.split("/", 1)[1]
-    return "bin"
-
-
-async def _create_ready_lesson_media_asset(
-    *,
-    owner_id: str,
-    lesson_id: str,
-    course_id: str | None,
-    kind: str,
-    storage_path: str,
-    storage_bucket: str,
-    content_type: str,
-    size: int,
-    original_name: str | None,
-) -> dict[str, Any]:
-    media_type = _asset_media_type(kind)
-    streaming_format = _asset_streaming_format(
-        content_type=content_type,
-        storage_path=storage_path,
-    )
-    media_asset = await media_assets_repo.create_media_asset(
-        owner_id=owner_id,
-        course_id=course_id,
-        lesson_id=lesson_id,
-        media_type=media_type,
-        purpose="lesson_media",
-        ingest_format=streaming_format,
-        original_object_path=storage_path,
-        original_content_type=content_type,
-        original_filename=original_name,
-        original_size_bytes=size,
-        storage_bucket=storage_bucket,
-        state="ready",
-    )
-    if not media_asset:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to persist media asset",
-        )
-    marked_ready = await media_assets_repo.mark_media_asset_ready(
-        media_id=str(media_asset["id"]),
-        streaming_object_path=storage_path,
-        streaming_format=streaming_format,
-        duration_seconds=None,
-        codec=None,
-        streaming_storage_bucket=storage_bucket,
-    )
-    if not marked_ready:
-        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to finalize media asset",
-        )
-    return media_asset
 
 
 def _safe_join(base: Path, *parts: str) -> Path:
@@ -383,33 +308,32 @@ async def _persist_lesson_media(
             storage_bucket=storage_bucket,
             storage_path=normalized_path,
         )
-    media_asset = await _create_ready_lesson_media_asset(
+
+    media_object = await models.create_media_object(
         owner_id=owner_id,
-        lesson_id=lesson_id,
-        course_id=course_id,
-        kind=kind,
         storage_path=normalized_path,
         storage_bucket=storage_bucket,
         content_type=content_type,
-        size=size,
+        byte_size=size,
+        checksum=checksum,
         original_name=original_name,
     )
-
-    try:
-        row = await models.add_lesson_media_entry_with_position_retry(
-            lesson_id=lesson_id,
-            kind=kind,
-            storage_path=normalized_path,
-            storage_bucket=storage_bucket,
-            media_id=None,
-            media_asset_id=str(media_asset["id"]),
-            max_retries=10,
+    if not media_object:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist media object",
         )
-    except Exception:
-        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
-        raise
+
+    row = await models.add_lesson_media_entry_with_position_retry(
+        lesson_id=lesson_id,
+        kind=kind,
+        storage_path=normalized_path,
+        storage_bucket=storage_bucket,
+        media_id=str(media_object["id"]),
+        media_asset_id=None,
+        max_retries=10,
+    )
     if not row:
-        await media_assets_repo.delete_media_asset(str(media_asset["id"]))
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Could not allocate lesson media position",

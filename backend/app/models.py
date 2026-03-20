@@ -1145,6 +1145,46 @@ async def add_lesson_media_entry(
             return row
 
 
+async def update_lesson_media_asset_link(
+    *,
+    lesson_media_id: str,
+    lesson_id: str,
+    kind: str,
+    media_asset_id: str,
+    storage_bucket: str,
+    duration_seconds: int | None = None,
+) -> dict | None:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.lesson_media
+                SET kind = %s,
+                    media_id = null,
+                    media_asset_id = %s,
+                    storage_path = null,
+                    storage_bucket = %s,
+                    duration_seconds = %s
+                WHERE id = %s
+                  AND lesson_id = %s
+                RETURNING id
+                """,
+                (
+                    kind,
+                    media_asset_id,
+                    storage_bucket,
+                    duration_seconds,
+                    lesson_media_id,
+                    lesson_id,
+                ),
+            )
+            row = await _fetchone(cur)
+            await conn.commit()
+    if not row:
+        return None
+    return await get_media(str(row["id"]))
+
+
 async def delete_lesson_media_entry(media_id: str) -> dict | None:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]

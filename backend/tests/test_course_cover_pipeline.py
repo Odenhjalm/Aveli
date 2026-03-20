@@ -210,7 +210,7 @@ async def test_cover_clear_deletes_assets(async_client, monkeypatch):
         )
         assert asset
 
-        await media_assets_repo.mark_course_cover_ready(
+        await media_assets_repo.mark_course_cover_ready_from_worker(
             media_id=str(asset["id"]),
             streaming_object_path=derived_path,
             streaming_format="jpg",

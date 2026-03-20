@@ -967,6 +967,17 @@ class MediaUploadCompleteRequest(BaseModel):
     )
 
 
+class MediaAttachRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_asset_id: UUID = Field(
+        validation_alias=AliasChoices("media_asset_id", "media_id")
+    )
+    lesson_id: UUID | None = None
+    link_scope: Literal["lesson", "home_upload"]
+    lesson_media_id: UUID | None = None
+
+
 class MediaUploadUrlResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -1035,6 +1046,39 @@ class MediaStatusResponse(BaseModel):
     duration_seconds: int | None = None
     codec: str | None = None
     lesson_media_id: UUID | None = None
+    lesson_media: dict[str, Any] | None = None
+
+
+class MediaCompleteResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_asset_id: UUID = Field(
+        validation_alias=AliasChoices("media_asset_id", "media_id")
+    )
+    media_id: UUID | None = None
+    state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+    error_message: str | None = None
+    ingest_format: str | None = None
+    streaming_format: str | None = None
+    duration_seconds: int | None = None
+    codec: str | None = None
+
+
+class MediaAttachResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_asset_id: UUID = Field(
+        validation_alias=AliasChoices("media_asset_id", "media_id")
+    )
+    media_id: UUID | None = None
+    state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+    error_message: str | None = None
+    ingest_format: str | None = None
+    streaming_format: str | None = None
+    duration_seconds: int | None = None
+    codec: str | None = None
+    lesson_media_id: UUID | None = None
+    runtime_media_id: UUID | None = None
     lesson_media: dict[str, Any] | None = None
 
 

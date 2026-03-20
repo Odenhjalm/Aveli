@@ -5497,6 +5497,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         courseId: courseId,
         lessonId: lessonId,
         existingFileName: fileName,
+        replacementLessonMediaId: oldLessonMediaId,
         onMediaUpdated: _loadLessonMedia,
       ),
     );
@@ -5524,6 +5525,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           showSnack(context, 'Kunde inte hitta den nya ljudfilen.');
         }
         setState(() => _mediaStatus = null);
+        return;
+      }
+
+      if (newLessonMediaId == oldLessonMediaId) {
+        await _loadLessonMedia();
+        if (!mounted || !_isEditorTokenValid(token)) return;
+        if (mounted && context.mounted) {
+          showSnack(context, 'Ljud ersatt.');
+        }
+        if (mounted) {
+          setState(() => _mediaStatus = 'Ljud ersatt.');
+        }
         return;
       }
 

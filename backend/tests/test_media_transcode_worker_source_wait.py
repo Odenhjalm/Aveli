@@ -196,7 +196,7 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
         calls["upload_source"] = source
         calls["upload_headers"] = headers
 
-    async def fake_mark_media_asset_ready(**kwargs):
+    async def fake_mark_media_asset_ready_from_worker(**kwargs):
         calls["mark_ready"] = kwargs
         return True
 
@@ -209,8 +209,8 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
     monkeypatch.setattr(worker, "_upload_file", fake_upload_file)
     monkeypatch.setattr(
         worker.media_assets_repo,
-        "mark_media_asset_ready",
-        fake_mark_media_asset_ready,
+        "mark_media_asset_ready_from_worker",
+        fake_mark_media_asset_ready_from_worker,
     )
 
     asset = {

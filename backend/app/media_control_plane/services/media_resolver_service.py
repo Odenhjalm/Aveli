@@ -198,6 +198,8 @@ class MediaResolverService:
                 SELECT id
                 FROM app.runtime_media
                 WHERE lesson_media_id = %s
+                  AND active = true
+                ORDER BY updated_at DESC, created_at DESC
                 LIMIT 1
                 """,
                 (normalized_lesson_media_id,),

@@ -368,11 +368,16 @@ class StudioRepository {
       },
     );
 
-    final finalized = await pipeline.completeUpload(mediaId: upload.mediaId);
-    final canonicalLessonMedia = finalized.lessonMedia;
+    await pipeline.completeUpload(mediaId: upload.mediaId);
+    final attached = await pipeline.attachUpload(
+      mediaId: upload.mediaId,
+      linkScope: 'lesson',
+      lessonId: lessonId,
+    );
+    final canonicalLessonMedia = attached.lessonMedia;
     if (canonicalLessonMedia == null || canonicalLessonMedia.isEmpty) {
       throw StateError(
-        'Media-pipeline completion saknade canonical lesson_media payload.',
+        'Media-pipeline attachment saknade canonical lesson_media payload.',
       );
     }
     return Map<String, dynamic>.from(canonicalLessonMedia);

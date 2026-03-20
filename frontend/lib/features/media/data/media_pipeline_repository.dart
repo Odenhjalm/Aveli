@@ -57,6 +57,7 @@ class MediaStatus {
     this.durationSeconds,
     this.codec,
     this.lessonMediaId,
+    this.runtimeMediaId,
     this.lessonMedia,
   });
 
@@ -68,10 +69,11 @@ class MediaStatus {
   final int? durationSeconds;
   final String? codec;
   final String? lessonMediaId;
+  final String? runtimeMediaId;
   final Map<String, dynamic>? lessonMedia;
 
   factory MediaStatus.fromJson(Map<String, dynamic> json) => MediaStatus(
-    mediaId: json['media_id'] as String,
+    mediaId: (json['media_asset_id'] ?? json['media_id']) as String,
     state: json['state'] as String? ?? 'uploaded',
     errorMessage: json['error_message'] as String?,
     ingestFormat: json['ingest_format'] as String?,
@@ -79,6 +81,7 @@ class MediaStatus {
     durationSeconds: json['duration_seconds'] as int?,
     codec: json['codec'] as String?,
     lessonMediaId: json['lesson_media_id'] as String?,
+    runtimeMediaId: json['runtime_media_id'] as String?,
     lessonMedia: json['lesson_media'] is Map
         ? Map<String, dynamic>.from(json['lesson_media'] as Map)
         : null,
@@ -236,8 +239,52 @@ class MediaPipelineRepository {
 
   Future<MediaStatus> completeUpload({required String mediaId}) async {
     final response = await _client.post<Map<String, dynamic>>(
-      ApiPaths.mediaUploadUrlComplete,
+      ApiPaths.mediaComplete,
       body: {'media_id': mediaId},
+    );
+    return MediaStatus.fromJson(response);
+  }
+
+  Future<MediaStatus> attachUpload({
+    required String mediaId,
+    required String linkScope,
+    String? lessonId,
+    String? lessonMediaId,
+  }) async {
+    final normalizedLinkScope = linkScope.trim();
+    if (normalizedLinkScope != 'lesson' &&
+        normalizedLinkScope != 'home_upload') {
+      throw ArgumentError.value(
+        linkScope,
+        'linkScope',
+        'Unsupported attach scope.',
+      );
+    }
+
+    final normalizedLessonId = lessonId?.trim();
+    final normalizedLessonMediaId = lessonMediaId?.trim();
+    if (normalizedLinkScope == 'lesson' &&
+        (normalizedLessonId == null || normalizedLessonId.isEmpty)) {
+      throw ArgumentError.value(
+        lessonId,
+        'lessonId',
+        'lessonId is required for lesson attachments.',
+      );
+    }
+
+    final payload = <String, dynamic>{
+      'media_id': mediaId,
+      'link_scope': normalizedLinkScope,
+      'lesson_id': normalizedLessonId == null || normalizedLessonId.isEmpty
+          ? null
+          : normalizedLessonId,
+      if (normalizedLessonMediaId != null && normalizedLessonMediaId.isNotEmpty)
+        'lesson_media_id': normalizedLessonMediaId,
+    };
+
+    final response = await _client.post<Map<String, dynamic>>(
+      ApiPaths.mediaAttach,
+      body: payload,
     );
     return MediaStatus.fromJson(response);
   }

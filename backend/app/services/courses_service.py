@@ -482,9 +482,8 @@ async def list_lessons(module_id: str) -> Sequence[dict[str, Any]]:
     return _materialize_rows(rows)
 
 
-async def _normalize_lesson_content_markdown(
-    content_markdown: str,
-    *,
+async def canonicalize_lesson_content(
+    markdown: str,
     lesson_id: str | None,
 ) -> str:
     lesson_media_kinds: dict[str, str] = {}
@@ -498,7 +497,7 @@ async def _normalize_lesson_content_markdown(
         )
 
     return normalize_lesson_markdown_for_storage(
-        content_markdown,
+        markdown,
         lesson_media_kinds=lesson_media_kinds,
         media_url_aliases=media_url_aliases,
     )
@@ -516,10 +515,7 @@ async def create_lesson(
     content_value = content_markdown
     if isinstance(content_value, str):
         serialized = serialize_audio_embeds(content_value)
-        content_value = await _normalize_lesson_content_markdown(
-            serialized,
-            lesson_id=lesson_id,
-        )
+        content_value = await canonicalize_lesson_content(serialized, lesson_id)
 
     row = await courses_repo.create_lesson(
         course_id,
@@ -588,6 +584,22 @@ async def list_lesson_media(
         return normalized.startswith(
             f"{base}/storage/v1/object/public/{public_bucket}/"
         )
+
+    def _is_editor_safe_image_fallback_url(url: str) -> bool:
+        normalized = url.strip()
+        if not normalized:
+            return False
+        lowered = normalized.lower()
+        if (
+            lowered.startswith("/studio/media/")
+            or lowered.startswith("/api/media/")
+            or lowered.startswith("/media/sign")
+            or lowered.startswith("/media/stream/")
+        ):
+            return False
+        if normalized.startswith("/api/files/"):
+            return True
+        return _looks_like_public_bucket_url(normalized)
 
     # Ensure public bucket URLs are aligned with the actual storage object key.
     #
@@ -679,6 +691,13 @@ async def list_lesson_media(
 
     if editor_mode:
         for item in items:
+            if str(item.get("kind") or "").strip().lower() == "image":
+                preview_candidate = item.get("download_url") or item.get("playback_url")
+                if (
+                    isinstance(preview_candidate, str)
+                    and _is_editor_safe_image_fallback_url(preview_candidate)
+                ):
+                    item["preferredUrl"] = preview_candidate
             item.pop("playback_url", None)
             item.pop("download_url", None)
             item.pop("signed_url", None)
@@ -727,9 +746,9 @@ async def upsert_lesson(
     content_value = lesson_payload.get("content_markdown")
     if isinstance(content_value, str):
         serialized = serialize_audio_embeds(content_value)
-        lesson_payload["content_markdown"] = await _normalize_lesson_content_markdown(
+        lesson_payload["content_markdown"] = await canonicalize_lesson_content(
             serialized,
-            lesson_id=lesson_id,
+            lesson_id,
         )
 
     row = await courses_repo.upsert_lesson(course_id, lesson_payload)

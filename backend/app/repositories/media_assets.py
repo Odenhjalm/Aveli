@@ -8,6 +8,10 @@ from psycopg.rows import dict_row
 from ..db import get_conn, pool
 
 
+class MediaAssetReadyAuthorityError(PermissionError):
+    """Raised when non-worker code attempts to mark a media asset ready."""
+
+
 async def create_media_asset(
     *,
     owner_id: str | None,
@@ -23,6 +27,12 @@ async def create_media_asset(
     storage_bucket: str,
     state: str,
 ) -> dict[str, Any] | None:
+    normalized_state = str(state or "").strip().lower()
+    if normalized_state == "ready":
+        raise MediaAssetReadyAuthorityError(
+            "Only the processing worker may set media_asset.state = 'ready'"
+        )
+
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -59,7 +69,7 @@ async def create_media_asset(
                     original_filename,
                     original_size_bytes,
                     storage_bucket,
-                    state,
+                    normalized_state,
                 ),
             )
             row = await cur.fetchone()
@@ -244,6 +254,20 @@ async def mark_media_asset_ready(
     codec: str | None,
     streaming_storage_bucket: str | None = None,
 ) -> bool:
+    raise MediaAssetReadyAuthorityError(
+        "Only the processing worker may set media_asset.state = 'ready'"
+    )
+
+
+async def mark_media_asset_ready_from_worker(
+    *,
+    media_id: str,
+    streaming_object_path: str,
+    streaming_format: str,
+    duration_seconds: int | None,
+    codec: str | None,
+    streaming_storage_bucket: str | None = None,
+) -> bool:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -276,6 +300,20 @@ async def mark_media_asset_ready(
 
 
 async def mark_course_cover_ready(
+    *,
+    media_id: str,
+    streaming_object_path: str,
+    streaming_format: str,
+    streaming_storage_bucket: str,
+    public_url: str,
+    codec: str | None,
+) -> dict[str, Any]:
+    raise MediaAssetReadyAuthorityError(
+        "Only the processing worker may set media_asset.state = 'ready'"
+    )
+
+
+async def mark_course_cover_ready_from_worker(
     *,
     media_id: str,
     streaming_object_path: str,

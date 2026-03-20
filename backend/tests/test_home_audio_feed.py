@@ -257,7 +257,7 @@ async def test_home_audio_returns_runtime_media_ids_and_playability_metadata(
     ):
         assert removed_field not in item
 
-    await media_assets_repo.mark_media_asset_ready(
+    await media_assets_repo.mark_media_asset_ready_from_worker(
         media_id=str(media_asset["id"]),
         streaming_object_path="media/derived/audio/courses/test.mp3",
         streaming_format="mp3",

@@ -203,12 +203,12 @@ async def test_update_lesson_rejects_unresolved_raw_media_refs(async_client):
             },
         )
         assert update_resp.status_code == 422, update_resp.text
-        assert "raw image URLs are not allowed" in str(update_resp.json()["detail"])
+        assert "could not normalize" in str(update_resp.json()["detail"])
     finally:
         await _cleanup_user(user_id)
 
 
-async def test_update_lesson_rejects_raw_document_media_links(async_client):
+async def test_update_lesson_rewrites_resolvable_legacy_document_links(async_client):
     headers, user_id = await _register_teacher(async_client)
     try:
         course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
@@ -231,7 +231,30 @@ async def test_update_lesson_rejects_raw_document_media_links(async_client):
                 "content_markdown": f"[📄 material.pdf](/studio/media/{document_id})"
             },
         )
+        assert update_resp.status_code == 200, update_resp.text
+
+        stored = await courses_repo.get_lesson(lesson_id)
+        assert stored is not None
+        assert stored["content_markdown"] == f"!document({document_id})"
+    finally:
+        await _cleanup_user(user_id)
+
+
+async def test_update_lesson_rejects_storage_path_media_refs(async_client):
+    headers, user_id = await _register_teacher(async_client)
+    try:
+        course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
+
+        update_resp = await async_client.patch(
+            f"/studio/lessons/{lesson_id}",
+            headers=headers,
+            json={
+                "content_markdown": (
+                    f"Intro\n\n[course pdf](courses/{course_id}/lessons/{lesson_id}/docs/material.pdf)"
+                )
+            },
+        )
         assert update_resp.status_code == 422, update_resp.text
-        assert "raw document links are not allowed" in str(update_resp.json()["detail"])
+        assert "could not normalize" in str(update_resp.json()["detail"])
     finally:
         await _cleanup_user(user_id)

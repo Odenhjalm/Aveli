@@ -8,12 +8,14 @@ class WavReplaceDialog extends StatefulWidget {
     required this.courseId,
     required this.lessonId,
     required this.existingFileName,
+    required this.replacementLessonMediaId,
     this.onMediaUpdated,
   });
 
   final String courseId;
   final String lessonId;
   final String existingFileName;
+  final String replacementLessonMediaId;
   final Future<void> Function()? onMediaUpdated;
 
   @override
@@ -52,6 +54,7 @@ class _WavReplaceDialogState extends State<WavReplaceDialog> {
             WavUploadCard(
               courseId: widget.courseId,
               lessonId: widget.lessonId,
+              replacementLessonMediaId: widget.replacementLessonMediaId,
               onMediaUpdated: widget.onMediaUpdated,
               actionLabel: 'Byt ljud',
               onPipelineFinalState: _handleFinalState,

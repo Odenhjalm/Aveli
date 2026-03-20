@@ -11,7 +11,13 @@ from .test_media_api import cleanup_user, create_lesson, register_teacher
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+async def _ensure_pool_open() -> None:
+    if db.pool.closed:  # type: ignore[attr-defined]
+        await db.pool.open(wait=True)  # type: ignore[attr-defined]
+
+
 async def test_runtime_media_backfill_counts_match_lesson_media():
+    await _ensure_pool_open()
     async with db.get_conn() as cur:
         await cur.execute(
             "SELECT count(*) AS lesson_count FROM app.lesson_media"
@@ -22,6 +28,7 @@ async def test_runtime_media_backfill_counts_match_lesson_media():
             SELECT count(*) AS runtime_count
             FROM app.runtime_media
             WHERE lesson_media_id IS NOT NULL
+              AND active = true
             """
         )
         runtime_count_row = await cur.fetchone()
@@ -32,6 +39,7 @@ async def test_runtime_media_backfill_counts_match_lesson_media():
               SELECT lesson_media_id
               FROM app.runtime_media
               WHERE lesson_media_id IS NOT NULL
+                AND active = true
               GROUP BY lesson_media_id
               HAVING count(*) > 1
             ) duplicates
@@ -115,6 +123,7 @@ async def test_runtime_media_maps_new_lesson_media_rows(async_client):
 
 
 async def test_runtime_media_backfill_counts_match_home_player_uploads():
+    await _ensure_pool_open()
     await runtime_media_repo.sync_home_player_upload_runtime_media()
 
     async with db.get_conn() as cur:

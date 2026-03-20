@@ -956,6 +956,21 @@ async def upsert_lesson(
 async def delete_lesson(lesson_id: str) -> bool:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            # `runtime_media` is a derived read model. Removing lesson-linked rows first
+            # keeps lesson deletion compatible with pre-migration databases that still
+            # enforce non-cascading lesson/course foreign keys on runtime_media.
+            await cur.execute(
+                """
+                DELETE FROM app.runtime_media
+                WHERE lesson_id = %s
+                   OR lesson_media_id IN (
+                     SELECT id
+                     FROM app.lesson_media
+                     WHERE lesson_id = %s
+                   )
+                """,
+                (lesson_id, lesson_id),
+            )
             await cur.execute(
                 "DELETE FROM app.lessons WHERE id = %s",
                 (lesson_id,),

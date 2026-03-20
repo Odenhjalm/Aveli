@@ -77,6 +77,72 @@ def _audio_source_suffix(asset: dict) -> str:
     return ".wav"
 
 
+def _normalized_media_kind(asset: dict) -> str | None:
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    if media_type in {"audio", "video", "image", "document"}:
+        return media_type
+    return None
+
+
+def _media_kind_requires_preview(kind: str) -> bool:
+    return kind in {"image", "video"}
+
+
+async def _storage_object_exists(
+    *,
+    storage: storage_service.StorageService,
+    object_path: str,
+) -> bool:
+    normalized_path = str(object_path or "").strip().lstrip("/")
+    if not normalized_path:
+        return False
+    try:
+        await storage.get_presigned_url(
+            normalized_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+            download=False,
+        )
+    except storage_service.StorageObjectNotFoundError:
+        return False
+    return True
+
+
+async def _verify_ready_contract(
+    *,
+    asset: dict,
+    playback_storage: storage_service.StorageService,
+    playback_object_path: str,
+    playback_content_type: str | None,
+    duration_seconds: int | None,
+    preview_storage: storage_service.StorageService | None = None,
+    preview_object_path: str | None = None,
+) -> None:
+    kind = _normalized_media_kind(asset)
+    if kind is None:
+        raise RuntimeError("Ready verification failed: kind metadata is missing")
+
+    if not str(playback_content_type or "").strip():
+        raise RuntimeError("Ready verification failed: content_type metadata is missing")
+
+    if kind in {"audio", "video"} and duration_seconds is None:
+        raise RuntimeError("Ready verification failed: duration metadata is missing")
+
+    if not await _storage_object_exists(
+        storage=playback_storage,
+        object_path=playback_object_path,
+    ):
+        raise RuntimeError("Ready verification failed: playback object is missing")
+
+    resolved_preview_storage = preview_storage or playback_storage
+    resolved_preview_path = preview_object_path or playback_object_path
+    if _media_kind_requires_preview(kind):
+        if not await _storage_object_exists(
+            storage=resolved_preview_storage,
+            object_path=resolved_preview_path,
+        ):
+            raise RuntimeError("Ready verification failed: preview object is missing")
+
+
 async def start_worker() -> None:
     global _worker_task
     if not _env_worker_enabled():
@@ -260,7 +326,15 @@ async def _transcode_audio_asset(
         )
         await _upload_file(upload.url, output_file, upload.headers)
 
-    updated = await media_assets_repo.mark_media_asset_ready(
+    await _verify_ready_contract(
+        asset=asset,
+        playback_storage=source_storage,
+        playback_object_path=output_path,
+        playback_content_type="audio/mpeg",
+        duration_seconds=duration,
+    )
+
+    updated = await media_assets_repo.mark_media_asset_ready_from_worker(
         media_id=str(asset["id"]),
         streaming_object_path=output_path,
         streaming_format="mp3",
@@ -327,7 +401,17 @@ async def _transcode_cover_asset(
         await _upload_file(upload.url, output_file, upload.headers)
         public_url = public_storage.public_url(output_path)
 
-    result = await media_assets_repo.mark_course_cover_ready(
+    await _verify_ready_contract(
+        asset=asset,
+        playback_storage=public_storage,
+        playback_object_path=output_path,
+        playback_content_type="image/jpeg",
+        duration_seconds=None,
+        preview_storage=public_storage,
+        preview_object_path=output_path,
+    )
+
+    result = await media_assets_repo.mark_course_cover_ready_from_worker(
         media_id=str(asset["id"]),
         streaming_object_path=output_path,
         streaming_storage_bucket=public_storage.bucket,

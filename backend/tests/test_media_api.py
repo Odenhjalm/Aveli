@@ -161,6 +161,7 @@ async def _create_media_asset(
     source_path: str,
     streaming_path: str | None = None,
 ) -> dict:
+    initial_state = "uploaded" if state == "ready" else state
     asset = await media_assets_repo.create_media_asset(
         owner_id=user_id,
         course_id=course_id,
@@ -173,11 +174,11 @@ async def _create_media_asset(
         original_filename="demo.wav",
         original_size_bytes=1024,
         storage_bucket=storage_module.storage_service.bucket,
-        state=state,
+        state=initial_state,
     )
     assert asset
     if state == "ready" and streaming_path:
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=str(asset["id"]),
             streaming_object_path=streaming_path,
             streaming_format="mp3",
@@ -185,6 +186,33 @@ async def _create_media_asset(
             codec="mp3",
         )
     return asset
+
+
+async def _attach_media_asset(
+    async_client,
+    headers: dict[str, str],
+    *,
+    media_id: str,
+    link_scope: str,
+    lesson_id: str | None = None,
+    lesson_media_id: str | None = None,
+) -> dict:
+    payload: dict[str, object] = {
+        "media_id": media_id,
+        "link_scope": link_scope,
+    }
+    if lesson_id is not None:
+        payload["lesson_id"] = lesson_id
+    if lesson_media_id is not None:
+        payload["lesson_media_id"] = lesson_media_id
+
+    response = await async_client.post(
+        "/api/media/attach",
+        headers=headers,
+        json=payload,
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 @pytest.mark.parametrize(
@@ -327,6 +355,141 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         await cleanup_user(user_id)
 
 
+async def test_attach_home_upload_is_idempotent(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(**_kwargs):
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+
+        upload_resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "home.wav",
+                "mime_type": "audio/wav",
+                "size_bytes": 2048,
+                "media_type": "audio",
+                "purpose": "home_player_audio",
+            },
+        )
+        assert upload_resp.status_code == 200, upload_resp.text
+        media_id = upload_resp.json()["media_asset_id"]
+
+        complete_resp = await async_client.post(
+            "/api/media/complete",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+
+        first_attach = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=media_id,
+            link_scope="home_upload",
+        )
+        second_attach = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=media_id,
+            link_scope="home_upload",
+        )
+
+        assert first_attach["lesson_media_id"] is None
+        assert second_attach["lesson_media_id"] is None
+        assert first_attach["runtime_media_id"] == second_attach["runtime_media_id"]
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT count(*) AS upload_count
+                FROM app.home_player_uploads
+                WHERE teacher_id = %s
+                  AND media_asset_id = %s
+                """,
+                (user_id, media_id),
+            )
+            upload_count = await cur.fetchone()
+            await cur.execute(
+                """
+                SELECT count(*) AS runtime_count
+                FROM app.runtime_media rm
+                JOIN app.home_player_uploads hpu ON hpu.id = rm.home_player_upload_id
+                WHERE hpu.teacher_id = %s
+                  AND hpu.media_asset_id = %s
+                """,
+                (user_id, media_id),
+            )
+            runtime_count = await cur.fetchone()
+
+        assert int(upload_count["upload_count"]) == 1
+        assert int(runtime_count["runtime_count"]) == 1
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_attach_lesson_rejects_home_player_assets(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+        media_asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=None,
+            lesson_id=None,
+            media_type="audio",
+            purpose="home_player_audio",
+            ingest_format="wav",
+            original_object_path=f"media/source/audio/home-player/{user_id}/demo.wav",
+            original_content_type="audio/wav",
+            original_filename="demo.wav",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="uploaded",
+        )
+        assert media_asset is not None
+
+        resp = await async_client.post(
+            "/api/media/attach",
+            headers=headers,
+            json={
+                "media_id": str(media_asset["id"]),
+                "lesson_id": lesson_id,
+                "link_scope": "lesson",
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["detail"] == "Only lesson uploads can use link_scope=lesson"
+    finally:
+        await cleanup_user(user_id)
+
+
 @pytest.mark.parametrize(
     ("filename", "mime_type"),
     [
@@ -335,7 +498,7 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         ("demo.m4a", "audio/mp4"),
     ],
 )
-async def test_complete_upload_attaches_lesson_media_and_advances_state(
+async def test_complete_upload_requires_separate_attach_for_lesson_media(
     async_client,
     monkeypatch,
     filename,
@@ -398,16 +561,34 @@ async def test_complete_upload_attaches_lesson_media_and_advances_state(
         assert pending_asset["state"] == "pending_upload"
 
         complete_resp = await async_client.post(
-            "/api/media/upload-url/complete",
+            "/api/media/complete",
             headers=headers,
             json={"media_id": media_id},
         )
         assert complete_resp.status_code == 200, complete_resp.text
         complete_body = complete_resp.json()
         assert complete_body["state"] == "uploaded"
-        assert complete_body["lesson_media_id"]
-        assert complete_body["lesson_media"]["id"] == complete_body["lesson_media_id"]
-        assert complete_body["lesson_media"]["kind"] == "audio"
+        assert complete_body.get("lesson_media_id") is None
+        assert complete_body.get("lesson_media") is None
+
+        lesson_media_before_attach = await models.get_lesson_media_by_media_asset_id(media_id)
+        assert lesson_media_before_attach is None
+
+        attach_body = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=media_id,
+            link_scope="lesson",
+            lesson_id=lesson_id,
+        )
+        assert attach_body["state"] == "uploaded"
+        assert attach_body["lesson_media_id"]
+        assert attach_body["runtime_media_id"]
+        assert attach_body["lesson_media"]["id"] == attach_body["lesson_media_id"]
+        assert attach_body["lesson_media"]["kind"] == "audio"
+        assert "storage_path" not in attach_body["lesson_media"]
+        assert "storage_bucket" not in attach_body["lesson_media"]
+        assert "media_id" not in attach_body["lesson_media"]
 
         list_resp = await async_client.get(
             f"/studio/lessons/{lesson_id}/media",
@@ -415,7 +596,7 @@ async def test_complete_upload_attaches_lesson_media_and_advances_state(
         )
         assert list_resp.status_code == 200, list_resp.text
         listed_ids = {item["id"] for item in list_resp.json()["items"]}
-        assert complete_body["lesson_media_id"] in listed_ids
+        assert attach_body["lesson_media_id"] in listed_ids
 
         uploaded_asset = await media_assets_repo.get_media_asset(media_id)
         assert uploaded_asset is not None
@@ -436,7 +617,7 @@ async def test_complete_upload_attaches_lesson_media_and_advances_state(
                 1,
             )
         ).with_suffix(".mp3").as_posix()
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=media_id,
             streaming_object_path=derived_path,
             streaming_format="mp3",
@@ -448,6 +629,121 @@ async def test_complete_upload_attaches_lesson_media_and_advances_state(
         assert ready_asset["state"] == "ready"
         assert ready_asset["streaming_object_path"] == derived_path
         assert ready_asset["streaming_format"] == "mp3"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_attach_replacement_keeps_stable_lesson_and_runtime_ids(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(**_kwargs):
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+
+        async def upload_and_complete(filename: str) -> str:
+            upload_resp = await async_client.post(
+                "/api/media/upload-url",
+                headers=headers,
+                json={
+                    "filename": filename,
+                    "mime_type": "audio/wav",
+                    "size_bytes": 2048,
+                    "media_type": "audio",
+                    "lesson_id": lesson_id,
+                },
+            )
+            assert upload_resp.status_code == 200, upload_resp.text
+            media_id = upload_resp.json()["media_asset_id"]
+
+            complete_resp = await async_client.post(
+                "/api/media/complete",
+                headers=headers,
+                json={"media_id": media_id},
+            )
+            assert complete_resp.status_code == 200, complete_resp.text
+            return media_id
+
+        first_media_id = await upload_and_complete("first.wav")
+        first_attach = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=first_media_id,
+            link_scope="lesson",
+            lesson_id=lesson_id,
+        )
+        original_lesson_media_id = first_attach["lesson_media_id"]
+        original_runtime_media_id = first_attach["runtime_media_id"]
+
+        second_media_id = await upload_and_complete("second.wav")
+        replacement_attach = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=second_media_id,
+            link_scope="lesson",
+            lesson_id=lesson_id,
+            lesson_media_id=original_lesson_media_id,
+        )
+        assert replacement_attach["lesson_media_id"] == original_lesson_media_id
+        assert replacement_attach["runtime_media_id"] == original_runtime_media_id
+
+        lesson_media = await models.get_media(original_lesson_media_id)
+        assert lesson_media is not None
+        assert str(lesson_media["media_asset_id"]) == second_media_id
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT count(*) AS lesson_media_count
+                FROM app.lesson_media
+                WHERE lesson_id = %s
+                """,
+                (lesson_id,),
+            )
+            lesson_media_count = await cur.fetchone()
+            await cur.execute(
+                """
+                SELECT count(*) AS active_runtime_count
+                FROM app.runtime_media
+                WHERE lesson_media_id = %s
+                  AND active = true
+                """,
+                (original_lesson_media_id,),
+            )
+            active_runtime_count = await cur.fetchone()
+
+        assert int(lesson_media_count["lesson_media_count"]) == 1
+        assert int(active_runtime_count["active_runtime_count"]) == 1
     finally:
         await cleanup_user(user_id)
 
@@ -809,7 +1105,7 @@ async def test_runtime_playback_home_direct_upload_asset_backed(async_client, mo
             state="processing",
         )
         assert asset
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=str(asset["id"]),
             streaming_object_path=f"media/derived/audio/home/{uuid.uuid4().hex}.mp3",
             streaming_format="mp3",
@@ -1004,7 +1300,7 @@ async def test_previews_and_lesson_playback_share_backend_resolution(
             return None, course_id
 
         async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
-            assert candidate_user_id == user_id
+            assert str(candidate_user_id) == user_id
             assert candidate_course_id == course_id
             return True
 
@@ -1125,7 +1421,7 @@ async def test_media_previews_isolate_malformed_and_missing_ids(
             return None, course_id
 
         async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
-            assert candidate_user_id == user_id
+            assert str(candidate_user_id) == user_id
             assert candidate_course_id == course_id
             return True
 
@@ -1229,7 +1525,7 @@ async def test_lesson_playback_legacy_row_is_blocked(async_client, monkeypatch):
         await cleanup_user(user_id)
 
 
-async def test_lesson_playback_derived_audio_adds_cache_version(
+async def test_lesson_playback_legacy_audio_passthrough_is_rejected(
     async_client, monkeypatch
 ):
     headers, user_id = await register_teacher(async_client)
@@ -1301,12 +1597,8 @@ async def test_lesson_playback_derived_audio_adds_cache_version(
             headers=headers,
             json={"lesson_media_id": str(lesson_media["id"])},
         )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["url"] == (
-            f"https://stream.local/course-media/{derived_path}?v={media_object['id']}"
-        )
-        assert body["playback_url"] == body["url"]
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["detail"] == "Lesson media has no playable source"
     finally:
         await cleanup_user(user_id)
 
@@ -1472,7 +1764,7 @@ async def test_lesson_playback_pipeline_preserves_teacher_bypass(
         await cleanup_user(user_id)
 
 
-async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeypatch):
+async def test_lesson_playback_legacy_intro_audio_is_rejected(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
@@ -1576,16 +1868,13 @@ async def test_lesson_playback_legacy_intro_skips_snapshot(async_client, monkeyp
             headers=headers,
             json={"lesson_media_id": lesson_media_id},
         )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["url"] == (
-            "https://stream.local/course-media/courses/demo/lessons/demo/legacy.mp3"
-        )
-        assert resp.json()["playback_url"] == resp.json()["url"]
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["detail"] == "Lesson media has no playable source"
     finally:
         await cleanup_user(user_id)
 
 
-async def test_lesson_playback_legacy_non_intro_requires_snapshot(
+async def test_lesson_playback_legacy_non_intro_audio_is_rejected(
     async_client, monkeypatch
 ):
     headers, user_id = await register_teacher(async_client)
@@ -1638,8 +1927,10 @@ async def test_lesson_playback_legacy_non_intro_requires_snapshot(
         async def fake_is_course_teacher_or_instructor(*_args, **_kwargs):
             return False
 
-        async def fake_snapshot(*_args, **_kwargs):
-            return {"can_access": False}
+        async def fail_if_snapshot_called(*args, **kwargs):
+            raise AssertionError(
+                "course_access_snapshot must not be called for legacy lesson audio"
+            )
 
         monkeypatch.setattr(
             lesson_playback_service.canonical_media_resolver,
@@ -1668,7 +1959,7 @@ async def test_lesson_playback_legacy_non_intro_requires_snapshot(
         monkeypatch.setattr(
             lesson_playback_service.models,
             "course_access_snapshot",
-            fake_snapshot,
+            fail_if_snapshot_called,
             raising=True,
         )
         resp = await async_client.post(
@@ -1676,8 +1967,8 @@ async def test_lesson_playback_legacy_non_intro_requires_snapshot(
             headers=headers,
             json={"lesson_media_id": lesson_media_id},
         )
-        assert resp.status_code == 403, resp.text
-        assert resp.json()["detail"] == "Access denied"
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["detail"] == "Lesson media has no playable source"
     finally:
         await cleanup_user(user_id)
 
@@ -1861,11 +2152,18 @@ async def test_wav_upload_position_allows_upload_after_deletion(
             )
             assert resp.status_code == 200, resp.text
             complete_resp = await async_client.post(
-                "/api/media/upload-url/complete",
+                "/api/media/complete",
                 headers=headers,
                 json={"media_id": resp.json()["media_asset_id"]},
             )
             assert complete_resp.status_code == 200, complete_resp.text
+            await _attach_media_asset(
+                async_client,
+                headers,
+                media_id=resp.json()["media_asset_id"],
+                link_scope="lesson",
+                lesson_id=lesson_id,
+            )
             return resp.json()
 
         await issue_upload("a.wav")
@@ -1958,10 +2256,10 @@ async def test_playback_url_allows_subscription_only_access(async_client, monkey
             original_filename="demo.wav",
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
-            state="ready",
+            state="uploaded",
         )
         assert asset
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=str(asset["id"]),
             streaming_object_path=derived_path,
             streaming_format="mp3",

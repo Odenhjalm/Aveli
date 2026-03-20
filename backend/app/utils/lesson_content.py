@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import base64
 import html
 import json
 import re
 from json import JSONDecodeError
 from typing import Any, Iterable, Mapping
+from urllib.parse import unquote, urlparse
 
 
 _SUPPORTED_LESSON_MEDIA_KINDS = frozenset({"image", "audio", "video", "document"})
 _LESSON_MEDIA_ID_FRAGMENT = r"[A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*"
+_LESSON_MEDIA_ID_PATTERN = re.compile(rf"^{_LESSON_MEDIA_ID_FRAGMENT}$")
 _AUDIO_HTML_ELEMENT_PATTERN = re.compile(
     r"<audio\b[^>]*?(?:\/>|>.*?<\/audio>)",
     re.IGNORECASE | re.DOTALL,
@@ -41,10 +44,26 @@ _MARKDOWN_LINK_PATTERN = re.compile(
     r"""(?<!!)\[[^\]]*]\((?:<)?([^)>\s]+)(?:>)?(?:\s+"[^"]*")?\)""",
     re.IGNORECASE,
 )
+_ANY_TYPED_TOKEN_PATTERN = re.compile(r"!([a-z]+)\(([^)]*)\)", re.IGNORECASE)
 _TOKEN_PATTERN_BY_KIND = {
     kind: re.compile(rf"!{kind}\(({_LESSON_MEDIA_ID_FRAGMENT})\)", re.IGNORECASE)
     for kind in _SUPPORTED_LESSON_MEDIA_KINDS
 }
+_MEDIA_FILE_EXTENSION_PATTERN = re.compile(
+    r"\.(?:png|jpe?g|webp|gif|svg|mp3|wav|m4a|mp4|pdf)(?:$|[?#])",
+    re.IGNORECASE,
+)
+_STORAGE_OBJECT_URL_PATH_PATTERN = re.compile(
+    r"/storage/v1/object/(?:public|authenticated|sign)/[^/]+/.+",
+    re.IGNORECASE,
+)
+_STORAGE_PATH_PREFIXES = (
+    "lessons/",
+    "media/",
+    "courses/",
+    "home-player/",
+    "users/",
+)
 
 
 def serialize_audio_embeds(content: str) -> str:
@@ -101,7 +120,6 @@ def _convert_quill_document_if_needed(raw: str) -> tuple[str, bool]:
             if html_tag is not None:
                 parts.append(html_tag)
                 continue
-        # Preserve unknown inserts to avoid losing content.
         parts.append(json.dumps(op))
 
     return "".join(parts), True
@@ -197,6 +215,7 @@ def build_lesson_media_write_contract(
     rows: Iterable[Mapping[str, Any]],
 ) -> tuple[dict[str, str], dict[str, str]]:
     lesson_media_kinds: dict[str, str] = {}
+    media_url_aliases: dict[str, str] = {}
 
     for row in rows:
         lesson_media_id = str(row.get("id") or "").strip()
@@ -207,7 +226,13 @@ def build_lesson_media_write_contract(
             continue
 
         lesson_media_kinds[lesson_media_id] = normalized_kind
-    return lesson_media_kinds, {}
+        _register_lesson_media_aliases(
+            lesson_media_id=lesson_media_id,
+            row=row,
+            media_url_aliases=media_url_aliases,
+        )
+
+    return lesson_media_kinds, media_url_aliases
 
 
 def normalize_lesson_markdown_for_storage(
@@ -224,13 +249,49 @@ def normalize_lesson_markdown_for_storage(
         for media_id, kind in (lesson_media_kinds or {}).items()
         if (normalized_kind := _normalize_lesson_media_kind(kind)) is not None
     }
+    aliases = {
+        str(alias).strip(): str(lesson_media_id).strip()
+        for alias, lesson_media_id in (media_url_aliases or {}).items()
+        if str(alias).strip() and str(lesson_media_id).strip()
+    }
 
     normalized = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = _replace_html_media(
+        normalized,
+        pattern=_AUDIO_HTML_ELEMENT_PATTERN,
+        expected_kind="audio",
+        lesson_media_kinds=allowed_kinds,
+        media_url_aliases=aliases,
+    )
+    normalized = _replace_html_media(
+        normalized,
+        pattern=_VIDEO_HTML_ELEMENT_PATTERN,
+        expected_kind="video",
+        lesson_media_kinds=allowed_kinds,
+        media_url_aliases=aliases,
+    )
+    normalized = _replace_html_media(
+        normalized,
+        pattern=_IMG_HTML_TAG_PATTERN,
+        expected_kind="image",
+        lesson_media_kinds=allowed_kinds,
+        media_url_aliases=aliases,
+    )
+    normalized = _normalize_markdown_images(
+        normalized,
+        lesson_media_kinds=allowed_kinds,
+        media_url_aliases=aliases,
+    )
+    normalized = _normalize_markdown_links(
+        normalized,
+        lesson_media_kinds=allowed_kinds,
+        media_url_aliases=aliases,
+    )
     _assert_no_html_media(normalized)
     _assert_no_raw_markdown_media_refs(
         normalized,
         lesson_media_kinds=allowed_kinds,
-        media_url_aliases={},
+        media_url_aliases=aliases,
     )
     _validate_typed_lesson_media_tokens(normalized, lesson_media_kinds=allowed_kinds)
     return normalized
@@ -258,32 +319,36 @@ def _normalize_media_source_attribute(attrs: Mapping[str, str]) -> str:
 def _resolve_lesson_media_id(
     *,
     raw_reference: str,
-    expected_kind: str,
+    expected_kind: str | None,
     attrs: Mapping[str, str] | None = None,
     source: str | None = None,
     lesson_media_kinds: Mapping[str, str],
     media_url_aliases: Mapping[str, str],
 ) -> str:
-    normalized_kind = _normalize_lesson_media_kind(expected_kind)
-    if normalized_kind is None:
-        raise ValueError(f"Unsupported lesson media kind: {expected_kind}")
-
     explicit_id = None
     if attrs:
         explicit_id = attrs.get("data-lesson-media-id") or attrs.get("data-lesson_media_id")
     lesson_media_id = explicit_id.strip() if explicit_id and explicit_id.strip() else None
+    if lesson_media_id is None and source:
+        lesson_media_id = _resolve_lesson_media_id_from_source(
+            source=source,
+            media_url_aliases=media_url_aliases,
+        )
     if not lesson_media_id:
         raise ValueError(
-            f"Lesson content {normalized_kind} refs must use canonical lesson_media ids; "
+            "Lesson content media must use canonical typed refs; "
             f"could not normalize {raw_reference!r}"
         )
 
+    normalized_kind = (
+        _normalize_lesson_media_kind(expected_kind) if expected_kind is not None else None
+    )
     actual_kind = lesson_media_kinds.get(lesson_media_id)
     if actual_kind is None:
         raise ValueError(
             f"Lesson content references lesson media {lesson_media_id!r} that is not attached to this lesson"
         )
-    if actual_kind != normalized_kind:
+    if normalized_kind is not None and actual_kind != normalized_kind:
         raise ValueError(
             f"Lesson content {normalized_kind} ref {lesson_media_id!r} does not match attached lesson media kind {actual_kind!r}"
         )
@@ -335,6 +400,36 @@ def _normalize_markdown_images(
 
     return _MARKDOWN_IMAGE_PATTERN.sub(_replacement, markdown)
 
+
+def _normalize_markdown_links(
+    markdown: str,
+    *,
+    lesson_media_kinds: Mapping[str, str],
+    media_url_aliases: Mapping[str, str],
+) -> str:
+    def _replacement(match: re.Match[str]) -> str:
+        raw = match.group(0) or ""
+        source = (match.group(1) or "").strip()
+        if not source or not _is_candidate_markdown_media_link(source):
+            return raw
+
+        lesson_media_id = _resolve_lesson_media_id(
+            raw_reference=raw,
+            expected_kind=None,
+            source=source,
+            lesson_media_kinds=lesson_media_kinds,
+            media_url_aliases=media_url_aliases,
+        )
+        actual_kind = lesson_media_kinds.get(lesson_media_id)
+        if actual_kind is None:
+            raise ValueError(
+                f"Lesson content references lesson media {lesson_media_id!r} that is not attached to this lesson"
+            )
+        return f"!{actual_kind}({lesson_media_id})"
+
+    return _MARKDOWN_LINK_PATTERN.sub(_replacement, markdown)
+
+
 def _assert_no_raw_markdown_media_refs(
     markdown: str,
     *,
@@ -353,13 +448,7 @@ def _assert_no_raw_markdown_media_refs(
         source = (match.group(1) or "").strip()
         if not raw or not source:
             continue
-        normalized_source = source.lower()
-        if (
-            _STUDIO_MEDIA_URL_PATTERN.search(source)
-            or _MEDIA_STREAM_URL_PATTERN.search(source)
-            or normalized_source.startswith("/api/files/")
-            or "/api/files/" in normalized_source
-        ):
+        if _is_candidate_markdown_media_link(source):
             raise ValueError(
                 "Lesson content media must use canonical typed refs; raw document links are not allowed"
             )
@@ -373,12 +462,7 @@ def markdown_contains_legacy_document_media_links(markdown: str) -> bool:
         source = (match.group(1) or "").strip()
         if not source:
             continue
-        if _STUDIO_MEDIA_URL_PATTERN.search(source):
-            return True
-        if _MEDIA_STREAM_URL_PATTERN.search(source):
-            return True
-        normalized_source = source.lower()
-        if normalized_source.startswith("/api/files/") or "/api/files/" in normalized_source:
+        if _is_candidate_markdown_media_link(source):
             return True
     return False
 
@@ -395,6 +479,15 @@ def _validate_typed_lesson_media_tokens(
     *,
     lesson_media_kinds: Mapping[str, str],
 ) -> None:
+    for match in _ANY_TYPED_TOKEN_PATTERN.finditer(markdown):
+        raw_kind = (match.group(1) or "").strip().lower()
+        raw_id = (match.group(2) or "").strip()
+        normalized_kind = _normalize_lesson_media_kind(raw_kind)
+        if normalized_kind is None or not _LESSON_MEDIA_ID_PATTERN.fullmatch(raw_id):
+            raise ValueError(
+                "Lesson content media must use canonical typed refs; only !image(id), !audio(id), !video(id), and !document(id) are allowed"
+            )
+
     for expected_kind, pattern in _TOKEN_PATTERN_BY_KIND.items():
         for match in pattern.finditer(markdown):
             lesson_media_id = match.group(1)
@@ -409,3 +502,140 @@ def _validate_typed_lesson_media_tokens(
                 raise ValueError(
                     f"Lesson content {expected_kind} ref {lesson_media_id!r} does not match attached lesson media kind {actual_kind!r}"
                 )
+
+
+def _register_media_url_alias(
+    media_url_aliases: dict[str, str],
+    *,
+    lesson_media_id: str,
+    candidate: str | None,
+) -> None:
+    normalized = _normalize_alias_candidate(candidate)
+    if normalized:
+        media_url_aliases.setdefault(normalized, lesson_media_id)
+
+
+def _register_lesson_media_aliases(
+    *,
+    lesson_media_id: str,
+    row: Mapping[str, Any],
+    media_url_aliases: dict[str, str],
+) -> None:
+    _register_media_url_alias(
+        media_url_aliases,
+        lesson_media_id=lesson_media_id,
+        candidate=f"/studio/media/{lesson_media_id}",
+    )
+    _register_media_url_alias(
+        media_url_aliases,
+        lesson_media_id=lesson_media_id,
+        candidate=f"studio/media/{lesson_media_id}",
+    )
+
+    storage_bucket = str(row.get("storage_bucket") or "").strip()
+    storage_path = str(row.get("storage_path") or "").strip().lstrip("/")
+    if not storage_bucket or not storage_path:
+        return
+
+    _register_media_url_alias(
+        media_url_aliases,
+        lesson_media_id=lesson_media_id,
+        candidate=f"/api/files/{storage_bucket}/{storage_path}",
+    )
+    _register_media_url_alias(
+        media_url_aliases,
+        lesson_media_id=lesson_media_id,
+        candidate=f"/storage/v1/object/public/{storage_bucket}/{storage_path}",
+    )
+    _register_media_url_alias(
+        media_url_aliases,
+        lesson_media_id=lesson_media_id,
+        candidate=f"/storage/v1/object/authenticated/{storage_bucket}/{storage_path}",
+    )
+
+
+def _normalize_alias_candidate(candidate: str | None) -> str | None:
+    raw = str(candidate or "").strip()
+    if not raw:
+        return None
+    raw = raw.strip("<>")
+    parsed = urlparse(raw)
+    path = unquote(parsed.path or raw).strip()
+    if not path:
+        return None
+    if not path.startswith("/"):
+        path = f"/{path.lstrip('/')}"
+    return re.sub(r"/{2,}", "/", path)
+
+
+def _extract_media_id_from_stream_token(token: str) -> str | None:
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    payload = parts[1]
+    payload += "=" * (-len(payload) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
+        parsed = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    subject = parsed.get("sub")
+    if isinstance(subject, str) and subject.strip():
+        return subject.strip()
+    return None
+
+
+def _resolve_lesson_media_id_from_source(
+    *,
+    source: str,
+    media_url_aliases: Mapping[str, str],
+) -> str | None:
+    studio_match = _STUDIO_MEDIA_URL_PATTERN.search(source)
+    if studio_match:
+        candidate = studio_match.group(1)
+        if candidate:
+            return candidate.strip()
+
+    stream_match = _MEDIA_STREAM_URL_PATTERN.search(source)
+    if stream_match:
+        candidate = _extract_media_id_from_stream_token(stream_match.group(1) or "")
+        if candidate:
+            return candidate
+
+    normalized = _normalize_alias_candidate(source)
+    if normalized:
+        lesson_media_id = media_url_aliases.get(normalized)
+        if lesson_media_id:
+            return lesson_media_id
+    return None
+
+
+def _looks_like_storage_path(source: str) -> bool:
+    normalized = source.strip().lstrip("/")
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    return lowered.startswith(_STORAGE_PATH_PREFIXES) and bool(
+        _MEDIA_FILE_EXTENSION_PATTERN.search(lowered)
+    )
+
+
+def _is_candidate_markdown_media_link(source: str) -> bool:
+    normalized = source.strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    if _STUDIO_MEDIA_URL_PATTERN.search(normalized):
+        return True
+    if _MEDIA_STREAM_URL_PATTERN.search(normalized):
+        return True
+    if lowered.startswith("/api/files/") or "/api/files/" in lowered:
+        return True
+    normalized_alias = _normalize_alias_candidate(normalized)
+    if normalized_alias and _STORAGE_OBJECT_URL_PATH_PATTERN.search(normalized_alias):
+        return True
+    if _looks_like_storage_path(normalized):
+        return True
+    return bool(_MEDIA_FILE_EXTENSION_PATTERN.search(lowered))

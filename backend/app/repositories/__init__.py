@@ -109,6 +109,7 @@ from .sessions import (
     list_session_slots,
 )
 from .media_assets import (
+    MediaAssetReadyAuthorityError,
     create_media_asset,
     delete_media_asset,
     defer_media_asset_processing,
@@ -118,6 +119,9 @@ from .media_assets import (
     increment_processing_attempts,
     mark_media_asset_failed,
     mark_media_asset_ready,
+    mark_media_asset_ready_from_worker,
+    mark_course_cover_ready,
+    mark_course_cover_ready_from_worker,
     release_processing_media_assets,
 )
 
@@ -231,6 +235,7 @@ __all__ = [
     "get_session_slot",
     "list_session_slots",
     # Media assets
+    "MediaAssetReadyAuthorityError",
     "create_media_asset",
     "delete_media_asset",
     "fetch_and_lock_pending_media_assets",
@@ -239,6 +244,9 @@ __all__ = [
     "increment_processing_attempts",
     "mark_media_asset_failed",
     "mark_media_asset_ready",
+    "mark_media_asset_ready_from_worker",
+    "mark_course_cover_ready",
+    "mark_course_cover_ready_from_worker",
     "defer_media_asset_processing",
     "release_processing_media_assets",
 ]

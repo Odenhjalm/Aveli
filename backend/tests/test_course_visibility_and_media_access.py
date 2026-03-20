@@ -244,10 +244,10 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
         original_filename="demo.wav",
         original_size_bytes=123,
         storage_bucket="course-media",
-        state="ready",
+        state="uploaded",
     )
     assert media_asset
-    await media_assets_repo.mark_media_asset_ready(
+    await media_assets_repo.mark_media_asset_ready_from_worker(
         media_id=str(media_asset["id"]),
         streaming_object_path=f"media/derived/audio/courses/{course_id}/lessons/{lesson['id']}/demo.mp3",
         streaming_format="mp3",
@@ -267,6 +267,20 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     )
     assert lesson_media
     lesson_media_id = str(lesson_media["id"])
+    async with db.get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id
+            FROM app.runtime_media
+            WHERE lesson_media_id = %s
+              AND active = true
+            LIMIT 1
+            """,
+            (lesson_media_id,),
+        )
+        runtime_row = await cur.fetchone()
+    assert runtime_row
+    runtime_media_id = str(runtime_row["id"])
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -289,12 +303,12 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     # Not enrolled => not visible in home audio feed.
     resp = await async_client.get("/home/audio", headers=auth_header(student_token))
     assert resp.status_code == 200, resp.text
-    assert lesson_media_id not in {it.get("id") for it in resp.json().get("items") or []}
+    assert runtime_media_id not in {it.get("id") for it in resp.json().get("items") or []}
 
     # Owner can always see their own media in published courses.
     resp_owner = await async_client.get("/home/audio", headers=auth_header(owner_token))
     assert resp_owner.status_code == 200, resp_owner.text
-    assert lesson_media_id in {it.get("id") for it in resp_owner.json().get("items") or []}
+    assert runtime_media_id in {it.get("id") for it in resp_owner.json().get("items") or []}
 
     # Enroll => visible in home audio feed.
     # Legacy media signing must also enforce access (403 before enrollment, 200 after).
@@ -328,7 +342,7 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     await courses_repo.ensure_course_enrollment(student_id, course_id)
     resp_enrolled = await async_client.get("/home/audio", headers=auth_header(student_token))
     assert resp_enrolled.status_code == 200, resp_enrolled.text
-    assert lesson_media_id in {it.get("id") for it in resp_enrolled.json().get("items") or []}
+    assert runtime_media_id in {it.get("id") for it in resp_enrolled.json().get("items") or []}
 
     sign_ok = await async_client.post(
         "/media/sign",

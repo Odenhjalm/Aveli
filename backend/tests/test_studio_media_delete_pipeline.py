@@ -98,10 +98,10 @@ async def test_delete_pipeline_audio_removes_storage_objects(async_client, monke
             original_filename="demo.wav",
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
-            state="ready",
+            state="uploaded",
         )
         assert asset
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=str(asset["id"]),
             streaming_object_path=derived_path,
             streaming_format="mp3",
@@ -174,10 +174,10 @@ async def test_delete_lesson_cleans_pipeline_assets(async_client, monkeypatch):
             original_filename="demo.wav",
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
-            state="ready",
+            state="uploaded",
         )
         assert asset
-        await media_assets_repo.mark_media_asset_ready(
+        await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=str(asset["id"]),
             streaming_object_path=derived_path,
             streaming_format="mp3",
