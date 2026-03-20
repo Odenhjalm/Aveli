@@ -375,4 +375,52 @@ void main() {
       debugPrint = originalDebugPrint;
     },
   );
+
+  testWidgets(
+    'LessonMediaPreview keeps unresolved placeholders compact in narrow layouts',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final mediaRepo = _MockMediaRepository();
+      _stubPreviewDependencies(
+        studioRepo,
+        mediaRepo,
+        fetchLessonMediaPreviews: (_) async => {
+          'media-image-1': {
+            'media_type': 'image',
+            'authoritative_editor_ready': false,
+            'failure_reason': 'unresolvable',
+          },
+        },
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            mediaRepositoryProvider.overrideWithValue(mediaRepo),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 116,
+                  child: LessonMediaPreview(
+                    lessonMediaId: 'media-image-1',
+                    mediaType: 'image',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

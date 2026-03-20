@@ -245,8 +245,11 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
     final isAudio = mediaType == 'audio';
     final content = LayoutBuilder(
       builder: (context, constraints) {
+        final minDetailedWidth = isAudio ? 84.0 : 128.0;
+        final minDetailedHeight = isAudio ? 72.0 : 84.0;
         final isCompact =
-            constraints.maxWidth < 84 || constraints.maxHeight < 72;
+            constraints.maxWidth < minDetailedWidth ||
+            constraints.maxHeight < minDetailedHeight;
         return DecoratedBox(
           decoration: _frameDecoration(context),
           child: Stack(

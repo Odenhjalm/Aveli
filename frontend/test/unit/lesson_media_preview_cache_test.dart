@@ -172,4 +172,40 @@ void main() {
       ).called(1);
     },
   );
+
+  test(
+    'preview cache keeps a stored image fallback when backend preview resolution fails',
+    () async {
+      final studioRepository = _MockStudioRepository();
+      when(() => studioRepository.fetchLessonMediaPreviews(any())).thenAnswer((
+        _,
+      ) async {
+        return {
+          'media-image-1': {
+            'media_type': 'image',
+            'authoritative_editor_ready': false,
+            'failure_reason': 'unresolvable',
+          },
+        };
+      });
+
+      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      cache.primeFromLessonMedia([
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'preferredUrl': 'https://cdn.test/media-image-1.webp',
+          'original_name': 'image.png',
+        },
+      ]);
+
+      final preview = await cache.getPreview('media-image-1');
+
+      expect(preview?.visualUrl, 'https://cdn.test/media-image-1.webp');
+      expect(preview?.authoritativeEditorReady, isFalse);
+      verify(
+        () => studioRepository.fetchLessonMediaPreviews(['media-image-1']),
+      ).called(1);
+    },
+  );
 }

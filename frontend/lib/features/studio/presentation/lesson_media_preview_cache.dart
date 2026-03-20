@@ -12,6 +12,7 @@ class LessonMediaPreviewData {
     required this.lessonMediaId,
     required this.mediaType,
     this.resolvedPreviewUrl,
+    this.fallbackPreviewUrl,
     this.authoritativeEditorReady,
     this.durationSeconds,
     this.fileName,
@@ -21,6 +22,7 @@ class LessonMediaPreviewData {
   final String lessonMediaId;
   final String mediaType;
   final String? resolvedPreviewUrl;
+  final String? fallbackPreviewUrl;
   final bool? authoritativeEditorReady;
   final int? durationSeconds;
   final String? fileName;
@@ -46,6 +48,8 @@ class LessonMediaPreviewData {
   String? get visualUrl {
     final preview = resolvedPreviewUrl?.trim();
     if (preview != null && preview.isNotEmpty) return preview;
+    final fallback = fallbackPreviewUrl?.trim();
+    if (fallback != null && fallback.isNotEmpty) return fallback;
     return null;
   }
 
@@ -67,6 +71,7 @@ class LessonMediaPreviewData {
       lessonMediaId: metadata.lessonMediaId,
       mediaType: metadata.mediaType.isEmpty ? mediaType : metadata.mediaType,
       resolvedPreviewUrl: resolvedPreviewUrl,
+      fallbackPreviewUrl: fallbackPreviewUrl ?? metadata.fallbackPreviewUrl,
       authoritativeEditorReady: authoritativeEditorReady,
       durationSeconds: metadata.durationSeconds ?? durationSeconds,
       fileName: metadata.fileName ?? fileName,
@@ -82,6 +87,7 @@ class LessonMediaPreviewData {
       lessonMediaId: lessonMediaId,
       mediaType: mediaType.isEmpty ? fallback.mediaType : mediaType,
       resolvedPreviewUrl: resolvedPreviewUrl,
+      fallbackPreviewUrl: fallbackPreviewUrl ?? fallback.fallbackPreviewUrl,
       authoritativeEditorReady: authoritativeEditorReady,
       durationSeconds: durationSeconds ?? fallback.durationSeconds,
       fileName: fileName ?? fallback.fileName,
@@ -93,6 +99,7 @@ class LessonMediaPreviewData {
     return LessonMediaPreviewData(
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
+      fallbackPreviewUrl: fallbackPreviewUrl,
       durationSeconds: durationSeconds,
       fileName: fileName,
     );
@@ -112,6 +119,9 @@ class LessonMediaPreviewData {
       mediaType: mediaType,
       resolvedPreviewUrl: _normalizedString(
         json['resolved_preview_url'] ?? json['resolvedPreviewUrl'],
+      ),
+      fallbackPreviewUrl: _normalizedString(
+        json['fallback_preview_url'] ?? json['fallbackPreviewUrl'],
       ),
       authoritativeEditorReady: json['authoritative_editor_ready'] as bool?,
       durationSeconds: duration is num ? duration.toInt() : null,
@@ -133,10 +143,12 @@ class LessonMediaPreviewData {
     final fileName =
         _normalizedString(media['file_name'] ?? media['fileName']) ??
         _normalizedString(media['original_name']);
+    final fallbackPreviewUrl = _safeStoredMediaFallbackUrl(media, mediaType);
 
     return LessonMediaPreviewData(
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
+      fallbackPreviewUrl: fallbackPreviewUrl,
       durationSeconds: duration is num ? duration.toInt() : null,
       fileName: fileName,
     );
@@ -147,6 +159,7 @@ class LessonMediaPreviewData {
       lessonMediaId: lessonMediaId,
       mediaType: mediaType,
       resolvedPreviewUrl: resolvedPreviewUrl,
+      fallbackPreviewUrl: fallbackPreviewUrl,
       authoritativeEditorReady: authoritativeEditorReady,
       durationSeconds: durationSeconds,
       fileName: fileName,
@@ -458,23 +471,25 @@ class LessonMediaPreviewCache {
 
     for (final lessonMediaId in ids) {
       final preview = previews[lessonMediaId];
+      final cachedPreview = _cache[lessonMediaId];
+      final effectivePreview = preview ?? cachedPreview;
       final effectiveMediaType = preview?.mediaType.isNotEmpty == true
           ? preview!.mediaType
-          : (_cache[lessonMediaId]?.mediaType ?? '');
+          : (cachedPreview?.mediaType ?? '');
       final requiresVisualResolution =
           (effectiveMediaType == 'image' || effectiveMediaType == 'video') &&
-          (preview?.visualUrl == null);
+          (effectivePreview?.visualUrl == null);
       final needsPlaceholderStabilization =
-          preview == null || requiresVisualResolution;
-      LessonMediaPreviewData? result = preview;
-      if (preview != null && !requiresVisualResolution) {
+          effectivePreview == null || requiresVisualResolution;
+      LessonMediaPreviewData? result = effectivePreview;
+      if (effectivePreview != null && !requiresVisualResolution) {
         _stabilizedPlaceholderIds.remove(lessonMediaId);
-        _cache[lessonMediaId] = preview.asNonAuthoritativeCacheEntry();
+        _cache[lessonMediaId] = effectivePreview.asNonAuthoritativeCacheEntry();
       } else if (needsPlaceholderStabilization) {
         _stabilizeFailedPreview(
           lessonMediaId: lessonMediaId,
-          preview: preview,
-          fallback: _cache[lessonMediaId],
+          preview: effectivePreview,
+          fallback: cachedPreview,
           error: batchError,
           reason: batchError == null
               ? 'backend_returned_unresolved_preview'
@@ -518,4 +533,43 @@ String? _normalizedString(Object? value) {
   if (value == null) return null;
   final normalized = value.toString().trim();
   return normalized.isEmpty ? null : normalized;
+}
+
+String? _safeStoredMediaFallbackUrl(
+  Map<String, dynamic> media,
+  String? mediaType,
+) {
+  if ((mediaType ?? '').trim().toLowerCase() != 'image') {
+    return null;
+  }
+  for (final key in const <String>[
+    'resolved_preview_url',
+    'resolvedPreviewUrl',
+    'preferredUrl',
+    'preferred_url',
+    'download_url',
+    'downloadUrl',
+    'playback_url',
+    'playbackUrl',
+  ]) {
+    final candidate = _normalizedString(media[key]);
+    if (candidate == null) continue;
+    if (_isBlockedStoredMediaFallbackUrl(candidate)) {
+      continue;
+    }
+    return candidate;
+  }
+  return null;
+}
+
+bool _isBlockedStoredMediaFallbackUrl(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) return true;
+  final uri = Uri.tryParse(normalized);
+  final path = uri?.path ?? normalized;
+  final lowered = path.toLowerCase();
+  return lowered.startsWith('/studio/media/') ||
+      lowered.startsWith('/api/media/') ||
+      lowered.startsWith('/media/sign') ||
+      lowered.startsWith('/media/stream/');
 }
