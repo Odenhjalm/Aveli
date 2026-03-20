@@ -6,6 +6,7 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -211,7 +212,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (redirect != null && redirect.startsWith('/')) {
         context.go(redirect);
       } else {
-        context.goNamed(AppRoute.home);
+        context.goNamed(
+          _defaultPostLoginRoute(ref.read(authControllerProvider).profile),
+        );
       }
     } catch (error) {
       if (!mounted || !context.mounted) return;
@@ -241,4 +244,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
     return null;
   }
+}
+
+String _defaultPostLoginRoute(Profile? profile) {
+  if (profile?.isAdmin == true) {
+    return AppRoute.home;
+  }
+  if (profile?.isTeacher == true) {
+    return AppRoute.teacherHome;
+  }
+  return AppRoute.home;
 }

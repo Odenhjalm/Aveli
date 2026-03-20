@@ -88,6 +88,7 @@ class Profile(BaseModel):
     onboarding_state: str | None = None
     email_verified: bool = False
     membership_active: bool = False
+    is_teacher: bool = False
     role_v2: str
     is_admin: bool
     created_at: datetime

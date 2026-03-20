@@ -12,8 +12,7 @@ abstract final class OnboardingStateValue {
   static const verifiedUnpaid = 'verified_unpaid';
   static const accessActiveProfileIncomplete =
       'access_active_profile_incomplete';
-  static const accessActiveProfileComplete =
-      'access_active_profile_complete';
+  static const accessActiveProfileComplete = 'access_active_profile_complete';
   static const welcomed = 'welcomed';
 }
 
@@ -44,6 +43,7 @@ class Profile extends Equatable {
     this.onboardingState,
     this.emailVerified = false,
     this.membershipActive = false,
+    this.hasTeacherAccess = false,
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) =>
@@ -78,6 +78,9 @@ class Profile extends Equatable {
   @JsonKey(name: 'membership_active', defaultValue: false)
   final bool membershipActive;
 
+  @JsonKey(name: 'is_teacher', defaultValue: false)
+  final bool hasTeacherAccess;
+
   @JsonKey(fromJson: parseDateTime, toJson: dateTimeToIsoString)
   final DateTime createdAt;
 
@@ -98,6 +101,7 @@ class Profile extends Equatable {
     String? onboardingState,
     bool? emailVerified,
     bool? membershipActive,
+    bool? hasTeacherAccess,
   }) {
     return Profile(
       id: id ?? this.id,
@@ -113,12 +117,13 @@ class Profile extends Equatable {
       onboardingState: onboardingState ?? this.onboardingState,
       emailVerified: emailVerified ?? this.emailVerified,
       membershipActive: membershipActive ?? this.membershipActive,
+      hasTeacherAccess: hasTeacherAccess ?? this.hasTeacherAccess,
     );
   }
 
-  bool get isTeacher => userRole == UserRole.teacher;
-  bool get isProfessional =>
-      userRole == UserRole.professional || userRole == UserRole.teacher;
+  bool get isTeacher =>
+      isAdmin || hasTeacherAccess || userRole == UserRole.teacher;
+  bool get isProfessional => userRole == UserRole.professional || isTeacher;
 
   @override
   List<Object?> get props => [
@@ -133,6 +138,7 @@ class Profile extends Equatable {
     onboardingState,
     emailVerified,
     membershipActive,
+    hasTeacherAccess,
     createdAt,
     updatedAt,
   ];

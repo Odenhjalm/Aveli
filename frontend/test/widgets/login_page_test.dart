@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/gate.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
@@ -118,5 +122,85 @@ void main() {
       findsOneWidget,
     );
     expect(gate.allowed, isFalse);
+  });
+
+  testWidgets('teacher login redirects to teacher home', (tester) async {
+    final repo = _MockAuthRepository();
+    final profile = Profile(
+      id: 'teacher-1',
+      email: 'teacher@example.com',
+      userRole: UserRole.user,
+      isAdmin: false,
+      createdAt: DateTime.utc(2024, 1, 1),
+      updatedAt: DateTime.utc(2024, 1, 2),
+      onboardingState: OnboardingStateValue.welcomed,
+      hasTeacherAccess: true,
+    );
+
+    when(
+      () => repo.login(
+        email: any(named: 'email'),
+        password: any(named: 'password'),
+      ),
+    ).thenAnswer((_) async => profile);
+    when(() => repo.currentToken()).thenAnswer((_) async => null);
+
+    final controller = _TestAuthController(repo);
+    final router = GoRouter(
+      initialLocation: RoutePath.login,
+      routes: [
+        GoRoute(
+          path: RoutePath.login,
+          name: AppRoute.login,
+          builder: (context, _) => const LoginPage(),
+        ),
+        GoRoute(
+          path: RoutePath.home,
+          name: AppRoute.home,
+          builder: (context, _) => const Text('home'),
+        ),
+        GoRoute(
+          path: RoutePath.teacherHome,
+          name: AppRoute.teacherHome,
+          builder: (context, _) => const Text('teacher-home'),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith((ref) => controller),
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: 'pk_test',
+              stripeMerchantDisplayName: 'Aveli',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          backendAssetResolverProvider.overrideWith(
+            (ref) => TestBackendAssetResolver(),
+          ),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'teacher@example.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'correct-pass');
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Logga in'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('teacher-home'), findsOneWidget);
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      RoutePath.teacherHome,
+    );
   });
 }

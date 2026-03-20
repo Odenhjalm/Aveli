@@ -28,6 +28,11 @@ final _testAppRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) => notifier.handleRedirect(state),
     routes: [
       GoRoute(
+        path: RoutePath.boot,
+        name: AppRoute.boot,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
         path: RoutePath.landing,
         name: AppRoute.landing,
         builder: (context, _) => const SizedBox.shrink(),
@@ -180,6 +185,15 @@ void main() {
     onboardingState: OnboardingStateValue.verifiedUnpaid,
   );
 
+  const teacherVerifiedUnpaid = RouteSessionSnapshot(
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
+    isTeacher: true,
+    isAdmin: false,
+    onboardingState: OnboardingStateValue.verifiedUnpaid,
+  );
+
   const profileIncomplete = RouteSessionSnapshot(
     isAuthenticated: true,
     isAuthLoading: false,
@@ -204,6 +218,23 @@ void main() {
     hasTentativeSession: false,
     isTeacher: true,
     isAdmin: true,
+  );
+
+  const adminVerifiedUnpaid = RouteSessionSnapshot(
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasTentativeSession: false,
+    isTeacher: true,
+    isAdmin: true,
+    onboardingState: OnboardingStateValue.verifiedUnpaid,
+  );
+
+  const tentativeSession = RouteSessionSnapshot(
+    isAuthenticated: false,
+    isAuthLoading: false,
+    hasTentativeSession: true,
+    isTeacher: false,
+    isAdmin: false,
   );
 
   testWidgets('unauthenticated users redirect to login with redirect query', (
@@ -231,6 +262,31 @@ void main() {
     expect(uri.path, RoutePath.home);
   });
 
+  testWidgets(
+    'teachers with subscription-bypass access are not routed to /subscribe',
+    (tester) async {
+      final router = await _pumpHarness(tester, teacherVerifiedUnpaid);
+
+      router.go(RoutePath.login);
+      await tester.pump();
+
+      final uri = router.routeInformationProvider.value.uri;
+      expect(uri.path, RoutePath.teacherHome);
+    },
+  );
+
+  testWidgets('admins bypass subscription onboarding redirects', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, adminVerifiedUnpaid);
+
+    router.go(RoutePath.login);
+    await tester.pump();
+
+    final uri = router.routeInformationProvider.value.uri;
+    expect(uri.path, RoutePath.home);
+  });
+
   testWidgets('registered unverified users are routed to /verify', (
     tester,
   ) async {
@@ -239,12 +295,13 @@ void main() {
     router.go(RoutePath.home);
     await tester.pump();
 
-    expect(router.routeInformationProvider.value.uri.path, RoutePath.verifyEmail);
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      RoutePath.verifyEmail,
+    );
   });
 
-  testWidgets('verified unpaid users are routed to /subscribe', (
-    tester,
-  ) async {
+  testWidgets('verified unpaid users are routed to /subscribe', (tester) async {
     final router = await _pumpHarness(tester, verifiedUnpaid);
 
     router.go(RoutePath.home);
@@ -253,19 +310,36 @@ void main() {
     expect(router.routeInformationProvider.value.uri.path, RoutePath.subscribe);
   });
 
-  testWidgets('active users with incomplete profile are routed to /create-profile', (
+  testWidgets('tentative sessions stabilize on /boot during hydration', (
     tester,
   ) async {
-    final router = await _pumpHarness(tester, profileIncomplete);
+    final router = await _pumpHarness(tester, tentativeSession);
 
     router.go(RoutePath.home);
     await tester.pump();
 
-    expect(
-      router.routeInformationProvider.value.uri.path,
-      RoutePath.createProfile,
-    );
+    final firstUri = router.routeInformationProvider.value.uri;
+    expect(firstUri.path, RoutePath.boot);
+    expect(firstUri.queryParameters['redirect'], RoutePath.home);
+
+    await tester.pump();
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.boot);
   });
+
+  testWidgets(
+    'active users with incomplete profile are routed to /create-profile',
+    (tester) async {
+      final router = await _pumpHarness(tester, profileIncomplete);
+
+      router.go(RoutePath.home);
+      await tester.pump();
+
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        RoutePath.createProfile,
+      );
+    },
+  );
 
   testWidgets('active users with completed profile are routed to /welcome', (
     tester,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from .. import repositories
+from .. import models, repositories
 from ..utils.membership_status import is_membership_row_active
 
 REGISTERED_UNVERIFIED = "registered_unverified"
@@ -25,6 +25,11 @@ async def derive_onboarding_state(user_id: str) -> str:
     user = await repositories.get_user_by_id(user_id)
     if not _is_email_verified(user):
         return REGISTERED_UNVERIFIED
+
+    if await models.is_teacher_user(user_id):
+        if not _is_profile_complete(profile):
+            return ACCESS_ACTIVE_PROFILE_INCOMPLETE
+        return ACCESS_ACTIVE_PROFILE_COMPLETE
 
     membership = await repositories.get_membership(user_id)
     if not is_membership_row_active(membership):
@@ -79,4 +84,3 @@ def _normalize_datetime(value: Any) -> datetime | None:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     return None
-

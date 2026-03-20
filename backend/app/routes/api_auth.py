@@ -89,6 +89,7 @@ async def _profile_response(user_id: str) -> schemas.Profile:
         )
 
     onboarding_state = await sync_onboarding_state(user_id)
+    is_teacher = await models.is_teacher_user(user_id)
     user = await repositories.get_user_by_id(user_id) or {}
     membership = await repositories.get_membership(user_id)
     membership_active = is_membership_active(
@@ -98,6 +99,7 @@ async def _profile_response(user_id: str) -> schemas.Profile:
 
     payload = dict(profile)
     payload["onboarding_state"] = onboarding_state
+    payload["is_teacher"] = bool(is_teacher)
     payload["email_verified"] = bool(
         user.get("email_confirmed_at") or user.get("confirmed_at")
     )

@@ -23,6 +23,7 @@ Profile _$ProfileFromJson(Map<String, dynamic> json) => Profile(
   onboardingState: json['onboarding_state'] as String?,
   emailVerified: json['email_verified'] as bool? ?? false,
   membershipActive: json['membership_active'] as bool? ?? false,
+  hasTeacherAccess: json['is_teacher'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$ProfileToJson(Profile instance) => <String, dynamic>{
@@ -37,6 +38,7 @@ Map<String, dynamic> _$ProfileToJson(Profile instance) => <String, dynamic>{
   'onboarding_state': instance.onboardingState,
   'email_verified': instance.emailVerified,
   'membership_active': instance.membershipActive,
+  'is_teacher': instance.hasTeacherAccess,
   'created_at': dateTimeToIsoString(instance.createdAt),
   'updated_at': dateTimeToIsoString(instance.updatedAt),
 };

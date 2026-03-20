@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
@@ -131,6 +131,9 @@ async def test_derive_onboarding_state_returns_verified_unpaid(monkeypatch):
     async def fake_get_membership(user_id: str):
         return None
 
+    async def fake_is_teacher_user(user_id: str) -> bool:
+        return False
+
     monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_profile",
         fake_get_profile,
@@ -140,12 +143,58 @@ async def test_derive_onboarding_state_returns_verified_unpaid(monkeypatch):
         fake_get_user_by_id,
     )
     monkeypatch.setattr(
+        "app.services.onboarding_state.models.is_teacher_user",
+        fake_is_teacher_user,
+    )
+    monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_membership",
         fake_get_membership,
     )
 
     state = await onboarding_state.derive_onboarding_state("user-2")
     assert state == "verified_unpaid"
+
+
+async def test_derive_onboarding_state_bypasses_subscription_for_teacher(monkeypatch):
+    now = datetime.now(timezone.utc)
+
+    async def fake_get_profile(user_id: str):
+        return {
+            "user_id": user_id,
+            "display_name": "Teacher User",
+            "onboarding_state": None,
+            "created_at": now,
+            "updated_at": now + timedelta(seconds=1),
+        }
+
+    async def fake_get_user_by_id(user_id: str):
+        return {"id": user_id, "email_confirmed_at": now, "confirmed_at": now}
+
+    async def fake_get_membership(user_id: str):
+        return None
+
+    async def fake_is_teacher_user(user_id: str) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "app.services.onboarding_state.repositories.get_profile",
+        fake_get_profile,
+    )
+    monkeypatch.setattr(
+        "app.services.onboarding_state.repositories.get_user_by_id",
+        fake_get_user_by_id,
+    )
+    monkeypatch.setattr(
+        "app.services.onboarding_state.models.is_teacher_user",
+        fake_is_teacher_user,
+    )
+    monkeypatch.setattr(
+        "app.services.onboarding_state.repositories.get_membership",
+        fake_get_membership,
+    )
+
+    state = await onboarding_state.derive_onboarding_state("teacher-1")
+    assert state == "access_active_profile_complete"
 
 
 async def test_derive_onboarding_state_returns_profile_incomplete(monkeypatch):
@@ -166,6 +215,9 @@ async def test_derive_onboarding_state_returns_profile_incomplete(monkeypatch):
     async def fake_get_membership(user_id: str):
         return {"status": "active", "end_date": None}
 
+    async def fake_is_teacher_user(user_id: str) -> bool:
+        return False
+
     monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_profile",
         fake_get_profile,
@@ -173,6 +225,10 @@ async def test_derive_onboarding_state_returns_profile_incomplete(monkeypatch):
     monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_user_by_id",
         fake_get_user_by_id,
+    )
+    monkeypatch.setattr(
+        "app.services.onboarding_state.models.is_teacher_user",
+        fake_is_teacher_user,
     )
     monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_membership",
@@ -206,6 +262,9 @@ async def test_sync_onboarding_state_persists_new_state(monkeypatch):
         set_calls.append((user_id, state))
         return {"user_id": user_id, "onboarding_state": state}
 
+    async def fake_is_teacher_user(user_id: str) -> bool:
+        return False
+
     monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_profile",
         fake_get_profile,
@@ -213,6 +272,10 @@ async def test_sync_onboarding_state_persists_new_state(monkeypatch):
     monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_user_by_id",
         fake_get_user_by_id,
+    )
+    monkeypatch.setattr(
+        "app.services.onboarding_state.models.is_teacher_user",
+        fake_is_teacher_user,
     )
     monkeypatch.setattr(
         "app.services.onboarding_state.repositories.get_membership",
@@ -350,6 +413,62 @@ async def test_profile_update_syncs_onboarding_state(monkeypatch):
     )
 
     assert response.onboarding_state == "access_active_profile_complete"
+
+
+async def test_auth_me_response_includes_computed_teacher_access(monkeypatch):
+    now = datetime.now(timezone.utc)
+
+    async def fake_get_profile(user_id: str):
+        return {
+            "user_id": uuid.UUID("00000000-0000-0000-0000-000000000321"),
+            "email": "teacher@example.com",
+            "display_name": "Teacher",
+            "bio": None,
+            "photo_url": None,
+            "avatar_media_id": None,
+            "onboarding_state": "welcomed",
+            "role_v2": "user",
+            "is_admin": False,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    async def fake_sync_onboarding_state(user_id: str):
+        return "welcomed"
+
+    async def fake_is_teacher_user(user_id: str) -> bool:
+        return True
+
+    async def fake_get_user_by_id(user_id: str):
+        return {"id": user_id, "email_confirmed_at": now, "confirmed_at": now}
+
+    async def fake_get_membership(user_id: str):
+        return None
+
+    monkeypatch.setattr(
+        "app.routes.api_auth.repositories.get_profile",
+        fake_get_profile,
+    )
+    monkeypatch.setattr(
+        "app.routes.api_auth.sync_onboarding_state",
+        fake_sync_onboarding_state,
+    )
+    monkeypatch.setattr(
+        "app.routes.api_auth.models.is_teacher_user",
+        fake_is_teacher_user,
+    )
+    monkeypatch.setattr(
+        "app.routes.api_auth.repositories.get_user_by_id",
+        fake_get_user_by_id,
+    )
+    monkeypatch.setattr(
+        "app.routes.api_auth.repositories.get_membership",
+        fake_get_membership,
+    )
+
+    response = await api_auth._profile_response("teacher-user")
+    assert response.is_teacher is True
+    assert response.membership_active is False
 
 
 async def test_welcome_completion_sets_terminal_state(monkeypatch):

@@ -108,7 +108,7 @@ class AppRouterNotifier extends ChangeNotifier {
         if (onboardingTarget != null) {
           return onboardingTarget;
         }
-        return redirectTarget ?? state.namedLocation(AppRoute.home);
+        return redirectTarget ?? _resolveDefaultAuthedTarget(session);
       }
 
       if (redirectTarget != null &&
@@ -155,7 +155,7 @@ class AppRouterNotifier extends ChangeNotifier {
 
     if (meta.redirectAuthed) {
       return _resolveOnboardingTarget(session) ??
-          state.namedLocation(AppRoute.home);
+          _resolveDefaultAuthedTarget(session);
     }
 
     final onboardingRedirect = _handleOnboardingRedirect(state, session);
@@ -196,12 +196,13 @@ String? _handleOnboardingRedirect(
     if (onboardingState == OnboardingStateValue.verifiedUnpaid) {
       return null;
     }
-    return _resolveOnboardingTarget(session) ?? RoutePath.home;
+    return _resolveOnboardingTarget(session) ??
+        _resolveDefaultAuthedTarget(session);
   }
 
   if (onboardingState == OnboardingStateValue.welcomed &&
       _isOnboardingOnlyRoute(state.uri.path)) {
-    return RoutePath.home;
+    return _resolveDefaultAuthedTarget(session);
   }
 
   final onboardingTarget = _resolveOnboardingTarget(session);
@@ -240,6 +241,9 @@ String? _resolveOnboardingTarget(RouteSessionSnapshot session) {
     case OnboardingStateValue.registeredUnverified:
       return RoutePath.verifyEmail;
     case OnboardingStateValue.verifiedUnpaid:
+      if (session.isTeacher || session.isAdmin) {
+        return null;
+      }
       return RoutePath.subscribe;
     case OnboardingStateValue.accessActiveProfileIncomplete:
       return RoutePath.createProfile;
@@ -248,6 +252,16 @@ String? _resolveOnboardingTarget(RouteSessionSnapshot session) {
     default:
       return null;
   }
+}
+
+String _resolveDefaultAuthedTarget(RouteSessionSnapshot session) {
+  if (session.isAdmin) {
+    return RoutePath.home;
+  }
+  if (session.isTeacher) {
+    return RoutePath.teacherHome;
+  }
+  return RoutePath.home;
 }
 
 bool _isAllowedOnboardingRoute(String path, String onboardingState) {
