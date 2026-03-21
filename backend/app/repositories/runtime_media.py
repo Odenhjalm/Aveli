@@ -37,6 +37,8 @@ async def sync_home_player_upload_runtime_media(
           legacy_storage_path,
           kind,
           active,
+          is_test,
+          test_session_id,
           created_at,
           updated_at
         )
@@ -66,10 +68,13 @@ async def sync_home_player_upload_runtime_media(
             ELSE 'other'
           END,
           hpu.active,
+          coalesce(ma.is_test, false) OR app.current_test_session_id() IS NOT NULL,
+          coalesce(ma.test_session_id, app.current_test_session_id()),
           coalesce(hpu.created_at, now()),
           now()
         FROM app.home_player_uploads hpu
         LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
+        LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
         {where_clause}
         ON CONFLICT (home_player_upload_id) DO UPDATE
           SET reference_type = excluded.reference_type,
@@ -84,6 +89,11 @@ async def sync_home_player_upload_runtime_media(
               legacy_storage_path = excluded.legacy_storage_path,
               kind = excluded.kind,
               active = excluded.active,
+              is_test = app.runtime_media.is_test OR excluded.is_test,
+              test_session_id = coalesce(
+                  excluded.test_session_id,
+                  app.runtime_media.test_session_id
+              ),
               updated_at = now()
     """
 

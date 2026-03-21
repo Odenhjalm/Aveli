@@ -12,6 +12,10 @@ class MediaAssetReadyAuthorityError(PermissionError):
     """Raised when non-worker code attempts to mark a media asset ready."""
 
 
+def _test_visibility_clause(alias: str) -> str:
+    return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
+
+
 async def create_media_asset(
     *,
     owner_id: str | None,
@@ -86,9 +90,7 @@ async def delete_media_asset(media_id: str) -> None:
 
 
 async def get_media_asset(media_id: str) -> dict[str, Any] | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
+    query = f"""
             SELECT
               id,
               owner_id,
@@ -116,17 +118,16 @@ async def get_media_asset(media_id: str) -> dict[str, Any] | None:
               updated_at
             FROM app.media_assets
             WHERE id = %s
-            """,
-            (media_id,),
-        )
+              AND {_test_visibility_clause("app.media_assets")}
+            """
+    async with get_conn() as cur:
+        await cur.execute(query, (media_id,))
         row = await cur.fetchone()
     return dict(row) if row else None
 
 
 async def get_media_asset_access(media_id: str) -> dict[str, Any] | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
+    query = f"""
             SELECT
               ma.id,
               ma.course_id,
@@ -151,9 +152,10 @@ async def get_media_asset_access(media_id: str) -> dict[str, Any] | None:
             LEFT JOIN app.lessons l ON l.id = ma.lesson_id
             LEFT JOIN app.courses c ON c.id = coalesce(ma.course_id, l.course_id)
             WHERE ma.id = %s
-            """,
-            (media_id,),
-        )
+              AND {_test_visibility_clause("ma")}
+            """
+    async with get_conn() as cur:
+        await cur.execute(query, (media_id,))
         row = await cur.fetchone()
     return dict(row) if row else None
 

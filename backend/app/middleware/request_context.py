@@ -7,6 +7,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 import sentry_sdk
 
+from ..config import settings
+from ..db import TEST_SESSION_HEADER, reset_test_session_id, set_test_session_id
 from ..logging_context import pop_request_context, push_request_context
 
 
@@ -16,12 +18,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
         token = push_request_context(request_id)
+        test_session_token = None
         request.state.request_id = request_id
         with sentry_sdk.configure_scope() as scope:  # pragma: no cover - tracing glue
             scope.set_tag("request_id", request_id)
+        if settings.enable_test_session_headers:
+            test_session_token = set_test_session_id(
+                request.headers.get(TEST_SESSION_HEADER)
+            )
         try:
             response: Response = await call_next(request)
         finally:
+            if test_session_token is not None:
+                reset_test_session_id(test_session_token)
             pop_request_context(token)
         response.headers.setdefault("X-Request-ID", request_id)
         return response

@@ -52,6 +52,7 @@ async def home_uploaded_media(
                   AND e.status = 'active'
                   AND c.is_published = true
                   AND c.created_by = %s
+                  AND app.is_test_row_visible(c.is_test, c.test_session_id)
                 LIMIT 1
                 """,
                 (user_id, teacher_id),

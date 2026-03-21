@@ -199,6 +199,7 @@ class MediaResolverService:
                 FROM app.runtime_media
                 WHERE lesson_media_id = %s
                   AND active = true
+                  AND app.is_test_row_visible(is_test, test_session_id)
                 ORDER BY updated_at DESC, created_at DESC
                 LIMIT 1
                 """,
@@ -304,6 +305,7 @@ class MediaResolverService:
                 LEFT JOIN app.media_objects mo ON mo.id = rm.media_object_id
                 LEFT JOIN app.media_assets ma ON ma.id = rm.media_asset_id
                 WHERE rm.id = %s
+                  AND app.is_test_row_visible(rm.is_test, rm.test_session_id)
                 LIMIT 1
                 """,
                 (runtime_media_id,),

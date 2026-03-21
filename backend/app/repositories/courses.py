@@ -52,6 +52,10 @@ _BASE_COURSE_UPDATE_COLUMNS = {
 }
 
 
+def _test_visibility_clause(alias: str) -> str:
+    return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
+
+
 def _legacy_course_columns(alias: str | None = None) -> str:
     prefix = f"{alias}." if alias else ""
     base_columns = [
@@ -126,16 +130,16 @@ async def get_course(
     clauses: list[str] = []
     params: list[Any] = []
     if course_id:
-        clauses.append("id = %s")
+        clauses.append("c.id = %s")
         params.append(course_id)
     if slug:
-        clauses.append("slug = %s")
+        clauses.append("c.slug = %s")
         params.append(slug)
 
-    where_clause = " AND ".join(clauses)
+    where_clause = " AND ".join([_test_visibility_clause("c"), *clauses])
     query = f"""
         SELECT {_FULL_COURSE_COLUMNS}
-        FROM app.courses
+        FROM app.courses c
         WHERE {where_clause}
         LIMIT 1
     """
@@ -148,7 +152,7 @@ async def get_course(
                 await conn.rollback()
                 fallback_query = f"""
                     SELECT {_legacy_course_columns()}
-                    FROM app.courses
+                    FROM app.courses c
                     WHERE {where_clause}
                     LIMIT 1
                 """
@@ -185,9 +189,10 @@ async def _get_course_by_slug_prefix(slug_base: str) -> CourseRow | None:
     pattern = f"{slug_base}%"
     query = f"""
         SELECT {_FULL_COURSE_COLUMNS}
-        FROM app.courses
-        WHERE lower(slug) LIKE %s
-        ORDER BY updated_at DESC
+        FROM app.courses c
+        WHERE lower(c.slug) LIKE %s
+          AND {_test_visibility_clause("c")}
+        ORDER BY c.updated_at DESC
         LIMIT 1
     """
     params = [pattern]
@@ -199,9 +204,10 @@ async def _get_course_by_slug_prefix(slug_base: str) -> CourseRow | None:
                 await conn.rollback()
                 fallback_query = f"""
                     SELECT {_legacy_course_columns()}
-                    FROM app.courses
-                    WHERE lower(slug) LIKE %s
-                    ORDER BY updated_at DESC
+                    FROM app.courses c
+                    WHERE lower(c.slug) LIKE %s
+                      AND {_test_visibility_clause("c")}
+                    ORDER BY c.updated_at DESC
                     LIMIT 1
                 """
                 await cur.execute(fallback_query, params)
@@ -267,8 +273,10 @@ async def list_courses(
     clauses: list[str] = []
     params: list[Any] = []
 
+    clauses.append(_test_visibility_clause("c"))
+
     if teacher_id:
-        clauses.append("created_by = %s")
+        clauses.append("c.created_by = %s")
         params.append(teacher_id)
 
     if status:
@@ -279,29 +287,29 @@ async def list_courses(
         }
         normalized = status.lower()
         if normalized in status_map:
-            clauses.append("is_published = %s")
+            clauses.append("c.is_published = %s")
             params.append(status_map[normalized])
 
     if published_only is True:
-        clauses.append("is_published = true")
+        clauses.append("c.is_published = true")
     elif published_only is False:
-        clauses.append("is_published = false")
+        clauses.append("c.is_published = false")
 
     if free_intro is not None:
-        clauses.append("is_free_intro = %s")
+        clauses.append("c.is_free_intro = %s")
         params.append(free_intro)
 
     if search:
-        clauses.append("(lower(title) LIKE %s OR lower(description) LIKE %s)")
+        clauses.append("(lower(c.title) LIKE %s OR lower(c.description) LIKE %s)")
         pattern = f"%{search.lower()}%"
         params.extend([pattern, pattern])
 
     where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     query = f"""
         SELECT {_FULL_COURSE_COLUMNS}
-        FROM app.courses
+        FROM app.courses c
         {where_sql}
-        ORDER BY updated_at DESC
+        ORDER BY c.updated_at DESC
     """
 
     if limit is not None:
@@ -334,23 +342,25 @@ async def list_public_courses(
     clauses: list[str] = []
     params: list[Any] = []
 
+    clauses.append(_test_visibility_clause("c"))
+
     if published_only:
-        clauses.append("is_published = true")
+        clauses.append("c.is_published = true")
     if free_intro is not None:
-        clauses.append("is_free_intro = %s")
+        clauses.append("c.is_free_intro = %s")
         params.append(free_intro)
     if search:
-        clauses.append("(lower(title) LIKE %s OR lower(description) LIKE %s)")
+        clauses.append("(lower(c.title) LIKE %s OR lower(c.description) LIKE %s)")
         pattern = f"%{search.lower()}%"
         params.extend([pattern, pattern])
 
     query = f"""
         SELECT {_FULL_COURSE_COLUMNS}
-        FROM app.courses
+        FROM app.courses c
     """
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
-    query += " ORDER BY created_at DESC"
+    query += " ORDER BY c.created_at DESC"
     if limit is not None:
         limit_value = _coerce_int(limit)
         if limit_value is None:
@@ -784,9 +794,10 @@ async def list_course_lessons(course_id: str) -> Sequence[LessonRow]:
             content_markdown,
             created_at,
             updated_at
-        FROM app.lessons
-        WHERE course_id = %s
-        ORDER BY position
+        FROM app.lessons l
+        WHERE l.course_id = %s
+          AND app.is_test_row_visible(l.is_test, l.test_session_id)
+        ORDER BY l.position
     """
     async with get_conn() as cur:
         await cur.execute(query, (course_id,))
@@ -804,8 +815,9 @@ async def get_lesson(lesson_id: str) -> LessonRow | None:
             content_markdown,
             created_at,
             updated_at
-        FROM app.lessons
-        WHERE id = %s
+        FROM app.lessons l
+        WHERE l.id = %s
+          AND app.is_test_row_visible(l.is_test, l.test_session_id)
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -814,7 +826,13 @@ async def get_lesson(lesson_id: str) -> LessonRow | None:
 
 
 async def get_lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
-    query = "SELECT course_id FROM app.lessons WHERE id = %s LIMIT 1"
+    query = """
+        SELECT l.course_id
+        FROM app.lessons l
+        WHERE l.id = %s
+          AND app.is_test_row_visible(l.is_test, l.test_session_id)
+        LIMIT 1
+    """
     async with get_conn() as cur:
         await cur.execute(query, (lesson_id,))
         row = await cur.fetchone()
@@ -981,7 +999,14 @@ async def delete_lesson(lesson_id: str) -> bool:
 
 
 async def is_course_owner(course_id: str, user_id: str) -> bool:
-    query = "SELECT 1 FROM app.courses WHERE id = %s AND created_by = %s LIMIT 1"
+    query = f"""
+        SELECT 1
+        FROM app.courses c
+        WHERE c.id = %s
+          AND c.created_by = %s
+          AND {_test_visibility_clause("c")}
+        LIMIT 1
+    """
     async with get_conn() as cur:
         await cur.execute(query, (course_id, user_id))
         return bool(await cur.fetchone())
@@ -1139,6 +1164,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
         LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         LEFT JOIN app.lesson_media_issues lmi ON lmi.lesson_media_id = lm.id
         WHERE lm.lesson_id = %s
+          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
         ORDER BY lm.position
     """
     fallback_query = query.replace(
@@ -1175,6 +1201,7 @@ async def list_lesson_media_by_ids(
           lm.lesson_id
         FROM app.lesson_media lm
         WHERE lm.id = ANY(%s::uuid[])
+          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
     """
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
@@ -1226,6 +1253,7 @@ async def get_lesson_media_access_by_path(
               ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
             END
           ) = %s
+          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -1342,6 +1370,7 @@ async def list_home_audio_media(
           {enrollment_join}
           WHERE linked.teacher_id = c.created_by
             AND (lm.kind = 'audio' OR lm.kind = 'video')
+            AND app.is_test_row_visible(rm.is_test, rm.test_session_id)
             AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
             AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
             {access_clause}
@@ -1385,6 +1414,7 @@ async def list_home_audio_media(
           JOIN app.profiles prof ON prof.user_id = hpu.teacher_id
           WHERE hpu.active = true
             AND (hpu.kind = 'audio' OR hpu.kind = 'video')
+            AND app.is_test_row_visible(rm.is_test, rm.test_session_id)
             AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
             AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
             {home_upload_access_clause}
@@ -1404,6 +1434,7 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
         FROM app.enrollments e
         JOIN app.courses c ON c.id = e.course_id
         WHERE e.user_id = %s
+          AND {_test_visibility_clause("c")}
         ORDER BY c.created_at DESC
     """
     async with get_conn() as cur:
@@ -1415,6 +1446,7 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
                 FROM app.enrollments e
                 JOIN app.courses c ON c.id = e.course_id
                 WHERE e.user_id = %s
+                  AND {_test_visibility_clause("c")}
                 ORDER BY c.created_at DESC
             """
             await cur.execute(fallback_query, (user_id,))

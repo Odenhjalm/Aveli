@@ -223,6 +223,7 @@ class Settings(BaseSettings):
     resend_api_key: str | None = Field(default=None, validation_alias="RESEND_API_KEY")
     email_from: str | None = Field(default=None, validation_alias="EMAIL_FROM")
     membership_expiry_warning_interval_seconds: int = 60 * 60 * 24
+    enable_test_session_headers: bool = False
 
     @model_validator(mode="after")
     def _populate_database_url(self):

@@ -6,8 +6,12 @@ from ..db import get_conn
 from . import runtime_media as runtime_media_repo
 
 
+def _test_visibility_clause(alias: str) -> str:
+    return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
+
+
 async def list_home_player_uploads(teacher_id: str) -> list[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           hpu.id,
           hpu.teacher_id,
@@ -26,7 +30,9 @@ async def list_home_player_uploads(teacher_id: str) -> list[dict[str, Any]]:
         FROM app.home_player_uploads hpu
         LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
         LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
+        LEFT JOIN app.runtime_media rm ON rm.home_player_upload_id = hpu.id
         WHERE hpu.teacher_id = %s
+          AND {_test_visibility_clause("rm")}
         ORDER BY hpu.created_at DESC
     """
     async with get_conn() as cur:
@@ -36,7 +42,7 @@ async def list_home_player_uploads(teacher_id: str) -> list[dict[str, Any]]:
 
 
 async def get_home_player_upload(*, upload_id: str, teacher_id: str) -> Optional[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           hpu.id,
           hpu.teacher_id,
@@ -55,7 +61,9 @@ async def get_home_player_upload(*, upload_id: str, teacher_id: str) -> Optional
         FROM app.home_player_uploads hpu
         LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
         LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
+        LEFT JOIN app.runtime_media rm ON rm.home_player_upload_id = hpu.id
         WHERE hpu.id = %s AND hpu.teacher_id = %s
+          AND {_test_visibility_clause("rm")}
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -69,7 +77,7 @@ async def get_home_player_upload_by_media_asset_id(
     media_asset_id: str,
     teacher_id: str,
 ) -> Optional[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           hpu.id,
           hpu.teacher_id,
@@ -88,8 +96,10 @@ async def get_home_player_upload_by_media_asset_id(
         FROM app.home_player_uploads hpu
         LEFT JOIN app.media_objects mo ON mo.id = hpu.media_id
         LEFT JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
+        LEFT JOIN app.runtime_media rm ON rm.home_player_upload_id = hpu.id
         WHERE hpu.media_asset_id = %s
           AND hpu.teacher_id = %s
+          AND {_test_visibility_clause("rm")}
         ORDER BY hpu.active DESC, hpu.updated_at DESC, hpu.created_at DESC
         LIMIT 1
     """
@@ -179,7 +189,7 @@ async def delete_home_player_upload(*, upload_id: str, teacher_id: str) -> Optio
 
 
 async def list_home_player_course_links(teacher_id: str) -> list[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           hpcl.id,
           hpcl.teacher_id,
@@ -202,6 +212,9 @@ async def list_home_player_course_links(teacher_id: str) -> list[dict[str, Any]]
         LEFT JOIN app.lessons l ON l.id = lm.lesson_id
         LEFT JOIN app.courses c ON c.id = l.course_id
         WHERE hpcl.teacher_id = %s
+          AND {_test_visibility_clause("lm")}
+          AND {_test_visibility_clause("l")}
+          AND {_test_visibility_clause("c")}
         ORDER BY hpcl.created_at DESC
     """
     async with get_conn() as cur:
@@ -218,7 +231,7 @@ async def list_home_player_course_links(teacher_id: str) -> list[dict[str, Any]]
 async def get_home_player_course_link(
     *, link_id: str, teacher_id: str
 ) -> Optional[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           hpcl.id,
           hpcl.teacher_id,
@@ -241,6 +254,9 @@ async def get_home_player_course_link(
         LEFT JOIN app.lessons l ON l.id = lm.lesson_id
         LEFT JOIN app.courses c ON c.id = l.course_id
         WHERE hpcl.id = %s AND hpcl.teacher_id = %s
+          AND {_test_visibility_clause("lm")}
+          AND {_test_visibility_clause("l")}
+          AND {_test_visibility_clause("c")}
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -254,7 +270,7 @@ async def get_home_player_course_link(
 
 
 async def resolve_lesson_media_course_owner(lesson_media_id: str) -> Optional[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           c.created_by AS teacher_id,
           c.title AS course_title,
@@ -266,6 +282,9 @@ async def resolve_lesson_media_course_owner(lesson_media_id: str) -> Optional[di
         JOIN app.courses c ON c.id = l.course_id
         LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
         WHERE lm.id = %s
+          AND {_test_visibility_clause("lm")}
+          AND {_test_visibility_clause("l")}
+          AND {_test_visibility_clause("c")}
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -352,7 +371,7 @@ async def delete_home_player_course_link(*, link_id: str, teacher_id: str) -> bo
 
 
 async def get_active_home_upload_by_media_id(media_id: str) -> Optional[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           hpu.teacher_id,
           hpu.active,
@@ -364,8 +383,10 @@ async def get_active_home_upload_by_media_id(media_id: str) -> Optional[dict[str
           mo.original_name
         FROM app.home_player_uploads hpu
         JOIN app.media_objects mo ON mo.id = hpu.media_id
+        LEFT JOIN app.runtime_media rm ON rm.home_player_upload_id = hpu.id
         WHERE hpu.active = true
           AND hpu.media_id = %s
+          AND {_test_visibility_clause("rm")}
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -375,7 +396,7 @@ async def get_active_home_upload_by_media_id(media_id: str) -> Optional[dict[str
 
 
 async def get_active_home_upload_by_media_asset_id(media_id: str) -> Optional[dict[str, Any]]:
-    query = """
+    query = f"""
         SELECT
           hpu.teacher_id,
           hpu.active,
@@ -386,8 +407,10 @@ async def get_active_home_upload_by_media_asset_id(media_id: str) -> Optional[di
           ma.state
         FROM app.home_player_uploads hpu
         JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
+        LEFT JOIN app.runtime_media rm ON rm.home_player_upload_id = hpu.id
         WHERE hpu.active = true
           AND hpu.media_asset_id = %s
+          AND {_test_visibility_clause("rm")}
         LIMIT 1
     """
     async with get_conn() as cur:

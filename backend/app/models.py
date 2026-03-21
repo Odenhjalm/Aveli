@@ -34,6 +34,10 @@ from .utils import media_signer
 logger = logging.getLogger(__name__)
 
 
+def _test_visibility_clause(alias: str) -> str:
+    return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
+
+
 async def _fetchone(cur):
     try:
         return await cur.fetchone()
@@ -580,7 +584,7 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             try:
                 await cur.execute(
-                    """
+                    f"""
                     SELECT
                         c.id,
                         c.slug,
@@ -604,6 +608,7 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
                     LEFT JOIN app.course_display_priorities pr
                       ON pr.teacher_id = c.created_by
                     WHERE c.is_published = true
+                      AND {_test_visibility_clause("c")}
                       AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
                       AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
                     ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC
@@ -614,7 +619,7 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
             except errors.UndefinedColumn:
                 await conn.rollback()
                 await cur.execute(
-                    """
+                    f"""
                     SELECT
                         c.id,
                         c.slug,
@@ -638,6 +643,7 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
                     LEFT JOIN app.course_display_priorities pr
                       ON pr.teacher_id = c.created_by
                     WHERE c.is_published = true
+                      AND {_test_visibility_clause("c")}
                       AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
                       AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
                     ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC
@@ -1299,6 +1305,7 @@ async def get_media(media_id: str) -> dict | None:
             LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
             LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
             WHERE lm.id = %s
+              AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
             """,
             (media_id,),
         )
@@ -1312,6 +1319,7 @@ async def get_lesson_media_by_media_asset_id(media_asset_id: str) -> dict | None
             SELECT id
             FROM app.lesson_media
             WHERE media_asset_id = %s
+              AND app.is_test_row_visible(app.lesson_media.is_test, app.lesson_media.test_session_id)
             ORDER BY created_at DESC
             LIMIT 1
             """,

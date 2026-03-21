@@ -600,6 +600,7 @@ async def _lookup_runtime_media_id_for_home_upload(upload_id: str) -> str | None
             FROM app.runtime_media
             WHERE home_player_upload_id = %s
               AND active = true
+              AND app.is_test_row_visible(is_test, test_session_id)
             ORDER BY updated_at DESC, created_at DESC
             LIMIT 1
             """,
