@@ -14,6 +14,7 @@ from app.services.email_tokens import (
     create_email_token,
     verify_email_token,
 )
+from .utils import current_test_headers
 
 pytestmark = pytest.mark.anyio
 
@@ -28,6 +29,7 @@ async def auth_client():
     async with AsyncClient(
         transport=transport,
         base_url="http://testserver",
+        headers=current_test_headers(),
     ) as client:
         yield client
 

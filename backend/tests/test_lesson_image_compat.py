@@ -5,6 +5,7 @@ from app import permissions
 from app.main import app
 from app.routes import upload as upload_routes
 from app.services.storage_service import PresignedUpload
+from .utils import current_test_headers
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -147,6 +148,7 @@ async def test_lesson_image_upload_creates_media_asset_without_media_object(
         async with AsyncClient(
             transport=transport,
             base_url="http://testserver",
+            headers=current_test_headers(),
         ) as client:
             response = await client.post(
                 "/api/upload/lesson-image",

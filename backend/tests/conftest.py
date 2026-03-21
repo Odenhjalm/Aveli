@@ -21,6 +21,15 @@ from app.db import (  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+_ISOLATED_TEST_TABLES = (
+    "courses",
+    "lessons",
+    "lesson_media",
+    "media_assets",
+    "runtime_media",
+)
+
+
 def _ensure_event_loop():
     try:
         asyncio.get_running_loop()
@@ -30,6 +39,25 @@ def _ensure_event_loop():
 
 
 _ensure_event_loop()
+
+
+async def _isolated_row_counts(session_id: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            for table_name in _ISOLATED_TEST_TABLES:
+                await cur.execute(
+                    f"""
+                    SELECT count(*)
+                    FROM app.{table_name}
+                    WHERE is_test = true
+                      AND test_session_id = %s::uuid
+                    """,
+                    (session_id,),
+                )
+                row = await cur.fetchone()
+                counts[table_name] = int((row or (0,))[0] or 0)
+    return counts
 
 
 @pytest.fixture(scope="module")
@@ -84,6 +112,20 @@ async def _test_session_scope():
                         (session_id,),
                     )
                     await conn.commit()
+            remaining = await _isolated_row_counts(session_id)
+            leaked = {
+                table_name: row_count
+                for table_name, row_count in remaining.items()
+                if row_count > 0
+            }
+            if leaked:
+                formatted = ", ".join(
+                    f"{table_name}={row_count}"
+                    for table_name, row_count in sorted(leaked.items())
+                )
+                raise AssertionError(
+                    f"test session cleanup left isolated rows behind: {formatted}"
+                )
         finally:
             settings.enable_test_session_headers = original_header_setting
             reset_test_session_id(token)

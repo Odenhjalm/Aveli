@@ -1,5 +1,15 @@
 import uuid
 
+from app.db import TEST_SESSION_HEADER, get_test_session_id
+
+
+def current_test_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
+    merged = dict(headers or {})
+    test_session_id = get_test_session_id()
+    if test_session_id:
+        merged.setdefault(TEST_SESSION_HEADER, test_session_id)
+    return merged
+
 
 async def register_user(async_client):
     email = f"billing_{uuid.uuid4().hex[:8]}@example.com"
