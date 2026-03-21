@@ -266,6 +266,93 @@ void main() {
   });
 
   test(
+    'runtime playback requests use POST + JSON and match payloads',
+    () async {
+      final storage = _MemoryFlutterSecureStorage();
+      final tokens = TokenStorage(storage: storage);
+      await tokens.saveTokens(
+        accessToken: _jwtWithExpSeconds(4102444800),
+        refreshToken: 'rt-1',
+      );
+
+      final client = ApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        tokenStorage: tokens,
+      );
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == ApiPaths.mediaRuntimePlayback) {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'runtime_media_id': 'runtime-media-1',
+              'playback_url': 'https://cdn.example.com/runtime.mp3',
+              'kind': 'audio',
+              'content_type': 'audio/mpeg',
+              'duration_seconds': 321,
+            },
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      client.raw.httpClientAdapter = adapter;
+      final repo = MediaPipelineRepository(client: client);
+
+      expect(
+        await repo.fetchRuntimePlaybackUrl('runtime-media-1'),
+        'https://cdn.example.com/runtime.mp3',
+      );
+
+      final requests = adapter.requestsFor(ApiPaths.mediaRuntimePlayback);
+      expect(requests, hasLength(1));
+      expect(requests.single.method, 'POST');
+      expect(
+        requests.single.contentType.toLowerCase().startsWith(
+          'application/json',
+        ),
+        true,
+      );
+      expect(Map<String, dynamic>.from(requests.single.data as Map), {
+        'runtime_media_id': 'runtime-media-1',
+      });
+    },
+  );
+
+  test('runtime playback parsing rejects legacy URL fields', () async {
+    final storage = _MemoryFlutterSecureStorage();
+    final tokens = TokenStorage(storage: storage);
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(4102444800),
+      refreshToken: 'rt-1',
+    );
+
+    final client = ApiClient(
+      baseUrl: 'http://127.0.0.1:1',
+      tokenStorage: tokens,
+    );
+    final responses = <Map<String, dynamic>>[
+      {'url': 'https://cdn.example.com/legacy.mp3'},
+      {'stream_url': 'https://cdn.example.com/stream.mp3'},
+      {'media_url': 'https://cdn.example.com/media.mp3'},
+    ];
+    var responseIndex = 0;
+    final adapter = _RecordingAdapter((options) {
+      if (options.path == ApiPaths.mediaRuntimePlayback) {
+        return _jsonResponse(statusCode: 200, body: responses[responseIndex++]);
+      }
+      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+    });
+    client.raw.httpClientAdapter = adapter;
+    final repo = MediaPipelineRepository(client: client);
+
+    for (var i = 0; i < responses.length; i += 1) {
+      await expectLater(
+        () => repo.fetchRuntimePlaybackUrl('runtime-media-$i'),
+        throwsA(isA<FormatException>()),
+      );
+    }
+  });
+
+  test(
     'lesson preview batch requests use POST + JSON and match payloads',
     () async {
       final storage = _MemoryFlutterSecureStorage();

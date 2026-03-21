@@ -64,6 +64,21 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   }
 
   @override
+  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<MediaStatus> attachUpload({
+    required String mediaId,
+    required String linkScope,
+    String? lessonId,
+    String? lessonMediaId,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MediaUploadTarget> requestUploadUrl({
     required String filename,
     required String mimeType,

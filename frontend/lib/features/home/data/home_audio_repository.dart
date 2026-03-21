@@ -12,23 +12,19 @@ class HomeAudioItem {
     required this.courseTitle,
     this.courseSlug,
     required this.kind,
-    this.storagePath,
-    this.storageBucket,
-    this.mediaId,
-    this.mediaAssetId,
     this.durationSeconds,
     this.createdAt,
     this.contentType,
     this.byteSize,
     this.originalName,
-    this.downloadUrl,
-    this.signedUrl,
-    this.signedUrlExpiresAt,
     this.isIntro,
     this.isFreeIntro,
-    this.mediaState,
     this.streamingFormat,
     this.codec,
+    this.runtimeMediaId,
+    this.isPlayable = false,
+    this.playbackState,
+    this.failureReason,
   });
 
   final String id;
@@ -38,40 +34,19 @@ class HomeAudioItem {
   final String courseTitle;
   final String? courseSlug;
   final String kind;
-  final String? storagePath;
-  final String? storageBucket;
-  final String? mediaId;
-  final String? mediaAssetId;
   final int? durationSeconds;
   final DateTime? createdAt;
   final String? contentType;
   final int? byteSize;
   final String? originalName;
-  final String? downloadUrl;
-  final String? signedUrl;
-  final DateTime? signedUrlExpiresAt;
   final bool? isIntro;
   final bool? isFreeIntro;
-  final String? mediaState;
   final String? streamingFormat;
   final String? codec;
-
-  String? get preferredUrl {
-    final download = downloadUrl?.trim();
-    final signed = signedUrl?.trim();
-    final expiresAt = signedUrlExpiresAt?.toUtc();
-    if (signed != null && signed.isNotEmpty) {
-      if (expiresAt == null ||
-          DateTime.now().toUtc().isBefore(
-            expiresAt.subtract(const Duration(seconds: 30)),
-          )) {
-        return signed;
-      }
-    }
-    if (download != null && download.isNotEmpty) return download;
-    if (signed != null && signed.isNotEmpty) return signed;
-    return null;
-  }
+  final String? runtimeMediaId;
+  final bool isPlayable;
+  final String? playbackState;
+  final String? failureReason;
 
   String get displayTitle {
     if (lessonTitle.trim().isNotEmpty) return lessonTitle.trim();
@@ -87,23 +62,19 @@ class HomeAudioItem {
     courseTitle: (json['course_title'] ?? '') as String,
     courseSlug: json['course_slug'] as String?,
     kind: (json['kind'] ?? 'audio') as String,
-    storagePath: json['storage_path'] as String?,
-    storageBucket: json['storage_bucket'] as String?,
-    mediaId: json['media_id'] as String?,
-    mediaAssetId: json['media_asset_id'] as String?,
     durationSeconds: _asInt(json['duration_seconds']),
     createdAt: _parseDate(json['created_at']),
     contentType: json['content_type'] as String?,
     byteSize: _asInt(json['byte_size']),
     originalName: json['original_name'] as String?,
-    downloadUrl: json['download_url'] as String?,
-    signedUrl: json['signed_url'] as String?,
-    signedUrlExpiresAt: _parseDate(json['signed_url_expires_at']),
     isIntro: json['is_intro'] as bool?,
     isFreeIntro: json['is_free_intro'] as bool?,
-    mediaState: json['media_state'] as String?,
     streamingFormat: json['streaming_format'] as String?,
     codec: json['codec'] as String?,
+    runtimeMediaId: json['runtime_media_id'] as String?,
+    isPlayable: json['is_playable'] == true,
+    playbackState: json['playback_state'] as String?,
+    failureReason: json['failure_reason'] as String?,
   );
 
   static int? _asInt(dynamic value) {

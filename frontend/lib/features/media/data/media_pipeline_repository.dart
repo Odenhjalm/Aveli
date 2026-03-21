@@ -121,6 +121,18 @@ class MediaPipelineRepository {
     throw const FormatException('Playback response had invalid shape');
   }
 
+  static String _extractPlaybackUrl(
+    Map<String, dynamic> data, {
+    required String endpointLabel,
+  }) {
+    final rawUrlValue = data['playback_url'];
+    final rawUrl = rawUrlValue is String ? rawUrlValue.trim() : '';
+    if (rawUrl.isEmpty) {
+      throw FormatException('$endpointLabel saknar playback_url');
+    }
+    return rawUrl;
+  }
+
   static Map<String, dynamic> _buildUploadUrlPayload({
     required String filename,
     required String mimeType,
@@ -351,11 +363,15 @@ class MediaPipelineRepository {
       data: {'lesson_media_id': lessonMediaId},
     );
     final data = _jsonObject(response.data);
-    final rawUrlValue = data['playback_url'];
-    final rawUrl = rawUrlValue is String ? rawUrlValue.trim() : '';
-    if (rawUrl.isEmpty) {
-      throw const FormatException('Playback URL saknas');
-    }
-    return rawUrl;
+    return _extractPlaybackUrl(data, endpointLabel: 'Lesson playback');
+  }
+
+  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) async {
+    final response = await _client.raw.post<dynamic>(
+      ApiPaths.mediaRuntimePlayback,
+      data: {'runtime_media_id': runtimeMediaId},
+    );
+    final data = _jsonObject(response.data);
+    return _extractPlaybackUrl(data, endpointLabel: 'Runtime playback');
   }
 }

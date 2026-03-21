@@ -60,10 +60,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final items = audioAsync.valueOrNull;
     final shouldPoll =
         items?.any((item) {
-          final mediaAssetId = (item.mediaAssetId ?? '').trim();
-          if (mediaAssetId.isEmpty) return false;
-          final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
-          return state != 'ready';
+          final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
+          if (runtimeMediaId.isEmpty) return false;
+          final state = (item.playbackState ?? '').trim().toLowerCase();
+          return state == 'processing' || state == 'uploaded';
         }) ??
         false;
 
@@ -437,9 +437,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   }
 
   void _syncPlaylist({String? preferredCurrentId}) {
-    final filtered = widget.items
-        .where(_isSupportedHomePlaylistItem)
-        .toList(growable: false);
+    final filtered = widget.items.toList(growable: false);
     final index = <String, HomeAudioItem>{
       for (final item in filtered) item.id: item,
     };
@@ -457,6 +455,16 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
       preferredCurrentId: preferredCurrentId,
     );
 
+    if ((preferredCurrentId ?? '').trim().isEmpty &&
+        (_selectedId == null || !_itemById.containsKey(_selectedId))) {
+      final firstPlayableIndex = _playlist.items.indexWhere(
+        (item) => item.isPlayable,
+      );
+      if (firstPlayableIndex >= 0) {
+        _playlist.playAt(firstPlayableIndex);
+      }
+    }
+
     if (_selectedId != null && !_itemById.containsKey(_selectedId)) {
       _selectedId = null;
     }
@@ -468,9 +476,7 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
 
   @override
   Widget build(BuildContext context) {
-    if (_playlistItems.isEmpty ||
-        !_playlist.hasPlayableItems ||
-        _playlist.allPlayableItemsFailed) {
+    if (_playlistItems.isEmpty) {
       return _buildUnavailableState(context);
     }
 
@@ -681,32 +687,51 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
 
   bool _canAttemptPlayback(HomeAudioItem item) {
     if (!_isSupportedHomePlaylistItem(item)) return false;
-    final mediaAssetId = (item.mediaAssetId ?? '').trim();
-    if (mediaAssetId.isNotEmpty) {
-      final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
-      return state == 'ready';
-    }
-    final url = item.preferredUrl;
-    return url != null && url.trim().isNotEmpty;
+    final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
+    if (runtimeMediaId.isEmpty) return false;
+    return item.isPlayable;
   }
 
   String? _statusMessageForItem(HomeAudioItem item) {
     if (!_isSupportedHomePlaylistItem(item)) {
       return 'Hemspelaren använder mp3-ljud just nu.';
     }
-    final mediaAssetId = (item.mediaAssetId ?? '').trim();
-    if (mediaAssetId.isNotEmpty) {
-      final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
-      if (state == 'ready') return null;
-      return state == 'failed'
-          ? 'Ljudet kunde inte bearbetas.'
-          : 'Ljudet bearbetas…';
+    if (item.isPlayable) return null;
+    final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
+    if (runtimeMediaId.isEmpty) {
+      return 'Runtime-ljud saknas för detta spår.';
     }
-    final url = item.preferredUrl;
-    if (url == null || url.trim().isEmpty) {
-      return 'Ljudlänken saknas för detta spår.';
+    final state = (item.playbackState ?? '').trim().toLowerCase();
+    final reason = (item.failureReason ?? '').trim().toLowerCase();
+    switch (state) {
+      case 'processing':
+      case 'uploaded':
+        return 'Ljudet bearbetas…';
+      case 'failed':
+        if (reason == 'missing_storage_object' ||
+            reason == 'legacy_object_not_found') {
+          return 'Ljudfilen saknas för detta spår.';
+        }
+        if (reason == 'missing_asset_link') {
+          return 'Ljudreferensen saknas för detta spår.';
+        }
+        if (reason == 'unsupported_media_contract' ||
+            reason == 'invalid_content_type' ||
+            reason == 'invalid_kind') {
+          return 'Ljudformatet stöds inte i hemspelaren.';
+        }
+        return 'Ljudet kunde inte göras spelbart.';
+      case 'missing':
+        return 'Ljudspåret finns inte längre.';
+      case 'inactive':
+        return 'Ljudspåret är inte aktivt.';
+      case 'unavailable':
+        return 'Ljudet är inte tillgängligt just nu.';
     }
-    return null;
+    if (reason == 'asset_not_ready' || reason == 'legacy_fallback_required') {
+      return 'Ljudet bearbetas…';
+    }
+    return 'Ljudet är inte spelbart just nu.';
   }
 
   Duration? _durationHintFor(HomeAudioItem item) {
@@ -870,29 +895,13 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   Future<InlineAudioPlaybackSource> _resolvePlaybackSource(
     HomeAudioItem item,
   ) async {
-    final mediaAssetId = (item.mediaAssetId ?? '').trim();
-    if (mediaAssetId.isNotEmpty) {
-      final repo = ref.read(mediaPipelineRepositoryProvider);
-      final playback = await repo.fetchPlaybackUrl(mediaAssetId);
-      return InlineAudioPlaybackSource(
-        url: playback.playbackUrl.toString(),
-        expiresAt: playback.expiresAt.toUtc(),
-      );
+    final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
+    if (runtimeMediaId.isEmpty) {
+      throw StateError('Runtime-ljud saknas för detta spår.');
     }
-    final repo = ref.read(mediaRepositoryProvider);
-    final preferred = item.preferredUrl;
-    if (preferred == null || preferred.trim().isEmpty) {
-      throw StateError('Ljudlänken saknas för detta spår.');
-    }
-    final trimmedPreferred = preferred.trim();
-    final signed = item.signedUrl?.trim();
-    final expiresAt = signed != null && signed == trimmedPreferred
-        ? item.signedUrlExpiresAt?.toUtc()
-        : null;
-    return InlineAudioPlaybackSource(
-      url: repo.resolvePlaybackUrl(trimmedPreferred),
-      expiresAt: expiresAt,
-    );
+    final repo = ref.read(mediaPipelineRepositoryProvider);
+    final playbackUrl = await repo.fetchRuntimePlaybackUrl(runtimeMediaId);
+    return InlineAudioPlaybackSource(url: playbackUrl);
   }
 
   void _openLibrary(BuildContext context, List<HomeAudioItem> items) {

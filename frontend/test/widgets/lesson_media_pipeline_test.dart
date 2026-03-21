@@ -44,6 +44,16 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   }
 
   @override
+  Future<MediaStatus> attachUpload({
+    required String mediaId,
+    required String linkScope,
+    String? lessonId,
+    String? lessonMediaId,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MediaUploadTarget> requestCoverUploadUrl({
     required String filename,
     required String mimeType,
@@ -79,6 +89,12 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
       expiresAt: DateTime.now().toUtc(),
       format: 'mp3',
     );
+  }
+
+  @override
+  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) async {
+    playbackCalls += 1;
+    return _lessonPlaybackFuture;
   }
 
   @override

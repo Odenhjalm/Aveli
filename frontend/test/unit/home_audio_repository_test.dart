@@ -2,57 +2,53 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/features/home/data/home_audio_repository.dart';
 
-HomeAudioItem _buildItem({
-  String? downloadUrl,
-  String? signedUrl,
-  DateTime? signedUrlExpiresAt,
-}) {
-  return HomeAudioItem(
-    id: 'track-1',
-    lessonId: 'lesson-1',
-    lessonTitle: 'Track 1',
-    courseId: 'course-1',
-    courseTitle: 'Course 1',
-    kind: 'audio',
-    downloadUrl: downloadUrl,
-    signedUrl: signedUrl,
-    signedUrlExpiresAt: signedUrlExpiresAt,
-  );
-}
-
 void main() {
-  test('preferredUrl keeps a still-valid signed URL', () {
-    final item = _buildItem(
-      downloadUrl: '/api/files/audio/fallback.mp3',
-      signedUrl: 'https://cdn.test/audio/signed.mp3',
-      signedUrlExpiresAt: DateTime.now().toUtc().add(
-        const Duration(minutes: 5),
-      ),
-    );
+  test('fromJson parses the runtime-media playback contract', () {
+    final item = HomeAudioItem.fromJson({
+      'id': 'runtime-row-1',
+      'lesson_id': 'lesson-1',
+      'lesson_title': 'Track 1',
+      'course_id': 'course-1',
+      'course_title': 'Course 1',
+      'kind': 'audio',
+      'content_type': 'audio/mpeg',
+      'duration_seconds': 123,
+      'runtime_media_id': 'runtime-media-1',
+      'is_playable': true,
+      'playback_state': 'ready',
+      'failure_reason': 'ok_ready_asset',
+    });
 
-    expect(item.preferredUrl, 'https://cdn.test/audio/signed.mp3');
+    expect(item.id, 'runtime-row-1');
+    expect(item.runtimeMediaId, 'runtime-media-1');
+    expect(item.isPlayable, isTrue);
+    expect(item.playbackState, 'ready');
+    expect(item.failureReason, 'ok_ready_asset');
+    expect(item.kind, 'audio');
+    expect(item.contentType, 'audio/mpeg');
+    expect(item.durationSeconds, 123);
   });
 
-  test('preferredUrl falls back when the signed URL is expired', () {
-    final item = _buildItem(
-      downloadUrl: '/api/files/audio/fallback.mp3',
-      signedUrl: 'https://cdn.test/audio/signed.mp3',
-      signedUrlExpiresAt: DateTime.now().toUtc().subtract(
-        const Duration(minutes: 1),
-      ),
-    );
+  test(
+    'displayTitle falls back to originalName when lesson title is blank',
+    () {
+      final item = HomeAudioItem.fromJson({
+        'id': 'runtime-row-2',
+        'lesson_id': 'lesson-2',
+        'lesson_title': '   ',
+        'course_id': 'course-1',
+        'course_title': 'Course 1',
+        'kind': 'audio',
+        'original_name': 'fallback-title.mp3',
+        'runtime_media_id': 'runtime-media-2',
+        'is_playable': false,
+        'playback_state': 'processing',
+        'failure_reason': 'asset_not_ready',
+      });
 
-    expect(item.preferredUrl, '/api/files/audio/fallback.mp3');
-  });
-
-  test('preferredUrl still exposes the signed URL when no fallback exists', () {
-    final item = _buildItem(
-      signedUrl: 'https://cdn.test/audio/signed.mp3',
-      signedUrlExpiresAt: DateTime.now().toUtc().subtract(
-        const Duration(minutes: 1),
-      ),
-    );
-
-    expect(item.preferredUrl, 'https://cdn.test/audio/signed.mp3');
-  });
+      expect(item.displayTitle, 'fallback-title.mp3');
+      expect(item.isPlayable, isFalse);
+      expect(item.playbackState, 'processing');
+    },
+  );
 }
