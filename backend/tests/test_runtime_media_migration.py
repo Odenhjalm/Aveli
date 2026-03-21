@@ -20,7 +20,11 @@ async def test_runtime_media_backfill_counts_match_lesson_media():
     await _ensure_pool_open()
     async with db.get_conn() as cur:
         await cur.execute(
-            "SELECT count(*) AS lesson_count FROM app.lesson_media"
+            """
+            SELECT count(*) AS lesson_count
+            FROM app.lesson_media
+            WHERE app.runtime_media_kind_is_playback_capable(kind)
+            """
         )
         lesson_count_row = await cur.fetchone()
         await cur.execute(
@@ -46,9 +50,20 @@ async def test_runtime_media_backfill_counts_match_lesson_media():
             """
         )
         duplicate_count_row = await cur.fetchone()
+        await cur.execute(
+            """
+            SELECT count(*) AS active_document_count
+            FROM app.runtime_media
+            WHERE lesson_media_id IS NOT NULL
+              AND kind = 'document'
+              AND active = true
+            """
+        )
+        active_document_count_row = await cur.fetchone()
 
     assert int(lesson_count_row["lesson_count"]) == int(runtime_count_row["runtime_count"])
     assert int(duplicate_count_row["duplicate_count"]) == 0
+    assert int(active_document_count_row["active_document_count"]) == 0
 
 
 async def test_runtime_media_maps_new_lesson_media_rows(async_client):
@@ -118,6 +133,127 @@ async def test_runtime_media_maps_new_lesson_media_rows(async_client):
         assert row["legacy_storage_path"] == storage_path
         assert row["kind"] == "audio"
         assert row["active"] is True
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_runtime_media_maps_new_document_lesson_media_rows_as_inactive(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+        storage_path = f"courses/{course_id}/lessons/{lesson_id}/docs/material.pdf"
+        media_object = await models.create_media_object(
+            owner_id=user_id,
+            storage_path=storage_path,
+            storage_bucket="course-media",
+            content_type="application/pdf",
+            byte_size=1024,
+            checksum=None,
+            original_name="material.pdf",
+        )
+        assert media_object
+
+        lesson_media = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="pdf",
+            storage_path=storage_path,
+            storage_bucket="course-media",
+            position=1,
+            media_id=str(media_object["id"]),
+            duration_seconds=None,
+        )
+        assert lesson_media
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT
+                  id,
+                  lesson_media_id,
+                  media_object_id,
+                  kind,
+                  active
+                FROM app.runtime_media
+                WHERE lesson_media_id = %s
+                """,
+                (str(lesson_media["id"]),),
+            )
+            rows = await cur.fetchall()
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert str(row["lesson_media_id"]) == str(lesson_media["id"])
+        assert str(row["media_object_id"]) == str(media_object["id"])
+        assert row["kind"] == "document"
+        assert row["active"] is False
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_runtime_media_retires_existing_runtime_row_when_lesson_media_becomes_document(
+    async_client,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+        storage_path = f"courses/{course_id}/lessons/{lesson_id}/images/demo.png"
+        media_object = await models.create_media_object(
+            owner_id=user_id,
+            storage_path=storage_path,
+            storage_bucket="course-media",
+            content_type="image/png",
+            byte_size=1024,
+            checksum=None,
+            original_name="demo.png",
+        )
+        assert media_object
+
+        lesson_media = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="image",
+            storage_path=storage_path,
+            storage_bucket="course-media",
+            position=1,
+            media_id=str(media_object["id"]),
+            duration_seconds=None,
+        )
+        assert lesson_media
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT id, kind, active
+                FROM app.runtime_media
+                WHERE lesson_media_id = %s
+                """,
+                (str(lesson_media["id"]),),
+            )
+            original_row = await cur.fetchone()
+            await cur.execute(
+                """
+                UPDATE app.lesson_media
+                SET kind = 'pdf'
+                WHERE id = %s
+                """,
+                (str(lesson_media["id"]),),
+            )
+            await cur.execute(
+                """
+                SELECT id, kind, active
+                FROM app.runtime_media
+                WHERE lesson_media_id = %s
+                ORDER BY updated_at DESC, created_at DESC
+                """,
+                (str(lesson_media["id"]),),
+            )
+            rows = await cur.fetchall()
+
+        assert original_row is not None
+        assert len(rows) == 1
+        updated_row = rows[0]
+        assert str(updated_row["id"]) == str(original_row["id"])
+        assert updated_row["kind"] == "document"
+        assert updated_row["active"] is False
     finally:
         await cleanup_user(user_id)
 

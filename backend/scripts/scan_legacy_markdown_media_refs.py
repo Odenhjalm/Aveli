@@ -17,6 +17,10 @@ Safety guarantees:
 * Existing `media_assets` are reused by `(storage_bucket, storage_path)`.
 * Existing `lesson_media` rows are reused per lesson when they already point to
   the same stored image.
+* `--mode full_repair` preserves the original all-or-nothing lesson semantics.
+* `--mode partial_salvage` converts only refs that already resolve through
+  canonical `media_assets`, leaves true missing refs untouched, and never rolls
+  back an entire lesson due to mixed state.
 
 Supported legacy URL variants:
 
@@ -101,6 +105,9 @@ class ImportRecord:
     lesson_media_action: str | None
     replacement: str | None
     status: str
+    classification: str | None = None
+    normalized_storage_bucket: str | None = None
+    normalized_storage_path: str | None = None
     error: str | None = None
 
 
@@ -154,6 +161,16 @@ def parse_args() -> argparse.Namespace:
         choices=("tsv", "json"),
         default="tsv",
         help="Output format (default: tsv).",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("full_repair", "partial_salvage"),
+        default="full_repair",
+        help=(
+            "Repair strategy. "
+            "`full_repair` preserves the original lesson-atomic importer; "
+            "`partial_salvage` converts only refs already backed by canonical media_assets."
+        ),
     )
     return parser.parse_args()
 
@@ -450,16 +467,20 @@ def _fetch_existing_lesson_media(cur: Any, lesson_id: str) -> list[dict[str, Any
 def _match_existing_lesson_media(
     existing_rows: list[dict[str, Any]],
     *,
+    media_asset_id: str | None = None,
     bucket: str,
     storage_path: str,
 ) -> dict[str, Any] | None:
     candidate_keys = set(_storage_equivalent_keys(bucket, storage_path))
-    if not candidate_keys:
+    normalized_media_asset_id = str(media_asset_id or "").strip()
+    if not candidate_keys and not normalized_media_asset_id:
         return None
 
     for row in existing_rows:
         if str(row.get("kind") or "").strip().lower() != "image":
             continue
+        if normalized_media_asset_id and str(row.get("media_asset_id") or "").strip() == normalized_media_asset_id:
+            return row
         row_bucket = str(
             row.get("effective_storage_bucket")
             or row.get("lesson_storage_bucket")
@@ -478,13 +499,20 @@ def _match_existing_lesson_media(
     return None
 
 
-def _select_media_asset(cur: Any, *, bucket: str, storage_path: str) -> dict[str, Any] | None:
+def _select_media_asset(
+    cur: Any,
+    *,
+    bucket: str,
+    storage_path: str,
+    for_update: bool = True,
+) -> dict[str, Any] | None:
     candidate_keys = _storage_equivalent_keys(bucket, storage_path)
     if not candidate_keys:
         return None
 
+    lock_clause = " FOR UPDATE" if for_update else ""
     cur.execute(
-        """
+        f"""
         SELECT
           id::text AS id,
           owner_id::text AS owner_id,
@@ -518,8 +546,7 @@ def _select_media_asset(cur: Any, *, bucket: str, storage_path: str) -> dict[str
           CASE WHEN lower(coalesce(purpose, '')) = 'lesson_media' THEN 0 ELSE 1 END,
           created_at ASC,
           id ASC
-        LIMIT 1
-        FOR UPDATE
+        LIMIT 1{lock_clause}
         """,
         (bucket, list(candidate_keys), bucket, list(candidate_keys)),
     )
@@ -853,6 +880,13 @@ def _create_lesson_media(
     return dict(row)
 
 
+def _upsert_runtime_media_for_lesson_media(cur: Any, lesson_media_id: str) -> None:
+    cur.execute(
+        "SELECT app.upsert_runtime_media_for_lesson_media(%s::uuid)",
+        (lesson_media_id,),
+    )
+
+
 def _import_lesson_images(
     cur: Any,
     *,
@@ -978,6 +1012,179 @@ def _import_lesson_images(
     )
 
 
+def _import_lesson_images_partial_salvage(
+    cur: Any,
+    *,
+    lesson: LessonRow,
+    refs: tuple[LegacyMarkdownImageRef, ...],
+    storage_cache: dict[tuple[str, str], dict[str, Any] | None],
+) -> LessonImportResult:
+    existing_lesson_media = _fetch_existing_lesson_media(cur, lesson.lesson_id)
+    replacement_map: dict[tuple[str, str], tuple[str, str, str, str, str, str]] = {}
+    replacements: list[tuple[LegacyMarkdownImageRef, str]] = []
+    records: list[ImportRecord] = []
+    created_media_assets = 0
+    reused_media_assets = 0
+    updated_media_assets = 0
+    created_lesson_media = 0
+    reused_lesson_media = 0
+
+    for ref in refs:
+        normalized_candidates = derive_public_storage_path_candidates(ref.raw_url)
+        try:
+            storage_object = _resolve_storage_object(
+                cur,
+                raw_url=ref.raw_url,
+                cache=storage_cache,
+            )
+        except ValueError as exc:
+            records.append(
+                ImportRecord(
+                    lesson_id=lesson.lesson_id,
+                    title=lesson.title,
+                    raw_url=ref.raw_url,
+                    storage_bucket=None,
+                    storage_path=None,
+                    media_asset_id=None,
+                    lesson_media_id=None,
+                    media_asset_action=None,
+                    lesson_media_action=None,
+                    replacement=None,
+                    status="pending",
+                    classification="missing",
+                    normalized_storage_bucket=_PUBLIC_BUCKET,
+                    normalized_storage_path=normalized_candidates[0] if normalized_candidates else None,
+                    error=str(exc),
+                )
+            )
+            continue
+
+        resolved = replacement_map.get((storage_object.bucket, storage_object.storage_path))
+        if resolved is None:
+            media_asset, media_asset_action = _ensure_media_asset(
+                cur,
+                lesson=lesson,
+                storage_object=storage_object,
+            )
+            media_asset_id = str(media_asset["id"])
+            existing_row = _match_existing_lesson_media(
+                existing_lesson_media,
+                media_asset_id=media_asset_id,
+                bucket=storage_object.bucket,
+                storage_path=storage_object.storage_path,
+            )
+            if existing_row is not None:
+                lesson_media_row, lesson_media_action = _update_existing_lesson_media(
+                    cur,
+                    row=existing_row,
+                    media_asset_id=media_asset_id,
+                    storage_object=storage_object,
+                )
+                reused_lesson_media += 1
+            else:
+                lesson_media_row = _create_lesson_media(
+                    cur,
+                    lesson_id=lesson.lesson_id,
+                    media_asset_id=media_asset_id,
+                    storage_object=storage_object,
+                )
+                existing_lesson_media.append(lesson_media_row)
+                lesson_media_action = "created_new"
+                created_lesson_media += 1
+
+            _upsert_runtime_media_for_lesson_media(
+                cur,
+                str(lesson_media_row["lesson_media_id"]),
+            )
+            if media_asset_action == "created_new":
+                created_media_assets += 1
+            elif media_asset_action == "updated_existing":
+                updated_media_assets += 1
+            else:
+                reused_media_assets += 1
+            resolved = (
+                media_asset_id,
+                media_asset_action,
+                str(lesson_media_row["lesson_media_id"]),
+                lesson_media_action,
+                storage_object.bucket,
+                storage_object.storage_path,
+            )
+            replacement_map[(storage_object.bucket, storage_object.storage_path)] = resolved
+
+        (
+            resolved_media_asset_id,
+            media_asset_action,
+            lesson_media_id,
+            lesson_media_action,
+            resolved_bucket,
+            resolved_path,
+        ) = resolved
+        replacement = f"!image({lesson_media_id})"
+        replacements.append((ref, replacement))
+        records.append(
+            ImportRecord(
+                lesson_id=lesson.lesson_id,
+                title=lesson.title,
+                raw_url=ref.raw_url,
+                storage_bucket=resolved_bucket,
+                storage_path=resolved_path,
+                media_asset_id=resolved_media_asset_id,
+                lesson_media_id=lesson_media_id,
+                media_asset_action=media_asset_action,
+                lesson_media_action=lesson_media_action,
+                replacement=replacement,
+                status="pending",
+                classification="resolvable",
+                normalized_storage_bucket=storage_object.bucket,
+                normalized_storage_path=storage_object.storage_path,
+            )
+        )
+
+    updated_markdown = rewrite_markdown_with_image_tokens(
+        lesson.content_markdown,
+        replacements,
+    )
+    remaining_refs = extract_legacy_markdown_image_refs(updated_markdown)
+    for remaining_ref in remaining_refs:
+        try:
+            _resolve_storage_object(
+                cur,
+                raw_url=remaining_ref.raw_url,
+                cache=storage_cache,
+            )
+        except ValueError as exc:
+            if str(exc) in {"storage_object_missing", "legacy_image_url_not_in_public_media"}:
+                continue
+            raise
+        raise ValueError("partial_salvage_left_resolvable_ref")
+
+    if replacements and updated_markdown != lesson.content_markdown:
+        cur.execute(
+            """
+            UPDATE app.lessons
+            SET content_markdown = %s,
+                updated_at = now()
+            WHERE id = %s::uuid
+            """,
+            (updated_markdown, lesson.lesson_id),
+        )
+
+    return LessonImportResult(
+        lesson_id=lesson.lesson_id,
+        title=lesson.title,
+        status="pending",
+        legacy_ref_count=len(refs),
+        converted_ref_count=len(replacements),
+        created_media_assets=created_media_assets,
+        reused_media_assets=reused_media_assets,
+        updated_media_assets=updated_media_assets,
+        created_lesson_media=created_lesson_media,
+        reused_lesson_media=reused_lesson_media,
+        records=tuple(records),
+    )
+
+
 def _with_status(result: LessonImportResult, *, status: str, error: str | None = None) -> LessonImportResult:
     updated_records = tuple(
         ImportRecord(
@@ -992,7 +1199,10 @@ def _with_status(result: LessonImportResult, *, status: str, error: str | None =
             lesson_media_action=record.lesson_media_action,
             replacement=record.replacement,
             status=status,
-            error=error,
+            classification=record.classification,
+            normalized_storage_bucket=record.normalized_storage_bucket,
+            normalized_storage_path=record.normalized_storage_path,
+            error=error if error is not None else record.error,
         )
         for record in result.records
     )
@@ -1042,6 +1252,9 @@ def _failed_result(
                 lesson_media_action=None,
                 replacement=None,
                 status="failed",
+                classification=None,
+                normalized_storage_bucket=None,
+                normalized_storage_path=None,
                 error=error,
             )
             for ref in refs
@@ -1054,6 +1267,7 @@ def process_lessons(
     conn: "psycopg.Connection",
     *,
     apply: bool,
+    mode: str,
 ) -> list[LessonImportResult]:
     storage_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
     results: list[LessonImportResult] = []
@@ -1066,12 +1280,20 @@ def process_lessons(
         conn.execute("BEGIN")
         try:
             with conn.cursor() as cur:
-                pending = _import_lesson_images(
-                    cur,
-                    lesson=lesson,
-                    refs=refs,
-                    storage_cache=storage_cache,
-                )
+                if mode == "partial_salvage":
+                    pending = _import_lesson_images_partial_salvage(
+                        cur,
+                        lesson=lesson,
+                        refs=refs,
+                        storage_cache=storage_cache,
+                    )
+                else:
+                    pending = _import_lesson_images(
+                        cur,
+                        lesson=lesson,
+                        refs=refs,
+                        storage_cache=storage_cache,
+                    )
             if apply:
                 conn.execute("COMMIT")
                 results.append(_with_status(pending, status="applied"))
@@ -1083,6 +1305,42 @@ def process_lessons(
             results.append(_failed_result(lesson, refs, error=str(exc)))
 
     return results
+
+
+def summarize_results(results: list[LessonImportResult]) -> dict[str, int]:
+    return {
+        "lessons_touched": len(results),
+        "lessons_failed": sum(1 for result in results if result.status == "failed"),
+        "legacy_refs_found": sum(result.legacy_ref_count for result in results),
+        "legacy_refs_converted": sum(result.converted_ref_count for result in results),
+        "media_assets_created": sum(result.created_media_assets for result in results),
+        "media_assets_reused": sum(result.reused_media_assets for result in results),
+        "media_assets_updated": sum(result.updated_media_assets for result in results),
+        "lesson_media_created": sum(result.created_lesson_media for result in results),
+        "lesson_media_reused": sum(result.reused_lesson_media for result in results),
+    }
+
+
+def summarize_partial_salvage(results: list[LessonImportResult]) -> dict[str, int]:
+    records = [record for result in results for record in result.records]
+    missing_by_lesson: dict[str, int] = {}
+    for record in records:
+        if record.classification == "missing":
+            missing_by_lesson[record.lesson_id] = missing_by_lesson.get(record.lesson_id, 0) + 1
+
+    return {
+        "lessons_processed": len(results),
+        "refs_total": sum(result.legacy_ref_count for result in results),
+        "resolvable_refs": sum(1 for record in records if record.classification == "resolvable"),
+        "missing_refs": sum(1 for record in records if record.classification == "missing"),
+        "would_convert": sum(result.converted_ref_count for result in results),
+        "would_leave_untouched": sum(1 for record in records if record.classification == "missing"),
+        "lessons_fully_cleaned": sum(
+            1 for result in results if result.lesson_id not in missing_by_lesson
+        ),
+        "lessons_still_blocked": len(missing_by_lesson),
+        "remaining_raw_refs": sum(1 for record in records if record.classification == "missing"),
+    }
 
 
 def print_tsv(results: list[LessonImportResult]) -> None:
@@ -1126,22 +1384,15 @@ def print_tsv(results: list[LessonImportResult]) -> None:
             )
 
 
-def print_json(results: list[LessonImportResult]) -> None:
-    summary = {
-        "lessons_touched": len(results),
-        "lessons_failed": sum(1 for result in results if result.status == "failed"),
-        "legacy_refs_found": sum(result.legacy_ref_count for result in results),
-        "legacy_refs_converted": sum(result.converted_ref_count for result in results),
-        "media_assets_created": sum(result.created_media_assets for result in results),
-        "media_assets_reused": sum(result.reused_media_assets for result in results),
-        "media_assets_updated": sum(result.updated_media_assets for result in results),
-        "lesson_media_created": sum(result.created_lesson_media for result in results),
-        "lesson_media_reused": sum(result.reused_lesson_media for result in results),
-    }
+def print_json(results: list[LessonImportResult], *, mode: str) -> None:
+    summary = summarize_results(results)
     payload = {
+        "mode": mode,
         "summary": summary,
         "results": [asdict(result) for result in results],
     }
+    if mode == "partial_salvage":
+        payload["partial_salvage_summary"] = summarize_partial_salvage(results)
     print(json.dumps(payload, ensure_ascii=True, indent=2))
 
 
@@ -1156,10 +1407,10 @@ def main() -> None:
     }
 
     with psycopg.connect(db_url, **connect_kwargs) as conn:
-        results = process_lessons(conn, apply=bool(args.apply))
+        results = process_lessons(conn, apply=bool(args.apply), mode=args.mode)
 
     if args.format == "json":
-        print_json(results)
+        print_json(results, mode=args.mode)
     else:
         print_tsv(results)
 
