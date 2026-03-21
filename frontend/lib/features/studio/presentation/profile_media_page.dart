@@ -36,10 +36,16 @@ class _StudioProfilePageState extends ConsumerState<StudioProfilePage> {
     final uploads = libraryAsync.valueOrNull?.uploads;
     final shouldPoll =
         uploads?.any((upload) {
+          final playbackState = upload.normalizedPlaybackState;
+          if (playbackState == 'uploaded' || playbackState == 'processing') {
+            return true;
+          }
           final mediaAssetId = (upload.mediaAssetId ?? '').trim();
           if (mediaAssetId.isEmpty) return false;
-          final state = (upload.mediaState ?? 'uploaded').trim().toLowerCase();
-          return state != 'ready' && state != 'failed';
+          final mediaState = upload.normalizedMediaState;
+          return mediaState.isNotEmpty &&
+              mediaState != 'ready' &&
+              mediaState != 'failed';
         }) ??
         false;
 
@@ -262,6 +268,70 @@ void _showErrorSnackBar(BuildContext context, Object error) {
       backgroundColor: Theme.of(context).colorScheme.error,
     ),
   );
+}
+
+bool _isHomeUploadProcessing(HomePlayerUploadItem upload) {
+  final playbackState = upload.normalizedPlaybackState;
+  if (playbackState == 'uploaded' || playbackState == 'processing') {
+    return true;
+  }
+
+  final mediaAssetId = (upload.mediaAssetId ?? '').trim();
+  if (mediaAssetId.isEmpty) return false;
+
+  final mediaState = upload.normalizedMediaState;
+  return mediaState.isNotEmpty &&
+      mediaState != 'ready' &&
+      mediaState != 'failed';
+}
+
+bool _hasHomeUploadError(HomePlayerUploadItem upload) {
+  if (_isHomeUploadProcessing(upload)) return false;
+
+  final playbackState = upload.normalizedPlaybackState;
+  if (playbackState == 'inactive' || playbackState == 'ready') return false;
+  if (playbackState == 'failed' ||
+      playbackState == 'missing' ||
+      playbackState == 'unavailable') {
+    return true;
+  }
+
+  if (upload.isPlayable == false) {
+    final failureReason = upload.normalizedFailureReason;
+    return failureReason.isEmpty ||
+        !failureReason.startsWith('ok_') && failureReason != 'asset_not_ready';
+  }
+
+  return upload.normalizedMediaState == 'failed';
+}
+
+String _homeUploadFailureText(HomePlayerUploadItem upload) {
+  switch (upload.normalizedFailureReason) {
+    case 'missing_storage_object':
+    case 'legacy_object_not_found':
+      return 'Orsak: Filen finns inte längre i lagringen.';
+    case 'missing_storage_identity':
+      return 'Orsak: Filkopplingen till lagringen är ofullständig.';
+    case 'missing_asset_link':
+      return 'Orsak: Filen saknar en giltig mediakoppling.';
+    case 'legacy_fallback_required':
+    case 'legacy_blocked':
+      return 'Orsak: Den äldre filkopplingen kan inte användas för uppspelning.';
+    case 'unsupported_media_contract':
+      return 'Orsak: Filen har en ogiltig eller trasig mediakonfiguration.';
+    case 'invalid_kind':
+    case 'invalid_content_type':
+      return 'Orsak: Filtypen stöds inte i Home-spelaren.';
+    case 'asset_not_ready':
+      return 'Orsak: Filen bearbetas fortfarande.';
+    case 'lesson_media_not_found':
+      return 'Orsak: Originalfilen kunde inte hittas.';
+    default:
+      if (upload.normalizedPlaybackState == 'failed') {
+        return 'Orsak: Filen kunde inte förberedas för uppspelning.';
+      }
+      return 'Orsak: Uppspelningen kunde inte förberedas.';
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -513,12 +583,10 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
     final icon = isVideo ? Icons.videocam_outlined : Icons.headphones;
     final typeLabel = isVideo ? 'Video' : 'Ljud';
     final isDisabled = widget.disabled || _saving;
-    final mediaAssetId = (widget.upload.mediaAssetId ?? '').trim();
-    final mediaState = (widget.upload.mediaState ?? 'uploaded')
-        .trim()
-        .toLowerCase();
-    final showsProcessing = mediaAssetId.isNotEmpty && mediaState != 'ready';
-    final processingError = mediaState == 'failed';
+    final showsProcessing = _isHomeUploadProcessing(widget.upload);
+    final showsError = _hasHomeUploadError(widget.upload);
+    final processingError =
+        !showsProcessing && widget.upload.normalizedMediaState == 'failed';
     final processingLabel = processingError
         ? 'Bearbetningen misslyckades.'
         : 'Bearbetar ljud…';
@@ -529,122 +597,204 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 160),
-      opacity: widget.upload.active ? 1 : 0.7,
+      opacity: widget.upload.active || showsError ? 1 : 0.7,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              icon,
-              size: 22,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_editing)
-                    Focus(
-                      onKeyEvent: (_, event) {
-                        if (event is KeyDownEvent &&
-                            event.logicalKey == LogicalKeyboardKey.escape) {
-                          _cancelEditing();
-                          return KeyEventResult.handled;
-                        }
-                        return KeyEventResult.ignored;
-                      },
-                      child: TextField(
-                        controller: _titleController,
-                        focusNode: _titleFocusNode,
-                        enabled: !isDisabled,
-                        maxLines: 1,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) async => await _saveEditing(),
-                        style: titleStyle,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
-                          border: UnderlineInputBorder(),
-                        ),
-                      ),
-                    )
-                  else
-                    MouseRegion(
-                      cursor: isDisabled
-                          ? SystemMouseCursors.basic
-                          : SystemMouseCursors.click,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: isDisabled ? null : _startEditing,
-                        child: Text(
-                          widget.upload.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: titleStyle,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 4),
-                  Text(
-                    typeLabel,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (showsProcessing) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!processingError)
-                          SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        if (!processingError) const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            processingLabel,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: processingError
-                                  ? theme.colorScheme.error
-                                  : theme.colorScheme.onSurfaceVariant,
-                              fontWeight: processingError
-                                  ? FontWeight.w600
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
+        child: Container(
+          decoration: BoxDecoration(
+            color: showsError
+                ? theme.colorScheme.error.withValues(alpha: 0.06)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            border: showsError
+                ? Border.all(
+                    color: theme.colorScheme.error.withValues(alpha: 0.35),
+                  )
+                : null,
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: showsError ? 12 : 0,
+            vertical: showsError ? 12 : 0,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                showsError ? Icons.error_outline : icon,
+                size: 22,
+                color: showsError
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.78),
               ),
-            ),
-            IconButton(
-              tooltip: 'Ta bort',
-              onPressed: isDisabled
-                  ? null
-                  : () async => await widget.onDelete(
-                      widget.upload.id,
-                      widget.upload.title,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_editing)
+                      Focus(
+                        onKeyEvent: (_, event) {
+                          if (event is KeyDownEvent &&
+                              event.logicalKey == LogicalKeyboardKey.escape) {
+                            _cancelEditing();
+                            return KeyEventResult.handled;
+                          }
+                          return KeyEventResult.ignored;
+                        },
+                        child: TextField(
+                          controller: _titleController,
+                          focusNode: _titleFocusNode,
+                          enabled: !isDisabled,
+                          maxLines: 1,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) async => await _saveEditing(),
+                          style: titleStyle,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                            border: UnderlineInputBorder(),
+                          ),
+                        ),
+                      )
+                    else
+                      MouseRegion(
+                        cursor: isDisabled
+                            ? SystemMouseCursors.basic
+                            : SystemMouseCursors.click,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: isDisabled ? null : _startEditing,
+                          child: Text(
+                            widget.upload.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      typeLabel,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: showsError
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.onSurfaceVariant,
+                        fontWeight: showsError ? FontWeight.w600 : null,
+                      ),
                     ),
-              icon: const Icon(Icons.delete_outline),
-            ),
-            Switch.adaptive(
-              value: widget.upload.active,
-              onChanged: isDisabled
-                  ? null
-                  : (value) async =>
-                        await widget.onToggle(widget.upload.id, value),
-            ),
-          ],
+                    if (showsProcessing) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!processingError)
+                            SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          if (!processingError) const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              processingLabel,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: processingError
+                                    ? theme.colorScheme.error
+                                    : theme.colorScheme.onSurfaceVariant,
+                                fontWeight: processingError
+                                    ? FontWeight.w600
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (showsError) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Den här filen saknas eller är trasig',
+                        key: ValueKey(
+                          'home-upload-error-title-${widget.upload.id}',
+                        ),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Ladda upp filen igen',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _homeUploadFailureText(widget.upload),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            key: ValueKey(
+                              'home-upload-disabled-play-${widget.upload.id}',
+                            ),
+                            onPressed: null,
+                            icon: const Icon(Icons.play_arrow_outlined),
+                            label: const Text('Kan inte spela'),
+                          ),
+                          TextButton.icon(
+                            key: ValueKey(
+                              'home-upload-remove-${widget.upload.id}',
+                            ),
+                            onPressed: isDisabled
+                                ? null
+                                : () async => await widget.onDelete(
+                                    widget.upload.id,
+                                    widget.upload.title,
+                                  ),
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Ta bort'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: theme.colorScheme.error,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (!showsError)
+                IconButton(
+                  tooltip: 'Ta bort',
+                  onPressed: isDisabled
+                      ? null
+                      : () async => await widget.onDelete(
+                          widget.upload.id,
+                          widget.upload.title,
+                        ),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              Switch.adaptive(
+                value: widget.upload.active,
+                onChanged: isDisabled
+                    ? null
+                    : (value) async =>
+                          await widget.onToggle(widget.upload.id, value),
+              ),
+            ],
+          ),
         ),
       ),
     );

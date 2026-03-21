@@ -33,6 +33,9 @@ class HomePlayerUploadItem extends Equatable {
     this.byteSize,
     this.mediaState,
     this.mediaErrorMessage,
+    this.isPlayable,
+    this.playbackState,
+    this.failureReason,
   });
 
   factory HomePlayerUploadItem.fromJson(Map<String, dynamic> json) {
@@ -51,6 +54,9 @@ class HomePlayerUploadItem extends Equatable {
       byteSize: json['byte_size'] as int?,
       mediaState: json['media_state'] as String?,
       mediaErrorMessage: json['media_error_message'] as String?,
+      isPlayable: json['is_playable'] as bool?,
+      playbackState: json['playback_state'] as String?,
+      failureReason: json['failure_reason'] as String?,
     );
   }
 
@@ -66,6 +72,17 @@ class HomePlayerUploadItem extends Equatable {
   final int? byteSize;
   final String? mediaState;
   final String? mediaErrorMessage;
+  final bool? isPlayable;
+  final String? playbackState;
+  final String? failureReason;
+
+  String get normalizedMediaState => (mediaState ?? '').trim().toLowerCase();
+
+  String get normalizedPlaybackState =>
+      (playbackState ?? '').trim().toLowerCase();
+
+  String get normalizedFailureReason =>
+      (failureReason ?? '').trim().toLowerCase();
 
   HomePlayerUploadItem copyWith({bool? active, String? title}) {
     return HomePlayerUploadItem(
@@ -81,6 +98,9 @@ class HomePlayerUploadItem extends Equatable {
       byteSize: byteSize,
       mediaState: mediaState,
       mediaErrorMessage: mediaErrorMessage,
+      isPlayable: isPlayable,
+      playbackState: playbackState,
+      failureReason: failureReason,
     );
   }
 
@@ -98,6 +118,9 @@ class HomePlayerUploadItem extends Equatable {
     byteSize,
     mediaState,
     mediaErrorMessage,
+    isPlayable,
+    playbackState,
+    failureReason,
   ];
 }
 

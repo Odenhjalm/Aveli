@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/auth_repository.dart';
 
 class HomeAudioItem {
@@ -29,6 +30,10 @@ class HomeAudioItem {
     this.mediaState,
     this.streamingFormat,
     this.codec,
+    this.runtimeMediaId,
+    this.isPlayable,
+    this.playbackState,
+    this.failureReason,
   });
 
   final String id;
@@ -55,6 +60,19 @@ class HomeAudioItem {
   final String? mediaState;
   final String? streamingFormat;
   final String? codec;
+  final String? runtimeMediaId;
+  final bool? isPlayable;
+  final String? playbackState;
+  final String? failureReason;
+
+  String? get runtimePlaybackId {
+    final runtimeId = runtimeMediaId?.trim();
+    if (runtimeId != null && runtimeId.isNotEmpty) {
+      return runtimeId;
+    }
+    final fallback = id.trim();
+    return fallback.isEmpty ? null : fallback;
+  }
 
   String? get preferredUrl {
     final download = downloadUrl?.trim();
@@ -104,6 +122,10 @@ class HomeAudioItem {
     mediaState: json['media_state'] as String?,
     streamingFormat: json['streaming_format'] as String?,
     codec: json['codec'] as String?,
+    runtimeMediaId: json['runtime_media_id'] as String?,
+    isPlayable: json['is_playable'] as bool?,
+    playbackState: json['playback_state'] as String?,
+    failureReason: json['failure_reason'] as String?,
   );
 
   static int? _asInt(dynamic value) {
@@ -136,6 +158,27 @@ class HomeAudioRepository {
               HomeAudioItem.fromJson(Map<String, dynamic>.from(item as Map)),
         )
         .toList(growable: false);
+  }
+
+  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) async {
+    final normalizedId = runtimeMediaId.trim();
+    if (normalizedId.isEmpty) {
+      throw ArgumentError.value(
+        runtimeMediaId,
+        'runtimeMediaId',
+        'Must not be empty.',
+      );
+    }
+
+    final response = await _client.post<Map<String, dynamic>>(
+      ApiPaths.mediaRuntimePlayback,
+      body: {'runtime_media_id': normalizedId},
+    );
+    final rawUrl = (response['playback_url'] as String? ?? '').trim();
+    if (rawUrl.isEmpty) {
+      throw const FormatException('Playback URL saknas');
+    }
+    return rawUrl;
   }
 }
 

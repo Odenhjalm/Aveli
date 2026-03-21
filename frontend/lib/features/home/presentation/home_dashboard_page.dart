@@ -21,7 +21,6 @@ import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/features/media/application/media_playback_controller.dart';
-import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
@@ -60,10 +59,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final items = audioAsync.valueOrNull;
     final shouldPoll =
         items?.any((item) {
-          final mediaAssetId = (item.mediaAssetId ?? '').trim();
-          if (mediaAssetId.isEmpty) return false;
-          final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
-          return state != 'ready';
+          if (item.isPlayable == true) return false;
+          final state = (item.playbackState ?? '').trim().toLowerCase();
+          return state == 'uploaded' || state == 'processing';
         }) ??
         false;
 
@@ -468,14 +466,14 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
 
   @override
   Widget build(BuildContext context) {
+    final playback = ref.watch(mediaPlaybackControllerProvider);
+    final selected = _resolveSelected(playback);
     if (_playlistItems.isEmpty ||
         !_playlist.hasPlayableItems ||
         _playlist.allPlayableItemsFailed) {
-      return _buildUnavailableState(context);
+      return _buildUnavailableState(context, item: selected);
     }
 
-    final playback = ref.watch(mediaPlaybackControllerProvider);
-    final selected = _resolveSelected(playback);
     if (selected == null) {
       return _buildUnavailableState(context);
     }
@@ -620,8 +618,11 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
     );
   }
 
-  Widget _buildUnavailableState(BuildContext context) {
-    final statusMessage = _statusMessage ?? 'Kan inte spela upp just nu.';
+  Widget _buildUnavailableState(BuildContext context, {HomeAudioItem? item}) {
+    final statusMessage =
+        _statusMessage ??
+        (item != null ? _statusMessageForItem(item) : null) ??
+        'Kan inte spela upp just nu.';
     return _NowPlayingShell(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -681,32 +682,36 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
 
   bool _canAttemptPlayback(HomeAudioItem item) {
     if (!_isSupportedHomePlaylistItem(item)) return false;
-    final mediaAssetId = (item.mediaAssetId ?? '').trim();
-    if (mediaAssetId.isNotEmpty) {
-      final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
-      return state == 'ready';
-    }
-    final url = item.preferredUrl;
-    return url != null && url.trim().isNotEmpty;
+    final runtimeMediaId = item.runtimePlaybackId;
+    return item.isPlayable == true &&
+        runtimeMediaId != null &&
+        runtimeMediaId.isNotEmpty;
   }
 
   String? _statusMessageForItem(HomeAudioItem item) {
     if (!_isSupportedHomePlaylistItem(item)) {
       return 'Hemspelaren använder mp3-ljud just nu.';
     }
-    final mediaAssetId = (item.mediaAssetId ?? '').trim();
-    if (mediaAssetId.isNotEmpty) {
-      final state = (item.mediaState ?? 'uploaded').trim().toLowerCase();
-      if (state == 'ready') return null;
-      return state == 'failed'
-          ? 'Ljudet kunde inte bearbetas.'
-          : 'Ljudet bearbetas…';
+    if (item.isPlayable == true) return null;
+
+    final playbackState = (item.playbackState ?? '').trim().toLowerCase();
+    if (playbackState == 'uploaded' || playbackState == 'processing') {
+      return 'Ljudet bearbetas…';
     }
-    final url = item.preferredUrl;
-    if (url == null || url.trim().isEmpty) {
-      return 'Ljudlänken saknas för detta spår.';
+    if (playbackState == 'inactive') {
+      return 'Spåret är inte aktivt.';
     }
-    return null;
+    if (playbackState == 'missing') {
+      return 'Spåret kunde inte hittas.';
+    }
+
+    final failureReason = (item.failureReason ?? '').trim().toLowerCase();
+    if (failureReason == 'missing_storage_object' ||
+        failureReason == 'legacy_object_not_found') {
+      return 'Ljudfilen saknas för detta spår.';
+    }
+
+    return 'Spåret är inte tillgängligt just nu.';
   }
 
   Duration? _durationHintFor(HomeAudioItem item) {
@@ -870,29 +875,13 @@ class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
   Future<InlineAudioPlaybackSource> _resolvePlaybackSource(
     HomeAudioItem item,
   ) async {
-    final mediaAssetId = (item.mediaAssetId ?? '').trim();
-    if (mediaAssetId.isNotEmpty) {
-      final repo = ref.read(mediaPipelineRepositoryProvider);
-      final playback = await repo.fetchPlaybackUrl(mediaAssetId);
-      return InlineAudioPlaybackSource(
-        url: playback.playbackUrl.toString(),
-        expiresAt: playback.expiresAt.toUtc(),
-      );
+    final runtimeMediaId = item.runtimePlaybackId;
+    if (runtimeMediaId == null || runtimeMediaId.isEmpty) {
+      throw StateError('Spårets uppspelnings-id saknas.');
     }
-    final repo = ref.read(mediaRepositoryProvider);
-    final preferred = item.preferredUrl;
-    if (preferred == null || preferred.trim().isEmpty) {
-      throw StateError('Ljudlänken saknas för detta spår.');
-    }
-    final trimmedPreferred = preferred.trim();
-    final signed = item.signedUrl?.trim();
-    final expiresAt = signed != null && signed == trimmedPreferred
-        ? item.signedUrlExpiresAt?.toUtc()
-        : null;
-    return InlineAudioPlaybackSource(
-      url: repo.resolvePlaybackUrl(trimmedPreferred),
-      expiresAt: expiresAt,
-    );
+    final repo = ref.read(homeAudioRepositoryProvider);
+    final playbackUrl = await repo.fetchRuntimePlaybackUrl(runtimeMediaId);
+    return InlineAudioPlaybackSource(url: playbackUrl);
   }
 
   void _openLibrary(BuildContext context, List<HomeAudioItem> items) {
