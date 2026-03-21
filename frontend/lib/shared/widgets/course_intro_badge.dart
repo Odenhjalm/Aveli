@@ -1,31 +1,41 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/design_tokens.dart';
-import 'package:aveli/shared/theme/ui_consts.dart';
 
 enum CourseIntroBadgeVariant { badge, link }
+
+const LinearGradient _courseIntroBadgeGradient = LinearGradient(
+  colors: [Color(0xFF84B7FF), Color(0xFFA4B3FF)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
 
 class CourseIntroBadge extends StatelessWidget {
   const CourseIntroBadge({
     super.key,
     this.label = 'Introduktion',
-    this.textColor = DesignTokens.infoAccentTextColor,
+    this.textColor,
     this.variant = CourseIntroBadgeVariant.badge,
-    this.gradient = kBrandBluePurpleGradient,
+    this.gradient = _courseIntroBadgeGradient,
   });
 
   final String label;
-  final Color textColor;
+  final Color? textColor;
   final CourseIntroBadgeVariant variant;
   final Gradient gradient;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final resolvedTextColor =
+        textColor ??
+        (variant == CourseIntroBadgeVariant.badge
+            ? Colors.white
+            : DesignTokens.infoAccentTextColor);
     switch (variant) {
       case CourseIntroBadgeVariant.badge:
         final style = theme.textTheme.labelSmall?.copyWith(
-          color: textColor,
+          color: resolvedTextColor,
           fontWeight: FontWeight.w800,
         );
         return ClipRRect(
@@ -50,7 +60,7 @@ class CourseIntroBadge extends StatelessWidget {
         final style = baseStyle.merge(buttonStyle);
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Text(label, style: style.copyWith(color: textColor)),
+          child: Text(label, style: style.copyWith(color: resolvedTextColor)),
         );
     }
   }
