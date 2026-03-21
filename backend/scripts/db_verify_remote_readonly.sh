@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
-MASTER_ENV_FILE="/home/oden/Aveli/backend/.env"
+MASTER_ENV_FILE="${MASTER_ENV_FILE:-${BACKEND_ENV_FILE:-${ROOT_DIR}/backend/.env}}"
 LOG_PATH="/tmp/aveli_remote_db_verify_$(date +%Y%m%d-%H%M%S).json"
 
 LOG_STATUS=""
@@ -81,6 +81,7 @@ append_report() {
 load_master_env() {
   if [[ ! -f "$MASTER_ENV_FILE" ]]; then
     echo "ERROR: master env missing at ${MASTER_ENV_FILE}" >&2
+    echo "Set MASTER_ENV_FILE=/path/to/backend.env (or BACKEND_ENV_FILE=...) to verify an explicit target." >&2
     LOG_STATUS="FAILED"
     LOG_REASON="master env missing"
     append_report <<TXT
@@ -119,6 +120,7 @@ PY
 }
 
 load_master_env
+echo "Using backend env file: ${MASTER_ENV_FILE}"
 if is_prod_env; then
   ENV_STAGE="live"
 fi

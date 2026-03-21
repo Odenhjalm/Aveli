@@ -5,9 +5,10 @@ This guide describes how to keep the Stripe test environment stable while exerci
 ## 1. Database prerequisites
 
 - Critical migrations: `supabase/migrations/004_memberships_billing.sql`, `005_course_entitlements.sql`, and `006_course_pricing.sql`.
-- Apply them to the active Supabase project before running the backend:
-  - `cd backend && supabase db push` (recommended) **or**
-  - `psql "$SUPABASE_DB_URL" < supabase/migrations/006_course_pricing.sql` (repeat for 004 + 005 if needed).
+- For dev/test only, apply them from the repo root before running the backend:
+  - `SUPABASE_DB_URL=postgresql://... SUPABASE_DB_PASSWORD=... backend/scripts/apply_supabase_migrations.sh` **or**
+  - `psql "$SUPABASE_DB_URL" -f supabase/migrations/006_course_pricing.sql` (repeat for 004 + 005 if needed).
+- Production note: do not use `cd backend && supabase db push` as a production release path. Production migrations must come from root `supabase/migrations` only.
 - If `app.memberships`, `app.payment_events`, or `app.billing_logs` are missing, rerun the migrations above before retesting.
 
 ## 2. Fill in test secrets

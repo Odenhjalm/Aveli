@@ -25,6 +25,8 @@ kill_timeout = "5s"
   processes = ["app"]
 
 [checks]
+  # Fly automates /healthz. Treat /readyz as a required manual post-deploy smoke
+  # in docs/DEPLOYMENT.md until a separate release gate is added.
   [checks.healthz]
     type = "http"
     port = 8080

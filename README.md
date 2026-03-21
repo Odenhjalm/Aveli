@@ -24,7 +24,7 @@ Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in 
 
 ## Environment
 - Copy `.env.example` → `.env` (root), `.env.example.backend` → `.env.backend`.
-- Flutter: copy `.env.example.flutter` → `frontend/.env.local` for local defines (or provide `--dart-define` flags directly). Use a separate `frontend/.env.web` for web builds and run `frontend/scripts/guard_web_defines.sh` to block secrets.
+- Flutter: copy `.env.example.flutter` → `frontend/.env.local` for local defines (or provide `--dart-define` flags directly). Use a separate `frontend/.env.web` for local web runs only, and run `frontend/scripts/guard_web_defines.sh` to block secrets. Production web deploys must use Netlify env vars plus `netlify.toml`, not a checked-in `.env` file.
 - Do **not** commit real keys (.env files are ignored).
 - Backend listens on port `8080` by default; update `API_BASE_URL`/`NEXT_PUBLIC_API_BASE_URL` accordingly.
 
@@ -43,7 +43,7 @@ SUPABASE_DB_URL=postgres://... \
 SUPABASE_DB_PASSWORD=... \
 backend/scripts/apply_supabase_migrations.sh
 ```
-Migrations source: `supabase/migrations/*.sql`.
+Production migration source: `supabase/migrations/*.sql` only.
 
 ### Backend tests & lint
 ```bash
@@ -80,10 +80,12 @@ docker compose --env-file .env.docker up --build
 # Backend: http://localhost:8080, Landing: http://localhost:3000
 ```
 
-## Deployment (Fly.io)
-- `fly.toml` points to `backend/Dockerfile`, internal port `8080`, HTTP checks on `/healthz` + `/readyz`.
-- Set secrets via `flyctl secrets set` using the keys from `docs/ENV_VARS.md`.
-- Deploy with `flyctl deploy`.
+## Deployment
+- Canonical production release is manual and exact-SHA based; see `docs/DEPLOYMENT.md`.
+- Database: apply migrations from root `supabase/migrations/*.sql` only. Do not use `backend/supabase/` or `cd backend && supabase db push` for production.
+- Backend: deploy Fly from a clean worktree at the exact commit on `main` using `fly.toml` and `backend/Dockerfile`.
+- Frontend: deploy the same commit via Netlify source build using `netlify.toml`. Do not upload a local `frontend/build/web` artifact to production.
+- Post-deploy: verify `/healthz`, `/readyz`, and one authenticated runtime-media playback path.
 
 ## Tooling
 - Scripts live in `backend/scripts` (and via root symlink `scripts/` for compatibility).

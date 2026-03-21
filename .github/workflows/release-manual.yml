@@ -1,0 +1,91 @@
+name: Release Manual Scaffold
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Exact Git ref or SHA to release (must resolve to a commit on origin/main)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_ref }}
+
+      - name: Verify ref is on origin/main
+        id: verify_ref
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/main; then
+            echo "Refusing release scaffold: $RELEASE_SHA is not on origin/main." >&2
+            exit 1
+          fi
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Publish manual release checklist
+        env:
+          RELEASE_SHA: ${{ steps.verify_ref.outputs.release_sha }}
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ## Manual Release Checklist
+
+          - Release ref: \`$RELEASE_SHA\`
+          - This workflow is a scaffold only. It does not deploy.
+          - Confirm required GitHub checks are green for \`$RELEASE_SHA\`: \`Backend CI\`, \`Validate App Stack\`, \`Web CI\`, \`Deploy Guard (Flutter Web)\`.
+
+          ### Preflight
+
+          \`\`\`bash
+          git fetch origin main
+          git checkout $RELEASE_SHA
+          test "\$(git rev-parse HEAD)" = "\$(git rev-parse origin/main)"
+          test -z "\$(git status --porcelain)"
+          \`\`\`
+
+          ### Verify DB Target
+
+          \`\`\`bash
+          BACKEND_ENV_FILE=/path/to/backend-release.env python3 backend/scripts/supabase_verify_env.py
+          MASTER_ENV_FILE=/path/to/backend-release.env VERIFY_WRITE_REPORT=0 APP_ENV=production backend/scripts/db_verify_remote_readonly.sh
+          \`\`\`
+
+          ### Apply Canonical Migrations
+
+          \`\`\`bash
+          APP_ENV=production REQUIRE_CLEAN_WORKTREE=1 SUPABASE_PROJECT_REF=<expected-project-ref> SUPABASE_DB_URL=postgresql://... SUPABASE_DB_PASSWORD=... backend/scripts/apply_supabase_migrations.sh
+          \`\`\`
+
+          ### Deploy Backend
+
+          \`\`\`bash
+          flyctl deploy --config fly.toml
+          \`\`\`
+
+          ### Frontend Handoff
+
+          - Trigger the Netlify production deploy for the same SHA via Netlify source build.
+          - Do not upload a local \`frontend/build/web\` artifact.
+
+          ### Post-deploy Smoke
+
+          \`\`\`bash
+          curl -fsS https://aveli.fly.dev/healthz
+          curl -fsS https://aveli.fly.dev/readyz
+          curl -fsS https://aveli.fly.dev/api/media/playback \
+            -H "Authorization: Bearer <token>" \
+            -H "Content-Type: application/json" \
+            -d '{"runtime_media_id":"<known-good-runtime-media-id>"}'
+          \`\`\`
+          EOF

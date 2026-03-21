@@ -92,10 +92,14 @@
 - Netlify SPA config hardened in `netlify.toml`: SPA redirect `/* -> /index.html`, no-cache for `index.html`, `main.dart.js`, `flutter.js`, `flutter_bootstrap.js`, `version.json`; long-cache for `/assets/*` and `/canvaskit/*`.
 - Build warnings observed: wasm dry-run incompatibilities for `flutter_secure_storage_web`/`uni_links_web`; MaterialIcons tree-shaking notice (icons still bundled).
 
-## Production Web Render Verification (to prove white-screen fixed)
+## Historical Production Web Render Verification (not the current release runbook)
+
+- This section records a stabilization-era verification path.
+- It is not the canonical production deployment path for the repo today.
+- Current production web releases must use Netlify source builds from the linked repo on `main`; see `docs/DEPLOYMENT.md`.
 
 - Build (from repo root): `cd frontend && flutter build web --release --dart-define=API_BASE_URL=https://aveli.fly.dev --dart-define=OAUTH_REDIRECT_WEB=https://app.aveli.app/auth/callback`
-- Deploy prebuilt to Netlify: `cd frontend && netlify deploy --dir=build/web --prod` (site must already be configured)
+- Historical only: `cd frontend && netlify deploy --dir=build/web --prod` (site must already be configured)
 - Post-deploy checks:
   - Open incognito: https://app.aveli.app/#/login
   - Network tab: `assets/AssetManifest.json` and `assets/FontManifest.json` return 200

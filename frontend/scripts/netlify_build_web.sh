@@ -38,6 +38,13 @@ normalize_url() {
   echo "${url%/}"
 }
 
+require_clean_worktree() {
+  if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]]; then
+    echo "Refusing production build: git worktree must be clean for exact-commit reproducibility." >&2
+    exit 1
+  fi
+}
+
 assert_single_canonical_build_dir() {
   local expected="$CANONICAL_BUILD_DIR"
   local canonical_count=0
@@ -117,6 +124,7 @@ fi
 
 MAIN_COMMIT=""
 if [[ "$NETLIFY_CONTEXT" == "production" ]]; then
+  require_clean_worktree
   if ! git -C "$REPO_ROOT" fetch --no-tags --depth=1 origin "$EXPECTED_MAIN_BRANCH"; then
     echo "Refusing production build: failed to fetch origin/$EXPECTED_MAIN_BRANCH for provenance check." >&2
     exit 1
