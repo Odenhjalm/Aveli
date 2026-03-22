@@ -177,12 +177,21 @@ def _recording_from_row(row: Dict[str, Any]) -> schemas.SeminarRecordingResponse
     return schemas.SeminarRecordingResponse(**data)
 
 
-@router.get("/courses")
-async def studio_courses(current: TeacherUser):
-    rows = await models.teacher_courses(current["id"])
-    await courses_service.warn_course_cover_contracts(rows)
+async def _apply_course_read_contract(
+    courses: dict[str, Any] | list[dict[str, Any]] | None,
+) -> None:
+    await courses_service.attach_course_cover_read_contract(courses)
+    if courses is None:
+        return
+    rows = [courses] if isinstance(courses, dict) else list(courses)
     for row in rows:
         media_signer.attach_cover_links(row)
+
+
+@router.get("/courses")
+async def studio_courses(current: TeacherUser):
+    rows = list(await courses_service.list_courses(teacher_id=str(current["id"])))
+    await _apply_course_read_contract(rows)
     return {"items": rows}
 
 
@@ -1353,10 +1362,10 @@ async def course_meta(course_id: str, current: TeacherUser):
             course_id=course_id,
         )
         raise HTTPException(status_code=403, detail="Not course owner")
-    row = await models.get_course(course_id=course_id)
+    row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    await courses_service.warn_course_cover_contracts(row)
+    await _apply_course_read_contract(row)
     return row
 
 

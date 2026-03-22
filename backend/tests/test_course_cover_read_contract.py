@@ -6,6 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from app import permissions
+from app.main import app
+from app.routes import studio as studio_routes
 from app.services import courses_service
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -453,3 +456,125 @@ async def test_courses_list_response_omits_cover_when_absent(async_client, monke
     assert response.status_code == 200, response.text
     body = response.json()
     assert "cover" not in body["items"][0]
+
+
+async def test_studio_courses_list_response_includes_cover_when_present(
+    async_client, monkeypatch
+):
+    now = datetime.now(timezone.utc)
+    app.dependency_overrides[permissions.require_teacher] = lambda: {"id": MEDIA_ID}
+
+    async def fake_list_courses(**kwargs):
+        assert kwargs == {"teacher_id": MEDIA_ID}
+        return [
+            {
+                "id": COURSE_ID,
+                "slug": "course-1",
+                "title": "Course 1",
+                "description": "Example",
+                "cover_url": None,
+                "cover_media_id": MEDIA_ID,
+                "cover": {
+                    "media_id": MEDIA_ID,
+                    "state": "ready",
+                    "resolved_url": "https://storage.local/public-media/media/derived/cover/courses/course-1/cover.jpg",
+                    "source": "control_plane",
+                },
+                "video_url": None,
+                "branch": None,
+                "is_free_intro": False,
+                "journey_step": None,
+                "step_level": "step1",
+                "course_family": "course",
+                "price_amount_cents": 0,
+                "currency": "sek",
+                "stripe_product_id": None,
+                "stripe_price_id": None,
+                "is_published": True,
+                "created_by": MEDIA_ID,
+                "created_at": now,
+                "updated_at": now,
+            }
+        ]
+
+    monkeypatch.setattr(
+        studio_routes.courses_service,
+        "list_courses",
+        fake_list_courses,
+        raising=True,
+    )
+
+    try:
+        response = await async_client.get("/studio/courses")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["items"][0]["cover"]["source"] == "control_plane"
+    assert body["items"][0]["cover"]["media_id"] == MEDIA_ID
+
+
+async def test_studio_course_detail_response_includes_cover_when_present(
+    async_client, monkeypatch
+):
+    now = datetime.now(timezone.utc)
+    app.dependency_overrides[permissions.require_teacher] = lambda: {"id": MEDIA_ID}
+
+    async def fake_is_course_owner(user_id: str, course_id: str):
+        assert user_id == MEDIA_ID
+        assert course_id == COURSE_ID
+        return True
+
+    async def fake_fetch_course(*, course_id: str | None = None, slug: str | None = None):
+        assert course_id == COURSE_ID
+        assert slug is None
+        return {
+            "id": COURSE_ID,
+            "slug": "course-1",
+            "title": "Course 1",
+            "description": "Example",
+            "cover_url": None,
+            "cover_media_id": MEDIA_ID,
+            "cover": {
+                "media_id": MEDIA_ID,
+                "state": "ready",
+                "resolved_url": "https://storage.local/public-media/media/derived/cover/courses/course-1/cover.jpg",
+                "source": "control_plane",
+            },
+            "video_url": None,
+            "branch": None,
+            "is_free_intro": False,
+            "journey_step": None,
+            "price_amount_cents": 0,
+            "currency": "sek",
+            "stripe_product_id": None,
+            "stripe_price_id": None,
+            "is_published": True,
+            "created_by": MEDIA_ID,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    monkeypatch.setattr(
+        studio_routes.models,
+        "is_course_owner",
+        fake_is_course_owner,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio_routes.courses_service,
+        "fetch_course",
+        fake_fetch_course,
+        raising=True,
+    )
+
+    try:
+        response = await async_client.get(f"/studio/courses/{COURSE_ID}")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["cover"]["source"] == "control_plane"
+    assert body["cover"]["media_id"] == MEDIA_ID
