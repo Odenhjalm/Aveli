@@ -26,6 +26,7 @@ import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
     as editor_test_bridge;
 import 'package:aveli/features/studio/presentation/editor_media_controls.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
+import 'package:aveli/features/studio/presentation/lesson_media_preview_cache.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/token_storage.dart';
@@ -329,6 +330,7 @@ Future<void> _pumpCourseEditorScreen(
   MediaPipelineRepository? mediaPipelineRepository,
   UploadQueueNotifier? uploadQueueNotifier,
   CourseEditorWebFilePicker? webImagePicker,
+  LessonMediaPreviewCache? previewCache,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -347,6 +349,8 @@ Future<void> _pumpCourseEditorScreen(
         authControllerProvider.overrideWith((ref) => _FakeAuthController()),
         studioRepositoryProvider.overrideWithValue(studioRepo),
         coursesRepositoryProvider.overrideWithValue(coursesRepo),
+        if (previewCache != null)
+          lessonMediaPreviewCacheProvider.overrideWithValue(previewCache),
         if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
         if (mediaRepository != null)
           mediaRepositoryProvider.overrideWithValue(mediaRepository),
@@ -850,6 +854,10 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: LessonMediaPreviewCache(
+          studioRepository: studioRepo,
+          transientResolverMaxRetries: 0,
+        ),
       );
       await _pumpEditorBootstrap(tester);
 
@@ -961,6 +969,10 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: LessonMediaPreviewCache(
+          studioRepository: studioRepo,
+          transientResolverMaxRetries: 0,
+        ),
       );
       await _pumpEditorBootstrap(tester);
 
@@ -1159,6 +1171,10 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: LessonMediaPreviewCache(
+          studioRepository: studioRepo,
+          transientResolverMaxRetries: 0,
+        ),
       );
       await _pumpEditorBootstrap(tester);
 
@@ -2111,6 +2127,10 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: LessonMediaPreviewCache(
+          studioRepository: studioRepo,
+          transientResolverMaxRetries: 0,
+        ),
       );
       await _pumpEditorBootstrap(tester);
 
@@ -2157,6 +2177,10 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: LessonMediaPreviewCache(
+          studioRepository: studioRepo,
+          transientResolverMaxRetries: 0,
+        ),
       );
       await _pumpEditorBootstrap(tester);
 
@@ -2625,10 +2649,15 @@ void main() {
   );
 
   testWidgets(
-    'CourseEditorScreen treats fallback-ready image rows as neutral, previewable, and not insertable',
+    'CourseEditorScreen keeps newly unresolved image rows processing before surfacing a retryable failure',
     (tester) async {
       final studioRepo = _MockStudioRepository();
       final coursesRepo = _MockCoursesRepository();
+      final previewCache = LessonMediaPreviewCache(
+        studioRepository: studioRepo,
+        transientResolverRetryDelay: const Duration(milliseconds: 400),
+        transientResolverMaxRetries: 1,
+      );
       _stubSingleLessonEditorData(
         studioRepo,
         coursesRepo,
@@ -2656,9 +2685,14 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: previewCache,
       );
-      await _pumpEditorBootstrap(tester);
-      await tester.pump();
+      await _pumpUntilFound(
+        tester,
+        find.text('fallback-image.png'),
+        maxPumps: 30,
+        step: const Duration(milliseconds: 10),
+      );
 
       final tileFinder = find
           .ancestor(
@@ -2667,15 +2701,15 @@ void main() {
           )
           .first;
       final tile = tester.widget<ListTile>(tileFinder);
-      expect(tile.onTap, isNotNull);
       expect(
-        find.descendant(of: tileFinder, matching: find.text('checking')),
+        find.descendant(of: tileFinder, matching: find.text('processing')),
         findsOneWidget,
       );
       expect(
         find.descendant(of: tileFinder, matching: find.text('failed')),
         findsNothing,
       );
+      expect(tile.onTap, isNull);
 
       final insertButton = tester.widget<IconButton>(
         find.descendant(
@@ -2688,20 +2722,29 @@ void main() {
       );
       expect(insertButton.onPressed, isNull);
 
-      await tester.ensureVisible(tileFinder);
-      await tester.tap(tileFinder);
+      await tester.pump(const Duration(milliseconds: 450));
       await tester.pump();
 
-      expect(find.byType(Dialog), findsOneWidget);
+      final failedTile = tester.widget<ListTile>(tileFinder);
       expect(
-        find.descendant(
-          of: find.byType(Dialog),
-          matching: _networkImageFinder('https://cdn.test/media-image-1.webp'),
-        ),
+        find.descendant(of: tileFinder, matching: find.text('failed')),
         findsOneWidget,
       );
-      final previewException = tester.takeException();
-      expect(previewException, anyOf(isNull, isA<NetworkImageLoadException>()));
+      expect(
+        find.descendant(of: tileFinder, matching: find.text('processing')),
+        findsNothing,
+      );
+      expect(failedTile.onTap, isNotNull);
+      final failedInsertButton = tester.widget<IconButton>(
+        find.descendant(
+          of: tileFinder,
+          matching: find.widgetWithIcon(
+            IconButton,
+            Icons.add_photo_alternate_outlined,
+          ),
+        ),
+      );
+      expect(failedInsertButton.onPressed, isNull);
 
       await _disposePumpedWidget(tester);
     },
@@ -2827,6 +2870,10 @@ void main() {
       final studioRepo = _MockStudioRepository();
       final coursesRepo = _MockCoursesRepository();
       final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      final previewCache = LessonMediaPreviewCache(
+        studioRepository: studioRepo,
+        transientResolverMaxRetries: 0,
+      );
       _stubSingleLessonEditorData(
         studioRepo,
         coursesRepo,
@@ -2848,6 +2895,7 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: previewCache,
       );
       await _pumpUntilFound(
         tester,
@@ -2890,6 +2938,10 @@ void main() {
       final studioRepo = _MockStudioRepository();
       final coursesRepo = _MockCoursesRepository();
       final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      final previewCache = LessonMediaPreviewCache(
+        studioRepository: studioRepo,
+        transientResolverMaxRetries: 0,
+      );
       _stubSingleLessonEditorData(
         studioRepo,
         coursesRepo,
@@ -2911,6 +2963,7 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: previewCache,
       );
       await _pumpUntilFound(
         tester,
@@ -3550,6 +3603,10 @@ void main() {
     (tester) async {
       final studioRepo = _MockStudioRepository();
       final coursesRepo = _MockCoursesRepository();
+      final previewCache = LessonMediaPreviewCache(
+        studioRepository: studioRepo,
+        transientResolverMaxRetries: 0,
+      );
 
       _stubSingleLessonEditorData(
         studioRepo,
@@ -3606,6 +3663,7 @@ void main() {
         tester,
         studioRepo: studioRepo,
         coursesRepo: coursesRepo,
+        previewCache: previewCache,
       );
       await _pumpEditorBootstrap(tester);
       await tester.pump();
@@ -3618,7 +3676,6 @@ void main() {
       for (final button in insertButtons) {
         expect(button.onPressed, isNull);
       }
-      verify(() => studioRepo.fetchLessonMediaPreviews(any())).called(1);
 
       await _disposePumpedWidget(tester);
     },

@@ -40,7 +40,10 @@ void main() {
         return response;
       });
 
-      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      final cache = LessonMediaPreviewCache(
+        studioRepository: studioRepository,
+        transientResolverMaxRetries: 0,
+      );
       cache.primeFromLessonMedia([
         {
           'id': 'media-1',
@@ -68,7 +71,7 @@ void main() {
   );
 
   test(
-    'preview cache stabilizes failed visual previews and suppresses repeated contract failures',
+    'preview cache keeps failed preview lookups retryable after contract failures',
     () async {
       final studioRepository = _MockStudioRepository();
       final telemetry = <String>[];
@@ -92,7 +95,10 @@ void main() {
         ),
       );
 
-      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      final cache = LessonMediaPreviewCache(
+        studioRepository: studioRepository,
+        transientResolverMaxRetries: 0,
+      );
       cache.primeFromLessonMedia([
         {'id': 'media-image-1', 'kind': 'image', 'original_name': 'image.png'},
       ]);
@@ -106,17 +112,11 @@ void main() {
       expect(secondPreview?.visualUrl, isNull);
       verify(
         () => studioRepository.fetchLessonMediaPreviews(['media-image-1']),
-      ).called(1);
+      ).called(2);
       expect(
         telemetry.any(
           (entry) =>
               entry.contains('LESSON_MEDIA_PREVIEW_ENDPOINT_CONTRACT_FAILURE'),
-        ),
-        isTrue,
-      );
-      expect(
-        telemetry.any(
-          (entry) => entry.contains('LESSON_MEDIA_PLACEHOLDER_STABILIZED'),
         ),
         isTrue,
       );
@@ -146,7 +146,10 @@ void main() {
         };
       });
 
-      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      final cache = LessonMediaPreviewCache(
+        studioRepository: studioRepository,
+        transientResolverMaxRetries: 0,
+      );
       cache.primeFromLessonMedia([
         {'id': 'media-valid', 'kind': 'image', 'original_name': 'valid.png'},
         {'id': 'media-invalid', 'kind': 'image', 'original_name': 'broken.png'},
@@ -176,7 +179,7 @@ void main() {
   );
 
   test(
-    'preview cache keeps a stored image fallback when backend preview resolution fails',
+    'preview cache ignores stored image fallbacks when backend preview resolution fails',
     () async {
       final studioRepository = _MockStudioRepository();
       when(() => studioRepository.fetchLessonMediaPreviews(any())).thenAnswer((
@@ -191,7 +194,10 @@ void main() {
         };
       });
 
-      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      final cache = LessonMediaPreviewCache(
+        studioRepository: studioRepository,
+        transientResolverMaxRetries: 0,
+      );
       cache.primeFromLessonMedia([
         {
           'id': 'media-image-1',
@@ -203,7 +209,7 @@ void main() {
 
       final preview = await cache.getPreview('media-image-1');
 
-      expect(preview?.visualUrl, 'https://cdn.test/media-image-1.webp');
+      expect(preview?.visualUrl, isNull);
       expect(preview?.authoritativeEditorReady, isFalse);
       verify(
         () => studioRepository.fetchLessonMediaPreviews(['media-image-1']),
@@ -212,7 +218,7 @@ void main() {
   );
 
   test(
-    'preview cache keeps fallback-ready images renderable while a fetch is in flight',
+    'preview cache keeps metadata-only images loading while a fetch is in flight',
     () async {
       final studioRepository = _MockStudioRepository();
       final completer = Completer<Map<String, Map<String, dynamic>>>();
@@ -236,8 +242,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       final inFlightStatus = cache.peekStatus('media-image-1');
-      expect(inFlightStatus?.state, LessonMediaPreviewState.fallbackReady);
-      expect(inFlightStatus?.visualUrl, 'https://cdn.test/media-image-1.webp');
+      expect(inFlightStatus?.state, LessonMediaPreviewState.loading);
+      expect(inFlightStatus?.visualUrl, isNull);
 
       completer.complete({
         'media-image-1': {
@@ -250,6 +256,63 @@ void main() {
 
       final preview = await previewFuture;
       expect(preview?.visualUrl, 'https://cdn.test/backend-image-1.webp');
+      expect(
+        cache.peekStatus('media-image-1')?.state,
+        LessonMediaPreviewState.ready,
+      );
+    },
+  );
+
+  test(
+    'preview cache retries transient unresolved image previews before surfacing failure',
+    () async {
+      final studioRepository = _MockStudioRepository();
+      var callCount = 0;
+      final retryCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      when(() => studioRepository.fetchLessonMediaPreviews(any())).thenAnswer((
+        _,
+      ) {
+        callCount += 1;
+        if (callCount == 1) {
+          return Future<Map<String, Map<String, dynamic>>>.value({
+            'media-image-1': {
+              'media_type': 'image',
+              'authoritative_editor_ready': false,
+              'failure_reason': 'unresolvable',
+              'file_name': 'image.png',
+            },
+          });
+        }
+        return retryCompleter.future;
+      });
+
+      final cache = LessonMediaPreviewCache(
+        studioRepository: studioRepository,
+        transientResolverRetryDelay: const Duration(milliseconds: 1),
+        transientResolverMaxRetries: 2,
+      );
+      cache.primeFromLessonMedia([
+        {'id': 'media-image-1', 'kind': 'image', 'original_name': 'image.png'},
+      ]);
+
+      final previewFuture = cache.getPreview('media-image-1');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+
+      final retryingStatus = cache.peekStatus('media-image-1');
+      expect(retryingStatus?.state, LessonMediaPreviewState.loading);
+      expect(retryingStatus?.isRetrying, isTrue);
+
+      retryCompleter.complete({
+        'media-image-1': {
+          'media_type': 'image',
+          'authoritative_editor_ready': true,
+          'resolved_preview_url': 'https://cdn.test/backend-image-1.webp',
+          'file_name': 'image.png',
+        },
+      });
+      final preview = await previewFuture;
+      expect(preview?.visualUrl, 'https://cdn.test/backend-image-1.webp');
+      expect(callCount, 2);
       expect(
         cache.peekStatus('media-image-1')?.state,
         LessonMediaPreviewState.ready,
@@ -273,7 +336,10 @@ void main() {
         };
       });
 
-      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      final cache = LessonMediaPreviewCache(
+        studioRepository: studioRepository,
+        transientResolverMaxRetries: 0,
+      );
       cache.primeFromLessonMedia([
         {'id': 'media-image-1', 'kind': 'image', 'original_name': 'image.png'},
       ]);

@@ -2,8 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
 
 import 'lesson_media_preview_cache.dart';
@@ -118,7 +116,6 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaRepository = ref.watch(mediaRepositoryProvider);
     final previewCache = ref.read(lessonMediaPreviewCacheProvider);
     final normalizedType = widget.mediaType.trim().toLowerCase();
     final invalidStatus = _initialStatus(
@@ -137,7 +134,6 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
             ignoring: true,
             child: invalidStatus != null
                 ? _buildPreviewFrame(
-                    mediaRepository: mediaRepository,
                     mediaType: normalizedType,
                     status: invalidStatus,
                   )
@@ -154,7 +150,6 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
                         status: status,
                       );
                       return _buildPreviewFrame(
-                        mediaRepository: mediaRepository,
                         mediaType: normalizedType,
                         status: status,
                       );
@@ -212,15 +207,13 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   }
 
   Widget _buildPreviewFrame({
-    required MediaRepository mediaRepository,
     required String mediaType,
     required LessonMediaPreviewStatus status,
   }) {
     final visualUrl = status.isRenderable
-        ? _resolveVisualUrl(
-            mediaRepository: mediaRepository,
+        ? _resolvedBackendVisualUrl(
             mediaType: mediaType,
-            preferred: status.visualUrl,
+            resolvedUrl: status.visualUrl,
           )
         : null;
     return _LessonMediaPreviewFrame(
@@ -229,6 +222,7 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
       fileName: status.fileName,
       durationSeconds: status.durationSeconds,
       isLoading: status.state == LessonMediaPreviewState.loading,
+      loadingLabel: status.isRetrying ? 'Bearbetas…' : null,
       placeholderState: _placeholderStateForStatus(status),
     );
   }
@@ -263,6 +257,7 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
     required this.fileName,
     required this.durationSeconds,
     required this.isLoading,
+    required this.loadingLabel,
     required this.placeholderState,
   });
 
@@ -271,6 +266,7 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
   final String? fileName;
   final int? durationSeconds;
   final bool isLoading;
+  final String? loadingLabel;
   final _LessonMediaPreviewPlaceholderState? placeholderState;
 
   static const double _imageAspectRatio = 4 / 3;
@@ -312,7 +308,11 @@ class _LessonMediaPreviewFrame extends StatelessWidget {
               Padding(
                 padding: EdgeInsets.all(isCompact ? 8 : 14),
                 child: isLoading
-                    ? _PreviewSkeleton(mediaType: mediaType, compact: isCompact)
+                    ? _PreviewSkeleton(
+                        mediaType: mediaType,
+                        compact: isCompact,
+                        label: loadingLabel,
+                      )
                     : _PreviewLabel(
                         mediaType: mediaType,
                         fileName: fileName,
@@ -516,10 +516,15 @@ class _PreviewLabel extends StatelessWidget {
 }
 
 class _PreviewSkeleton extends StatelessWidget {
-  const _PreviewSkeleton({required this.mediaType, required this.compact});
+  const _PreviewSkeleton({
+    required this.mediaType,
+    required this.compact,
+    this.label,
+  });
 
   final String mediaType;
   final bool compact;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -538,6 +543,7 @@ class _PreviewSkeleton extends StatelessWidget {
         ),
       );
     }
+    final hasLabel = label != null && label!.trim().isNotEmpty;
     return Align(
       key: const ValueKey<String>('lesson_media_preview_loading'),
       alignment: Alignment.bottomLeft,
@@ -571,6 +577,18 @@ class _PreviewSkeleton extends StatelessWidget {
               borderRadius: BorderRadius.circular(99),
             ),
           ),
+          if (hasLabel) ...[
+            const SizedBox(height: 10),
+            Text(
+              label!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.white.withValues(alpha: 0.88),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -578,11 +596,10 @@ class _PreviewSkeleton extends StatelessWidget {
 }
 
 String? _resolveVisualUrl({
-  required MediaRepository mediaRepository,
   required String mediaType,
-  required String? preferred,
+  required String? resolvedUrl,
 }) {
-  final candidate = preferred;
+  final candidate = resolvedUrl;
   if (candidate == null) return null;
   final normalized = candidate.trim();
   if (normalized.isEmpty) return null;
@@ -597,16 +614,20 @@ String? _resolveVisualUrl({
   }
 
   final uri = Uri.tryParse(normalized);
-  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-    return normalized;
-  }
-
-  try {
-    return mediaRepository.resolveDownloadUrl(normalized);
-  } catch (_) {
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
     return null;
   }
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'http' && scheme != 'https') {
+    return null;
+  }
+  return normalized;
 }
+
+String? _resolvedBackendVisualUrl({
+  required String mediaType,
+  required String? resolvedUrl,
+}) => _resolveVisualUrl(mediaType: mediaType, resolvedUrl: resolvedUrl);
 
 bool _isLegacyLessonMediaPath(String value) {
   final normalized = value.trim();

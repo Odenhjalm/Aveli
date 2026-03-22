@@ -155,12 +155,15 @@ Future<void> _pumpEditorHarness(
   required _MockStudioRepository studioRepo,
   required _MockMediaRepository mediaRepo,
   required String initialMarkdown,
+  LessonMediaPreviewCache? previewCache,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         studioRepositoryProvider.overrideWithValue(studioRepo),
         mediaRepositoryProvider.overrideWithValue(mediaRepo),
+        if (previewCache != null)
+          lessonMediaPreviewCacheProvider.overrideWithValue(previewCache),
       ],
       child: MaterialApp(
         localizationsDelegates: const [
@@ -445,7 +448,92 @@ void main() {
   );
 
   testWidgets(
-    'LessonMediaPreview renders fallback-ready images without unresolved telemetry',
+    'LessonMediaPreview keeps transient unresolved image previews in processing until the resolver catches up',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final mediaRepo = _MockMediaRepository();
+      var fetchCount = 0;
+      final retryCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      _stubPreviewDependencies(
+        studioRepo,
+        mediaRepo,
+        fetchLessonMediaPreviews: (_) {
+          fetchCount += 1;
+          if (fetchCount == 1) {
+            return Future<Map<String, Map<String, dynamic>>>.value({
+              'media-image-1': {
+                'media_type': 'image',
+                'authoritative_editor_ready': false,
+                'failure_reason': 'unresolvable',
+                'file_name': 'image.png',
+              },
+            });
+          }
+          return retryCompleter.future;
+        },
+      );
+      final previewCache = LessonMediaPreviewCache(
+        studioRepository: studioRepo,
+        transientResolverRetryDelay: const Duration(milliseconds: 1),
+        transientResolverMaxRetries: 2,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            mediaRepositoryProvider.overrideWithValue(mediaRepo),
+            lessonMediaPreviewCacheProvider.overrideWithValue(previewCache),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 160,
+                  child: LessonMediaPreview(
+                    lessonMediaId: 'media-image-1',
+                    mediaType: 'image',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 2));
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_loading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        findsNothing,
+      );
+
+      retryCompleter.complete({
+        'media-image-1': {
+          'media_type': 'image',
+          'authoritative_editor_ready': true,
+          'resolved_preview_url': 'https://cdn.test/backend-image-1.webp',
+          'file_name': 'image.png',
+        },
+      });
+      await tester.pump(const Duration(milliseconds: 2));
+      await tester.pump();
+
+      expect(
+        _networkImageFinder('https://cdn.test/backend-image-1.webp'),
+        findsOneWidget,
+      );
+      expect(fetchCount, 2);
+    },
+  );
+
+  testWidgets(
+    'LessonMediaPreview ignores metadata fallbacks and shows unresolved placeholders',
     (tester) async {
       final studioRepo = _MockStudioRepository();
       final mediaRepo = _MockMediaRepository();
@@ -474,6 +562,12 @@ void main() {
         overrides: [
           studioRepositoryProvider.overrideWithValue(studioRepo),
           mediaRepositoryProvider.overrideWithValue(mediaRepo),
+          lessonMediaPreviewCacheProvider.overrideWithValue(
+            LessonMediaPreviewCache(
+              studioRepository: studioRepo,
+              transientResolverMaxRetries: 0,
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -506,23 +600,28 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump();
 
       expect(
         _networkImageFinder('https://cdn.test/media-image-1.webp'),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
         findsOneWidget,
       );
       expect(
         telemetry.where(
           (entry) => entry.contains('UNRESOLVED_LESSON_MEDIA_RENDER'),
         ),
-        isEmpty,
+        hasLength(1),
       );
       debugPrint = originalDebugPrint;
     },
   );
 
   testWidgets(
-    'LessonMediaPreview does not re-log unresolved when a failed preview remounts over unchanged cache data',
+    'LessonMediaPreview re-logs unresolved when a failed preview remount triggers a fresh resolver retry',
     (tester) async {
       final studioRepo = _MockStudioRepository();
       final mediaRepo = _MockMediaRepository();
@@ -551,6 +650,12 @@ void main() {
         overrides: [
           studioRepositoryProvider.overrideWithValue(studioRepo),
           mediaRepositoryProvider.overrideWithValue(mediaRepo),
+          lessonMediaPreviewCacheProvider.overrideWithValue(
+            LessonMediaPreviewCache(
+              studioRepository: studioRepo,
+              transientResolverMaxRetries: 0,
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -594,7 +699,7 @@ void main() {
         telemetry.where(
           (entry) => entry.contains('UNRESOLVED_LESSON_MEDIA_RENDER'),
         ),
-        hasLength(1),
+        hasLength(2),
       );
       debugPrint = originalDebugPrint;
     },
@@ -622,6 +727,12 @@ void main() {
           overrides: [
             studioRepositoryProvider.overrideWithValue(studioRepo),
             mediaRepositoryProvider.overrideWithValue(mediaRepo),
+            lessonMediaPreviewCacheProvider.overrideWithValue(
+              LessonMediaPreviewCache(
+                studioRepository: studioRepo,
+                transientResolverMaxRetries: 0,
+              ),
+            ),
           ],
           child: const MaterialApp(
             home: Scaffold(

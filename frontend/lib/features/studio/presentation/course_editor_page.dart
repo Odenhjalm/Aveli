@@ -2018,9 +2018,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final previewStatus = _previewStatusForMedia(media);
     if (_requiresAuthoritativeEditorReadiness(media)) {
       final previewState = previewStatus?.state;
-      if (_isImageMedia(media)) {
+      if (_isImageMedia(media) || _isVideoMedia(media)) {
         if (previewState != LessonMediaPreviewState.ready &&
-            previewState != LessonMediaPreviewState.fallbackReady) {
+            previewState != LessonMediaPreviewState.failed) {
           return false;
         }
       } else if (previewState != LessonMediaPreviewState.ready) {
@@ -2254,6 +2254,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return null;
     }
     return _resolveLessonMediaDeliveryUrl(lessonMediaId);
+  }
+
+  Future<String?> _resolveLessonMediaPreviewUrlForMedia(
+    Map<String, dynamic> media,
+  ) async {
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null) {
+      return null;
+    }
+
+    final preview = await ref
+        .read(lessonMediaPreviewCacheProvider)
+        .getSettledOrFetch(lessonMediaId);
+    return _normalizeBrowserOpenableMediaUrl(preview?.visualUrl);
   }
 
   Future<String?> _resolveLessonEditorLaunchUrl(String rawUrl) async {
@@ -5384,13 +5398,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
     }
 
+    String? url;
+    if (kind == 'image' || kind == 'video') {
+      url = await _resolveLessonMediaPreviewUrlForMedia(media);
+      if (mounted) {
+        setState(() {});
+      }
+    } else {
+      url = await _resolveLessonMediaDeliveryUrlForMedia(media);
+    }
     final previewStatus = _previewStatusForMedia(media);
-    final classifiedImageUrl = kind == 'image'
-        ? _normalizeBrowserOpenableMediaUrl(previewStatus?.visualUrl)
-        : null;
-    final url =
-        classifiedImageUrl ??
-        await _resolveLessonMediaDeliveryUrlForMedia(media);
     if (!mounted) return;
     if (kind == 'image' && url != null) {
       await showDialog<void>(
@@ -5398,7 +5415,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         builder: (context) => Dialog(
           insetPadding: const EdgeInsets.all(24),
           child: InteractiveViewer(
-            child: Image.network(url, fit: BoxFit.contain),
+            child: Image.network(url!, fit: BoxFit.contain),
           ),
         ),
       );
@@ -6560,18 +6577,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   'failed',
                                                 LessonMediaPreviewState
                                                     .loading =>
-                                                  isPipeline &&
-                                                          pipelineState !=
-                                                              null &&
-                                                          pipelineState !=
-                                                              'ready' &&
-                                                          pipelineState !=
-                                                              'failed'
+                                                  previewStatus?.isRetrying ==
+                                                          true
+                                                      ? 'processing'
+                                                      : isPipeline &&
+                                                            pipelineState !=
+                                                                null &&
+                                                            pipelineState !=
+                                                                'ready' &&
+                                                            pipelineState !=
+                                                                'failed'
                                                       ? 'processing'
                                                       : 'checking',
-                                                LessonMediaPreviewState
-                                                    .fallbackReady =>
-                                                  'checking',
                                               }
                                             : isPipeline
                                             ? pipelineState == 'ready'
