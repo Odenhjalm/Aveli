@@ -497,6 +497,49 @@ async def mark_media_asset_uploaded(*, media_id: str) -> bool:
         return cur.rowcount > 0
 
 
+async def mark_media_asset_ready_passthrough(
+    *,
+    media_id: str,
+    streaming_object_path: str,
+    streaming_format: str,
+    storage_bucket: str | None = None,
+    original_content_type: str | None = None,
+    original_size_bytes: int | None = None,
+    codec: str | None = None,
+) -> bool:
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.media_assets
+                SET state = 'ready',
+                    streaming_object_path = %s,
+                    streaming_storage_bucket = coalesce(%s, streaming_storage_bucket, storage_bucket),
+                    streaming_format = %s,
+                    original_content_type = coalesce(%s, original_content_type),
+                    original_size_bytes = coalesce(%s, original_size_bytes),
+                    codec = coalesce(%s, codec),
+                    error_message = null,
+                    next_retry_at = null,
+                    processing_locked_at = null,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (
+                    streaming_object_path,
+                    storage_bucket,
+                    streaming_format,
+                    original_content_type,
+                    original_size_bytes,
+                    codec,
+                    media_id,
+                ),
+            )
+            updated = cur.rowcount > 0
+            await conn.commit()
+            return updated
+
+
 async def mark_media_asset_ready(
     *,
     media_id: str,

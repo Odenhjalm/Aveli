@@ -975,10 +975,10 @@ class MediaUploadUrlRequest(BaseModel):
     filename: str
     mime_type: str
     size_bytes: int = Field(ge=1)
-    media_type: Literal["audio"]
+    media_type: Literal["audio", "image"]
     course_id: UUID | None = None
     lesson_id: UUID | None = None
-    purpose: Literal["lesson_audio", "home_player_audio"] | None = None
+    purpose: Literal["lesson_audio", "home_player_audio", "lesson_media"] | None = None
 
 
 class MediaUploadUrlRefreshRequest(BaseModel):

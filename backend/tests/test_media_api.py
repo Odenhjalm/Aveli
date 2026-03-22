@@ -355,6 +355,61 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         await cleanup_user(user_id)
 
 
+async def test_upload_url_allows_lesson_image_purpose(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        _, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "diagram.png",
+                "mime_type": "image/png",
+                "size_bytes": 2048,
+                "media_type": "image",
+                "lesson_id": lesson_id,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["upload_url"].startswith("https://storage.local/")
+        assert body["storage_path"].startswith(f"lessons/{lesson_id}/images/")
+        assert body.get("media_asset_id")
+
+        asset = await media_assets_repo.get_media_asset(body["media_asset_id"])
+        assert asset is not None
+        assert asset["media_type"] == "image"
+        assert asset["purpose"] == "lesson_media"
+        assert asset["state"] == "pending_upload"
+        assert asset["storage_bucket"] == settings.media_public_bucket
+        assert asset["original_content_type"] == "image/png"
+    finally:
+        await cleanup_user(user_id)
+
+
 async def test_attach_home_upload_is_idempotent(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
@@ -629,6 +684,230 @@ async def test_complete_upload_requires_separate_attach_for_lesson_media(
         assert ready_asset["state"] == "ready"
         assert ready_asset["streaming_object_path"] == derived_path
         assert ready_asset["streaming_format"] == "mp3"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_complete_lesson_image_upload_marks_asset_ready(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        _, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(*, storage_bucket: str, storage_path: str):
+            assert storage_bucket == settings.media_public_bucket
+            assert storage_path.startswith(f"lessons/{lesson_id}/images/")
+            return True
+
+        async def fake_fetch_storage_object_details(pairs):
+            pair_list = list(pairs)
+            assert len(pair_list) == 1
+            bucket, path = pair_list[0]
+            assert bucket == settings.media_public_bucket
+            assert path.startswith(f"lessons/{lesson_id}/images/")
+            return {
+                (bucket, path): {
+                    "content_type": "image/png",
+                    "size_bytes": 2048,
+                }
+            }, True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.storage_objects,
+            "fetch_storage_object_details",
+            fake_fetch_storage_object_details,
+            raising=True,
+        )
+
+        upload_resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "diagram.png",
+                "mime_type": "image/png",
+                "size_bytes": 2048,
+                "media_type": "image",
+                "lesson_id": lesson_id,
+            },
+        )
+        assert upload_resp.status_code == 200, upload_resp.text
+        media_id = upload_resp.json()["media_asset_id"]
+
+        complete_resp = await async_client.post(
+            "/api/media/complete",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+        assert complete_resp.json()["state"] == "ready"
+
+        lesson_media_before_attach = await models.get_lesson_media_by_media_asset_id(media_id)
+        assert lesson_media_before_attach is None
+
+        asset = await media_assets_repo.get_media_asset(media_id)
+        assert asset is not None
+        assert asset["state"] == "ready"
+        assert asset["streaming_object_path"] == asset["original_object_path"]
+        assert asset["streaming_storage_bucket"] == settings.media_public_bucket
+        assert asset["storage_bucket"] == settings.media_public_bucket
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_attach_lesson_image_requires_ready_and_returns_canonical_lesson_media(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        _, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(**_kwargs):
+            return True
+
+        async def fake_fetch_storage_object_details(pairs):
+            pair_list = list(pairs)
+            bucket, path = pair_list[0]
+            return {
+                (bucket, path): {
+                    "content_type": "image/png",
+                    "size_bytes": 2048,
+                }
+            }, True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.storage_objects,
+            "fetch_storage_object_details",
+            fake_fetch_storage_object_details,
+            raising=True,
+        )
+
+        upload_resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "diagram.png",
+                "mime_type": "image/png",
+                "size_bytes": 2048,
+                "media_type": "image",
+                "lesson_id": lesson_id,
+            },
+        )
+        assert upload_resp.status_code == 200, upload_resp.text
+        media_id = upload_resp.json()["media_asset_id"]
+
+        attach_resp = await async_client.post(
+            "/api/media/attach",
+            headers=headers,
+            json={
+                "media_id": media_id,
+                "link_scope": "lesson",
+                "lesson_id": lesson_id,
+            },
+        )
+        assert attach_resp.status_code == 409, attach_resp.text
+        assert attach_resp.json()["detail"] == (
+            "Media asset must be ready before it can be attached"
+        )
+
+        complete_resp = await async_client.post(
+            "/api/media/complete",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+        assert complete_resp.json()["state"] == "ready"
+
+        attach_body = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=media_id,
+            link_scope="lesson",
+            lesson_id=lesson_id,
+        )
+        assert attach_body["state"] == "ready"
+        assert attach_body["lesson_media_id"]
+        assert attach_body["runtime_media_id"]
+        assert attach_body["lesson_media"]["id"] == attach_body["lesson_media_id"]
+        assert attach_body["lesson_media"]["kind"] == "image"
+        assert "storage_path" not in attach_body["lesson_media"]
+        assert "storage_bucket" not in attach_body["lesson_media"]
+        assert "media_id" not in attach_body["lesson_media"]
+
+        lesson_media = await models.get_lesson_media_by_media_asset_id(media_id)
+        assert lesson_media is not None
+        assert str(lesson_media["lesson_id"]) == lesson_id
+        assert str(lesson_media["media_asset_id"]) == media_id
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT media_id, media_asset_id, storage_path
+                FROM app.lesson_media
+                WHERE id = %s
+                """,
+                (attach_body["lesson_media_id"],),
+            )
+            lesson_media_row = await cur.fetchone()
+
+        assert lesson_media_row is not None
+        assert lesson_media_row["media_id"] is None
+        assert str(lesson_media_row["media_asset_id"]) == media_id
+        assert lesson_media_row["storage_path"] is None
     finally:
         await cleanup_user(user_id)
 
