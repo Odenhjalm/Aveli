@@ -424,8 +424,6 @@ async def _transcode_cover_asset(
             cache_seconds=settings.media_public_cache_seconds,
         )
         await _upload_file(upload.url, output_file, upload.headers)
-        public_url = public_storage.public_url(output_path)
-
     await _verify_ready_contract(
         asset=asset,
         playback_storage=public_storage,
@@ -441,7 +439,6 @@ async def _transcode_cover_asset(
         streaming_object_path=output_path,
         streaming_storage_bucket=public_storage.bucket,
         streaming_format="jpg",
-        public_url=public_url,
         codec="jpeg",
     )
     if not result.get("updated"):
@@ -460,6 +457,32 @@ async def _transcode_cover_asset(
             output_path,
         )
         return
+
+    course_id = str(asset.get("course_id") or result.get("course_id") or "").strip() or None
+    previous_cover_media_id = (
+        str(result.get("previous_cover_media_id") or "").strip() or None
+    )
+    latest_cover_media_id = (
+        str(result.get("latest_cover_media_id") or "").strip() or None
+    )
+
+    if result.get("cover_applied"):
+        logger.info(
+            "COURSE_COVER_PROMOTED course_id=%s media_id=%s previous_media_id=%s output=%s",
+            course_id,
+            asset["id"],
+            previous_cover_media_id,
+            output_path,
+        )
+    else:
+        logger.warning(
+            "COURSE_COVER_READY_NOT_PROMOTED course_id=%s media_id=%s previous_media_id=%s latest_media_id=%s output=%s",
+            course_id,
+            asset["id"],
+            previous_cover_media_id,
+            latest_cover_media_id,
+            output_path,
+        )
 
     if result.get("cover_applied") and asset.get("course_id"):
         try:

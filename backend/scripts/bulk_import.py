@@ -159,7 +159,11 @@ def main() -> None:
     ap.add_argument("--exclude", action="append", default=[], help="Skip manifests matching this (slug or filename). Can be repeated.")
     ap.add_argument("--dry-run", action="store_true", help="Validate manifests and files only; no uploads.")
     ap.add_argument("--max-size-mb", type=int, default=None, help="Warn on files larger than this many MB (dry-run only).")
-    ap.add_argument("--create-assets-lesson", action="store_true", help="Upload cover into _Assets/_Course Assets lesson and set cover_url.")
+    ap.add_argument(
+        "--create-assets-lesson",
+        action="store_true",
+        help="Upload cover into _Assets/_Course Assets lesson and queue it through the course-cover media pipeline.",
+    )
     ap.add_argument("--cleanup-duplicates", action="store_true", help="Delete duplicate lesson media entries after import.")
     ap.add_argument("--continue-on-error", action="store_true", help="Continue processing other manifests on failure.")
     ap.add_argument("--base-url", default=os.getenv("API_BASE_URL", "http://127.0.0.1:8080"))

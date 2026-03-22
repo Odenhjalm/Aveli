@@ -10,7 +10,7 @@ description: Intro to practices and core ideas
 is_free_intro: true
 is_published: false
 price_cents: 0
-cover_url: null  # optional string URL; upload of cover is not handled by this script
+cover_url: null  # optional legacy field; importer does not write this directly
 modules:
   - title: Start
     lessons:
@@ -36,6 +36,7 @@ Usage:
 
 Notes:
 - Files are uploaded to /studio/lessons/{id}/media (respects size limit).
+- Course covers are queued through /api/media/cover-from-media using lesson media.
 - Increase LESSON_MEDIA_MAX_BYTES in backend env if needed.
 - The script requires PyYAML for YAML manifests; JSON works without extra deps.
 """
@@ -127,7 +128,6 @@ def create_course(base_url: str, token: str, manifest: Dict[str, Any]) -> Dict[s
         "title": manifest["title"],
         "slug": manifest["slug"],
         "description": manifest.get("description"),
-        "cover_url": manifest.get("cover_url"),
         "video_url": manifest.get("video_url"),
         "is_free_intro": bool(manifest.get("is_free_intro", False)),
         "is_published": bool(manifest.get("is_published", False)),
@@ -238,6 +238,47 @@ def upload_media(base_url: str, token: str, lesson_id: str, file_path: Path, is_
     return r.json()
 
 
+def queue_cover_from_media(
+    base_url: str,
+    token: str,
+    course_id: str,
+    lesson_media_id: str,
+) -> Dict[str, Any]:
+    return post_json(
+        base_url,
+        "/api/media/cover-from-media",
+        token,
+        {
+            "course_id": course_id,
+            "lesson_media_id": lesson_media_id,
+        },
+    )
+
+
+def queue_cover_from_media_item(
+    base_url: str,
+    token: str,
+    course_id: str,
+    item: Dict[str, Any],
+    *,
+    source_label: str,
+) -> bool:
+    lesson_media_id = str(item.get("id") or "").strip()
+    if not lesson_media_id:
+        print(
+            f"      ! could not queue course cover from {source_label}: missing lesson media id"
+        )
+        return False
+
+    response = queue_cover_from_media(base_url, token, course_id, lesson_media_id)
+    print(
+        "      + cover queued via media pipeline:"
+        f" {source_label} -> lesson_media_id={lesson_media_id}"
+        f" cover_media_id={response.get('media_id')} state={response.get('state')}"
+    )
+    return True
+
+
 def _validate_file(path: Path, errors: List[str], warnings: List[str], max_size_mb: int | None) -> None:
     if not path.exists():
         errors.append(f"Missing file: {path}")
@@ -273,6 +314,10 @@ def validate_manifest(
     cover_raw = manifest.get("cover_path") or manifest.get("coverFile")
     if cover_raw:
         _validate_file((base_dir / str(cover_raw)).resolve(), errors, warnings, max_size_mb)
+    if str(manifest.get("cover_url") or "").strip():
+        warnings.append(
+            "Field 'cover_url' is legacy compatibility data and is ignored by the importer."
+        )
 
     modules = manifest.get("modules") or []
     if not isinstance(modules, list):
@@ -359,6 +404,7 @@ def main() -> None:
     manifest_path = Path(args.manifest)
     manifest_dir = manifest_path.parent.resolve()
     manifest = load_manifest(manifest_path)
+    manifest_cover_url = str(manifest.get("cover_url") or "").strip() or None
 
     # Dry run: validate and exit
     errors, warnings, stats = validate_manifest(
@@ -386,6 +432,11 @@ def main() -> None:
     if not course_id:
         raise RuntimeError("create_course: missing id")
     print(f"Created course: {course_id} {course.get('title')}")
+    if manifest_cover_url:
+        print(
+            "  ! manifest cover_url is ignored for active cover writes;"
+            " use cover_path to queue a course cover through the media pipeline"
+        )
 
     cover_path_raw = manifest.get("cover_path") or manifest.get("coverFile")
     cover_path: Path | None = None
@@ -395,7 +446,7 @@ def main() -> None:
             raise FileNotFoundError(f"Cover file not found: {p}")
         cover_path = p
 
-    cover_set = False
+    cover_queued = False
     cover_filename = cover_path.name if cover_path is not None else None
 
     # Optional: create a dedicated assets module/lesson to hold the cover file
@@ -412,11 +463,14 @@ def main() -> None:
             if not assets_lesson_id:
                 raise RuntimeError("create_lesson (assets) missing id")
             item = upload_media(base, token, assets_lesson_id, cover_path, is_intro=False)
-            cover_url = item.get("download_url")
-            if cover_url:
-                patch_course(base, token, course_id, {"cover_url": cover_url})
-                cover_set = True
-                print(f"  + cover set from {cover_path.name} in assets lesson -> {cover_url}")
+            if queue_cover_from_media_item(
+                base,
+                token,
+                course_id,
+                item,
+                source_label=f"{cover_path.name} in _Course Assets",
+            ):
+                cover_queued = True
         except Exception as e:
             print(f"  ! could not create _Assets/_Course Assets for cover: {e}")
             assets_lesson_id = None
@@ -442,14 +496,14 @@ def main() -> None:
             if assets_lesson_id:
                 try:
                     item = upload_media(base, token, assets_lesson_id, cover_path, is_intro=False)
-                    cover_url = item.get("download_url")
-                    if cover_url:
-                        patch_course(base, token, course_id, {"cover_url": cover_url})
-                        cover_set = True
-                        print(
-                            "  + cover set via existing _Course Assets ->"
-                            f" {cover_url}"
-                        )
+                    if queue_cover_from_media_item(
+                        base,
+                        token,
+                        course_id,
+                        item,
+                        source_label=f"{cover_path.name} via existing _Course Assets",
+                    ):
+                        cover_queued = True
                 except Exception as upload_error:
                     print(
                         "    ! upload to existing _Course Assets failed:"
@@ -632,12 +686,15 @@ def main() -> None:
                 if existing_list:
                     reused_item = existing_list.pop(0)
                     print(f"      ~ reuse media: {filename} -> {reused_item.get('id')}")
-                    if cover_filename and filename == cover_filename and not cover_set:
-                        download_url = reused_item.get("download_url")
-                        if download_url:
-                            patch_course(base, token, course_id, {"cover_url": download_url})
-                            cover_set = True
-                            print(f"        cover set from reused media -> {download_url}")
+                    if cover_filename and filename == cover_filename and not cover_queued:
+                        if queue_cover_from_media_item(
+                            base,
+                            token,
+                            course_id,
+                            reused_item,
+                            source_label=f"reused media {filename}",
+                        ):
+                            cover_queued = True
                     if args.cleanup_duplicates:
                         for duplicate in list(existing_list):
                             media_id = duplicate.get("id")
@@ -658,27 +715,38 @@ def main() -> None:
                     f" {media_path.name} -> {item.get('id')} {item.get('kind')}"
                     f" {item.get('download_url')}"
                 )
-                download_url = item.get("download_url")
-                if cover_filename and filename == cover_filename and download_url and not cover_set:
-                    patch_course(base, token, course_id, {"cover_url": download_url})
-                    cover_set = True
+                if cover_filename and filename == cover_filename and not cover_queued:
+                    if queue_cover_from_media_item(
+                        base,
+                        token,
+                        course_id,
+                        item,
+                        source_label=f"uploaded media {filename}",
+                    ):
+                        cover_queued = True
                 media_by_name.setdefault(filename, []).append(item)
 
-            if cover_path is not None and not cover_set and not args.create_assets_lesson and cover_filename:
+            if cover_path is not None and not cover_queued and not args.create_assets_lesson and cover_filename:
                 existing_cover_list = media_by_name.get(cover_filename) or []
                 if existing_cover_list:
-                    download_url = existing_cover_list[0].get("download_url")
-                    if download_url:
-                        patch_course(base, token, course_id, {"cover_url": download_url})
-                        cover_set = True
-                        print(f"      ~ cover set from existing media -> {download_url}")
+                    if queue_cover_from_media_item(
+                        base,
+                        token,
+                        course_id,
+                        existing_cover_list[0],
+                        source_label=f"existing media {cover_filename}",
+                    ):
+                        cover_queued = True
                 else:
                     item = upload_media(base, token, lesson_id, cover_path, is_intro=False)
-                    cover_url = item.get("download_url")
-                    if cover_url:
-                        patch_course(base, token, course_id, {"cover_url": cover_url})
-                        cover_set = True
-                        print(f"      + cover set from {cover_path.name} -> {cover_url}")
+                    if queue_cover_from_media_item(
+                        base,
+                        token,
+                        course_id,
+                        item,
+                        source_label=cover_path.name,
+                    ):
+                        cover_queued = True
                     media_by_name.setdefault(cover_filename, []).append(item)
 
     print("Import completed.")

@@ -597,6 +597,54 @@ async def clear_course_cover(course_id: str) -> str | None:
             )
 
 
+async def list_courses_with_cover_url(
+    *,
+    limit: int = 100,
+    after_id: str | None = None,
+) -> list[CourseRow]:
+    query = f"""
+        SELECT
+          c.id,
+          c.slug,
+          c.title,
+          c.cover_url,
+          c.cover_media_id,
+          c.created_by,
+          c.updated_at
+        FROM app.courses c
+        WHERE {_test_visibility_clause("c")}
+          AND nullif(btrim(coalesce(c.cover_url, '')), '') IS NOT NULL
+          AND (%s::uuid IS NULL OR c.id > %s::uuid)
+        ORDER BY c.id ASC
+        LIMIT %s
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (after_id, after_id, limit))
+            rows = await cur.fetchall()
+            return [dict(row) for row in rows]
+
+
+async def set_course_cover_media_id_if_unset(
+    *,
+    course_id: str,
+    cover_media_id: str,
+) -> bool:
+    query = """
+        UPDATE app.courses
+        SET cover_media_id = %s,
+            updated_at = now()
+        WHERE id = %s
+          AND cover_media_id IS NULL
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (cover_media_id, course_id))
+            updated = cur.rowcount > 0
+            await conn.commit()
+            return updated
+
+
 async def delete_course(course_id: str) -> bool:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import logging
 
 import pytest
 
@@ -244,3 +245,178 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
         "codec": "mp3",
         "streaming_storage_bucket": "course-media",
     }
+
+
+@pytest.mark.anyio
+async def test_transcode_cover_promotes_without_legacy_public_url(monkeypatch, caplog):
+    calls: dict[str, object] = {}
+
+    class DummySigned:
+        url = "https://example.invalid/source"
+
+    class DummyUpload:
+        url = "https://example.invalid/upload"
+        headers = {"content-type": "image/jpeg"}
+
+    class DummyStorage:
+        def __init__(self, bucket: str) -> None:
+            self.bucket = bucket
+
+        async def get_presigned_url(self, *args, **kwargs):
+            return DummySigned()
+
+        async def create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            calls["derived_path"] = path
+            calls["derived_content_type"] = content_type
+            return DummyUpload()
+
+    async def fake_download_to_file(url, destination):
+        calls["download_url"] = url
+        destination.write_bytes(b"cover-source")
+
+    async def fake_consume_attempt():
+        calls["attempt_consumed"] = True
+
+    async def fake_run_ffmpeg_cover(input_path, output_path):
+        calls["ffmpeg_input"] = input_path
+        calls["ffmpeg_output"] = output_path
+        output_path.write_bytes(b"cover-derived")
+
+    async def fake_upload_file(url, source, headers):
+        calls["upload_url"] = url
+        calls["upload_source"] = source
+        calls["upload_headers"] = headers
+
+    async def fake_verify_ready_contract(**kwargs):
+        calls["verify"] = kwargs
+
+    async def fake_mark_course_cover_ready_from_worker(**kwargs):
+        calls["mark_ready"] = kwargs
+        return {
+            "updated": True,
+            "cover_applied": True,
+            "course_id": "course-1",
+            "previous_cover_media_id": "old-media",
+            "latest_cover_media_id": "media-cover",
+        }
+
+    async def fake_prune_course_cover_assets(*, course_id: str):
+        calls["pruned_course_id"] = course_id
+
+    public_storage = DummyStorage("public-media")
+    source_storage = DummyStorage("course-media")
+    monkeypatch.setattr(
+        worker.storage_service,
+        "get_storage_service",
+        lambda bucket: public_storage if bucket == "public-media" else source_storage,
+    )
+    monkeypatch.setattr(worker, "_download_to_file", fake_download_to_file)
+    monkeypatch.setattr(worker, "_run_ffmpeg_cover", fake_run_ffmpeg_cover)
+    monkeypatch.setattr(worker, "_upload_file", fake_upload_file)
+    monkeypatch.setattr(worker, "_verify_ready_contract", fake_verify_ready_contract)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_course_cover_ready_from_worker",
+        fake_mark_course_cover_ready_from_worker,
+    )
+    monkeypatch.setattr(
+        worker.media_cleanup,
+        "prune_course_cover_assets",
+        fake_prune_course_cover_assets,
+    )
+
+    asset = {
+        "id": "media-cover",
+        "course_id": "course-1",
+        "media_type": "image",
+        "purpose": "course_cover",
+        "original_object_path": "media/source/cover/courses/course-1/cover.png",
+        "storage_bucket": "course-media",
+    }
+
+    with caplog.at_level(logging.INFO):
+        await worker._transcode_cover_asset(asset, fake_consume_attempt)
+
+    assert calls["mark_ready"]["streaming_object_path"].endswith(".jpg")
+    assert calls["mark_ready"]["streaming_format"] == "jpg"
+    assert calls["mark_ready"]["codec"] == "jpeg"
+    assert "public_url" not in calls["mark_ready"]
+    assert calls["pruned_course_id"] == "course-1"
+    assert "COURSE_COVER_PROMOTED" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_transcode_cover_logs_when_ready_asset_not_promoted(
+    monkeypatch, caplog
+):
+    class DummySigned:
+        url = "https://example.invalid/source"
+
+    class DummyUpload:
+        url = "https://example.invalid/upload"
+        headers = {"content-type": "image/jpeg"}
+
+    class DummyStorage:
+        def __init__(self, bucket: str) -> None:
+            self.bucket = bucket
+
+        async def get_presigned_url(self, *args, **kwargs):
+            return DummySigned()
+
+        async def create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            return DummyUpload()
+
+    async def fake_download_to_file(url, destination):
+        destination.write_bytes(b"cover-source")
+
+    async def fake_consume_attempt():
+        return None
+
+    async def fake_run_ffmpeg_cover(input_path, output_path):
+        output_path.write_bytes(b"cover-derived")
+
+    async def fake_upload_file(url, source, headers):
+        return None
+
+    async def fake_verify_ready_contract(**kwargs):
+        return None
+
+    async def fake_mark_course_cover_ready_from_worker(**kwargs):
+        return {
+            "updated": True,
+            "cover_applied": False,
+            "course_id": "course-1",
+            "previous_cover_media_id": "old-media",
+            "latest_cover_media_id": "newer-media",
+        }
+
+    public_storage = DummyStorage("public-media")
+    source_storage = DummyStorage("course-media")
+    monkeypatch.setattr(
+        worker.storage_service,
+        "get_storage_service",
+        lambda bucket: public_storage if bucket == "public-media" else source_storage,
+    )
+    monkeypatch.setattr(worker, "_download_to_file", fake_download_to_file)
+    monkeypatch.setattr(worker, "_run_ffmpeg_cover", fake_run_ffmpeg_cover)
+    monkeypatch.setattr(worker, "_upload_file", fake_upload_file)
+    monkeypatch.setattr(worker, "_verify_ready_contract", fake_verify_ready_contract)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_course_cover_ready_from_worker",
+        fake_mark_course_cover_ready_from_worker,
+    )
+
+    asset = {
+        "id": "media-cover",
+        "course_id": "course-1",
+        "media_type": "image",
+        "purpose": "course_cover",
+        "original_object_path": "media/source/cover/courses/course-1/cover.png",
+        "storage_bucket": "course-media",
+    }
+
+    with caplog.at_level(logging.WARNING):
+        await worker._transcode_cover_asset(asset, fake_consume_attempt)
+
+    assert "COURSE_COVER_READY_NOT_PROMOTED" in caplog.text

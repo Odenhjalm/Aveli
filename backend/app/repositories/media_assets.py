@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
@@ -7,6 +8,8 @@ from psycopg import errors
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
+
+logger = logging.getLogger(__name__)
 
 
 class MediaAssetReadyAuthorityError(PermissionError):
@@ -127,6 +130,51 @@ async def get_media_asset(media_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+async def get_media_assets(media_ids: Iterable[str]) -> dict[str, dict[str, Any]]:
+    normalized_ids = [str(media_id).strip() for media_id in media_ids if str(media_id).strip()]
+    if not normalized_ids:
+        return {}
+
+    query = f"""
+            SELECT
+              id,
+              owner_id,
+              course_id,
+              lesson_id,
+              media_type,
+              purpose,
+              ingest_format,
+              original_object_path,
+              original_content_type,
+              original_filename,
+              original_size_bytes,
+              storage_bucket,
+              streaming_object_path,
+              streaming_storage_bucket,
+              streaming_format,
+              duration_seconds,
+              codec,
+              state,
+              error_message,
+              processing_attempts,
+              processing_locked_at,
+              next_retry_at,
+              created_at,
+              updated_at
+            FROM app.media_assets
+            WHERE id = ANY(%s::uuid[])
+              AND {_test_visibility_clause("app.media_assets")}
+            """
+    async with get_conn() as cur:
+        await cur.execute(query, (normalized_ids,))
+        rows = await cur.fetchall()
+    return {
+        str(row["id"]): dict(row)
+        for row in rows
+        if row and row.get("id")
+    }
+
+
 async def get_media_asset_access(media_id: str) -> dict[str, Any] | None:
     query = f"""
             SELECT
@@ -159,6 +207,167 @@ async def get_media_asset_access(media_id: str) -> dict[str, Any] | None:
         await cur.execute(query, (media_id,))
         row = await cur.fetchone()
     return dict(row) if row else None
+
+
+async def list_ready_course_cover_assets_for_object(
+    *,
+    course_id: str,
+    storage_bucket: str,
+    storage_path: str,
+) -> list[dict[str, Any]]:
+    query = f"""
+            SELECT
+              id,
+              owner_id,
+              course_id,
+              lesson_id,
+              media_type,
+              purpose,
+              ingest_format,
+              original_object_path,
+              original_content_type,
+              original_filename,
+              original_size_bytes,
+              storage_bucket,
+              streaming_object_path,
+              streaming_storage_bucket,
+              streaming_format,
+              duration_seconds,
+              codec,
+              state,
+              error_message,
+              processing_attempts,
+              processing_locked_at,
+              next_retry_at,
+              created_at,
+              updated_at
+            FROM app.media_assets ma
+            WHERE ma.course_id = %s
+              AND lower(coalesce(ma.media_type, '')) = 'image'
+              AND lower(coalesce(ma.purpose, '')) = 'course_cover'
+              AND lower(coalesce(ma.state, '')) = 'ready'
+              AND coalesce(ma.streaming_storage_bucket, ma.storage_bucket) = %s
+              AND coalesce(ma.streaming_object_path, ma.original_object_path) = %s
+              AND {_test_visibility_clause("ma")}
+            ORDER BY ma.created_at ASC, ma.id ASC
+            """
+    async with get_conn() as cur:
+        await cur.execute(
+            query,
+            (course_id, storage_bucket, storage_path),
+        )
+        rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def create_ready_public_course_cover_asset(
+    *,
+    owner_id: str | None,
+    course_id: str,
+    storage_bucket: str,
+    storage_path: str,
+    content_type: str | None,
+    filename: str | None,
+    size_bytes: int | None,
+    ingest_format: str,
+    codec: str | None = None,
+) -> dict[str, Any] | None:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.media_assets (
+                    owner_id,
+                    course_id,
+                    lesson_id,
+                    media_type,
+                    purpose,
+                    ingest_format,
+                    original_object_path,
+                    original_content_type,
+                    original_filename,
+                    original_size_bytes,
+                    storage_bucket,
+                    streaming_object_path,
+                    streaming_storage_bucket,
+                    streaming_format,
+                    duration_seconds,
+                    codec,
+                    state,
+                    error_message,
+                    processing_attempts,
+                    processing_locked_at,
+                    next_retry_at,
+                    updated_at
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    null,
+                    'image',
+                    'course_cover',
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    null,
+                    %s,
+                    'ready',
+                    null,
+                    0,
+                    null,
+                    null,
+                    now()
+                )
+                RETURNING
+                  id,
+                  owner_id,
+                  course_id,
+                  lesson_id,
+                  media_type,
+                  purpose,
+                  ingest_format,
+                  original_object_path,
+                  original_content_type,
+                  original_filename,
+                  original_size_bytes,
+                  storage_bucket,
+                  streaming_object_path,
+                  streaming_storage_bucket,
+                  streaming_format,
+                  duration_seconds,
+                  codec,
+                  state,
+                  error_message,
+                  processing_attempts,
+                  processing_locked_at,
+                  next_retry_at,
+                  created_at,
+                  updated_at
+                """,
+                (
+                    owner_id,
+                    course_id,
+                    ingest_format,
+                    storage_path,
+                    content_type,
+                    filename,
+                    size_bytes,
+                    storage_bucket,
+                    storage_path,
+                    storage_bucket,
+                    ingest_format,
+                    codec,
+                ),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+            return dict(row) if row else None
 
 
 async def fetch_and_lock_pending_media_assets(
@@ -362,9 +571,15 @@ async def mark_course_cover_ready_from_worker(
     streaming_object_path: str,
     streaming_format: str,
     streaming_storage_bucket: str,
-    public_url: str,
+    public_url: str | None = None,
     codec: str | None,
 ) -> dict[str, Any]:
+    if str(public_url or "").strip():
+        logger.warning(
+            "COURSE_COVER_LEGACY_URL_WRITE_IGNORED media_id=%s attempted_cover_url=%s",
+            media_id,
+            public_url,
+        )
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -384,8 +599,15 @@ async def mark_course_cover_ready_from_worker(
                   WHERE id = %s
                   RETURNING id, course_id, created_at
                 ),
+                previous AS (
+                  SELECT
+                    c.id AS course_id,
+                    c.cover_media_id::text AS previous_cover_media_id
+                  FROM app.courses c
+                  WHERE c.id = (SELECT course_id FROM updated)
+                ),
                 latest AS (
-                  SELECT id
+                  SELECT id::text AS latest_cover_media_id
                   FROM app.media_assets
                   WHERE course_id = (SELECT course_id FROM updated)
                     AND purpose = 'course_cover'
@@ -395,15 +617,16 @@ async def mark_course_cover_ready_from_worker(
                 applied AS (
                   UPDATE app.courses
                   SET cover_media_id = updated.id,
-                      cover_url = %s,
                       updated_at = now()
                   FROM updated, latest
                   WHERE app.courses.id = updated.course_id
-                    AND updated.id = latest.id
+                    AND updated.id::text = latest.latest_cover_media_id
                   RETURNING app.courses.id
                 )
                 SELECT
-                  (SELECT course_id FROM updated) AS course_id,
+                  (SELECT course_id FROM updated)::text AS course_id,
+                  (SELECT previous_cover_media_id FROM previous) AS previous_cover_media_id,
+                  (SELECT latest_cover_media_id FROM latest) AS latest_cover_media_id,
                   EXISTS(SELECT 1 FROM updated) AS updated,
                   EXISTS(SELECT 1 FROM applied) AS cover_applied
                 """,
@@ -413,7 +636,6 @@ async def mark_course_cover_ready_from_worker(
                     streaming_format,
                     codec,
                     media_id,
-                    public_url,
                 ),
             )
             row = await cur.fetchone()
@@ -423,6 +645,16 @@ async def mark_course_cover_ready_from_worker(
             applied = bool(row and row.get("cover_applied"))
             return {
                 "course_id": course_id,
+                "previous_cover_media_id": (
+                    str(row["previous_cover_media_id"])
+                    if row and row.get("previous_cover_media_id")
+                    else None
+                ),
+                "latest_cover_media_id": (
+                    str(row["latest_cover_media_id"])
+                    if row and row.get("latest_cover_media_id")
+                    else None
+                ),
                 "updated": updated,
                 "cover_applied": applied,
             }

@@ -5,10 +5,10 @@ is_free_intro: true
 is_published: false
 price_cents: 0
 # Optional: local cover image to upload and use as course cover.
-# The script will upload it to the first created lesson and set course.cover_url
-# to the generated download URL. If omitted, you can set a public cover_url.
+# The script will upload it as lesson media and queue it through the
+# course-cover media pipeline.
 cover_path: media/cover.jpg
-# cover_url: null
+# cover_url: null  # legacy compatibility field; importer ignores it
 modules:
   - title: Start
     lessons:
