@@ -2616,9 +2616,94 @@ void main() {
 
       expect(
         _networkImageFinder('https://cdn.test/media-image-1-thumb.webp'),
-        findsOneWidget,
+        findsWidgets,
       );
       verify(() => studioRepo.fetchLessonMediaPreviews(any())).called(1);
+
+      await _disposePumpedWidget(tester);
+    },
+  );
+
+  testWidgets(
+    'CourseEditorScreen treats fallback-ready image rows as neutral, previewable, and not insertable',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final coursesRepo = _MockCoursesRepository();
+      _stubSingleLessonEditorData(
+        studioRepo,
+        coursesRepo,
+        contentMarkdown: 'Introtext\n\nEftertext',
+        lessonMedia: [
+          {
+            'id': 'media-image-1',
+            'kind': 'image',
+            'preferredUrl': 'https://cdn.test/media-image-1.webp',
+            'original_name': 'fallback-image.png',
+            'position': 1,
+          },
+        ],
+        fetchLessonMediaPreviews: (_) async => {
+          'media-image-1': {
+            'media_type': 'image',
+            'authoritative_editor_ready': false,
+            'failure_reason': 'unresolvable',
+            'file_name': 'fallback-image.png',
+          },
+        },
+      );
+
+      await _pumpCourseEditorScreen(
+        tester,
+        studioRepo: studioRepo,
+        coursesRepo: coursesRepo,
+      );
+      await _pumpEditorBootstrap(tester);
+      await tester.pump();
+
+      final tileFinder = find
+          .ancestor(
+            of: find.text('fallback-image.png'),
+            matching: find.byType(ListTile),
+          )
+          .first;
+      final tile = tester.widget<ListTile>(tileFinder);
+      expect(tile.onTap, isNotNull);
+      expect(
+        find.descendant(of: tileFinder, matching: find.text('checking')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: tileFinder, matching: find.text('failed')),
+        findsNothing,
+      );
+
+      final insertButton = tester.widget<IconButton>(
+        find.descendant(
+          of: tileFinder,
+          matching: find.widgetWithIcon(
+            IconButton,
+            Icons.add_photo_alternate_outlined,
+          ),
+        ),
+      );
+      expect(insertButton.onPressed, isNull);
+
+      await tester.ensureVisible(tileFinder);
+      await tester.tap(tileFinder);
+      await tester.pump();
+
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: _networkImageFinder('https://cdn.test/media-image-1.webp'),
+        ),
+        findsOneWidget,
+      );
+      final previewException = tester.takeException();
+      expect(previewException, anyOf(isNull, isA<NetworkImageLoadException>()));
+
+      await _disposePumpedWidget(tester);
     },
   );
 
@@ -2781,7 +2866,12 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('lesson_media_preview_loading')),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+          matching: find.byKey(
+            const ValueKey<String>('lesson_media_preview_loading'),
+          ),
+        ),
         findsOneWidget,
       );
       expect(
@@ -2850,6 +2940,15 @@ void main() {
           of: find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
           matching: find.byKey(
             const ValueKey<String>('lesson_media_preview_unresolved'),
+          ),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('lesson_editor_live_surface')),
+          matching: find.byKey(
+            const ValueKey<String>('lesson_media_preview_loading'),
           ),
         ),
         findsOneWidget,

@@ -168,6 +168,78 @@ class LessonMediaPreviewData {
   }
 }
 
+enum LessonMediaPreviewState { loading, fallbackReady, ready, failed }
+
+enum LessonMediaPreviewFailureKind { unresolved, missingId, legacyBlocked }
+
+class LessonMediaPreviewStatus {
+  const LessonMediaPreviewStatus({
+    required this.state,
+    required this.lessonMediaId,
+    required this.mediaType,
+    this.visualUrl,
+    this.fileName,
+    this.durationSeconds,
+    this.failureReason,
+    this.failureKind,
+    required this.stateVersion,
+    this.failedTransitionVersion,
+  });
+
+  final LessonMediaPreviewState state;
+  final String? lessonMediaId;
+  final String mediaType;
+  final String? visualUrl;
+  final String? fileName;
+  final int? durationSeconds;
+  final String? failureReason;
+  final LessonMediaPreviewFailureKind? failureKind;
+  final int stateVersion;
+  final int? failedTransitionVersion;
+
+  bool get isRenderable =>
+      state == LessonMediaPreviewState.fallbackReady ||
+      state == LessonMediaPreviewState.ready;
+
+  LessonMediaPreviewStatus copyWith({
+    LessonMediaPreviewState? state,
+    String? lessonMediaId,
+    String? mediaType,
+    String? visualUrl,
+    bool clearVisualUrl = false,
+    String? fileName,
+    bool clearFileName = false,
+    int? durationSeconds,
+    bool clearDurationSeconds = false,
+    String? failureReason,
+    bool clearFailureReason = false,
+    LessonMediaPreviewFailureKind? failureKind,
+    bool clearFailureKind = false,
+    int? stateVersion,
+    int? failedTransitionVersion,
+    bool clearFailedTransitionVersion = false,
+  }) {
+    return LessonMediaPreviewStatus(
+      state: state ?? this.state,
+      lessonMediaId: lessonMediaId ?? this.lessonMediaId,
+      mediaType: mediaType ?? this.mediaType,
+      visualUrl: clearVisualUrl ? null : (visualUrl ?? this.visualUrl),
+      fileName: clearFileName ? null : (fileName ?? this.fileName),
+      durationSeconds: clearDurationSeconds
+          ? null
+          : (durationSeconds ?? this.durationSeconds),
+      failureReason: clearFailureReason
+          ? null
+          : (failureReason ?? this.failureReason),
+      failureKind: clearFailureKind ? null : (failureKind ?? this.failureKind),
+      stateVersion: stateVersion ?? this.stateVersion,
+      failedTransitionVersion: clearFailedTransitionVersion
+          ? null
+          : (failedTransitionVersion ?? this.failedTransitionVersion),
+    );
+  }
+}
+
 final lessonMediaPreviewCacheProvider = Provider<LessonMediaPreviewCache>((
   ref,
 ) {
@@ -197,6 +269,9 @@ class LessonMediaPreviewCache {
       <String, Completer<LessonMediaPreviewData?>>{};
   final Map<String, List<Completer<void>>> _batchWaiters =
       <String, List<Completer<void>>>{};
+  final Map<String, LessonMediaPreviewStatus> _trackedStatuses =
+      <String, LessonMediaPreviewStatus>{};
+  final Map<String, int> _consumedFailedTransitionVersions = <String, int>{};
   final Set<String> _queuedIds = <String>{};
   final Set<String> _inFlightIds = <String>{};
 
@@ -208,13 +283,63 @@ class LessonMediaPreviewCache {
     return _cache[normalized];
   }
 
+  LessonMediaPreviewStatus? peekStatus(String lessonMediaId) {
+    final normalized = lessonMediaId.trim();
+    if (normalized.isEmpty) return null;
+    return _trackedStatusFor(
+      lessonMediaId: normalized,
+      preview: _cache[normalized],
+    );
+  }
+
+  LessonMediaPreviewStatus statusForPreview(
+    String lessonMediaId,
+    LessonMediaPreviewData? preview,
+  ) {
+    final normalized = lessonMediaId.trim();
+    if (normalized.isEmpty) {
+      return invalidStatus(
+        mediaType: preview?.mediaType ?? '',
+        failureKind: LessonMediaPreviewFailureKind.missingId,
+      );
+    }
+    return _trackedStatusFor(lessonMediaId: normalized, preview: preview);
+  }
+
+  LessonMediaPreviewStatus invalidStatus({
+    required String mediaType,
+    required LessonMediaPreviewFailureKind failureKind,
+  }) {
+    return LessonMediaPreviewStatus(
+      state: LessonMediaPreviewState.failed,
+      lessonMediaId: null,
+      mediaType: mediaType.trim().toLowerCase(),
+      failureKind: failureKind,
+      stateVersion: 0,
+    );
+  }
+
+  bool consumeFailedTransitionLog(
+    String lessonMediaId,
+    int failedTransitionVersion,
+  ) {
+    final normalized = lessonMediaId.trim();
+    if (normalized.isEmpty || failedTransitionVersion <= 0) {
+      return false;
+    }
+    final consumed = _consumedFailedTransitionVersions[normalized] ?? 0;
+    if (consumed >= failedTransitionVersion) {
+      return false;
+    }
+    _consumedFailedTransitionVersions[normalized] = failedTransitionVersion;
+    return true;
+  }
+
   bool isSettled(String lessonMediaId) {
     final normalized = lessonMediaId.trim();
     if (normalized.isEmpty) return false;
-    if (_stabilizedPlaceholderIds.contains(normalized)) {
-      return true;
-    }
-    return _cache[normalized]?.hasSettledAuthority == true;
+    return _rawStatusFor(lessonMediaId: normalized).state !=
+        LessonMediaPreviewState.loading;
   }
 
   Future<LessonMediaPreviewData?> getSettledOrFetch(String lessonMediaId) {
@@ -366,6 +491,100 @@ class LessonMediaPreviewCache {
     scheduleMicrotask(_flushQueued);
   }
 
+  LessonMediaPreviewStatus _trackedStatusFor({
+    required String lessonMediaId,
+    LessonMediaPreviewData? preview,
+  }) {
+    final candidate = _rawStatusFor(
+      lessonMediaId: lessonMediaId,
+      preview: preview,
+    );
+    return _trackStatus(lessonMediaId, candidate);
+  }
+
+  LessonMediaPreviewStatus _rawStatusFor({
+    required String lessonMediaId,
+    LessonMediaPreviewData? preview,
+  }) {
+    final effectivePreview = preview ?? _cache[lessonMediaId];
+    final mediaType = (effectivePreview?.mediaType ?? '').trim().toLowerCase();
+    final visualUrl = effectivePreview?.visualUrl;
+
+    if (effectivePreview?.authoritativeEditorReady == true) {
+      return LessonMediaPreviewStatus(
+        state: LessonMediaPreviewState.ready,
+        lessonMediaId: lessonMediaId,
+        mediaType: mediaType,
+        visualUrl: visualUrl,
+        fileName: effectivePreview?.fileName,
+        durationSeconds: effectivePreview?.durationSeconds,
+        failureReason: effectivePreview?.failureReason,
+        stateVersion: 0,
+      );
+    }
+
+    if (visualUrl != null && visualUrl.trim().isNotEmpty) {
+      return LessonMediaPreviewStatus(
+        state: LessonMediaPreviewState.fallbackReady,
+        lessonMediaId: lessonMediaId,
+        mediaType: mediaType,
+        visualUrl: visualUrl,
+        fileName: effectivePreview?.fileName,
+        durationSeconds: effectivePreview?.durationSeconds,
+        failureReason: effectivePreview?.failureReason,
+        stateVersion: 0,
+      );
+    }
+
+    if (_stabilizedPlaceholderIds.contains(lessonMediaId)) {
+      return LessonMediaPreviewStatus(
+        state: LessonMediaPreviewState.failed,
+        lessonMediaId: lessonMediaId,
+        mediaType: mediaType,
+        fileName: effectivePreview?.fileName,
+        durationSeconds: effectivePreview?.durationSeconds,
+        failureReason: effectivePreview?.failureReason,
+        failureKind: LessonMediaPreviewFailureKind.unresolved,
+        stateVersion: 0,
+      );
+    }
+
+    return LessonMediaPreviewStatus(
+      state: LessonMediaPreviewState.loading,
+      lessonMediaId: lessonMediaId,
+      mediaType: mediaType,
+      fileName: effectivePreview?.fileName,
+      durationSeconds: effectivePreview?.durationSeconds,
+      failureReason: effectivePreview?.failureReason,
+      stateVersion: 0,
+    );
+  }
+
+  LessonMediaPreviewStatus _trackStatus(
+    String lessonMediaId,
+    LessonMediaPreviewStatus next,
+  ) {
+    final previous = _trackedStatuses[lessonMediaId];
+    if (previous != null && _sameTrackedStatus(previous, next)) {
+      return previous;
+    }
+    final nextStateVersion = (previous?.stateVersion ?? 0) + 1;
+    final nextFailedTransitionVersion =
+        previous?.state != LessonMediaPreviewState.failed &&
+            next.state == LessonMediaPreviewState.failed
+        ? (previous?.failedTransitionVersion ?? 0) + 1
+        : previous?.failedTransitionVersion;
+    final tracked = next.copyWith(
+      stateVersion: nextStateVersion,
+      failedTransitionVersion: nextFailedTransitionVersion,
+      clearFailedTransitionVersion:
+          next.state != LessonMediaPreviewState.failed &&
+          nextFailedTransitionVersion == null,
+    );
+    _trackedStatuses[lessonMediaId] = tracked;
+    return tracked;
+  }
+
   Future<void> _registerBatchWaiter(String lessonMediaId) {
     final completer = Completer<void>();
     final waiters = _batchWaiters.putIfAbsent(
@@ -473,16 +692,13 @@ class LessonMediaPreviewCache {
       final preview = previews[lessonMediaId];
       final cachedPreview = _cache[lessonMediaId];
       final effectivePreview = preview ?? cachedPreview;
-      final effectiveMediaType = preview?.mediaType.isNotEmpty == true
-          ? preview!.mediaType
-          : (cachedPreview?.mediaType ?? '');
-      final requiresVisualResolution =
-          (effectiveMediaType == 'image' || effectiveMediaType == 'video') &&
-          (effectivePreview?.visualUrl == null);
+      final hasUsablePreview =
+          effectivePreview?.authoritativeEditorReady == true ||
+          (effectivePreview?.visualUrl != null);
       final needsPlaceholderStabilization =
-          effectivePreview == null || requiresVisualResolution;
+          effectivePreview == null || !hasUsablePreview;
       LessonMediaPreviewData? result = effectivePreview;
-      if (effectivePreview != null && !requiresVisualResolution) {
+      if (effectivePreview != null && hasUsablePreview) {
         _stabilizedPlaceholderIds.remove(lessonMediaId);
         _cache[lessonMediaId] = effectivePreview.asNonAuthoritativeCacheEntry();
       } else if (needsPlaceholderStabilization) {
@@ -572,4 +788,18 @@ bool _isBlockedStoredMediaFallbackUrl(String value) {
       lowered.startsWith('/api/media/') ||
       lowered.startsWith('/media/sign') ||
       lowered.startsWith('/media/stream/');
+}
+
+bool _sameTrackedStatus(
+  LessonMediaPreviewStatus previous,
+  LessonMediaPreviewStatus next,
+) {
+  return previous.state == next.state &&
+      previous.lessonMediaId == next.lessonMediaId &&
+      previous.mediaType == next.mediaType &&
+      previous.visualUrl == next.visualUrl &&
+      previous.fileName == next.fileName &&
+      previous.durationSeconds == next.durationSeconds &&
+      previous.failureReason == next.failureReason &&
+      previous.failureKind == next.failureKind;
 }

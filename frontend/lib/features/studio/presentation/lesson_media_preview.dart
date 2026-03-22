@@ -35,7 +35,6 @@ class LessonMediaPreview extends ConsumerStatefulWidget {
 class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   late Future<LessonMediaPreviewData?> _previewFuture;
   late int _hydrationRevision;
-  bool _loggedUnresolvedPreview = false;
 
   @override
   void initState() {
@@ -68,7 +67,6 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   Future<LessonMediaPreviewData?> _createPreviewFuture() {
     final normalizedLessonMediaId = widget.lessonMediaId.trim();
     if (normalizedLessonMediaId.isEmpty) {
-      _loggedUnresolvedPreview = false;
       final rawSource = widget.src?.trim();
       logMissingLessonMediaIdRender(
         surface: 'studio_editor_preview',
@@ -87,7 +85,6 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
       }
       return Future<LessonMediaPreviewData?>.value(null);
     }
-    _loggedUnresolvedPreview = false;
     return ref
         .read(lessonMediaPreviewCacheProvider)
         .getSettledOrFetch(normalizedLessonMediaId);
@@ -96,14 +93,6 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   int _effectiveHydrationRevision() {
     return widget.hydrationListenable?.value.revision ??
         widget.hydrationRevision;
-  }
-
-  bool _effectiveHydrating() {
-    final snapshot = widget.hydrationListenable?.value;
-    if (snapshot != null) {
-      return snapshot.isHydratingId(widget.lessonMediaId);
-    }
-    return widget.hydrating;
   }
 
   void _attachHydrationListenable() {
@@ -130,10 +119,12 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
   @override
   Widget build(BuildContext context) {
     final mediaRepository = ref.watch(mediaRepositoryProvider);
+    final previewCache = ref.read(lessonMediaPreviewCacheProvider);
     final normalizedType = widget.mediaType.trim().toLowerCase();
-    final supportsVisualPreview =
-        normalizedType == 'image' || normalizedType == 'video';
-    final placeholderState = _initialPlaceholderState();
+    final invalidStatus = _initialStatus(
+      previewCache: previewCache,
+      mediaType: normalizedType,
+    );
 
     return Semantics(
       identifier: 'media-preview',
@@ -144,72 +135,118 @@ class _LessonMediaPreviewState extends ConsumerState<LessonMediaPreview> {
           descendantsAreFocusable: false,
           child: IgnorePointer(
             ignoring: true,
-            child: FutureBuilder<LessonMediaPreviewData?>(
-              future: _previewFuture,
-              builder: (context, snapshot) {
-                final preview = snapshot.data;
-                final isHydrating = _effectiveHydrating();
-                final previewVisualUrl = _resolveVisualUrl(
-                  mediaRepository: mediaRepository,
-                  mediaType: normalizedType,
-                  preferred: preview?.visualUrl,
-                );
-                final visualUrl = previewVisualUrl;
-                final isHydratingVisible =
-                    isHydrating && supportsVisualPreview && visualUrl == null;
-                final isAsyncLoading =
-                    isHydrating &&
-                    snapshot.connectionState == ConnectionState.waiting &&
-                    preview == null &&
-                    visualUrl == null;
-                final isUnresolved =
-                    placeholderState == null &&
-                    supportsVisualPreview &&
-                    !isHydratingVisible &&
-                    !isAsyncLoading &&
-                    visualUrl == null;
-                if (isUnresolved && !_loggedUnresolvedPreview) {
-                  _loggedUnresolvedPreview = true;
-                  logUnresolvedLessonMediaRender(
-                    event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
-                    surface: 'studio_editor_preview',
+            child: invalidStatus != null
+                ? _buildPreviewFrame(
+                    mediaRepository: mediaRepository,
                     mediaType: normalizedType,
-                    lessonMediaId: widget.lessonMediaId,
-                  );
-                } else if (!isUnresolved) {
-                  _loggedUnresolvedPreview = false;
-                }
-                final isLoading = isHydratingVisible || isAsyncLoading;
-                return _LessonMediaPreviewFrame(
-                  mediaType: normalizedType,
-                  visualUrl: visualUrl,
-                  fileName: preview?.fileName,
-                  durationSeconds: preview?.durationSeconds,
-                  isLoading: isLoading,
-                  placeholderState:
-                      placeholderState ??
-                      (isUnresolved
-                          ? _LessonMediaPreviewPlaceholderState.unresolved
-                          : null),
-                );
-              },
-            ),
+                    status: invalidStatus,
+                  )
+                : FutureBuilder<LessonMediaPreviewData?>(
+                    future: _previewFuture,
+                    builder: (context, snapshot) {
+                      final status = previewCache.statusForPreview(
+                        widget.lessonMediaId,
+                        snapshot.data,
+                      );
+                      _maybeLogUnresolved(
+                        previewCache: previewCache,
+                        mediaType: normalizedType,
+                        status: status,
+                      );
+                      return _buildPreviewFrame(
+                        mediaRepository: mediaRepository,
+                        mediaType: normalizedType,
+                        status: status,
+                      );
+                    },
+                  ),
           ),
         ),
       ),
     );
   }
 
-  _LessonMediaPreviewPlaceholderState? _initialPlaceholderState() {
+  LessonMediaPreviewStatus? _initialStatus({
+    required LessonMediaPreviewCache previewCache,
+    required String mediaType,
+  }) {
     final normalizedLessonMediaId = widget.lessonMediaId.trim();
     if (normalizedLessonMediaId.isNotEmpty) {
       return null;
     }
     final rawSource = widget.src?.trim();
-    if (rawSource != null && rawSource.isNotEmpty) {
-      return _LessonMediaPreviewPlaceholderState.legacyBlocked;
+    return previewCache.invalidStatus(
+      mediaType: mediaType,
+      failureKind: rawSource != null && rawSource.isNotEmpty
+          ? LessonMediaPreviewFailureKind.legacyBlocked
+          : LessonMediaPreviewFailureKind.missingId,
+    );
+  }
+
+  void _maybeLogUnresolved({
+    required LessonMediaPreviewCache previewCache,
+    required String mediaType,
+    required LessonMediaPreviewStatus status,
+  }) {
+    if (status.state != LessonMediaPreviewState.failed ||
+        status.failureKind != LessonMediaPreviewFailureKind.unresolved) {
+      return;
     }
-    return _LessonMediaPreviewPlaceholderState.missingId;
+    final lessonMediaId = status.lessonMediaId?.trim();
+    final failedTransitionVersion = status.failedTransitionVersion;
+    if (lessonMediaId == null ||
+        lessonMediaId.isEmpty ||
+        failedTransitionVersion == null ||
+        !previewCache.consumeFailedTransitionLog(
+          lessonMediaId,
+          failedTransitionVersion,
+        )) {
+      return;
+    }
+    logUnresolvedLessonMediaRender(
+      event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
+      surface: 'studio_editor_preview',
+      mediaType: mediaType,
+      lessonMediaId: lessonMediaId,
+    );
+  }
+
+  Widget _buildPreviewFrame({
+    required MediaRepository mediaRepository,
+    required String mediaType,
+    required LessonMediaPreviewStatus status,
+  }) {
+    final visualUrl = status.isRenderable
+        ? _resolveVisualUrl(
+            mediaRepository: mediaRepository,
+            mediaType: mediaType,
+            preferred: status.visualUrl,
+          )
+        : null;
+    return _LessonMediaPreviewFrame(
+      mediaType: mediaType,
+      visualUrl: visualUrl,
+      fileName: status.fileName,
+      durationSeconds: status.durationSeconds,
+      isLoading: status.state == LessonMediaPreviewState.loading,
+      placeholderState: _placeholderStateForStatus(status),
+    );
+  }
+
+  _LessonMediaPreviewPlaceholderState? _placeholderStateForStatus(
+    LessonMediaPreviewStatus status,
+  ) {
+    if (status.state != LessonMediaPreviewState.failed) {
+      return null;
+    }
+    return switch (status.failureKind) {
+      LessonMediaPreviewFailureKind.missingId =>
+        _LessonMediaPreviewPlaceholderState.missingId,
+      LessonMediaPreviewFailureKind.legacyBlocked =>
+        _LessonMediaPreviewPlaceholderState.legacyBlocked,
+      LessonMediaPreviewFailureKind.unresolved ||
+      null => _LessonMediaPreviewPlaceholderState.unresolved,
+    };
   }
 }
 

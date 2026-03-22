@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +14,7 @@ import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
+import 'package:aveli/features/studio/presentation/lesson_media_preview_cache.dart';
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 
@@ -371,6 +374,227 @@ void main() {
           (entry) => entry.contains('MISSING_LESSON_MEDIA_ID_RENDER'),
         ),
         isTrue,
+      );
+      debugPrint = originalDebugPrint;
+    },
+  );
+
+  testWidgets(
+    'LessonMediaPreview treats a waiting preview request as loading without unresolved telemetry',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final mediaRepo = _MockMediaRepository();
+      final previewCompleter = Completer<Map<String, Map<String, dynamic>>>();
+      final telemetry = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) {
+          telemetry.add(message);
+        }
+      };
+      addTearDown(() => debugPrint = originalDebugPrint);
+
+      _stubPreviewDependencies(
+        studioRepo,
+        mediaRepo,
+        fetchLessonMediaPreviews: (_) => previewCompleter.future,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            mediaRepositoryProvider.overrideWithValue(mediaRepo),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 160,
+                  child: LessonMediaPreview(
+                    lessonMediaId: 'media-image-1',
+                    mediaType: 'image',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_loading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lesson_media_preview_unresolved')),
+        findsNothing,
+      );
+      expect(
+        telemetry.where(
+          (entry) => entry.contains('UNRESOLVED_LESSON_MEDIA_RENDER'),
+        ),
+        isEmpty,
+      );
+
+      previewCompleter.complete(<String, Map<String, dynamic>>{});
+      await tester.pump();
+      debugPrint = originalDebugPrint;
+    },
+  );
+
+  testWidgets(
+    'LessonMediaPreview renders fallback-ready images without unresolved telemetry',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final mediaRepo = _MockMediaRepository();
+      final telemetry = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) {
+          telemetry.add(message);
+        }
+      };
+      addTearDown(() => debugPrint = originalDebugPrint);
+
+      _stubPreviewDependencies(
+        studioRepo,
+        mediaRepo,
+        fetchLessonMediaPreviews: (_) async => {
+          'media-image-1': {
+            'media_type': 'image',
+            'authoritative_editor_ready': false,
+            'failure_reason': 'unresolvable',
+          },
+        },
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          mediaRepositoryProvider.overrideWithValue(mediaRepo),
+        ],
+      );
+      addTearDown(container.dispose);
+      final cache = container.read(lessonMediaPreviewCacheProvider);
+      cache.primeFromLessonMedia([
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'preferredUrl': 'https://cdn.test/media-image-1.webp',
+          'original_name': 'image.png',
+        },
+      ]);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 160,
+                  child: LessonMediaPreview(
+                    lessonMediaId: 'media-image-1',
+                    mediaType: 'image',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        _networkImageFinder('https://cdn.test/media-image-1.webp'),
+        findsOneWidget,
+      );
+      expect(
+        telemetry.where(
+          (entry) => entry.contains('UNRESOLVED_LESSON_MEDIA_RENDER'),
+        ),
+        isEmpty,
+      );
+      debugPrint = originalDebugPrint;
+    },
+  );
+
+  testWidgets(
+    'LessonMediaPreview does not re-log unresolved when a failed preview remounts over unchanged cache data',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final mediaRepo = _MockMediaRepository();
+      final telemetry = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) {
+          telemetry.add(message);
+        }
+      };
+      addTearDown(() => debugPrint = originalDebugPrint);
+
+      _stubPreviewDependencies(
+        studioRepo,
+        mediaRepo,
+        fetchLessonMediaPreviews: (_) async => {
+          'media-image-1': {
+            'media_type': 'image',
+            'authoritative_editor_ready': false,
+            'failure_reason': 'unresolvable',
+          },
+        },
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          mediaRepositoryProvider.overrideWithValue(mediaRepo),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      Widget buildPreview({required Key key}) {
+        return UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 160,
+                  child: LessonMediaPreview(
+                    key: key,
+                    lessonMediaId: 'media-image-1',
+                    mediaType: 'image',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(buildPreview(key: const ValueKey('first')));
+      await tester.pump();
+
+      expect(
+        telemetry.where(
+          (entry) => entry.contains('UNRESOLVED_LESSON_MEDIA_RENDER'),
+        ),
+        hasLength(1),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.pumpWidget(buildPreview(key: const ValueKey('second')));
+      await tester.pump();
+
+      expect(
+        telemetry.where(
+          (entry) => entry.contains('UNRESOLVED_LESSON_MEDIA_RENDER'),
+        ),
+        hasLength(1),
       );
       debugPrint = originalDebugPrint;
     },

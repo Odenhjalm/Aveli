@@ -1965,14 +1965,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return ref.read(lessonMediaPreviewCacheProvider).peek(lessonMediaId);
   }
 
+  LessonMediaPreviewStatus? _previewStatusForMedia(Map<String, dynamic> media) {
+    final lessonMediaId = safeString(media, 'id');
+    if (lessonMediaId == null || lessonMediaId.trim().isEmpty) {
+      return null;
+    }
+    return ref.read(lessonMediaPreviewCacheProvider).peekStatus(lessonMediaId);
+  }
+
   bool _isAuthoritativelyReadyForEditor(Map<String, dynamic> media) {
     final lessonMediaId = safeString(media, 'id');
     if (lessonMediaId == null) return false;
     if (!_requiresAuthoritativeEditorReadiness(media)) {
       return true;
     }
-    return _authoritativePreviewForMedia(media)?.authoritativeEditorReady ==
-        true;
+    return _previewStatusForMedia(media)?.state ==
+        LessonMediaPreviewState.ready;
   }
 
   bool _canInsertLessonMedia(Map<String, dynamic> media) {
@@ -2002,11 +2010,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (hasInvalidPipelineReference || isWavMedia) {
       return false;
     }
-    if (_requiresAuthoritativeEditorReadiness(media) &&
-        !_isAuthoritativelyReadyForEditor(media)) {
-      return false;
+    final previewStatus = _previewStatusForMedia(media);
+    if (_requiresAuthoritativeEditorReadiness(media)) {
+      final previewState = previewStatus?.state;
+      if (_isImageMedia(media)) {
+        if (previewState != LessonMediaPreviewState.ready &&
+            previewState != LessonMediaPreviewState.fallbackReady) {
+          return false;
+        }
+      } else if (previewState != LessonMediaPreviewState.ready) {
+        return false;
+      }
     }
-    if (_isPipelineMedia(media) && !canPipelinePlay) {
+    final normalizedKind = ((media['kind'] as String?) ?? '')
+        .trim()
+        .toLowerCase();
+    if (_isPipelineMedia(media) &&
+        normalizedKind == 'audio' &&
+        !canPipelinePlay) {
       return false;
     }
     return true;
@@ -5057,7 +5078,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final name = _fileNameFromMedia(media);
-    if (_isPipelineMedia(media)) {
+    if (_isPipelineMedia(media) && !_isImageMedia(media)) {
       final state = _pipelineState(media);
       if (state != 'ready') {
         if (mounted && context.mounted) {
@@ -5358,7 +5379,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
     }
 
-    final url = await _resolveLessonMediaDeliveryUrlForMedia(media);
+    final previewStatus = _previewStatusForMedia(media);
+    final classifiedImageUrl = kind == 'image'
+        ? _normalizeBrowserOpenableMediaUrl(previewStatus?.visualUrl)
+        : null;
+    final url =
+        classifiedImageUrl ??
+        await _resolveLessonMediaDeliveryUrlForMedia(media);
     if (!mounted) return;
     if (kind == 'image' && url != null) {
       await showDialog<void>(
@@ -5378,12 +5405,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         playbackUrl: _normalizeVideoPlaybackUrl(url),
       );
     } else {
-      logUnresolvedLessonMediaRender(
-        event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
-        surface: 'studio_media_list_preview',
-        mediaType: kind,
-        lessonMediaId: lessonMediaId,
-      );
+      final failedTransitionVersion = previewStatus?.failedTransitionVersion;
+      final shouldLogUnresolved =
+          previewStatus?.state == LessonMediaPreviewState.failed &&
+          previewStatus?.failureKind ==
+              LessonMediaPreviewFailureKind.unresolved &&
+          failedTransitionVersion != null &&
+          ref
+              .read(lessonMediaPreviewCacheProvider)
+              .consumeFailedTransitionLog(
+                lessonMediaId,
+                failedTransitionVersion,
+              );
+      if (shouldLogUnresolved) {
+        logUnresolvedLessonMediaRender(
+          event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
+          surface: 'studio_media_list_preview',
+          mediaType: kind,
+          lessonMediaId: lessonMediaId,
+        );
+      }
       if (mounted && context.mounted) {
         showSnack(context, 'Förhandsvisning kunde inte laddas.');
       }
@@ -6489,13 +6530,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             isPipeline &&
                                             (pipelineStateFromDb == null ||
                                                 pipelineStateFromDb.isEmpty);
-                                        final authoritativePreview =
-                                            _authoritativePreviewForMedia(
-                                              media,
-                                            );
-                                        final authoritativeReady =
-                                            authoritativePreview
-                                                ?.authoritativeEditorReady;
+                                        final previewStatus =
+                                            _previewStatusForMedia(media);
                                         final usesAuthoritativeStatus =
                                             _requiresAuthoritativeEditorReadiness(
                                               media,
@@ -6504,18 +6540,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             hasInvalidPipelineReference
                                             ? 'failed'
                                             : usesAuthoritativeStatus
-                                            ? authoritativeReady == true
-                                                  ? 'ready'
-                                                  : authoritativeReady == false
-                                                  ? 'failed'
-                                                  : isPipeline &&
-                                                        pipelineState != null &&
-                                                        pipelineState !=
-                                                            'ready' &&
-                                                        pipelineState !=
-                                                            'failed'
-                                                  ? 'processing'
-                                                  : 'checking'
+                                            ? switch (previewStatus?.state ??
+                                                  LessonMediaPreviewState
+                                                      .loading) {
+                                                LessonMediaPreviewState.ready =>
+                                                  'ready',
+                                                LessonMediaPreviewState
+                                                    .failed =>
+                                                  'failed',
+                                                LessonMediaPreviewState
+                                                    .loading =>
+                                                  isPipeline &&
+                                                          pipelineState !=
+                                                              null &&
+                                                          pipelineState !=
+                                                              'ready' &&
+                                                          pipelineState !=
+                                                              'failed'
+                                                      ? 'processing'
+                                                      : 'checking',
+                                                LessonMediaPreviewState
+                                                    .fallbackReady =>
+                                                  'checking',
+                                              }
                                             : isPipeline
                                             ? pipelineState == 'ready'
                                                   ? 'ready'

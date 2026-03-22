@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -206,6 +208,112 @@ void main() {
       verify(
         () => studioRepository.fetchLessonMediaPreviews(['media-image-1']),
       ).called(1);
+    },
+  );
+
+  test(
+    'preview cache keeps fallback-ready images renderable while a fetch is in flight',
+    () async {
+      final studioRepository = _MockStudioRepository();
+      final completer = Completer<Map<String, Map<String, dynamic>>>();
+      when(() => studioRepository.fetchLessonMediaPreviews(any())).thenAnswer((
+        _,
+      ) {
+        return completer.future;
+      });
+
+      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      cache.primeFromLessonMedia([
+        {
+          'id': 'media-image-1',
+          'kind': 'image',
+          'preferredUrl': 'https://cdn.test/media-image-1.webp',
+          'original_name': 'image.png',
+        },
+      ]);
+
+      final previewFuture = cache.getPreview('media-image-1');
+      await Future<void>.delayed(Duration.zero);
+
+      final inFlightStatus = cache.peekStatus('media-image-1');
+      expect(inFlightStatus?.state, LessonMediaPreviewState.fallbackReady);
+      expect(inFlightStatus?.visualUrl, 'https://cdn.test/media-image-1.webp');
+
+      completer.complete({
+        'media-image-1': {
+          'media_type': 'image',
+          'authoritative_editor_ready': true,
+          'resolved_preview_url': 'https://cdn.test/backend-image-1.webp',
+          'file_name': 'image.png',
+        },
+      });
+
+      final preview = await previewFuture;
+      expect(preview?.visualUrl, 'https://cdn.test/backend-image-1.webp');
+      expect(
+        cache.peekStatus('media-image-1')?.state,
+        LessonMediaPreviewState.ready,
+      );
+    },
+  );
+
+  test(
+    'preview cache consumes failed transition logs once per data-level failure epoch',
+    () async {
+      final studioRepository = _MockStudioRepository();
+      when(() => studioRepository.fetchLessonMediaPreviews(any())).thenAnswer((
+        _,
+      ) async {
+        return {
+          'media-image-1': {
+            'media_type': 'image',
+            'authoritative_editor_ready': false,
+            'failure_reason': 'unresolvable',
+          },
+        };
+      });
+
+      final cache = LessonMediaPreviewCache(studioRepository: studioRepository);
+      cache.primeFromLessonMedia([
+        {'id': 'media-image-1', 'kind': 'image', 'original_name': 'image.png'},
+      ]);
+
+      await cache.getPreview('media-image-1');
+      final firstFailed = cache.peekStatus('media-image-1');
+      expect(firstFailed?.state, LessonMediaPreviewState.failed);
+      expect(firstFailed?.failedTransitionVersion, 1);
+      expect(
+        cache.consumeFailedTransitionLog(
+          'media-image-1',
+          firstFailed!.failedTransitionVersion!,
+        ),
+        isTrue,
+      );
+      expect(
+        cache.consumeFailedTransitionLog(
+          'media-image-1',
+          firstFailed.failedTransitionVersion!,
+        ),
+        isFalse,
+      );
+
+      cache.invalidate(['media-image-1']);
+      expect(
+        cache.peekStatus('media-image-1')?.state,
+        LessonMediaPreviewState.loading,
+      );
+
+      await cache.getPreview('media-image-1');
+      final secondFailed = cache.peekStatus('media-image-1');
+      expect(secondFailed?.state, LessonMediaPreviewState.failed);
+      expect(secondFailed?.failedTransitionVersion, 2);
+      expect(
+        cache.consumeFailedTransitionLog(
+          'media-image-1',
+          secondFailed!.failedTransitionVersion!,
+        ),
+        isTrue,
+      );
     },
   );
 }
