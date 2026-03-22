@@ -1716,7 +1716,6 @@ async def upload_media(
 
     course_id_str = str(course_id)
     lesson_id_str = str(lesson_id)
-    storage_relative_dir = Path(course_id_str) / lesson_id_str
     allowed_prefixes = upload_routes._LESSON_ALLOWED_PREFIXES + tuple(
         upload_routes._LESSON_ALLOWED_EXACT_TYPES
     )

@@ -146,7 +146,7 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     if not course_id:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    course = await assert_can_access_course(current, course_id)
+    await assert_can_access_course(current, course_id)
 
     module = _virtual_module(course_id)
     modules = [module]

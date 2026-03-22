@@ -101,7 +101,7 @@ jobs:
             exit 1
           fi
 
-          if ! grep -Fq "Ta bort video" "$BUNDLE"; then
+          if ! grep -Fq "resolvable_for_editor" "$BUNDLE"; then
             echo "Expected stable marker from main code not found in $BUNDLE" >&2
             exit 1
           fi
