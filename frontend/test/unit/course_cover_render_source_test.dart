@@ -36,4 +36,77 @@ void main() {
       );
     });
   });
+
+  group('shouldClearStudioLocalCoverOverride', () {
+    test('returns true for control-plane covers with a media id', () {
+      expect(
+        shouldClearStudioLocalCoverOverride(<String, dynamic>{
+          'cover': <String, dynamic>{
+            'media_id': 'media-1',
+            'source': 'control_plane',
+          },
+        }),
+        isTrue,
+      );
+    });
+
+    test('returns false when the backend cover is not control-plane', () {
+      expect(
+        shouldClearStudioLocalCoverOverride(<String, dynamic>{
+          'cover': <String, dynamic>{
+            'media_id': 'media-1',
+            'source': 'editor_override',
+          },
+        }),
+        isFalse,
+      );
+    });
+
+    test('returns false when the backend cover has no media id', () {
+      expect(
+        shouldClearStudioLocalCoverOverride(<String, dynamic>{
+          'cover': <String, dynamic>{'source': 'control_plane'},
+        }),
+        isFalse,
+      );
+    });
+  });
+
+  group('selectStudioCourseCoverUrl', () {
+    test('prefers the backend control-plane cover over a local override', () {
+      expect(
+        selectStudioCourseCoverUrl(
+          backendResolvedUrl: 'https://cdn.test/control-plane.jpg',
+          backendSource: 'control_plane',
+          localOverrideResolvedUrl: 'https://cdn.test/local-override.jpg',
+        ),
+        'https://cdn.test/control-plane.jpg',
+      );
+    });
+
+    test(
+      'falls back to the local override before placeholder/backend gaps',
+      () {
+        expect(
+          selectStudioCourseCoverUrl(
+            backendResolvedUrl: null,
+            backendSource: 'placeholder',
+            localOverrideResolvedUrl: 'https://cdn.test/local-override.jpg',
+          ),
+          'https://cdn.test/local-override.jpg',
+        );
+      },
+    );
+
+    test('uses the backend url when no local override exists', () {
+      expect(
+        selectStudioCourseCoverUrl(
+          backendResolvedUrl: 'https://cdn.test/legacy.jpg',
+          backendSource: 'legacy_cover_url',
+          localOverrideResolvedUrl: null,
+        ),
+        'https://cdn.test/legacy.jpg',
+      );
+    });
+  });
 }

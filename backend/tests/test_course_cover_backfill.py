@@ -174,8 +174,9 @@ async def test_classify_noncanonical_public_lesson_cover(monkeypatch):
 
     items = await backfill.classify_course_cover_batch([_course(cover_url=noncanonical_url)])
     item = items[0]
-    assert item.classification == backfill.CLASS_LEGACY_PUBLIC_BUT_NONCANONICAL
-    assert item.reason == "noncanonical_public_cover_path"
+    assert item.classification == backfill.CLASS_LEGACY_MIGRATABLE
+    assert item.reason == "legacy_lesson_cover_requires_copy"
+    assert item.planned_action == "create_asset"
 
 
 async def test_classify_legacy_unverifiable_for_non_image(monkeypatch):
@@ -338,3 +339,137 @@ async def test_apply_mode_is_idempotent_for_create_path(monkeypatch):
     assert second.migrated_courses == 0
     assert second.created_assets == 0
     assert created_ids == ["created-1"]
+
+
+async def test_apply_mode_copies_lesson_cover_before_creating_asset(monkeypatch):
+    legacy_path = "lessons/lesson-1/images/demo.png"
+    legacy_url = f"/api/files/public-media/{legacy_path}"
+    course = _course(cover_url=legacy_url)
+    created_assets: dict[str, dict] = {}
+    copy_calls: list[dict[str, str | None]] = []
+
+    async def fake_list_courses_with_cover_url(*, limit=100, after_id=None):
+        if after_id is not None:
+            return []
+        return [course]
+
+    async def fake_get_media_assets(media_ids):
+        return {
+            media_id: created_assets[media_id]
+            for media_id in media_ids
+            if media_id in created_assets
+        }
+
+    async def fake_fetch_storage_object_details(pairs):
+        details = {
+            ("public-media", legacy_path): _storage_detail(
+                legacy_path,
+                content_type="image/png",
+            ),
+        }
+        for asset in created_assets.values():
+            path = str(asset.get("streaming_object_path") or "")
+            if path:
+                details[("public-media", path)] = _storage_detail(
+                    path,
+                    content_type="image/png",
+                )
+        return details, True
+
+    async def fake_list_ready_course_cover_assets_for_object(*, course_id, storage_bucket, storage_path):
+        raise AssertionError("lesson cover backfill should copy instead of reusing source path")
+
+    async def fake_set_course_cover_media_id_if_unset(*, course_id, cover_media_id):
+        if course.get("cover_media_id"):
+            return False
+        course["cover_media_id"] = cover_media_id
+        return True
+
+    async def fake_copy_object(
+        *,
+        source_bucket,
+        source_path,
+        destination_bucket,
+        destination_path,
+        content_type=None,
+        cache_seconds=None,
+    ):
+        copy_calls.append(
+            {
+                "source_bucket": source_bucket,
+                "source_path": source_path,
+                "destination_bucket": destination_bucket,
+                "destination_path": destination_path,
+                "content_type": content_type,
+            }
+        )
+
+    async def fake_create_ready_public_course_cover_asset(
+        *,
+        owner_id,
+        course_id,
+        storage_bucket,
+        storage_path,
+        content_type,
+        filename,
+        size_bytes,
+        ingest_format,
+        codec=None,
+    ):
+        media_id = f"created-{len(created_assets) + 1}"
+        asset = _asset(media_id=media_id, path=storage_path, course_id=course_id)
+        asset["owner_id"] = owner_id
+        asset["original_content_type"] = content_type
+        asset["original_filename"] = filename
+        asset["original_size_bytes"] = size_bytes
+        asset["ingest_format"] = ingest_format
+        asset["streaming_format"] = ingest_format
+        asset["codec"] = codec
+        created_assets[media_id] = asset
+        return asset
+
+    monkeypatch.setattr(backfill.courses_repo, "list_courses_with_cover_url", fake_list_courses_with_cover_url, raising=True)
+    monkeypatch.setattr(backfill.media_assets_repo, "get_media_assets", fake_get_media_assets, raising=True)
+    monkeypatch.setattr(backfill.storage_objects, "fetch_storage_object_details", fake_fetch_storage_object_details, raising=True)
+    monkeypatch.setattr(
+        backfill.media_assets_repo,
+        "list_ready_course_cover_assets_for_object",
+        fake_list_ready_course_cover_assets_for_object,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        backfill.courses_repo,
+        "set_course_cover_media_id_if_unset",
+        fake_set_course_cover_media_id_if_unset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        backfill.storage_service,
+        "copy_object",
+        fake_copy_object,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        backfill.media_assets_repo,
+        "create_ready_public_course_cover_asset",
+        fake_create_ready_public_course_cover_asset,
+        raising=True,
+    )
+
+    report = await backfill.run_course_cover_backfill(apply=True, batch_size=10)
+    assert report.migrated_courses == 1
+    assert report.created_assets == 1
+    assert report.errors == 0
+    assert len(copy_calls) == 1
+    copied = copy_calls[0]
+    assert copied["source_bucket"] == "public-media"
+    assert copied["source_path"] == legacy_path
+    assert copied["destination_bucket"] == "public-media"
+    assert copied["destination_path"] is not None
+    assert str(copied["destination_path"]).startswith(
+        f"media/derived/cover/courses/{COURSE_ID}/"
+    )
+    assert course["cover_media_id"] == "created-1"
+    created_asset = created_assets["created-1"]
+    assert created_asset["original_object_path"] == copied["destination_path"]
+    assert created_asset["original_object_path"] != legacy_path

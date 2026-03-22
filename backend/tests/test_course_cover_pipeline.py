@@ -7,6 +7,7 @@ import pytest
 from app import db, models
 from app.repositories import media_assets as media_assets_repo
 from app.routes import api_media
+from app.services import media_cleanup
 from app.services import storage_service as storage_module
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -219,9 +220,30 @@ async def test_cover_from_lesson_media_creates_asset(async_client, monkeypatch):
     try:
         course_id = await create_course(async_client, headers)
         lesson_id = await create_lesson(async_client, headers, course_id)
+        lesson_storage_path = f"lessons/{lesson_id}/images/demo.png"
+        copy_calls: list[dict[str, str | None]] = []
 
         async def fake_fetch_storage_object_existence(pairs):
             return {tuple(pair): True for pair in pairs}, True
+
+        async def fake_copy_object(
+            *,
+            source_bucket,
+            source_path,
+            destination_bucket,
+            destination_path,
+            content_type=None,
+            cache_seconds=None,
+        ):
+            copy_calls.append(
+                {
+                    "source_bucket": source_bucket,
+                    "source_path": source_path,
+                    "destination_bucket": destination_bucket,
+                    "destination_path": destination_path,
+                    "content_type": content_type,
+                }
+            )
 
         monkeypatch.setattr(
             api_media.storage_objects,
@@ -229,12 +251,18 @@ async def test_cover_from_lesson_media_creates_asset(async_client, monkeypatch):
             fake_fetch_storage_object_existence,
             raising=True,
         )
+        monkeypatch.setattr(
+            storage_module,
+            "copy_object",
+            fake_copy_object,
+            raising=True,
+        )
 
         media = await models.add_lesson_media_entry(
             lesson_id=lesson_id,
             kind="image",
-            storage_path="demo/cover.png",
-            storage_bucket=storage_module.storage_service.bucket,
+            storage_path=lesson_storage_path,
+            storage_bucket=storage_module.public_storage_service.bucket,
             media_id=None,
             media_asset_id=None,
             position=1,
@@ -254,8 +282,20 @@ async def test_cover_from_lesson_media_creates_asset(async_client, monkeypatch):
         body = resp.json()
         asset = await media_assets_repo.get_media_asset(body["media_id"])
         assert asset is not None
-        assert asset["original_object_path"] == "demo/cover.png"
+        assert len(copy_calls) == 1
+        copied = copy_calls[0]
+        assert copied["source_bucket"] == storage_module.public_storage_service.bucket
+        assert copied["source_path"] == lesson_storage_path
+        assert copied["destination_bucket"] == storage_module.storage_service.bucket
+        assert copied["destination_path"] is not None
+        assert str(copied["destination_path"]).startswith(
+            f"media/source/cover/courses/{course_id}/"
+        )
+        assert asset["original_object_path"] == copied["destination_path"]
+        assert asset["original_object_path"] != lesson_storage_path
+        assert not str(asset["original_object_path"]).startswith("lessons/")
         assert asset["purpose"] == "course_cover"
+        assert asset["storage_bucket"] == storage_module.storage_service.bucket
         meta = await get_course_cover_fields(course_id)
         assert meta.get("cover_media_id") is None
         assert meta.get("cover_url") is None
@@ -410,6 +450,180 @@ async def test_cover_clear_deletes_assets(async_client, monkeypatch):
 
         assert (storage_module.storage_service.bucket, source_path) in calls
         assert (storage_module.public_storage_service.bucket, derived_path) in calls
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_prune_course_cover_assets_skips_shared_lesson_storage(
+    async_client, monkeypatch, caplog
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+        lesson_id = await create_lesson(async_client, headers, course_id)
+        lesson_storage_path = f"lessons/{lesson_id}/images/shared-cover.png"
+        old_derived_path = f"media/derived/cover/courses/{course_id}/old.jpg"
+        new_source_path = f"media/source/cover/courses/{course_id}/fresh.png"
+        new_derived_path = f"media/derived/cover/courses/{course_id}/fresh.jpg"
+
+        lesson_media = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="image",
+            storage_path=lesson_storage_path,
+            storage_bucket=storage_module.public_storage_service.bucket,
+            media_id=None,
+            media_asset_id=None,
+            position=1,
+            duration_seconds=None,
+        )
+        assert lesson_media
+
+        old_asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format="png",
+            original_object_path=lesson_storage_path,
+            original_content_type="image/png",
+            original_filename="shared-cover.png",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.public_storage_service.bucket,
+            state="uploaded",
+        )
+        assert old_asset
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(old_asset["id"]),
+            streaming_object_path=old_derived_path,
+            streaming_format="jpg",
+            streaming_storage_bucket=storage_module.public_storage_service.bucket,
+            codec="jpeg",
+        )
+
+        new_asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format="png",
+            original_object_path=new_source_path,
+            original_content_type="image/png",
+            original_filename="fresh.png",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="uploaded",
+        )
+        assert new_asset
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(new_asset["id"]),
+            streaming_object_path=new_derived_path,
+            streaming_format="jpg",
+            streaming_storage_bucket=storage_module.public_storage_service.bucket,
+            codec="jpeg",
+        )
+
+        calls: list[tuple[str, str]] = []
+
+        async def fake_delete_object(self, path):
+            calls.append((self.bucket, path))
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "delete_object",
+            fake_delete_object,
+            raising=True,
+        )
+
+        with caplog.at_level(logging.INFO):
+            deleted_count = await media_cleanup.prune_course_cover_assets(
+                course_id=course_id
+            )
+
+        assert deleted_count == 1
+        assert await media_assets_repo.get_media_asset(str(old_asset["id"])) is None
+        assert await media_assets_repo.get_media_asset(str(new_asset["id"])) is not None
+        assert await models.get_media(str(lesson_media["id"])) is not None
+        assert (
+            storage_module.public_storage_service.bucket,
+            lesson_storage_path,
+        ) not in calls
+        assert (
+            storage_module.public_storage_service.bucket,
+            old_derived_path,
+        ) in calls
+        assert "MEDIA_CLEANUP_SHARED_STORAGE_DETECTED" in caplog.text
+        assert "MEDIA_CLEANUP_DELETE_SKIPPED_SHARED_REFERENCE" in caplog.text
+        assert "lesson_storage_prefix" in caplog.text
+        assert "lesson_media=1" in caplog.text
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_delete_media_asset_and_objects_skips_shared_media_object_storage(
+    async_client, monkeypatch, caplog
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+        shared_storage_path = f"media/source/cover/courses/{course_id}/shared-object.png"
+        media_object = await models.create_media_object(
+            owner_id=user_id,
+            storage_path=shared_storage_path,
+            storage_bucket=storage_module.storage_service.bucket,
+            content_type="image/png",
+            byte_size=128,
+            checksum=None,
+            original_name="shared-object.png",
+        )
+        assert media_object
+
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format="png",
+            original_object_path=shared_storage_path,
+            original_content_type="image/png",
+            original_filename="shared-object.png",
+            original_size_bytes=128,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="uploaded",
+        )
+        assert asset
+
+        calls: list[tuple[str, str]] = []
+
+        async def fake_delete_object(self, path):
+            calls.append((self.bucket, path))
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "delete_object",
+            fake_delete_object,
+            raising=True,
+        )
+
+        with caplog.at_level(logging.INFO):
+            deleted = await media_cleanup.delete_media_asset_and_objects(
+                media_id=str(asset["id"])
+            )
+
+        assert deleted is True
+        assert await media_assets_repo.get_media_asset(str(asset["id"])) is None
+        assert await models.get_media_object(str(media_object["id"])) is not None
+        assert (
+            storage_module.storage_service.bucket,
+            shared_storage_path,
+        ) not in calls
+        assert "MEDIA_CLEANUP_SHARED_STORAGE_DETECTED" in caplog.text
+        assert "MEDIA_CLEANUP_DELETE_SKIPPED_SHARED_REFERENCE" in caplog.text
+        assert "media_objects=1" in caplog.text
     finally:
         await cleanup_user(user_id)
 

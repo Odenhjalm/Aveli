@@ -293,3 +293,64 @@ def get_storage_service(bucket: str | None) -> StorageService:
 
 storage_service = get_storage_service(settings.media_source_bucket)
 public_storage_service = get_storage_service(settings.media_public_bucket)
+
+
+async def copy_object(
+    *,
+    source_bucket: str,
+    source_path: str,
+    destination_bucket: str,
+    destination_path: str,
+    content_type: str | None = None,
+    cache_seconds: int | None = None,
+) -> None:
+    normalized_source_bucket = str(source_bucket or "").strip()
+    normalized_source_path = str(source_path or "").strip().lstrip("/")
+    normalized_destination_bucket = str(destination_bucket or "").strip()
+    normalized_destination_path = str(destination_path or "").strip().lstrip("/")
+    if not normalized_source_bucket or not normalized_source_path:
+        raise StorageServiceError("source storage reference is required")
+    if not normalized_destination_bucket or not normalized_destination_path:
+        raise StorageServiceError("destination storage reference is required")
+
+    source_storage = get_storage_service(normalized_source_bucket)
+    destination_storage = get_storage_service(normalized_destination_bucket)
+    signed_source = await source_storage.get_presigned_url(
+        normalized_source_path,
+        ttl=max(60, int(settings.media_playback_url_ttl_seconds)),
+        download=False,
+    )
+    signed_destination = await destination_storage.create_upload_url(
+        normalized_destination_path,
+        content_type=content_type,
+        upsert=False,
+        cache_seconds=cache_seconds,
+    )
+
+    timeout = httpx.Timeout(10.0, read=None)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            source_response = await client.get(signed_source.url)
+        except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            raise StorageServiceError("Failed to download source object") from exc
+
+        if source_response.status_code == 404:
+            raise StorageObjectNotFoundError("Supabase Storage object not found")
+        if source_response.status_code >= 400:
+            raise StorageServiceError(
+                f"Supabase Storage download failed with status {source_response.status_code}"
+            )
+
+        try:
+            destination_response = await client.put(
+                signed_destination.url,
+                headers=dict(signed_destination.headers),
+                content=source_response.content,
+            )
+        except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            raise StorageServiceError("Failed to upload destination object") from exc
+
+    if destination_response.status_code >= 400:
+        raise StorageServiceError(
+            f"Supabase Storage copy upload failed with status {destination_response.status_code}"
+        )

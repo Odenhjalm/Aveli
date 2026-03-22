@@ -42,16 +42,123 @@ def _asset_delete_targets(asset: Mapping[str, Any]) -> set[tuple[str, str]]:
     return targets
 
 
+def _normalized_storage_key(path: str | None) -> str:
+    return str(path or "").strip().lstrip("/")
+
+
+def _is_lesson_storage_path(path: str | None) -> bool:
+    return _normalized_storage_key(path).startswith("lessons/")
+
+
+async def _shared_storage_reference_counts(
+    *,
+    storage_bucket: str | None,
+    storage_path: str,
+) -> dict[str, int]:
+    normalized_bucket = str(storage_bucket or "").strip() or None
+    normalized_path = _normalized_storage_key(storage_path)
+    if not normalized_path:
+        return {"media_objects": 0, "lesson_media": 0}
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT
+                  (
+                    SELECT count(*)
+                    FROM app.media_objects mo
+                    WHERE mo.storage_path = %s
+                      AND (
+                        %s IS NULL
+                        OR mo.storage_bucket = %s
+                        OR mo.storage_bucket IS NULL
+                      )
+                  ) AS media_objects,
+                  (
+                    SELECT count(*)
+                    FROM app.lesson_media lm
+                    WHERE lm.storage_path = %s
+                      AND (
+                        %s IS NULL
+                        OR lm.storage_bucket = %s
+                        OR lm.storage_bucket IS NULL
+                      )
+                  ) AS lesson_media
+                """,
+                (
+                    normalized_path,
+                    normalized_bucket,
+                    normalized_bucket,
+                    normalized_path,
+                    normalized_bucket,
+                    normalized_bucket,
+                ),
+            )
+            row = await cur.fetchone()
+    return {
+        "media_objects": int(row.get("media_objects") or 0) if row else 0,
+        "lesson_media": int(row.get("lesson_media") or 0) if row else 0,
+    }
+
+
+async def _should_skip_storage_delete(
+    *,
+    storage_bucket: str | None,
+    storage_path: str,
+) -> bool:
+    normalized_path = _normalized_storage_key(storage_path)
+    if not normalized_path:
+        return True
+
+    reasons: list[str] = []
+    if _is_lesson_storage_path(normalized_path):
+        reasons.append("lesson_storage_prefix")
+
+    reference_counts = await _shared_storage_reference_counts(
+        storage_bucket=storage_bucket,
+        storage_path=normalized_path,
+    )
+    if reference_counts["media_objects"] > 0:
+        reasons.append(f"media_objects={reference_counts['media_objects']}")
+    if reference_counts["lesson_media"] > 0:
+        reasons.append(f"lesson_media={reference_counts['lesson_media']}")
+
+    if not reasons:
+        return False
+
+    joined_reasons = ",".join(reasons)
+    logger.warning(
+        "MEDIA_CLEANUP_SHARED_STORAGE_DETECTED bucket=%s path=%s reasons=%s",
+        storage_bucket or "<missing>",
+        normalized_path,
+        joined_reasons,
+    )
+    logger.info(
+        "MEDIA_CLEANUP_DELETE_SKIPPED_SHARED_REFERENCE bucket=%s path=%s reasons=%s",
+        storage_bucket or "<missing>",
+        normalized_path,
+        joined_reasons,
+    )
+    return True
+
+
 async def _delete_storage_targets(targets: Iterable[tuple[str, str]]) -> None:
     for bucket, path in sorted(set(targets)):
+        normalized_path = _normalized_storage_key(path)
+        if await _should_skip_storage_delete(
+            storage_bucket=bucket,
+            storage_path=normalized_path,
+        ):
+            continue
         try:
             service = storage_service.get_storage_service(bucket)
-            await service.delete_object(path)
+            await service.delete_object(normalized_path)
         except storage_service.StorageServiceError as exc:
             logger.warning(
                 "Storage delete failed bucket=%s path=%s: %s",
                 bucket,
-                path,
+                normalized_path,
                 exc,
             )
 

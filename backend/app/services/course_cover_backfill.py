@@ -7,11 +7,13 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import unquote, urlparse
+from uuid import uuid4
 
 from ..config import settings
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
 from ..repositories import storage_objects
+from ..services import storage_service
 from ..utils import media_paths
 
 logger = logging.getLogger(__name__)
@@ -258,6 +260,24 @@ def _is_canonical_public_course_cover_path(storage_path: str | None) -> bool:
     if any(normalized.startswith(prefix) for prefix in _CANONICAL_COURSE_COVER_PREFIXES):
         return True
     return False
+
+
+def _legacy_cover_requires_copy(storage_path: str | None) -> bool:
+    normalized = str(storage_path or "").strip().lstrip("/")
+    return normalized.startswith("lessons/")
+
+
+def _build_backfill_course_cover_copy_path(course_id: str, filename: str | None) -> str:
+    safe_name = Path(filename or "").name.strip() or "cover.jpg"
+    path = (
+        Path("media")
+        / "derived"
+        / "cover"
+        / "courses"
+        / course_id
+        / f"{uuid4().hex}_{safe_name}"
+    )
+    return media_paths.validate_new_upload_object_path(path.as_posix())
 
 
 def _select_first_existing_storage_object(
@@ -513,6 +533,25 @@ async def _classify_course(
         )
 
     if not _is_canonical_public_course_cover_path(legacy_path):
+        if _legacy_cover_requires_copy(legacy_path):
+            return CourseCoverBackfillItem(
+                course_id=course_id,
+                course_owner_id=course_owner_id,
+                slug=slug,
+                title=title,
+                classification=CLASS_LEGACY_MIGRATABLE,
+                cover_url=cover_url,
+                cover_media_id=cover_media_id,
+                reason="legacy_lesson_cover_requires_copy",
+                legacy_storage_bucket=settings.media_public_bucket,
+                legacy_storage_path=legacy_path,
+                legacy_content_type=legacy_content_type,
+                legacy_size_bytes=legacy_size_bytes,
+                legacy_object_public=legacy_public,
+                reusable_asset_ids=[],
+                planned_action="create_asset",
+                planned_media_id=None,
+            )
         return CourseCoverBackfillItem(
             course_id=course_id,
             course_owner_id=course_owner_id,
@@ -639,20 +678,25 @@ async def _apply_item(report: CourseCoverBackfillReport, item: CourseCoverBackfi
             else:
                 mutation_action = "skipped_course_already_has_cover_media_id"
         else:
-            reusable_assets = await media_assets_repo.list_ready_course_cover_assets_for_object(
-                course_id=item.course_id,
-                storage_bucket=item.legacy_storage_bucket or settings.media_public_bucket,
-                storage_path=item.legacy_storage_path or "",
-            )
-            exact_assets = [
-                asset_row
-                for asset_row in reusable_assets
-                if str(asset_row.get("storage_bucket") or "").strip() == settings.media_public_bucket
-                and str(asset_row.get("original_object_path") or "").strip() == item.legacy_storage_path
-                and str(asset_row.get("streaming_storage_bucket") or "").strip() == settings.media_public_bucket
-                and str(asset_row.get("streaming_object_path") or "").strip() == item.legacy_storage_path
-                and asset_row.get("id")
-            ]
+            requires_copy = _legacy_cover_requires_copy(item.legacy_storage_path)
+            if requires_copy:
+                reusable_assets: list[dict[str, Any]] = []
+                exact_assets: list[dict[str, Any]] = []
+            else:
+                reusable_assets = await media_assets_repo.list_ready_course_cover_assets_for_object(
+                    course_id=item.course_id,
+                    storage_bucket=item.legacy_storage_bucket or settings.media_public_bucket,
+                    storage_path=item.legacy_storage_path or "",
+                )
+                exact_assets = [
+                    asset_row
+                    for asset_row in reusable_assets
+                    if str(asset_row.get("storage_bucket") or "").strip() == settings.media_public_bucket
+                    and str(asset_row.get("original_object_path") or "").strip() == item.legacy_storage_path
+                    and str(asset_row.get("streaming_storage_bucket") or "").strip() == settings.media_public_bucket
+                    and str(asset_row.get("streaming_object_path") or "").strip() == item.legacy_storage_path
+                    and asset_row.get("id")
+                ]
             if len(exact_assets) == 1:
                 assigned_media_id = str(exact_assets[0]["id"])
                 updated = await courses_repo.set_course_cover_media_id_if_unset(
@@ -670,11 +714,35 @@ async def _apply_item(report: CourseCoverBackfillReport, item: CourseCoverBackfi
                     item.legacy_storage_path or "",
                     item.legacy_content_type,
                 )
+                storage_bucket = item.legacy_storage_bucket or settings.media_public_bucket
+                storage_path = item.legacy_storage_path or ""
+                if requires_copy:
+                    storage_bucket = settings.media_public_bucket
+                    storage_path = _build_backfill_course_cover_copy_path(
+                        item.course_id,
+                        Path(item.legacy_storage_path or "").name or None,
+                    )
+                    await storage_service.copy_object(
+                        source_bucket=item.legacy_storage_bucket or settings.media_public_bucket,
+                        source_path=item.legacy_storage_path or "",
+                        destination_bucket=storage_bucket,
+                        destination_path=storage_path,
+                        content_type=item.legacy_content_type,
+                        cache_seconds=settings.media_public_cache_seconds,
+                    )
+                    logger.info(
+                        "COURSE_COVER_BACKFILL_STORAGE_COPIED course_id=%s source_bucket=%s source_path=%s destination_bucket=%s destination_path=%s",
+                        item.course_id,
+                        item.legacy_storage_bucket or settings.media_public_bucket,
+                        item.legacy_storage_path or "<missing>",
+                        storage_bucket,
+                        storage_path,
+                    )
                 created = await media_assets_repo.create_ready_public_course_cover_asset(
                     owner_id=item.course_owner_id,
                     course_id=item.course_id,
-                    storage_bucket=item.legacy_storage_bucket or settings.media_public_bucket,
-                    storage_path=item.legacy_storage_path or "",
+                    storage_bucket=storage_bucket,
+                    storage_path=storage_path,
                     content_type=item.legacy_content_type,
                     filename=Path(item.legacy_storage_path or "").name or None,
                     size_bytes=item.legacy_size_bytes,

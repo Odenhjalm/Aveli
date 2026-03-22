@@ -272,6 +272,12 @@ async def create_ready_public_course_cover_asset(
     ingest_format: str,
     codec: str | None = None,
 ) -> dict[str, Any] | None:
+    normalized_storage_path = str(storage_path or "").strip().lstrip("/")
+    if normalized_storage_path.startswith("lessons/"):
+        raise ValueError(
+            "course_cover assets must not reuse lesson-owned storage paths"
+        )
+
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -354,12 +360,12 @@ async def create_ready_public_course_cover_asset(
                     owner_id,
                     course_id,
                     ingest_format,
-                    storage_path,
+                    normalized_storage_path,
                     content_type,
                     filename,
                     size_bytes,
                     storage_bucket,
-                    storage_path,
+                    normalized_storage_path,
                     storage_bucket,
                     ingest_format,
                     codec,

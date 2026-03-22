@@ -191,14 +191,35 @@ def _normalize_preview_url_candidate(
     return normalized
 
 
+def _preview_resolution_source(item: dict[str, object]) -> str:
+    if _normalized_preview_string(item.get("media_asset_id")) is not None:
+        return "control_plane"
+    if _normalized_preview_string(item.get("media_id")) is not None:
+        return "legacy"
+    return "unknown"
+
+
+def _format_storage_candidates_for_log(
+    pairs: list[tuple[str, str]],
+) -> str:
+    if not pairs:
+        return "<none>"
+    return ",".join(f"{bucket}:{key}" for bucket, key in pairs)
+
+
 async def _resolve_image_public_fallback_url(
     *,
+    lesson_media_id: str,
     item: dict[str, object],
     base_url: str | None,
 ) -> str | None:
     kind = (_normalized_preview_string(item.get("kind")) or "").lower()
     if kind != "image":
         return None
+
+    source = _preview_resolution_source(item)
+    storage_bucket = _normalized_preview_string(item.get("storage_bucket"))
+    storage_path = _normalized_preview_string(item.get("storage_path"))
 
     for field in (
         "preferredUrl",
@@ -215,12 +236,28 @@ async def _resolve_image_public_fallback_url(
             base_url=base_url,
         )
         if candidate is not None:
+            logger.info(
+                "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
+                lesson_media_id,
+                storage_bucket or "<missing>",
+                storage_path or "<missing>",
+                candidate,
+                f"{source}_row_url",
+                f"trusted_field={field}",
+            )
             return candidate
 
-    storage_path = _normalized_preview_string(item.get("storage_path"))
     if storage_path is None:
+        logger.info(
+            "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
+            lesson_media_id,
+            storage_bucket or "<missing>",
+            "<missing>",
+            "<none>",
+            f"{source}_storage_lookup",
+            "missing_storage_path",
+        )
         return None
-    storage_bucket = _normalized_preview_string(item.get("storage_bucket"))
 
     candidate_pairs = courses_service._storage_candidates(
         storage_bucket=storage_bucket,
@@ -241,6 +278,20 @@ async def _resolve_image_public_fallback_url(
         or not resolved_key
         or resolved_bucket != settings.media_public_bucket
     ):
+        logger.info(
+            "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
+            lesson_media_id,
+            storage_bucket or "<missing>",
+            storage_path,
+            "<none>",
+            f"{source}_storage_lookup",
+            (
+                f"candidate_pairs={_format_storage_candidates_for_log(candidate_pairs)} "
+                f"resolved_bucket={resolved_bucket or '<none>'} "
+                f"resolved_key={resolved_key or '<none>'} "
+                f"bytes_exist={'true' if bytes_exist is True else ('false' if bytes_exist is False else 'unknown')}"
+            ),
+        )
         return None
 
     try:
@@ -250,7 +301,22 @@ async def _resolve_image_public_fallback_url(
     except storage_service.StorageServiceError:
         return None
 
-    return _normalize_preview_url_candidate(public_url, base_url=base_url)
+    normalized_public_url = _normalize_preview_url_candidate(public_url, base_url=base_url)
+    logger.info(
+        "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
+        lesson_media_id,
+        storage_bucket or "<missing>",
+        storage_path,
+        normalized_public_url or "<none>",
+        f"{source}_storage_lookup",
+        (
+            f"candidate_pairs={_format_storage_candidates_for_log(candidate_pairs)} "
+            f"resolved_bucket={resolved_bucket} "
+            f"resolved_key={resolved_key} "
+            f"bytes_exist=true"
+        ),
+    )
+    return normalized_public_url
 
 
 async def _resolve_preview_url(
@@ -336,6 +402,7 @@ async def _build_preview_item(
     )
     if resolved_preview_url is None and kind == "image":
         fallback_preview_url = await _resolve_image_public_fallback_url(
+            lesson_media_id=lesson_media_id,
             item=item,
             base_url=base_url,
         )
@@ -468,6 +535,64 @@ def _build_cover_source_object_path(course_id: str, filename: str) -> str:
     return path.as_posix()
 
 
+async def _copy_cover_source_object(
+    *,
+    course_id: str,
+    source_bucket: str,
+    source_path: str,
+    content_type: str | None,
+    filename: str | None,
+) -> tuple[str, str]:
+    copied_path = _build_cover_source_object_path(course_id, filename or source_path)
+    try:
+        copied_path = media_paths.validate_new_upload_object_path(copied_path)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    normalized_content_type = _normalize_mime(content_type) or _default_cover_content_type(
+        filename or source_path
+    )
+    destination_bucket = storage_service.storage_service.bucket
+    try:
+        await storage_service.copy_object(
+            source_bucket=source_bucket,
+            source_path=source_path,
+            destination_bucket=destination_bucket,
+            destination_path=copied_path,
+            content_type=normalized_content_type,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageObjectNotFoundError as exc:
+        logger.warning(
+            "Cover source disappeared during copy source_bucket=%s source_path=%s course_id=%s",
+            source_bucket,
+            source_path,
+            course_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cover source object is missing from storage",
+        ) from exc
+    except storage_service.StorageServiceError as exc:
+        logger.warning(
+            "Cover source copy failed source_bucket=%s source_path=%s destination_bucket=%s destination_path=%s course_id=%s: %s",
+            source_bucket,
+            source_path,
+            destination_bucket,
+            copied_path,
+            course_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cover source copy unavailable",
+        ) from exc
+    return destination_bucket, copied_path
+
+
 def _lesson_audio_source_prefix(course_id: str, lesson_id: str) -> str:
     return (
         Path("media")
@@ -530,6 +655,11 @@ def _cover_ingest_format(mime_type: str, filename: str) -> str:
         return "webp"
     suffix = Path(filename).suffix.lower().lstrip(".")
     return suffix or "image"
+
+
+def _default_cover_content_type(filename: str | None) -> str:
+    suffix = Path(filename or "").suffix.lower()
+    return _LESSON_IMAGE_CONTENT_TYPE_BY_EXTENSION.get(suffix, "image/jpeg")
 
 
 async def _authorize_lesson_upload(
@@ -1668,9 +1798,19 @@ async def request_cover_from_media(
     )
 
     original_name = media.get("original_name")
+    copied_storage_bucket, copied_storage_path = await _copy_cover_source_object(
+        course_id=course_id,
+        source_bucket=str(storage_bucket),
+        source_path=normalized_storage_path,
+        content_type=content_type or None,
+        filename=original_name or normalized_storage_path,
+    )
+    normalized_content_type = content_type or _default_cover_content_type(
+        original_name or normalized_storage_path
+    )
     ingest_format = _cover_ingest_format(
-        content_type,
-        original_name or normalized_storage_path,
+        normalized_content_type,
+        original_name or copied_storage_path,
     )
     media_asset = _assert_valid_cover_media_asset_row(
         await media_assets_repo.create_media_asset(
@@ -1680,23 +1820,26 @@ async def request_cover_from_media(
         media_type="image",
         purpose="course_cover",
         ingest_format=ingest_format,
-        original_object_path=normalized_storage_path,
-        original_content_type=content_type or None,
+        original_object_path=copied_storage_path,
+        original_content_type=normalized_content_type,
         original_filename=original_name,
         original_size_bytes=None,
-        storage_bucket=storage_bucket,
+        storage_bucket=copied_storage_bucket,
         state="uploaded",
         ),
         course_id=course_id,
-        original_object_path=normalized_storage_path,
+        original_object_path=copied_storage_path,
     )
 
     logger.info(
-        "Queued cover from media user_id=%s course_id=%s media_id=%s source=%s",
+        "Queued cover from media user_id=%s course_id=%s media_id=%s source_bucket=%s source=%s copied_bucket=%s copied=%s",
         user_id,
         course_id,
         media_asset["id"],
+        storage_bucket,
         normalized_storage_path,
+        copied_storage_bucket,
+        copied_storage_path,
     )
     return schemas.CoverMediaResponse(
         media_id=media_asset["id"],

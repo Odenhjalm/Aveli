@@ -103,6 +103,54 @@ String? safeString(Map<dynamic, dynamic>? source, Object key) {
   return normalized.isEmpty ? null : normalized;
 }
 
+Map<String, dynamic>? _courseCoverMap(Object? raw) {
+  if (raw is Map<String, dynamic>) {
+    return raw;
+  }
+  if (raw is Map) {
+    return Map<String, dynamic>.from(raw);
+  }
+  return null;
+}
+
+bool _isStudioControlPlaneCover(Map<dynamic, dynamic>? cover) {
+  final mediaId = safeString(cover, 'media_id') ?? safeString(cover, 'mediaId');
+  final source = safeString(cover, 'source');
+  return mediaId != null && source == 'control_plane';
+}
+
+@visibleForTesting
+bool shouldClearStudioLocalCoverOverride(Map<dynamic, dynamic>? response) {
+  if (response == null) return false;
+  return _isStudioControlPlaneCover(_courseCoverMap(response['cover']));
+}
+
+@visibleForTesting
+String? selectStudioCourseCoverUrl({
+  required String? backendResolvedUrl,
+  required String? backendSource,
+  required String? localOverrideResolvedUrl,
+}) {
+  final normalizedBackendUrl = backendResolvedUrl?.trim();
+  final normalizedLocalOverrideUrl = localOverrideResolvedUrl?.trim();
+  final hasBackendUrl =
+      normalizedBackendUrl != null && normalizedBackendUrl.isNotEmpty;
+  final hasLocalOverrideUrl =
+      normalizedLocalOverrideUrl != null &&
+      normalizedLocalOverrideUrl.isNotEmpty;
+
+  if (backendSource == 'control_plane' && hasBackendUrl) {
+    return normalizedBackendUrl;
+  }
+  if (hasLocalOverrideUrl) {
+    return normalizedLocalOverrideUrl;
+  }
+  if (hasBackendUrl) {
+    return normalizedBackendUrl;
+  }
+  return null;
+}
+
 bool? safeBool(Map<dynamic, dynamic>? source, Object key) {
   if (source == null) return null;
   final value = source[key];
@@ -1104,6 +1152,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _clearLocalCoverOverride() {
+    if (kDebugMode && _localCoverOverride != null) {
+      debugPrint(
+        '[COURSE_COVER_EDITOR_OVERRIDE_STATE] '
+        'action=clear '
+        'local.media_id=${_localCoverMediaId(_localCoverOverride) ?? '<none>'} '
+        'local.source=${safeString(_localCoverOverride, 'source') ?? '<none>'}',
+      );
+    }
     _localCoverOverride = null;
     _replaceLocalCoverPreview(null);
   }
@@ -1128,7 +1184,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     Map<String, dynamic>? localCoverOverride,
   }) {
     final override = localCoverOverride ?? _localCoverOverride;
-    if (override == null) return course;
+    if (override == null || shouldClearStudioLocalCoverOverride(course)) {
+      return course;
+    }
     final projected = Map<String, dynamic>.from(course);
     projected['cover'] = Map<String, dynamic>.from(override);
     return projected;
@@ -1145,6 +1203,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         localCoverOverride: localCoverOverride,
       ),
       ref.read(mediaRepositoryProvider),
+      preferResolvedContract: true,
       debugContext: debugContext,
     );
   }
@@ -1153,7 +1212,104 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     ResolvedCourseCover resolved, {
     Map<String, dynamic>? localCoverOverride,
   }) {
-    return _localCoverResolvedUrl(localCoverOverride) ?? resolved.imageUrl;
+    return selectStudioCourseCoverUrl(
+      backendResolvedUrl: resolved.imageUrl,
+      backendSource: resolved.backendSource,
+      localOverrideResolvedUrl: _localCoverResolvedUrl(localCoverOverride),
+    );
+  }
+
+  String _describeCourseCoverForDebug(Map<String, dynamic>? cover) {
+    if (cover == null || cover.isEmpty) {
+      return 'cover=<absent>';
+    }
+    final mediaId =
+        safeString(cover, 'media_id') ??
+        safeString(cover, 'mediaId') ??
+        '<none>';
+    final state = safeString(cover, 'state') ?? '<none>';
+    final source = safeString(cover, 'source') ?? '<none>';
+    final resolvedUrl =
+        safeString(cover, 'resolved_url') ??
+        safeString(cover, 'resolvedUrl') ??
+        '<none>';
+    return 'cover.media_id=$mediaId cover.state=$state '
+        'cover.source=$source cover.resolved_url=$resolvedUrl';
+  }
+
+  Map<String, dynamic>? _coverMapFromResponse(Map<String, dynamic> response) {
+    return _courseCoverMap(response['cover']);
+  }
+
+  void _logCourseMetaPatchPayload({
+    required String courseId,
+    required Map<String, dynamic> patch,
+  }) {
+    if (!kDebugMode) return;
+    debugPrint(
+      '[COURSE_COVER_META_PATCH] course_id=$courseId '
+      'cover_media_id=${patch['cover_media_id'] ?? '<absent>'} '
+      '${_describeCourseCoverForDebug(_coverMapFromResponse(patch))}',
+    );
+  }
+
+  void _logCourseMetaPatchResponse({
+    required String courseId,
+    required Map<String, dynamic> response,
+  }) {
+    if (!kDebugMode) return;
+    debugPrint(
+      '[COURSE_COVER_META_PATCH_RESPONSE] course_id=$courseId '
+      'cover_media_id=${response['cover_media_id'] ?? '<absent>'} '
+      '${_describeCourseCoverForDebug(_coverMapFromResponse(response))}',
+    );
+  }
+
+  void _logCourseMetaReloadResponse({
+    required String courseId,
+    required Map<String, dynamic> response,
+  }) {
+    if (!kDebugMode) return;
+    debugPrint(
+      '[COURSE_COVER_META_RELOAD] course_id=$courseId '
+      'cover_media_id=${response['cover_media_id'] ?? '<absent>'} '
+      '${_describeCourseCoverForDebug(_coverMapFromResponse(response))}',
+    );
+  }
+
+  void _logCourseCoverOverrideDecision({
+    required String courseId,
+    required Map<String, dynamic> response,
+    required bool willClearLocalOverride,
+  }) {
+    if (!kDebugMode) return;
+    final localOverride = _localCoverOverride;
+    final responseCover = _coverMapFromResponse(response);
+    if (localOverride == null) {
+      debugPrint(
+        '[COURSE_COVER_EDITOR_OVERRIDE_STATE] course_id=$courseId '
+        'action=retain_check result=no_local_override '
+        '${_describeCourseCoverForDebug(responseCover)}',
+      );
+      return;
+    }
+    if (willClearLocalOverride) {
+      debugPrint(
+        '[COURSE_COVER_EDITOR_OVERRIDE_STATE] course_id=$courseId '
+        'action=retain_check result=clear_local_override '
+        'local.media_id=${_localCoverMediaId(localOverride) ?? '<none>'} '
+        'local.source=${safeString(localOverride, 'source') ?? '<none>'} '
+        '${_describeCourseCoverForDebug(responseCover)}',
+      );
+      return;
+    }
+    debugPrint(
+      '[COURSE_COVER_EDITOR_OVERRIDE_STATE] course_id=$courseId '
+      'action=retain_check result=retained_local_override '
+      'local.media_id=${_localCoverMediaId(localOverride) ?? '<none>'} '
+      'local.source=${safeString(localOverride, 'source') ?? '<none>'} '
+      '${_describeCourseCoverForDebug(responseCover)}',
+    );
   }
 
   void _logEditorCoverOverride({
@@ -1378,6 +1534,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         courseId: courseId,
       )) {
         return;
+      }
+      final shouldClearLocalOverride = shouldClearStudioLocalCoverOverride(map);
+      _logCourseMetaReloadResponse(courseId: courseId, response: map);
+      _logCourseCoverOverrideDecision(
+        courseId: courseId,
+        response: map,
+        willClearLocalOverride: shouldClearLocalOverride,
+      );
+      if (shouldClearLocalOverride) {
+        _clearLocalCoverOverride();
       }
       _courseTitleCtrl.text = safeString(map, 'title') ?? '';
       _courseSlugCtrl.text = safeString(map, 'slug') ?? '';
@@ -6100,6 +6266,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (localCoverMediaId != null) {
       patch['cover_media_id'] = localCoverMediaId;
     }
+    _logCourseMetaPatchPayload(courseId: courseId, patch: patch);
 
     final requestId = ++_saveCourseRequestId;
     setState(() => _savingCourseMeta = true);
@@ -6112,6 +6279,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
+      _logCourseMetaPatchResponse(courseId: courseId, response: updated);
       final map = Map<String, dynamic>.from(updated);
       setState(() {
         _courses = _courses

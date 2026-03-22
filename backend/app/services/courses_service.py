@@ -917,6 +917,51 @@ def _attach_media_robustness(
     item["resolvable_for_student"] = resolvable
 
 
+def _lesson_image_source(item: Mapping[str, Any]) -> str:
+    if item.get("media_asset_id"):
+        return "control_plane"
+    if item.get("media_id"):
+        return "legacy"
+    return "unknown"
+
+
+def _format_storage_candidates_for_log(
+    pairs: Sequence[tuple[str, str]],
+) -> str:
+    if not pairs:
+        return "<none>"
+    return ",".join(f"{bucket}:{key}" for bucket, key in pairs)
+
+
+def _log_editor_image_resolution(
+    item: Mapping[str, Any],
+    *,
+    resolved_url: str | None,
+    candidate_pairs: Sequence[tuple[str, str]],
+    resolved_bucket: str | None,
+    resolved_key: str | None,
+    bytes_exist: bool | None,
+) -> None:
+    storage_path = item.get("storage_path")
+    logger.info(
+        "LESSON_IMAGE_EDITOR_READ lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalized_path=%s candidate_pairs=%s resolved_bucket=%s resolved_key=%s bytes_exist=%s",
+        str(item.get("id") or "").strip() or "<missing>",
+        str(item.get("storage_bucket") or "").strip() or "<missing>",
+        str(storage_path or "").strip() or "<missing>",
+        str(resolved_url or "").strip() or "<none>",
+        _lesson_image_source(item),
+        _normalize_storage_path(str(storage_path)) if storage_path else "<missing>",
+        _format_storage_candidates_for_log(candidate_pairs),
+        resolved_bucket or "<none>",
+        resolved_key or "<none>",
+        (
+            "true"
+            if bytes_exist is True
+            else ("false" if bytes_exist is False else "unknown")
+        ),
+    )
+
+
 async def fetch_course(
     *,
     course_id: str | None = None,
@@ -1246,12 +1291,48 @@ async def list_lesson_media(
     if editor_mode:
         for item in items:
             if str(item.get("kind") or "").strip().lower() == "image":
+                storage_path = item.get("storage_path")
+                storage_bucket = item.get("storage_bucket")
+                candidate_pairs_for_log: list[tuple[str, str]] = []
+                resolved_bucket_for_log: str | None = None
+                resolved_key_for_log: str | None = None
+                bytes_exist_for_log: bool | None = None
+                if storage_path:
+                    candidate_pairs_for_log = _storage_candidates(
+                        storage_bucket=(
+                            str(storage_bucket) if storage_bucket is not None else None
+                        ),
+                        storage_path=str(storage_path),
+                    )
+                    (
+                        resolved_bucket_for_log,
+                        resolved_key_for_log,
+                        _,
+                        bytes_exist_for_log,
+                    ) = _best_storage_candidate(
+                        storage_bucket=(
+                            str(storage_bucket) if storage_bucket is not None else None
+                        ),
+                        storage_path=str(storage_path),
+                        existence=existence,
+                        storage_table_available=storage_table_available,
+                    )
                 preview_candidate = item.get("download_url") or item.get("playback_url")
                 if (
                     isinstance(preview_candidate, str)
                     and _is_editor_safe_image_fallback_url(preview_candidate)
                 ):
                     item["preferredUrl"] = preview_candidate
+                _log_editor_image_resolution(
+                    item,
+                    resolved_url=(
+                        str(item.get("preferredUrl") or "").strip() or None
+                    ),
+                    candidate_pairs=candidate_pairs_for_log,
+                    resolved_bucket=resolved_bucket_for_log,
+                    resolved_key=resolved_key_for_log,
+                    bytes_exist=bytes_exist_for_log,
+                )
             item.pop("playback_url", None)
             item.pop("download_url", None)
             item.pop("signed_url", None)
