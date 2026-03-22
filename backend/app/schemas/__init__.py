@@ -1185,6 +1185,7 @@ class StudioCourseUpdate(BaseModel):
     slug: str | None = None
     description: str | None = None
     video_url: str | None = None
+    cover_media_id: UUID | None = None
     is_free_intro: bool | None = None
     journey_step: CourseJourneyStep | None = None
     is_published: bool | None = None

@@ -76,6 +76,21 @@ String? _normalizeVideoPlaybackUrl(String? raw) {
   return lesson_pipeline.normalizeVideoPlaybackUrl(raw);
 }
 
+@visibleForTesting
+String selectCourseCoverRenderSource({
+  required String? resolvedUrl,
+  required Uint8List? localPreviewBytes,
+}) {
+  final normalizedResolvedUrl = resolvedUrl?.trim();
+  if (normalizedResolvedUrl != null && normalizedResolvedUrl.isNotEmpty) {
+    return 'resolved_url';
+  }
+  if (localPreviewBytes != null && localPreviewBytes.isNotEmpty) {
+    return 'local_bytes';
+  }
+  return 'placeholder';
+}
+
 String? safeString(Map<dynamic, dynamic>? source, Object key) {
   if (source == null) return null;
   final value = source[key];
@@ -447,6 +462,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _coverActionRequestId = 0;
   String? _coverActionCourseId;
   Timer? _coverPollTimer;
+  String? _lastCourseCoverRenderSignature;
 
   ProviderSubscription<List<UploadJob>>? _uploadSubscription;
   bool _lessonEditorFocusRestoreScheduled = false;
@@ -1064,6 +1080,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  String? _localCoverMediaId([Map<String, dynamic>? cover]) {
+    final activeCover = cover ?? _localCoverOverride;
+    return safeString(activeCover, 'media_id') ??
+        safeString(activeCover, 'mediaId');
+  }
+
   void _disposeCoverPreview(CoverUploadPreview? preview) {
     preview?.dispose();
   }
@@ -1142,6 +1164,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     debugPrint(
       '[COURSE_COVER_EDITOR_OVERRIDE] media_id=$mediaId active=$active',
     );
+  }
+
+  void _logCourseCoverRender({
+    required String source,
+    String? resolvedUrl,
+    required bool hasLocalPreview,
+  }) {
+    if (!kDebugMode) return;
+    final signature =
+        '$source|${resolvedUrl ?? '<none>'}|${hasLocalPreview ? '1' : '0'}';
+    if (_lastCourseCoverRenderSignature == signature) {
+      return;
+    }
+    _lastCourseCoverRenderSignature = signature;
+    debugPrint('[COURSE_COVER_RENDER] using=$source');
   }
 
   Future<String?> _bestAvailableLessonMediaCoverPreviewUrl(
@@ -3448,12 +3485,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     final bodyStyle = theme.textTheme.bodySmall;
     final localCoverPreviewBytes = _localCoverPreview?.bytes;
-    final coverPreviewUrl = _courseCoverPreviewUrl?.trim();
     final hasLocalPreview =
         localCoverPreviewBytes != null && localCoverPreviewBytes.isNotEmpty;
-    final hasCover =
-        hasLocalPreview ||
-        (coverPreviewUrl != null && coverPreviewUrl.isNotEmpty);
+    final resolvedCoverUrl =
+        _localCoverResolvedUrl() ??
+        _normalizedCoverPreviewUrl(_courseCoverPreviewUrl) ??
+        _normalizedCoverPreviewUrl(_courseCoverPath);
+    final renderSource = selectCourseCoverRenderSource(
+      resolvedUrl: resolvedCoverUrl,
+      localPreviewBytes: localCoverPreviewBytes,
+    );
+    final hasCover = renderSource != 'placeholder';
     final status = _coverPipelineState;
     final statusText = status == null ? null : _coverStatusLabel(status);
     final coverPipelineError = _coverPipelineError?.trim();
@@ -3482,16 +3524,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       const placeholder = Center(
                         child: Icon(Icons.image_outlined, size: 28),
                       );
-                      if (!hasCover) {
+                      _logCourseCoverRender(
+                        source: renderSource,
+                        resolvedUrl: resolvedCoverUrl,
+                        hasLocalPreview: hasLocalPreview,
+                      );
+                      if (renderSource == 'placeholder') {
                         return placeholder;
                       }
-                      if (hasLocalPreview) {
+                      if (renderSource == 'local_bytes') {
                         return Stack(
                           fit: StackFit.expand,
                           children: [
                             placeholder,
                             Image.memory(
-                              localCoverPreviewBytes,
+                              localCoverPreviewBytes!,
                               fit: BoxFit.cover,
                               gaplessPlayback: true,
                               filterQuality: SafeMedia.filterQuality(
@@ -3515,23 +3562,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         max: 600,
                       );
 
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          placeholder,
-                          Image.network(
-                            coverPreviewUrl!,
-                            fit: BoxFit.cover,
-                            filterQuality: SafeMedia.filterQuality(
-                              full: FilterQuality.high,
-                            ),
-                            cacheWidth: cacheWidth,
-                            cacheHeight: cacheHeight,
-                            gaplessPlayback: true,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ],
+                      return Image.network(
+                        resolvedCoverUrl!,
+                        fit: BoxFit.cover,
+                        filterQuality: SafeMedia.filterQuality(
+                          full: FilterQuality.high,
+                        ),
+                        cacheWidth: cacheWidth,
+                        cacheHeight: cacheHeight,
+                        gaplessPlayback: true,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const SizedBox.shrink(),
                       );
                     },
                   ),
@@ -6054,6 +6095,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     };
     if (slug.isNotEmpty) {
       patch['slug'] = slug;
+    }
+    final localCoverMediaId = _localCoverMediaId();
+    if (localCoverMediaId != null) {
+      patch['cover_media_id'] = localCoverMediaId;
     }
 
     final requestId = ++_saveCourseRequestId;

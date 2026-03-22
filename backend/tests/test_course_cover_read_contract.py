@@ -274,7 +274,83 @@ async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypat
     course_disabled = _course()
     monkeypatch.delenv("COURSE_COVER_RESOLVED_READ_ENABLED", raising=False)
     await courses_service.attach_course_cover_read_contract(course_disabled)
-    assert "cover" not in course_disabled
+    assert course_disabled["cover"]["source"] == "control_plane"
+
+    legacy_only = _course(cover_media_id=None, cover_url=LEGACY_URL)
+    await courses_service.attach_course_cover_read_contract(legacy_only)
+    assert "cover" not in legacy_only
+
+
+async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypatch):
+    asset = _asset()
+    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): True})
+
+    async def fake_get_course(*, course_id: str | None = None, slug: str | None = None):
+        assert course_id == COURSE_ID
+        assert slug is None
+        return _course()
+
+    async def fake_get_media_asset(media_id: str):
+        assert media_id == MEDIA_ID
+        return asset
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "get_course",
+        fake_get_course,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_media_asset",
+        fake_get_media_asset,
+        raising=True,
+    )
+    monkeypatch.delenv("COURSE_COVER_RESOLVED_READ_ENABLED", raising=False)
+
+    course = await courses_service.fetch_course(course_id=COURSE_ID)
+
+    assert course is not None
+    assert course["cover"]["media_id"] == MEDIA_ID
+    assert course["cover"]["source"] == "control_plane"
+    assert (
+        course["cover"]["resolved_url"]
+        == f"https://storage.local/public-media/{DERIVED_PATH}"
+    )
+
+
+async def test_list_public_courses_includes_cover_when_cover_media_id_resolves(
+    monkeypatch,
+):
+    asset = _asset()
+    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): True})
+
+    async def fake_list_public_courses(**kwargs):
+        return [_course()]
+
+    async def fake_get_media_asset(media_id: str):
+        assert media_id == MEDIA_ID
+        return asset
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "list_public_courses",
+        fake_list_public_courses,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_media_asset",
+        fake_get_media_asset,
+        raising=True,
+    )
+    monkeypatch.delenv("COURSE_COVER_RESOLVED_READ_ENABLED", raising=False)
+
+    courses = await courses_service.list_public_courses()
+
+    assert len(courses) == 1
+    assert courses[0]["cover"]["media_id"] == MEDIA_ID
+    assert courses[0]["cover"]["source"] == "control_plane"
 
 
 async def test_courses_list_response_includes_cover_when_present(

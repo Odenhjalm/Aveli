@@ -414,6 +414,43 @@ async def test_cover_clear_deletes_assets(async_client, monkeypatch):
         await cleanup_user(user_id)
 
 
+async def test_studio_course_update_persists_cover_media_id(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+
+        source_path = f"media/source/cover/courses/{course_id}/persisted.jpg"
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format="jpeg",
+            original_object_path=source_path,
+            original_content_type="image/jpeg",
+            original_filename="persisted.jpg",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="uploaded",
+        )
+        assert asset
+
+        resp = await async_client.patch(
+            f"/studio/courses/{course_id}",
+            headers=headers,
+            json={"cover_media_id": str(asset["id"])},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["cover_media_id"] == str(asset["id"])
+
+        meta = await get_course_cover_fields(course_id)
+        assert meta.get("cover_media_id") == str(asset["id"])
+        assert meta.get("cover_url") is None
+    finally:
+        await cleanup_user(user_id)
+
+
 async def test_worker_promotion_updates_cover_media_id_without_touching_cover_url(
     async_client, caplog
 ):

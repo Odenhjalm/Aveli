@@ -506,6 +506,9 @@ async def update_course(
         if column in data:
             updates.append((column, data[column]))
 
+    if "cover_media_id" in data:
+        updates.append(("cover_media_id", data.get("cover_media_id")))
+
     if "is_free_intro" in data:
         updates.append(("is_free_intro", _coerce_bool(data.get("is_free_intro"))))
     if "price_amount_cents" in data or "price_cents" in data:
