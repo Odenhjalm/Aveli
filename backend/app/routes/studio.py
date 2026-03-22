@@ -180,6 +180,7 @@ def _recording_from_row(row: Dict[str, Any]) -> schemas.SeminarRecordingResponse
 @router.get("/courses")
 async def studio_courses(current: TeacherUser):
     rows = await models.teacher_courses(current["id"])
+    await courses_service.warn_course_cover_contracts(rows)
     for row in rows:
         media_signer.attach_cover_links(row)
     return {"items": rows}
@@ -1355,6 +1356,7 @@ async def course_meta(course_id: str, current: TeacherUser):
     row = await models.get_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
+    await courses_service.warn_course_cover_contracts(row)
     return row
 
 

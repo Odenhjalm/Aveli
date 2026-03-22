@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from .. import models
+from ..services import courses_service
 from ..utils import media_signer
 
 router = APIRouter(prefix="/landing", tags=["landing"])
@@ -17,6 +18,7 @@ async def intro_courses():
 @router.get("/popular-courses")
 async def popular_courses():
     rows = await models.list_popular_courses()
+    await courses_service.warn_course_cover_contracts(rows)
     for row in rows:
         media_signer.attach_cover_links(row)
     return {"items": rows}

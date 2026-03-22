@@ -1,5 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'package:aveli/shared/utils/course_cover_contract.dart';
+
 part 'course.g.dart';
 
 @JsonSerializable(fieldRename: FieldRename.snake, explicitToJson: true)
@@ -11,6 +13,7 @@ class Course {
     this.description,
     this.coverUrl,
     this.coverMediaId,
+    this.cover,
     this.videoUrl,
     this.isFreeIntro = false,
     this.isPublished = false,
@@ -26,6 +29,7 @@ class Course {
   final String? description;
   final String? coverUrl;
   final String? coverMediaId;
+  final CourseCoverData? cover;
   final String? videoUrl;
 
   @JsonKey(defaultValue: false)

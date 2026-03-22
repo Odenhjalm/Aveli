@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
 import 'course_access_api.dart';
@@ -447,6 +448,7 @@ class CourseSummary {
     this.description,
     this.coverUrl,
     this.coverMediaId,
+    this.cover,
     this.videoUrl,
     this.branch,
     this.stepLevel,
@@ -464,6 +466,7 @@ class CourseSummary {
   final String? description;
   final String? coverUrl;
   final String? coverMediaId;
+  final CourseCoverData? cover;
   final String? videoUrl;
   final String? branch;
   final CourseJourneyStep? stepLevel;
@@ -481,6 +484,11 @@ class CourseSummary {
     description: json['description'] as String?,
     coverUrl: json['cover_url'] as String?,
     coverMediaId: json['cover_media_id'] as String?,
+    cover: json['cover'] is Map
+        ? CourseCoverData.fromJson(
+            Map<String, dynamic>.from(json['cover'] as Map),
+          )
+        : null,
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
     stepLevel: courseJourneyStepFromApi(json['step_level']),

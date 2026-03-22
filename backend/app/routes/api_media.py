@@ -79,6 +79,52 @@ def _normalized_preview_string(value: object | None) -> str | None:
     return normalized or None
 
 
+def _assert_valid_cover_media_asset_row(
+    media_asset: dict[str, object] | None,
+    *,
+    course_id: str,
+    original_object_path: str,
+) -> dict[str, object]:
+    if not media_asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create cover media record",
+        )
+
+    media_id = str(media_asset.get("id") or "").strip()
+    persisted_course_id = str(media_asset.get("course_id") or "").strip()
+    persisted_object_path = str(media_asset.get("original_object_path") or "").strip()
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    purpose = str(media_asset.get("purpose") or "").strip().lower()
+    state = str(media_asset.get("state") or "").strip().lower()
+
+    if (
+        not media_id
+        or persisted_course_id != course_id
+        or persisted_object_path != original_object_path
+        or media_type != "image"
+        or purpose != "course_cover"
+        or state != "uploaded"
+    ):
+        logger.error(
+            "Invalid cover media asset contract course_id=%s media_id=%s "
+            "persisted_course_id=%s persisted_object_path=%s media_type=%s purpose=%s state=%s",
+            course_id,
+            media_id or "<missing>",
+            persisted_course_id or "<missing>",
+            persisted_object_path or "<missing>",
+            media_type or "<missing>",
+            purpose or "<missing>",
+            state or "<missing>",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid cover media record created",
+        )
+
+    return media_asset
+
+
 def _preview_file_name(item: dict[str, object]) -> str | None:
     explicit_file_name = _normalized_preview_string(item.get("file_name") or item.get("fileName"))
     if explicit_file_name:
@@ -513,6 +559,50 @@ async def _storage_object_exists(
     except storage_service.StorageObjectNotFoundError:
         return False
     return True
+
+
+async def _validate_cover_source_storage_reference(
+    *,
+    storage_bucket: str,
+    storage_path: str,
+) -> str:
+    try:
+        normalized_path = media_paths.normalize_storage_path(storage_bucket, storage_path)
+    except RuntimeError as exc:
+        logger.warning(
+            "Cover source rejected because storage_path contains bucket prefix bucket=%s path=%s",
+            storage_bucket,
+            storage_path,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cover source storage_path must not include bucket prefix",
+        ) from exc
+
+    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
+        [(storage_bucket, normalized_path)]
+    )
+    if not storage_table_available:
+        logger.warning(
+            "Cover source rejected because storage catalog is unavailable bucket=%s path=%s",
+            storage_bucket,
+            normalized_path,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cover source object could not be verified in storage catalog",
+        )
+    if not existence.get((storage_bucket, normalized_path), False):
+        logger.warning(
+            "Cover source rejected because storage object is missing bucket=%s path=%s",
+            storage_bucket,
+            normalized_path,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cover source object is missing from storage",
+        )
+    return normalized_path
 
 
 async def _wait_for_storage_object(
@@ -1261,7 +1351,8 @@ async def request_cover_upload_url(
             detail="Storage signing unavailable",
         ) from exc
 
-    media_asset = await media_assets_repo.create_media_asset(
+    media_asset = _assert_valid_cover_media_asset_row(
+        await media_assets_repo.create_media_asset(
         owner_id=user_id,
         course_id=course_id,
         lesson_id=None,
@@ -1274,12 +1365,10 @@ async def request_cover_upload_url(
         original_size_bytes=payload.size_bytes,
         storage_bucket=storage_service.storage_service.bucket,
         state="uploaded",
+        ),
+        course_id=course_id,
+        original_object_path=upload.path,
     )
-    if not media_asset:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create cover media record",
-        )
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
     logger.info(
@@ -1341,35 +1430,41 @@ async def request_cover_from_media(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Media missing storage path"
         )
     storage_bucket = media.get("storage_bucket") or settings.media_source_bucket
+    normalized_storage_path = await _validate_cover_source_storage_reference(
+        storage_bucket=str(storage_bucket),
+        storage_path=str(storage_path),
+    )
 
     original_name = media.get("original_name")
-    ingest_format = _cover_ingest_format(content_type, original_name or storage_path)
-    media_asset = await media_assets_repo.create_media_asset(
+    ingest_format = _cover_ingest_format(
+        content_type,
+        original_name or normalized_storage_path,
+    )
+    media_asset = _assert_valid_cover_media_asset_row(
+        await media_assets_repo.create_media_asset(
         owner_id=user_id,
         course_id=course_id,
         lesson_id=None,
         media_type="image",
         purpose="course_cover",
         ingest_format=ingest_format,
-        original_object_path=storage_path,
+        original_object_path=normalized_storage_path,
         original_content_type=content_type or None,
         original_filename=original_name,
         original_size_bytes=None,
         storage_bucket=storage_bucket,
         state="uploaded",
+        ),
+        course_id=course_id,
+        original_object_path=normalized_storage_path,
     )
-    if not media_asset:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create cover media record",
-        )
 
     logger.info(
         "Queued cover from media user_id=%s course_id=%s media_id=%s source=%s",
         user_id,
         course_id,
         media_asset["id"],
-        storage_path,
+        normalized_storage_path,
     )
     return schemas.CoverMediaResponse(
         media_id=media_asset["id"],

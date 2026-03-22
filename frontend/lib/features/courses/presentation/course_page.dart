@@ -15,6 +15,7 @@ import 'package:aveli/features/paywall/presentation/paywall_gate.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/paywall/application/pricing_providers.dart';
 import 'package:aveli/features/paywall/data/course_pricing_api.dart';
+import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -56,18 +57,10 @@ class _CoursePageState extends ConsumerState<CoursePage> {
             ? detail.course.slug!
             : widget.slug;
         final currentUserId = ref.watch(authControllerProvider).profile?.id;
-        final coverPath = (detail.course.coverUrl ?? '').trim();
-        final coverUrl = coverPath.isEmpty
-            ? null
-            : () {
-                try {
-                  return ref
-                      .read(mediaRepositoryProvider)
-                      .resolveDownloadUrl(coverPath);
-                } catch (_) {
-                  return null;
-                }
-              }();
+        final cover = resolveCourseSummaryCover(
+          detail.course,
+          ref.read(mediaRepositoryProvider),
+        );
         final pricingAsync = ref.watch(coursePricingProvider(slug));
         final buyButton = _buildBuyButton(
           courseSlug: slug,
@@ -76,7 +69,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         );
         return _CourseContent(
           detail: detail,
-          coverUrl: coverUrl,
+          coverUrl: cover.imageUrl,
           buyButton: buyButton,
           onEnroll: () => _handleEnroll(detail),
           onRefreshOrderStatus: () async {

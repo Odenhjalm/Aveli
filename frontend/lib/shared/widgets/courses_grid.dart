@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -14,10 +16,12 @@ class CoursesGrid extends StatelessWidget {
   final List<CourseSummary> courses;
   final Map<String, double>? progress; // course_id -> 0..1
   final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
   const CoursesGrid({
     super.key,
     required this.courses,
     required this.assets,
+    required this.mediaRepository,
     this.progress,
   });
 
@@ -40,7 +44,8 @@ class CoursesGrid extends StatelessWidget {
           ),
           itemBuilder: (_, i) {
             final c = courses[i];
-            final cover = c.resolvedCoverUrl ?? '';
+            final resolvedCover = resolveCourseSummaryCover(c, mediaRepository);
+            final cover = resolvedCover.imageUrl ?? '';
             final title = c.title;
             final id = c.id;
             final pct = (progress?[id] ?? 0.0).clamp(0.0, 1.0);

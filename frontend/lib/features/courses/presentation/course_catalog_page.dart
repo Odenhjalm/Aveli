@@ -13,6 +13,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
@@ -615,11 +616,11 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(16);
     final slug = (course.slug ?? '').trim();
-    final resolvedCover = _resolveCoverUrl(mediaRepository, course.coverUrl);
+    final resolvedCover = resolveCourseSummaryCover(course, mediaRepository);
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
       slug: slug,
-      coverUrl: resolvedCover,
+      coverUrl: resolvedCover.imageUrl,
     );
     final imageProvider = coverProvider ?? AppImages.logo;
     final isFallbackLogo = coverProvider == null;
@@ -772,11 +773,11 @@ class _JourneyCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final slug = (course.slug ?? '').trim();
-    final resolvedCover = _resolveCoverUrl(mediaRepository, course.coverUrl);
+    final resolvedCover = resolveCourseSummaryCover(course, mediaRepository);
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
       slug: slug,
-      coverUrl: resolvedCover,
+      coverUrl: resolvedCover.imageUrl,
     );
     final imageProvider = coverProvider ?? AppImages.logo;
     final isFallbackLogo = coverProvider == null;
@@ -1019,14 +1020,5 @@ class _ActAveliProSection extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-String? _resolveCoverUrl(MediaRepository repository, String? path) {
-  if (path == null || path.trim().isEmpty) return null;
-  try {
-    return repository.resolveDownloadUrl(path);
-  } catch (_) {
-    return null;
   }
 }

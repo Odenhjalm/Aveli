@@ -15,6 +15,7 @@ import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
+import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/course_level_sort.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
@@ -320,13 +321,13 @@ class CoursesShowcaseSection extends ConsumerWidget {
     MediaRepository mediaRepository,
   ) {
     for (final course in courses) {
-      final cover = course['cover_url'] as String?;
-      if (cover == null || cover.isEmpty) continue;
-      try {
-        course['cover_url'] = mediaRepository.resolveDownloadUrl(cover);
-      } catch (_) {
-        course['cover_url'] = null;
-      }
+      final resolved = resolveCourseMapCover(
+        course,
+        mediaRepository,
+        debugContext:
+            'CoursesShowcase:${(course['slug'] as String?) ?? (course['id'] as String?) ?? 'unknown'}',
+      );
+      course['cover_url'] = resolved.imageUrl;
     }
     return courses;
   }
@@ -354,6 +355,13 @@ class CoursesShowcaseSection extends ConsumerWidget {
             'step_level': course.stepLevel?.name,
             'price_amount_cents': course.priceCents,
             'cover_url': course.coverUrl,
+            if (course.cover != null)
+              'cover': {
+                'media_id': course.cover!.mediaId,
+                'state': course.cover!.state,
+                'resolved_url': course.cover!.resolvedUrl,
+                'source': course.cover!.source,
+              },
           };
         })
         .toList(growable: false);

@@ -7,6 +7,8 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
@@ -40,6 +42,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final postsAsync = ref.watch(postsProvider);
     final feedPublisher = ref.watch(postPublisherProvider);
     final assets = ref.watch(backendAssetResolverProvider);
+    final mediaRepository = ref.watch(mediaRepositoryProvider);
 
     final progressAsync = coursesAsync.when<AsyncValue<Map<String, double>>>(
       data: (courses) {
@@ -112,6 +115,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               coursesAsync: coursesAsync,
               progressAsync: progressAsync,
               assets: assets,
+              mediaRepository: mediaRepository,
             ),
           ],
         ),
@@ -333,11 +337,13 @@ class _CoursesCard extends StatelessWidget {
     required this.coursesAsync,
     required this.progressAsync,
     required this.assets,
+    required this.mediaRepository,
   });
 
   final AsyncValue<List<CourseSummary>> coursesAsync;
   final AsyncValue<Map<String, double>> progressAsync;
   final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -384,6 +390,7 @@ class _CoursesCard extends StatelessWidget {
                   courses: courses,
                   progress: progress,
                   assets: assets,
+                  mediaRepository: mediaRepository,
                 ),
               );
             },

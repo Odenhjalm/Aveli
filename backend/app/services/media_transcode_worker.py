@@ -23,6 +23,7 @@ class SourceNotReadyError(RuntimeError):
 
 
 _worker_task: asyncio.Task[None] | None = None
+_logged_missing_source_assets: set[str] = set()
 
 
 def _now() -> datetime:
@@ -178,6 +179,7 @@ async def stop_worker() -> None:
 async def _poll_loop() -> None:
     while True:
         try:
+            await _log_skipped_missing_source_assets()
             batch = await media_assets_repo.fetch_and_lock_pending_media_assets(
                 limit=settings.media_transcode_batch_size,
                 max_attempts=settings.media_transcode_max_attempts,
@@ -197,6 +199,29 @@ async def _poll_loop() -> None:
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("Media transcode poller error: %s", exc)
             await asyncio.sleep(settings.media_transcode_poll_interval_seconds)
+
+
+async def _log_skipped_missing_source_assets() -> None:
+    missing_assets = await media_assets_repo.list_pending_media_assets_missing_source(
+        limit=settings.media_transcode_batch_size,
+        max_attempts=settings.media_transcode_max_attempts,
+    )
+    for asset in missing_assets:
+        media_id = str(asset.get("id") or "").strip()
+        if not media_id or media_id in _logged_missing_source_assets:
+            continue
+        _logged_missing_source_assets.add(media_id)
+        logger.warning(
+            "Media transcode skipped asset because source object is missing "
+            "media_id=%s purpose=%s media_type=%s bucket=%s path=%s state=%s attempts=%s",
+            media_id,
+            str(asset.get("purpose") or "").strip() or "<missing>",
+            str(asset.get("media_type") or "").strip() or "<missing>",
+            str(asset.get("storage_bucket") or "").strip() or "<missing>",
+            str(asset.get("original_object_path") or "").strip() or "<missing>",
+            str(asset.get("state") or "").strip() or "<missing>",
+            int(asset.get("processing_attempts") or 0),
+        )
 
 
 def _uncancel_current_task() -> None:

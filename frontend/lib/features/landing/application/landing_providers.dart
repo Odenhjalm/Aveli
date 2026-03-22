@@ -8,6 +8,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart'
     as studio;
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/shared/utils/course_cover_resolver.dart';
 
 class LandingSectionState {
   const LandingSectionState({
@@ -64,15 +65,13 @@ Future<LandingSectionState> _fetchLandingSection(
     final items = _castList(response['items'])
         .map((item) {
           final map = Map<String, dynamic>.from(item);
-          final cover = map['cover_url'] as String?;
-          if (cover != null && cover.isNotEmpty) {
-            try {
-              final resolved = mediaRepository.resolveDownloadUrl(cover);
-              map['cover_url'] = resolved;
-            } catch (_) {
-              map['cover_url'] = null;
-            }
-          }
+          final resolved = resolveCourseMapCover(
+            map,
+            mediaRepository,
+            debugContext:
+                'Landing:$path:${(map['slug'] as String?) ?? (map['id'] as String?) ?? 'unknown'}',
+          );
+          map['cover_url'] = resolved.imageUrl;
           return map;
         })
         .toList(growable: false);

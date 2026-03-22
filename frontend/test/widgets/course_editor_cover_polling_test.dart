@@ -122,6 +122,9 @@ void main() {
         },
       ],
     );
+    when(
+      () => studioRepo.fetchLessonMediaPreviews(any()),
+    ).thenAnswer((_) async => <String, Map<String, dynamic>>{});
 
     when(
       () => mediaRepo.requestCoverFromLessonMedia(
@@ -172,7 +175,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    final coverButton = find.byTooltip('Använd som kursbild');
+    final coverButton = find.byWidgetPredicate(
+      (widget) =>
+          widget is IconButton && widget.tooltip == 'Använd som kursbild',
+      description: 'IconButton(tooltip: Använd som kursbild)',
+    );
     await tester.ensureVisible(coverButton);
     await tester.tap(coverButton);
     await tester.pump();

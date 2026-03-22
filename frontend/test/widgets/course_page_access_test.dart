@@ -1,13 +1,18 @@
+import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/features/courses/presentation/course_page.dart';
 import 'package:aveli/features/paywall/application/pricing_providers.dart';
 import 'package:aveli/features/paywall/data/course_pricing_api.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +20,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
+
+class _FakeTokenStorage implements TokenStorage {
+  @override
+  Future<void> clear() async {}
+
+  @override
+  Future<String?> readAccessToken() async => null;
+
+  @override
+  Future<String?> readRefreshToken() async => null;
+
+  @override
+  Future<void> saveTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {}
+
+  @override
+  Future<void> updateAccessToken(String accessToken) async {}
+}
 
 class _TestAuthController extends AuthController {
   _TestAuthController({
@@ -27,6 +52,10 @@ class _TestAuthController extends AuthController {
 }
 
 void main() {
+  const resolvedContractUiEnabled = bool.fromEnvironment(
+    'COURSE_COVER_RESOLVED_UI_ENABLED',
+    defaultValue: false,
+  );
   final ownerProfile = Profile(
     id: 'owner-1',
     email: 'owner@example.com',
@@ -42,6 +71,22 @@ void main() {
     return authControllerProvider.overrideWith(
       (ref) =>
           _TestAuthController(repo: repo, observer: observer, profile: profile),
+    );
+  }
+
+  MediaRepository buildMediaRepository(String apiBaseUrl) {
+    final client = ApiClient(
+      baseUrl: apiBaseUrl,
+      tokenStorage: _FakeTokenStorage(),
+    );
+    return MediaRepository(
+      client: client,
+      config: AppConfig(
+        apiBaseUrl: apiBaseUrl,
+        stripePublishableKey: 'pk_test',
+        stripeMerchantDisplayName: 'Aveli Test',
+        subscriptionsEnabled: true,
+      ),
     );
   }
 
@@ -260,5 +305,104 @@ void main() {
       expect(find.text('L2'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
+  );
+
+  testWidgets(
+    'prefers backend resolved cover over legacy cover url when the frontend flag is enabled',
+    (tester) async {
+      final detail = CourseDetailData(
+        course: const CourseSummary(
+          id: 'course-cover-contract',
+          slug: 'course-cover-contract',
+          title: 'Cover Contract',
+          description: 'Resolved cover should win when enabled',
+          coverUrl: '/api/files/public-media/legacy-cover.png',
+          cover: CourseCoverData(
+            mediaId: 'cover-1',
+            state: 'ready',
+            resolvedUrl: '/api/files/public-media/resolved-cover.png',
+            source: 'control_plane',
+          ),
+          isFreeIntro: true,
+          isPublished: true,
+          priceCents: 0,
+        ),
+        modules: const [
+          CourseModule(
+            id: flatLessonsModuleId,
+            courseId: 'course-cover-contract',
+            title: '',
+            position: 0,
+          ),
+        ],
+        lessonsByModule: const {
+          flatLessonsModuleId: [
+            LessonSummary(
+              id: 'lesson-1',
+              title: 'Intro',
+              position: 1,
+              isIntro: true,
+            ),
+          ],
+        },
+        hasAccess: false,
+        accessReason: '',
+        isEnrolled: false,
+        hasActiveSubscription: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost:8080',
+                stripePublishableKey: 'pk_test',
+                stripeMerchantDisplayName: 'Aveli Test',
+                subscriptionsEnabled: true,
+              ),
+            ),
+            mediaRepositoryProvider.overrideWithValue(
+              buildMediaRepository('http://localhost:8080'),
+            ),
+            authOverride(),
+            courseDetailProvider.overrideWith((ref, slug) async => detail),
+            coursePricingProvider.overrideWith(
+              (ref, slug) async =>
+                  CoursePricing(amountCents: 0, currency: 'sek'),
+            ),
+          ],
+          child: const MaterialApp(
+            home: CoursePage(slug: 'course-cover-contract'),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      final imageException = tester.takeException();
+      expect(imageException, anyOf(isNull, isA<NetworkImageLoadException>()));
+
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is NetworkImage &&
+              (widget.image as NetworkImage).url ==
+                  'http://localhost:8080/api/files/public-media/resolved-cover.png',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is NetworkImage &&
+              (widget.image as NetworkImage).url ==
+                  'http://localhost:8080/api/files/public-media/legacy-cover.png',
+        ),
+        findsNothing,
+      );
+    },
+    skip: !resolvedContractUiEnabled,
   );
 }

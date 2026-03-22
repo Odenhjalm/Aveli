@@ -29,6 +29,7 @@ import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/editor/session/editor_session.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
+import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -1230,9 +1231,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _courseJourneyStep =
               courseJourneyStepFromApi(safeString(map, 'journey_step')) ??
               CourseJourneyStep.intro;
-          final coverPath = safeString(map, 'cover_url');
-          _courseCoverPath = coverPath;
-          _courseCoverPreviewUrl = _resolveMediaUrl(_courseCoverPath);
+          final resolvedCover = resolveCourseMapCover(
+            map,
+            ref.read(mediaRepositoryProvider),
+            debugContext: 'StudioCourseMeta:$courseId',
+          );
+          _courseCoverPath = safeString(map, 'cover_url');
+          _courseCoverPreviewUrl = resolvedCover.imageUrl;
         });
       }
     } catch (e, stackTrace) {
@@ -5881,13 +5886,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) return;
       final row = Map<String, dynamic>.from(inserted);
       final createdCourseId = safeString(row, 'id');
-      final coverPath = safeString(row, 'cover_url');
+      final resolvedCover = resolveCourseMapCover(
+        row,
+        ref.read(mediaRepositoryProvider),
+        debugContext:
+            'StudioCourseCreate:${createdCourseId ?? safeString(row, 'slug') ?? 'unknown'}',
+      );
       setState(() {
         _resetCourseContext(clearLists: true);
         _courses = <Map<String, dynamic>>[row, ..._courses];
         _selectedCourseId = createdCourseId;
-        _courseCoverPath = coverPath;
-        _courseCoverPreviewUrl = _resolveMediaUrl(_courseCoverPath);
+        _courseCoverPath = safeString(row, 'cover_url');
+        _courseCoverPreviewUrl = resolvedCover.imageUrl;
       });
       ref.invalidate(myCoursesProvider);
       _newCourseTitle.clear();

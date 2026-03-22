@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
+from psycopg import errors
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
@@ -208,6 +209,46 @@ async def fetch_and_lock_pending_media_assets(
             (max_attempts, max_attempts, limit),
         )
         rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def list_pending_media_assets_missing_source(
+    *,
+    limit: int = 5,
+    max_attempts: int | None = None,
+) -> list[dict[str, Any]]:
+    try:
+        async with get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT
+                  id,
+                  course_id,
+                  lesson_id,
+                  media_type,
+                  purpose,
+                  original_object_path,
+                  storage_bucket,
+                  state,
+                  processing_attempts
+                FROM app.media_assets
+                WHERE state IN ('uploaded', 'failed')
+                  AND (next_retry_at IS NULL OR next_retry_at <= now())
+                  AND (%s IS NULL OR COALESCE(processing_attempts, 0) < %s)
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM storage.objects o
+                    WHERE o.bucket_id = app.media_assets.storage_bucket
+                      AND o.name = app.media_assets.original_object_path
+                  )
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (max_attempts, max_attempts, limit),
+            )
+            rows = await cur.fetchall()
+    except errors.UndefinedTable:
+        return []
     return [dict(row) for row in rows]
 
 

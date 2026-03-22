@@ -2,7 +2,14 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, List, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 from uuid import UUID
 
 from .billing import (
@@ -906,6 +913,21 @@ class ProfileDetailResponse(ProfileDetail):
     pass
 
 
+class CourseCoverResolved(BaseModel):
+    media_id: UUID | None = None
+    state: Literal[
+        "ready",
+        "uploaded",
+        "processing",
+        "failed",
+        "missing",
+        "legacy_fallback",
+        "placeholder",
+    ]
+    resolved_url: str | None = None
+    source: Literal["control_plane", "legacy_cover_url", "placeholder"]
+
+
 class Course(BaseModel):
     id: UUID
     slug: str
@@ -913,6 +935,7 @@ class Course(BaseModel):
     description: str | None = None
     cover_url: str | None = None
     cover_media_id: UUID | None = None
+    cover: CourseCoverResolved | None = None
     video_url: str | None = None
     is_free_intro: bool
     journey_step: CourseJourneyStep | None = None
@@ -924,6 +947,13 @@ class Course(BaseModel):
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        payload = handler(self)
+        if payload.get("cover") is None:
+            payload.pop("cover", None)
+        return payload
 
 
 class CourseListResponse(BaseModel):

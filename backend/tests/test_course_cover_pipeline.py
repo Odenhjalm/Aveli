@@ -5,6 +5,7 @@ import pytest
 
 from app import db, models
 from app.repositories import media_assets as media_assets_repo
+from app.routes import api_media
 from app.services import storage_service as storage_module
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -73,6 +74,22 @@ async def create_lesson(async_client, headers, course_id: str):
     )
     assert lesson_resp.status_code == 200, lesson_resp.text
     return str(lesson_resp.json()["id"])
+
+
+async def count_course_cover_assets(course_id: str) -> int:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT count(*)
+                FROM app.media_assets
+                WHERE course_id = %s
+                  AND purpose = 'course_cover'
+                """,
+                (course_id,),
+            )
+            row = await cur.fetchone()
+    return int(row[0] if row else 0)
 
 
 async def test_cover_upload_url_allows_image(async_client, monkeypatch):
@@ -150,11 +167,21 @@ async def test_cover_upload_url_rejects_non_image(async_client):
         await cleanup_user(user_id)
 
 
-async def test_cover_from_lesson_media_creates_asset(async_client):
+async def test_cover_from_lesson_media_creates_asset(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         course_id = await create_course(async_client, headers)
         lesson_id = await create_lesson(async_client, headers, course_id)
+
+        async def fake_fetch_storage_object_existence(pairs):
+            return {tuple(pair): True for pair in pairs}, True
+
+        monkeypatch.setattr(
+            api_media.storage_objects,
+            "fetch_storage_object_existence",
+            fake_fetch_storage_object_existence,
+            raising=True,
+        )
 
         media = await models.add_lesson_media_entry(
             lesson_id=lesson_id,
@@ -182,6 +209,86 @@ async def test_cover_from_lesson_media_creates_asset(async_client):
         assert asset is not None
         assert asset["original_object_path"] == "demo/cover.png"
         assert asset["purpose"] == "course_cover"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_cover_from_lesson_media_rejects_bucket_prefixed_path(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+        lesson_id = await create_lesson(async_client, headers, course_id)
+
+        media = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="image",
+            storage_path=f"{storage_module.storage_service.bucket}/demo/cover.png",
+            storage_bucket=storage_module.storage_service.bucket,
+            media_id=None,
+            media_asset_id=None,
+            position=1,
+            duration_seconds=None,
+        )
+        assert media
+
+        before_count = await count_course_cover_assets(course_id)
+        resp = await async_client.post(
+            "/api/media/cover-from-media",
+            headers=headers,
+            json={
+                "course_id": course_id,
+                "lesson_media_id": str(media["id"]),
+            },
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"] == "Cover source storage_path must not include bucket prefix"
+        assert await count_course_cover_assets(course_id) == before_count
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_cover_from_lesson_media_rejects_missing_storage_object(
+    async_client, monkeypatch
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+        lesson_id = await create_lesson(async_client, headers, course_id)
+
+        async def fake_fetch_storage_object_existence(pairs):
+            return {tuple(pair): False for pair in pairs}, True
+
+        monkeypatch.setattr(
+            api_media.storage_objects,
+            "fetch_storage_object_existence",
+            fake_fetch_storage_object_existence,
+            raising=True,
+        )
+
+        media = await models.add_lesson_media_entry(
+            lesson_id=lesson_id,
+            kind="image",
+            storage_path="demo/missing-cover.png",
+            storage_bucket=storage_module.storage_service.bucket,
+            media_id=None,
+            media_asset_id=None,
+            position=1,
+            duration_seconds=None,
+        )
+        assert media
+
+        before_count = await count_course_cover_assets(course_id)
+        resp = await async_client.post(
+            "/api/media/cover-from-media",
+            headers=headers,
+            json={
+                "course_id": course_id,
+                "lesson_media_id": str(media["id"]),
+            },
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"] == "Cover source object is missing from storage"
+        assert await count_course_cover_assets(course_id) == before_count
     finally:
         await cleanup_user(user_id)
 
