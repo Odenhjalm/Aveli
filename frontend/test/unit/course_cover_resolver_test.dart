@@ -96,6 +96,31 @@ void main() {
       expect(resolved.usedPlaceholder, isFalse);
     });
 
+    test('uses cover.resolved_url regardless of backend source label', () {
+      final repository = _buildRepository();
+
+      final resolved = resolveCourseCover(
+        mediaRepository: repository,
+        cover: const CourseCoverData(
+          mediaId: 'media-2b',
+          state: 'ready',
+          resolvedUrl: '/api/files/public-media/source-agnostic-cover.png',
+          source: 'unexpected_source',
+        ),
+        legacyCoverUrl: '/api/files/public-media/raw-legacy-cover.png',
+        preferResolvedContract: true,
+        debugContext: 'unit-source-agnostic',
+      );
+
+      expect(
+        resolved.imageUrl,
+        'https://api.example.com/api/files/public-media/source-agnostic-cover.png',
+      );
+      expect(resolved.backendSource, 'unexpected_source');
+      expect(resolved.usedLegacyCompatibility, isFalse);
+      expect(resolved.usedPlaceholder, isFalse);
+    });
+
     test('falls back to legacy cover url when the new contract is absent', () {
       final repository = _buildRepository();
 
@@ -130,7 +155,7 @@ void main() {
     });
 
     test(
-      'does not fall back to raw legacy cover when the new contract is present but invalid',
+      'falls back to legacy cover url when cover.resolved_url is missing',
       () {
         final repository = _buildRepository();
 
@@ -147,10 +172,13 @@ void main() {
           debugContext: 'unit-invalid-contract',
         );
 
-        expect(resolved.imageUrl, isNull);
+        expect(
+          resolved.imageUrl,
+          'https://api.example.com/api/files/public-media/legacy-cover.png',
+        );
         expect(resolved.backendSource, 'placeholder');
-        expect(resolved.usedLegacyCompatibility, isFalse);
-        expect(resolved.usedPlaceholder, isTrue);
+        expect(resolved.usedLegacyCompatibility, isTrue);
+        expect(resolved.usedPlaceholder, isFalse);
       },
     );
 

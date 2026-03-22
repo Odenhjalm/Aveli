@@ -1,5 +1,16 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart' as fs;
+
+class CoverUploadPreview {
+  const CoverUploadPreview({this.resolvedUrl, this.bytes});
+
+  final String? resolvedUrl;
+  final Uint8List? bytes;
+
+  void dispose() {}
+}
 
 class CoverUploadFile {
   CoverUploadFile(this.file, this.mimeType, this.size);
@@ -9,6 +20,16 @@ class CoverUploadFile {
   final int size;
 
   String get name => file.name;
+
+  Future<CoverUploadPreview> buildPreview() async {
+    final previewUrl = file.path.isEmpty
+        ? null
+        : Uri.file(file.path).toString();
+    return CoverUploadPreview(
+      resolvedUrl: previewUrl,
+      bytes: await file.readAsBytes(),
+    );
+  }
 }
 
 Future<CoverUploadFile?> pickCoverFile() async {
@@ -48,9 +69,7 @@ Future<void> uploadCoverFile({
   await dio.putUri<void>(
     uploadUrl,
     data: stream,
-    options: Options(
-      headers: Map<String, String>.from(headers),
-    ),
+    options: Options(headers: Map<String, String>.from(headers)),
     onSendProgress: (sent, total) {
       final resolvedTotal = total > 0 ? total : file.size;
       onProgress(sent, resolvedTotal);

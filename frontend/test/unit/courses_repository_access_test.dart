@@ -35,6 +35,31 @@ class _FakeAccessApi implements CourseAccessApi {
 }
 
 void main() {
+  group('CourseSummary.fromJson', () {
+    test('preserves the backend cover object', () {
+      final summary = CourseSummary.fromJson({
+        'id': 'course-1',
+        'title': 'Aveli 101',
+        'cover_url': '/api/files/public-media/legacy-cover.png',
+        'cover_media_id': 'media-1',
+        'cover': {
+          'media_id': 'media-1',
+          'state': 'ready',
+          'resolved_url': '/api/files/public-media/course-cover.png',
+          'source': 'control_plane',
+        },
+      });
+
+      expect(summary.cover, isNotNull);
+      expect(summary.cover!.mediaId, 'media-1');
+      expect(
+        summary.cover!.resolvedUrl,
+        '/api/files/public-media/course-cover.png',
+      );
+      expect(summary.cover!.source, 'control_plane');
+    });
+  });
+
   group('CoursesRepository.hasAccess', () {
     late _MockApiClient client;
 

@@ -7,8 +7,6 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart'
     as studio;
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/shared/utils/course_cover_resolver.dart';
 
 class LandingSectionState {
   const LandingSectionState({
@@ -59,22 +57,9 @@ Future<LandingSectionState> _fetchLandingSection(
   String errorLabel,
 ) async {
   final api = ref.read(apiClientProvider);
-  final mediaRepository = ref.read(mediaRepositoryProvider);
   try {
     final response = await api.get<Map<String, dynamic>>(path, skipAuth: true);
-    final items = _castList(response['items'])
-        .map((item) {
-          final map = Map<String, dynamic>.from(item);
-          final resolved = resolveCourseMapCover(
-            map,
-            mediaRepository,
-            debugContext:
-                'Landing:$path:${(map['slug'] as String?) ?? (map['id'] as String?) ?? 'unknown'}',
-          );
-          map['cover_url'] = resolved.imageUrl;
-          return map;
-        })
-        .toList(growable: false);
+    final items = _castList(response['items']);
     return _landingSuccessState(items);
   } on TimeoutException {
     return _landingErrorState(

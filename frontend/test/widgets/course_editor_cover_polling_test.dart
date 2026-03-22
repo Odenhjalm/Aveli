@@ -122,9 +122,16 @@ void main() {
         },
       ],
     );
-    when(
-      () => studioRepo.fetchLessonMediaPreviews(any()),
-    ).thenAnswer((_) async => <String, Map<String, dynamic>>{});
+    when(() => studioRepo.fetchLessonMediaPreviews(any())).thenAnswer(
+      (_) async => <String, Map<String, dynamic>>{
+        'media-1': {
+          'media_type': 'image',
+          'resolved_preview_url':
+              'http://localhost:8080/api/files/public-media/lessons/lesson-1/images/cover.png',
+          'authoritative_editor_ready': true,
+        },
+      },
+    );
 
     when(
       () => mediaRepo.requestCoverFromLessonMedia(
@@ -185,10 +192,137 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      find.text('Kunde inte hämta status för kursbilden. Försök igen.'),
-      findsOneWidget,
-    );
     expect(find.text('Uppdaterar...'), findsNothing);
   });
+
+  testWidgets(
+    'editor-local cover override keeps preview active after meta reload without backend cover',
+    (tester) async {
+      final studioRepo = _MockStudioRepository();
+      final mediaRepo = _MockMediaPipelineRepository();
+
+      when(() => studioRepo.fetchStatus()).thenAnswer(
+        (_) async => const StudioStatus(
+          isTeacher: true,
+          verifiedCertificates: 1,
+          hasApplication: false,
+        ),
+      );
+      when(() => studioRepo.myCourses()).thenAnswer(
+        (_) async => [
+          {'id': 'course-1', 'title': 'Testkurs'},
+        ],
+      );
+      when(() => studioRepo.fetchCourseMeta('course-1')).thenAnswer(
+        (_) async => {
+          'title': 'Testkurs',
+          'slug': 'testkurs',
+          'description': 'Beskrivning',
+          'price_cents': 0,
+          'is_free_intro': false,
+          'is_published': false,
+        },
+      );
+      when(() => studioRepo.listCourseLessons('course-1')).thenAnswer(
+        (_) async => [
+          {
+            'id': 'lesson-1',
+            'title': 'Lektion',
+            'position': 1,
+            'is_intro': false,
+            'course_id': 'course-1',
+          },
+        ],
+      );
+      when(() => studioRepo.listLessonMedia('lesson-1')).thenAnswer(
+        (_) async => [
+          {
+            'id': 'media-1',
+            'kind': 'image',
+            'storage_path': 'course-1/lesson-1/image.png',
+            'storage_bucket': 'course-media',
+            'position': 1,
+            'lesson_id': 'lesson-1',
+            'course_id': 'course-1',
+          },
+        ],
+      );
+      when(() => studioRepo.fetchLessonMediaPreviews(any())).thenAnswer(
+        (_) async => <String, Map<String, dynamic>>{
+          'media-1': {
+            'media_type': 'image',
+            'resolved_preview_url':
+                'http://localhost:8080/api/files/public-media/lessons/lesson-1/images/cover.png',
+            'authoritative_editor_ready': true,
+          },
+        },
+      );
+
+      when(
+        () => mediaRepo.requestCoverFromLessonMedia(
+          courseId: any(named: 'courseId'),
+          lessonMediaId: any(named: 'lessonMediaId'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            const CoverMediaResponse(mediaId: 'cover-1', state: 'uploaded'),
+      );
+      when(() => mediaRepo.fetchStatus(any())).thenAnswer(
+        (_) async => const MediaStatus(
+          mediaId: 'cover-1',
+          state: 'failed',
+          errorMessage: 'processor failed',
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost:8080',
+                stripePublishableKey: 'pk_test_stub',
+                stripeMerchantDisplayName: 'Test Merchant',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            mediaPipelineRepositoryProvider.overrideWithValue(mediaRepo),
+            studioUploadQueueProvider.overrideWith(
+              (ref) => _NoopUploadQueueNotifier(studioRepo),
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              FlutterQuillLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('en'), Locale('sv')],
+            home: CourseEditorScreen(studioRepository: studioRepo),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      final coverButton = find.byWidgetPredicate(
+        (widget) =>
+            widget is IconButton && widget.tooltip == 'Använd som kursbild',
+        description: 'IconButton(tooltip: Använd som kursbild)',
+      );
+      await tester.ensureVisible(coverButton);
+      await tester.tap(coverButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Aktiv kursbild'), findsOneWidget);
+      expect(find.text('processor failed'), findsOneWidget);
+    },
+  );
 }

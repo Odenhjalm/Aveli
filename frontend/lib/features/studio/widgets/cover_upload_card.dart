@@ -19,7 +19,12 @@ class CoverUploadCard extends ConsumerStatefulWidget {
   });
 
   final String? courseId;
-  final void Function(String courseId, String mediaId)? onCoverQueued;
+  final void Function(
+    String courseId,
+    String mediaId,
+    CoverUploadPreview preview,
+  )?
+  onCoverQueued;
   final void Function(String courseId, String message)? onUploadError;
   final Future<CoverUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
@@ -88,7 +93,13 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
       _uploading = true;
     });
 
+    CoverUploadPreview? preview;
     try {
+      preview = await picked.buildPreview();
+      if (!mounted) {
+        preview.dispose();
+        return;
+      }
       final repo = ref.read(mediaPipelineRepositoryProvider);
       final upload = await repo.requestCoverUploadUrl(
         filename: picked.name,
@@ -97,7 +108,10 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
         courseId: courseId,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        preview.dispose();
+        return;
+      }
       setState(() => _status = 'Laddar upp kursbild...');
 
       final uploader = widget.uploadFileOverride ?? uploadCoverFile;
@@ -112,13 +126,21 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
         },
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        preview.dispose();
+        return;
+      }
       setState(() {
         _uploading = false;
         _status = 'Uppladdad. Bearbetas...';
       });
-      widget.onCoverQueued?.call(courseId, upload.mediaId);
+      if (widget.onCoverQueued == null) {
+        preview.dispose();
+      } else {
+        widget.onCoverQueued!(courseId, upload.mediaId, preview);
+      }
     } catch (error, stackTrace) {
+      preview?.dispose();
       final failure = AppFailure.from(error, stackTrace);
       if (!mounted) return;
       setState(() {

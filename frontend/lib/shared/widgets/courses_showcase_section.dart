@@ -134,10 +134,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
 
     final allCourses = allCoursesAsync.valueOrNull ?? const <CourseSummary>[];
     final items = hasAllCoursesValue
-        ? _normalizeCourseCovers(
-            _mapCourseSummaries(allCourses),
-            mediaRepository,
-          )
+        ? _mapCourseSummaries(allCourses, mediaRepository)
         : _mergePopularWithMyCourses(popular, myStudio, mediaRepository);
     final visible = _sortCoursesForDisplay(items);
 
@@ -327,7 +324,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
         debugContext:
             'CoursesShowcase:${(course['slug'] as String?) ?? (course['id'] as String?) ?? 'unknown'}',
       );
-      course['cover_url'] = resolved.imageUrl;
+      course['resolved_cover_url'] = resolved.imageUrl;
     }
     return courses;
   }
@@ -342,9 +339,11 @@ class CoursesShowcaseSection extends ConsumerWidget {
 
   static List<Map<String, dynamic>> _mapCourseSummaries(
     List<CourseSummary> courses,
+    MediaRepository mediaRepository,
   ) {
     return courses
         .map((course) {
+          final resolved = resolveCourseSummaryCover(course, mediaRepository);
           return {
             'id': course.id,
             'title': course.title,
@@ -354,7 +353,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
             'journey_step': course.journeyStep?.name ?? course.stepLevel?.name,
             'step_level': course.stepLevel?.name,
             'price_amount_cents': course.priceCents,
-            'cover_url': course.coverUrl,
+            'resolved_cover_url': resolved.imageUrl,
             if (course.cover != null)
               'cover': {
                 'media_id': course.cover!.mediaId,
@@ -759,7 +758,7 @@ class _CourseTileGlass extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = (course['title'] as String?) ?? 'Kurs';
     final desc = (course['description'] as String?) ?? '';
-    final cover = (course['cover_url'] as String?) ?? '';
+    final cover = (course['resolved_cover_url'] as String?) ?? '';
     final slug = (course['slug'] as String?) ?? '';
     final isIntro = course['is_free_intro'] == true;
     final priceCents =

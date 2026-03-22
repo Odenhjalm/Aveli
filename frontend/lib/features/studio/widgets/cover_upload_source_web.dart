@@ -2,6 +2,20 @@
 
 import 'dart:async';
 import 'dart:html';
+import 'dart:typed_data';
+
+class CoverUploadPreview {
+  CoverUploadPreview({this.resolvedUrl, this.bytes});
+
+  final String? resolvedUrl;
+  final Uint8List? bytes;
+
+  void dispose() {
+    final url = resolvedUrl;
+    if (url == null || url.isEmpty || !url.startsWith('blob:')) return;
+    Url.revokeObjectUrl(url);
+  }
+}
 
 class CoverUploadFile {
   CoverUploadFile(this.file);
@@ -11,6 +25,33 @@ class CoverUploadFile {
   String get name => file.name;
   int get size => file.size;
   String? get mimeType => file.type.isEmpty ? null : file.type;
+
+  Future<CoverUploadPreview> buildPreview() async {
+    final reader = FileReader();
+    final completer = Completer<Uint8List>();
+
+    reader.onLoad.listen((_) {
+      final result = reader.result;
+      if (result is ByteBuffer) {
+        completer.complete(Uint8List.view(result));
+        return;
+      }
+      if (result is Uint8List) {
+        completer.complete(result);
+        return;
+      }
+      completer.completeError(StateError('Unsupported preview buffer'));
+    });
+    reader.onError.listen((_) {
+      completer.completeError(StateError('Failed to build cover preview'));
+    });
+    reader.readAsArrayBuffer(file);
+
+    return CoverUploadPreview(
+      resolvedUrl: Url.createObjectUrl(file),
+      bytes: await completer.future,
+    );
+  }
 }
 
 Future<CoverUploadFile?> pickCoverFile() async {
@@ -70,9 +111,7 @@ Future<void> uploadCoverFile({
     if (status >= 200 && status < 300) {
       completer.complete();
     } else {
-      completer.completeError(
-        StateError('Upload failed with status $status'),
-      );
+      completer.completeError(StateError('Upload failed with status $status'));
     }
   });
 

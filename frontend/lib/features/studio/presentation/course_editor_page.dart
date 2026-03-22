@@ -53,6 +53,7 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
+import 'package:aveli/features/studio/widgets/cover_upload_source.dart';
 import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart'
@@ -436,6 +437,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _courseCoverPreviewUrl;
   bool _updatingCourseCover = false;
   String? _coverPipelineMediaId;
+  Map<String, dynamic>? _localCoverOverride;
+  CoverUploadPreview? _localCoverPreview;
   String? _coverPipelineState;
   String? _coverPipelineError;
   int _coverPollAttempts = 0;
@@ -1029,6 +1032,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _coverActionCourseId = null;
     _updatingCourseCover = false;
     _coverPipelineMediaId = null;
+    _clearLocalCoverOverride();
     _coverPipelineState = null;
     _coverPipelineError = null;
     if (clearPreview) {
@@ -1045,6 +1049,127 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _coverActionRequestId += 1;
     _coverActionCourseId = courseId;
     return _coverActionRequestId;
+  }
+
+  String? _normalizedCoverPreviewUrl(String? value) {
+    final normalized = value?.trim();
+    return normalized == null || normalized.isEmpty ? null : normalized;
+  }
+
+  String? _localCoverResolvedUrl([Map<String, dynamic>? cover]) {
+    final activeCover = cover ?? _localCoverOverride;
+    return _normalizedCoverPreviewUrl(
+      safeString(activeCover, 'resolved_url') ??
+          safeString(activeCover, 'resolvedUrl'),
+    );
+  }
+
+  void _disposeCoverPreview(CoverUploadPreview? preview) {
+    preview?.dispose();
+  }
+
+  CoverUploadPreview? _detachLocalCoverPreview() {
+    final preview = _localCoverPreview;
+    _localCoverPreview = null;
+    return preview;
+  }
+
+  void _replaceLocalCoverPreview(CoverUploadPreview? preview) {
+    if (identical(_localCoverPreview, preview)) return;
+    final previous = _detachLocalCoverPreview();
+    _localCoverPreview = preview;
+    _disposeCoverPreview(previous);
+  }
+
+  void _clearLocalCoverOverride() {
+    _localCoverOverride = null;
+    _replaceLocalCoverPreview(null);
+  }
+
+  Map<String, dynamic> _buildLocalCoverOverride({
+    required String mediaId,
+    required String resolvedUrl,
+    required String state,
+  }) {
+    return <String, dynamic>{
+      'mediaId': mediaId,
+      'media_id': mediaId,
+      'resolvedUrl': resolvedUrl,
+      'resolved_url': resolvedUrl,
+      'state': state,
+      'source': 'editor_override',
+    };
+  }
+
+  Map<String, dynamic> _projectCourseMapForPreview(
+    Map<String, dynamic> course, {
+    Map<String, dynamic>? localCoverOverride,
+  }) {
+    final override = localCoverOverride ?? _localCoverOverride;
+    if (override == null) return course;
+    final projected = Map<String, dynamic>.from(course);
+    projected['cover'] = Map<String, dynamic>.from(override);
+    return projected;
+  }
+
+  ResolvedCourseCover _resolveEditorCourseMapCover(
+    Map<String, dynamic> course, {
+    required String debugContext,
+    Map<String, dynamic>? localCoverOverride,
+  }) {
+    return resolveCourseMapCover(
+      _projectCourseMapForPreview(
+        course,
+        localCoverOverride: localCoverOverride,
+      ),
+      ref.read(mediaRepositoryProvider),
+      debugContext: debugContext,
+    );
+  }
+
+  String? _effectiveEditorCourseCoverUrl(
+    ResolvedCourseCover resolved, {
+    Map<String, dynamic>? localCoverOverride,
+  }) {
+    return _localCoverResolvedUrl(localCoverOverride) ?? resolved.imageUrl;
+  }
+
+  void _logEditorCoverOverride({
+    required String mediaId,
+    required bool active,
+  }) {
+    if (!kDebugMode) return;
+    debugPrint(
+      '[COURSE_COVER_EDITOR_OVERRIDE] media_id=$mediaId active=$active',
+    );
+  }
+
+  Future<String?> _bestAvailableLessonMediaCoverPreviewUrl(
+    String lessonMediaId,
+    Map<String, dynamic> media,
+  ) async {
+    final cache = ref.read(lessonMediaPreviewCacheProvider);
+    final cachedPreview = cache.peek(lessonMediaId)?.visualUrl;
+    if (cachedPreview != null && cachedPreview.isNotEmpty) {
+      return cachedPreview;
+    }
+    try {
+      final preview = await cache.getSettledOrFetch(lessonMediaId);
+      final previewUrl = _normalizedCoverPreviewUrl(preview?.visualUrl);
+      if (previewUrl != null) {
+        return previewUrl;
+      }
+    } catch (_) {
+      // The lesson-media cover action can still continue without cache hydration.
+    }
+    return _normalizedCoverPreviewUrl(
+      safeString(media, 'resolved_preview_url') ??
+          safeString(media, 'resolvedPreviewUrl') ??
+          safeString(media, 'download_url') ??
+          safeString(media, 'downloadUrl') ??
+          safeString(media, 'signed_url') ??
+          safeString(media, 'signedUrl'),
+    );
   }
 
   void _resetCourseContext({bool clearLists = false}) {
@@ -1119,6 +1244,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   @override
   void dispose() {
+    _disposeCoverPreview(_detachLocalCoverPreview());
     _uploadSubscription?.close();
     _qPrompt.dispose();
     _qOptions.dispose();
@@ -1231,13 +1357,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _courseJourneyStep =
               courseJourneyStepFromApi(safeString(map, 'journey_step')) ??
               CourseJourneyStep.intro;
-          final resolvedCover = resolveCourseMapCover(
+          final resolvedCover = _resolveEditorCourseMapCover(
             map,
-            ref.read(mediaRepositoryProvider),
             debugContext: 'StudioCourseMeta:$courseId',
           );
-          _courseCoverPath = safeString(map, 'cover_url');
-          _courseCoverPreviewUrl = resolvedCover.imageUrl;
+          final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
+            resolvedCover,
+          );
+          _courseCoverPath = effectiveCoverUrl;
+          _courseCoverPreviewUrl = effectiveCoverUrl;
         });
       }
     } catch (e, stackTrace) {
@@ -3319,8 +3447,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       fontWeight: FontWeight.w700,
     );
     final bodyStyle = theme.textTheme.bodySmall;
+    final localCoverPreviewBytes = _localCoverPreview?.bytes;
     final coverPreviewUrl = _courseCoverPreviewUrl?.trim();
-    final hasCover = coverPreviewUrl != null && coverPreviewUrl.isNotEmpty;
+    final hasLocalPreview =
+        localCoverPreviewBytes != null && localCoverPreviewBytes.isNotEmpty;
+    final hasCover =
+        hasLocalPreview ||
+        (coverPreviewUrl != null && coverPreviewUrl.isNotEmpty);
     final status = _coverPipelineState;
     final statusText = status == null ? null : _coverStatusLabel(status);
     final coverPipelineError = _coverPipelineError?.trim();
@@ -3352,6 +3485,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       if (!hasCover) {
                         return placeholder;
                       }
+                      if (hasLocalPreview) {
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            placeholder,
+                            Image.memory(
+                              localCoverPreviewBytes,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              filterQuality: SafeMedia.filterQuality(
+                                full: FilterQuality.high,
+                              ),
+                              errorBuilder: (context, error, stackTrace) =>
+                                  placeholder,
+                            ),
+                          ],
+                        );
+                      }
 
                       final cacheWidth = SafeMedia.cacheDimension(
                         context,
@@ -3369,7 +3520,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         children: [
                           placeholder,
                           Image.network(
-                            coverPreviewUrl,
+                            coverPreviewUrl!,
                             fit: BoxFit.cover,
                             filterQuality: SafeMedia.filterQuality(
                               full: FilterQuality.high,
@@ -3454,7 +3605,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           const SizedBox(height: 12),
           CoverUploadCard(
             courseId: _selectedCourseId,
-            onCoverQueued: _queueCoverUpload,
+            onCoverQueued: (courseId, mediaId, preview) {
+              _queueCoverUpload(courseId, mediaId, preview);
+            },
             onUploadError: (courseId, message) {
               if (!mounted || _selectedCourseId != courseId) return;
               setState(() {
@@ -4527,9 +4680,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _queueCoverUpload(String courseId, String mediaId) {
-    if (!mounted) return;
+  void _queueCoverUpload(
+    String courseId,
+    String mediaId,
+    CoverUploadPreview preview,
+  ) {
+    if (!mounted) {
+      preview.dispose();
+      return;
+    }
     if (courseId.isEmpty) {
+      preview.dispose();
       if (context.mounted) {
         showSnack(
           context,
@@ -4539,15 +4700,43 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     if (_selectedCourseId != courseId) {
+      preview.dispose();
       return;
     }
+    final resolvedPreviewUrl =
+        _normalizedCoverPreviewUrl(preview.resolvedUrl) ??
+        _normalizedCoverPreviewUrl(_courseCoverPreviewUrl) ??
+        _normalizedCoverPreviewUrl(_courseCoverPath);
+    final localCoverOverride = resolvedPreviewUrl == null
+        ? null
+        : _buildLocalCoverOverride(
+            mediaId: mediaId,
+            resolvedUrl: resolvedPreviewUrl,
+            state: 'uploaded',
+          );
+    final resolvedCover = _resolveEditorCourseMapCover(
+      const <String, dynamic>{},
+      debugContext: 'StudioCourseCoverUploadQueued:$courseId',
+      localCoverOverride: localCoverOverride,
+    );
+    final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
+      resolvedCover,
+      localCoverOverride: localCoverOverride,
+    );
     final requestId = _beginCoverAction(courseId: courseId);
     setState(() {
       _coverPipelineMediaId = mediaId;
+      _localCoverOverride = localCoverOverride;
+      _replaceLocalCoverPreview(preview);
+      _courseCoverPath = effectiveCoverUrl;
+      _courseCoverPreviewUrl = effectiveCoverUrl;
       _coverPipelineState = 'uploaded';
       _coverPipelineError = null;
       _updatingCourseCover = true;
     });
+    if (localCoverOverride != null) {
+      _logEditorCoverOverride(mediaId: mediaId, active: true);
+    }
     _startCoverPolling(mediaId, requestId: requestId);
   }
 
@@ -4677,6 +4866,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
+    final previewUrl = await _bestAvailableLessonMediaCoverPreviewUrl(
+      lessonMediaId,
+      media,
+    );
+    if (!mounted) return;
 
     final requestId = _beginCoverAction(courseId: courseId);
     final previousPath = _courseCoverPath;
@@ -4703,10 +4897,33 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _selectedCourseId != courseId) {
         return;
       }
+      final localCoverOverride = previewUrl == null
+          ? null
+          : _buildLocalCoverOverride(
+              mediaId: response.mediaId,
+              resolvedUrl: previewUrl,
+              state: response.state,
+            );
+      final resolvedCover = _resolveEditorCourseMapCover(
+        const <String, dynamic>{},
+        debugContext: 'StudioCourseCoverFromLessonMedia:$courseId',
+        localCoverOverride: localCoverOverride,
+      );
+      final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
+        resolvedCover,
+        localCoverOverride: localCoverOverride,
+      );
       setState(() {
         _coverPipelineMediaId = response.mediaId;
+        _localCoverOverride = localCoverOverride;
+        _replaceLocalCoverPreview(null);
+        _courseCoverPath = effectiveCoverUrl;
+        _courseCoverPreviewUrl = effectiveCoverUrl;
         _coverPipelineState = response.state;
       });
+      if (localCoverOverride != null) {
+        _logEditorCoverOverride(mediaId: response.mediaId, active: true);
+      }
       _startCoverPolling(response.mediaId, requestId: requestId);
       if (context.mounted) {
         showSnack(context, 'Kursbilden bearbetas…');
@@ -4734,10 +4951,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final courseId = _selectedCourseId;
     if (courseId == null) return;
     var resumePolling = false;
+    var restoreLocalPreview = false;
 
     final previousPath = _courseCoverPath;
     final previousPreview = _courseCoverPreviewUrl;
     final previousMediaId = _coverPipelineMediaId;
+    final previousLocalCoverOverride = _localCoverOverride == null
+        ? null
+        : Map<String, dynamic>.from(_localCoverOverride!);
+    final previousLocalPreview = _detachLocalCoverPreview();
     final previousState = _coverPipelineState;
     final previousError = _coverPipelineError;
 
@@ -4750,6 +4972,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _courseCoverPath = null;
         _courseCoverPreviewUrl = null;
         _coverPipelineMediaId = null;
+        _localCoverOverride = null;
+        _localCoverPreview = null;
         _coverPipelineState = null;
         _coverPipelineError = null;
       });
@@ -4768,9 +4992,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _courseCoverPath = previousPath;
         _courseCoverPreviewUrl = previousPreview;
         _coverPipelineMediaId = previousMediaId;
+        _localCoverOverride = previousLocalCoverOverride;
+        _localCoverPreview = previousLocalPreview;
         _coverPipelineState = previousState;
         _coverPipelineError = previousError;
       });
+      restoreLocalPreview = true;
       if (previousMediaId != null &&
           previousState != null &&
           previousState != 'ready' &&
@@ -4782,6 +5009,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       _showFriendlyErrorSnack('Kunde inte uppdatera kursbild', e, stackTrace);
     } finally {
+      if (!restoreLocalPreview) {
+        _disposeCoverPreview(previousLocalPreview);
+      }
       if (mounted && !resumePolling) {
         setState(() => _updatingCourseCover = false);
       }
@@ -5903,9 +6133,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) return;
       final row = Map<String, dynamic>.from(inserted);
       final createdCourseId = safeString(row, 'id');
-      final resolvedCover = resolveCourseMapCover(
+      final resolvedCover = _resolveEditorCourseMapCover(
         row,
-        ref.read(mediaRepositoryProvider),
         debugContext:
             'StudioCourseCreate:${createdCourseId ?? safeString(row, 'slug') ?? 'unknown'}',
       );
@@ -5913,8 +6142,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _resetCourseContext(clearLists: true);
         _courses = <Map<String, dynamic>>[row, ..._courses];
         _selectedCourseId = createdCourseId;
-        _courseCoverPath = safeString(row, 'cover_url');
-        _courseCoverPreviewUrl = resolvedCover.imageUrl;
+        final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(resolvedCover);
+        _courseCoverPath = effectiveCoverUrl;
+        _courseCoverPreviewUrl = effectiveCoverUrl;
       });
       ref.invalidate(myCoursesProvider);
       _newCourseTitle.clear();

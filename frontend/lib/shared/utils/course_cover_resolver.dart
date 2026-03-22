@@ -5,14 +5,18 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 
-const bool _courseCoverResolvedUiEnabledDefault = bool.fromEnvironment(
+const bool _courseCoverResolvedUiEnabled = bool.fromEnvironment(
   'COURSE_COVER_RESOLVED_UI_ENABLED',
-  defaultValue: false,
+);
+const bool _courseCoverResolvedUiFlagPresent = bool.hasEnvironment(
+  'COURSE_COVER_RESOLVED_UI_ENABLED',
 );
 const bool _courseCoverDebugEnabled = bool.fromEnvironment(
   'COURSE_COVER_FRONTEND_DEBUG',
   defaultValue: false,
 );
+
+bool _didLogMissingResolvedUiFlag = false;
 
 @immutable
 class ResolvedCourseCover {
@@ -50,11 +54,17 @@ void _debugLog({
   required bool usedLegacyCompatibility,
   required bool usedPlaceholder,
   String? imageUrl,
+  String? coverMediaId,
+  required bool hasCoverObject,
+  required bool hasResolvedUrl,
 }) {
   if (!_courseCoverDebugEnabled) return;
   debugPrint(
     '[COURSE_COVER_FRONTEND] '
     'context=$context '
+    'cover_media_id=${coverMediaId ?? '<absent>'} '
+    'has_cover_object=$hasCoverObject '
+    'has_resolved_url=$hasResolvedUrl '
     'backend_source=${backendSource ?? '<absent>'} '
     'legacy_fallback=$usedLegacyCompatibility '
     'placeholder=$usedPlaceholder '
@@ -62,48 +72,41 @@ void _debugLog({
   );
 }
 
+void _debugLogMissingResolvedUiFlag() {
+  if (!kDebugMode || _courseCoverResolvedUiFlagPresent) return;
+  if (_didLogMissingResolvedUiFlag) return;
+  _didLogMissingResolvedUiFlag = true;
+  debugPrint(
+    '[COURSE_COVER_FRONTEND] '
+    'missing_flag=COURSE_COVER_RESOLVED_UI_ENABLED '
+    'resolved_ui_enabled=$_courseCoverResolvedUiEnabled',
+  );
+}
+
 ResolvedCourseCover resolveCourseCover({
   required MediaRepository mediaRepository,
   CourseCoverData? cover,
   String? legacyCoverUrl,
-  bool preferResolvedContract = _courseCoverResolvedUiEnabledDefault,
+  bool preferResolvedContract = _courseCoverResolvedUiEnabled,
   String debugContext = 'course',
 }) {
+  _debugLogMissingResolvedUiFlag();
+
   final normalizedLegacyUrl = _resolveUrlSafe(mediaRepository, legacyCoverUrl);
   final normalizedCover = cover;
+  final backendSource = _trimmed(normalizedCover?.source);
+  final resolvedUrl = preferResolvedContract
+      ? _resolveUrlSafe(mediaRepository, normalizedCover?.resolvedUrl)
+      : null;
+  final hasCoverObject = normalizedCover != null;
+  final hasResolvedUrl = _trimmed(normalizedCover?.resolvedUrl) != null;
 
-  if (preferResolvedContract && normalizedCover != null) {
-    final source = _trimmed(normalizedCover.source);
-    final resolvedUrl = _resolveUrlSafe(
-      mediaRepository,
-      normalizedCover.resolvedUrl,
-    );
-    final usesBackendResolvedUrl =
-        (source == 'control_plane' ||
-            source == 'legacy_cover_url' ||
-            source == 'legacy_fallback') &&
-        resolvedUrl != null;
-    if (usesBackendResolvedUrl) {
-      final resolved = ResolvedCourseCover(
-        imageUrl: resolvedUrl,
-        backendSource: source,
-        usedLegacyCompatibility: false,
-        usedPlaceholder: false,
-      );
-      _debugLog(
-        context: debugContext,
-        backendSource: resolved.backendSource,
-        usedLegacyCompatibility: resolved.usedLegacyCompatibility,
-        usedPlaceholder: resolved.usedPlaceholder,
-        imageUrl: resolved.imageUrl,
-      );
-      return resolved;
-    }
+  if (resolvedUrl != null) {
     final resolved = ResolvedCourseCover(
-      imageUrl: null,
-      backendSource: source,
+      imageUrl: resolvedUrl,
+      backendSource: backendSource,
       usedLegacyCompatibility: false,
-      usedPlaceholder: true,
+      usedPlaceholder: false,
     );
     _debugLog(
       context: debugContext,
@@ -111,6 +114,9 @@ ResolvedCourseCover resolveCourseCover({
       usedLegacyCompatibility: resolved.usedLegacyCompatibility,
       usedPlaceholder: resolved.usedPlaceholder,
       imageUrl: resolved.imageUrl,
+      coverMediaId: normalizedCover?.mediaId,
+      hasCoverObject: hasCoverObject,
+      hasResolvedUrl: hasResolvedUrl,
     );
     return resolved;
   }
@@ -118,7 +124,7 @@ ResolvedCourseCover resolveCourseCover({
   if (normalizedLegacyUrl != null) {
     final resolved = ResolvedCourseCover(
       imageUrl: normalizedLegacyUrl,
-      backendSource: normalizedCover?.source,
+      backendSource: backendSource,
       usedLegacyCompatibility: true,
       usedPlaceholder: false,
     );
@@ -128,13 +134,16 @@ ResolvedCourseCover resolveCourseCover({
       usedLegacyCompatibility: resolved.usedLegacyCompatibility,
       usedPlaceholder: resolved.usedPlaceholder,
       imageUrl: resolved.imageUrl,
+      coverMediaId: normalizedCover?.mediaId,
+      hasCoverObject: hasCoverObject,
+      hasResolvedUrl: hasResolvedUrl,
     );
     return resolved;
   }
 
   final resolved = ResolvedCourseCover(
     imageUrl: null,
-    backendSource: normalizedCover?.source,
+    backendSource: backendSource,
     usedLegacyCompatibility: false,
     usedPlaceholder: true,
   );
@@ -144,6 +153,9 @@ ResolvedCourseCover resolveCourseCover({
     usedLegacyCompatibility: resolved.usedLegacyCompatibility,
     usedPlaceholder: resolved.usedPlaceholder,
     imageUrl: resolved.imageUrl,
+    coverMediaId: normalizedCover?.mediaId,
+    hasCoverObject: hasCoverObject,
+    hasResolvedUrl: hasResolvedUrl,
   );
   return resolved;
 }
@@ -151,7 +163,7 @@ ResolvedCourseCover resolveCourseCover({
 ResolvedCourseCover resolveCourseSummaryCover(
   CourseSummary course,
   MediaRepository mediaRepository, {
-  bool preferResolvedContract = _courseCoverResolvedUiEnabledDefault,
+  bool preferResolvedContract = _courseCoverResolvedUiEnabled,
 }) {
   return resolveCourseCover(
     mediaRepository: mediaRepository,
@@ -165,7 +177,7 @@ ResolvedCourseCover resolveCourseSummaryCover(
 ResolvedCourseCover resolveCourseModelCover(
   app_models.Course course,
   MediaRepository mediaRepository, {
-  bool preferResolvedContract = _courseCoverResolvedUiEnabledDefault,
+  bool preferResolvedContract = _courseCoverResolvedUiEnabled,
 }) {
   return resolveCourseCover(
     mediaRepository: mediaRepository,
@@ -179,7 +191,7 @@ ResolvedCourseCover resolveCourseModelCover(
 ResolvedCourseCover resolveCourseMapCover(
   Map<String, dynamic> course,
   MediaRepository mediaRepository, {
-  bool preferResolvedContract = _courseCoverResolvedUiEnabledDefault,
+  bool preferResolvedContract = _courseCoverResolvedUiEnabled,
   String debugContext = 'CourseMap',
 }) {
   final coverJson = course['cover'];
