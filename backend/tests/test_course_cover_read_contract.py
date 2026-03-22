@@ -272,11 +272,27 @@ async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypat
     assert course_enabled["cover"]["source"] == "control_plane"
 
     course_disabled = _course()
+    course_disabled["cover"] = {
+        "media_id": MEDIA_ID,
+        "state": "placeholder",
+        "resolved_url": None,
+        "source": "placeholder",
+    }
     monkeypatch.delenv("COURSE_COVER_RESOLVED_READ_ENABLED", raising=False)
     await courses_service.attach_course_cover_read_contract(course_disabled)
     assert course_disabled["cover"]["source"] == "control_plane"
+    assert (
+        course_disabled["cover"]["resolved_url"]
+        == f"https://storage.local/public-media/{DERIVED_PATH}"
+    )
 
     legacy_only = _course(cover_media_id=None, cover_url=LEGACY_URL)
+    legacy_only["cover"] = {
+        "media_id": None,
+        "state": "legacy_fallback",
+        "resolved_url": LEGACY_URL,
+        "source": "legacy_cover_url",
+    }
     await courses_service.attach_course_cover_read_contract(legacy_only)
     assert "cover" not in legacy_only
 

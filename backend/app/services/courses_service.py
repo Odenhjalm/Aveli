@@ -68,18 +68,6 @@ def _course_cover_resolved_read_enabled() -> bool:
     }
 
 
-def _should_include_course_cover_payload(
-    *,
-    cover_media_id: str | None,
-    feature_flag_enabled: bool,
-) -> bool:
-    if feature_flag_enabled:
-        return True
-    # Keep control-plane-backed covers visible even when the legacy read flag is
-    # disabled so persisted course covers survive reloads and list/detail reads.
-    return cover_media_id is not None
-
-
 def _is_admin_profile(profile: Mapping[str, Any] | None) -> bool:
     if not profile:
         return False
@@ -636,10 +624,12 @@ async def attach_course_cover_read_contract(
             existence=existence,
             storage_table_available=storage_table_available,
         )
-        if _should_include_course_cover_payload(
-            cover_media_id=cover_media_id,
-            feature_flag_enabled=include_cover,
-        ):
+        if cover_media_id:
+            # Control-plane-backed course covers are part of the stable read
+            # contract even when the legacy feature flag is off.
+            row["cover"] = resolution
+            continue
+        if include_cover:
             row["cover"] = resolution
         else:
             row.pop("cover", None)
