@@ -533,6 +533,119 @@ async def test_get_asset_missing_snapshot_reports_storage_verification_unavailab
     }
 
 
+async def test_get_asset_failed_unlinked_home_audio_without_active_upload_is_not_inconsistent(
+    monkeypatch,
+):
+    async def _get_media_asset(_: str):
+        return _asset_row(
+            "asset-home",
+            lesson_id=None,
+            purpose="home_player_audio",
+            state="failed",
+            error_message="missing_source",
+        )
+
+    async def _list_lesson_media_for_asset(_: str, *, limit: int):
+        assert limit == 26
+        return []
+
+    async def _list_runtime_media_for_asset(_: str, *, limit: int):
+        assert limit == 26
+        return []
+
+    async def _get_active_home_upload_by_media_asset_id(_: str):
+        return None
+
+    monkeypatch.setattr(service.media_assets_repo, "get_media_asset", _get_media_asset)
+    monkeypatch.setattr(
+        service.courses_repo,
+        "list_lesson_media_for_asset",
+        _list_lesson_media_for_asset,
+    )
+    monkeypatch.setattr(
+        service.runtime_media_repo,
+        "list_runtime_media_for_asset",
+        _list_runtime_media_for_asset,
+    )
+    monkeypatch.setattr(
+        service.home_player_library_repo,
+        "get_active_home_upload_by_media_asset_id",
+        _get_active_home_upload_by_media_asset_id,
+    )
+    monkeypatch.setattr(
+        service.storage_objects,
+        "fetch_storage_object_details",
+        _storage_catalog_present,
+    )
+
+    result = await service.get_asset("asset-home")
+
+    assert result["state_classification"] == "failed_unlinked"
+    assert not any(
+        item["code"] == "home_runtime_projection_missing"
+        for item in result["detected_inconsistencies"]
+    )
+
+
+async def test_get_asset_failed_home_audio_with_active_upload_requires_runtime_projection(
+    monkeypatch,
+):
+    async def _get_media_asset(_: str):
+        return _asset_row(
+            "asset-home",
+            lesson_id=None,
+            purpose="home_player_audio",
+            state="failed",
+            error_message="missing_source",
+        )
+
+    async def _list_lesson_media_for_asset(_: str, *, limit: int):
+        assert limit == 26
+        return []
+
+    async def _list_runtime_media_for_asset(_: str, *, limit: int):
+        assert limit == 26
+        return []
+
+    async def _get_active_home_upload_by_media_asset_id(_: str):
+        return {
+            "teacher_id": "teacher-1",
+            "active": True,
+            "media_asset_id": "asset-home",
+            "state": "failed",
+        }
+
+    monkeypatch.setattr(service.media_assets_repo, "get_media_asset", _get_media_asset)
+    monkeypatch.setattr(
+        service.courses_repo,
+        "list_lesson_media_for_asset",
+        _list_lesson_media_for_asset,
+    )
+    monkeypatch.setattr(
+        service.runtime_media_repo,
+        "list_runtime_media_for_asset",
+        _list_runtime_media_for_asset,
+    )
+    monkeypatch.setattr(
+        service.home_player_library_repo,
+        "get_active_home_upload_by_media_asset_id",
+        _get_active_home_upload_by_media_asset_id,
+    )
+    monkeypatch.setattr(
+        service.storage_objects,
+        "fetch_storage_object_details",
+        _storage_catalog_present,
+    )
+
+    result = await service.get_asset("asset-home")
+
+    assert result["state_classification"] == "inconsistent"
+    assert any(
+        item["code"] == "home_runtime_projection_missing"
+        for item in result["detected_inconsistencies"]
+    )
+
+
 async def test_media_control_plane_docs_cover_hardened_contract_states():
     docs_path = Path(__file__).resolve().parents[2] / "docs" / "media_control_plane_mcp.md"
     text = docs_path.read_text(encoding="utf-8")

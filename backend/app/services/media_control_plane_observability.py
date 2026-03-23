@@ -11,6 +11,7 @@ from ..media_control_plane.services.media_resolver_service import (
 from ..observability import log_buffer
 from ..repositories import (
     courses as courses_repo,
+    home_player_library as home_player_library_repo,
     media_assets as media_assets_repo,
     media_resolution_failures as media_resolution_failures_repo,
     runtime_media as runtime_media_repo,
@@ -1039,6 +1040,11 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
     normalized_asset = _normalize_asset_row(asset_row)
     purpose = _normalize_text(asset_row.get("purpose"))
     state = _normalize_text(asset_row.get("state"))
+    active_home_upload = None
+    if purpose == "home_player_audio":
+        active_home_upload = await home_player_library_repo.get_active_home_upload_by_media_asset_id(
+            normalized_asset_id
+        )
 
     if normalized_asset is None:
         raise RuntimeError("asset normalization failed")
@@ -1236,7 +1242,12 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
             )
         )
 
-    if purpose == "home_player_audio" and state in {"ready", "failed"} and not runtime_rows:
+    if (
+        purpose == "home_player_audio"
+        and state in {"ready", "failed"}
+        and not runtime_rows
+        and active_home_upload is not None
+    ):
         inconsistencies.append(
             _inconsistency(
                 "home_runtime_projection_missing",
