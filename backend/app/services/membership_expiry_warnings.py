@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from ..config import settings
 from ..db import get_conn
+from ..observability import log_buffer
 from ..repositories import memberships as memberships_repo
 from . import email_service
 
@@ -92,6 +94,13 @@ async def run_once(*, now: datetime | None = None) -> int:
         )
         sent_count += 1
 
+    logger.info(
+        "MEMBERSHIP_EXPIRY_WARNING_RUN_SUMMARY",
+        extra={
+            "candidates": len(candidates),
+            "sent": sent_count,
+        },
+    )
     return sent_count
 
 
@@ -169,4 +178,22 @@ def _build_warning_email_text(
     )
 
 
-__all__ = ["run_once", "start_worker", "stop_worker"]
+def get_metrics() -> dict[str, Any]:
+    last_error = next(
+        iter(
+            log_buffer.list_events(
+                limit=1,
+                min_level="ERROR",
+                logger_names={__name__},
+            )
+        ),
+        None,
+    )
+    return {
+        "worker_running": _worker_task is not None and not _worker_task.done(),
+        "poll_interval_seconds": settings.membership_expiry_warning_interval_seconds,
+        "last_error": last_error,
+    }
+
+
+__all__ = ["get_metrics", "run_once", "start_worker", "stop_worker"]

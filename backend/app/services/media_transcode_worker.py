@@ -7,10 +7,12 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 
 from ..config import settings
+from ..observability import log_buffer
 from ..repositories import media_assets as media_assets_repo
 from ..services import storage_service
 from . import media_cleanup
@@ -174,6 +176,32 @@ async def stop_worker() -> None:
         pass
     _worker_task = None
     logger.info("Media transcode worker stopped")
+
+
+async def get_metrics() -> dict[str, Any]:
+    summary = await media_assets_repo.get_media_processing_worker_summary(
+        stale_after_seconds=settings.media_transcode_stale_lock_seconds
+    )
+    last_error = next(
+        iter(
+            log_buffer.list_events(
+                limit=1,
+                min_level="ERROR",
+                logger_names={__name__},
+            )
+        ),
+        None,
+    )
+    return {
+        "worker_running": _worker_task is not None and not _worker_task.done(),
+        "enabled_by_env": _env_worker_enabled(),
+        "enabled_by_config": _enabled(),
+        "poll_interval_seconds": settings.media_transcode_poll_interval_seconds,
+        "batch_size": settings.media_transcode_batch_size,
+        "max_attempts": settings.media_transcode_max_attempts,
+        "queue_summary": summary,
+        "last_error": last_error,
+    }
 
 
 async def _poll_loop() -> None:

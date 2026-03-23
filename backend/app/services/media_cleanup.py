@@ -379,6 +379,14 @@ async def prune_course_cover_assets(*, course_id: str, limit: int = 100) -> int:
     deleted_assets = [dict(row) for row in deleted_rows]
     for asset in deleted_assets:
         await _delete_storage_targets(_asset_delete_targets(asset))
+    logger.info(
+        "MEDIA_CLEANUP_PRUNE_COURSE_COVER_SUMMARY",
+        extra={
+            "course_id": course_id,
+            "deleted_assets": len(deleted_assets),
+            "limit": limit,
+        },
+    )
     return len(deleted_assets)
 
 
@@ -426,6 +434,14 @@ async def delete_course_cover_assets_for_course(*, course_id: str, limit: int = 
     deleted_assets = [dict(row) for row in deleted_rows]
     for asset in deleted_assets:
         await _delete_storage_targets(_asset_delete_targets(asset))
+    logger.info(
+        "MEDIA_CLEANUP_DELETE_COURSE_COVERS_SUMMARY",
+        extra={
+            "course_id": course_id,
+            "deleted_assets": len(deleted_assets),
+            "limit": limit,
+        },
+    )
     return len(deleted_assets)
 
 
@@ -565,11 +581,20 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
                     str(storage_bucket) if storage_bucket else None,
                 )
 
-    return {
+    summary = {
         "media_assets_lesson_audio_deleted": deleted_audio_assets,
         "media_assets_course_cover_deleted": deleted_cover_assets,
         "media_objects_deleted": deleted_media_objects,
     }
+    logger.info(
+        "MEDIA_CLEANUP_GARBAGE_COLLECT_SUMMARY",
+        extra={
+            **summary,
+            "batch_size": batch_size,
+            "max_batches": max_batches,
+        },
+    )
+    return summary
 
 
 async def delete_media_asset_and_objects(*, media_id: str) -> bool:
@@ -612,8 +637,16 @@ async def delete_media_asset_and_objects(*, media_id: str) -> bool:
             await conn.commit()
 
     if not row:
+        logger.info(
+            "MEDIA_CLEANUP_DELETE_MEDIA_ASSET",
+            extra={"media_id": media_id, "deleted": False},
+        )
         return False
 
     asset = dict(row)
     await _delete_storage_targets(_asset_delete_targets(asset))
+    logger.info(
+        "MEDIA_CLEANUP_DELETE_MEDIA_ASSET",
+        extra={"media_id": media_id, "deleted": True},
+    )
     return True

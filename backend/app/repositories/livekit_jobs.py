@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Iterable
 
+from psycopg import errors
 from psycopg.types.json import Jsonb
 
 from ..db import get_conn
@@ -26,17 +27,79 @@ async def release_processing_webhook_jobs() -> None:
 
 
 async def get_webhook_job_counts() -> dict[str, int]:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            select
-              count(*) filter (where status in ('pending', 'processing')) as pending,
-              count(*) filter (where status = 'failed') as failed
-            from app.livekit_webhook_jobs
-            """
-        )
-        row = await cur.fetchone()
+    try:
+        async with get_conn() as cur:
+            await cur.execute(
+                """
+                select
+                  count(*) filter (where status in ('pending', 'processing')) as pending,
+                  count(*) filter (where status = 'failed') as failed
+                from app.livekit_webhook_jobs
+                """
+            )
+            row = await cur.fetchone()
+    except errors.UndefinedTable:
+        return {"pending": 0, "failed": 0}
     return {"pending": row["pending"], "failed": row["failed"]}
+
+
+async def get_webhook_queue_snapshot() -> dict[str, Any]:
+    try:
+        async with get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT
+                  count(*) FILTER (WHERE status = 'pending') AS pending,
+                  count(*) FILTER (WHERE status = 'processing') AS processing,
+                  count(*) FILTER (WHERE status = 'failed') AS failed,
+                  min(next_run_at) FILTER (WHERE status = 'pending') AS next_due_at,
+                  max(updated_at) FILTER (WHERE status = 'failed') AS last_failed_at
+                FROM app.livekit_webhook_jobs
+                """
+            )
+            row = await cur.fetchone()
+    except errors.UndefinedTable:
+        return {
+            "pending": 0,
+            "processing": 0,
+            "failed": 0,
+            "next_due_at": None,
+            "last_failed_at": None,
+        }
+    return {
+        "pending": int(row["pending"] or 0) if row else 0,
+        "processing": int(row["processing"] or 0) if row else 0,
+        "failed": int(row["failed"] or 0) if row else 0,
+        "next_due_at": row["next_due_at"] if row else None,
+        "last_failed_at": row["last_failed_at"] if row else None,
+    }
+
+
+async def list_recent_failed_webhook_jobs(limit: int = 20) -> list[dict[str, Any]]:
+    capped_limit = max(1, min(int(limit or 20), 100))
+    try:
+        async with get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT
+                  id,
+                  event,
+                  attempt,
+                  status,
+                  last_error,
+                  last_attempt_at,
+                  updated_at
+                FROM app.livekit_webhook_jobs
+                WHERE status = 'failed'
+                ORDER BY updated_at DESC, id DESC
+                LIMIT %s
+                """,
+                (capped_limit,),
+            )
+            rows = await cur.fetchall()
+    except errors.UndefinedTable:
+        return []
+    return [dict(row) for row in rows]
 
 
 async def create_webhook_job(payload: dict[str, Any]) -> dict[str, Any]:

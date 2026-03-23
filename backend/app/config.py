@@ -224,6 +224,10 @@ class Settings(BaseSettings):
     email_from: str | None = Field(default=None, validation_alias="EMAIL_FROM")
     membership_expiry_warning_interval_seconds: int = 60 * 60 * 24
     enable_test_session_headers: bool = False
+    logs_mcp_enabled: bool = Field(default_factory=lambda: not _is_cloud_runtime())
+    media_control_plane_mcp_enabled: bool = Field(
+        default_factory=lambda: not _is_cloud_runtime()
+    )
 
     @model_validator(mode="after")
     def _populate_database_url(self):

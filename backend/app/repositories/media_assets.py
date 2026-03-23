@@ -175,6 +175,135 @@ async def get_media_assets(media_ids: Iterable[str]) -> dict[str, dict[str, Any]
     }
 
 
+async def list_media_failures(
+    *,
+    limit: int = 20,
+    media_id: str | None = None,
+) -> list[dict[str, Any]]:
+    capped_limit = max(1, min(int(limit or 20), 100))
+    normalized_media_id = str(media_id or "").strip() or None
+    query = f"""
+            SELECT
+              ma.id,
+              ma.course_id,
+              ma.lesson_id,
+              ma.media_type,
+              ma.purpose,
+              ma.state,
+              ma.error_message,
+              ma.processing_attempts,
+              ma.processing_locked_at,
+              ma.next_retry_at,
+              ma.original_object_path,
+              ma.storage_bucket,
+              ma.streaming_object_path,
+              ma.streaming_storage_bucket,
+              ma.created_at,
+              ma.updated_at,
+              hpu.id AS home_player_upload_id,
+              hpu.title AS home_player_upload_title,
+              hpu.active AS home_player_upload_active
+            FROM app.media_assets ma
+            LEFT JOIN app.home_player_uploads hpu ON hpu.media_asset_id = ma.id
+            WHERE (%s IS NULL OR ma.id = %s)
+              AND (lower(coalesce(ma.state, '')) = 'failed' OR ma.error_message IS NOT NULL)
+              AND {_test_visibility_clause("ma")}
+            ORDER BY ma.updated_at DESC, ma.id DESC
+            LIMIT %s
+            """
+    try:
+        async with get_conn() as cur:
+            await cur.execute(
+                query,
+                (normalized_media_id, normalized_media_id, capped_limit),
+            )
+            rows = await cur.fetchall()
+    except errors.UndefinedTable:
+        return []
+    return [dict(row) for row in rows]
+
+
+async def list_orphaned_control_plane_assets(
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    capped_limit = max(1, min(int(limit or 100), 200))
+    query = f"""
+            SELECT
+              ma.id,
+              ma.course_id,
+              ma.lesson_id,
+              ma.media_type,
+              ma.purpose,
+              ma.ingest_format,
+              ma.original_object_path,
+              ma.original_content_type,
+              ma.original_size_bytes,
+              ma.storage_bucket,
+              ma.streaming_object_path,
+              ma.streaming_storage_bucket,
+              ma.streaming_format,
+              ma.duration_seconds,
+              ma.codec,
+              ma.state,
+              ma.error_message,
+              ma.processing_attempts,
+              ma.processing_locked_at,
+              ma.next_retry_at,
+              ma.created_at,
+              ma.updated_at,
+              count(DISTINCT lm.id) AS lesson_media_count,
+              count(DISTINCT rm.id) AS runtime_media_count,
+              count(DISTINCT hpu.id) AS home_player_upload_count
+            FROM app.media_assets ma
+            LEFT JOIN app.lesson_media lm
+              ON lm.media_asset_id = ma.id
+             AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
+            LEFT JOIN app.runtime_media rm
+              ON rm.media_asset_id = ma.id
+             AND app.is_test_row_visible(rm.is_test, rm.test_session_id)
+            LEFT JOIN app.home_player_uploads hpu
+              ON hpu.media_asset_id = ma.id
+             AND app.is_test_row_visible(hpu.is_test, hpu.test_session_id)
+            WHERE lower(coalesce(ma.purpose, '')) IN ('lesson_audio', 'lesson_media', 'home_player_audio')
+              AND {_test_visibility_clause("ma")}
+            GROUP BY
+              ma.id,
+              ma.course_id,
+              ma.lesson_id,
+              ma.media_type,
+              ma.purpose,
+              ma.ingest_format,
+              ma.original_object_path,
+              ma.original_content_type,
+              ma.original_size_bytes,
+              ma.storage_bucket,
+              ma.streaming_object_path,
+              ma.streaming_storage_bucket,
+              ma.streaming_format,
+              ma.duration_seconds,
+              ma.codec,
+              ma.state,
+              ma.error_message,
+              ma.processing_attempts,
+              ma.processing_locked_at,
+              ma.next_retry_at,
+              ma.created_at,
+              ma.updated_at
+            HAVING count(DISTINCT lm.id) = 0
+               AND count(DISTINCT rm.id) = 0
+            ORDER BY ma.updated_at DESC, ma.id DESC
+            LIMIT %s
+            """
+    try:
+        async with get_conn() as cur:
+            await cur.execute(query, (capped_limit,))
+            rows = await cur.fetchall()
+    except errors.UndefinedTable:
+        return []
+    return [dict(row) for row in rows]
+
+
 async def get_media_asset_access(media_id: str) -> dict[str, Any] | None:
     query = f"""
             SELECT
@@ -465,6 +594,69 @@ async def list_pending_media_assets_missing_source(
     except errors.UndefinedTable:
         return []
     return [dict(row) for row in rows]
+
+
+async def get_media_processing_worker_summary(
+    *,
+    stale_after_seconds: int,
+) -> dict[str, Any]:
+    try:
+        query = f"""
+                SELECT
+                  count(*) FILTER (
+                    WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
+                      AND lower(coalesce(ma.state, '')) = 'pending_upload'
+                  ) AS pending_upload,
+                  count(*) FILTER (
+                    WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
+                      AND lower(coalesce(ma.state, '')) = 'uploaded'
+                  ) AS uploaded,
+                  count(*) FILTER (
+                    WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
+                      AND lower(coalesce(ma.state, '')) = 'processing'
+                  ) AS processing,
+                  count(*) FILTER (
+                    WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
+                      AND lower(coalesce(ma.state, '')) = 'failed'
+                  ) AS failed,
+                  count(*) FILTER (
+                    WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
+                      AND lower(coalesce(ma.state, '')) = 'ready'
+                  ) AS ready,
+                  count(*) FILTER (
+                    WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
+                      AND lower(coalesce(ma.state, '')) = 'processing'
+                      AND ma.processing_locked_at < now() - (%s || ' seconds')::interval
+                  ) AS stale_processing_locks,
+                  min(ma.created_at) FILTER (
+                    WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
+                      AND lower(coalesce(ma.state, '')) IN ('uploaded', 'processing', 'failed')
+                  ) AS oldest_unfinished_created_at
+                FROM app.media_assets ma
+                WHERE {_test_visibility_clause("ma")}
+                """
+        async with get_conn() as cur:
+            await cur.execute(query, (stale_after_seconds,))
+            row = await cur.fetchone()
+    except errors.UndefinedTable:
+        return {
+            "pending_upload": 0,
+            "uploaded": 0,
+            "processing": 0,
+            "failed": 0,
+            "ready": 0,
+            "stale_processing_locks": 0,
+            "oldest_unfinished_created_at": None,
+        }
+    return {
+        "pending_upload": int(row["pending_upload"] or 0) if row else 0,
+        "uploaded": int(row["uploaded"] or 0) if row else 0,
+        "processing": int(row["processing"] or 0) if row else 0,
+        "failed": int(row["failed"] or 0) if row else 0,
+        "ready": int(row["ready"] or 0) if row else 0,
+        "stale_processing_locks": int(row["stale_processing_locks"] or 0) if row else 0,
+        "oldest_unfinished_created_at": row["oldest_unfinished_created_at"] if row else None,
+    }
 
 
 async def release_processing_media_assets(*, stale_after_seconds: int = 1800) -> int:

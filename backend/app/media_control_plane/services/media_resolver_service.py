@@ -210,7 +210,12 @@ class MediaResolverService:
             return None
         return str(row["id"])
 
-    async def resolve_runtime_media(self, runtime_media_id: str) -> RuntimeMediaResolution:
+    async def resolve_runtime_media(
+        self,
+        runtime_media_id: str,
+        *,
+        emit_logs: bool = True,
+    ) -> RuntimeMediaResolution:
         normalized_runtime_media_id = _normalize_text(runtime_media_id)
         if normalized_runtime_media_id is None:
             result = self._not_found_resolution(
@@ -218,7 +223,8 @@ class MediaResolverService:
                 lesson_media_id=None,
                 failure_detail="runtime_media_id is required",
             )
-            self._log_resolution(result)
+            if emit_logs:
+                self._log_resolution(result)
             return result
 
         row = await self._fetch_runtime_media_contract_row(normalized_runtime_media_id)
@@ -228,14 +234,21 @@ class MediaResolverService:
                 lesson_media_id=None,
                 failure_detail="runtime_media row missing",
             )
-            self._log_resolution(result)
+            if emit_logs:
+                self._log_resolution(result)
             return result
 
         result = await self._resolve_row(row)
-        self._log_resolution(result)
+        if emit_logs:
+            self._log_resolution(result)
         return result
 
-    async def resolve_lesson_media(self, lesson_media_id: str) -> RuntimeMediaResolution:
+    async def resolve_lesson_media(
+        self,
+        lesson_media_id: str,
+        *,
+        emit_logs: bool = True,
+    ) -> RuntimeMediaResolution:
         normalized_lesson_media_id = _normalize_text(lesson_media_id)
         if normalized_lesson_media_id is None:
             result = self._not_found_resolution(
@@ -243,7 +256,8 @@ class MediaResolverService:
                 lesson_media_id="",
                 failure_detail="lesson_media_id is required",
             )
-            self._log_resolution(result)
+            if emit_logs:
+                self._log_resolution(result)
             return result
 
         runtime_media_id = await self.lookup_runtime_media_id_for_lesson_media(normalized_lesson_media_id)
@@ -253,13 +267,20 @@ class MediaResolverService:
                 lesson_media_id=normalized_lesson_media_id,
                 failure_detail="runtime_media row missing for lesson_media",
             )
-            self._log_resolution(result)
+            if emit_logs:
+                self._log_resolution(result)
             return result
 
-        result = await self.resolve_runtime_media(runtime_media_id)
+        result = await self.resolve_runtime_media(runtime_media_id, emit_logs=emit_logs)
         if result.lesson_media_id is None:
             result.lesson_media_id = normalized_lesson_media_id
         return result
+
+    async def inspect_runtime_media(self, runtime_media_id: str) -> RuntimeMediaResolution:
+        return await self.resolve_runtime_media(runtime_media_id, emit_logs=False)
+
+    async def inspect_lesson_media(self, lesson_media_id: str) -> RuntimeMediaResolution:
+        return await self.resolve_lesson_media(lesson_media_id, emit_logs=False)
 
     async def _fetch_runtime_media_contract_row(
         self,

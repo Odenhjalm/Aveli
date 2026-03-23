@@ -52,6 +52,8 @@ from .routes import (
     home,
     landing,
     livekit_webhooks,
+    logs_mcp,
+    media_control_plane_mcp,
     course_bundles,
     email_verification,
     media,
@@ -184,6 +186,8 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(studio_sessions.router)
     app.include_router(stripe_webhooks.router)
     app.include_router(livekit_webhooks.router)
+    app.include_router(logs_mcp.router)
+    app.include_router(media_control_plane_mcp.router)
     app.include_router(upload.router)
     app.include_router(upload.files_router)
     app.include_router(upload.legacy_router)

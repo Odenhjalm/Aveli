@@ -5,6 +5,8 @@ import logging
 from logging.config import dictConfig
 from typing import Any, Dict
 
+from .observability import get_event_buffer_handler
+
 
 class JSONFormatter(logging.Formatter):
     """
@@ -62,6 +64,11 @@ def setup_logging() -> None:
     config: Dict[str, Any] = {
         "version": 1,
         "disable_existing_loggers": False,
+        "filters": {
+            "request_context": {
+                "()": "app.logging_context.RequestContextFilter",
+            }
+        },
         "formatters": {
             "json": {
                 "()": "app.logging_utils.JSONFormatter",
@@ -72,12 +79,19 @@ def setup_logging() -> None:
             "default": {
                 "class": "logging.StreamHandler",
                 "formatter": "json",
+                "filters": ["request_context"],
                 "level": "INFO",
-            }
+            },
+            "observability": {
+                "()": "app.observability.log_buffer.get_event_buffer_handler",
+                "filters": ["request_context"],
+                "level": "INFO",
+            },
         },
         "root": {
-            "handlers": ["default"],
+            "handlers": ["default", "observability"],
             "level": "INFO",
         },
     }
+    get_event_buffer_handler()
     dictConfig(config)

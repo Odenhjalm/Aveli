@@ -1164,8 +1164,21 @@ async def reorder_lessons(
             await conn.commit()
 
 
-async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
-    query = """
+async def list_lesson_media(
+    lesson_id: str,
+    *,
+    limit: int | None = None,
+) -> Sequence[dict[str, Any]]:
+    limit_value = _coerce_int(limit) if limit is not None else None
+    if limit is not None and limit_value is None:
+        raise ValueError("limit must be an integer.")
+
+    limit_clause = " LIMIT %s" if limit_value is not None else ""
+    params: list[Any] = [lesson_id]
+    if limit_value is not None:
+        params.append(limit_value)
+
+    query = f"""
         SELECT
           lm.id,
           lm.lesson_id,
@@ -1183,6 +1196,8 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
           lm.media_id,
           lm.media_asset_id,
           lm.position,
+          nullif(trim(lm.storage_path), '') AS runtime_contract_storage_path,
+          nullif(trim(lm.storage_bucket), '') AS runtime_contract_storage_bucket,
           coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
           coalesce(
             mo.content_type,
@@ -1217,6 +1232,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
         WHERE lm.lesson_id = %s
           AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
         ORDER BY lm.position
+        {limit_clause}
     """
     fallback_query = query.replace(
         """
@@ -1232,10 +1248,101 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             try:
-                await cur.execute(query, (lesson_id,))
+                await cur.execute(query, params)
             except (errors.UndefinedTable, errors.UndefinedColumn):
                 await conn.rollback()
-                await cur.execute(fallback_query, (lesson_id,))
+                await cur.execute(fallback_query, params)
+            return await cur.fetchall()
+
+
+async def list_lesson_media_for_asset(
+    media_asset_id: str,
+    *,
+    limit: int | None = None,
+) -> Sequence[dict[str, Any]]:
+    limit_value = _coerce_int(limit) if limit is not None else None
+    if limit is not None and limit_value is None:
+        raise ValueError("limit must be an integer.")
+
+    limit_clause = " LIMIT %s" if limit_value is not None else ""
+    params: list[Any] = [media_asset_id]
+    if limit_value is not None:
+        params.append(limit_value)
+
+    query = f"""
+        SELECT
+          lm.id,
+          lm.lesson_id,
+          lm.kind,
+          CASE
+            WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+              coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
+            ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
+          END AS storage_path,
+          CASE
+            WHEN ma.id IS NOT NULL AND ma.state = 'ready' THEN
+              coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+            ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
+          END AS storage_bucket,
+          lm.media_id,
+          lm.media_asset_id,
+          lm.position,
+          nullif(trim(lm.storage_path), '') AS runtime_contract_storage_path,
+          nullif(trim(lm.storage_bucket), '') AS runtime_contract_storage_bucket,
+          coalesce(ma.duration_seconds, lm.duration_seconds) AS duration_seconds,
+          coalesce(
+            mo.content_type,
+            CASE
+              WHEN ma.state = 'ready' AND lower(coalesce(ma.media_type, '')) = 'audio'
+                THEN 'audio/mpeg'
+              ELSE ma.original_content_type
+            END
+          ) AS content_type,
+          coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
+          coalesce(mo.original_name, ma.original_filename) AS original_name,
+          coalesce(
+            ma.state,
+            CASE
+              WHEN lower(coalesce(lm.kind, '')) IN ('document', 'pdf')
+                THEN 'ready'
+              ELSE NULL
+            END
+          ) AS media_state,
+          ma.ingest_format,
+          ma.streaming_format,
+          ma.codec,
+          ma.error_message,
+          lmi.issue AS issue_reason,
+          lmi.details AS issue_details,
+          lmi.updated_at AS issue_updated_at,
+          lm.created_at
+        FROM app.lesson_media lm
+        LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
+        LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
+        LEFT JOIN app.lesson_media_issues lmi ON lmi.lesson_media_id = lm.id
+        WHERE lm.media_asset_id = %s
+          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
+        ORDER BY lm.created_at DESC, lm.id DESC
+        {limit_clause}
+    """
+    fallback_query = query.replace(
+        """
+          lmi.issue AS issue_reason,
+          lmi.details AS issue_details,
+          lmi.updated_at AS issue_updated_at,
+""",
+        "",
+    ).replace(
+        "\n        LEFT JOIN app.lesson_media_issues lmi ON lmi.lesson_media_id = lm.id",
+        "",
+    )
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(query, params)
+            except (errors.UndefinedTable, errors.UndefinedColumn):
+                await conn.rollback()
+                await cur.execute(fallback_query, params)
             return await cur.fetchall()
 
 

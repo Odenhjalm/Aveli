@@ -21,6 +21,10 @@ _ALLOWED_REASONS = {
 }
 
 
+def _test_visibility_clause(alias: str) -> str:
+    return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
+
+
 def normalize_mode(value: str | None) -> str:
     normalized = (value or "").strip().lower()
     if normalized in _ALLOWED_MODES:
@@ -84,3 +88,46 @@ async def record_media_resolution_failure(
             normalized_mode,
             normalized_reason,
         )
+
+
+async def list_recent_media_resolution_failures(
+    *,
+    limit: int = 20,
+    media_asset_id: str | None = None,
+) -> list[dict[str, Any]]:
+    capped_limit = max(1, min(int(limit or 20), 100))
+    normalized_media_asset_id = str(media_asset_id or "").strip() or None
+    try:
+        async with pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    f"""
+                    SELECT
+                      mrf.id,
+                      mrf.created_at,
+                      mrf.lesson_media_id,
+                      mrf.mode,
+                      mrf.reason,
+                      mrf.details,
+                      lm.media_asset_id,
+                      lm.lesson_id,
+                      l.course_id
+                    FROM app.media_resolution_failures mrf
+                    LEFT JOIN app.lesson_media lm ON lm.id = mrf.lesson_media_id
+                    LEFT JOIN app.lessons l ON l.id = lm.lesson_id
+                    WHERE (%s IS NULL OR lm.media_asset_id = %s)
+                      AND ({_test_visibility_clause("lm")} OR lm.id IS NULL)
+                      AND ({_test_visibility_clause("l")} OR l.id IS NULL)
+                    ORDER BY mrf.created_at DESC, mrf.id DESC
+                    LIMIT %s
+                    """,
+                    (
+                        normalized_media_asset_id,
+                        normalized_media_asset_id,
+                        capped_limit,
+                    ),
+                )
+                rows = await cur.fetchall()
+    except errors.UndefinedTable:
+        return []
+    return [dict(row) for row in rows]
