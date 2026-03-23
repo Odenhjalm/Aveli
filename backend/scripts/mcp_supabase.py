@@ -42,8 +42,15 @@ class MCPClient:
         if not CONFIG_PATH.exists():
             raise SystemExit(f"Missing MCP config: {CONFIG_PATH}")
         config = json.loads(CONFIG_PATH.read_text())
+        servers = config.get("servers")
+        if not isinstance(servers, dict):
+            servers = config.get("mcpServers")
+        if not isinstance(servers, dict):
+            raise SystemExit(
+                f"Missing 'servers' configuration in {CONFIG_PATH}"
+            )
         try:
-            return config["mcpServers"][server_name]["url"]
+            return servers[server_name]["url"]
         except KeyError as exc:
             raise SystemExit(
                 f"Server '{server_name}' not found in {CONFIG_PATH}"
