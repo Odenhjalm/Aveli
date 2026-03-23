@@ -241,6 +241,9 @@ class Settings(BaseSettings):
     verification_mcp_enabled: bool = Field(
         default_factory=lambda: not _is_cloud_runtime()
     )
+    domain_observability_mcp_enabled: bool = Field(
+        default_factory=lambda: not _is_cloud_runtime()
+    )
 
     @field_validator("mcp_mode", mode="before")
     @classmethod

@@ -50,6 +50,7 @@ from .routes import (
     community,
     connect,
     courses,
+    domain_observability_mcp,
     home,
     landing,
     livekit_webhooks,
@@ -199,6 +200,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(logs_mcp.router)
     app.include_router(media_control_plane_mcp.router)
     app.include_router(verification_mcp.router)
+    app.include_router(domain_observability_mcp.router)
     app.include_router(upload.router)
     app.include_router(upload.files_router)
     app.include_router(upload.legacy_router)
