@@ -125,6 +125,13 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
           setState(() => _progress = fraction.clamp(0.0, 1.0));
         },
       );
+      if (!mounted) {
+        preview.dispose();
+        return;
+      }
+      setState(() => _status = 'Verifierar uppladdning...');
+
+      await repo.completeUpload(mediaId: upload.mediaId);
 
       if (!mounted) {
         preview.dispose();

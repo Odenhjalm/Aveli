@@ -188,7 +188,79 @@ async def test_cover_upload_url_allows_image(async_client, monkeypatch):
         assert asset is not None
         assert asset["media_type"] == "image"
         assert asset["purpose"] == "course_cover"
-        assert asset["state"] == "uploaded"
+        assert asset["state"] == "pending_upload"
+        meta = await get_course_cover_fields(course_id)
+        assert meta.get("cover_media_id") is None
+        assert meta.get("cover_url") is None
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_complete_cover_upload_promotes_verified_asset(async_client, monkeypatch):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(*, storage_bucket: str, storage_path: str):
+            assert storage_bucket == storage_module.storage_service.bucket
+            assert storage_path.startswith(f"media/source/cover/courses/{course_id}/")
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+
+        upload_resp = await async_client.post(
+            "/api/media/cover-upload-url",
+            headers=headers,
+            json={
+                "filename": "cover.jpg",
+                "mime_type": "image/jpeg",
+                "size_bytes": 2048,
+                "course_id": course_id,
+            },
+        )
+        assert upload_resp.status_code == 200, upload_resp.text
+        media_id = upload_resp.json()["media_id"]
+
+        pending_asset = await media_assets_repo.get_media_asset(media_id)
+        assert pending_asset is not None
+        assert pending_asset["state"] == "pending_upload"
+
+        complete_resp = await async_client.post(
+            "/api/media/complete",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+        assert complete_resp.json()["state"] == "uploaded"
+
+        uploaded_asset = await media_assets_repo.get_media_asset(media_id)
+        assert uploaded_asset is not None
+        assert uploaded_asset["state"] == "uploaded"
         meta = await get_course_cover_fields(course_id)
         assert meta.get("cover_media_id") is None
         assert meta.get("cover_url") is None
@@ -404,6 +476,7 @@ async def test_cover_clear_deletes_assets(async_client, monkeypatch):
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
 
@@ -491,6 +564,7 @@ async def test_prune_course_cover_assets_skips_shared_lesson_storage(
             original_size_bytes=1024,
             storage_bucket=storage_module.public_storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert old_asset
         await media_assets_repo.mark_course_cover_ready_from_worker(
@@ -514,6 +588,7 @@ async def test_prune_course_cover_assets_skips_shared_lesson_storage(
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert new_asset
         await media_assets_repo.mark_course_cover_ready_from_worker(
@@ -593,6 +668,7 @@ async def test_delete_media_asset_and_objects_skips_shared_media_object_storage(
             original_size_bytes=128,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
 
@@ -647,6 +723,7 @@ async def test_studio_course_update_persists_cover_media_id(async_client):
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
 
@@ -689,6 +766,7 @@ async def test_worker_promotion_updates_cover_media_id_without_touching_cover_ur
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
 
@@ -734,6 +812,7 @@ async def test_worker_promotion_is_idempotent_for_cover_media_id(async_client):
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
 

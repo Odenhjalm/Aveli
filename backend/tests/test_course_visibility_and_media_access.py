@@ -245,6 +245,7 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
         original_size_bytes=123,
         storage_bucket="course-media",
         state="uploaded",
+        allow_uploaded_state=True,
     )
     assert media_asset
     await media_assets_repo.mark_media_asset_ready_from_worker(

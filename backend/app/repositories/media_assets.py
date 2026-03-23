@@ -16,6 +16,10 @@ class MediaAssetReadyAuthorityError(PermissionError):
     """Raised when non-worker code attempts to mark a media asset ready."""
 
 
+class MediaAssetUploadedStateRequiresVerificationError(ValueError):
+    """Raised when code tries to create an uploaded asset without verification."""
+
+
 def _test_visibility_clause(alias: str) -> str:
     return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
 
@@ -34,11 +38,16 @@ async def create_media_asset(
     original_size_bytes: int | None,
     storage_bucket: str,
     state: str,
+    allow_uploaded_state: bool = False,
 ) -> dict[str, Any] | None:
     normalized_state = str(state or "").strip().lower()
     if normalized_state == "ready":
         raise MediaAssetReadyAuthorityError(
             "Only the processing worker may set media_asset.state = 'ready'"
+        )
+    if normalized_state == "uploaded" and not allow_uploaded_state:
+        raise MediaAssetUploadedStateRequiresVerificationError(
+            "create_media_asset may not persist state='uploaded' before source verification"
         )
 
     async with pool.connection() as conn:  # type: ignore

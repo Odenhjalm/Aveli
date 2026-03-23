@@ -102,6 +102,7 @@ async def test_pipeline_audio_becomes_editor_resolvable_after_processing(
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset_ok
         await media_assets_repo.mark_media_asset_ready_from_worker(
@@ -137,6 +138,7 @@ async def test_pipeline_audio_becomes_editor_resolvable_after_processing(
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset_missing
         await media_assets_repo.mark_media_asset_ready_from_worker(

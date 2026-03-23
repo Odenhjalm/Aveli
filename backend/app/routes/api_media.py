@@ -106,6 +106,7 @@ def _assert_valid_cover_media_asset_row(
     *,
     course_id: str,
     original_object_path: str,
+    expected_state: str,
 ) -> dict[str, object]:
     if not media_asset:
         raise HTTPException(
@@ -126,7 +127,7 @@ def _assert_valid_cover_media_asset_row(
         or persisted_object_path != original_object_path
         or media_type != "image"
         or purpose != "course_cover"
-        or state != "uploaded"
+        or state != expected_state
     ):
         logger.error(
             "Invalid cover media asset contract course_id=%s media_id=%s "
@@ -535,6 +536,23 @@ def _build_cover_source_object_path(course_id: str, filename: str) -> str:
     return path.as_posix()
 
 
+def _cover_source_prefix(course_id: str) -> str:
+    return (
+        Path("media") / "source" / "cover" / "courses" / course_id
+    ).as_posix() + "/"
+
+
+def _is_canonical_cover_source_path(
+    object_path: str,
+    *,
+    course_id: str,
+) -> bool:
+    normalized = str(object_path or "").strip().lstrip("/")
+    if not normalized:
+        return False
+    return normalized.startswith(_cover_source_prefix(course_id))
+
+
 async def _copy_cover_source_object(
     *,
     course_id: str,
@@ -839,6 +857,206 @@ async def _authorize_media_asset(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied",
+            )
+
+    return media_asset
+
+
+async def _finalize_media_asset_upload(
+    media_asset: dict[str, object],
+) -> dict[str, object]:
+    media_asset_id = str(media_asset.get("id") or "").strip()
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    purpose = (media_asset.get("purpose") or "").strip().lower()
+    course_id = str(media_asset.get("course_id") or "").strip()
+    lesson_id = str(media_asset.get("lesson_id") or "").strip()
+    object_path = str(media_asset.get("original_object_path") or "").strip()
+    storage_bucket = str(
+        media_asset.get("storage_bucket") or storage_service.storage_service.bucket
+    ).strip()
+    if not object_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Media missing storage path",
+        )
+
+    if media_type == "audio":
+        if purpose not in {"lesson_audio", "home_player_audio"}:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Unsupported media purpose",
+            )
+        if purpose == "lesson_audio":
+            if not course_id or not lesson_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Lesson audio is missing course or lesson context",
+                )
+            if not _is_canonical_lesson_audio_source_path(
+                object_path,
+                course_id=course_id,
+                lesson_id=lesson_id,
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Lesson audio must use the canonical pipeline source path",
+                )
+    elif media_type == "image":
+        if purpose == "lesson_media":
+            if storage_bucket != settings.media_public_bucket:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Lesson image must use the public media bucket",
+                )
+            if not lesson_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Lesson image is missing lesson context",
+                )
+            if not _is_canonical_lesson_image_object_path(
+                object_path,
+                lesson_id=lesson_id,
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Lesson image must use the canonical public image path",
+                )
+        elif purpose == "course_cover":
+            if not course_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Course cover is missing course context",
+                )
+            if storage_bucket != storage_service.storage_service.bucket:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Course cover must use the canonical source media bucket",
+                )
+            if not _is_canonical_cover_source_path(
+                object_path,
+                course_id=course_id,
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Course cover must use the canonical source media path",
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Unsupported media purpose",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported media type",
+        )
+
+    try:
+        source_exists = await _wait_for_storage_object(
+            storage_bucket=storage_bucket,
+            storage_path=object_path,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning("Media upload completion check failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    if not source_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Uploaded file is missing from storage",
+        )
+
+    current_state = str(media_asset.get("state") or "").strip().lower()
+    if media_type == "audio":
+        if current_state in {"pending_upload", "failed"}:
+            updated = await media_assets_repo.mark_media_asset_uploaded(
+                media_id=media_asset_id
+            )
+            if not updated:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Media not found",
+                )
+            media_asset = (
+                await media_assets_repo.get_media_asset(media_asset_id) or media_asset
+            )
+    elif purpose == "lesson_media":
+        details, storage_table_available = await storage_objects.fetch_storage_object_details(
+            [(storage_bucket, object_path)]
+        )
+        storage_detail = (
+            details.get((storage_bucket, object_path))
+            if storage_table_available
+            else None
+        )
+        content_type = _normalize_mime(
+            storage_detail.get("content_type") if storage_detail else None
+        ) or _normalize_mime(media_asset.get("original_content_type") or "")
+        if content_type not in _LESSON_IMAGE_MIME_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=_LESSON_IMAGE_SUPPORTED_DETAIL,
+            )
+        size_bytes = (
+            storage_detail.get("size_bytes")
+            if storage_detail is not None
+            else media_asset.get("original_size_bytes")
+        )
+        if current_state != "ready":
+            updated = await media_assets_repo.mark_media_asset_ready_passthrough(
+                media_id=media_asset_id,
+                streaming_object_path=object_path,
+                storage_bucket=storage_bucket,
+                streaming_format=str(
+                    media_asset.get("ingest_format")
+                    or _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE.get(
+                        content_type, "image"
+                    )
+                ),
+                original_content_type=content_type,
+                original_size_bytes=(
+                    int(size_bytes) if size_bytes is not None else None
+                ),
+            )
+            if not updated:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Media not found",
+                )
+            media_asset = (
+                await media_assets_repo.get_media_asset(media_asset_id) or media_asset
+            )
+    else:
+        details, storage_table_available = await storage_objects.fetch_storage_object_details(
+            [(storage_bucket, object_path)]
+        )
+        storage_detail = (
+            details.get((storage_bucket, object_path))
+            if storage_table_available
+            else None
+        )
+        content_type = _normalize_mime(
+            storage_detail.get("content_type") if storage_detail else None
+        ) or _normalize_mime(media_asset.get("original_content_type") or "")
+        if content_type not in _COVER_MIME_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported cover image type",
+            )
+        if current_state in {"pending_upload", "failed"}:
+            updated = await media_assets_repo.mark_media_asset_uploaded(
+                media_id=media_asset_id
+            )
+            if not updated:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Media not found",
+                )
+            media_asset = (
+                await media_assets_repo.get_media_asset(media_asset_id) or media_asset
             )
 
     return media_asset
@@ -1242,7 +1460,7 @@ async def request_upload_url(
         media_asset_purpose = (
             "home_player_audio" if purpose == "home_player_audio" else "lesson_audio"
         )
-        initial_state = "pending_upload" if purpose == "lesson_audio" else "uploaded"
+        initial_state = "pending_upload"
     else:
         media_asset_purpose = "lesson_media"
         initial_state = "pending_upload"
@@ -1462,149 +1680,8 @@ async def complete_upload_url(
         user_id=user_id,
         media_asset_id=media_asset_id,
     )
-
+    media_asset = await _finalize_media_asset_upload(media_asset)
     media_type = str(media_asset.get("media_type") or "").strip().lower()
-    purpose = (media_asset.get("purpose") or "").strip().lower()
-    course_id = str(media_asset.get("course_id") or "").strip()
-    lesson_id = str(media_asset.get("lesson_id") or "").strip()
-    object_path = str(media_asset.get("original_object_path") or "").strip()
-    storage_bucket = str(
-        media_asset.get("storage_bucket") or storage_service.storage_service.bucket
-    ).strip()
-    if not object_path:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Media missing storage path",
-        )
-    if media_type == "audio":
-        if purpose not in {"lesson_audio", "home_player_audio"}:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Unsupported media purpose",
-            )
-        if purpose == "lesson_audio":
-            if not course_id or not lesson_id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Lesson audio is missing course or lesson context",
-                )
-            if not _is_canonical_lesson_audio_source_path(
-                object_path,
-                course_id=course_id,
-                lesson_id=lesson_id,
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Lesson audio must use the canonical pipeline source path",
-                )
-    elif media_type == "image":
-        if purpose != "lesson_media":
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Unsupported media purpose",
-            )
-        if storage_bucket != settings.media_public_bucket:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Lesson image must use the public media bucket",
-            )
-        if not lesson_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Lesson image is missing lesson context",
-            )
-        if not _is_canonical_lesson_image_object_path(
-            object_path,
-            lesson_id=lesson_id,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Lesson image must use the canonical public image path",
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported media type",
-        )
-
-    try:
-        source_exists = await _wait_for_storage_object(
-            storage_bucket=storage_bucket,
-            storage_path=object_path,
-        )
-    except storage_service.StorageServiceError as exc:
-        logger.warning("Media upload completion check failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Storage signing unavailable",
-        ) from exc
-
-    if not source_exists:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Uploaded file is missing from storage",
-        )
-
-    current_state = str(media_asset.get("state") or "").strip().lower()
-    if media_type == "audio":
-        if current_state in {"pending_upload", "failed"}:
-            updated = await media_assets_repo.mark_media_asset_uploaded(
-                media_id=media_asset_id
-            )
-            if not updated:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Media not found",
-                )
-            media_asset = (
-                await media_assets_repo.get_media_asset(media_asset_id) or media_asset
-            )
-    else:
-        details, storage_table_available = await storage_objects.fetch_storage_object_details(
-            [(storage_bucket, object_path)]
-        )
-        storage_detail = (
-            details.get((storage_bucket, object_path))
-            if storage_table_available
-            else None
-        )
-        content_type = _normalize_mime(
-            storage_detail.get("content_type") if storage_detail else None
-        ) or _normalize_mime(media_asset.get("original_content_type") or "")
-        if content_type not in _LESSON_IMAGE_MIME_TYPES:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=_LESSON_IMAGE_SUPPORTED_DETAIL,
-            )
-        size_bytes = (
-            storage_detail.get("size_bytes")
-            if storage_detail is not None
-            else media_asset.get("original_size_bytes")
-        )
-        if current_state != "ready":
-            updated = await media_assets_repo.mark_media_asset_ready_passthrough(
-                media_id=media_asset_id,
-                streaming_object_path=object_path,
-                storage_bucket=storage_bucket,
-                streaming_format=str(
-                    media_asset.get("ingest_format")
-                    or _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE.get(
-                        content_type, "image"
-                    )
-                ),
-                original_content_type=content_type,
-                original_size_bytes=(
-                    int(size_bytes) if size_bytes is not None else None
-                ),
-            )
-            if not updated:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Media not found",
-                )
-            media_asset = (
-                await media_assets_repo.get_media_asset(media_asset_id) or media_asset
-            )
 
     return schemas.MediaCompleteResponse(
         media_asset_id=UUID(media_asset_id),
@@ -1715,21 +1792,22 @@ async def request_cover_upload_url(
 
     media_asset = _assert_valid_cover_media_asset_row(
         await media_assets_repo.create_media_asset(
-        owner_id=user_id,
-        course_id=course_id,
-        lesson_id=None,
-        media_type="image",
-        purpose="course_cover",
-        ingest_format=_cover_ingest_format(mime_type, payload.filename),
-        original_object_path=upload.path,
-        original_content_type=mime_type,
-        original_filename=payload.filename,
-        original_size_bytes=payload.size_bytes,
-        storage_bucket=storage_service.storage_service.bucket,
-        state="uploaded",
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format=_cover_ingest_format(mime_type, payload.filename),
+            original_object_path=upload.path,
+            original_content_type=mime_type,
+            original_filename=payload.filename,
+            original_size_bytes=payload.size_bytes,
+            storage_bucket=storage_service.storage_service.bucket,
+            state="pending_upload",
         ),
         course_id=course_id,
         original_object_path=upload.path,
+        expected_state="pending_upload",
     )
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
@@ -1814,22 +1892,24 @@ async def request_cover_from_media(
     )
     media_asset = _assert_valid_cover_media_asset_row(
         await media_assets_repo.create_media_asset(
-        owner_id=user_id,
-        course_id=course_id,
-        lesson_id=None,
-        media_type="image",
-        purpose="course_cover",
-        ingest_format=ingest_format,
-        original_object_path=copied_storage_path,
-        original_content_type=normalized_content_type,
-        original_filename=original_name,
-        original_size_bytes=None,
-        storage_bucket=copied_storage_bucket,
-        state="uploaded",
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format=ingest_format,
+            original_object_path=copied_storage_path,
+            original_content_type=normalized_content_type,
+            original_filename=original_name,
+            original_size_bytes=None,
+            storage_bucket=copied_storage_bucket,
+            state="pending_upload",
         ),
         course_id=course_id,
         original_object_path=copied_storage_path,
+        expected_state="pending_upload",
     )
+    media_asset = await _finalize_media_asset_upload(media_asset)
 
     logger.info(
         "Queued cover from media user_id=%s course_id=%s media_id=%s source_bucket=%s source=%s copied_bucket=%s copied=%s",

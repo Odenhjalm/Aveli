@@ -99,6 +99,7 @@ async def test_delete_pipeline_audio_removes_storage_objects(async_client, monke
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
         await media_assets_repo.mark_media_asset_ready_from_worker(
@@ -175,6 +176,7 @@ async def test_delete_lesson_cleans_pipeline_assets(async_client, monkeypatch):
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
         await media_assets_repo.mark_media_asset_ready_from_worker(

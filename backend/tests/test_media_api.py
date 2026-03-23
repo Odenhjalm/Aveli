@@ -175,6 +175,7 @@ async def _create_media_asset(
         original_size_bytes=1024,
         storage_bucket=storage_module.storage_service.bucket,
         state=initial_state,
+        allow_uploaded_state=initial_state == "uploaded",
     )
     assert asset
     if state == "ready" and streaming_path:
@@ -351,6 +352,35 @@ async def test_upload_url_allows_home_player_audio_purpose(async_client, monkeyp
         asset = await media_assets_repo.get_media_asset(body["media_asset_id"])
         assert asset is not None
         assert asset["purpose"] == "home_player_audio"
+        assert asset["state"] == "pending_upload"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_create_media_asset_rejects_unverified_uploaded_state(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+
+        with pytest.raises(
+            media_assets_repo.MediaAssetUploadedStateRequiresVerificationError
+        ):
+            await media_assets_repo.create_media_asset(
+                owner_id=user_id,
+                course_id=course_id,
+                lesson_id=lesson_id,
+                media_type="audio",
+                purpose="lesson_audio",
+                ingest_format="wav",
+                original_object_path=(
+                    f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/demo.wav"
+                ),
+                original_content_type="audio/wav",
+                original_filename="demo.wav",
+                original_size_bytes=1024,
+                storage_bucket=storage_module.storage_service.bucket,
+                state="uploaded",
+            )
     finally:
         await cleanup_user(user_id)
 
@@ -527,6 +557,7 @@ async def test_attach_lesson_rejects_home_player_assets(async_client):
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert media_asset is not None
 
@@ -2536,6 +2567,7 @@ async def test_playback_url_allows_subscription_only_access(async_client, monkey
             original_size_bytes=1024,
             storage_bucket=storage_module.storage_service.bucket,
             state="uploaded",
+            allow_uploaded_state=True,
         )
         assert asset
         await media_assets_repo.mark_media_asset_ready_from_worker(
