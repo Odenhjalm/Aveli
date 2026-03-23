@@ -62,6 +62,19 @@ void main() {
       );
     });
 
+    test('returns true when the backend exposes top-level cover_media_id', () {
+      expect(
+        shouldClearStudioLocalCoverOverride(<String, dynamic>{
+          'cover_media_id': 'media-1',
+          'cover': <String, dynamic>{
+            'media_id': 'media-1',
+            'source': 'placeholder',
+          },
+        }),
+        isTrue,
+      );
+    });
+
     test('returns false when the backend cover has no media id', () {
       expect(
         shouldClearStudioLocalCoverOverride(<String, dynamic>{
@@ -78,6 +91,7 @@ void main() {
         selectStudioCourseCoverUrl(
           backendResolvedUrl: 'https://cdn.test/control-plane.jpg',
           backendSource: 'control_plane',
+          backendHasCanonicalIdentity: true,
           localOverrideResolvedUrl: 'https://cdn.test/local-override.jpg',
         ),
         'https://cdn.test/control-plane.jpg',
@@ -91,6 +105,7 @@ void main() {
           selectStudioCourseCoverUrl(
             backendResolvedUrl: null,
             backendSource: 'placeholder',
+            backendHasCanonicalIdentity: false,
             localOverrideResolvedUrl: 'https://cdn.test/local-override.jpg',
           ),
           'https://cdn.test/local-override.jpg',
@@ -103,10 +118,26 @@ void main() {
         selectStudioCourseCoverUrl(
           backendResolvedUrl: 'https://cdn.test/legacy.jpg',
           backendSource: 'legacy_cover_url',
+          backendHasCanonicalIdentity: false,
           localOverrideResolvedUrl: null,
         ),
         'https://cdn.test/legacy.jpg',
       );
     });
+
+    test(
+      'suppresses the local override when backend canonical cover exists',
+      () {
+        expect(
+          selectStudioCourseCoverUrl(
+            backendResolvedUrl: null,
+            backendSource: 'placeholder',
+            backendHasCanonicalIdentity: true,
+            localOverrideResolvedUrl: 'https://cdn.test/local-override.jpg',
+          ),
+          isNull,
+        );
+      },
+    );
   });
 }

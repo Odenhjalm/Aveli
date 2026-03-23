@@ -56,6 +56,59 @@ def _test_visibility_clause(alias: str) -> str:
     return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
 
 
+def _course_read_columns(alias: str = "c") -> str:
+    # Read selectors stay schema-tolerant for optional course metadata without
+    # changing canonical fields like cover_media_id or cover_url.
+    row_json = f"to_jsonb({alias})"
+
+    def optional_text(column: str) -> str:
+        return f"NULLIF({row_json} ->> '{column}', '')"
+
+    def optional_int(column: str) -> str:
+        return f"NULLIF({row_json} ->> '{column}', '')::int"
+
+    columns = [
+        f"{alias}.id",
+        f"{alias}.slug",
+        f"{alias}.title",
+        f"{alias}.description",
+        f"{alias}.cover_url",
+        f"{alias}.cover_media_id",
+        f"{alias}.video_url",
+        f"{alias}.branch",
+        f"{alias}.is_free_intro",
+        f"{alias}.journey_step",
+        (
+            "COALESCE("
+            f"{optional_text('step_level')}, "
+            f"NULLIF({alias}.journey_step, ''), "
+            f"CASE WHEN {alias}.is_free_intro THEN 'intro' ELSE 'step1' END"
+            ")::text AS step_level"
+        ),
+        (
+            "COALESCE("
+            f"{optional_text('course_family')}, "
+            f"LOWER(SPLIT_PART({alias}.slug, '-', 1))"
+            ")::text AS course_family"
+        ),
+        (
+            "COALESCE("
+            f"{optional_int('price_amount_cents')}, "
+            f"{optional_int('price_cents')}, "
+            "0"
+            ") AS price_amount_cents"
+        ),
+        f"COALESCE({optional_text('currency')}, 'sek')::text AS currency",
+        f"{optional_text('stripe_product_id')} AS stripe_product_id",
+        f"{optional_text('stripe_price_id')} AS stripe_price_id",
+        f"{alias}.is_published",
+        f"{alias}.created_by",
+        f"{alias}.created_at",
+        f"{alias}.updated_at",
+    ]
+    return ",\n        ".join(columns)
+
+
 def _legacy_course_columns(alias: str | None = None) -> str:
     prefix = f"{alias}." if alias else ""
     base_columns = [
@@ -138,7 +191,7 @@ async def get_course(
 
     where_clause = " AND ".join([_test_visibility_clause("c"), *clauses])
     query = f"""
-        SELECT {_FULL_COURSE_COLUMNS}
+        SELECT {_course_read_columns("c")}
         FROM app.courses c
         WHERE {where_clause}
         LIMIT 1
@@ -146,17 +199,7 @@ async def get_course(
 
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(query, params)
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                fallback_query = f"""
-                    SELECT {_legacy_course_columns()}
-                    FROM app.courses c
-                    WHERE {where_clause}
-                    LIMIT 1
-                """
-                await cur.execute(fallback_query, params)
+            await cur.execute(query, params)
             return await cur.fetchone()
 
 
@@ -188,7 +231,7 @@ async def get_course_by_slug(slug: str) -> CourseRow | None:
 async def _get_course_by_slug_prefix(slug_base: str) -> CourseRow | None:
     pattern = f"{slug_base}%"
     query = f"""
-        SELECT {_FULL_COURSE_COLUMNS}
+        SELECT {_course_read_columns("c")}
         FROM app.courses c
         WHERE lower(c.slug) LIKE %s
           AND {_test_visibility_clause("c")}
@@ -198,19 +241,7 @@ async def _get_course_by_slug_prefix(slug_base: str) -> CourseRow | None:
     params = [pattern]
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(query, params)
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                fallback_query = f"""
-                    SELECT {_legacy_course_columns()}
-                    FROM app.courses c
-                    WHERE lower(c.slug) LIKE %s
-                      AND {_test_visibility_clause("c")}
-                    ORDER BY c.updated_at DESC
-                    LIMIT 1
-                """
-                await cur.execute(fallback_query, params)
+            await cur.execute(query, params)
             return await cur.fetchone()
 
 
@@ -306,7 +337,7 @@ async def list_courses(
 
     where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     query = f"""
-        SELECT {_FULL_COURSE_COLUMNS}
+        SELECT {_course_read_columns("c")}
         FROM app.courses c
         {where_sql}
         ORDER BY c.updated_at DESC
@@ -321,14 +352,7 @@ async def list_courses(
 
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(query, params)
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                fallback_query = query.replace(
-                    _FULL_COURSE_COLUMNS, _legacy_course_columns()
-                )
-                await cur.execute(fallback_query, params)
+            await cur.execute(query, params)
             return await cur.fetchall()
 
 
@@ -355,7 +379,7 @@ async def list_public_courses(
         params.extend([pattern, pattern])
 
     query = f"""
-        SELECT {_FULL_COURSE_COLUMNS}
+        SELECT {_course_read_columns("c")}
         FROM app.courses c
     """
     if clauses:
@@ -370,14 +394,7 @@ async def list_public_courses(
 
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(query, params)
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                fallback_query = query.replace(
-                    _FULL_COURSE_COLUMNS, _legacy_course_columns()
-                )
-                await cur.execute(fallback_query, params)
+            await cur.execute(query, params)
             return await cur.fetchall()
 
 
@@ -1588,7 +1605,7 @@ async def list_home_audio_media(
 
 async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     query = f"""
-        SELECT {_FULL_COURSE_COLUMNS_WITH_ALIAS}
+        SELECT {_course_read_columns("c")}
         FROM app.enrollments e
         JOIN app.courses c ON c.id = e.course_id
         WHERE e.user_id = %s
@@ -1596,18 +1613,7 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
         ORDER BY c.created_at DESC
     """
     async with get_conn() as cur:
-        try:
-            await cur.execute(query, (user_id,))
-        except errors.UndefinedColumn:
-            fallback_query = f"""
-                SELECT {_legacy_course_columns('c')}
-                FROM app.enrollments e
-                JOIN app.courses c ON c.id = e.course_id
-                WHERE e.user_id = %s
-                  AND {_test_visibility_clause("c")}
-                ORDER BY c.created_at DESC
-            """
-            await cur.execute(fallback_query, (user_id,))
+        await cur.execute(query, (user_id,))
         return await cur.fetchall()
 
 

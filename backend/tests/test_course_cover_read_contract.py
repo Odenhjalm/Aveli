@@ -5,9 +5,11 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+from psycopg import errors
 
 from app import permissions
 from app.main import app
+from app.repositories import courses as courses_repo
 from app.routes import studio as studio_routes
 from app.services import courses_service
 
@@ -45,6 +47,67 @@ def _course(*, cover_media_id: str | None = MEDIA_ID, cover_url: str | None = No
         "cover_media_id": cover_media_id,
         "cover_url": cover_url,
     }
+
+
+class _FakeCourseCursor:
+    def __init__(
+        self,
+        *,
+        rows: list[dict[str, object]] | None = None,
+        fail_on_direct_step_level: bool = False,
+    ) -> None:
+        self._rows = rows or []
+        self._fail_on_direct_step_level = fail_on_direct_step_level
+        self.executed: list[tuple[str, tuple[object, ...]]] = []
+
+    async def __aenter__(self) -> _FakeCourseCursor:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    async def execute(
+        self,
+        query: str,
+        params: list[object] | tuple[object, ...] | None = None,
+    ) -> None:
+        normalized_query = " ".join(query.split())
+        normalized_params = tuple(params or ())
+        self.executed.append((normalized_query, normalized_params))
+        if self._fail_on_direct_step_level and "c.step_level" in normalized_query:
+            raise errors.UndefinedColumn('column "step_level" does not exist')
+
+    async def fetchone(self) -> dict[str, object] | None:
+        return self._rows[0] if self._rows else None
+
+    async def fetchall(self) -> list[dict[str, object]]:
+        return list(self._rows)
+
+
+class _FakeCourseConnection:
+    def __init__(self, cursor: _FakeCourseCursor) -> None:
+        self._cursor = cursor
+        self.rollback_calls = 0
+
+    async def __aenter__(self) -> _FakeCourseConnection:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def cursor(self, *, row_factory=None) -> _FakeCourseCursor:
+        return self._cursor
+
+    async def rollback(self) -> None:
+        self.rollback_calls += 1
+
+
+class _FakeCoursePool:
+    def __init__(self, connection: _FakeCourseConnection) -> None:
+        self._connection = connection
+
+    def connection(self) -> _FakeCourseConnection:
+        return self._connection
 
 
 def _asset(*, state: str = "ready", path: str = DERIVED_PATH) -> dict:
@@ -338,6 +401,54 @@ async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypa
     )
 
 
+async def test_course_repository_read_preserves_cover_media_id_when_step_level_missing(
+    monkeypatch,
+):
+    row = {
+        "id": COURSE_ID,
+        "slug": "course-1",
+        "title": "Course 1",
+        "description": "Example",
+        "cover_url": LEGACY_URL,
+        "cover_media_id": MEDIA_ID,
+        "video_url": None,
+        "branch": None,
+        "is_free_intro": False,
+        "journey_step": None,
+        "step_level": "step1",
+        "course_family": "course",
+        "price_amount_cents": 0,
+        "currency": "sek",
+        "stripe_product_id": None,
+        "stripe_price_id": None,
+        "is_published": True,
+        "created_by": MEDIA_ID,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    cursor = _FakeCourseCursor(
+        rows=[row],
+        fail_on_direct_step_level=True,
+    )
+    connection = _FakeCourseConnection(cursor)
+    monkeypatch.setattr(
+        courses_repo,
+        "pool",
+        _FakeCoursePool(connection),
+        raising=True,
+    )
+
+    course = await courses_repo.get_course(course_id=COURSE_ID)
+
+    assert course is not None
+    assert course["cover_media_id"] == MEDIA_ID
+    assert course["cover_url"] == LEGACY_URL
+    assert connection.rollback_calls == 0
+    assert all(
+        "NULL::uuid AS cover_media_id" not in query for query, _ in cursor.executed
+    )
+
+
 async def test_list_public_courses_includes_cover_when_cover_media_id_resolves(
     monkeypatch,
 ):
@@ -513,6 +624,7 @@ async def test_studio_courses_list_response_includes_cover_when_present(
     body = response.json()
     assert body["items"][0]["cover"]["source"] == "control_plane"
     assert body["items"][0]["cover"]["media_id"] == MEDIA_ID
+    assert body["items"][0]["cover_media_id"] == MEDIA_ID
 
 
 async def test_studio_course_detail_response_includes_cover_when_present(
@@ -578,3 +690,4 @@ async def test_studio_course_detail_response_includes_cover_when_present(
     body = response.json()
     assert body["cover"]["source"] == "control_plane"
     assert body["cover"]["media_id"] == MEDIA_ID
+    assert body["cover_media_id"] == MEDIA_ID

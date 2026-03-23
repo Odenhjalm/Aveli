@@ -113,22 +113,31 @@ Map<String, dynamic>? _courseCoverMap(Object? raw) {
   return null;
 }
 
-bool _isStudioControlPlaneCover(Map<dynamic, dynamic>? cover) {
-  final mediaId = safeString(cover, 'media_id') ?? safeString(cover, 'mediaId');
+bool _studioResponseHasCanonicalCoverIdentity(Map<dynamic, dynamic>? response) {
+  if (response == null) return false;
+  final responseCoverMediaId =
+      safeString(response, 'cover_media_id') ??
+      safeString(response, 'coverMediaId');
+  if (responseCoverMediaId != null) {
+    return true;
+  }
+  final cover = _courseCoverMap(response['cover']);
+  final coverMediaId =
+      safeString(cover, 'media_id') ?? safeString(cover, 'mediaId');
   final source = safeString(cover, 'source');
-  return mediaId != null && source == 'control_plane';
+  return coverMediaId != null && source != 'editor_override';
 }
 
 @visibleForTesting
 bool shouldClearStudioLocalCoverOverride(Map<dynamic, dynamic>? response) {
-  if (response == null) return false;
-  return _isStudioControlPlaneCover(_courseCoverMap(response['cover']));
+  return _studioResponseHasCanonicalCoverIdentity(response);
 }
 
 @visibleForTesting
 String? selectStudioCourseCoverUrl({
   required String? backendResolvedUrl,
   required String? backendSource,
+  required bool backendHasCanonicalIdentity,
   required String? localOverrideResolvedUrl,
 }) {
   final normalizedBackendUrl = backendResolvedUrl?.trim();
@@ -139,6 +148,12 @@ String? selectStudioCourseCoverUrl({
       normalizedLocalOverrideUrl != null &&
       normalizedLocalOverrideUrl.isNotEmpty;
 
+  if (backendHasCanonicalIdentity && hasBackendUrl) {
+    return normalizedBackendUrl;
+  }
+  if (backendHasCanonicalIdentity) {
+    return null;
+  }
   if (backendSource == 'control_plane' && hasBackendUrl) {
     return normalizedBackendUrl;
   }
@@ -1209,12 +1224,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   String? _effectiveEditorCourseCoverUrl(
+    Map<String, dynamic> course,
     ResolvedCourseCover resolved, {
     Map<String, dynamic>? localCoverOverride,
   }) {
     return selectStudioCourseCoverUrl(
       backendResolvedUrl: resolved.imageUrl,
       backendSource: resolved.backendSource,
+      backendHasCanonicalIdentity: _studioResponseHasCanonicalCoverIdentity(
+        course,
+      ),
       localOverrideResolvedUrl: _localCoverResolvedUrl(localCoverOverride),
     );
   }
@@ -1571,6 +1590,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             debugContext: 'StudioCourseMeta:$courseId',
           );
           final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
+            map,
             resolvedCover,
           );
           _courseCoverPath = effectiveCoverUrl;
@@ -4939,6 +4959,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       localCoverOverride: localCoverOverride,
     );
     final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
+      const <String, dynamic>{},
       resolvedCover,
       localCoverOverride: localCoverOverride,
     );
@@ -5129,6 +5150,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         localCoverOverride: localCoverOverride,
       );
       final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
+        const <String, dynamic>{},
         resolvedCover,
         localCoverOverride: localCoverOverride,
       );
@@ -6367,7 +6389,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _resetCourseContext(clearLists: true);
         _courses = <Map<String, dynamic>>[row, ..._courses];
         _selectedCourseId = createdCourseId;
-        final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(resolvedCover);
+        final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
+          row,
+          resolvedCover,
+        );
         _courseCoverPath = effectiveCoverUrl;
         _courseCoverPreviewUrl = effectiveCoverUrl;
       });
