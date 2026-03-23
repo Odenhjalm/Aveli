@@ -1053,8 +1053,25 @@ class CoverClearRequest(BaseModel):
     course_id: UUID
 
 
+class StorageCleanupTarget(BaseModel):
+    bucket: str
+    path: str
+    reason: str | None = None
+
+
+class CoverClearStorageCleanup(BaseModel):
+    deleted: list[StorageCleanupTarget] = Field(default_factory=list)
+    remaining: list[StorageCleanupTarget] = Field(default_factory=list)
+
+
 class CoverClearResponse(BaseModel):
     ok: bool
+    status: Literal["success", "partial_failure", "failure"]
+    course_id: UUID
+    cover_media_id: UUID | None = None
+    storage_cleanup: CoverClearStorageCleanup = Field(
+        default_factory=CoverClearStorageCleanup
+    )
 
 
 class MediaPlaybackUrlRequest(BaseModel):

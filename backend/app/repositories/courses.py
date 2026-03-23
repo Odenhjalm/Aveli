@@ -109,7 +109,11 @@ def _course_read_columns(alias: str = "c") -> str:
     return ",\n        ".join(columns)
 
 
-def _legacy_course_columns(alias: str | None = None) -> str:
+def _legacy_course_columns(
+    alias: str | None = None,
+    *,
+    preserve_cover_media_id: bool = False,
+) -> str:
     prefix = f"{alias}." if alias else ""
     base_columns = [
         "id",
@@ -128,7 +132,14 @@ def _legacy_course_columns(alias: str | None = None) -> str:
     ]
     column_lines = [f"{prefix}{column}" for column in base_columns]
     cover_index = base_columns.index("cover_url") + 1
-    column_lines.insert(cover_index, "NULL::uuid AS cover_media_id")
+    column_lines.insert(
+        cover_index,
+        (
+            f"{prefix}cover_media_id"
+            if preserve_cover_media_id
+            else "NULL::uuid AS cover_media_id"
+        ),
+    )
     price_source = f"{prefix}price_cents"
     journey_source = f"{prefix}journey_step"
     intro_source = f"{prefix}is_free_intro"
@@ -563,6 +574,8 @@ async def update_course(
                 for column, value in updates:
                     if column == "price_amount_cents":
                         fallback_updates.append(("price_cents", value))
+                    elif column == "cover_media_id":
+                        fallback_updates.append((column, value))
                     elif column == "step_level":
                         fallback_updates.append(("journey_step", value))
                     elif column in _BASE_COURSE_UPDATE_COLUMNS - {"price_amount_cents"}:
@@ -578,7 +591,11 @@ async def update_course(
                     UPDATE app.courses
                     SET {fallback_clause}, updated_at = now()
                     WHERE id = %s
-                    RETURNING {_legacy_course_columns()}
+                    RETURNING {_legacy_course_columns(
+                        preserve_cover_media_id=any(
+                            column == "cover_media_id" for column, _ in fallback_updates
+                        )
+                    )}
                 """
                 await cur.execute(fallback_query, fallback_params)
             row = await cur.fetchone()

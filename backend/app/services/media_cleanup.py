@@ -15,6 +15,35 @@ from ..services import storage_service
 logger = logging.getLogger(__name__)
 
 
+def _empty_storage_cleanup_report() -> dict[str, list[dict[str, str]]]:
+    return {"deleted": [], "remaining": []}
+
+
+def _storage_cleanup_entry(
+    *,
+    bucket: str,
+    path: str,
+    reason: str | None = None,
+) -> dict[str, str]:
+    entry = {
+        "bucket": str(bucket or settings.media_source_bucket),
+        "path": _normalized_storage_key(path),
+    }
+    if reason:
+        entry["reason"] = str(reason)
+    return entry
+
+
+def _merge_storage_cleanup_report(
+    summary: dict[str, list[dict[str, str]]],
+    report: Mapping[str, Any] | None,
+) -> None:
+    if not report:
+        return
+    summary["deleted"].extend(list(report.get("deleted") or []))
+    summary["remaining"].extend(list(report.get("remaining") or []))
+
+
 def _asset_delete_targets(asset: Mapping[str, Any]) -> set[tuple[str, str]]:
     targets: set[tuple[str, str]] = set()
 
@@ -50,6 +79,32 @@ def _is_lesson_storage_path(path: str | None) -> bool:
     return _normalized_storage_key(path).startswith("lessons/")
 
 
+async def _storage_object_exists(
+    *,
+    storage_bucket: str | None,
+    storage_path: str,
+) -> bool:
+    normalized_bucket = str(storage_bucket or settings.media_source_bucket).strip()
+    normalized_path = _normalized_storage_key(storage_path)
+    if not normalized_bucket or not normalized_path:
+        return False
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT 1
+                FROM storage.objects
+                WHERE bucket_id = %s
+                  AND name = %s
+                LIMIT 1
+                """,
+                (normalized_bucket, normalized_path),
+            )
+            row = await cur.fetchone()
+    return bool(row)
+
+
 async def _shared_storage_reference_counts(
     *,
     storage_bucket: str | None,
@@ -70,8 +125,8 @@ async def _shared_storage_reference_counts(
                     FROM app.media_objects mo
                     WHERE mo.storage_path = %s
                       AND (
-                        %s IS NULL
-                        OR mo.storage_bucket = %s
+                        %s::text IS NULL
+                        OR mo.storage_bucket = %s::text
                         OR mo.storage_bucket IS NULL
                       )
                   ) AS media_objects,
@@ -80,8 +135,8 @@ async def _shared_storage_reference_counts(
                     FROM app.lesson_media lm
                     WHERE lm.storage_path = %s
                       AND (
-                        %s IS NULL
-                        OR lm.storage_bucket = %s
+                        %s::text IS NULL
+                        OR lm.storage_bucket = %s::text
                         OR lm.storage_bucket IS NULL
                       )
                   ) AS lesson_media
@@ -143,24 +198,91 @@ async def _should_skip_storage_delete(
     return True
 
 
-async def _delete_storage_targets(targets: Iterable[tuple[str, str]]) -> None:
+async def _delete_storage_targets(
+    targets: Iterable[tuple[str, str]],
+) -> dict[str, list[dict[str, str]]]:
+    report = _empty_storage_cleanup_report()
     for bucket, path in sorted(set(targets)):
+        normalized_bucket = str(bucket or settings.media_source_bucket).strip() or str(
+            settings.media_source_bucket
+        )
         normalized_path = _normalized_storage_key(path)
+        if not normalized_path:
+            continue
         if await _should_skip_storage_delete(
-            storage_bucket=bucket,
+            storage_bucket=normalized_bucket,
             storage_path=normalized_path,
         ):
+            entry = _storage_cleanup_entry(
+                bucket=normalized_bucket,
+                path=normalized_path,
+                reason="shared_reference",
+            )
+            report["remaining"].append(entry)
+            logger.info(
+                "MEDIA_CLEANUP_STORAGE_TARGET_REMAINING",
+                extra=entry,
+            )
             continue
+
+        delete_reason: str | None = None
         try:
-            service = storage_service.get_storage_service(bucket)
-            await service.delete_object(normalized_path)
+            service = storage_service.get_storage_service(normalized_bucket)
+            deleted = await service.delete_object(normalized_path)
+            if deleted:
+                entry = _storage_cleanup_entry(
+                    bucket=normalized_bucket,
+                    path=normalized_path,
+                )
+                report["deleted"].append(entry)
+                logger.info(
+                    "MEDIA_CLEANUP_STORAGE_TARGET_DELETED",
+                    extra=entry,
+                )
+                continue
         except storage_service.StorageServiceError as exc:
+            delete_reason = str(exc)
             logger.warning(
                 "Storage delete failed bucket=%s path=%s: %s",
-                bucket,
+                normalized_bucket,
                 normalized_path,
                 exc,
             )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            delete_reason = str(exc)
+            logger.warning(
+                "Unexpected storage delete failure bucket=%s path=%s: %s",
+                normalized_bucket,
+                normalized_path,
+                exc,
+            )
+
+        if not await _storage_object_exists(
+            storage_bucket=normalized_bucket,
+            storage_path=normalized_path,
+        ):
+            entry = _storage_cleanup_entry(
+                bucket=normalized_bucket,
+                path=normalized_path,
+            )
+            report["deleted"].append(entry)
+            logger.info(
+                "MEDIA_CLEANUP_STORAGE_TARGET_DELETED",
+                extra=entry,
+            )
+            continue
+
+        entry = _storage_cleanup_entry(
+            bucket=normalized_bucket,
+            path=normalized_path,
+            reason=delete_reason or "delete_not_confirmed",
+        )
+        report["remaining"].append(entry)
+        logger.info(
+            "MEDIA_CLEANUP_STORAGE_TARGET_REMAINING",
+            extra=entry,
+        )
+    return report
 
 
 def _delete_local_media_object_file(storage_path: str, storage_bucket: str | None) -> None:
@@ -377,20 +499,30 @@ async def prune_course_cover_assets(*, course_id: str, limit: int = 100) -> int:
             await conn.commit()
 
     deleted_assets = [dict(row) for row in deleted_rows]
+    storage_report = _empty_storage_cleanup_report()
     for asset in deleted_assets:
-        await _delete_storage_targets(_asset_delete_targets(asset))
+        _merge_storage_cleanup_report(
+            storage_report,
+            await _delete_storage_targets(_asset_delete_targets(asset)),
+        )
     logger.info(
         "MEDIA_CLEANUP_PRUNE_COURSE_COVER_SUMMARY",
         extra={
             "course_id": course_id,
             "deleted_assets": len(deleted_assets),
             "limit": limit,
+            "storage_targets_deleted": len(storage_report["deleted"]),
+            "storage_targets_remaining": len(storage_report["remaining"]),
         },
     )
     return len(deleted_assets)
 
 
-async def delete_course_cover_assets_for_course(*, course_id: str, limit: int = 250) -> int:
+async def delete_course_cover_assets_for_course(
+    *,
+    course_id: str,
+    limit: int = 250,
+) -> dict[str, Any]:
     """Delete all cover assets for a course once the cover has been cleared."""
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
@@ -432,17 +564,26 @@ async def delete_course_cover_assets_for_course(*, course_id: str, limit: int = 
             await conn.commit()
 
     deleted_assets = [dict(row) for row in deleted_rows]
+    storage_report = _empty_storage_cleanup_report()
     for asset in deleted_assets:
-        await _delete_storage_targets(_asset_delete_targets(asset))
+        _merge_storage_cleanup_report(
+            storage_report,
+            await _delete_storage_targets(_asset_delete_targets(asset)),
+        )
     logger.info(
         "MEDIA_CLEANUP_DELETE_COURSE_COVERS_SUMMARY",
         extra={
             "course_id": course_id,
             "deleted_assets": len(deleted_assets),
             "limit": limit,
+            "storage_targets_deleted": len(storage_report["deleted"]),
+            "storage_targets_remaining": len(storage_report["remaining"]),
         },
     )
-    return len(deleted_assets)
+    return {
+        "deleted_assets": len(deleted_assets),
+        "storage_cleanup": storage_report,
+    }
 
 
 async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10) -> dict[str, int]:
@@ -453,6 +594,8 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
     deleted_audio_assets = 0
     deleted_cover_assets = 0
     deleted_media_objects = 0
+    storage_targets_deleted = 0
+    storage_targets_remaining = 0
 
     for _ in range(max_batches):
         batch = await _delete_unreferenced_lesson_audio_assets(limit=batch_size)
@@ -460,7 +603,9 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
             break
         deleted_audio_assets += len(batch)
         for asset in batch:
-            await _delete_storage_targets(_asset_delete_targets(asset))
+            report = await _delete_storage_targets(_asset_delete_targets(asset))
+            storage_targets_deleted += len(report["deleted"])
+            storage_targets_remaining += len(report["remaining"])
 
     for _ in range(max_batches):
         batch = await _delete_orphan_course_cover_assets_for_deleted_courses(limit=batch_size)
@@ -468,7 +613,9 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
             break
         deleted_cover_assets += len(batch)
         for asset in batch:
-            await _delete_storage_targets(_asset_delete_targets(asset))
+            report = await _delete_storage_targets(_asset_delete_targets(asset))
+            storage_targets_deleted += len(report["deleted"])
+            storage_targets_remaining += len(report["remaining"])
 
     for _ in range(max_batches):
         async with pool.connection() as conn:  # type: ignore
@@ -585,6 +732,8 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
         "media_assets_lesson_audio_deleted": deleted_audio_assets,
         "media_assets_course_cover_deleted": deleted_cover_assets,
         "media_objects_deleted": deleted_media_objects,
+        "storage_targets_deleted": storage_targets_deleted,
+        "storage_targets_remaining": storage_targets_remaining,
     }
     logger.info(
         "MEDIA_CLEANUP_GARBAGE_COLLECT_SUMMARY",
@@ -644,9 +793,14 @@ async def delete_media_asset_and_objects(*, media_id: str) -> bool:
         return False
 
     asset = dict(row)
-    await _delete_storage_targets(_asset_delete_targets(asset))
+    storage_report = await _delete_storage_targets(_asset_delete_targets(asset))
     logger.info(
         "MEDIA_CLEANUP_DELETE_MEDIA_ASSET",
-        extra={"media_id": media_id, "deleted": True},
+        extra={
+            "media_id": media_id,
+            "deleted": True,
+            "storage_targets_deleted": len(storage_report["deleted"]),
+            "storage_targets_remaining": len(storage_report["remaining"]),
+        },
     )
     return True

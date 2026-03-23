@@ -112,6 +112,51 @@ async def test_verify_course_cover_truth_flags_legacy_fallback(monkeypatch):
     }
 
 
+async def test_verify_course_cover_truth_accepts_null_cover_control_state(monkeypatch):
+    async def fake_get_course(*, course_id: str | None = None, slug: str | None = None):
+        assert course_id == "course-1"
+        assert slug is None
+        return {
+            "id": "course-1",
+            "slug": "course-1",
+            "title": "Course 1",
+            "cover_media_id": None,
+            "cover_url": None,
+        }
+
+    async def fake_get_worker_health():
+        return {
+            "worker_health": {
+                "media_transcode": {
+                    "status": "ok",
+                    "worker_running": True,
+                    "queue_summary": {},
+                }
+            }
+        }
+
+    monkeypatch.setattr(
+        verification_observability.courses_repo,
+        "get_course",
+        fake_get_course,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        verification_observability.logs_observability,
+        "get_worker_health",
+        fake_get_worker_health,
+        raising=True,
+    )
+
+    result = await verification_observability.verify_course_cover_truth("course-1")
+
+    assert result["verdict"] == "pass"
+    assert result["summary"]["resolved_state"] == "no_cover_control_state"
+    assert result["summary"]["resolved_source"] == "no_cover_control_state"
+    assert result["summary"]["asset_state_classification"] == "no_cover_control_state"
+    assert result["violations"] == []
+
+
 async def test_get_test_cases_discovers_bounded_candidates(monkeypatch):
     async def fake_list_courses(*, teacher_id=None, status=None, limit=None, published_only=None, free_intro=None, search=None):
         assert limit == 12

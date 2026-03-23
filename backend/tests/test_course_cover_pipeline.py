@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app import db, models
+from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
 from app.routes import api_media
 from app.services import media_cleanup
@@ -508,7 +509,27 @@ async def test_cover_clear_deletes_assets(async_client, monkeypatch):
             json={"course_id": course_id},
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json() == {"ok": True}
+        assert resp.json() == {
+            "ok": True,
+            "status": "success",
+            "course_id": course_id,
+            "cover_media_id": None,
+            "storage_cleanup": {
+                "deleted": [
+                    {
+                        "bucket": storage_module.storage_service.bucket,
+                        "path": source_path,
+                        "reason": None,
+                    },
+                    {
+                        "bucket": storage_module.public_storage_service.bucket,
+                        "path": derived_path,
+                        "reason": None,
+                    },
+                ],
+                "remaining": [],
+            },
+        }
 
         meta = await async_client.get(
             f"/studio/courses/{course_id}",
@@ -523,6 +544,101 @@ async def test_cover_clear_deletes_assets(async_client, monkeypatch):
 
         assert (storage_module.storage_service.bucket, source_path) in calls
         assert (storage_module.public_storage_service.bucket, derived_path) in calls
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_cover_clear_reports_partial_failure_without_500(
+    async_client, monkeypatch
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+
+        source_path = f"media/source/cover/courses/{course_id}/broken.jpg"
+        derived_path = f"media/derived/cover/courses/{course_id}/broken.jpg"
+
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format="jpeg",
+            original_object_path=source_path,
+            original_content_type="image/jpeg",
+            original_filename="broken.jpg",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="uploaded",
+            allow_uploaded_state=True,
+        )
+        assert asset
+
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(asset["id"]),
+            streaming_object_path=derived_path,
+            streaming_format="jpg",
+            streaming_storage_bucket=storage_module.public_storage_service.bucket,
+            public_url=f"https://public.local/{derived_path}",
+            codec="jpeg",
+        )
+
+        async def fake_delete_object(self, path):
+            raise storage_module.StorageServiceError("boom")
+
+        async def fake_storage_object_exists(*, storage_bucket, storage_path):
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "delete_object",
+            fake_delete_object,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            media_cleanup,
+            "_storage_object_exists",
+            fake_storage_object_exists,
+            raising=True,
+        )
+
+        resp = await async_client.post(
+            "/api/media/cover-clear",
+            headers=headers,
+            json={"course_id": course_id},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {
+            "ok": False,
+            "status": "partial_failure",
+            "course_id": course_id,
+            "cover_media_id": None,
+            "storage_cleanup": {
+                "deleted": [],
+                "remaining": [
+                    {
+                        "bucket": storage_module.storage_service.bucket,
+                        "path": source_path,
+                        "reason": "boom",
+                    },
+                    {
+                        "bucket": storage_module.public_storage_service.bucket,
+                        "path": derived_path,
+                        "reason": "boom",
+                    },
+                ],
+            },
+        }
+
+        meta = await async_client.get(
+            f"/studio/courses/{course_id}",
+            headers=headers,
+        )
+        assert meta.status_code == 200, meta.text
+        meta_json = meta.json()
+        assert meta_json.get("cover_media_id") is None
+        assert meta_json.get("cover_url") is None
     finally:
         await cleanup_user(user_id)
 
@@ -700,6 +816,72 @@ async def test_delete_media_asset_and_objects_skips_shared_media_object_storage(
         assert "MEDIA_CLEANUP_SHARED_STORAGE_DETECTED" in caplog.text
         assert "MEDIA_CLEANUP_DELETE_SKIPPED_SHARED_REFERENCE" in caplog.text
         assert "media_objects=1" in caplog.text
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_garbage_collect_media_reports_remaining_cover_storage_for_deleted_course(
+    async_client, monkeypatch
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id = await create_course(async_client, headers)
+
+        source_path = f"media/source/cover/courses/{course_id}/orphan.png"
+        derived_path = f"media/derived/cover/courses/{course_id}/orphan.jpg"
+
+        asset = await media_assets_repo.create_media_asset(
+            owner_id=user_id,
+            course_id=course_id,
+            lesson_id=None,
+            media_type="image",
+            purpose="course_cover",
+            ingest_format="png",
+            original_object_path=source_path,
+            original_content_type="image/png",
+            original_filename="orphan.png",
+            original_size_bytes=1024,
+            storage_bucket=storage_module.storage_service.bucket,
+            state="uploaded",
+            allow_uploaded_state=True,
+        )
+        assert asset
+
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(asset["id"]),
+            streaming_object_path=derived_path,
+            streaming_format="jpg",
+            streaming_storage_bucket=storage_module.public_storage_service.bucket,
+            codec="jpeg",
+        )
+
+        async def fake_delete_object(self, path):
+            raise storage_module.StorageServiceError("delete failed")
+
+        async def fake_storage_object_exists(*, storage_bucket, storage_path):
+            return True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "delete_object",
+            fake_delete_object,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            media_cleanup,
+            "_storage_object_exists",
+            fake_storage_object_exists,
+            raising=True,
+        )
+
+        deleted = await courses_repo.delete_course(course_id)
+        assert deleted is True
+
+        summary = await media_cleanup.garbage_collect_media()
+        assert summary["media_assets_course_cover_deleted"] == 1
+        assert summary["storage_targets_deleted"] == 0
+        assert summary["storage_targets_remaining"] == 2
+        assert await media_assets_repo.get_media_asset(str(asset["id"])) is None
     finally:
         await cleanup_user(user_id)
 

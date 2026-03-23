@@ -431,34 +431,39 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
     resolved_course = _course_summary_row(course_row, course_id=normalized_course_id)
     cover_media_id = _normalize_text(course_row.get("cover_media_id"))
     cover_url = _normalize_text(course_row.get("cover_url"))
-    resolver_truth = await courses_service.resolve_course_cover(
-        course_id=normalized_course_id,
-        cover_media_id=cover_media_id,
-        cover_url=cover_url,
-    )
-    asset_truth = (
-        await media_control_plane_observability.get_asset(cover_media_id)
-        if cover_media_id
-        else None
-    )
-    asset_failures_payload = (
-        await logs_observability.get_media_failures(asset_id=cover_media_id)
-        if cover_media_id
-        else {"summary": {}, "media_failures": [], "asset_id": None}
-    )
+    null_cover_control_state = cover_media_id is None and cover_url is None
+    if null_cover_control_state:
+        resolver_truth = {
+            "course_id": normalized_course_id,
+            "media_id": None,
+            "resolved_url": None,
+            "source": "no_cover_control_state",
+            "state": "no_cover_control_state",
+        }
+        asset_truth = None
+        asset_failures_payload = {"summary": {}, "media_failures": [], "asset_id": None}
+    else:
+        resolver_truth = await courses_service.resolve_course_cover(
+            course_id=normalized_course_id,
+            cover_media_id=cover_media_id,
+            cover_url=cover_url,
+        )
+        asset_truth = (
+            await media_control_plane_observability.get_asset(cover_media_id)
+            if cover_media_id
+            else None
+        )
+        asset_failures_payload = (
+            await logs_observability.get_media_failures(asset_id=cover_media_id)
+            if cover_media_id
+            else {"summary": {}, "media_failures": [], "asset_id": None}
+        )
 
     violations: list[dict[str, Any]] = []
-    if cover_media_id is None and cover_url is None:
-        violations.append(
-            _violation(
-                "course_cover_missing",
-                "Course does not have a cover_media_id or legacy cover_url",
-                source="courses.get_course",
-                severity="error",
-                course_id=normalized_course_id,
-            )
-        )
-    elif resolver_truth.get("state") != "ready" or resolver_truth.get("source") != "control_plane":
+    if not null_cover_control_state and (
+        resolver_truth.get("state") != "ready"
+        or resolver_truth.get("source") != "control_plane"
+    ):
         violations.append(
             _violation(
                 "course_cover_not_control_plane_ready",
@@ -525,7 +530,11 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
             "resolved_state": resolver_truth.get("state"),
             "resolved_source": resolver_truth.get("source"),
             "asset_state_classification": (
-                asset_truth.get("state_classification") if asset_truth is not None else "missing"
+                asset_truth.get("state_classification")
+                if asset_truth is not None
+                else (
+                    "no_cover_control_state" if null_cover_control_state else "missing"
+                )
             ),
             "media_transcode_worker_status": _worker_health_signal(worker_health).get("status"),
         },

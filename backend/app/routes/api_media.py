@@ -4,6 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from urllib.parse import urljoin, urlparse
 from uuid import UUID, uuid4
 
@@ -1935,8 +1936,33 @@ async def clear_course_cover(
     course_id = str(payload.course_id)
     await _authorize_course_upload(user_id, course_id)
     await courses_repo.clear_course_cover(course_id)
-    await media_cleanup.delete_course_cover_assets_for_course(course_id=course_id)
-    return schemas.CoverClearResponse(ok=True)
+    status = "success"
+    ok = True
+    storage_cleanup: dict[str, Any] = {"deleted": [], "remaining": []}
+    try:
+        cleanup_report = await media_cleanup.delete_course_cover_assets_for_course(
+            course_id=course_id
+        )
+        storage_cleanup = dict(cleanup_report.get("storage_cleanup") or storage_cleanup)
+        if storage_cleanup.get("remaining"):
+            status = "partial_failure"
+            ok = False
+    except Exception as exc:  # pragma: no cover - defensive contract protection
+        status = "partial_failure"
+        ok = False
+        logger.exception(
+            "Cover clear cleanup failed user_id=%s course_id=%s: %s",
+            user_id,
+            course_id,
+            exc,
+        )
+    return schemas.CoverClearResponse(
+        ok=ok,
+        status=status,
+        course_id=payload.course_id,
+        cover_media_id=None,
+        storage_cleanup=storage_cleanup,
+    )
 
 
 @router.get("/{media_id}", response_model=schemas.MediaStatusResponse)
