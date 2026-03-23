@@ -191,41 +191,70 @@ async def list_media_failures(
 ) -> list[dict[str, Any]]:
     capped_limit = max(1, min(int(limit or 20), 100))
     normalized_media_id = str(media_id or "").strip() or None
-    query = f"""
-            SELECT
-              ma.id,
-              ma.course_id,
-              ma.lesson_id,
-              ma.media_type,
-              ma.purpose,
-              ma.state,
-              ma.error_message,
-              ma.processing_attempts,
-              ma.processing_locked_at,
-              ma.next_retry_at,
-              ma.original_object_path,
-              ma.storage_bucket,
-              ma.streaming_object_path,
-              ma.streaming_storage_bucket,
-              ma.created_at,
-              ma.updated_at,
-              hpu.id AS home_player_upload_id,
-              hpu.title AS home_player_upload_title,
-              hpu.active AS home_player_upload_active
-            FROM app.media_assets ma
-            LEFT JOIN app.home_player_uploads hpu ON hpu.media_asset_id = ma.id
-            WHERE (%s IS NULL OR ma.id = %s)
-              AND (lower(coalesce(ma.state, '')) = 'failed' OR ma.error_message IS NOT NULL)
-              AND {_test_visibility_clause("ma")}
-            ORDER BY ma.updated_at DESC, ma.id DESC
-            LIMIT %s
-            """
+    if normalized_media_id is None:
+        query = f"""
+                SELECT
+                  ma.id,
+                  ma.course_id,
+                  ma.lesson_id,
+                  ma.media_type,
+                  ma.purpose,
+                  ma.state,
+                  ma.error_message,
+                  ma.processing_attempts,
+                  ma.processing_locked_at,
+                  ma.next_retry_at,
+                  ma.original_object_path,
+                  ma.storage_bucket,
+                  ma.streaming_object_path,
+                  ma.streaming_storage_bucket,
+                  ma.created_at,
+                  ma.updated_at,
+                  hpu.id AS home_player_upload_id,
+                  hpu.title AS home_player_upload_title,
+                  hpu.active AS home_player_upload_active
+                FROM app.media_assets ma
+                LEFT JOIN app.home_player_uploads hpu ON hpu.media_asset_id = ma.id
+                WHERE (lower(coalesce(ma.state, '')) = 'failed' OR ma.error_message IS NOT NULL)
+                  AND {_test_visibility_clause("ma")}
+                ORDER BY ma.updated_at DESC, ma.id DESC
+                LIMIT %s::int
+                """
+        params: tuple[Any, ...] = (capped_limit,)
+    else:
+        query = f"""
+                SELECT
+                  ma.id,
+                  ma.course_id,
+                  ma.lesson_id,
+                  ma.media_type,
+                  ma.purpose,
+                  ma.state,
+                  ma.error_message,
+                  ma.processing_attempts,
+                  ma.processing_locked_at,
+                  ma.next_retry_at,
+                  ma.original_object_path,
+                  ma.storage_bucket,
+                  ma.streaming_object_path,
+                  ma.streaming_storage_bucket,
+                  ma.created_at,
+                  ma.updated_at,
+                  hpu.id AS home_player_upload_id,
+                  hpu.title AS home_player_upload_title,
+                  hpu.active AS home_player_upload_active
+                FROM app.media_assets ma
+                LEFT JOIN app.home_player_uploads hpu ON hpu.media_asset_id = ma.id
+                WHERE ma.id = %s::uuid
+                  AND (lower(coalesce(ma.state, '')) = 'failed' OR ma.error_message IS NOT NULL)
+                  AND {_test_visibility_clause("ma")}
+                ORDER BY ma.updated_at DESC, ma.id DESC
+                LIMIT %s::int
+                """
+        params = (normalized_media_id, capped_limit)
     try:
         async with get_conn() as cur:
-            await cur.execute(
-                query,
-                (normalized_media_id, normalized_media_id, capped_limit),
-            )
+            await cur.execute(query, params)
             rows = await cur.fetchall()
     except errors.UndefinedTable:
         return []
@@ -635,7 +664,7 @@ async def get_media_processing_worker_summary(
                   count(*) FILTER (
                     WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')
                       AND lower(coalesce(ma.state, '')) = 'processing'
-                      AND ma.processing_locked_at < now() - (%s || ' seconds')::interval
+                      AND ma.processing_locked_at < now() - (%s::text || ' seconds')::interval
                   ) AS stale_processing_locks,
                   min(ma.created_at) FILTER (
                     WHERE ma.purpose IN ('lesson_audio', 'home_player_audio', 'course_cover')

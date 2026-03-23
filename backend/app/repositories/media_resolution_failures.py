@@ -100,33 +100,50 @@ async def list_recent_media_resolution_failures(
     try:
         async with pool.connection() as conn:  # type: ignore[attr-defined]
             async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-                await cur.execute(
-                    f"""
-                    SELECT
-                      mrf.id,
-                      mrf.created_at,
-                      mrf.lesson_media_id,
-                      mrf.mode,
-                      mrf.reason,
-                      mrf.details,
-                      lm.media_asset_id,
-                      lm.lesson_id,
-                      l.course_id
-                    FROM app.media_resolution_failures mrf
-                    LEFT JOIN app.lesson_media lm ON lm.id = mrf.lesson_media_id
-                    LEFT JOIN app.lessons l ON l.id = lm.lesson_id
-                    WHERE (%s IS NULL OR lm.media_asset_id = %s)
-                      AND ({_test_visibility_clause("lm")} OR lm.id IS NULL)
-                      AND ({_test_visibility_clause("l")} OR l.id IS NULL)
-                    ORDER BY mrf.created_at DESC, mrf.id DESC
-                    LIMIT %s
-                    """,
-                    (
-                        normalized_media_asset_id,
-                        normalized_media_asset_id,
-                        capped_limit,
-                    ),
-                )
+                if normalized_media_asset_id is None:
+                    query = f"""
+                            SELECT
+                              mrf.id,
+                              mrf.created_at,
+                              mrf.lesson_media_id,
+                              mrf.mode,
+                              mrf.reason,
+                              mrf.details,
+                              lm.media_asset_id,
+                              lm.lesson_id,
+                              l.course_id
+                            FROM app.media_resolution_failures mrf
+                            LEFT JOIN app.lesson_media lm ON lm.id = mrf.lesson_media_id
+                            LEFT JOIN app.lessons l ON l.id = lm.lesson_id
+                            WHERE ({_test_visibility_clause("lm")} OR lm.id IS NULL)
+                              AND ({_test_visibility_clause("l")} OR l.id IS NULL)
+                            ORDER BY mrf.created_at DESC, mrf.id DESC
+                            LIMIT %s::int
+                            """
+                    params = (capped_limit,)
+                else:
+                    query = f"""
+                            SELECT
+                              mrf.id,
+                              mrf.created_at,
+                              mrf.lesson_media_id,
+                              mrf.mode,
+                              mrf.reason,
+                              mrf.details,
+                              lm.media_asset_id,
+                              lm.lesson_id,
+                              l.course_id
+                            FROM app.media_resolution_failures mrf
+                            LEFT JOIN app.lesson_media lm ON lm.id = mrf.lesson_media_id
+                            LEFT JOIN app.lessons l ON l.id = lm.lesson_id
+                            WHERE lm.media_asset_id = %s::uuid
+                              AND ({_test_visibility_clause("lm")} OR lm.id IS NULL)
+                              AND ({_test_visibility_clause("l")} OR l.id IS NULL)
+                            ORDER BY mrf.created_at DESC, mrf.id DESC
+                            LIMIT %s::int
+                            """
+                    params = (normalized_media_asset_id, capped_limit)
+                await cur.execute(query, params)
                 rows = await cur.fetchall()
     except errors.UndefinedTable:
         return []

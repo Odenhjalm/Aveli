@@ -92,7 +92,7 @@ async def list_recent_failed_webhook_jobs(limit: int = 20) -> list[dict[str, Any
                 FROM app.livekit_webhook_jobs
                 WHERE status = 'failed'
                 ORDER BY updated_at DESC, id DESC
-                LIMIT %s
+                LIMIT %s::int
                 """,
                 (capped_limit,),
             )
