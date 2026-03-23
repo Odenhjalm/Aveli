@@ -141,6 +141,16 @@ def _worker_health_signal(worker_health: Mapping[str, Any]) -> dict[str, Any]:
     return dict((worker_health.get("worker_health") or {}).get("media_transcode") or {})
 
 
+def _worker_environment_signals(worker_health: Mapping[str, Any]) -> dict[str, Any]:
+    media_transcode = _worker_health_signal(worker_health)
+    return {
+        "worker_status": _normalize_text(media_transcode.get("status")) or "unknown",
+        "worker_running": bool(media_transcode.get("worker_running")),
+        "queue_summary": dict(media_transcode.get("queue_summary") or {}),
+        "last_error": media_transcode.get("last_error"),
+    }
+
+
 def _worker_health_violations(
     worker_health: Mapping[str, Any],
     *,
@@ -305,7 +315,7 @@ async def verify_lesson_media_truth(lesson_id: str) -> dict[str, Any]:
         for asset_id, payload in zip(asset_ids, failure_payloads, strict=False)
     ]
 
-    violations: list[dict[str, Any]] = [
+    subject_violations: list[dict[str, Any]] = [
         _wrap_inconsistency(
             inconsistency,
             source="media_control_plane.validate_runtime_projection",
@@ -313,13 +323,6 @@ async def verify_lesson_media_truth(lesson_id: str) -> dict[str, Any]:
         )
         for inconsistency in projection.get("detected_inconsistencies") or []
     ]
-    violations.extend(
-        _worker_health_violations(
-            worker_health,
-            source="logs.get_worker_health",
-            lesson_id=normalized_lesson_id,
-        )
-    )
     for asset_id, payload in zip(asset_ids, failure_payloads, strict=False):
         asset_violation = _asset_failure_violation(
             payload,
@@ -328,10 +331,11 @@ async def verify_lesson_media_truth(lesson_id: str) -> dict[str, Any]:
             asset_id=asset_id,
         )
         if asset_violation is not None:
-            violations.append(asset_violation)
+            subject_violations.append(asset_violation)
 
     lesson_missing = projection.get("lesson") is None
-    sorted_violations = _sort_violations(violations)
+    sorted_subject_violations = _sort_violations(subject_violations)
+    environment_signals = _worker_environment_signals(worker_health)
     evaluated_at = _iso(_now())
     return {
         "generated_at": evaluated_at,
@@ -340,22 +344,24 @@ async def verify_lesson_media_truth(lesson_id: str) -> dict[str, Any]:
             "version": "1",
         },
         "lesson_id": normalized_lesson_id,
-        "verdict": _verdict(sorted_violations),
+        "verdict": _verdict(sorted_subject_violations),
         "confidence": _confidence(
             has_logs=True,
             has_media_truth=True,
             has_resolver_truth=bool(playback_items),
             missing_subject=lesson_missing,
         ),
-        "violations": sorted_violations,
+        "violations": sorted_subject_violations,
+        "subject_violations": sorted_subject_violations,
+        "environment_signals": environment_signals,
         "summary": {
             "lesson_media_count": int(len(lesson_media_items)),
             "asset_count": int(len(asset_ids)),
             "resolver_checks": int(len(resolver_truth)),
-            "error_count": _error_count(sorted_violations),
-            "warning_count": _warning_count(sorted_violations),
+            "error_count": _error_count(sorted_subject_violations),
+            "warning_count": _warning_count(sorted_subject_violations),
             "control_plane_state_classification": projection.get("state_classification"),
-            "media_transcode_worker_status": _worker_health_signal(worker_health).get("status"),
+            "media_transcode_worker_status": environment_signals.get("worker_status"),
         },
         "truth_sources": {
             "media_control_plane": projection,
@@ -381,7 +387,7 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
 
     if course_row is None:
         evaluated_at = _iso(_now())
-        violations = [
+        subject_violations = [
             _violation(
                 "course_missing",
                 "Course was not found",
@@ -389,13 +395,9 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
                 severity="error",
                 course_id=normalized_course_id,
             ),
-            *_worker_health_violations(
-                worker_health,
-                source="logs.get_worker_health",
-                course_id=normalized_course_id,
-            ),
         ]
-        sorted_violations = _sort_violations(violations)
+        sorted_subject_violations = _sort_violations(subject_violations)
+        environment_signals = _worker_environment_signals(worker_health)
         return {
             "generated_at": evaluated_at,
             "verification": {
@@ -403,15 +405,17 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
                 "version": "1",
             },
             "course_id": normalized_course_id,
-            "verdict": _verdict(sorted_violations),
+            "verdict": _verdict(sorted_subject_violations),
             "confidence": "low",
-            "violations": sorted_violations,
+            "violations": sorted_subject_violations,
+            "subject_violations": sorted_subject_violations,
+            "environment_signals": environment_signals,
             "summary": {
-                "error_count": _error_count(sorted_violations),
-                "warning_count": _warning_count(sorted_violations),
+                "error_count": _error_count(sorted_subject_violations),
+                "warning_count": _warning_count(sorted_subject_violations),
                 "resolved_state": "missing",
                 "resolved_source": "missing",
-                "media_transcode_worker_status": _worker_health_signal(worker_health).get("status"),
+                "media_transcode_worker_status": environment_signals.get("worker_status"),
             },
             "course": None,
             "truth_sources": {
@@ -459,12 +463,12 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
             else {"summary": {}, "media_failures": [], "asset_id": None}
         )
 
-    violations: list[dict[str, Any]] = []
+    subject_violations: list[dict[str, Any]] = []
     if not null_cover_control_state and (
         resolver_truth.get("state") != "ready"
         or resolver_truth.get("source") != "control_plane"
     ):
-        violations.append(
+        subject_violations.append(
             _violation(
                 "course_cover_not_control_plane_ready",
                 "Course cover did not resolve to a ready control-plane asset",
@@ -481,7 +485,7 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
         )
 
     if asset_truth is not None:
-        violations.extend(
+        subject_violations.extend(
             _wrap_inconsistency(
                 inconsistency,
                 source="media_control_plane.get_asset",
@@ -497,17 +501,10 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
         asset_id=cover_media_id,
     )
     if asset_failure_violation is not None:
-        violations.append(asset_failure_violation)
+        subject_violations.append(asset_failure_violation)
 
-    violations.extend(
-        _worker_health_violations(
-            worker_health,
-            source="logs.get_worker_health",
-            course_id=normalized_course_id,
-        )
-    )
-
-    sorted_violations = _sort_violations(violations)
+    sorted_subject_violations = _sort_violations(subject_violations)
+    environment_signals = _worker_environment_signals(worker_health)
     evaluated_at = _iso(_now())
     return {
         "generated_at": evaluated_at,
@@ -516,17 +513,19 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
             "version": "1",
         },
         "course_id": normalized_course_id,
-        "verdict": _verdict(sorted_violations),
+        "verdict": _verdict(sorted_subject_violations),
         "confidence": _confidence(
             has_logs=True,
             has_media_truth=cover_media_id is not None,
             has_resolver_truth=True,
             missing_subject=False,
         ),
-        "violations": sorted_violations,
+        "violations": sorted_subject_violations,
+        "subject_violations": sorted_subject_violations,
+        "environment_signals": environment_signals,
         "summary": {
-            "error_count": _error_count(sorted_violations),
-            "warning_count": _warning_count(sorted_violations),
+            "error_count": _error_count(sorted_subject_violations),
+            "warning_count": _warning_count(sorted_subject_violations),
             "resolved_state": resolver_truth.get("state"),
             "resolved_source": resolver_truth.get("source"),
             "asset_state_classification": (
@@ -536,7 +535,7 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
                     "no_cover_control_state" if null_cover_control_state else "missing"
                 )
             ),
-            "media_transcode_worker_status": _worker_health_signal(worker_health).get("status"),
+            "media_transcode_worker_status": environment_signals.get("worker_status"),
         },
         "course": resolved_course,
         "truth_sources": {
@@ -712,15 +711,9 @@ async def verify_phase2_truth_alignment() -> dict[str, Any]:
         *(verify_course_cover_truth(str(case["course_id"])) for case in course_cases)
     )
 
-    violations: list[dict[str, Any]] = []
-    violations.extend(
-        _worker_health_violations(
-            worker_health,
-            source="logs.get_worker_health",
-        )
-    )
+    subject_violations: list[dict[str, Any]] = []
     if not lesson_cases:
-        violations.append(
+        subject_violations.append(
             _violation(
                 "no_phase2_lesson_sample",
                 "Phase 2 verification could not find a lesson sample to validate",
@@ -729,7 +722,7 @@ async def verify_phase2_truth_alignment() -> dict[str, Any]:
             )
         )
     if not course_cases:
-        violations.append(
+        subject_violations.append(
             _violation(
                 "no_phase2_course_cover_sample",
                 "Phase 2 verification could not find a course cover sample to validate",
@@ -739,23 +732,9 @@ async def verify_phase2_truth_alignment() -> dict[str, Any]:
         )
 
     recent_error_count = len(recent_errors.get("recent_errors") or [])
-    if recent_error_count > 0:
-        violations.append(
-            _violation(
-                "recent_errors_present",
-                "Recent backend errors are present during the verification window",
-                source="logs.get_recent_errors",
-                severity="warning",
-                details={
-                    "recent_error_count": recent_error_count,
-                    "limit_applied": recent_errors.get("limit_applied"),
-                },
-            )
-        )
-
     for payload in lesson_results:
         if payload.get("verdict") == "fail":
-            violations.append(
+            subject_violations.append(
                 _violation(
                     "lesson_truth_sample_failed",
                     "A sampled lesson truth verification failed",
@@ -775,7 +754,7 @@ async def verify_phase2_truth_alignment() -> dict[str, Any]:
 
     for payload in course_results:
         if payload.get("verdict") == "fail":
-            violations.append(
+            subject_violations.append(
                 _violation(
                     "course_cover_truth_sample_failed",
                     "A sampled course cover truth verification failed",
@@ -793,7 +772,13 @@ async def verify_phase2_truth_alignment() -> dict[str, Any]:
                 )
             )
 
-    sorted_violations = _sort_violations(violations)
+    sorted_subject_violations = _sort_violations(subject_violations)
+    environment_signals = {
+        **_worker_environment_signals(worker_health),
+        "recent_error_count": recent_error_count,
+        "recent_errors": list(recent_errors.get("recent_errors") or []),
+        "recent_error_limit_applied": recent_errors.get("limit_applied"),
+    }
     evaluated_at = _iso(_now())
     return {
         "generated_at": evaluated_at,
@@ -801,7 +786,7 @@ async def verify_phase2_truth_alignment() -> dict[str, Any]:
             "tool": "verify_phase2_truth_alignment",
             "version": "1",
         },
-        "verdict": _verdict(sorted_violations),
+        "verdict": _verdict(sorted_subject_violations),
         "confidence": (
             "high"
             if lesson_cases and course_cases
@@ -809,14 +794,16 @@ async def verify_phase2_truth_alignment() -> dict[str, Any]:
             if lesson_cases or course_cases
             else "low"
         ),
-        "violations": sorted_violations,
+        "violations": sorted_subject_violations,
+        "subject_violations": sorted_subject_violations,
+        "environment_signals": environment_signals,
         "summary": {
             "lesson_samples_checked": int(len(lesson_results)),
             "course_cover_samples_checked": int(len(course_results)),
             "recent_error_count": recent_error_count,
-            "error_count": _error_count(sorted_violations),
-            "warning_count": _warning_count(sorted_violations),
-            "media_transcode_worker_status": _worker_health_signal(worker_health).get("status"),
+            "error_count": _error_count(sorted_subject_violations),
+            "warning_count": _warning_count(sorted_subject_violations),
+            "media_transcode_worker_status": environment_signals.get("worker_status"),
         },
         "truth_sources": {
             "test_cases": test_cases,

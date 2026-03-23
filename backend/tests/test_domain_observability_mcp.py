@@ -271,3 +271,105 @@ async def test_domain_observability_mcp_inspect_media_asset(async_client, monkey
         "worker_status": "ok",
     }
     assert parsed["truth_sources"]["media_control_plane"]["asset"]["asset_id"] == "asset-123"
+
+
+async def test_domain_observability_mcp_inspect_media_asset_keeps_worker_health_out_of_status(
+    async_client, monkeypatch
+):
+    from app.routes import domain_observability_mcp
+    from app.services.domain_observability import media_inspection
+
+    async def _fake_get_asset(asset_id: str):
+        return {
+            "generated_at": "2026-03-23T12:00:00+00:00",
+            "asset_id": asset_id,
+            "state_classification": "projected_ready",
+            "detected_inconsistencies": [],
+            "asset": {
+                "asset_id": asset_id,
+                "lesson_id": "lesson-123",
+                "state": "ready",
+            },
+            "lesson_media_references": [{"lesson_media_id": "lm-1"}],
+            "runtime_projection": [{"runtime_media_id": "rm-1"}],
+        }
+
+    async def _fake_get_media_failures(*, asset_id: str | None = None):
+        return {
+            "generated_at": "2026-03-23T12:00:00+00:00",
+            "asset_id": asset_id,
+            "media_failures": [],
+            "summary": {},
+        }
+
+    async def _fake_get_worker_health():
+        return {
+            "generated_at": "2026-03-23T12:00:00+00:00",
+            "worker_health": {
+                "media_transcode": {
+                    "status": "degraded",
+                    "worker_running": True,
+                    "queue_summary": {"uploaded": 48, "failed": 0},
+                    "last_error": {"message": "Historical worker error"},
+                },
+            },
+        }
+
+    monkeypatch.setattr(
+        media_inspection.media_control_plane_observability,
+        "get_asset",
+        _fake_get_asset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        media_inspection.logs_observability,
+        "get_media_failures",
+        _fake_get_media_failures,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        media_inspection.logs_observability,
+        "get_worker_health",
+        _fake_get_worker_health,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        domain_observability_mcp.settings,
+        "mcp_mode",
+        "local",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        domain_observability_mcp.settings,
+        "domain_observability_mcp_enabled",
+        True,
+        raising=False,
+    )
+
+    await async_client.post(
+        "/mcp/domain-observability",
+        json=_initialize_payload(),
+        headers={"Accept": "application/json, text/event-stream"},
+    )
+
+    tool_call = await async_client.post(
+        "/mcp/domain-observability",
+        json={
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "inspect_media",
+                "arguments": {"asset_id": "asset-123"},
+            },
+        },
+        headers={
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2025-11-25",
+        },
+    )
+    assert tool_call.status_code == 200
+    parsed = json.loads(tool_call.json()["result"]["content"][0]["text"])
+    assert parsed["status"] == "ok"
+    assert parsed["violations"] == []
+    assert parsed["environment_signals"]["worker_status"] == "degraded"

@@ -65,6 +65,17 @@ def _worker_violation(worker_health_payload: Mapping[str, Any]) -> dict[str, Any
     )
 
 
+def _environment_signals(worker_health_payload: Mapping[str, Any]) -> dict[str, Any]:
+    worker_health = worker_health_payload.get("worker_health") or {}
+    media_transcode = worker_health.get("media_transcode") or {}
+    return {
+        "worker_status": normalize_text(media_transcode.get("status")) or "unknown",
+        "worker_running": bool(media_transcode.get("worker_running")),
+        "queue_summary": dict(media_transcode.get("queue_summary") or {}),
+        "last_error": media_transcode.get("last_error"),
+    }
+
+
 def _wrap_inconsistencies(
     items: Sequence[Mapping[str, Any]],
     *,
@@ -100,12 +111,10 @@ async def _inspect_asset(asset_id: str) -> dict[str, Any]:
     )
     if failure_violation is not None:
         wrapped_violations.append(failure_violation)
-    worker_violation = _worker_violation(worker_health)
-    if worker_violation is not None:
-        wrapped_violations.append(worker_violation)
 
     sorted_violations = sort_violations(wrapped_violations)
     sorted_inconsistencies = sort_inconsistencies(wrapped_inconsistencies)
+    environment_signals = _environment_signals(worker_health)
     asset = asset_snapshot.get("asset") or {}
     lesson_media_references = list(asset_snapshot.get("lesson_media_references") or [])
     runtime_projection = list(asset_snapshot.get("runtime_projection") or [])
@@ -127,13 +136,14 @@ async def _inspect_asset(asset_id: str) -> dict[str, Any]:
         ),
         "violations": sorted_violations,
         "inconsistencies": sorted_inconsistencies,
+        "environment_signals": environment_signals,
         "state_summary": {
             "control_plane_state": asset_snapshot.get("state_classification"),
             "asset_count": 1 if asset_snapshot.get("asset") is not None else 0,
             "lesson_media_count": len(lesson_media_references),
             "runtime_media_count": len(runtime_projection),
             "recent_failure_count": failure_count(media_failures.get("summary") or {}),
-            "worker_status": media_transcode_status(worker_health),
+            "worker_status": environment_signals.get("worker_status"),
         },
         "truth_sources": {
             "media_control_plane": {
@@ -178,9 +188,6 @@ async def _inspect_lesson(lesson_id: str) -> dict[str, Any]:
         )
         if failure_violation is not None:
             wrapped_violations.append(failure_violation)
-    worker_violation = _worker_violation(worker_health)
-    if worker_violation is not None:
-        wrapped_violations.append(worker_violation)
 
     runtime_media_count = sum(
         1 for item in lesson_media_items if (item.get("runtime_projection") or {}) != {}
@@ -188,6 +195,7 @@ async def _inspect_lesson(lesson_id: str) -> dict[str, Any]:
 
     sorted_violations = sort_violations(wrapped_violations)
     sorted_inconsistencies = sort_inconsistencies(wrapped_inconsistencies)
+    environment_signals = _environment_signals(worker_health)
     generated_at = iso(now())
     return {
         "generated_at": generated_at,
@@ -206,6 +214,7 @@ async def _inspect_lesson(lesson_id: str) -> dict[str, Any]:
         ),
         "violations": sorted_violations,
         "inconsistencies": sorted_inconsistencies,
+        "environment_signals": environment_signals,
         "state_summary": {
             "control_plane_state": projection.get("state_classification"),
             "asset_count": len(asset_ids),
@@ -214,7 +223,7 @@ async def _inspect_lesson(lesson_id: str) -> dict[str, Any]:
             "recent_failure_count": sum(
                 failure_count(payload.get("summary") or {}) for payload in failure_payloads
             ),
-            "worker_status": media_transcode_status(worker_health),
+            "worker_status": environment_signals.get("worker_status"),
         },
         "truth_sources": {
             "media_control_plane": {
