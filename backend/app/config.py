@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import AliasChoices, AnyUrl, Field, field_validator, model_validator
@@ -8,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PRODUCTION_ENVS = {"prod", "production", "live"}
 _LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db"}
+_ALLOWED_MCP_MODES = {"local", "production"}
 
 
 def _truthy_env(key: str) -> bool:
@@ -94,6 +96,14 @@ class Settings(BaseSettings):
     )
     supabase_db_url: AnyUrl | None = None
     database_url: AnyUrl | None = None
+    mcp_mode: str = Field(default="local", validation_alias="MCP_MODE")
+    mcp_production_database_url: AnyUrl | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "MCP_PRODUCTION_DATABASE_URL",
+            "MCP_PRODUCTION_SUPABASE_DB_URL",
+        ),
+    )
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 15
@@ -228,10 +238,45 @@ class Settings(BaseSettings):
     media_control_plane_mcp_enabled: bool = Field(
         default_factory=lambda: not _is_cloud_runtime()
     )
+    verification_mcp_enabled: bool = Field(
+        default_factory=lambda: not _is_cloud_runtime()
+    )
+
+    @field_validator("mcp_mode", mode="before")
+    @classmethod
+    def _normalize_mcp_mode(cls, value: Any) -> str:
+        normalized = str(value or "local").strip().lower()
+        if normalized not in _ALLOWED_MCP_MODES:
+            expected = ", ".join(sorted(_ALLOWED_MCP_MODES))
+            raise ValueError(f"MCP_MODE must be one of: {expected}")
+        return normalized
+
+    @property
+    def mcp_production_mode(self) -> bool:
+        return self.mcp_mode == "production"
+
+    @property
+    def mcp_workers_enabled(self) -> bool:
+        return not self.mcp_production_mode
+
+    @property
+    def mcp_environment(self) -> dict[str, Any]:
+        return {
+            "mcp_mode": self.mcp_mode,
+            "production_data": self.mcp_production_mode,
+            "access_mode": "read_only",
+        }
 
     @model_validator(mode="after")
     def _populate_database_url(self):
-        if self.database_url is None:
+        if self.mcp_production_mode:
+            if self.mcp_production_database_url is None:
+                raise ValueError(
+                    "MCP_MODE=production requires "
+                    "MCP_PRODUCTION_DATABASE_URL or MCP_PRODUCTION_SUPABASE_DB_URL"
+                )
+            self.database_url = self.mcp_production_database_url
+        elif self.database_url is None:
             if self.supabase_db_url is None:
                 raise ValueError("DATABASE_URL or SUPABASE_DB_URL is required")
             self.database_url = self.supabase_db_url
@@ -241,7 +286,7 @@ class Settings(BaseSettings):
         hostname = (parsed.hostname or "").strip().lower()
 
         if hostname and hostname not in _LOCAL_DB_HOSTS and _looks_like_supabase_host(hostname):
-            allow_remote = _truthy_env("AVELI_ALLOW_REMOTE_DB")
+            allow_remote = _truthy_env("AVELI_ALLOW_REMOTE_DB") or self.mcp_production_mode
             app_env = _app_env_lower()
             is_prod_env = app_env in _PRODUCTION_ENVS
             if not allow_remote and not (is_prod_env and _is_cloud_runtime()):

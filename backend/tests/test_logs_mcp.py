@@ -39,6 +39,7 @@ async def test_logs_mcp_initialize_and_tool_call(async_client, monkeypatch):
         _fake_get_worker_health,
         raising=True,
     )
+    monkeypatch.setattr(logs_mcp.settings, "mcp_mode", "local", raising=False)
 
     initialize = await async_client.post(
         "/mcp/logs",
@@ -85,6 +86,11 @@ async def test_logs_mcp_initialize_and_tool_call(async_client, monkeypatch):
     assert len(content) == 1
     parsed = json.loads(content[0]["text"])
     assert parsed["worker_health"]["media_transcode"]["status"] == "ok"
+    assert parsed["environment"] == {
+        "mcp_mode": "local",
+        "production_data": False,
+        "access_mode": "read_only",
+    }
 
 
 async def test_logs_mcp_rejects_non_local_origin(async_client):

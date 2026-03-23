@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 import os
 from pathlib import Path
 import re
@@ -54,6 +55,7 @@ from .routes import (
     livekit_webhooks,
     logs_mcp,
     media_control_plane_mcp,
+    verification_mcp,
     course_bundles,
     email_verification,
     media,
@@ -71,6 +73,8 @@ ASSETS_ROOT = Path(__file__).resolve().parents[1] / "assets"
 UPLOADS_ROOT = ASSETS_ROOT / "uploads"
 
 setup_logging()
+
+logger = logging.getLogger(__name__)
 
 _CORS_ALLOW_METHODS = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
 
@@ -101,15 +105,21 @@ async def lifespan(app: FastAPI):
     for sub in ("users", "courses", "lessons"):
         (UPLOADS_ROOT / sub).mkdir(parents=True, exist_ok=True)
     await pool.open(wait=True)
-    await livekit_events.start_worker()
-    await media_transcode_worker.start_worker()
-    await membership_expiry_warnings.start_worker()
+    if settings.mcp_workers_enabled:
+        await livekit_events.start_worker()
+        await media_transcode_worker.start_worker()
+        await membership_expiry_warnings.start_worker()
+    else:
+        logger.info(
+            "MCP production mode enabled: background workers are disabled for read-only inspection"
+        )
     try:
         yield
     finally:
-        await membership_expiry_warnings.stop_worker()
-        await media_transcode_worker.stop_worker()
-        await livekit_events.stop_worker()
+        if settings.mcp_workers_enabled:
+            await membership_expiry_warnings.stop_worker()
+            await media_transcode_worker.stop_worker()
+            await livekit_events.stop_worker()
         await pool.close()
 
 
@@ -188,6 +198,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(livekit_webhooks.router)
     app.include_router(logs_mcp.router)
     app.include_router(media_control_plane_mcp.router)
+    app.include_router(verification_mcp.router)
     app.include_router(upload.router)
     app.include_router(upload.files_router)
     app.include_router(upload.legacy_router)

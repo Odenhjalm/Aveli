@@ -149,11 +149,18 @@ def _jsonrpc_error(
 
 
 def _tool_success(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized_payload = dict(payload)
+    normalized_payload.setdefault("environment", settings.mcp_environment)
     return {
         "content": [
             {
                 "type": "text",
-                "text": json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+                "text": json.dumps(
+                    normalized_payload,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                ),
             }
         ]
     }

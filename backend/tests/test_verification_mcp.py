@@ -19,65 +19,77 @@ def _initialize_payload() -> dict:
     }
 
 
-async def test_media_control_plane_mcp_initialize_and_tool_call(async_client, monkeypatch):
-    from app.routes import media_control_plane_mcp
+async def test_verification_mcp_initialize_and_tool_call(async_client, monkeypatch):
+    from app.routes import verification_mcp
 
-    async def _fake_get_asset(*, asset_id: str):
+    async def _fake_get_test_cases():
         return {
             "generated_at": "2026-03-23T12:00:00+00:00",
-            "asset_id": asset_id,
-            "state_classification": "projected_ready",
-            "detected_inconsistencies": [],
-            "asset": {
-                "asset_id": asset_id,
-                "state": "ready",
-                "purpose": "lesson_audio",
+            "verification": {"tool": "get_test_cases", "version": "1"},
+            "verdict": "pass",
+            "confidence": "high",
+            "violations": [],
+            "course_cover_cases": [
+                {
+                    "course_id": "course-123",
+                    "slug": "course-123",
+                    "title": "Course 123",
+                    "why": "course has cover_media_id",
+                }
+            ],
+            "lesson_media_cases": [
+                {
+                    "lesson_id": "lesson-123",
+                    "course_id": "course-123",
+                    "course_title": "Course 123",
+                    "lesson_title": "Lesson 123",
+                    "why": "lesson has lesson_media kind=audio",
+                }
+            ],
+            "recommended_calls": [
+                {
+                    "tool": "verify_lesson_media_truth",
+                    "arguments": {"lesson_id": "lesson-123"},
+                }
+            ],
+            "summary": {
+                "course_cover_case_count": 1,
+                "lesson_media_case_count": 1,
+                "error_count": 0,
+                "warning_count": 0,
             },
-            "lesson_media_references": [],
-            "runtime_projection": [],
-            "storage_verification": {"storage_catalog_available": True, "checks": []},
-            "correlation": {
-                "asset_ids": [asset_id],
-                "lesson_ids": [],
-                "lesson_media_ids": [],
-                "runtime_media_ids": [],
-                "timestamps": [],
-                "state_transitions": [],
-            },
-            "truncation": {
-                "lesson_media_references_truncated": False,
-                "runtime_projection_truncated": False,
-            },
+            "sources_consulted": [
+                "courses.list_courses",
+                "courses.list_course_lessons",
+                "courses.list_lesson_media",
+            ],
         }
 
     monkeypatch.setattr(
-        media_control_plane_mcp.media_control_plane_observability,
-        "get_asset",
-        _fake_get_asset,
+        verification_mcp.verification_observability,
+        "get_test_cases",
+        _fake_get_test_cases,
         raising=True,
     )
     monkeypatch.setattr(
-        media_control_plane_mcp.settings,
+        verification_mcp.settings,
         "mcp_mode",
         "local",
         raising=False,
     )
 
     initialize = await async_client.post(
-        "/mcp/media-control-plane",
+        "/mcp/verification",
         json=_initialize_payload(),
         headers={"Accept": "application/json, text/event-stream"},
     )
     assert initialize.status_code == 200
     init_payload = initialize.json()
     assert init_payload["result"]["protocolVersion"] == "2025-11-25"
-    assert (
-        init_payload["result"]["serverInfo"]["name"]
-        == "aveli-media-control-plane-mcp"
-    )
+    assert init_payload["result"]["serverInfo"]["name"] == "aveli-verification-mcp"
 
     tools_list = await async_client.post(
-        "/mcp/media-control-plane",
+        "/mcp/verification",
         json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         headers={
             "Accept": "application/json, text/event-stream",
@@ -87,22 +99,19 @@ async def test_media_control_plane_mcp_initialize_and_tool_call(async_client, mo
     assert tools_list.status_code == 200
     listed = tools_list.json()["result"]["tools"]
     assert {tool["name"] for tool in listed} == {
-        "get_asset",
-        "trace_asset_lifecycle",
-        "list_orphaned_assets",
-        "validate_runtime_projection",
+        "verify_lesson_media_truth",
+        "verify_course_cover_truth",
+        "verify_phase2_truth_alignment",
+        "get_test_cases",
     }
 
     tool_call = await async_client.post(
-        "/mcp/media-control-plane",
+        "/mcp/verification",
         json={
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {
-                "name": "get_asset",
-                "arguments": {"asset_id": "asset-123"},
-            },
+            "params": {"name": "get_test_cases", "arguments": {}},
         },
         headers={
             "Accept": "application/json, text/event-stream",
@@ -113,8 +122,7 @@ async def test_media_control_plane_mcp_initialize_and_tool_call(async_client, mo
     content = tool_call.json()["result"]["content"]
     assert len(content) == 1
     parsed = json.loads(content[0]["text"])
-    assert parsed["asset"]["asset_id"] == "asset-123"
-    assert parsed["state_classification"] == "projected_ready"
+    assert parsed["recommended_calls"][0]["tool"] == "verify_lesson_media_truth"
     assert parsed["environment"] == {
         "mcp_mode": "local",
         "production_data": False,
@@ -122,9 +130,9 @@ async def test_media_control_plane_mcp_initialize_and_tool_call(async_client, mo
     }
 
 
-async def test_media_control_plane_mcp_rejects_non_local_origin(async_client):
+async def test_verification_mcp_rejects_non_local_origin(async_client):
     response = await async_client.post(
-        "/mcp/media-control-plane",
+        "/mcp/verification",
         json=_initialize_payload(),
         headers={
             "Accept": "application/json, text/event-stream",
@@ -133,27 +141,24 @@ async def test_media_control_plane_mcp_rejects_non_local_origin(async_client):
     )
 
     assert response.status_code == 403
-    assert (
-        response.json()["detail"]
-        == "Media Control Plane MCP rejected the supplied Origin header"
-    )
+    assert response.json()["detail"] == "Verification MCP rejected the supplied Origin header"
 
 
-async def test_media_control_plane_mcp_missing_asset_id_returns_jsonrpc_error(async_client):
+async def test_verification_mcp_missing_lesson_id_returns_jsonrpc_error(async_client):
     await async_client.post(
-        "/mcp/media-control-plane",
+        "/mcp/verification",
         json=_initialize_payload(),
         headers={"Accept": "application/json, text/event-stream"},
     )
 
     response = await async_client.post(
-        "/mcp/media-control-plane",
+        "/mcp/verification",
         json={
             "jsonrpc": "2.0",
             "id": 4,
             "method": "tools/call",
             "params": {
-                "name": "get_asset",
+                "name": "verify_lesson_media_truth",
                 "arguments": {},
             },
         },
@@ -166,4 +171,4 @@ async def test_media_control_plane_mcp_missing_asset_id_returns_jsonrpc_error(as
     assert response.status_code == 200
     payload = response.json()
     assert payload["error"]["code"] == -32602
-    assert payload["error"]["message"] == "asset_id is required"
+    assert payload["error"]["message"] == "lesson_id is required"

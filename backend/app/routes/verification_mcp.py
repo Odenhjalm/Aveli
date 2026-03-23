@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from ..config import settings
-from ..services import logs_observability
+from ..services import verification_observability
 
 router = APIRouter()
 
@@ -17,56 +17,49 @@ _DEFAULT_PROTOCOL_VERSION = "2025-11-25"
 _FALLBACK_PROTOCOL_VERSION = "2025-03-26"
 _PROTOCOL_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
-_ALLOWED_WINDOWS = ["1h", "6h", "24h", "7d"]
 _TOOL_DEFINITIONS = [
     {
-        "name": "get_recent_errors",
-        "description": "Return a bounded list of the most recent backend errors across logs and durable failure tables.",
+        "name": "verify_lesson_media_truth",
+        "description": "Verify a lesson's authored lesson_media, runtime projection, canonical resolver result, and recent media failure signals without manual correlation.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50,
-                    "default": 20,
-                }
-            },
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "get_media_failures",
-        "description": "Return normalized media pipeline failures from media assets, resolution telemetry, and related log events.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "asset_id": {
+                "lesson_id": {
                     "type": "string",
-                    "description": "Optional media asset UUID to scope the failure view.",
+                    "description": "Lesson UUID.",
                 }
             },
+            "required": ["lesson_id"],
             "additionalProperties": False,
         },
     },
     {
-        "name": "get_cleanup_activity",
-        "description": "Return recent cleanup activity from the in-memory observability buffer for a bounded time window.",
+        "name": "verify_course_cover_truth",
+        "description": "Verify a course cover against canonical cover resolution, media control-plane asset truth, and recent media failure signals.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "window": {
+                "course_id": {
                     "type": "string",
-                    "enum": _ALLOWED_WINDOWS,
-                    "default": "24h",
+                    "description": "Course UUID.",
                 }
             },
+            "required": ["course_id"],
             "additionalProperties": False,
         },
     },
     {
-        "name": "get_worker_health",
-        "description": "Return current health snapshots for the media transcode worker, LiveKit webhook worker, and membership warning worker.",
+        "name": "verify_phase2_truth_alignment",
+        "description": "Run a bounded high-level phase-2 alignment verification across sampled lesson media and course cover cases, worker health, and recent errors.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_test_cases",
+        "description": "Return bounded deterministic lesson and course ids that are good candidates for verification tool calls.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -92,17 +85,17 @@ def _origin_is_local(origin: str | None) -> bool:
 
 
 def _ensure_access_allowed(request: Request) -> None:
-    if not settings.logs_mcp_enabled:
+    if not settings.verification_mcp_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     if not _client_is_local(request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Logs MCP is restricted to local clients",
+            detail="Verification MCP is restricted to local clients",
         )
     if not _origin_is_local(request.headers.get("origin")):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Logs MCP rejected the supplied Origin header",
+            detail="Verification MCP rejected the supplied Origin header",
         )
 
 
@@ -188,64 +181,53 @@ def _unexpected_keys(arguments: dict[str, Any], allowed: set[str]) -> set[str]:
     return {key for key in arguments if key not in allowed}
 
 
-def _coerce_limit(value: Any) -> int | None:
-    if value is None:
-        return None
-    if not isinstance(value, int):
-        raise ValueError("limit must be an integer")
-    return value
-
-
-def _coerce_optional_string(value: Any, *, field: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string")
-    return value
+def _required_string(arguments: dict[str, Any], field: str) -> str:
+    value = arguments.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} is required")
+    return value.strip()
 
 
 async def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    if name == "get_recent_errors":
-        unexpected = _unexpected_keys(arguments, {"limit"})
+    if name == "verify_lesson_media_truth":
+        unexpected = _unexpected_keys(arguments, {"lesson_id"})
         if unexpected:
             raise ValueError(f"Unexpected arguments: {', '.join(sorted(unexpected))}")
-        return await logs_observability.get_recent_errors(
-            limit=_coerce_limit(arguments.get("limit"))
+        return await verification_observability.verify_lesson_media_truth(
+            lesson_id=_required_string(arguments, "lesson_id")
         )
 
-    if name == "get_media_failures":
-        unexpected = _unexpected_keys(arguments, {"asset_id"})
+    if name == "verify_course_cover_truth":
+        unexpected = _unexpected_keys(arguments, {"course_id"})
         if unexpected:
             raise ValueError(f"Unexpected arguments: {', '.join(sorted(unexpected))}")
-        return await logs_observability.get_media_failures(
-            asset_id=_coerce_optional_string(arguments.get("asset_id"), field="asset_id")
+        return await verification_observability.verify_course_cover_truth(
+            course_id=_required_string(arguments, "course_id")
         )
 
-    if name == "get_cleanup_activity":
-        unexpected = _unexpected_keys(arguments, {"window"})
-        if unexpected:
-            raise ValueError(f"Unexpected arguments: {', '.join(sorted(unexpected))}")
-        return await logs_observability.get_cleanup_activity(
-            window=_coerce_optional_string(arguments.get("window"), field="window")
-        )
-
-    if name == "get_worker_health":
+    if name == "verify_phase2_truth_alignment":
         unexpected = _unexpected_keys(arguments, set())
         if unexpected:
             raise ValueError(f"Unexpected arguments: {', '.join(sorted(unexpected))}")
-        return await logs_observability.get_worker_health()
+        return await verification_observability.verify_phase2_truth_alignment()
+
+    if name == "get_test_cases":
+        unexpected = _unexpected_keys(arguments, set())
+        if unexpected:
+            raise ValueError(f"Unexpected arguments: {', '.join(sorted(unexpected))}")
+        return await verification_observability.get_test_cases()
 
     raise KeyError(name)
 
 
-@router.get("/mcp/logs")
-async def logs_mcp_stream(request: Request) -> Response:
+@router.get("/mcp/verification")
+async def verification_mcp_stream(request: Request) -> Response:
     _ensure_access_allowed(request)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/mcp/logs")
-async def logs_mcp_endpoint(request: Request) -> Response:
+@router.post("/mcp/verification")
+async def verification_mcp_endpoint(request: Request) -> Response:
     _ensure_access_allowed(request)
     try:
         payload = await request.json()
@@ -308,7 +290,7 @@ async def logs_mcp_endpoint(request: Request) -> Response:
             {
                 "protocolVersion": protocol_version,
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "aveli-logs-mcp", "version": "0.1.0"},
+                "serverInfo": {"name": "aveli-verification-mcp", "version": "0.1.0"},
             },
             protocol_version=protocol_version,
         )
@@ -345,7 +327,7 @@ async def logs_mcp_endpoint(request: Request) -> Response:
                 protocol_version=protocol_version,
             )
         try:
-            payload = await _call_tool(name=name, arguments=arguments)
+            tool_payload = await _call_tool(name=name, arguments=arguments)
         except KeyError:
             return _jsonrpc_error(
                 request_id,
@@ -368,7 +350,7 @@ async def logs_mcp_endpoint(request: Request) -> Response:
             )
         return _jsonrpc_result(
             request_id,
-            _tool_success(payload),
+            _tool_success(tool_payload),
             protocol_version=protocol_version,
         )
 
