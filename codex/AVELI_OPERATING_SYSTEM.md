@@ -122,6 +122,52 @@ Rules:
 - Never use UI login state as proof that backend auth is correct.
 - If production access is required, read first and mutate only with explicit task justification.
 
+ ## AUTH BOOTSTRAP (E2E VERIFICATION)
+
+Default rule:
+- Do not use /auth/login for normal operation
+- Do not create or modify users for the purpose of testing
+
+Exception:
+- If E2E_EMAIL and E2E_PASSWORD are defined in environment
+- Codex MAY call /auth/login using ONLY those credentials
+
+Purpose:
+- Establish a safe, isolated test session for UI and end-to-end verification
+- Avoid modifying existing production users or data
+
+Rules:
+
+- E2E credentials are treated as controlled test identities
+- They MUST NOT overlap with real user accounts
+- They MUST NOT be modified
+- They MUST NOT be used for anything except verification flows
+
+Execution:
+
+1. If E2E_EMAIL and E2E_PASSWORD exist:
+   - Perform /auth/login
+   - Store access token
+   - Use it for:
+     - API calls
+     - Playwright session bootstrap
+
+2. If E2E credentials do not exist:
+   - STOP
+   - Report missing auth bootstrap
+
+3. Never attempt:
+   - guessing credentials
+   - scanning for users
+   - using reset-password flows
+   - creating users via API or DB
+
+Outcome:
+
+- Auth is deterministic
+- No mutation of production data
+- No exploratory login behavior
+
 ## Verification Order
 
 Every runtime-affecting task follows this verification chain:
@@ -252,3 +298,38 @@ Unless the prompt says otherwise, Codex SHOULD assume:
 - Domain observability outranks raw logs for diagnosis.
 - Versioned migrations outrank ad hoc SQL for schema changes.
 - Residual uncertainty must be stated explicitly, not hidden behind guesswork.
+
+## PYTHON EXECUTION
+
+Codex MUST use the repository’s Python toolchain.
+
+Rules:
+
+- NEVER call pytest directly
+- NEVER assume system Python environment
+- NEVER assume pytest is globally installed
+
+Always use:
+
+- poetry run <command>
+
+Examples:
+
+- Run tests:
+  poetry run pytest path/to/test_file.py
+
+- Run scripts:
+  poetry run python script.py
+
+- Start backend:
+  poetry run uvicorn app.main:app
+
+Detection:
+
+- If pyproject.toml exists → use poetry
+- Do not attempt alternative runners (pip, system python, uv) unless explicitly instructed
+
+Failure handling:
+
+- If poetry is missing → STOP
+- Do not fallback to raw pytest or python
