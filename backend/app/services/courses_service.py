@@ -917,6 +917,16 @@ def _attach_media_robustness(
     item["resolvable_for_student"] = resolvable
 
 
+def _surface_resolvable(
+    item: Mapping[str, Any],
+    *,
+    editor_mode: bool,
+) -> bool:
+    if editor_mode:
+        return item.get("resolvable_for_editor") is True
+    return item.get("resolvable_for_student") is True
+
+
 def _lesson_image_source(item: Mapping[str, Any]) -> str:
     if item.get("media_asset_id"):
         return "control_plane"
@@ -1290,6 +1300,12 @@ async def list_lesson_media(
 
     if editor_mode:
         for item in items:
+            renderable_for_editor = _surface_resolvable(item, editor_mode=True)
+            if not renderable_for_editor:
+                media_signer.strip_renderable_media_links(
+                    item,
+                    include_preview_fields=True,
+                )
             if str(item.get("kind") or "").strip().lower() == "image":
                 storage_path = item.get("storage_path")
                 storage_bucket = item.get("storage_bucket")
@@ -1317,12 +1333,19 @@ async def list_lesson_media(
                         existence=existence,
                         storage_table_available=storage_table_available,
                     )
-                preview_candidate = item.get("download_url") or item.get("playback_url")
+                preview_candidate = (
+                    item.get("download_url") or item.get("playback_url")
+                    if renderable_for_editor
+                    else None
+                )
                 if (
                     isinstance(preview_candidate, str)
                     and _is_editor_safe_image_fallback_url(preview_candidate)
                 ):
                     item["preferredUrl"] = preview_candidate
+                else:
+                    item.pop("preferredUrl", None)
+                    item.pop("preferred_url", None)
                 _log_editor_image_resolution(
                     item,
                     resolved_url=(
@@ -1340,6 +1363,11 @@ async def list_lesson_media(
             item.pop("poster_frame", None)
     else:
         for item in items:
+            if not _surface_resolvable(item, editor_mode=False):
+                media_signer.strip_renderable_media_links(
+                    item,
+                    include_preview_fields=True,
+                )
             item.pop("storage_path", None)
             item.pop("storage_bucket", None)
     return items

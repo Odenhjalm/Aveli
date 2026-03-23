@@ -401,6 +401,10 @@ async def _build_preview_item(
         kind=kind,
         user_id=user_id,
     )
+    authoritative_editor_ready = failure_reason is None and (
+        kind not in {"image", "video"} or resolved_preview_url is not None
+    )
+
     if resolved_preview_url is None and kind == "image":
         fallback_preview_url = await _resolve_image_public_fallback_url(
             lesson_media_id=lesson_media_id,
@@ -409,16 +413,11 @@ async def _build_preview_item(
         )
         if fallback_preview_url is not None:
             logger.info(
-                "LESSON_MEDIA_PREVIEW_PUBLIC_FALLBACK lesson_media_id=%s kind=%s",
+                "LESSON_MEDIA_PREVIEW_PUBLIC_FALLBACK lesson_media_id=%s kind=%s authoritative=false",
                 lesson_media_id,
                 kind,
             )
             resolved_preview_url = fallback_preview_url
-            failure_reason = None
-
-    authoritative_editor_ready = (
-        failure_reason is None and (kind not in {"image", "video"} or resolved_preview_url is not None)
-    )
 
     return schemas.MediaPreviewItem(
         media_type=kind,

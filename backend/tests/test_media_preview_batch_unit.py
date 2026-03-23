@@ -269,8 +269,8 @@ async def test_request_media_previews_falls_back_to_public_image_url(monkeypatch
         current={"id": user_id},
     )
 
-    assert response.items[image_id].authoritative_editor_ready is True
+    assert response.items[image_id].authoritative_editor_ready is False
     assert response.items[image_id].resolved_preview_url == (
         "https://cdn.public.test/course-images/cover.png"
     )
-    assert response.items[image_id].failure_reason is None
+    assert response.items[image_id].failure_reason == "unresolvable"

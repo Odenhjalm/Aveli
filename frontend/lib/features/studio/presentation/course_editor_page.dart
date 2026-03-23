@@ -1342,26 +1342,32 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     Map<String, dynamic> media,
   ) async {
     final cache = ref.read(lessonMediaPreviewCacheProvider);
-    final cachedPreview = cache.peek(lessonMediaId)?.visualUrl;
-    if (cachedPreview != null && cachedPreview.isNotEmpty) {
-      return cachedPreview;
+    final cachedPreview = cache.peek(lessonMediaId);
+    final cachedPreviewUrl = _normalizedCoverPreviewUrl(
+      cachedPreview?.authoritativeEditorReady == true
+          ? cachedPreview?.visualUrl
+          : null,
+    );
+    if (cachedPreviewUrl != null) {
+      return cachedPreviewUrl;
     }
     try {
       final preview = await cache.getSettledOrFetch(lessonMediaId);
-      final previewUrl = _normalizedCoverPreviewUrl(preview?.visualUrl);
+      final previewUrl = _normalizedCoverPreviewUrl(
+        preview?.authoritativeEditorReady == true ? preview?.visualUrl : null,
+      );
       if (previewUrl != null) {
         return previewUrl;
       }
     } catch (_) {
       // The lesson-media cover action can still continue without cache hydration.
     }
+    if (_requiresAuthoritativeEditorReadiness(media)) {
+      return null;
+    }
     return _normalizedCoverPreviewUrl(
       safeString(media, 'resolved_preview_url') ??
-          safeString(media, 'resolvedPreviewUrl') ??
-          safeString(media, 'download_url') ??
-          safeString(media, 'downloadUrl') ??
-          safeString(media, 'signed_url') ??
-          safeString(media, 'signedUrl'),
+          safeString(media, 'resolvedPreviewUrl'),
     );
   }
 
@@ -2298,7 +2304,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   ) {
     final lessonMediaId = safeString(media, 'id');
     if (lessonMediaId == null) return null;
-    return ref.read(lessonMediaPreviewCacheProvider).peek(lessonMediaId);
+    final preview = ref
+        .read(lessonMediaPreviewCacheProvider)
+        .peek(lessonMediaId);
+    if (preview?.authoritativeEditorReady != true) {
+      return null;
+    }
+    return preview;
   }
 
   LessonMediaPreviewStatus? _previewStatusForMedia(Map<String, dynamic> media) {

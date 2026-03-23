@@ -316,8 +316,15 @@ def _attach_lesson_links(data: dict[str, Any]) -> dict[str, Any]:
         "id": data.get("id"),
         "storage_bucket": data.get("storage_bucket") or "lesson-media",
         "storage_path": data.get("storage_path"),
+        "media_asset_id": data.get("media_asset_id"),
+        "media_state": data.get("media_state"),
     }
     media_signer.attach_media_links(lesson, purpose="editor_preview")
+    if (
+        lesson.get("media_asset_id") is None
+        or str(lesson.get("media_state") or "").strip().lower() != "ready"
+    ):
+        media_signer.strip_renderable_media_links(lesson)
     download_url = lesson.get("download_url")
     signed_url = lesson.get("signed_url")
     signed_expires = lesson.get("signed_url_expires_at")
@@ -371,8 +378,14 @@ def _populate_media_links(row: dict[str, Any]) -> dict[str, Any]:
             or "lesson-media",
             "storage_path": data.get("lesson_media_storage_path"),
             "media_asset_id": data.get("lesson_media_media_asset_id"),
+            "media_state": data.get("lesson_media_state"),
         }
         media_signer.attach_media_links(lesson, purpose="editor_preview")
+        if (
+            lesson.get("media_asset_id") is None
+            or str(lesson.get("media_state") or "").strip().lower() != "ready"
+        ):
+            media_signer.strip_renderable_media_links(lesson)
         download_url = lesson.get("download_url")
         signed_url = lesson.get("signed_url")
         expires_at = lesson.get("signed_url_expires_at")

@@ -291,6 +291,46 @@ def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
         item["playback_url"] = legacy_url
 
 
+def strip_renderable_media_links(
+    item: dict[str, Any],
+    *,
+    include_preview_fields: bool = False,
+) -> None:
+    """Remove fields that could be mistaken for renderability authority.
+
+    Callers should use this after they have determined the current surface is
+    not allowed to present the media as renderable.
+    """
+
+    for field in (
+        "download_url",
+        "downloadUrl",
+        "playback_url",
+        "playbackUrl",
+        "signed_url",
+        "signedUrl",
+        "signed_url_expires_at",
+        "signedUrlExpiresAt",
+        "url",
+    ):
+        item.pop(field, None)
+
+    if not include_preview_fields:
+        return
+
+    for field in (
+        "preferredUrl",
+        "preferred_url",
+        "resolved_preview_url",
+        "resolvedPreviewUrl",
+        "thumbnail_url",
+        "thumbnailUrl",
+        "poster_frame",
+        "posterFrame",
+    ):
+        item.pop(field, None)
+
+
 def attach_cover_links(course: dict) -> None:
     """Mutate a course dict with cover URL details.
 

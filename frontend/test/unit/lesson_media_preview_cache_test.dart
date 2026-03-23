@@ -19,6 +19,7 @@ void main() {
         {
           'media-1': {
             'media_type': 'image',
+            'authoritative_editor_ready': true,
             'resolved_preview_url': 'https://cdn.test/backend-preview-1.webp',
             'file_name': 'image.png',
           },
@@ -26,6 +27,7 @@ void main() {
         {
           'media-1': {
             'media_type': 'image',
+            'authoritative_editor_ready': true,
             'resolved_preview_url': 'https://cdn.test/backend-preview-2.webp',
             'file_name': 'image.png',
           },
@@ -189,6 +191,7 @@ void main() {
           'media-image-1': {
             'media_type': 'image',
             'authoritative_editor_ready': false,
+            'resolved_preview_url': 'https://cdn.test/non-authoritative.webp',
             'failure_reason': 'unresolvable',
           },
         };
@@ -211,6 +214,10 @@ void main() {
 
       expect(preview?.visualUrl, isNull);
       expect(preview?.authoritativeEditorReady, isFalse);
+      expect(
+        cache.peekStatus('media-image-1')?.state,
+        LessonMediaPreviewState.failed,
+      );
       verify(
         () => studioRepository.fetchLessonMediaPreviews(['media-image-1']),
       ).called(1);

@@ -498,8 +498,7 @@ class LessonMediaPreviewCache {
       );
     }
 
-    if (effectivePreview?.authoritativeEditorReady == true ||
-        (visualUrl != null && visualUrl.trim().isNotEmpty)) {
+    if (effectivePreview?.authoritativeEditorReady == true) {
       return LessonMediaPreviewStatus(
         state: LessonMediaPreviewState.ready,
         lessonMediaId: lessonMediaId,
@@ -787,8 +786,7 @@ String? _normalizedString(Object? value) {
 }
 
 bool _isReadyPreviewData(LessonMediaPreviewData preview) {
-  return preview.authoritativeEditorReady == true ||
-      ((preview.visualUrl?.trim().isNotEmpty ?? false));
+  return preview.authoritativeEditorReady == true;
 }
 
 bool _isTransientResolverRetryEligible(LessonMediaPreviewData preview) {
