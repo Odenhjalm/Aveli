@@ -33,11 +33,28 @@ def _now() -> datetime:
 
 
 def _enabled() -> bool:
-    return settings.media_transcode_enabled
+    return settings.mcp_workers_enabled
 
 
 def _env_worker_enabled() -> bool:
-    return os.environ.get("RUN_MEDIA_WORKER", "").strip().lower() == "true"
+    return os.environ.get("RUN_MEDIA_WORKER", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
+def _enablement_state() -> dict[str, bool]:
+    enabled_by_mcp_mode = _enabled()
+    enabled_by_env = _env_worker_enabled()
+    return {
+        "enabled_by_mcp_mode": enabled_by_mcp_mode,
+        "enabled_by_env": enabled_by_env,
+        "enabled_by_config": enabled_by_mcp_mode,
+        "final_state": enabled_by_mcp_mode or enabled_by_env,
+    }
 
 
 def _truncate(message: str, limit: int = 500) -> str:
@@ -148,11 +165,9 @@ async def _verify_ready_contract(
 
 async def start_worker() -> None:
     global _worker_task
-    if not _env_worker_enabled():
-        logger.info("Media transcode worker disabled: RUN_MEDIA_WORKER not true")
-        return
-    if not _enabled():
-        logger.info("Media transcode worker disabled by configuration")
+    enablement = _enablement_state()
+    if not enablement["final_state"]:
+        logger.info("Media transcode worker disabled", extra=enablement)
         return
     if _worker_task is not None:
         return
@@ -162,7 +177,7 @@ async def start_worker() -> None:
     if released:
         logger.info("Released %s stale media transcode locks", released)
     _worker_task = asyncio.create_task(_poll_loop())
-    logger.info("Media transcode worker started")
+    logger.info("Media transcode worker started", extra=enablement)
 
 
 async def stop_worker() -> None:
@@ -179,6 +194,7 @@ async def stop_worker() -> None:
 
 
 async def get_metrics() -> dict[str, Any]:
+    enablement = _enablement_state()
     summary = await media_assets_repo.get_media_processing_worker_summary(
         stale_after_seconds=settings.media_transcode_stale_lock_seconds
     )
@@ -194,8 +210,7 @@ async def get_metrics() -> dict[str, Any]:
     )
     return {
         "worker_running": _worker_task is not None and not _worker_task.done(),
-        "enabled_by_env": _env_worker_enabled(),
-        "enabled_by_config": _enabled(),
+        **enablement,
         "poll_interval_seconds": settings.media_transcode_poll_interval_seconds,
         "batch_size": settings.media_transcode_batch_size,
         "max_attempts": settings.media_transcode_max_attempts,
@@ -671,8 +686,9 @@ if __name__ == "__main__":
     from ..logging_utils import setup_logging
 
     setup_logging()
-    if not _env_worker_enabled():
-        logger.info("Media transcode worker disabled: RUN_MEDIA_WORKER not true")
+    enablement = _enablement_state()
+    if not enablement["final_state"]:
+        logger.info("Media transcode worker disabled", extra=enablement)
         raise SystemExit(0)
     try:
         asyncio.run(_run_worker_forever())

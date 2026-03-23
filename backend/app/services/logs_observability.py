@@ -299,9 +299,7 @@ async def get_worker_health() -> dict[str, Any]:
     webhook_snapshot = await livekit_jobs_repo.get_webhook_queue_snapshot()
     membership_metrics = membership_expiry_warnings.get_metrics()
 
-    transcode_enabled = bool(
-        transcode_metrics["enabled_by_env"] and transcode_metrics["enabled_by_config"]
-    )
+    transcode_enabled = bool(transcode_metrics.get("final_state"))
     transcode_last_error = transcode_metrics.get("last_error")
     transcode_queue = transcode_metrics.get("queue_summary") or {}
     transcode_status = _status_from_flags(
@@ -329,8 +327,10 @@ async def get_worker_health() -> dict[str, Any]:
         "media_transcode": {
             "status": transcode_status,
             "worker_running": bool(transcode_metrics.get("worker_running")),
+            "enabled_by_mcp_mode": bool(transcode_metrics.get("enabled_by_mcp_mode")),
             "enabled_by_env": bool(transcode_metrics.get("enabled_by_env")),
             "enabled_by_config": bool(transcode_metrics.get("enabled_by_config")),
+            "final_state": bool(transcode_metrics.get("final_state")),
             "poll_interval_seconds": int(transcode_metrics.get("poll_interval_seconds") or 0),
             "batch_size": int(transcode_metrics.get("batch_size") or 0),
             "max_attempts": int(transcode_metrics.get("max_attempts") or 0),

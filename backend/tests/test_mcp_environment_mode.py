@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -41,6 +42,90 @@ def test_settings_require_explicit_production_database_for_mcp_mode(monkeypatch)
 
     with pytest.raises(ValueError, match="MCP_MODE=production requires"):
         Settings()
+
+
+@pytest.mark.anyio("asyncio")
+async def test_media_transcode_worker_enablement_follows_mcp_mode(monkeypatch):
+    from app.services import media_transcode_worker as worker
+
+    async def fake_poll_loop() -> None:
+        return None
+
+    release_locks = AsyncMock(return_value=0)
+
+    monkeypatch.delenv("RUN_MEDIA_WORKER", raising=False)
+    monkeypatch.setattr(worker.settings, "mcp_mode", "local", raising=False)
+    monkeypatch.setattr(worker, "_worker_task", None, raising=False)
+    monkeypatch.setattr(worker, "_poll_loop", fake_poll_loop, raising=True)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "release_processing_media_assets",
+        release_locks,
+        raising=True,
+    )
+
+    await worker.start_worker()
+    await asyncio.sleep(0)
+
+    assert worker._enablement_state() == {
+        "enabled_by_mcp_mode": True,
+        "enabled_by_env": False,
+        "enabled_by_config": True,
+        "final_state": True,
+    }
+    assert worker._worker_task is not None
+    release_locks.assert_awaited_once()
+
+    worker._worker_task = None
+
+    monkeypatch.setattr(worker.settings, "mcp_mode", "production", raising=False)
+    release_locks.reset_mock()
+
+    await worker.start_worker()
+
+    assert worker._enablement_state() == {
+        "enabled_by_mcp_mode": False,
+        "enabled_by_env": False,
+        "enabled_by_config": False,
+        "final_state": False,
+    }
+    assert worker._worker_task is None
+    release_locks.assert_not_awaited()
+
+
+@pytest.mark.anyio("asyncio")
+async def test_media_transcode_worker_env_override_can_force_enable(monkeypatch):
+    from app.services import media_transcode_worker as worker
+
+    async def fake_poll_loop() -> None:
+        return None
+
+    release_locks = AsyncMock(return_value=0)
+
+    monkeypatch.setenv("RUN_MEDIA_WORKER", "1")
+    monkeypatch.setattr(worker.settings, "mcp_mode", "production", raising=False)
+    monkeypatch.setattr(worker, "_worker_task", None, raising=False)
+    monkeypatch.setattr(worker, "_poll_loop", fake_poll_loop, raising=True)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "release_processing_media_assets",
+        release_locks,
+        raising=True,
+    )
+
+    await worker.start_worker()
+    await asyncio.sleep(0)
+
+    assert worker._enablement_state() == {
+        "enabled_by_mcp_mode": False,
+        "enabled_by_env": True,
+        "enabled_by_config": False,
+        "final_state": True,
+    }
+    assert worker._worker_task is not None
+    release_locks.assert_awaited_once()
+
+    worker._worker_task = None
 
 
 @pytest.mark.anyio("asyncio")
