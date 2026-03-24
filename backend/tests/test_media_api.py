@@ -1345,9 +1345,6 @@ async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
             assert storage_path.endswith(".mp3")
             return True
 
-        async def fake_resolve_storage_playback_url(**_kwargs):
-            return "https://stream.local/home-object.mp3"
-
         monkeypatch.setattr(
             lesson_playback_service.canonical_media_resolver,
             "_storage_object_exists",
@@ -1355,9 +1352,11 @@ async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
             raising=True,
         )
         monkeypatch.setattr(
-            lesson_playback_service.media_resolver,
-            "resolve_storage_playback_url",
-            fake_resolve_storage_playback_url,
+            lesson_playback_service.media_resolver.storage_service,
+            "get_storage_service",
+            lambda _bucket: _FakePlaybackStorageClient(
+                "https://stream.local/home-object.mp3"
+            ),
             raising=True,
         )
 

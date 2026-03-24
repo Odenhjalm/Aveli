@@ -193,6 +193,67 @@ async def test_resolve_runtime_media_playback_blocks_legacy_storage_for_lesson_m
     assert exc_info.value.detail == "Lesson media has no playable source"
 
 
+async def test_resolve_legacy_storage_playback_allows_direct_home_mp3_without_derived_guard(
+    monkeypatch,
+):
+    resolution = LessonMediaResolution(
+        lesson_media_id=None,
+        lesson_id=None,
+        media_asset_id=None,
+        legacy_media_object_id="legacy-home-1",
+        kind="audio",
+        content_type="audio/mpeg",
+        media_state="ready",
+        duration_seconds=120,
+        storage_bucket="course-media",
+        storage_path="home-player/teacher-1/demo.mp3",
+        is_playable=True,
+        playback_mode=LessonMediaPlaybackMode.LEGACY_STORAGE,
+        failure_reason=LessonMediaResolutionReason.OK_LEGACY_OBJECT,
+        failure_detail=None,
+        asset_purpose=None,
+        requires_legacy_fallback=False,
+        runtime_media_id="runtime-home-1",
+        reference_type="home_player_upload",
+        auth_scope="home_teacher_library",
+        home_player_upload_id="upload-1",
+        teacher_id="teacher-1",
+        course_id=None,
+        active=True,
+        fallback_policy="if_no_ready_asset",
+    )
+
+    async def fake_authorize_home_player_upload_playback(user_id: str, teacher_id: str):
+        assert user_id == "user-1"
+        assert teacher_id == "teacher-1"
+
+    async def fake_resolve_storage_playback_url(**kwargs):
+        assert kwargs["storage_path"] == "home-player/teacher-1/demo.mp3"
+        assert kwargs["storage_bucket"] == "course-media"
+        assert kwargs["require_derived_audio"] is False
+        return "https://stream.test/home.mp3"
+
+    monkeypatch.setattr(
+        lesson_playback_service,
+        "_authorize_home_player_upload_playback",
+        fake_authorize_home_player_upload_playback,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        lesson_playback_service.media_resolver,
+        "resolve_storage_playback_url",
+        fake_resolve_storage_playback_url,
+        raising=True,
+    )
+
+    result = await lesson_playback_service._resolve_legacy_storage_playback_from_resolution(
+        resolution=resolution,
+        user_id="user-1",
+    )
+
+    assert result["playback_url"] == "https://stream.test/home.mp3"
+
+
 async def test_resolve_runtime_media_playback_allows_legacy_image_passthrough_for_lesson_media(
     monkeypatch,
 ):

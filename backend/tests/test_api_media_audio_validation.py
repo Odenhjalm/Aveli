@@ -89,6 +89,26 @@ def test_media_resolver_allows_only_derived_audio_paths_for_lesson_playback():
     )
 
 
+def test_media_resolver_detects_direct_home_mp3_paths():
+    assert media_resolver.is_direct_home_mp3_path(
+        "home-player/teacher-1/demo.mp3",
+        content_type="audio/mpeg",
+    )
+    assert media_resolver.is_direct_home_mp3_path(
+        "course-media/home-player/teacher-1/demo.mp3",
+        storage_bucket="course-media",
+        content_type="audio/mpeg",
+    )
+    assert not media_resolver.is_direct_home_mp3_path(
+        "home-player/teacher-1/demo.mp3",
+        content_type="audio/wav",
+    )
+    assert not media_resolver.is_direct_home_mp3_path(
+        "media/derived/audio/home-player/teacher-1/demo.mp3",
+        content_type="audio/mpeg",
+    )
+
+
 def test_media_paths_validate_new_upload_object_path_enforces_allowlist():
     assert (
         media_paths.validate_new_upload_object_path(

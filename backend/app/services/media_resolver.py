@@ -85,6 +85,19 @@ def is_derived_audio_path(storage_path: str) -> bool:
     )
 
 
+def is_direct_home_mp3_path(
+    storage_path: str,
+    *,
+    storage_bucket: str | None = None,
+    content_type: str | None = None,
+) -> bool:
+    normalized_type = str(content_type or "").strip().lower()
+    if normalized_type != "audio/mpeg":
+        return False
+    _, key = _detect_bucket_and_key(storage_path, storage_bucket=storage_bucket)
+    return key.startswith("home-player/")
+
+
 async def resolve_media_url(storage_path: str) -> str:
     bucket, key = _detect_bucket_and_key(storage_path)
     presigned = await storage_service.get_storage_service(bucket).get_presigned_url(

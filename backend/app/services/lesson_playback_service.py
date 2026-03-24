@@ -55,6 +55,19 @@ def _playback_resolution_source(resolution: LessonMediaResolution) -> str:
     return "unknown"
 
 
+def _legacy_audio_requires_derived_playback(
+    resolution: LessonMediaResolution,
+) -> bool:
+    kind = str(resolution.kind or "").strip().lower()
+    if kind != "audio":
+        return False
+    return not media_resolver.is_direct_home_mp3_path(
+        str(resolution.storage_path or ""),
+        storage_bucket=resolution.storage_bucket,
+        content_type=resolution.content_type,
+    )
+
+
 def _log_image_playback_resolution(
     *,
     resolution: LessonMediaResolution,
@@ -422,7 +435,9 @@ async def _resolve_legacy_storage_playback_from_resolution(
             storage_path=storage_path,
             storage_bucket=storage_bucket,
             cache_version=resolution.legacy_media_object_id,
-            require_derived_audio=(str(resolution.kind or "").strip().lower() == "audio"),
+            require_derived_audio=_legacy_audio_requires_derived_playback(
+                resolution
+            ),
         )
     except (ValueError, storage_service.StorageServiceError) as exc:
         logger.warning(
