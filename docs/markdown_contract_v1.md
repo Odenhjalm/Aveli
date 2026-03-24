@@ -5,6 +5,7 @@
 - Persisted `content_markdown` is the canonical interchange format.
 - UI is not truth.
 - The read path is a strict consumer, not a healing layer.
+- Persisted markdown states are classified as `canonical`, `valid_legacy`, or `invalid`.
 
 ## 2. Priority order
 Use this exact evaluation order:
@@ -33,8 +34,11 @@ P4. Emphasis
 
 P5. Plain text
 
-## 3. Supported canonical syntax
-Allowed:
+## 3. Persisted states
+### A. Canonical
+Preferred persisted form going forward.
+
+Canonical in v1 includes:
 - plain text
 - `*italic*`
 - `**bold**`
@@ -43,29 +47,51 @@ Allowed:
 - fenced code
 - media tokens
 - normal block markdown used by Aveli
+- punctuation-inside-label form: `**Tips:** text`
 
-Not canonical in v1:
-- `__bold__`
+### B. Valid legacy
+Allowed persisted forms that are not preferred, but are deterministic in the current
+`markdown_to_editor -> Quill` runtime and therefore do not block apply by themselves.
+
+Valid legacy in v1 includes:
 - `_italic_`
-- raw HTML emphasis tags
-- overlapping emphasis
-- free-form mixed emphasis not explicitly round-trip tested
-- intraword emphasis forms that depend on parser ambiguity
+- post-close punctuation or dash adjacency such as:
+  - `**ALFA**–`
+  - `**text**,`
+  - `**text**.`
+- label punctuation outside bold when deterministic, such as `**Morrigan**:`
 
-## 4. Canonical inline rules
-- No whitespace directly inside emphasis delimiters.
-- Label punctuation belongs inside the bold span.
+Rules:
+- valid legacy may be normalized later
+- valid legacy is not a blocking defect
+- the read path may consume valid legacy
+- the write path should still prefer canonical output
+
+### C. Invalid
+Blocking contract violations.
+
+Invalid in v1 includes:
+- escaped emphasis that shows literal markers
+- whitespace directly inside emphasis delimiters
+- unbalanced emphasis
+- post-close alphanumeric adjacency such as:
+  - `**Tips:**Om`
+  - `**Energi**Ljus`
+  - `**guidebyte**i`
+- mixed-formatting boundary cases that produce ambiguous or non-deterministic import/render behavior
+- raw HTML emphasis tags if present
+
+## 4. Inline rules
+- No whitespace directly inside emphasis delimiters in canonical output.
+- Label punctuation belongs inside the bold span in canonical output.
   - canonical: `**Tips:** text`
-  - not canonical: `**Tips**: text`
-- After a closing emphasis delimiter, the canonical boundary is:
+  - valid legacy if deterministic: `**Morrigan**: text`
+- After a closing emphasis delimiter, canonical output uses:
   - whitespace
   - newline
   - end-of-block
-- Therefore these are non-canonical and must normalize or be flagged:
-  - `**Tips:**Om`
-  - `**Energi**Ljus`
-  - `**OBS!**Giftig`
-  - `**guidebyte**i`
+- Post-close punctuation or dash adjacency may remain `valid_legacy` if deterministic.
+- Post-close alphanumeric adjacency is `invalid`.
 
 ## 5. Normalization order
 Use this exact order:
@@ -81,12 +107,13 @@ Use this exact order:
 
 ## 6. Validation and apply gate
 - Canonical markdown must round-trip through the current `markdown_to_editor` path deterministically.
-- Non-canonical persisted markdown is a data-quality defect.
+- `valid_legacy` persisted markdown is allowed when deterministic, but is still not the preferred write form.
+- `invalid` persisted markdown is a blocking data-quality defect.
 - The read path may log violations but must not invent semantics.
 - Apply is only allowed when:
   - false positives = 0
   - risky cases = 0
-  - remaining out-of-contract rows are explicitly classified and intentionally out of scope
+  - invalid rows remaining = 0
 
 ## 7. Decision rule for new patterns
 - A new pattern must become either:
