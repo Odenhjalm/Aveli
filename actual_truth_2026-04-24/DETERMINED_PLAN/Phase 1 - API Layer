@@ -1,0 +1,160 @@
+# Phase 1 - API Layer Contract Stabilization
+
+INPUT DECISION FILES (all steps reference):
+- actual_truth_2026-04-24/Aveli_System_Decisions.md
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md
+- docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md
+- docs/media_control_plane_mcp.md
+- docs/SECURITY.md
+- docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md
+- backend/app/main.py
+- backend/app/routes/auth.py
+- backend/app/routes/api_payments.py
+- backend/app/routes/api_billing.py
+- backend/app/routes/api_media.py
+- backend/app/routes/admin.py
+- backend/app/routes/api_admin.py
+- backend/app/routes/api_media_control.py
+- backend/app/routes/api_courses.py
+- backend/app/routes/api_editor.py
+- backend/app/routes/api_health.py
+
+STEP 1
+Input files:
+- actual_truth_2026-04-24/Aveli_System_Decisions.md
+Action:
+- IF actual_truth_2026-04-24/Aveli_System_Decisions.md does not exist, STOP with condition: "Aveli_System_Decisions.md missing".
+- IF file exists, extract the following explicit decisions:
+  - API definitions = audit-driven catalog truth (API_CATALOG.json/markdown + usage diff)
+  - Media control plane = control-plane required
+  - Auth flow = security baseline only
+Expected output:
+- Decision alignment record with three fields: API source, Media scope, Auth constraint.
+PASS condition:
+- All three fields are present and map exactly to the approved options.
+STOP if:
+- Any field is absent or maps to a non-approved option.
+
+RULE 1: API truth source (no change to logic)
+IF a route is processed in any comparison step, THEN source-of-truth for API definitions is:
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md
+- docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md
+AND no route decisions may use docs/api_v2_reference.md as canonical.
+
+RULE 2: Media control-plane protection
+IF a route path belongs to media control-plane set in docs/media_control_plane_mcp.md, THEN
+- action = DO NOT modify media_control_plane routes or docs.
+- action = DO NOT remove route from media control-plane docs.
+- action = DO NOT add changes to media control-plane route definitions.
+
+RULE 3: Auth boundary protection
+IF route file/path is part of auth system, THEN
+- action = DO NOT redesign structure.
+- action = route handling may only be aligned to security baseline from:
+  - docs/SECURITY.md
+  - docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md
+AND DO NOT alter auth boundary architecture in this phase.
+
+RULE 4
+Input files:
+- backend/app/main.py
+- backend/app/routes/*.py
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md
+- docs/media_control_plane_mcp.md
+Action:
+- Parse route declarations from each listed backend/app/routes/*.py file and route mount statements in backend/app/main.py.
+- Parse route entries from API_CATALOG.json and API_CATALOG.md.
+- Parse media-control-plane allowed routes from docs/media_control_plane_mcp.md.
+- IF same path+method appears in runtime and catalog, mark in_both.
+- IF runtime-only and NOT in media-control-plane set, mark runtime_only.
+- IF runtime-only and in media-control-plane set, mark control_plane_runtime_only.
+- IF catalog-only, mark catalog_only.
+- IF same path+method appears in multiple runtime files, mark duplicate.
+Expected output:
+- Route map matrix with columns: route_key, in_runtime, in_catalog, classification.
+PASS condition:
+- Every discovered route_key has one of: in_both, runtime_only, control_plane_runtime_only, catalog_only, duplicate.
+STOP if:
+- Path or method cannot be extracted from any file.
+
+RULE 5
+IF route is catalog-only AND route is in media-control-plane docs, THEN action = DO NOT remove route from docs/media_control_plane_mcp.md.
+IF route is catalog-only AND route is not in media-control-plane docs, THEN action = mark catalog_only_only.
+
+RULE 6
+Input files:
+- docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md
+- backend/app/routes/*.py
+- backend/app/main.py
+Action:
+- Parse frontend usage lines in API_USAGE_DIFF.md that indicate missing or extra routes.
+- IF usage indicates frontend path maps to route that is missing at runtime, mark missing_runtime_route.
+- IF runtime route has no frontend usage record, mark unused_runtime_route.
+Expected output:
+- Usage mismatch list with explicit fields: frontend_path, runtime_presence, catalog_presence, usage_status.
+PASS condition:
+- Each usage record has an explicit mismatch label or explicit match label.
+STOP if:
+- Usage record references route that cannot be parsed to method/path.
+
+RULE 7
+Input files:
+- backend/app/main.py
+- backend/app/routes/*.py
+- actual_truth_2026-04-24/Aveli_System_Decisions.md
+Action:
+- IF ambiguous route path maps to multiple runtime routes AND any linked component is marked planned in Aveli_System_Decisions.md, THEN classify as planned_route.
+- IF ambiguous route path maps to multiple runtime routes, DO NOT modify any route definition.
+- DO NOT merge or delete any ambiguous route definitions.
+Expected output:
+- Ambiguity table with columns: route_key, matched_routes, planned_linkage, decision.
+PASS condition:
+- For each ambiguous route, decision is either planned_route or STOP.
+STOP if:
+- Any ambiguous route has no unambiguous planned linkage.
+
+RULE 8
+Input files:
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json
+- docs/media_control_plane_mcp.md
+- backend/app/main.py
+- backend/app/routes/*.py
+Action:
+- IF same route path + method appears in multiple files, mark duplicate_route_conflict.
+- IF one duplicate is mounted in backend/app/main.py and others are not, THEN mark unmounted duplicate as legacy_duplicate and DO NOT modify.
+- IF all duplicates are mounted, THEN STOP with reason conflict_requires_manual_resolution.
+- IF none duplicated routes are mounted, THEN STOP with reason invalid_route_definition.
+Expected output:
+- Duplicate route classification list.
+PASS condition:
+- All duplicate cases are assigned one of: legacy_duplicate, conflict_requires_manual_resolution, invalid_route_definition, unknown.
+STOP if:
+- any duplicate case cannot be resolved by the IF rules.
+
+STEP 2
+Input files:
+- actual_truth_2026-04-24/DETERMINED_PLAN/Phase 1 - API Layer
+- docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json
+- docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md
+- backend/app/main.py
+- backend/app/routes/*.py
+Action:
+- Keep phase order unchanged.
+- Replace non-deterministic text with IF/THEN actions.
+- Preserve non-contradiction constraint: no auth redesign, no media-control-plane route modification, no non-audit route source override.
+Expected output:
+- Deterministic rule list for execution.
+PASS condition:
+- No rule contains open-ended verbs (for example, "reconcile", "improve", "fix", "handle") and no step requires human interpretation.
+STOP if:
+- Any rule requires manual choice not already encoded in this file.
+
+EXPECTED PHASE BOUNDARY CONDITIONS
+- DO NOT modify media_control_plane routes or docs.
+- DO NOT remove routes referenced in control-plane docs.
+- Auth routes may only be aligned to security baseline.
+- Do NOT stop at catalog-only status unless the file path is in media-control-plane docs.
+- Do NOT add new phases or reorder step IDs.
