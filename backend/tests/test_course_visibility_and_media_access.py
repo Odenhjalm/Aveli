@@ -8,6 +8,7 @@ from app.config import settings
 from app import db, models, repositories
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
+from app.services import courses_service
 pytestmark = pytest.mark.anyio("asyncio")
 
 
@@ -585,3 +586,166 @@ async def test_non_active_membership_statuses_do_not_grant_course_or_media_acces
         headers=auth_header(student_token),
     )
     assert sign_resp.status_code == 403, sign_resp.text
+
+
+async def test_lesson_detail_returns_unresolved_media_without_intro_enrollment_side_effect(
+    async_client,
+):
+    password = "Passw0rd!"
+    _, teacher_id = await register_user(
+        async_client,
+        f"intro_teacher_{uuid.uuid4().hex[:6]}@example.com",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+    student_token, student_id = await register_user(
+        async_client,
+        f"intro_student_{uuid.uuid4().hex[:6]}@example.com",
+        password,
+        "Student",
+    )
+
+    course_id = await insert_course(
+        slug=f"intro-read-{uuid.uuid4().hex[:8]}",
+        title="Intro Read Contract",
+        owner_id=teacher_id,
+        is_published=True,
+        is_free_intro=True,
+    )
+    lesson = await courses_repo.create_lesson(
+        course_id,
+        title="Broken Intro Lesson",
+        position=0,
+        is_intro=True,
+    )
+    assert lesson
+
+    media_object = await models.create_media_object(
+        owner_id=teacher_id,
+        storage_path=f"missing/{uuid.uuid4().hex}.png",
+        storage_bucket="lesson-media",
+        content_type="image/png",
+        byte_size=3,
+        checksum=None,
+        original_name="broken.png",
+    )
+    assert media_object
+    legacy_media = await models.add_lesson_media_entry(
+        lesson_id=str(lesson["id"]),
+        kind="image",
+        storage_path=media_object["storage_path"],
+        storage_bucket=media_object["storage_bucket"],
+        media_id=str(media_object["id"]),
+        position=1,
+    )
+    assert legacy_media
+
+    await upsert_membership(student_id, "active")
+    assert await courses_repo.is_enrolled(student_id, course_id) is False
+
+    lesson_detail_resp = await async_client.get(
+        f"/courses/lessons/{lesson['id']}",
+        headers=auth_header(student_token),
+    )
+    assert lesson_detail_resp.status_code == 200, lesson_detail_resp.text
+
+    payload = lesson_detail_resp.json()
+    assert payload["lesson"]["id"] == str(lesson["id"])
+    item = next(
+        media_item
+        for media_item in (payload.get("media") or [])
+        if media_item.get("id") == str(legacy_media["id"])
+    )
+    assert item["resolvable_for_student"] is False
+    assert item["resolvable_for_editor"] is False
+    assert "preferredUrl" not in item
+    assert "download_url" not in item
+    assert "playback_url" not in item
+    assert "signed_url" not in item
+    assert "signed_url_expires_at" not in item
+    assert await courses_repo.is_enrolled(student_id, course_id) is False
+
+
+async def test_lesson_detail_access_check_does_not_depend_on_full_course_fetch(
+    async_client,
+    monkeypatch,
+):
+    password = "Passw0rd!"
+    _, teacher_id = await register_user(
+        async_client,
+        f"intro_teacher_access_{uuid.uuid4().hex[:6]}@example.com",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+    student_token, student_id = await register_user(
+        async_client,
+        f"intro_student_access_{uuid.uuid4().hex[:6]}@example.com",
+        password,
+        "Student",
+    )
+
+    course_id = await insert_course(
+        slug=f"intro-access-{uuid.uuid4().hex[:8]}",
+        title="Intro Access Isolation",
+        owner_id=teacher_id,
+        is_published=True,
+        is_free_intro=True,
+    )
+    lesson = await courses_repo.create_lesson(
+        course_id,
+        title="Broken Intro Lesson",
+        position=0,
+        is_intro=True,
+    )
+    assert lesson
+
+    media_object = await models.create_media_object(
+        owner_id=teacher_id,
+        storage_path=f"missing/{uuid.uuid4().hex}.png",
+        storage_bucket="lesson-media",
+        content_type="image/png",
+        byte_size=3,
+        checksum=None,
+        original_name="broken.png",
+    )
+    assert media_object
+    legacy_media = await models.add_lesson_media_entry(
+        lesson_id=str(lesson["id"]),
+        kind="image",
+        storage_path=media_object["storage_path"],
+        storage_bucket=media_object["storage_bucket"],
+        media_id=str(media_object["id"]),
+        position=1,
+    )
+    assert legacy_media
+
+    await upsert_membership(student_id, "active")
+
+    async def fail_fetch_course(*args, **kwargs):
+        raise RuntimeError("full course read path must not be used for lesson access")
+
+    monkeypatch.setattr(
+        courses_service,
+        "fetch_course",
+        fail_fetch_course,
+    )
+
+    lesson_detail_resp = await async_client.get(
+        f"/courses/lessons/{lesson['id']}",
+        headers=auth_header(student_token),
+    )
+    assert lesson_detail_resp.status_code == 200, lesson_detail_resp.text
+
+    payload = lesson_detail_resp.json()
+    item = next(
+        media_item
+        for media_item in (payload.get("media") or [])
+        if media_item.get("id") == str(legacy_media["id"])
+    )
+    assert item["resolvable_for_student"] is False
+    assert item["resolvable_for_editor"] is False
+    assert "preferredUrl" not in item
+    assert "download_url" not in item
+    assert "playback_url" not in item

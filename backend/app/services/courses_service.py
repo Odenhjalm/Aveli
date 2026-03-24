@@ -833,6 +833,12 @@ async def fetch_course(
     return materialized
 
 
+async def fetch_course_access_subject(course_id: str) -> dict[str, Any] | None:
+    """Return only the course fields needed for access decisions."""
+    row = await courses_repo.get_course(course_id=course_id)
+    return _materialize_optional_row(row)
+
+
 async def list_courses(
     *,
     teacher_id: str | None = None,
@@ -1539,6 +1545,7 @@ __all__ = [
     "ModulePayload",
     "LessonPayload",
     "fetch_course",
+    "fetch_course_access_subject",
     "list_courses",
     "list_public_courses",
     "create_course",

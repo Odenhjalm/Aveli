@@ -28,8 +28,8 @@ def _virtual_module(course_id: str) -> dict[str, Any]:
     }
 
 
-async def assert_can_access_course(user: OptionalCurrentUser, course_id: str) -> dict[str, Any]:
-    course = await courses_service.fetch_course(course_id=course_id)
+async def assert_can_access_course(user: OptionalCurrentUser, course_id: str) -> None:
+    course = await courses_service.fetch_course_access_subject(course_id)
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
@@ -42,10 +42,10 @@ async def assert_can_access_course(user: OptionalCurrentUser, course_id: str) ->
     user_id = str(user["id"])
     role_value = str(user.get("role_v2") or "").lower()
     if bool(user.get("is_admin")) or role_value == "admin":
-        return course
+        return
 
     if await courses_service.can_user_read_course(user_id, course):
-        return course
+        return
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -250,14 +250,14 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
     course_id = str(row["id"])
-    course = await assert_can_access_course(current, course_id)
+    await assert_can_access_course(current, course_id)
     module = _virtual_module(course_id)
     modules = [module]
     lessons_map: dict[str, list] = {
         course_id: await courses_service.list_course_lessons(course_id)
     }
     response = {
-        "course": course,
+        "course": row,
         "modules": modules,
         "lessons": lessons_map,
     }
@@ -266,7 +266,10 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
 
 @router.get("/{course_id}")
 async def course_detail(course_id: str, current: OptionalCurrentUser = None):
-    row = await assert_can_access_course(current, course_id)
+    await assert_can_access_course(current, course_id)
+    row = await courses_service.fetch_course(course_id=course_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Course not found")
     module = _virtual_module(course_id)
     modules = [module]
     lessons_map: dict[str, list] = {
