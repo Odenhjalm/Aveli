@@ -156,46 +156,20 @@ def test_attach_media_links_excludes_private_bucket(monkeypatch):
     assert item["download_url"] == "/studio/media/media84"
 
 
-def test_attach_cover_links_strips_legacy_cover():
+def test_attach_cover_links_strips_legacy_signed_fields_only():
     course = {
         "cover_url": "/studio/media/cover123",
         "signed_cover_url": "/media/stream/legacy",
     }
     media_signer.attach_cover_links(course)
-    assert course.get("cover_url") is None
+    assert course.get("cover_url") == "/studio/media/cover123"
     assert "signed_cover_url" not in course
     assert "signed_cover_url_expires_at" not in course
 
 
-def test_attach_cover_links_allows_public_media_path():
+def test_attach_cover_links_preserves_cover_url():
     course = {
         "cover_url": "/api/files/public-media/courses/cover.jpg",
     }
     media_signer.attach_cover_links(course)
     assert course.get("cover_url") == "/api/files/public-media/courses/cover.jpg"
-
-
-def test_attach_cover_links_converts_api_files_cover_when_supabase_configured(monkeypatch):
-    class _FakeUrl:
-        def __init__(self, value: str) -> None:
-            self._value = value
-
-        def unicode_string(self) -> str:
-            return self._value
-
-    monkeypatch.setattr(
-        media_signer.settings,
-        "supabase_url",
-        _FakeUrl("https://example.supabase.co"),
-        raising=False,
-    )
-
-    course = {
-        "cover_url": "/api/files/public-media/courses/cover.jpg",
-    }
-    media_signer.attach_cover_links(course)
-    url = course.get("cover_url") or ""
-    assert url.startswith(
-        "https://example.supabase.co/storage/v1/object/public/public-media/"
-    )
-    assert "/api/files/" not in url

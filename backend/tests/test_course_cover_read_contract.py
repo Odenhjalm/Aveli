@@ -165,7 +165,6 @@ async def test_resolve_course_cover_ready_asset_returns_control_plane(monkeypatc
     cover = await courses_service.resolve_course_cover(
         course_id=COURSE_ID,
         cover_media_id=MEDIA_ID,
-        cover_url=None,
     )
 
     assert cover == {
@@ -176,7 +175,7 @@ async def test_resolve_course_cover_ready_asset_returns_control_plane(monkeypatc
     }
 
 
-async def test_resolve_course_cover_uploaded_asset_uses_legacy_fallback(monkeypatch):
+async def test_resolve_course_cover_uploaded_asset_returns_placeholder(monkeypatch):
     async def fake_get_media_asset(media_id: str):
         return _asset(state="uploaded")
 
@@ -186,28 +185,20 @@ async def test_resolve_course_cover_uploaded_asset_uses_legacy_fallback(monkeypa
         fake_get_media_asset,
         raising=True,
     )
-    monkeypatch.setattr(
-        courses_service.media_signer.settings,
-        "supabase_url",
-        None,
-        raising=False,
-    )
-
     cover = await courses_service.resolve_course_cover(
         course_id=COURSE_ID,
         cover_media_id=MEDIA_ID,
-        cover_url=LEGACY_URL,
     )
 
     assert cover == {
         "media_id": MEDIA_ID,
-        "state": "legacy_fallback",
-        "resolved_url": LEGACY_URL,
-        "source": "legacy_cover_url",
+        "state": "uploaded",
+        "resolved_url": None,
+        "source": "placeholder",
     }
 
 
-async def test_resolve_course_cover_missing_asset_uses_legacy_fallback(monkeypatch):
+async def test_resolve_course_cover_missing_asset_returns_placeholder(monkeypatch):
     async def fake_get_media_asset(media_id: str):
         return None
 
@@ -217,24 +208,16 @@ async def test_resolve_course_cover_missing_asset_uses_legacy_fallback(monkeypat
         fake_get_media_asset,
         raising=True,
     )
-    monkeypatch.setattr(
-        courses_service.media_signer.settings,
-        "supabase_url",
-        None,
-        raising=False,
-    )
-
     cover = await courses_service.resolve_course_cover(
         course_id=COURSE_ID,
         cover_media_id=MEDIA_ID,
-        cover_url=LEGACY_URL,
     )
 
     assert cover == {
         "media_id": MEDIA_ID,
-        "state": "legacy_fallback",
-        "resolved_url": LEGACY_URL,
-        "source": "legacy_cover_url",
+        "state": "placeholder",
+        "resolved_url": None,
+        "source": "placeholder",
     }
 
 
@@ -254,7 +237,6 @@ async def test_resolve_course_cover_missing_asset_without_legacy_returns_placeho
     cover = await courses_service.resolve_course_cover(
         course_id=COURSE_ID,
         cover_media_id=MEDIA_ID,
-        cover_url=None,
     )
 
     assert cover == {
@@ -282,20 +264,18 @@ async def test_resolve_course_cover_missing_derived_bytes_never_returns_ready(mo
     cover = await courses_service.resolve_course_cover(
         course_id=COURSE_ID,
         cover_media_id=MEDIA_ID,
-        cover_url=LEGACY_URL,
     )
 
     assert cover == {
         "media_id": MEDIA_ID,
-        "state": "legacy_fallback",
-        "resolved_url": LEGACY_URL,
-        "source": "legacy_cover_url",
+        "state": "missing",
+        "resolved_url": None,
+        "source": "placeholder",
     }
 
 
-async def test_resolve_course_cover_logs_source_mismatch(monkeypatch, caplog):
-    asset = _asset()
-    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): True})
+async def test_resolve_course_cover_logs_contract_violation(monkeypatch, caplog):
+    asset = _asset(state="processing")
 
     async def fake_get_media_asset(media_id: str):
         return asset
@@ -307,15 +287,14 @@ async def test_resolve_course_cover_logs_source_mismatch(monkeypatch, caplog):
         raising=True,
     )
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.ERROR):
         cover = await courses_service.resolve_course_cover(
             course_id=COURSE_ID,
             cover_media_id=MEDIA_ID,
-            cover_url="/api/files/public-media/courses/different-cover.jpg",
         )
 
-    assert cover["source"] == "control_plane"
-    assert "COURSE_COVER_RESOLVED_SOURCE_DISAGREE" in caplog.text
+    assert cover["source"] == "placeholder"
+    assert "COURSE_COVER_RESOLVED_ASSET_NOT_READY" in caplog.text
 
 
 async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypatch):
@@ -336,6 +315,7 @@ async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypat
     monkeypatch.setenv("COURSE_COVER_RESOLVED_READ_ENABLED", "1")
     await courses_service.attach_course_cover_read_contract(course_enabled)
     assert course_enabled["cover"]["source"] == "control_plane"
+    assert "cover_url" not in course_enabled
 
     course_disabled = _course()
     course_disabled["cover"] = {
@@ -347,6 +327,7 @@ async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypat
     monkeypatch.delenv("COURSE_COVER_RESOLVED_READ_ENABLED", raising=False)
     await courses_service.attach_course_cover_read_contract(course_disabled)
     assert course_disabled["cover"]["source"] == "control_plane"
+    assert "cover_url" not in course_disabled
     assert (
         course_disabled["cover"]["resolved_url"]
         == f"https://storage.local/public-media/{DERIVED_PATH}"
@@ -355,12 +336,13 @@ async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypat
     legacy_only = _course(cover_media_id=None, cover_url=LEGACY_URL)
     legacy_only["cover"] = {
         "media_id": None,
-        "state": "legacy_fallback",
-        "resolved_url": LEGACY_URL,
-        "source": "legacy_cover_url",
+        "state": "placeholder",
+        "resolved_url": None,
+        "source": "placeholder",
     }
     await courses_service.attach_course_cover_read_contract(legacy_only)
     assert "cover" not in legacy_only
+    assert "cover_url" not in legacy_only
 
 
 async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypatch):
@@ -393,6 +375,7 @@ async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypa
     course = await courses_service.fetch_course(course_id=COURSE_ID)
 
     assert course is not None
+    assert "cover_url" not in course
     assert course["cover"]["media_id"] == MEDIA_ID
     assert course["cover"]["source"] == "control_plane"
     assert (
@@ -479,6 +462,7 @@ async def test_list_public_courses_includes_cover_when_cover_media_id_resolves(
     courses = await courses_service.list_public_courses()
 
     assert len(courses) == 1
+    assert "cover_url" not in courses[0]
     assert courses[0]["cover"]["media_id"] == MEDIA_ID
     assert courses[0]["cover"]["source"] == "control_plane"
 
@@ -495,7 +479,6 @@ async def test_courses_list_response_includes_cover_when_present(
                 "slug": "course-1",
                 "title": "Course 1",
                 "description": "Example",
-                "cover_url": None,
                 "cover_media_id": MEDIA_ID,
                 "cover": {
                     "media_id": MEDIA_ID,
@@ -527,6 +510,7 @@ async def test_courses_list_response_includes_cover_when_present(
     response = await async_client.get("/courses")
     assert response.status_code == 200, response.text
     body = response.json()
+    assert "cover_url" not in body["items"][0]
     assert body["items"][0]["cover"]["source"] == "control_plane"
 
 
@@ -540,7 +524,6 @@ async def test_courses_list_response_omits_cover_when_absent(async_client, monke
                 "slug": "course-1",
                 "title": "Course 1",
                 "description": "Example",
-                "cover_url": None,
                 "cover_media_id": MEDIA_ID,
                 "video_url": None,
                 "is_free_intro": False,
@@ -566,7 +549,58 @@ async def test_courses_list_response_omits_cover_when_absent(async_client, monke
     response = await async_client.get("/courses")
     assert response.status_code == 200, response.text
     body = response.json()
+    assert "cover_url" not in body["items"][0]
     assert "cover" not in body["items"][0]
+
+
+async def test_intro_first_response_omits_cover_url(async_client, monkeypatch):
+    now = datetime.now(timezone.utc)
+
+    async def fake_list_public_courses(**kwargs):
+        assert kwargs == {
+            "published_only": True,
+            "free_intro": True,
+            "limit": 1,
+        }
+        return [
+            {
+                "id": MEDIA_ID,
+                "slug": "course-1",
+                "title": "Course 1",
+                "description": "Example",
+                "cover_media_id": MEDIA_ID,
+                "cover": {
+                    "media_id": MEDIA_ID,
+                    "state": "ready",
+                    "resolved_url": "https://storage.local/public-media/media/derived/cover/courses/course-1/cover.jpg",
+                    "source": "control_plane",
+                },
+                "video_url": None,
+                "is_free_intro": True,
+                "journey_step": None,
+                "price_amount_cents": 0,
+                "currency": "sek",
+                "stripe_product_id": None,
+                "stripe_price_id": None,
+                "is_published": True,
+                "created_by": MEDIA_ID,
+                "created_at": now,
+                "updated_at": now,
+            }
+        ]
+
+    monkeypatch.setattr(
+        courses_service,
+        "list_public_courses",
+        fake_list_public_courses,
+        raising=True,
+    )
+
+    response = await async_client.get("/courses/intro-first")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "cover_url" not in body["course"]
+    assert body["course"]["cover"]["source"] == "control_plane"
 
 
 async def test_studio_courses_list_response_includes_cover_when_present(
@@ -574,6 +608,11 @@ async def test_studio_courses_list_response_includes_cover_when_present(
 ):
     now = datetime.now(timezone.utc)
     app.dependency_overrides[permissions.require_teacher] = lambda: {"id": MEDIA_ID}
+
+    async def fake_apply_course_read_contract(courses):
+        rows = [courses] if isinstance(courses, dict) else list(courses or [])
+        for row in rows:
+            row.pop("cover_url", None)
 
     async def fake_list_courses(**kwargs):
         assert kwargs == {"teacher_id": MEDIA_ID}
@@ -583,7 +622,6 @@ async def test_studio_courses_list_response_includes_cover_when_present(
                 "slug": "course-1",
                 "title": "Course 1",
                 "description": "Example",
-                "cover_url": None,
                 "cover_media_id": MEDIA_ID,
                 "cover": {
                     "media_id": MEDIA_ID,
@@ -614,6 +652,12 @@ async def test_studio_courses_list_response_includes_cover_when_present(
         fake_list_courses,
         raising=True,
     )
+    monkeypatch.setattr(
+        studio_routes,
+        "_apply_course_read_contract",
+        fake_apply_course_read_contract,
+        raising=True,
+    )
 
     try:
         response = await async_client.get("/studio/courses")
@@ -622,6 +666,7 @@ async def test_studio_courses_list_response_includes_cover_when_present(
 
     assert response.status_code == 200, response.text
     body = response.json()
+    assert "cover_url" not in body["items"][0]
     assert body["items"][0]["cover"]["source"] == "control_plane"
     assert body["items"][0]["cover"]["media_id"] == MEDIA_ID
     assert body["items"][0]["cover_media_id"] == MEDIA_ID
@@ -632,6 +677,11 @@ async def test_studio_course_detail_response_includes_cover_when_present(
 ):
     now = datetime.now(timezone.utc)
     app.dependency_overrides[permissions.require_teacher] = lambda: {"id": MEDIA_ID}
+
+    async def fake_apply_course_read_contract(courses):
+        rows = [courses] if isinstance(courses, dict) else list(courses or [])
+        for row in rows:
+            row.pop("cover_url", None)
 
     async def fake_is_course_owner(user_id: str, course_id: str):
         assert user_id == MEDIA_ID
@@ -646,7 +696,6 @@ async def test_studio_course_detail_response_includes_cover_when_present(
             "slug": "course-1",
             "title": "Course 1",
             "description": "Example",
-            "cover_url": None,
             "cover_media_id": MEDIA_ID,
             "cover": {
                 "media_id": MEDIA_ID,
@@ -680,6 +729,12 @@ async def test_studio_course_detail_response_includes_cover_when_present(
         fake_fetch_course,
         raising=True,
     )
+    monkeypatch.setattr(
+        studio_routes,
+        "_apply_course_read_contract",
+        fake_apply_course_read_contract,
+        raising=True,
+    )
 
     try:
         response = await async_client.get(f"/studio/courses/{COURSE_ID}")
@@ -688,6 +743,39 @@ async def test_studio_course_detail_response_includes_cover_when_present(
 
     assert response.status_code == 200, response.text
     body = response.json()
+    assert "cover_url" not in body
     assert body["cover"]["source"] == "control_plane"
     assert body["cover"]["media_id"] == MEDIA_ID
     assert body["cover_media_id"] == MEDIA_ID
+
+
+async def test_studio_course_create_rejects_cover_url_payload(async_client):
+    app.dependency_overrides[permissions.require_teacher] = lambda: {"id": MEDIA_ID}
+
+    try:
+        response = await async_client.post(
+            "/studio/courses",
+            json={
+                "title": "Course 1",
+                "slug": "course-1",
+                "cover_url": LEGACY_URL,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422, response.text
+
+
+async def test_studio_course_update_rejects_cover_url_payload(async_client):
+    app.dependency_overrides[permissions.require_teacher] = lambda: {"id": MEDIA_ID}
+
+    try:
+        response = await async_client.patch(
+            f"/studio/courses/{COURSE_ID}",
+            json={"cover_url": LEGACY_URL},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422, response.text

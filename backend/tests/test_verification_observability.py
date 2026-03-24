@@ -8,7 +8,7 @@ from app.services import verification_observability
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-async def test_verify_course_cover_truth_flags_legacy_fallback(monkeypatch):
+async def test_verify_course_cover_truth_flags_non_control_plane_resolution(monkeypatch):
     async def fake_get_course(*, course_id: str | None = None, slug: str | None = None):
         assert course_id == "course-1"
         assert slug is None
@@ -17,18 +17,16 @@ async def test_verify_course_cover_truth_flags_legacy_fallback(monkeypatch):
             "slug": "course-1",
             "title": "Course 1",
             "cover_media_id": "asset-1",
-            "cover_url": "/api/files/public-media/courses/legacy-cover.jpg",
         }
 
-    async def fake_resolve_course_cover(*, course_id: str, cover_media_id: str | None, cover_url: str | None):
+    async def fake_resolve_course_cover(*, course_id: str, cover_media_id: str | None):
         assert course_id == "course-1"
         assert cover_media_id == "asset-1"
-        assert cover_url == "/api/files/public-media/courses/legacy-cover.jpg"
         return {
             "media_id": "asset-1",
-            "state": "legacy_fallback",
-            "resolved_url": "/api/files/public-media/courses/legacy-cover.jpg",
-            "source": "legacy_cover_url",
+            "state": "processing",
+            "resolved_url": None,
+            "source": "placeholder",
         }
 
     async def fake_get_asset(asset_id: str):
@@ -104,7 +102,7 @@ async def test_verify_course_cover_truth_flags_legacy_fallback(monkeypatch):
 
     assert result["verdict"] == "fail"
     assert result["confidence"] == "high"
-    assert result["summary"]["resolved_source"] == "legacy_cover_url"
+    assert result["summary"]["resolved_source"] == "placeholder"
     assert {item["code"] for item in result["violations"]} == {
         "course_cover_not_control_plane_ready",
         "asset_processing_failed",
@@ -121,7 +119,6 @@ async def test_verify_course_cover_truth_accepts_null_cover_control_state(monkey
             "slug": "course-1",
             "title": "Course 1",
             "cover_media_id": None,
-            "cover_url": None,
         }
 
     async def fake_get_worker_health():
@@ -166,13 +163,11 @@ async def test_verify_course_cover_truth_passes_with_degraded_worker(monkeypatch
             "slug": "course-1",
             "title": "Course 1",
             "cover_media_id": "asset-1",
-            "cover_url": None,
         }
 
-    async def fake_resolve_course_cover(*, course_id: str, cover_media_id: str | None, cover_url: str | None):
+    async def fake_resolve_course_cover(*, course_id: str, cover_media_id: str | None):
         assert course_id == "course-1"
         assert cover_media_id == "asset-1"
-        assert cover_url is None
         return {
             "media_id": "asset-1",
             "state": "ready",
@@ -261,14 +256,12 @@ async def test_get_test_cases_discovers_bounded_candidates(monkeypatch):
                 "slug": "course-1",
                 "title": "Course 1",
                 "cover_media_id": "cover-1",
-                "cover_url": None,
             },
             {
                 "id": "course-2",
                 "slug": "course-2",
                 "title": "Course 2",
                 "cover_media_id": None,
-                "cover_url": None,
             },
         ]
 
