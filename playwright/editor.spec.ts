@@ -68,7 +68,7 @@ function editor(page: Page): Locator {
 }
 
 function mediaPreviews(page: Page): Locator {
-  return page.locator(mediaPreviewSelector);
+  return editor(page).locator(mediaPreviewSelector);
 }
 
 async function enableFlutterAccessibility(page: Page) {
