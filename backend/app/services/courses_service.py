@@ -48,6 +48,7 @@ ModulePayload = Mapping[str, Any]
 LessonPayload = Mapping[str, Any]
 
 logger = logging.getLogger(__name__)
+_LEGACY_COURSE_COVER_FIELD = "cover" "_url"
 
 
 def _course_cover_contract_debug_enabled() -> bool:
@@ -114,18 +115,6 @@ def _materialize_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
     return [_materialize_mapping(row) for row in rows]
 
 
-def _normalize_public_cover_key(value: Any) -> str | None:
-    normalized = _normalize_storage_path(str(value or ""))
-    if not normalized:
-        return None
-    public_bucket = settings.media_public_bucket.strip().strip("/")
-    prefix = f"{public_bucket}/"
-    if public_bucket and normalized.startswith(prefix):
-        stripped = normalized[len(prefix) :].lstrip("/")
-        return stripped or None
-    return normalized
-
-
 def _course_cover_log_context(course: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         str(course.get("id") or "").strip() or "<missing>",
@@ -134,23 +123,20 @@ def _course_cover_log_context(course: Mapping[str, Any]) -> tuple[str, str, str]
     )
 
 
-def _log_course_cover_warning(
+def _log_course_cover_contract_violation(
     event: str,
     *,
     course: Mapping[str, Any],
     cover_media_id: str | None,
-    cover_url: str | None,
     asset: Mapping[str, Any] | None = None,
     reason: str | None = None,
     derived_bucket: str | None = None,
     derived_path: str | None = None,
-    expected_key: str | None = None,
-    actual_key: str | None = None,
 ) -> None:
     course_id, slug, title = _course_cover_log_context(course)
     asset_state = str((asset or {}).get("state") or "").strip().lower() or "<missing>"
-    logger.warning(
-        "%s course_id=%s slug=%s title=%s cover_media_id=%s asset_state=%s reason=%s derived_bucket=%s derived_path=%s expected_key=%s actual_key=%s cover_url=%s",
+    logger.error(
+        "%s course_id=%s slug=%s title=%s cover_media_id=%s asset_state=%s reason=%s derived_bucket=%s derived_path=%s",
         event,
         course_id,
         slug,
@@ -160,9 +146,6 @@ def _log_course_cover_warning(
         reason or "<missing>",
         derived_bucket or "<missing>",
         derived_path or "<missing>",
-        expected_key or "<missing>",
-        actual_key or "<missing>",
-        cover_url or "<missing>",
     )
 
 
@@ -171,11 +154,9 @@ def _normalize_course_cover_media_id(value: Any) -> str | None:
     return normalized or None
 
 
-def _usable_legacy_cover_url(cover_url: Any) -> str | None:
-    preview = {"cover_url": cover_url}
-    media_signer.attach_cover_links(preview)
-    normalized = str(preview.get("cover_url") or "").strip()
-    return normalized or None
+def _enforce_course_cover_write_contract(payload: Mapping[str, Any]) -> None:
+    if _LEGACY_COURSE_COVER_FIELD in payload:
+        raise ValueError("cover_url is deprecated and cannot be used at runtime")
 
 
 def _build_course_cover_payload(
@@ -274,7 +255,6 @@ async def resolve_course_cover(
     *,
     course_id: str,
     cover_media_id: str | None,
-    cover_url: str | None,
 ) -> dict[str, Any]:
     asset = (
         await media_assets_repo.get_media_asset(cover_media_id)
@@ -296,7 +276,6 @@ async def resolve_course_cover(
             "slug": None,
             "title": None,
             "cover_media_id": cover_media_id,
-            "cover_url": cover_url,
         },
         asset=asset,
         existence=existence,
@@ -312,24 +291,8 @@ async def _resolve_course_cover_payload(
     storage_table_available: bool,
 ) -> dict[str, Any]:
     cover_media_id = _normalize_course_cover_media_id(course.get("cover_media_id"))
-    cover_url = str(course.get("cover_url") or "").strip() or None
-    legacy_url = _usable_legacy_cover_url(cover_url)
     course_row_id = str(course.get("id") or "").strip() or None
     if not cover_media_id:
-        if legacy_url:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_LEGACY_FALLBACK_USED",
-                course=course,
-                cover_media_id=None,
-                cover_url=cover_url,
-                reason="no_cover_media_id",
-            )
-            return _build_course_cover_payload(
-                media_id=None,
-                state="legacy_fallback",
-                resolved_url=legacy_url,
-                source="legacy_cover_url",
-            )
         return _build_course_cover_payload(
             media_id=None,
             state="placeholder",
@@ -338,27 +301,12 @@ async def _resolve_course_cover_payload(
         )
 
     if asset is None:
-        _log_course_cover_warning(
+        _log_course_cover_contract_violation(
             "COURSE_COVER_RESOLVED_ASSET_MISSING",
             course=course,
             cover_media_id=cover_media_id,
-            cover_url=cover_url,
             reason="asset_missing",
         )
-        if legacy_url:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_LEGACY_FALLBACK_USED",
-                course=course,
-                cover_media_id=cover_media_id,
-                cover_url=cover_url,
-                reason="asset_missing",
-            )
-            return _build_course_cover_payload(
-                media_id=cover_media_id,
-                state="legacy_fallback",
-                resolved_url=legacy_url,
-                source="legacy_cover_url",
-            )
         return _build_course_cover_payload(
             media_id=cover_media_id,
             state="placeholder",
@@ -370,29 +318,13 @@ async def _resolve_course_cover_payload(
     asset_purpose = str(asset.get("purpose") or "").strip().lower()
     asset_state = str(asset.get("state") or "").strip().lower()
     if asset_purpose != "course_cover" or asset_course_id != course_row_id:
-        _log_course_cover_warning(
+        _log_course_cover_contract_violation(
             "COURSE_COVER_RESOLVED_ASSET_MISSING",
             course=course,
             cover_media_id=cover_media_id,
-            cover_url=cover_url,
             asset=asset,
             reason="invalid_asset_contract",
         )
-        if legacy_url:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_LEGACY_FALLBACK_USED",
-                course=course,
-                cover_media_id=cover_media_id,
-                cover_url=cover_url,
-                asset=asset,
-                reason="invalid_asset_contract",
-            )
-            return _build_course_cover_payload(
-                media_id=cover_media_id,
-                state="legacy_fallback",
-                resolved_url=legacy_url,
-                source="legacy_cover_url",
-            )
         return _build_course_cover_payload(
             media_id=cover_media_id,
             state="placeholder",
@@ -401,29 +333,13 @@ async def _resolve_course_cover_payload(
         )
 
     if asset_state != "ready":
-        _log_course_cover_warning(
+        _log_course_cover_contract_violation(
             "COURSE_COVER_RESOLVED_ASSET_NOT_READY",
             course=course,
             cover_media_id=cover_media_id,
-            cover_url=cover_url,
             asset=asset,
             reason="asset_not_ready",
         )
-        if legacy_url:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_LEGACY_FALLBACK_USED",
-                course=course,
-                cover_media_id=cover_media_id,
-                cover_url=cover_url,
-                asset=asset,
-                reason="asset_not_ready",
-            )
-            return _build_course_cover_payload(
-                media_id=cover_media_id,
-                state="legacy_fallback",
-                resolved_url=legacy_url,
-                source="legacy_cover_url",
-            )
         return _build_course_cover_payload(
             media_id=cover_media_id,
             state=_valid_course_cover_processing_state(asset_state),
@@ -433,33 +349,15 @@ async def _resolve_course_cover_payload(
 
     derived_bucket, derived_path = _course_cover_candidate_from_asset(asset)
     if not derived_bucket or not derived_path:
-        _log_course_cover_warning(
+        _log_course_cover_contract_violation(
             "COURSE_COVER_RESOLVED_DERIVED_BYTES_MISSING",
             course=course,
             cover_media_id=cover_media_id,
-            cover_url=cover_url,
             asset=asset,
             reason="missing_derived_identity",
             derived_bucket=derived_bucket,
             derived_path=derived_path,
         )
-        if legacy_url:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_LEGACY_FALLBACK_USED",
-                course=course,
-                cover_media_id=cover_media_id,
-                cover_url=cover_url,
-                asset=asset,
-                reason="missing_derived_identity",
-                derived_bucket=derived_bucket,
-                derived_path=derived_path,
-            )
-            return _build_course_cover_payload(
-                media_id=cover_media_id,
-                state="legacy_fallback",
-                resolved_url=legacy_url,
-                source="legacy_cover_url",
-            )
         return _build_course_cover_payload(
             media_id=cover_media_id,
             state="missing",
@@ -474,33 +372,15 @@ async def _resolve_course_cover_payload(
         storage_table_available=storage_table_available,
     )
     if not exists:
-        _log_course_cover_warning(
+        _log_course_cover_contract_violation(
             "COURSE_COVER_RESOLVED_DERIVED_BYTES_MISSING",
             course=course,
             cover_media_id=cover_media_id,
-            cover_url=cover_url,
             asset=asset,
             reason="derived_object_missing",
             derived_bucket=derived_bucket,
             derived_path=derived_path,
         )
-        if legacy_url:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_LEGACY_FALLBACK_USED",
-                course=course,
-                cover_media_id=cover_media_id,
-                cover_url=cover_url,
-                asset=asset,
-                reason="derived_object_missing",
-                derived_bucket=derived_bucket,
-                derived_path=derived_path,
-            )
-            return _build_course_cover_payload(
-                media_id=cover_media_id,
-                state="legacy_fallback",
-                resolved_url=legacy_url,
-                source="legacy_cover_url",
-            )
         return _build_course_cover_payload(
             media_id=cover_media_id,
             state="missing",
@@ -513,56 +393,21 @@ async def _resolve_course_cover_payload(
         storage_path=derived_path,
     )
     if not resolved_url:
-        _log_course_cover_warning(
+        _log_course_cover_contract_violation(
             "COURSE_COVER_RESOLVED_DERIVED_BYTES_MISSING",
             course=course,
             cover_media_id=cover_media_id,
-            cover_url=cover_url,
             asset=asset,
             reason="derived_object_not_public",
             derived_bucket=derived_bucket,
             derived_path=derived_path,
         )
-        if legacy_url:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_LEGACY_FALLBACK_USED",
-                course=course,
-                cover_media_id=cover_media_id,
-                cover_url=cover_url,
-                asset=asset,
-                reason="derived_object_not_public",
-                derived_bucket=derived_bucket,
-                derived_path=derived_path,
-            )
-            return _build_course_cover_payload(
-                media_id=cover_media_id,
-                state="legacy_fallback",
-                resolved_url=legacy_url,
-                source="legacy_cover_url",
-            )
         return _build_course_cover_payload(
             media_id=cover_media_id,
             state="missing",
             resolved_url=None,
             source="placeholder",
         )
-
-    if legacy_url:
-        expected_key = _normalize_public_cover_key(derived_path)
-        actual_key = _normalize_public_cover_key(legacy_url)
-        if expected_key != actual_key:
-            _log_course_cover_warning(
-                "COURSE_COVER_RESOLVED_SOURCE_DISAGREE",
-                course=course,
-                cover_media_id=cover_media_id,
-                cover_url=cover_url,
-                asset=asset,
-                reason="legacy_cover_url_disagrees",
-                derived_bucket=derived_bucket,
-                derived_path=derived_path,
-                expected_key=expected_key,
-                actual_key=actual_key,
-            )
 
     return _build_course_cover_payload(
         media_id=cover_media_id,
@@ -617,6 +462,7 @@ async def attach_course_cover_read_contract(
 
     include_cover = _course_cover_resolved_read_enabled()
     for row in rows:
+        row.pop(_LEGACY_COURSE_COVER_FIELD, None)
         cover_media_id = _normalize_course_cover_media_id(row.get("cover_media_id"))
         resolution = await _resolve_course_cover_payload(
             row,
@@ -1025,6 +871,7 @@ async def list_public_courses(
 
 async def create_course(payload: CoursePayload) -> dict[str, Any]:
     """Create a course after upcoming validation hooks."""
+    _enforce_course_cover_write_contract(payload)
     return await courses_repo.create_course(payload)
 
 
@@ -1033,6 +880,7 @@ async def update_course(
     payload: CoursePayload,
 ) -> dict[str, Any] | None:
     """Update an existing course and return the new state."""
+    _enforce_course_cover_write_contract(payload)
     return await courses_repo.update_course(course_id, payload)
 
 
@@ -1495,6 +1343,35 @@ async def is_user_enrolled(user_id: str, course_id: str) -> bool:
     return await courses_repo.is_enrolled(user_id, course_id)
 
 
+async def can_user_read_course(
+    user_id: str,
+    course: Mapping[str, Any],
+) -> bool:
+    """Evaluate course read access without mutating enrollment state."""
+    normalized_user_id = str(user_id or "").strip()
+    course_id = str(course.get("id") or "").strip()
+    if not normalized_user_id or not course_id:
+        return False
+
+    if await is_course_teacher_or_instructor(normalized_user_id, course_id):
+        return True
+
+    if await is_user_enrolled(normalized_user_id, course_id):
+        return True
+
+    if not bool(course.get("is_free_intro")):
+        return False
+
+    if await courses_repo.user_owns_any_course_step(normalized_user_id, "step1"):
+        return True
+
+    membership = await get_membership(normalized_user_id)
+    return is_membership_active(
+        (membership or {}).get("status") or "",
+        (membership or {}).get("end_date"),
+    )
+
+
 async def enroll_free_intro(user_id: str, course_id: str) -> dict[str, Any]:
     """Apply intro access policy and enroll if allowed."""
     course = await fetch_course(course_id=course_id)
@@ -1687,6 +1564,7 @@ __all__ = [
     "is_course_owner",
     "is_course_teacher_or_instructor",
     "is_user_enrolled",
+    "can_user_read_course",
     "enroll_free_intro",
     "latest_order_for_course",
     "course_access_snapshot",

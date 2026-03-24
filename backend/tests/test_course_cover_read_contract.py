@@ -384,7 +384,7 @@ async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypa
     )
 
 
-async def test_course_repository_read_preserves_cover_media_id_when_step_level_missing(
+async def test_course_repository_read_omits_cover_url_when_step_level_missing(
     monkeypatch,
 ):
     row = {
@@ -392,7 +392,6 @@ async def test_course_repository_read_preserves_cover_media_id_when_step_level_m
         "slug": "course-1",
         "title": "Course 1",
         "description": "Example",
-        "cover_url": LEGACY_URL,
         "cover_media_id": MEDIA_ID,
         "video_url": None,
         "branch": None,
@@ -425,7 +424,7 @@ async def test_course_repository_read_preserves_cover_media_id_when_step_level_m
 
     assert course is not None
     assert course["cover_media_id"] == MEDIA_ID
-    assert course["cover_url"] == LEGACY_URL
+    assert "cover_url" not in course
     assert connection.rollback_calls == 0
     assert all(
         "NULL::uuid AS cover_media_id" not in query for query, _ in cursor.executed
@@ -779,3 +778,24 @@ async def test_studio_course_update_rejects_cover_url_payload(async_client):
         app.dependency_overrides.clear()
 
     assert response.status_code == 422, response.text
+
+
+async def test_create_course_rejects_legacy_cover_url_runtime_write():
+    with pytest.raises(ValueError, match="cover_url is deprecated"):
+        await courses_service.create_course(
+            {
+                "title": "Course 1",
+                "created_by": MEDIA_ID,
+                "cover_url": LEGACY_URL,
+            }
+        )
+
+
+async def test_update_course_rejects_legacy_cover_url_runtime_write():
+    with pytest.raises(ValueError, match="cover_url is deprecated"):
+        await courses_service.update_course(
+            COURSE_ID,
+            {
+                "cover_url": LEGACY_URL,
+            },
+        )

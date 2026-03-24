@@ -921,11 +921,10 @@ class CourseCoverResolved(BaseModel):
         "processing",
         "failed",
         "missing",
-        "legacy_fallback",
         "placeholder",
     ]
     resolved_url: str | None = None
-    source: Literal["control_plane", "legacy_cover_url", "placeholder"]
+    source: Literal["control_plane", "placeholder"]
 
 
 class Course(BaseModel):
@@ -933,7 +932,6 @@ class Course(BaseModel):
     slug: str
     title: str
     description: str | None = None
-    cover_url: str | None = None
     cover_media_id: UUID | None = None
     cover: CourseCoverResolved | None = None
     video_url: str | None = None
@@ -1186,6 +1184,8 @@ class QuizSubmission(BaseModel):
 
 
 class StudioCourseCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     slug: str
     description: str | None = None
@@ -1198,6 +1198,8 @@ class StudioCourseCreate(BaseModel):
 
 
 class StudioCourseUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     slug: str | None = None
     description: str | None = None

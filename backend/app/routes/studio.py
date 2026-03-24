@@ -181,11 +181,6 @@ async def _apply_course_read_contract(
     courses: dict[str, Any] | list[dict[str, Any]] | None,
 ) -> None:
     await courses_service.attach_course_cover_read_contract(courses)
-    if courses is None:
-        return
-    rows = [courses] if isinstance(courses, dict) else list(courses)
-    for row in rows:
-        media_signer.attach_cover_links(row)
 
 
 @router.get("/courses")
@@ -255,6 +250,7 @@ async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUse
     row = await models.create_course_for_user(current["id"], payload.model_dump())
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create course")
+    await _apply_course_read_contract(row)
     return row
 
 
@@ -1384,6 +1380,7 @@ async def update_course(
             course_id=course_id,
         )
         raise HTTPException(status_code=403, detail="Not course owner")
+    await _apply_course_read_contract(row)
     return row
 
 

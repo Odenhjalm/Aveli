@@ -239,7 +239,6 @@ def _course_summary_row(course_row: Mapping[str, Any] | None, *, course_id: str)
         "slug": _normalize_text(course_row.get("slug")),
         "title": _normalize_text(course_row.get("title")),
         "cover_media_id": _normalize_text(course_row.get("cover_media_id")),
-        "cover_url": _normalize_text(course_row.get("cover_url")),
     }
 
 
@@ -434,8 +433,7 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
 
     resolved_course = _course_summary_row(course_row, course_id=normalized_course_id)
     cover_media_id = _normalize_text(course_row.get("cover_media_id"))
-    cover_url = _normalize_text(course_row.get("cover_url"))
-    null_cover_control_state = cover_media_id is None and cover_url is None
+    null_cover_control_state = cover_media_id is None
     if null_cover_control_state:
         resolver_truth = {
             "course_id": normalized_course_id,
@@ -450,7 +448,6 @@ async def verify_course_cover_truth(course_id: str) -> dict[str, Any]:
         resolver_truth = await courses_service.resolve_course_cover(
             course_id=normalized_course_id,
             cover_media_id=cover_media_id,
-            cover_url=cover_url,
         )
         asset_truth = (
             await media_control_plane_observability.get_asset(cover_media_id)
@@ -576,21 +573,14 @@ async def get_test_cases() -> dict[str, Any]:
 
         if (
             len(course_cover_cases) < _TEST_CASE_COURSE_CASE_LIMIT
-            and (
-                _normalize_text(course.get("cover_media_id")) is not None
-                or _normalize_text(course.get("cover_url")) is not None
-            )
+            and _normalize_text(course.get("cover_media_id")) is not None
         ):
             course_cover_cases.append(
                 {
                     "course_id": course_id,
                     "slug": _normalize_text(course.get("slug")),
                     "title": _normalize_text(course.get("title")),
-                    "why": (
-                        "course has cover_media_id"
-                        if _normalize_text(course.get("cover_media_id")) is not None
-                        else "course has legacy cover_url"
-                    ),
+                    "why": "course has cover_media_id",
                 }
             )
 

@@ -19,7 +19,6 @@ _FULL_COURSE_COLUMNS = """
         slug,
         title,
         description,
-        cover_url,
         cover_media_id,
         video_url,
         branch,
@@ -58,7 +57,7 @@ def _test_visibility_clause(alias: str) -> str:
 
 def _course_read_columns(alias: str = "c") -> str:
     # Read selectors stay schema-tolerant for optional course metadata without
-    # changing canonical fields like cover_media_id or cover_url.
+    # changing canonical fields like cover_media_id.
     row_json = f"to_jsonb({alias})"
 
     def optional_text(column: str) -> str:
@@ -72,7 +71,6 @@ def _course_read_columns(alias: str = "c") -> str:
         f"{alias}.slug",
         f"{alias}.title",
         f"{alias}.description",
-        f"{alias}.cover_url",
         f"{alias}.cover_media_id",
         f"{alias}.video_url",
         f"{alias}.branch",
@@ -120,7 +118,6 @@ def _legacy_course_columns(
         "slug",
         "title",
         "description",
-        "cover_url",
         "video_url",
         "branch",
         "is_free_intro",
@@ -131,9 +128,8 @@ def _legacy_course_columns(
         "updated_at",
     ]
     column_lines = [f"{prefix}{column}" for column in base_columns]
-    cover_index = base_columns.index("cover_url") + 1
     column_lines.insert(
-        cover_index,
+        4,
         (
             f"{prefix}cover_media_id"
             if preserve_cover_media_id
@@ -613,7 +609,6 @@ async def clear_course_cover(course_id: str) -> str | None:
         updated AS (
           UPDATE app.courses
           SET cover_media_id = null,
-              cover_url = null,
               updated_at = now()
           WHERE id = %s
           RETURNING id
@@ -1689,6 +1684,7 @@ async def user_owns_course_step(user_id: str, course_family: str, step_level: st
         try:
             await cur.execute(query, (user_id, normalized_family, normalized_level))
         except errors.UndefinedColumn:
+            await cur.connection.rollback()
             await cur.execute(
                 fallback_query,
                 (user_id, normalized_family, normalized_level),
@@ -1729,6 +1725,7 @@ async def user_owns_any_course_step(user_id: str, step_level: str) -> bool:
         try:
             await cur.execute(query, (user_id, normalized_level))
         except errors.UndefinedColumn:
+            await cur.connection.rollback()
             await cur.execute(fallback_query, (user_id, normalized_level))
         except errors.UndefinedTable:
             return False

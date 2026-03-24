@@ -2,7 +2,6 @@ from fastapi import APIRouter
 
 from .. import models
 from ..services import courses_service
-from ..utils import media_signer
 
 router = APIRouter(prefix="/landing", tags=["landing"])
 
@@ -10,8 +9,7 @@ router = APIRouter(prefix="/landing", tags=["landing"])
 @router.get("/intro-courses")
 async def intro_courses():
     rows = await models.list_intro_courses()
-    for row in rows:
-        media_signer.attach_cover_links(row)
+    await courses_service.attach_course_cover_read_contract(rows)
     return {"items": rows}
 
 
@@ -19,8 +17,6 @@ async def intro_courses():
 async def popular_courses():
     rows = await models.list_popular_courses()
     await courses_service.warn_course_cover_contracts(rows)
-    for row in rows:
-        media_signer.attach_cover_links(row)
     return {"items": rows}
 
 

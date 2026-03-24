@@ -204,28 +204,6 @@ def public_download_url(storage_path: str | None) -> str | None:
     return _public_download_path(storage_path)
 
 
-def _public_cover_url_prefix() -> str | None:
-    if settings.supabase_url is None:
-        return None
-    base = settings.supabase_url.unicode_string().rstrip("/")
-    bucket = settings.media_public_bucket
-    return f"{base}/storage/v1/object/public/{bucket}/"
-
-
-def _is_public_cover_url(url: str | None) -> bool:
-    if not url:
-        return False
-    normalized = url.strip()
-    if not normalized:
-        return False
-    if normalized.startswith("/api/files/public-media/"):
-        return True
-    public_prefix = _public_cover_url_prefix()
-    if public_prefix and normalized.startswith(public_prefix):
-        return True
-    return False
-
-
 def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
     """Mutate a lesson media dict with download and signed URLs."""
 
@@ -332,21 +310,7 @@ def strip_renderable_media_links(
 
 
 def attach_cover_links(course: dict) -> None:
-    """Mutate a course dict with cover URL details.
+    """Strip retired legacy cover-link fields from a course dict."""
 
-    Legacy course covers stored `/studio/media/{lesson_media_id}` and were signed at
-    read time, which caused expiring links on public pages. We now expose only
-    stable public cover URLs and omit signed cover fields.
-    """
-
-    cover_url = course.get("cover_url")
-    public_prefix = _public_cover_url_prefix()
-    if public_prefix and cover_url and cover_url.startswith("/api/files/public-media/"):
-        key = cover_url[len("/api/files/public-media/") :].lstrip("/")
-        if key:
-            course["cover_url"] = f"{public_prefix}{key}"
-            cover_url = course["cover_url"]
-    if cover_url and not _is_public_cover_url(cover_url):
-        course["cover_url"] = None
     course.pop("signed_cover_url", None)
     course.pop("signed_cover_url_expires_at", None)

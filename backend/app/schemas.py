@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from uuid import UUID
 
 CourseJourneyStep = Literal["intro", "step1", "step2", "step3"]
@@ -638,7 +638,6 @@ class Course(BaseModel):
     slug: str
     title: str
     description: str | None = None
-    cover_url: str | None = None
     cover_media_id: UUID | None = None
     video_url: str | None = None
     is_free_intro: bool
@@ -690,6 +689,8 @@ class QuizSubmission(BaseModel):
 
 
 class StudioCourseCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     slug: str
     description: str | None = None
@@ -702,6 +703,8 @@ class StudioCourseCreate(BaseModel):
 
 
 class StudioCourseUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     slug: str | None = None
     description: str | None = None

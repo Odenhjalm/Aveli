@@ -7,18 +7,9 @@ from ..auth import CurrentUser, OptionalCurrentUser
 from ..permissions import AdminUser
 from ..repositories import courses as courses_repo
 from ..services import courses_service
-from ..utils import media_signer
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 api_router = APIRouter(prefix="/api/courses", tags=["courses"])
-
-
-def _attach_cover_links(course: dict) -> None:
-    media_signer.attach_cover_links(course)
-
-
-def _attach_media_links(item: dict) -> None:
-    media_signer.attach_media_links(item)
 
 
 def _virtual_module(course_id: str) -> dict[str, Any]:
@@ -53,16 +44,8 @@ async def assert_can_access_course(user: OptionalCurrentUser, course_id: str) ->
     if bool(user.get("is_admin")) or role_value == "admin":
         return course
 
-    if await courses_service.is_course_teacher_or_instructor(user_id, course_id):
+    if await courses_service.can_user_read_course(user_id, course):
         return course
-
-    if await courses_service.is_user_enrolled(user_id, course_id):
-        return course
-
-    if bool(course.get("is_free_intro")):
-        intro_access = await courses_service.enroll_free_intro(user_id, course_id)
-        if intro_access.get("ok"):
-            return course
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -83,8 +66,6 @@ async def list_courses(
         search=search,
         limit=limit,
     )
-    for row in rows:
-        _attach_cover_links(row)
     items = [schemas.Course(**row) for row in rows]
     return schemas.CourseListResponse(items=items)
 
@@ -171,8 +152,6 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
 @router.get("/me", response_model=schemas.CourseListResponse)
 async def my_courses(current: CurrentUser):
     rows = await courses_service.list_my_courses(current["id"])
-    for row in rows:
-        _attach_cover_links(row)
     items = [schemas.Course(**row) for row in rows]
     return schemas.CourseListResponse(items=items)
 
@@ -232,8 +211,6 @@ async def intro_first():
         limit=1,
     )
     course = rows[0] if rows else None
-    if course:
-        _attach_cover_links(course)
     return {"course": course}
 
 
@@ -274,7 +251,6 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
         raise HTTPException(status_code=404, detail="Course not found")
     course_id = str(row["id"])
     course = await assert_can_access_course(current, course_id)
-    _attach_cover_links(course)
     module = _virtual_module(course_id)
     modules = [module]
     lessons_map: dict[str, list] = {
