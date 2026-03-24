@@ -23,6 +23,7 @@ class MediaCategory(StrEnum):
 class MediaStatus(StrEnum):
     ok = "ok"
     ok_legacy = "ok_legacy"
+    not_playable = "not_playable"
     needs_migration = "needs_migration"
     missing_bytes = "missing_bytes"
     manual_review = "manual_review"
@@ -66,6 +67,7 @@ LESSON_MEDIA_ISSUE_TO_STATUS: dict[str, MediaStatus] = {
 STATUS_TO_RECOMMENDED_ACTION: dict[MediaStatus, MediaRecommendedAction] = {
     MediaStatus.ok: MediaRecommendedAction.keep,
     MediaStatus.ok_legacy: MediaRecommendedAction.keep,
+    MediaStatus.not_playable: MediaRecommendedAction.manual_review,
     MediaStatus.needs_migration: MediaRecommendedAction.auto_migrate,
     MediaStatus.missing_bytes: MediaRecommendedAction.reupload_required,
     MediaStatus.manual_review: MediaRecommendedAction.manual_review,

@@ -497,6 +497,54 @@ def _apply_audio_content_type_fallback(item: dict[str, Any]) -> None:
         item["content_type"] = resolved
 
 
+def _lesson_media_resolution_is_image(resolution: RuntimeMediaResolution) -> bool:
+    kind = str(resolution.kind or "").strip().lower()
+    content_type = str(resolution.content_type or "").strip().lower()
+    return kind == "image" or content_type.startswith("image/")
+
+
+def _student_playback_contract_allows_resolution(
+    resolution: RuntimeMediaResolution,
+) -> bool:
+    if not resolution.is_playable:
+        return False
+    if resolution.playback_mode == RuntimeMediaPlaybackMode.PIPELINE_ASSET:
+        return True
+    if resolution.playback_mode == RuntimeMediaPlaybackMode.LEGACY_STORAGE:
+        return (
+            resolution.reference_type == "lesson_media"
+            and _lesson_media_resolution_is_image(resolution)
+        )
+    return False
+
+
+async def _align_student_media_payload_to_playback_contract(
+    item: dict[str, Any],
+) -> None:
+    if item.get("resolvable_for_student") is not True:
+        return
+
+    lesson_media_id = str(item.get("id") or "").strip()
+    if not lesson_media_id:
+        allowed = False
+    else:
+        resolution = await canonical_media_resolver.resolve_lesson_media(
+            lesson_media_id,
+            emit_logs=False,
+        )
+        allowed = _student_playback_contract_allows_resolution(resolution)
+
+    if allowed:
+        return
+
+    item["resolvable_for_student"] = False
+    item["robustness_status"] = str(media_robustness.MediaStatus.not_playable)
+    item["robustness_recommended_action"] = str(
+        media_robustness.MediaRecommendedAction.manual_review
+    )
+    item["_playback_contract_rejected"] = True
+
+
 def _home_playback_state(resolution: RuntimeMediaResolution) -> str:
     if resolution.is_playable:
         if (
@@ -1033,6 +1081,14 @@ async def list_lesson_media(
             storage_table_available=storage_table_available,
         )
 
+    if not editor_mode:
+        await asyncio.gather(
+            *[
+                _align_student_media_payload_to_playback_contract(item)
+                for item in items
+            ]
+        )
+
     public_bucket = settings.media_public_bucket
 
     def _looks_like_public_bucket_url(url: str) -> bool:
@@ -1217,11 +1273,16 @@ async def list_lesson_media(
             item.pop("poster_frame", None)
     else:
         for item in items:
+            playback_contract_rejected = bool(
+                item.pop("_playback_contract_rejected", False)
+            )
             if not _surface_resolvable(item, editor_mode=False):
                 media_signer.strip_renderable_media_links(
                     item,
                     include_preview_fields=True,
                 )
+                if playback_contract_rejected:
+                    item["playback_url"] = None
             item.pop("storage_path", None)
             item.pop("storage_bucket", None)
     return items
