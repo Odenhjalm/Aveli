@@ -40,7 +40,6 @@ void main() {
       final summary = CourseSummary.fromJson({
         'id': 'course-1',
         'title': 'Aveli 101',
-        'cover_url': '/api/files/public-media/legacy-cover.png',
         'cover_media_id': 'media-1',
         'cover': {
           'media_id': 'media-1',
@@ -150,7 +149,6 @@ void main() {
             'slug': slug,
             'title': 'Aveli 101',
             'description': 'Intro description',
-            'cover_url': null,
             'video_url': null,
             'is_free_intro': true,
             'is_published': true,
@@ -232,7 +230,6 @@ void main() {
               'slug': slug,
               'title': 'Aveli 101',
               'description': null,
-              'cover_url': null,
               'video_url': null,
               'is_free_intro': false,
               'is_published': true,

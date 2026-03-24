@@ -46,7 +46,7 @@ MediaRepository _buildRepository() {
 
 void main() {
   group('resolveCourseCover', () {
-    test('uses resolved control-plane cover when available', () {
+    test('uses ready control-plane cover when available', () {
       final repository = _buildRepository();
 
       final resolved = resolveCourseCover(
@@ -57,8 +57,7 @@ void main() {
           resolvedUrl: '/api/files/public-media/course-cover.png',
           source: 'control_plane',
         ),
-        legacyCoverUrl: '/api/files/public-media/legacy-cover.png',
-        preferResolvedContract: true,
+        coverMediaId: 'media-1',
         debugContext: 'unit-control-plane',
       );
 
@@ -67,143 +66,90 @@ void main() {
         'https://api.example.com/api/files/public-media/course-cover.png',
       );
       expect(resolved.backendSource, 'control_plane');
-      expect(resolved.usedLegacyCompatibility, isFalse);
       expect(resolved.usedPlaceholder, isFalse);
-    });
-
-    test('uses backend legacy fallback cover when provided by the contract', () {
-      final repository = _buildRepository();
-
-      final resolved = resolveCourseCover(
-        mediaRepository: repository,
-        cover: const CourseCoverData(
-          mediaId: 'media-2',
-          state: 'legacy_fallback',
-          resolvedUrl: '/api/files/public-media/backend-legacy-cover.png',
-          source: 'legacy_cover_url',
-        ),
-        legacyCoverUrl: '/api/files/public-media/raw-legacy-cover.png',
-        preferResolvedContract: true,
-        debugContext: 'unit-backend-legacy',
-      );
-
-      expect(
-        resolved.imageUrl,
-        'https://api.example.com/api/files/public-media/backend-legacy-cover.png',
-      );
-      expect(resolved.backendSource, 'legacy_cover_url');
-      expect(resolved.usedLegacyCompatibility, isFalse);
-      expect(resolved.usedPlaceholder, isFalse);
-    });
-
-    test('uses cover.resolved_url regardless of backend source label', () {
-      final repository = _buildRepository();
-
-      final resolved = resolveCourseCover(
-        mediaRepository: repository,
-        cover: const CourseCoverData(
-          mediaId: 'media-2b',
-          state: 'ready',
-          resolvedUrl: '/api/files/public-media/source-agnostic-cover.png',
-          source: 'unexpected_source',
-        ),
-        legacyCoverUrl: '/api/files/public-media/raw-legacy-cover.png',
-        preferResolvedContract: true,
-        debugContext: 'unit-source-agnostic',
-      );
-
-      expect(
-        resolved.imageUrl,
-        'https://api.example.com/api/files/public-media/source-agnostic-cover.png',
-      );
-      expect(resolved.backendSource, 'unexpected_source');
-      expect(resolved.usedLegacyCompatibility, isFalse);
-      expect(resolved.usedPlaceholder, isFalse);
-    });
-
-    test('falls back to legacy cover url when the new contract is absent', () {
-      final repository = _buildRepository();
-
-      final resolved = resolveCourseCover(
-        mediaRepository: repository,
-        legacyCoverUrl: '/api/files/public-media/legacy-cover.png',
-        preferResolvedContract: true,
-        debugContext: 'unit-legacy-absent',
-      );
-
-      expect(
-        resolved.imageUrl,
-        'https://api.example.com/api/files/public-media/legacy-cover.png',
-      );
-      expect(resolved.backendSource, isNull);
-      expect(resolved.usedLegacyCompatibility, isTrue);
-      expect(resolved.usedPlaceholder, isFalse);
-    });
-
-    test('returns placeholder when no contract or legacy cover exists', () {
-      final repository = _buildRepository();
-
-      final resolved = resolveCourseCover(
-        mediaRepository: repository,
-        preferResolvedContract: true,
-        debugContext: 'unit-placeholder',
-      );
-
-      expect(resolved.imageUrl, isNull);
-      expect(resolved.usedLegacyCompatibility, isFalse);
-      expect(resolved.usedPlaceholder, isTrue);
+      expect(resolved.hadContractViolation, isFalse);
     });
 
     test(
-      'falls back to legacy cover url when cover.resolved_url is missing',
+      'returns placeholder and contract violation when canonical cover is not ready',
       () {
         final repository = _buildRepository();
 
         final resolved = resolveCourseCover(
           mediaRepository: repository,
           cover: const CourseCoverData(
-            mediaId: 'media-3',
-            state: 'failed',
+            mediaId: 'media-2',
+            state: 'processing',
             resolvedUrl: null,
             source: 'placeholder',
           ),
-          legacyCoverUrl: '/api/files/public-media/legacy-cover.png',
-          preferResolvedContract: true,
+          coverMediaId: 'media-2',
           debugContext: 'unit-invalid-contract',
         );
 
-        expect(
-          resolved.imageUrl,
-          'https://api.example.com/api/files/public-media/legacy-cover.png',
-        );
+        expect(resolved.imageUrl, isNull);
         expect(resolved.backendSource, 'placeholder');
-        expect(resolved.usedLegacyCompatibility, isTrue);
-        expect(resolved.usedPlaceholder, isFalse);
+        expect(resolved.usedPlaceholder, isTrue);
+        expect(resolved.hadContractViolation, isTrue);
       },
     );
 
-    test('keeps legacy behavior when the feature flag path is disabled', () {
+    test('returns placeholder without violation when no cover exists', () {
       final repository = _buildRepository();
 
       final resolved = resolveCourseCover(
         mediaRepository: repository,
-        cover: const CourseCoverData(
-          mediaId: 'media-4',
-          state: 'ready',
-          resolvedUrl: '/api/files/public-media/course-cover.png',
-          source: 'control_plane',
-        ),
-        legacyCoverUrl: '/api/files/public-media/legacy-cover.png',
-        preferResolvedContract: false,
-        debugContext: 'unit-flag-off',
+        debugContext: 'unit-placeholder',
+      );
+
+      expect(resolved.imageUrl, isNull);
+      expect(resolved.usedPlaceholder, isTrue);
+      expect(resolved.hadContractViolation, isFalse);
+    });
+
+    test('ignores legacy cover_url payloads completely', () {
+      final repository = _buildRepository();
+
+      final resolved = resolveCourseMapCover(
+        <String, dynamic>{
+          'id': 'course-legacy',
+          'cover_url': '/api/files/public-media/legacy-cover.png',
+        },
+        repository,
+        debugContext: 'unit-legacy-ignored',
+      );
+
+      expect(resolved.imageUrl, isNull);
+      expect(resolved.usedPlaceholder, isTrue);
+      expect(resolved.hadContractViolation, isFalse);
+    });
+
+    test('allows explicit editor override previews when enabled', () {
+      final repository = _buildRepository();
+
+      final resolved = resolveCourseMapCover(
+        <String, dynamic>{
+          'id': 'course-editor',
+          'cover_media_id': 'media-editor',
+          'cover': <String, dynamic>{
+            'media_id': 'media-editor',
+            'state': 'uploaded',
+            'resolved_url': '/api/files/public-media/editor-preview.png',
+            'source': 'editor_override',
+          },
+        },
+        repository,
+        allowEditorOverride: true,
+        debugContext: 'unit-editor-override',
       );
 
       expect(
         resolved.imageUrl,
-        'https://api.example.com/api/files/public-media/legacy-cover.png',
+        'https://api.example.com/api/files/public-media/editor-preview.png',
       );
-      expect(resolved.usedLegacyCompatibility, isTrue);
+      expect(resolved.backendSource, 'editor_override');
       expect(resolved.usedPlaceholder, isFalse);
+      expect(resolved.hadContractViolation, isFalse);
     });
   });
 }

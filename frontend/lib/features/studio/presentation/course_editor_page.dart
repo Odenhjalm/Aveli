@@ -1218,7 +1218,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         localCoverOverride: localCoverOverride,
       ),
       ref.read(mediaRepositoryProvider),
-      preferResolvedContract: true,
+      allowEditorOverride: true,
       debugContext: debugContext,
     );
   }

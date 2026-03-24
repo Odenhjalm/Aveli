@@ -11,7 +11,6 @@ class Course {
     this.slug,
     required this.title,
     this.description,
-    this.coverUrl,
     this.coverMediaId,
     this.cover,
     this.videoUrl,
@@ -27,7 +26,6 @@ class Course {
   final String? slug;
   final String title;
   final String? description;
-  final String? coverUrl;
   final String? coverMediaId;
   final CourseCoverData? cover;
   final String? videoUrl;
@@ -37,6 +35,4 @@ class Course {
 
   @JsonKey(defaultValue: false)
   final bool isPublished;
-
-  String? get resolvedCoverUrl => coverUrl;
 }

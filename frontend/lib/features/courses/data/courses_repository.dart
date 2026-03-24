@@ -446,7 +446,6 @@ class CourseSummary {
     this.slug,
     required this.title,
     this.description,
-    this.coverUrl,
     this.coverMediaId,
     this.cover,
     this.videoUrl,
@@ -464,7 +463,6 @@ class CourseSummary {
   final String? slug;
   final String title;
   final String? description;
-  final String? coverUrl;
   final String? coverMediaId;
   final CourseCoverData? cover;
   final String? videoUrl;
@@ -482,7 +480,6 @@ class CourseSummary {
     slug: json['slug'] as String?,
     title: (json['title'] ?? '') as String,
     description: json['description'] as String?,
-    coverUrl: json['cover_url'] as String?,
     coverMediaId: json['cover_media_id'] as String?,
     cover: json['cover'] is Map
         ? CourseCoverData.fromJson(
@@ -503,8 +500,6 @@ class CourseSummary {
     priceCents:
         _asInt(json['price_amount_cents']) ?? _asInt(json['price_cents']),
   );
-
-  String? get resolvedCoverUrl => coverUrl;
 
   static int? _asInt(dynamic value) {
     if (value is int) return value;

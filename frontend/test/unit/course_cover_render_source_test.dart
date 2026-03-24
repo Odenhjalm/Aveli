@@ -117,7 +117,7 @@ void main() {
       expect(
         selectStudioCourseCoverUrl(
           backendResolvedUrl: 'https://cdn.test/legacy.jpg',
-          backendSource: 'legacy_cover_url',
+          backendSource: 'control_plane',
           backendHasCanonicalIdentity: false,
           localOverrideResolvedUrl: null,
         ),

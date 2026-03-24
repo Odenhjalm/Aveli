@@ -52,10 +52,6 @@ class _TestAuthController extends AuthController {
 }
 
 void main() {
-  const resolvedContractUiEnabled = bool.fromEnvironment(
-    'COURSE_COVER_RESOLVED_UI_ENABLED',
-    defaultValue: false,
-  );
   final ownerProfile = Profile(
     id: 'owner-1',
     email: 'owner@example.com',
@@ -308,15 +304,14 @@ void main() {
   );
 
   testWidgets(
-    'prefers backend resolved cover over legacy cover url when the frontend flag is enabled',
+    'renders the backend resolved cover without a legacy fallback field',
     (tester) async {
       final detail = CourseDetailData(
         course: const CourseSummary(
           id: 'course-cover-contract',
           slug: 'course-cover-contract',
           title: 'Cover Contract',
-          description: 'Resolved cover should win when enabled',
-          coverUrl: '/api/files/public-media/legacy-cover.png',
+          description: 'Resolved cover should be used directly',
           cover: CourseCoverData(
             mediaId: 'cover-1',
             state: 'ready',
@@ -403,6 +398,5 @@ void main() {
         findsNothing,
       );
     },
-    skip: !resolvedContractUiEnabled,
   );
 }

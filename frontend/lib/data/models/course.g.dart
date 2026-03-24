@@ -11,7 +11,6 @@ Course _$CourseFromJson(Map<String, dynamic> json) => Course(
   slug: json['slug'] as String?,
   title: json['title'] as String,
   description: json['description'] as String?,
-  coverUrl: json['cover_url'] as String?,
   coverMediaId: json['cover_media_id'] as String?,
   cover: json['cover'] == null
       ? null
@@ -28,7 +27,6 @@ Map<String, dynamic> _$CourseToJson(Course instance) => <String, dynamic>{
   'slug': instance.slug,
   'title': instance.title,
   'description': instance.description,
-  'cover_url': instance.coverUrl,
   'cover_media_id': instance.coverMediaId,
   'cover': instance.cover?.toJson(),
   'video_url': instance.videoUrl,
