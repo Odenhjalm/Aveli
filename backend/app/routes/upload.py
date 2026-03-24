@@ -55,6 +55,7 @@ _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE = {
     "image/webp": "webp",
     "image/svg+xml": "svg",
 }
+_LEGACY_LESSON_UPLOAD_DISABLED_DETAIL = "Legacy lesson upload is disabled"
 
 
 class UploadMediaType(str, Enum):
@@ -83,6 +84,13 @@ class UploadWriteResult:
     destination_path: Path
     size: int
     checksum: str | None
+
+
+def _raise_legacy_lesson_upload_disabled() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=_LEGACY_LESSON_UPLOAD_DISABLED_DETAIL,
+    )
 
 
 def _storage_candidates(
@@ -298,6 +306,8 @@ async def _persist_lesson_media(
     course_id: str | None = None,
     storage_object_verified: bool = False,
 ) -> dict[str, Any]:
+    _raise_legacy_lesson_upload_disabled()
+
     kind = _detect_kind(content_type)
     normalized_path = media_paths.validate_new_upload_object_path(storage_path)
     if not storage_object_verified:
@@ -477,6 +487,8 @@ async def upload_course_media(
     media_type: Annotated[UploadMediaType | None, Form(alias="type")] = None,
     is_intro: Annotated[bool | None, Form()] = None,
 ) -> dict[str, Any]:
+    _raise_legacy_lesson_upload_disabled()
+
     if not settings.media_allow_legacy_media:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
@@ -535,9 +547,7 @@ async def upload_course_media(
         effective_is_intro = False
 
     detected_kind = _detect_kind(normalized_content_type)
-    if lesson_id and (
-        media_type == UploadMediaType.audio or detected_kind == "audio"
-    ):
+    if lesson_id and (media_type == UploadMediaType.audio or detected_kind == "audio"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Lesson audio uploads must use /api/media/upload-url",
@@ -569,9 +579,7 @@ async def upload_course_media(
         temp_storage_path = media_paths.build_lesson_passthrough_object_path(
             course_id=resolved_course_id_str,
             lesson_id=lesson_id_str,
-            media_kind=media_type.value
-            if media_type
-            else detected_kind,
+            media_kind=media_type.value if media_type else detected_kind,
             filename=file.filename or "media",
         )
         storage_relative_path = Path(temp_storage_path)
@@ -663,6 +671,8 @@ async def upload_lesson_image(
     lesson_id: Annotated[str, Form()],
     course_id: Annotated[str | None, Form()] = None,
 ) -> dict[str, Any]:
+    _raise_legacy_lesson_upload_disabled()
+
     owner = current["id"]
     owner_id = str(owner)
     lesson_id_str = str(lesson_id).strip()
@@ -763,7 +773,9 @@ async def upload_lesson_image(
         persisted_storage_path = storage_key
 
     checksum = hashlib.sha256(payload).hexdigest()
-    normalized_path = media_paths.validate_new_upload_object_path(persisted_storage_path)
+    normalized_path = media_paths.validate_new_upload_object_path(
+        persisted_storage_path
+    )
     await _assert_storage_object_exists(
         storage_bucket=_PUBLIC_MEDIA_BUCKET,
         storage_path=normalized_path,
@@ -799,6 +811,8 @@ async def upload_public_media(
     file: Annotated[UploadFile, File(description="Public media upload")],
     current: TeacherUser,
 ) -> dict[str, Any]:
+    _raise_legacy_lesson_upload_disabled()
+
     if not settings.media_allow_legacy_media:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
@@ -831,6 +845,14 @@ async def upload_public_media(
         "content_type": content_type,
         "size": write_result.size,
     }
+
+
+async def legacy_profile_upload_disabled(current: CurrentUser) -> dict[str, Any]:
+    _raise_legacy_lesson_upload_disabled()
+
+
+async def legacy_teacher_upload_disabled(current: TeacherUser) -> dict[str, Any]:
+    _raise_legacy_lesson_upload_disabled()
 
 
 @files_router.get("/{path:path}", name="serve_uploaded_file")
@@ -875,9 +897,15 @@ async def serve_uploaded_file(path: str):
 
 
 # Backwards-compatible aliases for older Flutter Web routes.
-legacy_router.add_api_route("/profile", upload_profile_media, methods=["POST"])
-legacy_router.add_api_route("/course-media", upload_course_media, methods=["POST"])
-legacy_router.add_api_route("/lesson-image", upload_lesson_image, methods=["POST"])
+legacy_router.add_api_route(
+    "/profile", legacy_profile_upload_disabled, methods=["POST"]
+)
+legacy_router.add_api_route(
+    "/course-media", legacy_teacher_upload_disabled, methods=["POST"]
+)
+legacy_router.add_api_route(
+    "/lesson-image", legacy_teacher_upload_disabled, methods=["POST"]
+)
 
 
 __all__ = ["router", "files_router", "legacy_router"]

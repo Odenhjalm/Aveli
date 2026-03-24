@@ -1086,6 +1086,11 @@ async def test_lesson_video_control_plane_flow_is_asset_backed_and_playable(
         assert attach_body["runtime_media_id"]
         assert attach_body["lesson_media"]["kind"] == "video"
 
+        lesson_media = await models.get_lesson_media_by_media_asset_id(media_id)
+        assert lesson_media is not None
+        assert str(lesson_media["id"]) == attach_body["lesson_media_id"]
+        assert str(lesson_media["media_asset_id"]) == media_id
+
         async with db.get_conn() as cur:
             await cur.execute(
                 """
@@ -1269,6 +1274,7 @@ async def test_lesson_document_control_plane_flow_stays_out_of_playback_contract
 
         lesson_media = await models.get_media(attach_body["lesson_media_id"])
         assert lesson_media is not None
+        assert str(lesson_media["media_asset_id"]) == media_id
         assert lesson_media["storage_path"] == asset["streaming_object_path"]
         assert lesson_media["storage_bucket"] == storage_module.storage_service.bucket
         assert lesson_media["content_type"] == "application/pdf"

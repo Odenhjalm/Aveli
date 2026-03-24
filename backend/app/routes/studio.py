@@ -260,6 +260,8 @@ async def presign_lesson_media_upload(
     payload: schemas.LessonMediaPresignRequest,
     current: TeacherUser,
 ):
+    upload_routes._raise_legacy_lesson_upload_disabled()
+
     # Ensure lesson exists and current user owns the course.
     lesson_id_str = str(lesson_id)
     lesson = await models.get_lesson(lesson_id_str)
@@ -312,6 +314,8 @@ async def complete_lesson_media_upload(
     payload: schemas.LessonMediaUploadCompleteRequest,
     current: TeacherUser,
 ):
+    upload_routes._raise_legacy_lesson_upload_disabled()
+
     # Ensure lesson exists and current user owns the course.
     lesson_id_str = str(lesson_id)
     lesson = await models.get_lesson(lesson_id_str)
@@ -1698,6 +1702,8 @@ async def upload_media(
     file: UploadFile = File(...),
     is_intro: bool = Form(False),
 ):
+    upload_routes._raise_legacy_lesson_upload_disabled()
+
     owner = current["id"]
     owner_id = str(owner)
     _, course_id = await courses_service.lesson_course_ids(lesson_id)

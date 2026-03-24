@@ -696,7 +696,9 @@ def _normalize_public_profile_photo_url(url: str | None) -> str | None:
 
     parsed = urlparse(value)
     if parsed.scheme in {"http", "https"}:
-        if parsed.path.startswith(("/api/files/", "/profiles/avatar/", "/auth/avatar/")):
+        if parsed.path.startswith(
+            ("/api/files/", "/profiles/avatar/", "/auth/avatar/")
+        ):
             suffix = f"?{parsed.query}" if parsed.query else ""
             return f"{parsed.path}{suffix}"
         return value
@@ -759,7 +761,11 @@ def _choose_public_profile_photo_url(
     auth_picture_url: str | None = None,
 ) -> str | None:
     resolved = _normalize_public_profile_photo_url(photo_url)
-    if resolved and resolved.startswith("/api/files/") and not _public_upload_exists(resolved):
+    if (
+        resolved
+        and resolved.startswith("/api/files/")
+        and not _public_upload_exists(resolved)
+    ):
         resolved = None
 
     return (
@@ -1024,6 +1030,10 @@ async def add_lesson_media_entry_with_position_retry(
     Guard with UNIQUE(lesson_id, position) and retry on UniqueViolation.
     """
 
+    normalized_media_asset_id = str(media_asset_id or "").strip()
+    if not normalized_media_asset_id:
+        raise ValueError("lesson_media writes require media_asset_id")
+
     max_attempts = max(1, int(max_retries))
     for _ in range(max_attempts):
         position = await next_lesson_media_position(lesson_id)
@@ -1035,7 +1045,7 @@ async def add_lesson_media_entry_with_position_retry(
                 storage_bucket=storage_bucket,
                 position=position,
                 media_id=media_id,
-                media_asset_id=media_asset_id,
+                media_asset_id=normalized_media_asset_id,
                 duration_seconds=duration_seconds,
             )
         except errors.UniqueViolation:
@@ -1054,6 +1064,10 @@ async def add_lesson_media_entry(
     media_asset_id: str | None = None,
     duration_seconds: int | None = None,
 ) -> dict | None:
+    normalized_media_asset_id = str(media_asset_id or "").strip()
+    if not normalized_media_asset_id:
+        raise ValueError("lesson_media writes require media_asset_id")
+
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -1137,7 +1151,7 @@ async def add_lesson_media_entry(
                     storage_path,
                     storage_bucket,
                     media_id,
-                    media_asset_id,
+                    normalized_media_asset_id,
                     position,
                     duration_seconds,
                 ),
@@ -1859,7 +1873,8 @@ async def upsert_subscription_record(
             except errors.UndefinedTable:
                 await conn.rollback()
                 logger.warning(
-                    "app.subscriptions is missing; skipping upsert_subscription_record for %s", subscription_id
+                    "app.subscriptions is missing; skipping upsert_subscription_record for %s",
+                    subscription_id,
                 )
                 return {
                     "user_id": user_id,
@@ -1898,7 +1913,8 @@ async def update_subscription_status(
             except errors.UndefinedTable:
                 await conn.rollback()
                 logger.warning(
-                    "app.subscriptions is missing; cannot update subscription_id=%s", subscription_id
+                    "app.subscriptions is missing; cannot update subscription_id=%s",
+                    subscription_id,
                 )
                 return None
             row = await _fetchone(cur)
@@ -1919,7 +1935,10 @@ async def get_subscription_record(subscription_id: str) -> dict | None:
                 (subscription_id,),
             )
         except errors.UndefinedTable:
-            logger.warning("app.subscriptions is missing; get_subscription_record skipped for %s", subscription_id)
+            logger.warning(
+                "app.subscriptions is missing; get_subscription_record skipped for %s",
+                subscription_id,
+            )
             return None
         row = await _fetchone(cur)
     return dict(row) if row else None

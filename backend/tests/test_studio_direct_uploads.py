@@ -3,8 +3,7 @@ import uuid
 import pytest
 
 from app import db
-from app.services import storage_service as storage_module
-from app.utils import media_signer
+
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -74,44 +73,23 @@ async def create_lesson(async_client, headers):
     return course_id, lesson_id
 
 
-@pytest.mark.anyio("asyncio")
-async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
+async def _lesson_media_count(lesson_id: str) -> int:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "SELECT count(*) FROM app.lesson_media WHERE lesson_id = %s",
+                (lesson_id,),
+            )
+            row = await cur.fetchone()
+    return int(row[0] or 0)
+
+
+async def test_direct_lesson_media_presign_route_is_disabled(async_client):
     headers, user_id = await register_teacher(async_client)
     try:
-        course_id, lesson_id = await create_lesson(async_client, headers)
+        _, lesson_id = await create_lesson(async_client, headers)
 
-        async def fake_create_upload_url(
-            self, path, *, content_type, upsert, cache_seconds
-        ):
-            return storage_module.PresignedUpload(
-                url=f"https://storage.local/{path}",
-                headers={
-                    "x-upsert": "true" if upsert else "false",
-                    "content-type": content_type,
-                    "cache-control": f"max-age={cache_seconds}",
-                },
-                path=path,
-                expires_in=3600,
-            )
-
-        monkeypatch.setattr(
-            "app.services.storage_service.StorageService.create_upload_url",
-            fake_create_upload_url,
-            raising=True,
-        )
-
-        async def fake_storage_object_exists(*, storage_bucket, storage_path):
-            assert storage_bucket == "course-media"
-            assert storage_path.startswith(f"lessons/{lesson_id}/")
-            return True
-
-        monkeypatch.setattr(
-            "app.routes.upload._storage_object_exists",
-            fake_storage_object_exists,
-            raising=True,
-        )
-
-        presign_resp = await async_client.post(
+        resp = await async_client.post(
             f"/studio/lessons/{lesson_id}/media/presign",
             headers=headers,
             json={
@@ -120,230 +98,48 @@ async def test_direct_lesson_media_upload_flow(async_client, monkeypatch):
                 "media_type": "video",
             },
         )
-        assert presign_resp.status_code == 200, presign_resp.text
-        presign_data = presign_resp.json()
-        assert presign_data["method"] == "PUT"
-        assert presign_data["storage_bucket"] == "course-media"
-        assert presign_data["storage_path"].startswith(f"lessons/{lesson_id}/")
-        assert not presign_data["storage_path"].startswith("course-media/")
+        assert resp.status_code == 410, resp.text
+        assert resp.json()["detail"] == "Legacy lesson upload is disabled"
+        assert await _lesson_media_count(lesson_id) == 0
+    finally:
+        await cleanup_user(user_id)
 
-        complete_resp = await async_client.post(
+
+async def test_direct_lesson_media_complete_route_is_disabled(async_client):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        _, lesson_id = await create_lesson(async_client, headers)
+
+        resp = await async_client.post(
             f"/studio/lessons/{lesson_id}/media/complete",
             headers=headers,
             json={
-                "storage_path": presign_data["storage_path"],
-                "storage_bucket": presign_data["storage_bucket"],
+                "storage_path": f"lessons/{lesson_id}/demo.mp4",
+                "storage_bucket": "course-media",
                 "content_type": "video/mp4",
                 "byte_size": 1024,
                 "original_name": "demo.mp4",
             },
         )
-        assert complete_resp.status_code == 200, complete_resp.text
-        body = complete_resp.json()
-        assert body["storage_path"] == presign_data["storage_path"]
-        assert body["storage_bucket"] == presign_data["storage_bucket"]
-        assert body["content_type"] == "video/mp4"
-        assert body.get("media_asset_id")
-        assert body.get("media_id") is None
-        assert body.get("media_state") == "ready"
-        assert body.get("original_name") == "demo.mp4"
-
-        monkeypatch.setattr(
-            media_signer.settings, "media_allow_legacy_media", False, raising=False
-        )
-        monkeypatch.setattr(
-            media_signer.settings, "media_signing_secret", "dev-secret", raising=False
-        )
-        monkeypatch.setattr(
-            media_signer.settings, "media_signing_ttl_seconds", 60, raising=False
-        )
-
-        # Lesson media list should include the new row.
-        list_resp = await async_client.get(
-            f"/studio/lessons/{lesson_id}/media", headers=headers
-        )
-        assert list_resp.status_code == 200
-        items = list_resp.json()["items"]
-        assert any(item["id"] == body["id"] for item in items)
-        listed = next(item for item in items if item["id"] == body["id"])
-        assert listed["signed_url"].startswith("http")
-        assert "/media/stream/" in listed["signed_url"]
-        assert "signed_url_expires_at" in listed
-        assert "download_url" not in listed
+        assert resp.status_code == 410, resp.text
+        assert resp.json()["detail"] == "Legacy lesson upload is disabled"
+        assert await _lesson_media_count(lesson_id) == 0
     finally:
         await cleanup_user(user_id)
 
 
-@pytest.mark.anyio("asyncio")
-async def test_direct_lesson_pdf_upload_flow(async_client, monkeypatch):
+async def test_direct_lesson_media_post_route_is_disabled(async_client):
     headers, user_id = await register_teacher(async_client)
     try:
-        _course_id, lesson_id = await create_lesson(async_client, headers)
+        _, lesson_id = await create_lesson(async_client, headers)
 
-        async def fake_create_upload_url(
-            self, path, *, content_type, upsert, cache_seconds
-        ):
-            return storage_module.PresignedUpload(
-                url=f"https://storage.local/{path}",
-                headers={
-                    "x-upsert": "true" if upsert else "false",
-                    "content-type": content_type,
-                    "cache-control": f"max-age={cache_seconds}",
-                },
-                path=path,
-                expires_in=3600,
-            )
-
-        monkeypatch.setattr(
-            "app.services.storage_service.StorageService.create_upload_url",
-            fake_create_upload_url,
-            raising=True,
-        )
-
-        async def fake_storage_object_exists(*, storage_bucket, storage_path):
-            assert storage_bucket == "course-media"
-            assert storage_path.startswith(f"lessons/{lesson_id}/")
-            return True
-
-        monkeypatch.setattr(
-            "app.routes.upload._storage_object_exists",
-            fake_storage_object_exists,
-            raising=True,
-        )
-
-        presign_resp = await async_client.post(
-            f"/studio/lessons/{lesson_id}/media/presign",
-            headers=headers,
-            json={
-                "filename": "guide.pdf",
-                "content_type": "application/pdf",
-                "media_type": "pdf",
-            },
-        )
-        assert presign_resp.status_code == 200, presign_resp.text
-        presign_data = presign_resp.json()
-
-        complete_resp = await async_client.post(
-            f"/studio/lessons/{lesson_id}/media/complete",
-            headers=headers,
-            json={
-                "storage_path": presign_data["storage_path"],
-                "storage_bucket": presign_data["storage_bucket"],
-                "content_type": "application/pdf",
-                "byte_size": 1024,
-                "original_name": "guide.pdf",
-            },
-        )
-        assert complete_resp.status_code == 200, complete_resp.text
-        body = complete_resp.json()
-        assert body["kind"] == "pdf"
-        assert body["storage_path"] == presign_data["storage_path"]
-        assert body["storage_bucket"] == presign_data["storage_bucket"]
-        assert body["content_type"] == "application/pdf"
-        assert body.get("media_asset_id")
-        assert body.get("media_id") is None
-        assert body.get("media_state") == "ready"
-        assert body.get("original_name") == "guide.pdf"
-    finally:
-        await cleanup_user(user_id)
-
-
-@pytest.mark.anyio("asyncio")
-async def test_complete_rejects_bucket_mismatch(async_client, monkeypatch):
-    headers, user_id = await register_teacher(async_client)
-    try:
-        course_id, lesson_id = await create_lesson(async_client, headers)
-        # Short-circuit storage presign
-
-        async def fake_create_upload_url(
-            self, path, *, content_type, upsert, cache_seconds
-        ):
-            return storage_module.PresignedUpload(
-                url=f"https://storage.local/{path}",
-                headers={
-                    "x-upsert": "true",
-                    "content-type": content_type,
-                    "cache-control": "max-age=60",
-                },
-                path=path,
-                expires_in=60,
-            )
-
-        monkeypatch.setattr(
-            "app.services.storage_service.StorageService.create_upload_url",
-            fake_create_upload_url,
-            raising=True,
-        )
-
-        presign_resp = await async_client.post(
-            f"/studio/lessons/{lesson_id}/media/presign",
-            headers=headers,
-            json={"filename": "demo.mp4", "content_type": "video/mp4"},
-        )
-        assert presign_resp.status_code == 200, presign_resp.text
-        presign_data = presign_resp.json()
-
-        bad_resp = await async_client.post(
-            f"/studio/lessons/{lesson_id}/media/complete",
-            headers=headers,
-            json={
-                "storage_path": presign_data["storage_path"],
-                "storage_bucket": "public-media",
-                "content_type": "video/mp4",
-                "byte_size": 100,
-            },
-        )
-        assert bad_resp.status_code == 400
-        assert "storage_bucket" in bad_resp.text
-    finally:
-        await cleanup_user(user_id)
-
-
-@pytest.mark.anyio("asyncio")
-async def test_direct_lesson_media_upload_requires_course_owner(
-    async_client, monkeypatch
-):
-    owner_headers, owner_id = await register_teacher(async_client)
-    other_headers, other_id = await register_teacher(async_client)
-    try:
-        _, lesson_id = await create_lesson(async_client, owner_headers)
-
-        async def fake_create_upload_url(
-            self, path, *, content_type, upsert, cache_seconds
-        ):
-            return storage_module.PresignedUpload(
-                url=f"https://storage.local/{path}",
-                headers={
-                    "x-upsert": "true" if upsert else "false",
-                    "content-type": content_type,
-                    "cache-control": f"max-age={cache_seconds}",
-                },
-                path=path,
-                expires_in=3600,
-            )
-
-        monkeypatch.setattr(
-            "app.services.storage_service.StorageService.create_upload_url",
-            fake_create_upload_url,
-            raising=True,
-        )
-
-        presign_denied = await async_client.post(
-            f"/studio/lessons/{lesson_id}/media/presign",
-            headers=other_headers,
-            json={
-                "filename": "demo.mp3",
-                "content_type": "audio/mpeg",
-                "media_type": "audio",
-            },
-        )
-        assert presign_denied.status_code == 403, presign_denied.text
-
-        list_denied = await async_client.get(
+        resp = await async_client.post(
             f"/studio/lessons/{lesson_id}/media",
-            headers=other_headers,
+            headers=headers,
+            files={"file": ("demo.mp4", b"mp4-bytes", "video/mp4")},
         )
-        assert list_denied.status_code == 403, list_denied.text
+        assert resp.status_code == 410, resp.text
+        assert resp.json()["detail"] == "Legacy lesson upload is disabled"
+        assert await _lesson_media_count(lesson_id) == 0
     finally:
-        await cleanup_user(other_id)
-        await cleanup_user(owner_id)
+        await cleanup_user(user_id)
