@@ -144,42 +144,46 @@ Finder _lessonAudioMediaPlayerFinder() {
 }
 
 void main() {
-  testWidgets('shows processing state without requesting playback', (
+  testWidgets(
+    'hides non-embedded processing audio without requesting playback',
+    (tester) async {
+      final repo = _FakeMediaPipelineRepository(
+        Future.value('https://cdn.test/audio.mp3'),
+      );
+      final data = _buildLessonData(mediaState: 'processing');
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost',
+                stripePublishableKey: '',
+                stripeMerchantDisplayName: 'Test',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            lessonDetailProvider.overrideWith((ref, lessonId) async => data),
+            mediaPipelineRepositoryProvider.overrideWithValue(repo),
+          ],
+          child: const MaterialApp(home: LessonPage(lessonId: 'lesson-1')),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ljudet bearbetas…'), findsNothing);
+      expect(_legacyInlineAudioPlayerFinder(), findsNothing);
+      expect(_lessonAudioMediaPlayerFinder(), findsNothing);
+      expect(repo.lessonPlaybackCalls, 0);
+      expect(repo.playbackCalls, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('hides non-embedded ready audio without requesting playback', (
     tester,
   ) async {
-    final repo = _FakeMediaPipelineRepository(
-      Future.value('https://cdn.test/audio.mp3'),
-    );
-    final data = _buildLessonData(mediaState: 'processing');
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost',
-              stripePublishableKey: '',
-              stripeMerchantDisplayName: 'Test',
-              subscriptionsEnabled: false,
-            ),
-          ),
-          lessonDetailProvider.overrideWith((ref, lessonId) async => data),
-          mediaPipelineRepositoryProvider.overrideWithValue(repo),
-        ],
-        child: const MaterialApp(home: LessonPage(lessonId: 'lesson-1')),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    expect(find.text('Ljudet bearbetas…'), findsOneWidget);
-    expect(_legacyInlineAudioPlayerFinder(), findsNothing);
-    expect(repo.lessonPlaybackCalls, 0);
-    expect(repo.playbackCalls, 0);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('requests playback only when ready', (tester) async {
     final pending = Completer<String>();
     final repo = _FakeMediaPipelineRepository(pending.future);
     final data = _buildLessonData(mediaState: 'ready');
@@ -205,17 +209,16 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(repo.lessonPlaybackCalls, 1);
+    expect(repo.lessonPlaybackCalls, 0);
     expect(repo.playbackCalls, 0);
-    expect(find.byType(LinearProgressIndicator), findsWidgets);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
 
     pending.complete('https://cdn.test/audio.mp3');
 
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(_lessonAudioMediaPlayerFinder(), findsOneWidget);
-    expect(find.text('Ljud'), findsNothing);
+    expect(_lessonAudioMediaPlayerFinder(), findsNothing);
     expect(_legacyInlineAudioPlayerFinder(), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -270,9 +273,7 @@ void main() {
     expect(find.byType(AveliLessonMediaPlayer), findsNothing);
   });
 
-  testWidgets('lesson renders image embed via AveliLessonImage', (
-    tester,
-  ) async {
+  testWidgets('lesson hides non-embedded trailing image rows', (tester) async {
     const imageUrl = 'https://cdn.test/lesson-image.webp';
     final repo = _FakeMediaPipelineRepository(Future.value(imageUrl));
     final data = LessonDetailData(
@@ -316,13 +317,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is AveliLessonImage && widget.src == imageUrl,
-      ),
-      findsOneWidget,
-    );
-    expect(repo.lessonPlaybackCalls, 1);
+    expect(find.byType(AveliLessonImage), findsNothing);
+    expect(repo.lessonPlaybackCalls, 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -393,6 +389,7 @@ void main() {
           kind: 'document',
           storagePath: 'lesson-1/docs/guide.pdf',
           contentType: 'application/pdf',
+          signedUrl: '/media/stream/pdf-token',
           originalName: 'guide.pdf',
           position: 1,
         ),
@@ -424,7 +421,74 @@ void main() {
     expect(find.text('Ladda ner PDF'), findsOneWidget);
     expect(find.textContaining('https://cdn.test/guide.pdf'), findsNothing);
     expect(find.byIcon(Icons.download_rounded), findsOneWidget);
-    expect(repo.lessonPlaybackCalls, 1);
+    expect(repo.lessonPlaybackCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lesson trailing media only includes supported documents', (
+    tester,
+  ) async {
+    final repo = _FakeMediaPipelineRepository(
+      Future.value('https://cdn.test/ignored.mp4'),
+    );
+    final data = LessonDetailData(
+      lesson: const LessonDetail(
+        id: 'lesson-trailing-docs',
+        title: 'Trailing docs lesson',
+        contentMarkdown: 'Intro\n',
+        isIntro: false,
+        moduleId: null,
+        position: 1,
+      ),
+      media: const [
+        LessonMediaItem(
+          id: 'media-video',
+          kind: 'video',
+          storagePath: 'lesson-1/video.mp4',
+          originalName: 'video.mp4',
+          resolvableForStudent: false,
+          position: 1,
+        ),
+        LessonMediaItem(
+          id: 'media-pdf-2',
+          kind: 'document',
+          storagePath: 'lesson-1/docs/notes.pdf',
+          contentType: 'application/pdf',
+          signedUrl: '/media/stream/notes-token',
+          originalName: 'notes.pdf',
+          position: 2,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost',
+              stripePublishableKey: '',
+              stripeMerchantDisplayName: 'Test',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          lessonDetailProvider.overrideWith((ref, lessonId) async => data),
+          mediaPipelineRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(
+          home: LessonPage(lessonId: 'lesson-trailing-docs'),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('notes.pdf'), findsOneWidget);
+    expect(find.text('Ladda ner PDF'), findsOneWidget);
+    expect(find.text('video.mp4'), findsNothing);
+    expect(find.byType(AveliLessonMediaPlayer), findsNothing);
+    expect(repo.lessonPlaybackCalls, 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -478,7 +542,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(repo.lessonPlaybackCalls, 1);
+      expect(repo.lessonPlaybackCalls, 0);
       expect(
         find.byWidgetPredicate(
           (widget) =>

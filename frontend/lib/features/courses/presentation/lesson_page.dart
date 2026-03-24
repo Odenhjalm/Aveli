@@ -262,6 +262,7 @@ class _LessonContent extends ConsumerWidget {
 
     final trailingMedia = mediaItems
         .where((item) => !isEmbedded(item))
+        .where(_isAllowedTrailingLessonMediaType)
         .toList(growable: false);
 
     final coreContent = MouseRegion(
@@ -369,6 +370,15 @@ class _BundleLink {
   const _BundleLink({required this.url, required this.bundleId});
   final String url;
   final String bundleId;
+}
+
+const bool _hideUnavailableTrailingMedia = false;
+const Set<String> _allowedTrailingLessonMediaKinds = {'document', 'pdf'};
+
+bool _isAllowedTrailingLessonMediaType(LessonMediaItem item) {
+  final normalizedKind = item.kind.trim().toLowerCase();
+  if (_allowedTrailingLessonMediaKinds.contains(normalizedKind)) return true;
+  return isLessonMediaPdf(item);
 }
 
 class LessonPageRenderer extends ConsumerStatefulWidget {
@@ -1180,6 +1190,17 @@ class _MediaItem extends ConsumerWidget {
     }
   }
 
+  Widget _buildUnavailableMediaTile() {
+    if (_hideUnavailableTrailingMedia) {
+      return const SizedBox.shrink();
+    }
+    return ListTile(
+      leading: Icon(_iconForKind()),
+      title: Text(_fileName),
+      subtitle: const Text('Otillgängligt media'),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final normalizedLessonMediaId = item.id.trim();
@@ -1264,11 +1285,7 @@ class _MediaItem extends ConsumerWidget {
           final playbackUrl = snapshot.data;
           final url = _normalizeInlinePlaybackUrl(playbackUrl);
           if (url == null) {
-            return ListTile(
-              leading: Icon(_iconForKind()),
-              title: Text(_fileName),
-              subtitle: const Text('Media saknas eller stöds inte längre'),
-            );
+            return _buildUnavailableMediaTile();
           }
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -1285,6 +1302,9 @@ class _MediaItem extends ConsumerWidget {
     }
 
     if (item.kind == 'video') {
+      if (!canAttemptLessonMediaPlayback(item)) {
+        return _buildUnavailableMediaTile();
+      }
       final future = resolveLessonMediaPlaybackUrl(
         item: item,
         mediaRepository: mediaRepo,
@@ -1302,11 +1322,7 @@ class _MediaItem extends ConsumerWidget {
           final playbackUrl = snapshot.data;
           final url = _normalizeInlinePlaybackUrl(playbackUrl);
           if (url == null) {
-            return ListTile(
-              leading: Icon(_iconForKind()),
-              title: Text(_fileName),
-              subtitle: const Text('Media saknas eller stöds inte längre'),
-            );
+            return _buildUnavailableMediaTile();
           }
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -1323,6 +1339,9 @@ class _MediaItem extends ConsumerWidget {
     }
 
     if (item.kind == 'audio') {
+      if (!canAttemptLessonMediaPlayback(item)) {
+        return _buildUnavailableMediaTile();
+      }
       final future = resolveLessonMediaPlaybackUrl(
         item: item,
         mediaRepository: mediaRepo,
@@ -1340,11 +1359,7 @@ class _MediaItem extends ConsumerWidget {
           final playbackUrl = snapshot.data;
           final url = _normalizeInlinePlaybackUrl(playbackUrl);
           if (url == null) {
-            return ListTile(
-              leading: Icon(_iconForKind()),
-              title: Text(_fileName),
-              subtitle: const Text('Media saknas eller stöds inte längre'),
-            );
+            return _buildUnavailableMediaTile();
           }
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -1360,42 +1375,20 @@ class _MediaItem extends ConsumerWidget {
       );
     }
 
-    final future = resolveLessonMediaPlaybackUrl(
+    final documentUrl = resolveLessonMediaDocumentUrl(
       item: item,
       mediaRepository: mediaRepo,
-      pipelineRepository: pipelineRepo,
     );
-    final isPdf =
-        item.kind == 'pdf' ||
-        item.kind == 'document' ||
-        item.contentType == 'application/pdf' ||
-        _fileName.toLowerCase().endsWith('.pdf');
-
-    return FutureBuilder<String?>(
-      future: future,
-      builder: (context, snapshot) {
-        final url = snapshot.data;
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: LinearProgressIndicator(),
-          );
-        }
-        if (url == null || url.trim().isEmpty) {
-          return ListTile(
-            leading: Icon(_iconForKind()),
-            title: Text(_fileName),
-          );
-        }
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _LessonDownloadCard(
-            fileName: _fileName,
-            isPdf: isPdf,
-            onTap: () => launchUrlString(url),
-          ),
-        );
-      },
+    if (documentUrl == null || documentUrl.trim().isEmpty) {
+      return _buildUnavailableMediaTile();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _LessonDownloadCard(
+        fileName: _fileName,
+        isPdf: isLessonMediaPdf(item),
+        onTap: () => launchUrlString(documentUrl),
+      ),
     );
   }
 }

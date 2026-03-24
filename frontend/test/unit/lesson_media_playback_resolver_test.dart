@@ -38,10 +38,13 @@ class _FakeMediaPipelineRepository extends MediaPipelineRepository {
       );
 
   final String _playbackUrl;
+  int lessonPlaybackCalls = 0;
 
   @override
-  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async =>
-      _playbackUrl;
+  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
+    lessonPlaybackCalls += 1;
+    return _playbackUrl;
+  }
 }
 
 MediaRepository _buildMediaRepository() {
@@ -67,28 +70,76 @@ const _lessonMediaItem = LessonMediaItem(
   storagePath: 'unused',
 );
 
+const _blockedLessonMediaItem = LessonMediaItem(
+  id: 'lesson-media-2',
+  kind: 'video',
+  storagePath: 'unused',
+  resolvableForStudent: false,
+);
+
+const _pdfLessonMediaItem = LessonMediaItem(
+  id: 'lesson-media-3',
+  kind: 'document',
+  storagePath: 'unused',
+  contentType: 'application/pdf',
+  signedUrl: '/media/stream/pdf-token',
+  originalName: 'guide.pdf',
+);
+
 void main() {
   group('Lesson media playback resolver', () {
     test('returns a valid https playback URL', () async {
+      final pipelineRepository = _FakeMediaPipelineRepository(
+        'https://cdn.example.com/audio.mp3',
+      );
       final resolved = await resolveLessonMediaPlaybackUrl(
         item: _lessonMediaItem,
         mediaRepository: _buildMediaRepository(),
-        pipelineRepository: _FakeMediaPipelineRepository(
-          'https://cdn.example.com/audio.mp3',
-        ),
+        pipelineRepository: pipelineRepository,
       );
 
       expect(resolved, 'https://cdn.example.com/audio.mp3');
+      expect(pipelineRepository.lessonPlaybackCalls, 1);
     });
 
     test('rejects non-http playback URLs', () async {
+      final pipelineRepository = _FakeMediaPipelineRepository(
+        'javascript:alert(1)',
+      );
       final resolved = await resolveLessonMediaPlaybackUrl(
         item: _lessonMediaItem,
         mediaRepository: _buildMediaRepository(),
-        pipelineRepository: _FakeMediaPipelineRepository('javascript:alert(1)'),
+        pipelineRepository: pipelineRepository,
       );
 
       expect(resolved, isNull);
+      expect(pipelineRepository.lessonPlaybackCalls, 1);
+    });
+
+    test(
+      'skips lesson playback when payload marks media unavailable',
+      () async {
+        final pipelineRepository = _FakeMediaPipelineRepository(
+          'https://cdn.example.com/video.mp4',
+        );
+        final resolved = await resolveLessonMediaPlaybackUrl(
+          item: _blockedLessonMediaItem,
+          mediaRepository: _buildMediaRepository(),
+          pipelineRepository: pipelineRepository,
+        );
+
+        expect(resolved, isNull);
+        expect(pipelineRepository.lessonPlaybackCalls, 0);
+      },
+    );
+
+    test('resolves PDFs from direct document URLs without playback', () {
+      final resolved = resolveLessonMediaDocumentUrl(
+        item: _pdfLessonMediaItem,
+        mediaRepository: _buildMediaRepository(),
+      );
+
+      expect(resolved, 'https://api.example.com/media/stream/pdf-token');
     });
   });
 }
