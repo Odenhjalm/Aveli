@@ -235,7 +235,7 @@ PY
 
 missing_in_db=""
 extra_in_db=""
-if [[ -n "$db_migrations" ]]; then
+if [[ "$migrations_exists" == "t" ]]; then
   missing_in_db=$(comm -23 <(echo "$repo_migrations") <(echo "$db_migrations") || true)
   extra_in_db=$(comm -13 <(echo "$repo_migrations") <(echo "$db_migrations") || true)
 fi

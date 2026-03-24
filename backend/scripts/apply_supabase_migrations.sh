@@ -55,17 +55,31 @@ print_db_target() {
 from urllib.parse import urlparse
 import sys
 
+def derive_project_ref(url: str) -> str:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    username = parsed.username or ""
+
+    if username.startswith("postgres."):
+        return username.split(".", 1)[1]
+
+    for suffix in (".supabase.co", ".supabase.com"):
+        if host.startswith("db.") and host.endswith(suffix):
+            middle = host[len("db.") : -len(suffix)]
+            if middle:
+                return middle
+        if host.endswith(suffix):
+            label = host[: -len(suffix)]
+            if label and "." not in label:
+                return label
+
+    return ""
+
 parsed = urlparse(sys.argv[1])
 host = parsed.hostname or "unknown"
 port = f":{parsed.port}" if parsed.port else ""
 dbname = parsed.path.lstrip("/") or "postgres"
-username = parsed.username or ""
-project_ref = ""
-
-if username.startswith("postgres."):
-    project_ref = username.split(".", 1)[1]
-elif host.endswith(".supabase.co"):
-    project_ref = host.split(".", 1)[0]
+project_ref = derive_project_ref(sys.argv[1])
 
 print(f"Target DB: {host}{port}/{dbname}")
 if project_ref:
@@ -87,16 +101,27 @@ verify_project_ref_match() {
 from urllib.parse import urlparse
 import sys
 
-parsed = urlparse(sys.argv[1])
-host = parsed.hostname or ""
-username = parsed.username or ""
+def derive_project_ref(url: str) -> str:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    username = parsed.username or ""
 
-project_ref = ""
-if username.startswith("postgres."):
-    project_ref = username.split(".", 1)[1]
-elif host.endswith(".supabase.co"):
-    project_ref = host.split(".", 1)[0]
+    if username.startswith("postgres."):
+        return username.split(".", 1)[1]
 
+    for suffix in (".supabase.co", ".supabase.com"):
+        if host.startswith("db.") and host.endswith(suffix):
+            middle = host[len("db.") : -len(suffix)]
+            if middle:
+                return middle
+        if host.endswith(suffix):
+            label = host[: -len(suffix)]
+            if label and "." not in label:
+                return label
+
+    return ""
+
+project_ref = derive_project_ref(sys.argv[1])
 print(project_ref)
 PY
   )"
