@@ -66,6 +66,11 @@ _AUDIO_SOURCE_SUPPORTED_DETAIL = "Only MP3, WAV, or M4A audio files are supporte
 _LESSON_IMAGE_SUPPORTED_DETAIL = (
     "Only PNG, JPEG, WEBP, or SVG lesson images are supported"
 )
+_LESSON_VIDEO_SUPPORTED_DETAIL = (
+    "Only lesson videos with video/* MIME types are supported"
+)
+_LESSON_DOCUMENT_MIME_TYPES = {"application/pdf"}
+_LESSON_DOCUMENT_SUPPORTED_DETAIL = "Only PDF lesson documents are supported"
 
 
 class LessonPlaybackRequest(BaseModel):
@@ -150,7 +155,9 @@ def _assert_valid_cover_media_asset_row(
 
 
 def _preview_file_name(item: dict[str, object]) -> str | None:
-    explicit_file_name = _normalized_preview_string(item.get("file_name") or item.get("fileName"))
+    explicit_file_name = _normalized_preview_string(
+        item.get("file_name") or item.get("fileName")
+    )
     if explicit_file_name:
         return explicit_file_name
     original_name = _normalized_preview_string(item.get("original_name"))
@@ -265,14 +272,17 @@ async def _resolve_image_public_fallback_url(
         storage_bucket=storage_bucket,
         storage_path=storage_path,
     )
-    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
-        candidate_pairs
-    )
-    resolved_bucket, resolved_key, _, bytes_exist = courses_service._best_storage_candidate(
-        storage_bucket=storage_bucket,
-        storage_path=storage_path,
-        existence=existence,
-        storage_table_available=storage_table_available,
+    (
+        existence,
+        storage_table_available,
+    ) = await storage_objects.fetch_storage_object_existence(candidate_pairs)
+    resolved_bucket, resolved_key, _, bytes_exist = (
+        courses_service._best_storage_candidate(
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            existence=existence,
+            storage_table_available=storage_table_available,
+        )
     )
     if (
         bytes_exist is not True
@@ -303,7 +313,9 @@ async def _resolve_image_public_fallback_url(
     except storage_service.StorageServiceError:
         return None
 
-    normalized_public_url = _normalize_preview_url_candidate(public_url, base_url=base_url)
+    normalized_public_url = _normalize_preview_url_candidate(
+        public_url, base_url=base_url
+    )
     logger.info(
         "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
         lesson_media_id,
@@ -520,6 +532,47 @@ def _lesson_image_ingest_format(filename: str, mime_type: str) -> str:
     return _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE[mime_type]
 
 
+def _lesson_video_ingest_format(filename: str, mime_type: str) -> str:
+    if not mime_type.startswith("video/"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=_LESSON_VIDEO_SUPPORTED_DETAIL,
+        )
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    if suffix:
+        return suffix
+    subtype = mime_type.split("/", 1)[1].split(";", 1)[0].strip().lower()
+    return subtype or "video"
+
+
+def _lesson_document_ingest_format(filename: str, mime_type: str) -> str:
+    if mime_type not in _LESSON_DOCUMENT_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=_LESSON_DOCUMENT_SUPPORTED_DETAIL,
+        )
+    _ = filename
+    return "pdf"
+
+
+def _lesson_passthrough_ingest_format(
+    *,
+    media_type: str,
+    filename: str,
+    mime_type: str,
+) -> str:
+    if media_type == "image":
+        return _lesson_image_ingest_format(filename, mime_type)
+    if media_type == "video":
+        return _lesson_video_ingest_format(filename, mime_type)
+    if media_type == "document":
+        return _lesson_document_ingest_format(filename, mime_type)
+    raise HTTPException(
+        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        detail="Unsupported media type",
+    )
+
+
 def _build_cover_source_object_path(course_id: str, filename: str) -> str:
     safe_name = Path(filename).name.strip()
     if not safe_name:
@@ -537,9 +590,7 @@ def _build_cover_source_object_path(course_id: str, filename: str) -> str:
 
 
 def _cover_source_prefix(course_id: str) -> str:
-    return (
-        Path("media") / "source" / "cover" / "courses" / course_id
-    ).as_posix() + "/"
+    return (Path("media") / "source" / "cover" / "courses" / course_id).as_posix() + "/"
 
 
 def _is_canonical_cover_source_path(
@@ -570,9 +621,9 @@ async def _copy_cover_source_object(
             detail=str(exc),
         ) from exc
 
-    normalized_content_type = _normalize_mime(content_type) or _default_cover_content_type(
-        filename or source_path
-    )
+    normalized_content_type = _normalize_mime(
+        content_type
+    ) or _default_cover_content_type(filename or source_path)
     destination_bucket = storage_service.storage_service.bucket
     try:
         await storage_service.copy_object(
@@ -645,6 +696,71 @@ def _is_canonical_lesson_image_object_path(
         return False
     prefix = (Path("lessons") / lesson_id / "images").as_posix() + "/"
     return normalized.startswith(prefix)
+
+
+def _lesson_passthrough_content_type_supported(
+    media_type: str, content_type: str
+) -> bool:
+    if media_type == "image":
+        return content_type in _LESSON_IMAGE_MIME_TYPES
+    if media_type == "video":
+        return content_type.startswith("video/")
+    if media_type == "document":
+        return content_type in _LESSON_DOCUMENT_MIME_TYPES
+    return False
+
+
+def _lesson_passthrough_supported_detail(media_type: str) -> str:
+    if media_type == "image":
+        return _LESSON_IMAGE_SUPPORTED_DETAIL
+    if media_type == "video":
+        return _LESSON_VIDEO_SUPPORTED_DETAIL
+    if media_type == "document":
+        return _LESSON_DOCUMENT_SUPPORTED_DETAIL
+    return "Unsupported media type"
+
+
+def _lesson_passthrough_prefix(
+    *,
+    course_id: str,
+    lesson_id: str,
+    media_type: str,
+) -> str:
+    normalized_media_type = str(media_type or "").strip().lower()
+    if normalized_media_type == "image":
+        return (Path("lessons") / lesson_id / "images").as_posix() + "/"
+    folder = (
+        "documents"
+        if normalized_media_type == "document"
+        else (normalized_media_type or "media")
+    )
+    return (
+        Path("courses") / course_id / "lessons" / lesson_id / folder
+    ).as_posix() + "/"
+
+
+def _is_canonical_lesson_passthrough_object_path(
+    object_path: str,
+    *,
+    course_id: str,
+    lesson_id: str,
+    media_type: str,
+) -> bool:
+    normalized = str(object_path or "").strip().lstrip("/")
+    if not normalized:
+        return False
+    if media_type == "image":
+        return _is_canonical_lesson_image_object_path(
+            object_path,
+            lesson_id=lesson_id,
+        )
+    return normalized.startswith(
+        _lesson_passthrough_prefix(
+            course_id=course_id,
+            lesson_id=lesson_id,
+            media_type=media_type,
+        )
+    )
 
 
 def _upload_max_bytes(media_type: str) -> int:
@@ -752,7 +868,10 @@ async def _storage_object_exists(
     if not normalized_path:
         return False
 
-    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
+    (
+        existence,
+        storage_table_available,
+    ) = await storage_objects.fetch_storage_object_existence(
         [(storage_bucket, normalized_path)]
     )
     if storage_table_available and existence.get((storage_bucket, normalized_path)):
@@ -775,7 +894,9 @@ async def _validate_cover_source_storage_reference(
     storage_path: str,
 ) -> str:
     try:
-        normalized_path = media_paths.normalize_storage_path(storage_bucket, storage_path)
+        normalized_path = media_paths.normalize_storage_path(
+            storage_bucket, storage_path
+        )
     except RuntimeError as exc:
         logger.warning(
             "Cover source rejected because storage_path contains bucket prefix bucket=%s path=%s",
@@ -787,7 +908,10 @@ async def _validate_cover_source_storage_reference(
             detail="Cover source storage_path must not include bucket prefix",
         ) from exc
 
-    existence, storage_table_available = await storage_objects.fetch_storage_object_existence(
+    (
+        existence,
+        storage_table_available,
+    ) = await storage_objects.fetch_storage_object_existence(
         [(storage_bucket, normalized_path)]
     )
     if not storage_table_available:
@@ -945,6 +1069,32 @@ async def _finalize_media_asset_upload(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Unsupported media purpose",
             )
+    elif media_type in {"video", "document"}:
+        if purpose != "lesson_media":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Unsupported media purpose",
+            )
+        if storage_bucket != storage_service.storage_service.bucket:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Lesson passthrough media must use the private media bucket",
+            )
+        if not course_id or not lesson_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Lesson passthrough media is missing course or lesson context",
+            )
+        if not _is_canonical_lesson_passthrough_object_path(
+            object_path,
+            course_id=course_id,
+            lesson_id=lesson_id,
+            media_type=media_type,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Lesson passthrough media must use the canonical private lesson path",
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -984,7 +1134,10 @@ async def _finalize_media_asset_upload(
                 await media_assets_repo.get_media_asset(media_asset_id) or media_asset
             )
     elif purpose == "lesson_media":
-        details, storage_table_available = await storage_objects.fetch_storage_object_details(
+        (
+            details,
+            storage_table_available,
+        ) = await storage_objects.fetch_storage_object_details(
             [(storage_bucket, object_path)]
         )
         storage_detail = (
@@ -995,27 +1148,39 @@ async def _finalize_media_asset_upload(
         content_type = _normalize_mime(
             storage_detail.get("content_type") if storage_detail else None
         ) or _normalize_mime(media_asset.get("original_content_type") or "")
-        if content_type not in _LESSON_IMAGE_MIME_TYPES:
+        if not _lesson_passthrough_content_type_supported(media_type, content_type):
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=_LESSON_IMAGE_SUPPORTED_DETAIL,
+                detail=_lesson_passthrough_supported_detail(media_type),
             )
         size_bytes = (
             storage_detail.get("size_bytes")
             if storage_detail is not None
             else media_asset.get("original_size_bytes")
         )
+        streaming_format = str(media_asset.get("ingest_format") or "").strip()
+        if not streaming_format:
+            if media_type == "image":
+                streaming_format = _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE.get(
+                    content_type,
+                    "image",
+                )
+            else:
+                streaming_format = _lesson_passthrough_ingest_format(
+                    media_type=media_type,
+                    filename=str(
+                        media_asset.get("original_filename")
+                        or media_asset.get("original_object_path")
+                        or object_path
+                    ),
+                    mime_type=content_type,
+                )
         if current_state != "ready":
             updated = await media_assets_repo.mark_media_asset_ready_passthrough(
                 media_id=media_asset_id,
                 streaming_object_path=object_path,
                 storage_bucket=storage_bucket,
-                streaming_format=str(
-                    media_asset.get("ingest_format")
-                    or _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE.get(
-                        content_type, "image"
-                    )
-                ),
+                streaming_format=streaming_format,
                 original_content_type=content_type,
                 original_size_bytes=(
                     int(size_bytes) if size_bytes is not None else None
@@ -1030,7 +1195,10 @@ async def _finalize_media_asset_upload(
                 await media_assets_repo.get_media_asset(media_asset_id) or media_asset
             )
     else:
-        details, storage_table_available = await storage_objects.fetch_storage_object_details(
+        (
+            details,
+            storage_table_available,
+        ) = await storage_objects.fetch_storage_object_details(
             [(storage_bucket, object_path)]
         )
         storage_detail = (
@@ -1090,6 +1258,13 @@ def _media_asset_kind(media_asset: dict[str, object]) -> str:
     )
 
 
+def _lesson_media_storage_kind(kind: str) -> str:
+    normalized_kind = str(kind or "").strip().lower()
+    if normalized_kind == "document":
+        return "pdf"
+    return normalized_kind
+
+
 async def _lookup_runtime_media_id_for_home_upload(upload_id: str) -> str | None:
     async with get_conn() as cur:
         await cur.execute(
@@ -1111,8 +1286,10 @@ async def _lookup_runtime_media_id_for_home_upload(upload_id: str) -> str | None
 
 
 async def _ensure_lesson_media_runtime_id(lesson_media_id: str) -> str:
-    runtime_media_id = await canonical_media_resolver.lookup_runtime_media_id_for_lesson_media(
-        lesson_media_id
+    runtime_media_id = (
+        await canonical_media_resolver.lookup_runtime_media_id_for_lesson_media(
+            lesson_media_id
+        )
     )
     if runtime_media_id is None:
         raise HTTPException(
@@ -1158,6 +1335,7 @@ async def _attach_lesson_media_asset(
 
     media_asset_id = str(media_asset["id"])
     kind = _media_asset_kind(media_asset)
+    lesson_media_kind = _lesson_media_storage_kind(kind)
     asset_state = str(media_asset.get("state") or "").strip().lower()
     if purpose == "lesson_audio":
         if asset_state not in {"uploaded", "processing", "ready"}:
@@ -1166,10 +1344,10 @@ async def _attach_lesson_media_asset(
                 detail="Media asset must be completed before it can be attached",
             )
     else:
-        if kind != "image":
+        if kind not in {"image", "video", "document"}:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Only lesson image assets currently support purpose=lesson_media",
+                detail="Only lesson image, video, or document assets currently support purpose=lesson_media",
             )
         if asset_state != "ready":
             raise HTTPException(
@@ -1182,8 +1360,13 @@ async def _attach_lesson_media_asset(
 
     lesson_media: dict[str, object] | None = None
     if replacement_lesson_media_id:
-        existing_attachment = await models.get_lesson_media_by_media_asset_id(media_asset_id)
-        if existing_attachment is not None and str(existing_attachment.get("id") or "") != replacement_lesson_media_id:
+        existing_attachment = await models.get_lesson_media_by_media_asset_id(
+            media_asset_id
+        )
+        if (
+            existing_attachment is not None
+            and str(existing_attachment.get("id") or "") != replacement_lesson_media_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Media asset is already attached to another lesson media row",
@@ -1195,7 +1378,9 @@ async def _attach_lesson_media_asset(
                 detail="Lesson media not found",
             )
         existing_kind = str(existing.get("kind") or "").strip().lower()
-        normalized_existing_kind = "document" if existing_kind == "pdf" else existing_kind
+        normalized_existing_kind = (
+            "document" if existing_kind == "pdf" else existing_kind
+        )
         if normalized_existing_kind and normalized_existing_kind != kind:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1204,10 +1389,11 @@ async def _attach_lesson_media_asset(
         lesson_media = await models.update_lesson_media_asset_link(
             lesson_media_id=replacement_lesson_media_id,
             lesson_id=lesson_id,
-            kind=kind,
+            kind=lesson_media_kind,
             media_asset_id=media_asset_id,
             storage_bucket=str(
-                media_asset.get("storage_bucket") or storage_service.storage_service.bucket
+                media_asset.get("storage_bucket")
+                or storage_service.storage_service.bucket
             ),
             duration_seconds=duration_seconds,
         )
@@ -1224,10 +1410,11 @@ async def _attach_lesson_media_asset(
         else:
             lesson_media = await models.add_lesson_media_entry_with_position_retry(
                 lesson_id=lesson_id,
-                kind=kind,
+                kind=lesson_media_kind,
                 storage_path=None,
                 storage_bucket=str(
-                    media_asset.get("storage_bucket") or storage_service.storage_service.bucket
+                    media_asset.get("storage_bucket")
+                    or storage_service.storage_service.bucket
                 ),
                 media_id=None,
                 media_asset_id=media_asset_id,
@@ -1241,7 +1428,22 @@ async def _attach_lesson_media_asset(
             detail="Could not attach media to lesson",
         )
 
-    runtime_media_id = await _ensure_lesson_media_runtime_id(str(lesson_media["id"]))
+    runtime_media_id: str | None = None
+    if kind == "document":
+        runtime_media_id = (
+            await canonical_media_resolver.lookup_runtime_media_id_for_lesson_media(
+                str(lesson_media["id"])
+            )
+        )
+        if runtime_media_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Document lesson media must not create runtime playback ids",
+            )
+    else:
+        runtime_media_id = await _ensure_lesson_media_runtime_id(
+            str(lesson_media["id"])
+        )
     canonical_lesson_media = await _canonical_lesson_media_row(
         lesson_id=lesson_id,
         lesson_media_id=str(lesson_media["id"]),
@@ -1257,7 +1459,9 @@ async def _attach_lesson_media_asset(
         duration_seconds=media_asset.get("duration_seconds"),
         codec=media_asset.get("codec"),
         lesson_media_id=UUID(str(lesson_media["id"])),
-        runtime_media_id=UUID(runtime_media_id),
+        runtime_media_id=UUID(runtime_media_id)
+        if runtime_media_id is not None
+        else None,
         lesson_media=canonical_lesson_media,
     )
 
@@ -1281,9 +1485,11 @@ async def _attach_home_upload_media_asset(
             detail="Media asset must be completed before it can be attached",
         )
 
-    existing_upload = await home_player_library_repo.get_home_player_upload_by_media_asset_id(
-        media_asset_id=media_asset_id,
-        teacher_id=user_id,
+    existing_upload = (
+        await home_player_library_repo.get_home_player_upload_by_media_asset_id(
+            media_asset_id=media_asset_id,
+            teacher_id=user_id,
+        )
     )
     if existing_upload is None:
         original_name = str(media_asset.get("original_filename") or "").strip()
@@ -1365,9 +1571,13 @@ async def request_upload_url(
         )
 
     purpose = (
-        payload.purpose
-        or ("lesson_media" if media_type == "image" else "lesson_audio")
-    ).strip().lower()
+        (
+            payload.purpose
+            or ("lesson_audio" if media_type == "audio" else "lesson_media")
+        )
+        .strip()
+        .lower()
+    )
     course_id: str | None = None
     lesson_id: str | None = None
     object_path: str | None = None
@@ -1404,17 +1614,26 @@ async def request_upload_url(
             object_path = media_paths.build_lesson_audio_source_object_path(
                 course_id, lesson_id, payload.filename
             )
-    elif media_type == "image":
-        ingest_format = _lesson_image_ingest_format(payload.filename, mime_type)
+    elif media_type in {"image", "video", "document"}:
+        ingest_format = _lesson_passthrough_ingest_format(
+            media_type=media_type,
+            filename=payload.filename,
+            mime_type=mime_type,
+        )
         if purpose != "lesson_media":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Unsupported upload purpose",
             )
         if payload.lesson_id is None:
+            detail = {
+                "image": "lesson_id is required for lesson image uploads",
+                "video": "lesson_id is required for lesson video uploads",
+                "document": "lesson_id is required for lesson document uploads",
+            }[media_type]
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="lesson_id is required for lesson image uploads",
+                detail=detail,
             )
         lesson_id = str(payload.lesson_id)
         course_id = await _authorize_lesson_upload(
@@ -1426,10 +1645,11 @@ async def request_upload_url(
         object_path = media_paths.build_lesson_passthrough_object_path(
             course_id=course_id,
             lesson_id=lesson_id,
-            media_kind="image",
+            media_kind=media_type,
             filename=payload.filename,
         )
-        storage_client = storage_service.public_storage_service
+        if media_type == "image":
+            storage_client = storage_service.public_storage_service
     else:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -1579,24 +1799,41 @@ async def refresh_upload_url(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Lesson audio must use the canonical pipeline source path",
                 )
-    elif media_type == "image":
+    elif media_type in {"image", "video", "document"}:
         if purpose != "lesson_media":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Unsupported media purpose",
             )
         if not lesson_id:
+            detail = {
+                "image": "Lesson image is missing lesson context",
+                "video": "Lesson video is missing lesson context",
+                "document": "Lesson document is missing lesson context",
+            }[media_type]
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Lesson image is missing lesson context",
+                detail=detail,
             )
-        if not _is_canonical_lesson_image_object_path(
-            object_path,
-            lesson_id=lesson_id,
-        ):
+        if media_type != "image" and not course_id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Lesson image must use the canonical public image path",
+                detail="Lesson passthrough media is missing course or lesson context",
+            )
+        if not _is_canonical_lesson_passthrough_object_path(
+            object_path,
+            course_id=course_id,
+            lesson_id=lesson_id,
+            media_type=media_type,
+        ):
+            detail = {
+                "image": "Lesson image must use the canonical public image path",
+                "video": "Lesson video must use the canonical private lesson path",
+                "document": "Lesson document must use the canonical private lesson path",
+            }[media_type]
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=detail,
             )
     else:
         raise HTTPException(
@@ -1620,10 +1857,10 @@ async def refresh_upload_url(
                 original_object_path=object_path,
             )
     else:
-        if content_type not in _LESSON_IMAGE_MIME_TYPES:
+        if not _lesson_passthrough_content_type_supported(media_type, content_type):
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=_LESSON_IMAGE_SUPPORTED_DETAIL,
+                detail=_lesson_passthrough_supported_detail(media_type),
             )
 
     storage_bucket = (
@@ -1633,6 +1870,14 @@ async def refresh_upload_url(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Lesson image must use the public media bucket",
+        )
+    if (
+        media_type in {"video", "document"}
+        and storage_bucket != storage_service.storage_service.bucket
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Lesson passthrough media must use the private media bucket",
         )
     storage_client = storage_service.get_storage_service(storage_bucket)
 
@@ -1688,7 +1933,7 @@ async def complete_upload_url(
         media_id=UUID(media_asset_id),
         state=str(
             media_asset.get("state")
-            or ("ready" if media_type == "image" else "uploaded")
+            or ("ready" if media_type in {"image", "video", "document"} else "uploaded")
         ),
         error_message=media_asset.get("error_message"),
         ingest_format=media_asset.get("ingest_format"),
@@ -1723,7 +1968,9 @@ async def attach_media(
             media_asset=media_asset,
             lesson_id=lesson_id,
             replacement_lesson_media_id=(
-                str(payload.lesson_media_id) if payload.lesson_media_id is not None else None
+                str(payload.lesson_media_id)
+                if payload.lesson_media_id is not None
+                else None
             ),
         )
 

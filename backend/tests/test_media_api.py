@@ -216,6 +216,17 @@ async def _attach_media_asset(
     return response.json()
 
 
+async def test_media_upload_url_request_normalizes_pdf_to_document():
+    payload = api_media.schemas.MediaUploadUrlRequest(
+        filename="guide.pdf",
+        mime_type="application/pdf",
+        size_bytes=1024,
+        media_type="pdf",
+    )
+
+    assert payload.media_type == "document"
+
+
 @pytest.mark.parametrize(
     ("filename", "mime_type", "ingest_format"),
     [
@@ -443,6 +454,7 @@ async def test_upload_url_allows_lesson_image_purpose(async_client, monkeypatch)
 async def test_attach_home_upload_is_idempotent(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
+
         async def fake_create_upload_url(
             self,
             path,
@@ -609,7 +621,9 @@ async def test_complete_upload_requires_separate_attach_for_lesson_media(
                 expires_in=120,
             )
 
-        async def fake_wait_for_storage_object(*, storage_bucket: str, storage_path: str):
+        async def fake_wait_for_storage_object(
+            *, storage_bucket: str, storage_path: str
+        ):
             assert storage_bucket == storage_module.storage_service.bucket
             assert storage_path == (
                 f"media/source/audio/courses/{course_id}/lessons/{lesson_id}/{filename}"
@@ -657,7 +671,9 @@ async def test_complete_upload_requires_separate_attach_for_lesson_media(
         assert complete_body.get("lesson_media_id") is None
         assert complete_body.get("lesson_media") is None
 
-        lesson_media_before_attach = await models.get_lesson_media_by_media_asset_id(media_id)
+        lesson_media_before_attach = await models.get_lesson_media_by_media_asset_id(
+            media_id
+        )
         assert lesson_media_before_attach is None
 
         attach_body = await _attach_media_asset(
@@ -696,13 +712,17 @@ async def test_complete_upload_requires_separate_attach_for_lesson_media(
         assert str(lesson_media["media_asset_id"]) == media_id
         assert lesson_media["storage_path"] is None
 
-        derived_path = Path(
-            str(uploaded_asset["original_object_path"]).replace(
-                "media/source/audio/",
-                "media/derived/audio/",
-                1,
+        derived_path = (
+            Path(
+                str(uploaded_asset["original_object_path"]).replace(
+                    "media/source/audio/",
+                    "media/derived/audio/",
+                    1,
+                )
             )
-        ).with_suffix(".mp3").as_posix()
+            .with_suffix(".mp3")
+            .as_posix()
+        )
         await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=media_id,
             streaming_object_path=derived_path,
@@ -742,7 +762,9 @@ async def test_complete_lesson_image_upload_marks_asset_ready(
                 expires_in=120,
             )
 
-        async def fake_wait_for_storage_object(*, storage_bucket: str, storage_path: str):
+        async def fake_wait_for_storage_object(
+            *, storage_bucket: str, storage_path: str
+        ):
             assert storage_bucket == settings.media_public_bucket
             assert storage_path.startswith(f"lessons/{lesson_id}/images/")
             return True
@@ -800,7 +822,9 @@ async def test_complete_lesson_image_upload_marks_asset_ready(
         assert complete_resp.status_code == 200, complete_resp.text
         assert complete_resp.json()["state"] == "ready"
 
-        lesson_media_before_attach = await models.get_lesson_media_by_media_asset_id(media_id)
+        lesson_media_before_attach = await models.get_lesson_media_by_media_asset_id(
+            media_id
+        )
         assert lesson_media_before_attach is None
 
         asset = await media_assets_repo.get_media_asset(media_id)
@@ -939,6 +963,344 @@ async def test_attach_lesson_image_requires_ready_and_returns_canonical_lesson_m
         assert lesson_media_row["media_id"] is None
         assert str(lesson_media_row["media_asset_id"]) == media_id
         assert lesson_media_row["storage_path"] is None
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_video_control_plane_flow_is_asset_backed_and_playable(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(
+            *, storage_bucket: str, storage_path: str
+        ):
+            assert storage_bucket == storage_module.storage_service.bucket
+            assert storage_path.startswith(
+                f"courses/{course_id}/lessons/{lesson_id}/video/"
+            )
+            return True
+
+        async def fake_fetch_storage_object_details(pairs):
+            pair_list = list(pairs)
+            assert len(pair_list) == 1
+            bucket, path = pair_list[0]
+            assert bucket == storage_module.storage_service.bucket
+            assert path.startswith(f"courses/{course_id}/lessons/{lesson_id}/video/")
+            return {
+                (bucket, path): {
+                    "content_type": "video/mp4",
+                    "size_bytes": 4096,
+                }
+            }, True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.storage_objects,
+            "fetch_storage_object_details",
+            fake_fetch_storage_object_details,
+            raising=True,
+        )
+
+        upload_resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "lesson.mp4",
+                "mime_type": "video/mp4",
+                "size_bytes": 4096,
+                "media_type": "video",
+                "lesson_id": lesson_id,
+            },
+        )
+        assert upload_resp.status_code == 200, upload_resp.text
+        upload_body = upload_resp.json()
+        media_id = upload_body["media_asset_id"]
+        assert upload_body["storage_path"].startswith(
+            f"courses/{course_id}/lessons/{lesson_id}/video/"
+        )
+
+        refresh_resp = await async_client.post(
+            "/api/media/upload-url/refresh",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert refresh_resp.status_code == 200, refresh_resp.text
+        assert refresh_resp.json()["storage_path"] == upload_body["storage_path"]
+
+        complete_resp = await async_client.post(
+            "/api/media/complete",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+        assert complete_resp.json()["state"] == "ready"
+
+        asset = await media_assets_repo.get_media_asset(media_id)
+        assert asset is not None
+        assert asset["media_type"] == "video"
+        assert asset["purpose"] == "lesson_media"
+        assert asset["state"] == "ready"
+        assert asset["streaming_object_path"] == asset["original_object_path"]
+        assert (
+            asset["streaming_storage_bucket"] == storage_module.storage_service.bucket
+        )
+        assert asset["streaming_format"] == "mp4"
+
+        attach_body = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=media_id,
+            link_scope="lesson",
+            lesson_id=lesson_id,
+        )
+        assert attach_body["lesson_media_id"]
+        assert attach_body["runtime_media_id"]
+        assert attach_body["lesson_media"]["kind"] == "video"
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT kind, active, fallback_policy, legacy_storage_path, media_asset_id
+                FROM app.runtime_media
+                WHERE lesson_media_id = %s
+                  AND active = true
+                """,
+                (attach_body["lesson_media_id"],),
+            )
+            runtime_row = await cur.fetchone()
+
+        assert runtime_row is not None
+        assert runtime_row["kind"] == "video"
+        assert runtime_row["active"] is True
+        assert runtime_row["fallback_policy"] == "never"
+        assert runtime_row["legacy_storage_path"] is None
+        assert str(runtime_row["media_asset_id"]) == media_id
+
+        async def fake_fetch_storage_object_existence(pairs):
+            pair_list = list(pairs)
+            assert pair_list == [
+                (
+                    storage_module.storage_service.bucket,
+                    str(asset["streaming_object_path"]),
+                )
+            ]
+            return {pair_list[0]: True}, True
+
+        monkeypatch.setattr(
+            "app.media_control_plane.services.media_resolver_service.storage_objects.fetch_storage_object_existence",
+            fake_fetch_storage_object_existence,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            lesson_playback_service.storage_service,
+            "get_storage_service",
+            lambda _bucket: _FakePlaybackStorageClient(
+                "https://stream.local/control-plane-video.mp4"
+            ),
+            raising=True,
+        )
+
+        playback_resp = await async_client.post(
+            "/api/media/playback",
+            headers=headers,
+            json={"runtime_media_id": attach_body["runtime_media_id"]},
+        )
+        assert playback_resp.status_code == 200, playback_resp.text
+        playback_body = playback_resp.json()
+        assert playback_body["runtime_media_id"] == attach_body["runtime_media_id"]
+        assert playback_body["kind"] == "video"
+        assert (
+            playback_body["playback_url"]
+            == "https://stream.local/control-plane-video.mp4"
+        )
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_lesson_document_control_plane_flow_stays_out_of_playback_contract(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        course_id, lesson_id = await create_lesson(async_client, headers)
+
+        async def fake_create_upload_url(
+            self,
+            path,
+            *,
+            content_type,
+            upsert,
+            cache_seconds,
+        ):
+            return storage_module.PresignedUpload(
+                url=f"https://storage.local/{path}",
+                headers={"content-type": content_type},
+                path=path,
+                expires_in=120,
+            )
+
+        async def fake_wait_for_storage_object(
+            *, storage_bucket: str, storage_path: str
+        ):
+            assert storage_bucket == storage_module.storage_service.bucket
+            assert storage_path.startswith(
+                f"courses/{course_id}/lessons/{lesson_id}/documents/"
+            )
+            return True
+
+        async def fake_fetch_storage_object_details(pairs):
+            pair_list = list(pairs)
+            assert len(pair_list) == 1
+            bucket, path = pair_list[0]
+            assert bucket == storage_module.storage_service.bucket
+            assert path.startswith(
+                f"courses/{course_id}/lessons/{lesson_id}/documents/"
+            )
+            return {
+                (bucket, path): {
+                    "content_type": "application/pdf",
+                    "size_bytes": 2048,
+                }
+            }, True
+
+        monkeypatch.setattr(
+            storage_module.StorageService,
+            "create_upload_url",
+            fake_create_upload_url,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            "app.routes.api_media._wait_for_storage_object",
+            fake_wait_for_storage_object,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            api_media.storage_objects,
+            "fetch_storage_object_details",
+            fake_fetch_storage_object_details,
+            raising=True,
+        )
+
+        upload_resp = await async_client.post(
+            "/api/media/upload-url",
+            headers=headers,
+            json={
+                "filename": "guide.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 2048,
+                "media_type": "document",
+                "lesson_id": lesson_id,
+            },
+        )
+        assert upload_resp.status_code == 200, upload_resp.text
+        upload_body = upload_resp.json()
+        media_id = upload_body["media_asset_id"]
+        assert upload_body["storage_path"].startswith(
+            f"courses/{course_id}/lessons/{lesson_id}/documents/"
+        )
+
+        refresh_resp = await async_client.post(
+            "/api/media/upload-url/refresh",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert refresh_resp.status_code == 200, refresh_resp.text
+        assert refresh_resp.json()["storage_path"] == upload_body["storage_path"]
+
+        complete_resp = await async_client.post(
+            "/api/media/complete",
+            headers=headers,
+            json={"media_id": media_id},
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+        assert complete_resp.json()["state"] == "ready"
+
+        asset = await media_assets_repo.get_media_asset(media_id)
+        assert asset is not None
+        assert asset["media_type"] == "document"
+        assert asset["purpose"] == "lesson_media"
+        assert asset["state"] == "ready"
+        assert asset["streaming_object_path"] == asset["original_object_path"]
+        assert (
+            asset["streaming_storage_bucket"] == storage_module.storage_service.bucket
+        )
+        assert asset["streaming_format"] == "pdf"
+
+        attach_body = await _attach_media_asset(
+            async_client,
+            headers,
+            media_id=media_id,
+            link_scope="lesson",
+            lesson_id=lesson_id,
+        )
+        assert attach_body["lesson_media_id"]
+        assert attach_body["runtime_media_id"] is None
+        assert attach_body["lesson_media"]["kind"] == "pdf"
+
+        lesson_media = await models.get_media(attach_body["lesson_media_id"])
+        assert lesson_media is not None
+        assert lesson_media["storage_path"] == asset["streaming_object_path"]
+        assert lesson_media["storage_bucket"] == storage_module.storage_service.bucket
+        assert lesson_media["content_type"] == "application/pdf"
+
+        async with db.get_conn() as cur:
+            await cur.execute(
+                """
+                SELECT kind, active, media_asset_id
+                FROM app.runtime_media
+                WHERE lesson_media_id = %s
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (attach_body["lesson_media_id"],),
+            )
+            runtime_row = await cur.fetchone()
+            await cur.execute(
+                """
+                SELECT count(*) AS active_count
+                FROM app.runtime_media
+                WHERE lesson_media_id = %s
+                  AND active = true
+                """,
+                (attach_body["lesson_media_id"],),
+            )
+            active_count_row = await cur.fetchone()
+
+        assert runtime_row is not None
+        assert runtime_row["kind"] == "document"
+        assert runtime_row["active"] is False
+        assert str(runtime_row["media_asset_id"]) == media_id
+        assert int(active_count_row["active_count"]) == 0
     finally:
         await cleanup_user(user_id)
 
@@ -1190,7 +1552,9 @@ async def test_runtime_playback_success(async_client, monkeypatch):
     try:
         runtime_media_id = str(uuid.uuid4())
 
-        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+        async def fake_resolve_runtime_media_playback(
+            *, runtime_media_id: str, user_id: str
+        ):
             assert runtime_media_id
             assert user_id
             return {
@@ -1229,7 +1593,9 @@ async def test_runtime_playback_returns_not_ready(async_client, monkeypatch):
     try:
         runtime_media_id = str(uuid.uuid4())
 
-        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+        async def fake_resolve_runtime_media_playback(
+            *, runtime_media_id: str, user_id: str
+        ):
             raise HTTPException(
                 status_code=409,
                 detail="Media is not ready",
@@ -1258,7 +1624,9 @@ async def test_runtime_playback_denies_access(async_client, monkeypatch):
     try:
         runtime_media_id = str(uuid.uuid4())
 
-        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+        async def fake_resolve_runtime_media_playback(
+            *, runtime_media_id: str, user_id: str
+        ):
             raise HTTPException(
                 status_code=403,
                 detail="Access denied",
@@ -1287,7 +1655,9 @@ async def test_runtime_playback_returns_not_found(async_client, monkeypatch):
     try:
         runtime_media_id = str(uuid.uuid4())
 
-        async def fake_resolve_runtime_media_playback(*, runtime_media_id: str, user_id: str):
+        async def fake_resolve_runtime_media_playback(
+            *, runtime_media_id: str, user_id: str
+        ):
             raise HTTPException(
                 status_code=404,
                 detail="Media not found",
@@ -1340,7 +1710,9 @@ async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
         assert upload
         runtime_media_id = await _runtime_media_id_for_home_upload(str(upload["id"]))
 
-        async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+        async def fake_storage_exists(
+            *, storage_bucket: str, storage_path: str
+        ) -> bool:
             assert storage_bucket == "course-media"
             assert storage_path.endswith(".mp3")
             return True
@@ -1367,7 +1739,10 @@ async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
         )
         assert teacher_resp.status_code == 200, teacher_resp.text
         assert teacher_resp.json()["runtime_media_id"] == runtime_media_id
-        assert teacher_resp.json()["playback_url"] == "https://stream.local/home-object.mp3"
+        assert (
+            teacher_resp.json()["playback_url"]
+            == "https://stream.local/home-object.mp3"
+        )
 
         other_headers, other_user_id, _ = await register_user(async_client)
         denied_resp = await async_client.post(
@@ -1389,14 +1764,19 @@ async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
         )
         assert allowed_resp.status_code == 200, allowed_resp.text
         assert allowed_resp.json()["runtime_media_id"] == runtime_media_id
-        assert allowed_resp.json()["playback_url"] == "https://stream.local/home-object.mp3"
+        assert (
+            allowed_resp.json()["playback_url"]
+            == "https://stream.local/home-object.mp3"
+        )
     finally:
         if other_user_id is not None:
             await cleanup_user(other_user_id)
         await cleanup_user(user_id)
 
 
-async def test_runtime_playback_home_direct_upload_asset_backed(async_client, monkeypatch):
+async def test_runtime_playback_home_direct_upload_asset_backed(
+    async_client, monkeypatch
+):
     headers, user_id = await register_teacher(async_client)
     try:
         asset = await media_assets_repo.create_media_asset(
@@ -1433,7 +1813,9 @@ async def test_runtime_playback_home_direct_upload_asset_backed(async_client, mo
         assert upload
         runtime_media_id = await _runtime_media_id_for_home_upload(str(upload["id"]))
 
-        async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+        async def fake_storage_exists(
+            *, storage_bucket: str, storage_path: str
+        ) -> bool:
             assert storage_bucket == "course-media"
             assert storage_path.endswith(".mp3")
             return True
@@ -1469,7 +1851,9 @@ async def test_runtime_playback_home_direct_upload_asset_backed(async_client, mo
         await cleanup_user(user_id)
 
 
-async def test_runtime_playback_home_course_linked_lesson_media(async_client, monkeypatch):
+async def test_runtime_playback_home_course_linked_lesson_media(
+    async_client, monkeypatch
+):
     headers, user_id = await register_teacher(async_client)
     student_headers = None
     student_user_id = None
@@ -1509,7 +1893,9 @@ async def test_runtime_playback_home_course_linked_lesson_media(async_client, mo
         )
         assert create_link_resp.status_code == 201, create_link_resp.text
 
-        async def fake_storage_exists(*, storage_bucket: str, storage_path: str) -> bool:
+        async def fake_storage_exists(
+            *, storage_bucket: str, storage_path: str
+        ) -> bool:
             assert storage_bucket == "course-media"
             assert storage_path.endswith(".mp3")
             return True
@@ -1545,7 +1931,10 @@ async def test_runtime_playback_home_course_linked_lesson_media(async_client, mo
         )
         assert allowed_resp.status_code == 200, allowed_resp.text
         assert allowed_resp.json()["runtime_media_id"] == runtime_media_id
-        assert allowed_resp.json()["playback_url"] == "https://stream.local/course-link.mp3"
+        assert (
+            allowed_resp.json()["playback_url"]
+            == "https://stream.local/course-link.mp3"
+        )
     finally:
         if student_user_id is not None:
             await cleanup_user(student_user_id)
@@ -1556,6 +1945,7 @@ async def test_lesson_playback_pipeline_row(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
+
         async def fake_resolve_lesson_media_playback(
             *, lesson_media_id: str, user_id: str
         ):
@@ -1608,12 +1998,16 @@ async def test_previews_and_lesson_playback_share_backend_resolution(
             assert candidate_lesson_id == lesson_id
             return None, course_id
 
-        async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
+        async def fake_is_course_owner(
+            candidate_user_id: str, candidate_course_id: str
+        ):
             assert str(candidate_user_id) == user_id
             assert candidate_course_id == course_id
             return True
 
-        async def fake_list_lesson_media(candidate_lesson_id: str, mode: str = "editor_preview"):
+        async def fake_list_lesson_media(
+            candidate_lesson_id: str, mode: str = "editor_preview"
+        ):
             assert candidate_lesson_id == lesson_id
             assert mode == "editor_preview"
             return [
@@ -1637,7 +2031,9 @@ async def test_previews_and_lesson_playback_share_backend_resolution(
                 },
             ]
 
-        async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+        async def fake_resolve_lesson_media_playback(
+            *, lesson_media_id: str, user_id: str
+        ):
             assert user_id
             return {
                 "url": f"https://stream.local/{lesson_media_id}.bin",
@@ -1729,12 +2125,16 @@ async def test_media_previews_isolate_malformed_and_missing_ids(
             assert candidate_lesson_id == lesson_id
             return None, course_id
 
-        async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
+        async def fake_is_course_owner(
+            candidate_user_id: str, candidate_course_id: str
+        ):
             assert str(candidate_user_id) == user_id
             assert candidate_course_id == course_id
             return True
 
-        async def fake_list_lesson_media(candidate_lesson_id: str, mode: str = "editor_preview"):
+        async def fake_list_lesson_media(
+            candidate_lesson_id: str, mode: str = "editor_preview"
+        ):
             assert candidate_lesson_id == lesson_id
             assert mode == "editor_preview"
             return [
@@ -1746,7 +2146,9 @@ async def test_media_previews_isolate_malformed_and_missing_ids(
                 }
             ]
 
-        async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+        async def fake_resolve_lesson_media_playback(
+            *, lesson_media_id: str, user_id: str
+        ):
             assert lesson_media_id == valid_id
             assert user_id
             return {
@@ -1821,7 +2223,9 @@ async def test_media_previews_keep_image_fallback_non_authoritative(
             assert candidate_lesson_id == lesson_id
             return None, course_id
 
-        async def fake_is_course_owner(candidate_user_id: str, candidate_course_id: str):
+        async def fake_is_course_owner(
+            candidate_user_id: str, candidate_course_id: str
+        ):
             assert str(candidate_user_id) == user_id
             assert candidate_course_id == course_id
             return True
@@ -1842,7 +2246,9 @@ async def test_media_previews_keep_image_fallback_non_authoritative(
                 }
             ]
 
-        async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+        async def fake_resolve_lesson_media_playback(
+            *, lesson_media_id: str, user_id: str
+        ):
             assert lesson_media_id == image_id
             raise HTTPException(
                 status_code=404,
@@ -1900,6 +2306,7 @@ async def test_lesson_playback_legacy_row_is_blocked(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
+
         async def fake_resolve_lesson_media_playback(
             *, lesson_media_id: str, user_id: str
         ):
@@ -1981,6 +2388,7 @@ async def test_lesson_playback_legacy_audio_passthrough_is_rejected(
             fake_get_presigned_url,
             raising=True,
         )
+
         async def fake_storage_exists(*, storage_bucket: str, storage_path: str):
             assert storage_bucket == "course-media"
             assert storage_path == derived_path
@@ -2009,7 +2417,9 @@ async def test_lesson_playback_invalid_row_returns_404(async_client, monkeypatch
     try:
         media_id = str(uuid.uuid4())
 
-        async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+        async def fake_resolve_lesson_media_playback(
+            *, lesson_media_id: str, user_id: str
+        ):
             raise HTTPException(
                 status_code=404,
                 detail="Lesson media has no playable source",
@@ -2065,7 +2475,9 @@ async def test_lesson_playback_pipeline_preserves_teacher_bypass(
             fallback_policy="never",
         )
 
-        async def fake_lookup_runtime_media_id_for_lesson_media(candidate_lesson_media_id: str):
+        async def fake_lookup_runtime_media_id_for_lesson_media(
+            candidate_lesson_media_id: str,
+        ):
             assert candidate_lesson_media_id == lesson_media_id
             return runtime_media_id
 
@@ -2165,7 +2577,9 @@ async def test_lesson_playback_pipeline_preserves_teacher_bypass(
         await cleanup_user(user_id)
 
 
-async def test_lesson_playback_legacy_intro_audio_is_rejected(async_client, monkeypatch):
+async def test_lesson_playback_legacy_intro_audio_is_rejected(
+    async_client, monkeypatch
+):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
@@ -2193,7 +2607,9 @@ async def test_lesson_playback_legacy_intro_audio_is_rejected(async_client, monk
             fallback_policy="legacy_only",
         )
 
-        async def fake_lookup_runtime_media_id_for_lesson_media(candidate_lesson_media_id: str):
+        async def fake_lookup_runtime_media_id_for_lesson_media(
+            candidate_lesson_media_id: str,
+        ):
             assert candidate_lesson_media_id == lesson_media_id
             return runtime_media_id
 
@@ -2305,7 +2721,9 @@ async def test_lesson_playback_legacy_non_intro_audio_is_rejected(
             fallback_policy="legacy_only",
         )
 
-        async def fake_lookup_runtime_media_id_for_lesson_media(candidate_lesson_media_id: str):
+        async def fake_lookup_runtime_media_id_for_lesson_media(
+            candidate_lesson_media_id: str,
+        ):
             assert candidate_lesson_media_id == lesson_media_id
             return runtime_media_id
 
@@ -2530,6 +2948,7 @@ async def test_wav_upload_position_allows_upload_after_deletion(
             fake_create_upload_url,
             raising=True,
         )
+
         async def fake_wait_for_storage_object(**_kwargs):
             return True
 

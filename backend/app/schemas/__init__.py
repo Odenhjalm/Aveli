@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    field_validator,
     model_serializer,
 )
 from uuid import UUID
@@ -973,10 +974,18 @@ class MediaUploadUrlRequest(BaseModel):
     filename: str
     mime_type: str
     size_bytes: int = Field(ge=1)
-    media_type: Literal["audio", "image"]
+    media_type: Literal["audio", "image", "video", "document", "pdf"]
     course_id: UUID | None = None
     lesson_id: UUID | None = None
     purpose: Literal["lesson_audio", "home_player_audio", "lesson_media"] | None = None
+
+    @field_validator("media_type", mode="before")
+    @classmethod
+    def _normalize_media_type(cls, value: Any) -> Any:
+        normalized = str(value or "").strip().lower()
+        if normalized == "pdf":
+            return "document"
+        return normalized
 
 
 class MediaUploadUrlRefreshRequest(BaseModel):
