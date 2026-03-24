@@ -35,6 +35,11 @@ if TYPE_CHECKING:
 _ESCAPED_BOLD_MARKER_PATTERN = re.compile(r"""\\\*\\\*""")
 _UNESCAPED_BOLD_PATTERN = re.compile(r"""(?<!\\)\*\*""")
 _REPEATED_BOLD_MARKER_PATTERN = re.compile(r"""(?<!\\)\*{3,}""")
+_BOLD_PUNCTUATION_BOUNDARY_PATTERN = re.compile(r"""(\*\*[^*]+?[:!?]\*\*)(?=\S)""")
+_BOLD_GENERAL_BOUNDARY_PATTERN = re.compile(
+    r"""(^|[\s([{>•])(\*\*(?=\S)[^*]+?(?<=\S)\*\*)(?=[A-Za-zÅÄÖåäö0-9])""",
+    re.MULTILINE,
+)
 _FENCED_CODE_BLOCK_PATTERN = re.compile(
     r"""(^|\n)(?P<fence>`{3,}|~{3,})[^\n]*\n.*?\n(?P=fence)[^\n]*(?=\n|$)""",
     re.MULTILINE | re.DOTALL,
@@ -278,6 +283,67 @@ def _trim_balanced_bold_whitespace(block: str) -> tuple[str, IssuePreview | None
     )
 
 
+def fix_bold_colon_boundary(text: str) -> str:
+    """
+    Fix pattern:
+    **Tips:**Om -> **Tips:** Om
+
+    Only applies when:
+    - bold segment ends with punctuation (:!?)
+    - immediately followed by non-space character
+    """
+
+    return _BOLD_PUNCTUATION_BOUNDARY_PATTERN.sub(r"\1 ", text)
+
+
+def _fix_bold_colon_boundary(block: str) -> tuple[str, IssuePreview | None]:
+    first_match = _BOLD_PUNCTUATION_BOUNDARY_PATTERN.search(block)
+    if not first_match:
+        return block, None
+
+    updated = fix_bold_colon_boundary(block)
+    if updated == block:
+        return block, None
+
+    return updated, _preview(
+        "bold_boundary",
+        block,
+        updated,
+        first_match.start(),
+        first_match.end(),
+    )
+
+
+def fix_bold_general_boundary(text: str) -> str:
+    """
+    Fix:
+    **text**X -> **text** X
+
+    Only when:
+    - bold is immediately followed by alphanumeric character
+    """
+
+    return _BOLD_GENERAL_BOUNDARY_PATTERN.sub(r"\1\2 ", text)
+
+
+def _fix_bold_general_boundary(block: str) -> tuple[str, IssuePreview | None]:
+    first_match = _BOLD_GENERAL_BOUNDARY_PATTERN.search(block)
+    if not first_match:
+        return block, None
+
+    updated = fix_bold_general_boundary(block)
+    if updated == block:
+        return block, None
+
+    return updated, _preview(
+        "bold_general_boundary",
+        block,
+        updated,
+        first_match.start(),
+        first_match.end(),
+    )
+
+
 def _normalize_text_block(block: str) -> tuple[str, tuple[IssuePreview, ...]]:
     issues: dict[str, IssuePreview] = {}
     updated = block
@@ -289,6 +355,14 @@ def _normalize_text_block(block: str) -> tuple[str, tuple[IssuePreview, ...]]:
     updated, whitespace_issue = _trim_balanced_bold_whitespace(updated)
     if whitespace_issue:
         issues[whitespace_issue.issue_type] = whitespace_issue
+
+    updated, boundary_issue = _fix_bold_colon_boundary(updated)
+    if boundary_issue:
+        issues[boundary_issue.issue_type] = boundary_issue
+
+    updated, general_boundary_issue = _fix_bold_general_boundary(updated)
+    if general_boundary_issue:
+        issues[general_boundary_issue.issue_type] = general_boundary_issue
 
     return updated, tuple(issues.values())
 

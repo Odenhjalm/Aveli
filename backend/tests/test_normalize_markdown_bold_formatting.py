@@ -32,6 +32,27 @@ def test_normalize_lesson_markdown_fixes_whitespace_bold():
     assert {issue.issue_type for issue in issues} == {"whitespace_bold"}
 
 
+def test_normalize_lesson_markdown_fixes_general_bold_boundary():
+    normalized, issues = normalize_lesson_markdown('**Ett "guidebyte"**i detta')
+
+    assert normalized == '**Ett "guidebyte"** i detta'
+    assert {issue.issue_type for issue in issues} == {"bold_general_boundary"}
+
+
+def test_normalize_lesson_markdown_preserves_punctuation_boundaries():
+    normalized, issues = normalize_lesson_markdown("**text**. **text**, **text**:")
+
+    assert normalized == "**text**. **text**, **text**:"
+    assert issues == ()
+
+
+def test_normalize_lesson_markdown_preserves_adjacent_bold_spans():
+    normalized, issues = normalize_lesson_markdown("**Kristaller** **Ametist**")
+
+    assert normalized == "**Kristaller** **Ametist**"
+    assert issues == ()
+
+
 def test_normalize_lesson_markdown_is_idempotent():
     first_pass, first_issues = normalize_lesson_markdown(r"\*\*\*\* text \*\*\*\*")
     second_pass, second_issues = normalize_lesson_markdown(first_pass)
@@ -68,6 +89,15 @@ def test_normalize_lesson_markdown_ignores_links_images_and_media_tokens():
         "!audio(test123)\n"
         "!image(test123)"
     )
+
+    normalized, issues = normalize_lesson_markdown(source)
+
+    assert normalized == source
+    assert issues == ()
+
+
+def test_normalize_lesson_markdown_ignores_valid_already_spaced_mixed_formatting():
+    source = "_**Frukost:** Avgiftande smoothie_"
 
     normalized, issues = normalize_lesson_markdown(source)
 
