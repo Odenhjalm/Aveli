@@ -72,6 +72,7 @@ pool = ContextAwareAsyncConnectionPool(
     conninfo=settings.database_url.unicode_string(),
     min_size=1,
     max_size=10,
+    check=ContextAwareAsyncConnectionPool.check_connection,
     open=False,
 )
 
