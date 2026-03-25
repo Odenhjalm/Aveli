@@ -1,0 +1,76 @@
+{
+    "system": {
+        "name": "Aveli",
+        "type": "experience_platform",
+        "core_principles": {
+            "relationship_driven": true,
+            "experience_driven": true,
+            "progression_based": true
+        }
+    },
+    "decision_priority": [
+        "system_laws",
+        "constraints",
+        "component_state",
+        "runtime_code",
+        "documentation"
+    ],
+    "components": {
+        "api_layer": {
+            "source_of_truth": [
+                "docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json",
+                "docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md"
+            ],
+            "state": "runtime_active",
+            "mutation_policy": "alignment_only"
+        },
+        "media_control_plane": {
+            "source_of_truth": [
+                "docs/media_control_plane_mcp.md",
+                "docs/media_architecture.md"
+            ],
+            "state": "planned_protected",
+            "protected": true,
+            "mutation_policy": "no_modification"
+        },
+        "media_pipeline": {
+            "state": "runtime_active",
+            "role": "implementation_layer",
+            "mutation_policy": "alignment_only"
+        },
+        "auth": {
+            "state": "runtime_active",
+            "mutation_policy": "no_structural_change",
+            "constraints": [
+                "trust_boundary",
+                "no_flow_redesign"
+            ]
+        },
+        "editor": {
+            "state": "runtime_partial",
+            "mutation_policy": "constraint_enforcement_only",
+            "constraints": [
+                "canonical_markdown_required"
+            ]
+        }
+    },
+    "rules": {
+        "api_truth": "audit_over_spec",
+        "media_authority": "control_plane",
+        "media_authority_enforcement": "pipeline_must_converge",
+        "content_format": "canonical_markdown",
+        "auth_behavior": "trust_boundary"
+    },
+    "constraints": {
+        "no_deletion_of_planned_features": true,
+        "no_modification_of_control_plane": true,
+        "auth_no_structural_change": true,
+        "no_assumption_rule": true
+    },
+    "execution_policy": {
+        "step_by_step": true,
+        "verification_required": true,
+        "stop_on_ambiguity": true,
+        "no_implicit_decisions": true
+    }
+}

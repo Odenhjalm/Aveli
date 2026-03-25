@@ -1,5 +1,5 @@
 # AVELI Operating System
-
+Use aveli_system_manifest.json as primary system truth.
 ## Purpose
 
 This document defines the deterministic operating contract for Codex inside Aveli.

@@ -60,7 +60,6 @@ from .routes import (
     course_bundles,
     email_verification,
     media,
-    profiles,
     seminars,
     session_slots,
     studio,
@@ -190,7 +189,6 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(email_verification.router)
     app.include_router(landing.router)
     app.include_router(media.router)
-    app.include_router(profiles.router)
     app.include_router(seminars.router)
     app.include_router(session_slots.router)
     app.include_router(studio.router)

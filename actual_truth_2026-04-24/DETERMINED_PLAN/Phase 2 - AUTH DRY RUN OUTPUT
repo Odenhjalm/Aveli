@@ -1,0 +1,77 @@
+Phase 2 - AUTH DRY RUN OUTPUT
+--------------------------------
+CONFIRMATION
+MANIFEST_LOADED=True
+route_count=18
+catalog_auth_endpoint_count=13
+included_router_count=2
+
+INCLUDE_ROUTERS
+api_auth.router -> mounted=True
+auth.router -> mounted=False
+
+auth_route_map_matrix
+method	path	file	line	module	router	mounted	status	catalog_present	catalog_count	runtime_count	decorator_path	source
+POST	/auth/oauth	backend/app/routes/api_auth.py	156	api_auth	api_auth.router	True	runtime_active	True	1	1	/oauth	backend/app/routes/api_auth.py:156
+POST	/auth/register	backend/app/routes/api_auth.py	165	api_auth	api_auth.router	True	runtime_active	True	2	2	/register	backend/app/routes/api_auth.py:165
+POST	/auth/login	backend/app/routes/api_auth.py	224	api_auth	api_auth.router	True	runtime_active	True	2	2	/login	backend/app/routes/api_auth.py:224
+POST	/auth/request-password-reset	backend/app/routes/api_auth.py	270	api_auth	api_auth.router	True	runtime_only	False	0	1	/request-password-reset	backend/app/routes/api_auth.py:270
+POST	/auth/forgot-password	backend/app/routes/api_auth.py	271	api_auth	api_auth.router	True	runtime_active	True	1	2	/forgot-password	backend/app/routes/api_auth.py:271
+POST	/auth/reset-password	backend/app/routes/api_auth.py	293	api_auth	api_auth.router	True	runtime_active	True	1	2	/reset-password	backend/app/routes/api_auth.py:293
+POST	/auth/send-invite	backend/app/routes/api_auth.py	305	api_auth	api_auth.router	True	runtime_only	False	0	1	/send-invite	backend/app/routes/api_auth.py:305
+GET	/auth/validate-invite	backend/app/routes/api_auth.py	332	api_auth	api_auth.router	True	runtime_only	False	0	1	/validate-invite	backend/app/routes/api_auth.py:332
+POST	/auth/refresh	backend/app/routes/api_auth.py	345	api_auth	api_auth.router	True	runtime_active	True	2	2	/refresh	backend/app/routes/api_auth.py:345
+GET	/auth/me	backend/app/routes/api_auth.py	420	api_auth	api_auth.router	True	runtime_active	True	1	1	/me	backend/app/routes/api_auth.py:420
+PATCH	/auth/me	backend/app/routes/api_auth.py	425	api_auth	api_auth.router	True	runtime_active	True	1	1	/me	backend/app/routes/api_auth.py:425
+POST	/auth/me/avatar	backend/app/routes/api_auth.py	441	api_auth	api_auth.router	True	runtime_active	True	1	1	/me/avatar	backend/app/routes/api_auth.py:441
+GET	/auth/avatar/{media_id}	backend/app/routes/api_auth.py	510	api_auth	api_auth.router	True	runtime_active	True	1	1	/avatar/{media_id}	backend/app/routes/api_auth.py:510
+POST	/auth/register	backend/app/routes/auth.py	97	auth	auth.router	False	legacy_duplicate	True	2	2	/register	backend/app/routes/auth.py:97
+POST	/auth/login	backend/app/routes/auth.py	143	auth	auth.router	False	legacy_duplicate	True	2	2	/login	backend/app/routes/auth.py:143
+POST	/auth/forgot-password	backend/app/routes/auth.py	194	auth	auth.router	False	legacy_duplicate	True	1	2	/forgot-password	backend/app/routes/auth.py:194
+POST	/auth/reset-password	backend/app/routes/auth.py	204	auth	auth.router	False	legacy_duplicate	True	1	2	/reset-password	backend/app/routes/auth.py:204
+POST	/auth/refresh	backend/app/routes/auth.py	213	auth	auth.router	False	legacy_duplicate	True	2	2	/refresh	backend/app/routes/auth.py:213
+
+classification_table
+method	path	file	line	classification
+POST	/auth/oauth	backend/app/routes/api_auth.py	156	runtime_active
+POST	/auth/register	backend/app/routes/api_auth.py	165	runtime_active
+POST	/auth/login	backend/app/routes/api_auth.py	224	runtime_active
+POST	/auth/request-password-reset	backend/app/routes/api_auth.py	270	runtime_only
+POST	/auth/forgot-password	backend/app/routes/api_auth.py	271	runtime_active
+POST	/auth/reset-password	backend/app/routes/api_auth.py	293	runtime_active
+POST	/auth/send-invite	backend/app/routes/api_auth.py	305	runtime_only
+GET	/auth/validate-invite	backend/app/routes/api_auth.py	332	runtime_only
+POST	/auth/refresh	backend/app/routes/api_auth.py	345	runtime_active
+GET	/auth/me	backend/app/routes/api_auth.py	420	runtime_active
+PATCH	/auth/me	backend/app/routes/api_auth.py	425	runtime_active
+POST	/auth/me/avatar	backend/app/routes/api_auth.py	441	runtime_active
+GET	/auth/avatar/{media_id}	backend/app/routes/api_auth.py	510	runtime_active
+POST	/auth/register	backend/app/routes/auth.py	97	legacy_duplicate
+POST	/auth/login	backend/app/routes/auth.py	143	legacy_duplicate
+POST	/auth/forgot-password	backend/app/routes/auth.py	194	legacy_duplicate
+POST	/auth/reset-password	backend/app/routes/auth.py	204	legacy_duplicate
+POST	/auth/refresh	backend/app/routes/auth.py	213	legacy_duplicate
+
+ambiguity_resolution_log
+POST	/auth/forgot-password	backend/app/routes/api_auth.py:271; backend/app/routes/auth.py:194	rule=RULE11	canonical=backend/app/routes/api_auth.py (api_auth router)	legacy=backend/app/routes/auth.py (auth router)	api_auth_mounted=True	legacy_mounted=False	stop=none	action=mark legacy router entry as legacy_duplicate
+POST	/auth/login	backend/app/routes/api_auth.py:224; backend/app/routes/auth.py:143	rule=RULE11	canonical=backend/app/routes/api_auth.py (api_auth router)	legacy=backend/app/routes/auth.py (auth router)	api_auth_mounted=True	legacy_mounted=False	stop=none	action=mark legacy router entry as legacy_duplicate
+POST	/auth/refresh	backend/app/routes/api_auth.py:345; backend/app/routes/auth.py:213	rule=RULE11	canonical=backend/app/routes/api_auth.py (api_auth router)	legacy=backend/app/routes/auth.py (auth router)	api_auth_mounted=True	legacy_mounted=False	stop=none	action=mark legacy router entry as legacy_duplicate
+POST	/auth/register	backend/app/routes/api_auth.py:165; backend/app/routes/auth.py:97	rule=RULE11	canonical=backend/app/routes/api_auth.py (api_auth router)	legacy=backend/app/routes/auth.py (auth router)	api_auth_mounted=True	legacy_mounted=False	stop=none	action=mark legacy router entry as legacy_duplicate
+POST	/auth/reset-password	backend/app/routes/api_auth.py:293; backend/app/routes/auth.py:204	rule=RULE11	canonical=backend/app/routes/api_auth.py (api_auth router)	legacy=backend/app/routes/auth.py (auth router)	api_auth_mounted=True	legacy_mounted=False	stop=none	action=mark legacy router entry as legacy_duplicate
+
+frontend_missing_auth_routes
+DELETE	/auth/me	frontend/lib/mvp/api_client.dart:70	frontend_missing
+POST	/auth/forgot-password	frontend/lib/api/auth_repository.dart:68	unmounted_frontend_ref
+POST	/auth/reset-password	frontend/lib/api/auth_repository.dart:86	unmounted_frontend_ref
+
+runtime_only_auth_routes
+POST	/auth/request-password-reset	backend/app/routes/api_auth.py:270
+POST	/auth/send-invite	backend/app/routes/api_auth.py:305
+GET	/auth/validate-invite	backend/app/routes/api_auth.py:332
+
+catalog_only_auth_routes
+NONE
+
+unused_runtime_auth_routes
+POST	/auth/oauth	backend/app/routes/api_auth.py:156
+POST	/auth/me/avatar	backend/app/routes/api_auth.py:441
