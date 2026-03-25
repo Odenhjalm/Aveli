@@ -1,0 +1,2 @@
+-- baseline snapshot created manually
+-- database schema is already in sync
