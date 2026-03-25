@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -52,6 +53,7 @@ _TOOL_DEFINITIONS = [
         },
     },
 ]
+_MCP_SERVER_NAME = "aveli-domain-observability-mcp"
 
 
 def _client_is_local(request: Request) -> bool:
@@ -101,6 +103,17 @@ def _response_headers(protocol_version: str) -> dict[str, str]:
     return {"MCP-Protocol-Version": protocol_version}
 
 
+def _contract_response(*, status: str, data: dict[str, Any], query: str | None) -> dict[str, Any]:
+    source = {"server": _MCP_SERVER_NAME, "timestamp": datetime.now(timezone.utc).isoformat()}
+    if query:
+        source["query"] = query
+    return {
+        "status": status,
+        "data": data,
+        "source": source,
+    }
+
+
 def _jsonrpc_result(request_id: Any, result: dict[str, Any], *, protocol_version: str) -> JSONResponse:
     return JSONResponse(
         content={"jsonrpc": "2.0", "id": request_id, "result": result},
@@ -130,36 +143,19 @@ def _jsonrpc_error(
 def _tool_success(payload: dict[str, Any]) -> dict[str, Any]:
     normalized_payload = dict(payload)
     normalized_payload.setdefault("environment", settings.mcp_environment)
-    return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps(
-                    normalized_payload,
-                    ensure_ascii=False,
-                    indent=2,
-                    sort_keys=True,
-                ),
-            }
-        ]
-    }
+    return _contract_response(
+        status="ok",
+        data=normalized_payload,
+        query="tools/call",
+    ) | {"confidence": "high"}
 
 
 def _tool_error(message: str) -> dict[str, Any]:
-    return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps(
-                    {"error": message},
-                    ensure_ascii=False,
-                    indent=2,
-                    sort_keys=True,
-                ),
-            }
-        ],
-        "isError": True,
-    }
+    return _contract_response(
+        status="error",
+        data={"error": message},
+        query="tools/call",
+    ) | {"confidence": "low"}
 
 
 def _unexpected_keys(arguments: dict[str, Any], allowed: set[str]) -> set[str]:
@@ -211,7 +207,15 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
 @router.get("/mcp/domain-observability")
 async def domain_observability_mcp_stream(request: Request) -> Response:
     _ensure_access_allowed(request)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return JSONResponse(
+        content=_contract_response(
+            status="ok",
+            data={},
+            query="GET /mcp/domain-observability",
+        )
+        | {"confidence": "low"},
+        headers=_response_headers(_FALLBACK_PROTOCOL_VERSION),
+    )
 
 
 @router.post("/mcp/domain-observability")
@@ -292,6 +296,14 @@ async def domain_observability_mcp_endpoint(request: Request) -> Response:
         tool_name = params.get("name")
         arguments = params.get("arguments") or {}
         if not isinstance(tool_name, str) or not tool_name:
+            return _jsonrpc_error(
+                request_id,
+                code=-32602,
+                message="Tool name is required",
+                protocol_version=protocol_version,
+            )
+        tool_name = tool_name.strip("'\"")
+        if not tool_name:
             return _jsonrpc_error(
                 request_id,
                 code=-32602,
