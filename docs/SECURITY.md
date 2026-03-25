@@ -1,7 +1,6 @@
 # Security & Secret Hygiene
 
-## Current status
-- All committed secrets were removed from the repo. The leaked values in `.env`/`.env.test` included Supabase DB credentials, Supabase API keys (publishable/secret), Stripe test keys, LiveKit keys, JWT/media secrets. Rotate them immediately.
+
 
 ## Rotation checklist
 1. **Supabase**
