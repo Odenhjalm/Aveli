@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 
@@ -150,20 +148,18 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
         },
     )
     assert tool_call.status_code == 200
-    parsed = json.loads(tool_call.json()["result"]["content"][0]["text"])
-    assert parsed["subject"] == {"user_id": "user-123"}
-    assert parsed["status"] == "warning"
-    assert parsed["state_summary"]["role_state"] == "teacher"
-    assert parsed["state_summary"]["authored_course_count"] == 2
-    assert parsed["truth_sources"]["courses"]["authored_course_ids"] == [
+    result = tool_call.json()["result"]
+    assert result["status"] == "ok"
+    assert result["confidence"] == "high"
+    assert result["source"]["server"] == "aveli-domain-observability-mcp"
+    assert result["data"]["subject"] == {"user_id": "user-123"}
+    assert result["data"]["status"] == "warning"
+    assert result["data"]["state_summary"]["role_state"] == "teacher"
+    assert result["data"]["state_summary"]["authored_course_count"] == 2
+    assert result["data"]["truth_sources"]["courses"]["authored_course_ids"] == [
         "course-a",
         "course-b",
     ]
-    assert parsed["environment"] == {
-        "mcp_mode": "local",
-        "production_data": False,
-        "access_mode": "read_only",
-    }
 
 
 async def test_domain_observability_mcp_inspect_media_asset(async_client, monkeypatch):
@@ -255,14 +251,17 @@ async def test_domain_observability_mcp_inspect_media_asset(async_client, monkey
         },
     )
     assert tool_call.status_code == 200
-    parsed = json.loads(tool_call.json()["result"]["content"][0]["text"])
-    assert parsed["subject"] == {
+    result = tool_call.json()["result"]
+    assert result["status"] == "ok"
+    assert result["confidence"] == "high"
+    assert result["source"]["server"] == "aveli-domain-observability-mcp"
+    assert result["data"]["subject"] == {
         "mode": "asset",
         "asset_id": "asset-123",
         "lesson_id": "lesson-123",
     }
-    assert parsed["status"] == "ok"
-    assert parsed["state_summary"] == {
+    assert result["data"]["status"] == "ok"
+    assert result["data"]["state_summary"] == {
         "control_plane_state": "projected_ready",
         "asset_count": 1,
         "lesson_media_count": 1,
@@ -270,7 +269,10 @@ async def test_domain_observability_mcp_inspect_media_asset(async_client, monkey
         "recent_failure_count": 0,
         "worker_status": "ok",
     }
-    assert parsed["truth_sources"]["media_control_plane"]["asset"]["asset_id"] == "asset-123"
+    assert (
+        result["data"]["truth_sources"]["media_control_plane"]["asset"]["asset_id"]
+        == "asset-123"
+    )
 
 
 async def test_domain_observability_mcp_inspect_media_asset_keeps_worker_health_out_of_status(
@@ -369,7 +371,10 @@ async def test_domain_observability_mcp_inspect_media_asset_keeps_worker_health_
         },
     )
     assert tool_call.status_code == 200
-    parsed = json.loads(tool_call.json()["result"]["content"][0]["text"])
-    assert parsed["status"] == "ok"
-    assert parsed["violations"] == []
-    assert parsed["environment_signals"]["worker_status"] == "degraded"
+    result = tool_call.json()["result"]
+    assert result["status"] == "ok"
+    assert result["confidence"] == "high"
+    assert result["source"]["server"] == "aveli-domain-observability-mcp"
+    assert result["data"]["status"] == "ok"
+    assert result["data"]["violations"] == []
+    assert result["data"]["environment_signals"]["worker_status"] == "degraded"

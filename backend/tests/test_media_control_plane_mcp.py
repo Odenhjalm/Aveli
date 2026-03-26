@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 
@@ -62,6 +60,12 @@ async def test_media_control_plane_mcp_initialize_and_tool_call(async_client, mo
         "local",
         raising=False,
     )
+    monkeypatch.setattr(
+        media_control_plane_mcp.settings,
+        "media_control_plane_mcp_enabled",
+        True,
+        raising=False,
+    )
 
     initialize = await async_client.post(
         "/mcp/media-control-plane",
@@ -110,19 +114,23 @@ async def test_media_control_plane_mcp_initialize_and_tool_call(async_client, mo
         },
     )
     assert tool_call.status_code == 200
-    content = tool_call.json()["result"]["content"]
-    assert len(content) == 1
-    parsed = json.loads(content[0]["text"])
-    assert parsed["asset"]["asset_id"] == "asset-123"
-    assert parsed["state_classification"] == "projected_ready"
-    assert parsed["environment"] == {
-        "mcp_mode": "local",
-        "production_data": False,
-        "access_mode": "read_only",
-    }
+    result = tool_call.json()["result"]
+    assert result["status"] == "ok"
+    assert result["confidence"] == "high"
+    assert result["source"]["server"] == "aveli-media-control-plane-mcp"
+    assert result["data"]["asset"]["asset_id"] == "asset-123"
+    assert result["data"]["state_classification"] == "projected_ready"
 
 
-async def test_media_control_plane_mcp_rejects_non_local_origin(async_client):
+async def test_media_control_plane_mcp_rejects_non_local_origin(async_client, monkeypatch):
+    from app.routes import media_control_plane_mcp
+
+    monkeypatch.setattr(
+        media_control_plane_mcp.settings,
+        "media_control_plane_mcp_enabled",
+        True,
+        raising=False,
+    )
     response = await async_client.post(
         "/mcp/media-control-plane",
         json=_initialize_payload(),
@@ -139,7 +147,17 @@ async def test_media_control_plane_mcp_rejects_non_local_origin(async_client):
     )
 
 
-async def test_media_control_plane_mcp_missing_asset_id_returns_jsonrpc_error(async_client):
+async def test_media_control_plane_mcp_missing_asset_id_returns_jsonrpc_error(
+    async_client, monkeypatch
+):
+    from app.routes import media_control_plane_mcp
+
+    monkeypatch.setattr(
+        media_control_plane_mcp.settings,
+        "media_control_plane_mcp_enabled",
+        True,
+        raising=False,
+    )
     await async_client.post(
         "/mcp/media-control-plane",
         json=_initialize_payload(),
@@ -164,6 +182,8 @@ async def test_media_control_plane_mcp_missing_asset_id_returns_jsonrpc_error(as
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["error"]["code"] == -32602
-    assert payload["error"]["message"] == "asset_id is required"
+    result = response.json()["result"]
+    assert result["status"] == "error"
+    assert result["confidence"] == "low"
+    assert result["source"]["server"] == "aveli-media-control-plane-mcp"
+    assert result["data"] == {"error": "asset_id is required"}

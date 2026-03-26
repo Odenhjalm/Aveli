@@ -162,12 +162,10 @@ def _jsonrpc_error(
 
 
 def _tool_success(payload: dict[str, Any]) -> dict[str, Any]:
-    normalized_payload = dict(payload)
-    normalized_payload.setdefault("environment", settings.mcp_environment)
     return _contract_response(
         status="ok",
-        data=normalized_payload,
-        query="tools/call",
+        data=payload,
+        query=None,
     ) | {"confidence": "high"}
 
 
@@ -175,7 +173,7 @@ def _tool_error(message: str) -> dict[str, Any]:
     return _contract_response(
         status="error",
         data={"error": message},
-        query="tools/call",
+        query=None,
     ) | {"confidence": "low"}
 
 
@@ -328,41 +326,36 @@ async def media_control_plane_mcp_endpoint(request: Request) -> Response:
         tool_name = params.get("name")
         arguments = params.get("arguments") or {}
         if not isinstance(tool_name, str) or not tool_name.strip():
-            return _jsonrpc_error(
+            return _jsonrpc_result(
                 request_id,
-                code=-32602,
-                message="Tool name is required",
+                _tool_error("Tool name is required"),
                 protocol_version=protocol_version,
             )
         tool_name = tool_name.strip("'\"")
         if not tool_name:
-            return _jsonrpc_error(
+            return _jsonrpc_result(
                 request_id,
-                code=-32602,
-                message="Tool name is required",
+                _tool_error("Tool name is required"),
                 protocol_version=protocol_version,
             )
         if not isinstance(arguments, dict):
-            return _jsonrpc_error(
+            return _jsonrpc_result(
                 request_id,
-                code=-32602,
-                message="Tool arguments must be an object",
+                _tool_error("Tool arguments must be an object"),
                 protocol_version=protocol_version,
             )
         try:
             tool_payload = await _call_tool(name=tool_name, arguments=arguments)
         except KeyError:
-            return _jsonrpc_error(
+            return _jsonrpc_result(
                 request_id,
-                code=-32601,
-                message=f"Unknown tool: {tool_name}",
+                _tool_error(f"Unknown tool: {tool_name}"),
                 protocol_version=protocol_version,
             )
         except ValueError as exc:
-            return _jsonrpc_error(
+            return _jsonrpc_result(
                 request_id,
-                code=-32602,
-                message=str(exc),
+                _tool_error(str(exc)),
                 protocol_version=protocol_version,
             )
         except Exception as exc:  # pragma: no cover - defensive boundary

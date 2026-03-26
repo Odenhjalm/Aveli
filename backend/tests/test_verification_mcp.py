@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 
@@ -77,6 +75,12 @@ async def test_verification_mcp_initialize_and_tool_call(async_client, monkeypat
         "local",
         raising=False,
     )
+    monkeypatch.setattr(
+        verification_mcp.settings,
+        "verification_mcp_enabled",
+        True,
+        raising=False,
+    )
 
     initialize = await async_client.post(
         "/mcp/verification",
@@ -119,18 +123,22 @@ async def test_verification_mcp_initialize_and_tool_call(async_client, monkeypat
         },
     )
     assert tool_call.status_code == 200
-    content = tool_call.json()["result"]["content"]
-    assert len(content) == 1
-    parsed = json.loads(content[0]["text"])
-    assert parsed["recommended_calls"][0]["tool"] == "verify_lesson_media_truth"
-    assert parsed["environment"] == {
-        "mcp_mode": "local",
-        "production_data": False,
-        "access_mode": "read_only",
-    }
+    result = tool_call.json()["result"]
+    assert result["status"] == "ok"
+    assert result["confidence"] == "high"
+    assert result["source"]["server"] == "aveli-verification-mcp"
+    assert result["data"]["recommended_calls"][0]["tool"] == "verify_lesson_media_truth"
 
 
-async def test_verification_mcp_rejects_non_local_origin(async_client):
+async def test_verification_mcp_rejects_non_local_origin(async_client, monkeypatch):
+    from app.routes import verification_mcp
+
+    monkeypatch.setattr(
+        verification_mcp.settings,
+        "verification_mcp_enabled",
+        True,
+        raising=False,
+    )
     response = await async_client.post(
         "/mcp/verification",
         json=_initialize_payload(),
@@ -144,7 +152,15 @@ async def test_verification_mcp_rejects_non_local_origin(async_client):
     assert response.json()["detail"] == "Verification MCP rejected the supplied Origin header"
 
 
-async def test_verification_mcp_missing_lesson_id_returns_jsonrpc_error(async_client):
+async def test_verification_mcp_missing_lesson_id_returns_jsonrpc_error(async_client, monkeypatch):
+    from app.routes import verification_mcp
+
+    monkeypatch.setattr(
+        verification_mcp.settings,
+        "verification_mcp_enabled",
+        True,
+        raising=False,
+    )
     await async_client.post(
         "/mcp/verification",
         json=_initialize_payload(),
@@ -169,6 +185,8 @@ async def test_verification_mcp_missing_lesson_id_returns_jsonrpc_error(async_cl
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["error"]["code"] == -32602
-    assert payload["error"]["message"] == "lesson_id is required"
+    result = response.json()["result"]
+    assert result["status"] == "error"
+    assert result["confidence"] == "low"
+    assert result["source"]["server"] == "aveli-verification-mcp"
+    assert result["data"] == {"error": "lesson_id is required"}

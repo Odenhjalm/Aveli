@@ -1,7 +1,9 @@
-import json
 import uuid
 
 import pytest
+
+from app import db, models
+from app.auth import create_access_token
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -25,20 +27,10 @@ def _auth_header(token: str) -> dict[str, str]:
 
 
 async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
-    from app import db
-
     email = f"logs_mcp_teacher_{uuid.uuid4().hex[:8]}@example.com"
     password = "Secret123!"
-    register_resp = await async_client.post(
-        "/auth/register",
-        json={"email": email, "password": password, "display_name": "Teacher"},
-    )
-    assert register_resp.status_code == 201, register_resp.text
-    tokens = register_resp.json()
-    headers = _auth_header(tokens["access_token"])
-    me_resp = await async_client.get("/auth/me", headers=headers)
-    assert me_resp.status_code == 200, me_resp.text
-    user_id = str(me_resp.json()["user_id"])
+    user_id = str(await models.create_user(email, password, "Teacher"))
+    headers = _auth_header(create_access_token(user_id))
 
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -131,6 +123,7 @@ async def test_logs_mcp_initialize_and_tool_call(async_client, monkeypatch):
         raising=True,
     )
     monkeypatch.setattr(logs_mcp.settings, "mcp_mode", "local", raising=False)
+    monkeypatch.setattr(logs_mcp.settings, "logs_mcp_enabled", True, raising=False)
 
     initialize = await async_client.post(
         "/mcp/logs",
@@ -173,18 +166,17 @@ async def test_logs_mcp_initialize_and_tool_call(async_client, monkeypatch):
         },
     )
     assert tool_call.status_code == 200
-    content = tool_call.json()["result"]["content"]
-    assert len(content) == 1
-    parsed = json.loads(content[0]["text"])
-    assert parsed["worker_health"]["media_transcode"]["status"] == "ok"
-    assert parsed["environment"] == {
-        "mcp_mode": "local",
-        "production_data": False,
-        "access_mode": "read_only",
-    }
+    result = tool_call.json()["result"]
+    assert result["status"] == "ok"
+    assert result["confidence"] == "high"
+    assert result["source"]["server"] == "aveli-logs-mcp"
+    assert result["data"]["worker_health"]["media_transcode"]["status"] == "ok"
 
 
-async def test_logs_mcp_rejects_non_local_origin(async_client):
+async def test_logs_mcp_rejects_non_local_origin(async_client, monkeypatch):
+    from app.routes import logs_mcp
+
+    monkeypatch.setattr(logs_mcp.settings, "logs_mcp_enabled", True, raising=False)
     response = await async_client.post(
         "/mcp/logs",
         json=_initialize_payload(),
@@ -198,7 +190,10 @@ async def test_logs_mcp_rejects_non_local_origin(async_client):
     assert response.json()["detail"] == "Logs MCP rejected the supplied Origin header"
 
 
-async def test_logs_mcp_invalid_window_returns_jsonrpc_error(async_client):
+async def test_logs_mcp_invalid_window_returns_jsonrpc_error(async_client, monkeypatch):
+    from app.routes import logs_mcp
+
+    monkeypatch.setattr(logs_mcp.settings, "logs_mcp_enabled", True, raising=False)
     await async_client.post(
         "/mcp/logs",
         json=_initialize_payload(),
@@ -223,17 +218,21 @@ async def test_logs_mcp_invalid_window_returns_jsonrpc_error(async_client):
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["error"]["code"] == -32602
-    assert "Unsupported window" in payload["error"]["message"]
+    result = response.json()["result"]
+    assert result["status"] == "error"
+    assert result["confidence"] == "low"
+    assert result["source"]["server"] == "aveli-logs-mcp"
+    assert "Unsupported window" in result["data"]["error"]
 
 
-async def test_logs_mcp_tools_execute_with_typed_media_failure_queries(async_client):
-    from app import models
+async def test_logs_mcp_tools_execute_with_typed_media_failure_queries(async_client, monkeypatch):
     from app.repositories import media_assets as media_assets_repo
     from app.repositories import media_resolution_failures as media_resolution_failures_repo
+    from app.routes import logs_mcp
 
     await _ensure_media_resolution_failures_table()
+    monkeypatch.setattr(logs_mcp.settings, "mcp_mode", "local", raising=False)
+    monkeypatch.setattr(logs_mcp.settings, "logs_mcp_enabled", True, raising=False)
     headers, user_id = await _register_teacher(async_client)
     course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
 
@@ -307,13 +306,14 @@ async def test_logs_mcp_tools_execute_with_typed_media_failure_queries(async_cli
         },
     )
     assert media_failures_unfiltered.status_code == 200
-    unfiltered_payload = json.loads(
-        media_failures_unfiltered.json()["result"]["content"][0]["text"]
-    )
-    assert unfiltered_payload["asset_id"] is None
+    unfiltered_result = media_failures_unfiltered.json()["result"]
+    assert unfiltered_result["status"] == "ok"
+    assert unfiltered_result["confidence"] == "high"
+    assert unfiltered_result["source"]["server"] == "aveli-logs-mcp"
+    assert unfiltered_result["data"]["asset_id"] is None
     assert {
         item["source"]
-        for item in unfiltered_payload["media_failures"]
+        for item in unfiltered_result["data"]["media_failures"]
     } >= {"media_assets", "media_resolution_failures"}
 
     media_failures_filtered = await async_client.post(
@@ -333,14 +333,15 @@ async def test_logs_mcp_tools_execute_with_typed_media_failure_queries(async_cli
         },
     )
     assert media_failures_filtered.status_code == 200
-    filtered_payload = json.loads(
-        media_failures_filtered.json()["result"]["content"][0]["text"]
-    )
-    assert filtered_payload["asset_id"] == asset_id
-    assert filtered_payload["media_failures"]
+    filtered_result = media_failures_filtered.json()["result"]
+    assert filtered_result["status"] == "ok"
+    assert filtered_result["confidence"] == "high"
+    assert filtered_result["source"]["server"] == "aveli-logs-mcp"
+    assert filtered_result["data"]["asset_id"] == asset_id
+    assert filtered_result["data"]["media_failures"]
     assert all(
         (item.get("details") or {}).get("asset_id") == asset_id
-        for item in filtered_payload["media_failures"]
+        for item in filtered_result["data"]["media_failures"]
         if item["source"] in {"media_assets", "media_resolution_failures"}
     )
 
@@ -358,9 +359,16 @@ async def test_logs_mcp_tools_execute_with_typed_media_failure_queries(async_cli
         },
     )
     assert cleanup_activity.status_code == 200
+    cleanup_result = cleanup_activity.json()["result"]
+    assert cleanup_result["status"] == "ok"
+    assert cleanup_result["confidence"] == "high"
+    assert cleanup_result["source"]["server"] == "aveli-logs-mcp"
 
 
-async def test_logs_mcp_notification_returns_accepted(async_client):
+async def test_logs_mcp_notification_returns_accepted(async_client, monkeypatch):
+    from app.routes import logs_mcp
+
+    monkeypatch.setattr(logs_mcp.settings, "logs_mcp_enabled", True, raising=False)
     response = await async_client.post(
         "/mcp/logs",
         json={"jsonrpc": "2.0", "method": "notifications/initialized"},
