@@ -14,6 +14,8 @@ async def grant_course_entitlement(
     stripe_customer_id: str | None,
     payment_intent_id: str | None,
 ) -> dict[str, Any]:
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
+    # Keep app.course_entitlements synchronized only for purchase compatibility.
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -54,6 +56,7 @@ async def grant_course_entitlement(
 
 
 async def list_entitlements_for_user(user_id: str | UUID) -> list[str]:
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -71,6 +74,7 @@ async def list_entitlements_for_user(user_id: str | UUID) -> list[str]:
 
 
 async def revoke_course_entitlement(user_id: str | UUID, course_slug: str) -> bool:
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(

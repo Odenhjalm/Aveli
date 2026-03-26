@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from ..auth import CurrentUser
 from ..db import get_conn, get_test_session_id
 from ..routes import media as media_routes
-from ..services import entitlement_service, runtime_media_service
+from ..services import courses_service, entitlement_service, runtime_media_service
 from ..services.entitlement_service import fetch_one
 from ..services.playback_delivery_service import (
     resolve_runtime_media_playback_url,
@@ -63,7 +63,14 @@ async def _resolve_course_id_for_lesson_media(
     return str(course_id)
 
 
-async def _enforce_course_entitlement(db, *, user_id: str, course_id: str) -> None:
+async def _enforce_course_access(db, *, user_id: str, course_id: str) -> None:
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
+    if await courses_service.is_course_teacher_or_instructor(user_id, course_id):
+        return
+    if await courses_service.is_user_enrolled(user_id, course_id):
+        return
+
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
     has_access = await entitlement_service.has_course_access(
         db=db,
         user_id=user_id,
@@ -139,7 +146,7 @@ async def resolve_lesson_playback(
             lesson_media_id=lesson_media_id,
             current_session_id=current_session_id,
         )
-        await _enforce_course_entitlement(
+        await _enforce_course_access(
             db,
             user_id=user_id,
             course_id=course_id,
@@ -175,7 +182,7 @@ async def stream_runtime_media(
             runtime_media_id=str(runtime_media_id),
             current_session_id=current_session_id,
         )
-        await _enforce_course_entitlement(
+        await _enforce_course_access(
             db,
             user_id=user_id,
             course_id=course_id,

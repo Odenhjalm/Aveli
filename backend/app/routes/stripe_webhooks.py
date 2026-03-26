@@ -133,6 +133,15 @@ async def stripe_payment_element_webhook(request: Request):
                 user_id = metadata.get("user_id")
                 course_slug = metadata.get("course_slug")
                 if user_id and course_slug:
+                    course_row = await courses_repo.get_course_by_slug(str(course_slug))
+                    if course_row and course_row.get("id"):
+                        # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
+                        await courses_repo.ensure_course_enrollment(
+                            str(user_id),
+                            str(course_row["id"]),
+                            source="purchase",
+                        )
+                    # LEGACY ACCESS PATH — DO NOT EXTEND.
                     await course_entitlements.grant_course_entitlement(
                         user_id=str(user_id),
                         course_slug=str(course_slug),
@@ -214,19 +223,21 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
     user_id = metadata.get("user_id") or (order.get("user_id") if order else None)
     course_slug = metadata.get("course_slug")
     if user_id and course_slug:
+        course_row = await courses_repo.get_course_by_slug(course_slug)
+        if course_row and course_row.get("id"):
+            # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
+            await courses_repo.ensure_course_enrollment(
+                str(user_id),
+                str(course_row["id"]),
+                source="purchase",
+            )
+        # LEGACY ACCESS PATH — DO NOT EXTEND.
         await course_entitlements.grant_course_entitlement(
             user_id=str(user_id),
             course_slug=str(course_slug),
             stripe_customer_id=stripe_customer_id,
             payment_intent_id=str(payment_intent) if payment_intent else None,
         )
-        course_row = await courses_repo.get_course_by_slug(course_slug)
-        if course_row and course_row.get("id"):
-            await courses_repo.ensure_course_enrollment(
-                str(user_id),
-                str(course_row["id"]),
-                source="purchase",
-            )
 
     bundle_id = metadata.get("bundle_id")
     if user_id and bundle_id:
@@ -313,9 +324,11 @@ async def _handle_refund_event(event_type: str, payload: dict[str, object]) -> N
         return
 
     course_slug = course.get("slug")
-    if course_slug:
-        await course_entitlements.revoke_course_entitlement(user_id_value, str(course_slug))
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
     await courses_repo.revoke_course_enrollment(user_id_value, course_id_value)
+    if course_slug:
+        # LEGACY ACCESS PATH — DO NOT EXTEND.
+        await course_entitlements.revoke_course_entitlement(user_id_value, str(course_slug))
 
     previous_status = str(refunded_order.get("previous_status") or "").lower()
     if previous_status == "refunded":

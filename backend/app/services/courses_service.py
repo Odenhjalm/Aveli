@@ -947,6 +947,7 @@ async def delete_course(course_id: str) -> bool:
 
 
 async def list_modules(course_id: str) -> Sequence[dict[str, Any]]:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     """Return ordered modules for a course."""
     rows = await courses_repo.list_modules(course_id)
     return _materialize_rows(rows)
@@ -959,6 +960,7 @@ async def create_module(
     position: int = 0,
     module_id: str | None = None,
 ) -> dict[str, Any]:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     row = await courses_repo.create_module(
         course_id,
         title=title,
@@ -973,6 +975,7 @@ async def upsert_module(
     course_id: str,
     payload: ModulePayload,
 ) -> dict[str, Any]:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     """Create or update a module."""
     row = await courses_repo.upsert_module(course_id, payload)
     materialized = _materialize_optional_row(row)
@@ -980,6 +983,7 @@ async def upsert_module(
 
 
 async def delete_module(module_id: str) -> bool:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     """Remove a module using the repository."""
     deleted = await courses_repo.delete_module(module_id)
     if deleted:
@@ -988,6 +992,7 @@ async def delete_module(module_id: str) -> bool:
 
 
 async def list_lessons(module_id: str) -> Sequence[dict[str, Any]]:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     """Return lessons for the supplied module."""
     rows = await courses_repo.list_lessons(module_id)
     return _materialize_rows(rows)
@@ -1406,6 +1411,7 @@ async def is_course_teacher_or_instructor(user_id: str, course_id: str) -> bool:
 
 
 async def is_user_enrolled(user_id: str, course_id: str) -> bool:
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
     """Check whether the user is enrolled in the course."""
     return await courses_repo.is_enrolled(user_id, course_id)
 
@@ -1423,12 +1429,15 @@ async def can_user_read_course(
     if await is_course_teacher_or_instructor(normalized_user_id, course_id):
         return True
 
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
     if await is_user_enrolled(normalized_user_id, course_id):
         return True
 
     if not bool(course.get("is_free_intro")):
         return False
 
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
+    # Free-intro and membership fallbacks stay in place for compatibility only.
     if await courses_repo.user_owns_any_course_step(normalized_user_id, "step1"):
         return True
 
@@ -1447,7 +1456,11 @@ async def enroll_free_intro(user_id: str, course_id: str) -> dict[str, Any]:
     if not bool(course.get("is_free_intro")):
         return {"ok": False, "status": "not_free_intro"}
 
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
+    # Step-ownership checks remain compatibility-only while intro grants write to
+    # enrollments as the canonical authority.
     if await courses_repo.user_owns_any_course_step(user_id, "step1"):
+        # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
         await courses_repo.ensure_course_enrollment(user_id, course_id, source="free_intro")
         return {"ok": True, "status": "step1_unlimited"}
 
@@ -1480,11 +1493,15 @@ async def course_access_snapshot(user_id: str, course_id: str) -> dict[str, Any]
             "latest_order": await latest_order_for_course(user_id, course_id),
         }
 
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
     enrolled = await is_user_enrolled(user_id, course_id)
     latest_order = await latest_order_for_course(user_id, course_id)
     profile = await get_profile(user_id)
     subscription = await get_latest_subscription(user_id)
     is_admin = _is_admin_profile(profile)
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
+    # Subscription/admin compatibility stays here until the runtime is fully
+    # enrollment-backed.
     has_active_subscription = (
         _has_active_subscription(profile, subscription) and not is_admin
     )

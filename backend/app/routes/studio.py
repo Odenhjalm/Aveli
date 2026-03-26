@@ -1522,6 +1522,7 @@ async def create_module(
     payload: schemas.StudioModuleCreate,
     current: TeacherUser,
 ):
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     if not await models.is_course_owner(current["id"], payload.course_id):
         _log_course_owner_denied(
             str(current["id"]),
@@ -1546,6 +1547,7 @@ async def update_module(
     payload: schemas.StudioModuleUpdate,
     current: TeacherUser,
 ):
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     course_id = await courses_service.get_module_course_id(module_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
         _log_course_owner_denied(
@@ -1566,6 +1568,7 @@ async def update_module(
 
 @router.delete("/modules/{module_id}")
 async def delete_module(module_id: str, current: TeacherUser):
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     course_id = await courses_service.get_module_course_id(module_id)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
         _log_course_owner_denied(

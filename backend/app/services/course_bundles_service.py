@@ -219,18 +219,20 @@ async def grant_bundle_entitlements(
     for course in courses:
         slug = course.get("slug")
         course_id = course.get("course_id")
+        if course_id:
+            # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
+            await courses_repo.ensure_course_enrollment(
+                user_id,
+                str(course_id),
+                source="purchase",
+            )
         if slug:
+            # LEGACY ACCESS PATH — DO NOT EXTEND.
             await course_entitlements.grant_course_entitlement(
                 user_id=user_id,
                 course_slug=str(slug),
                 stripe_customer_id=stripe_customer_id,
                 payment_intent_id=payment_intent_id,
-            )
-        if course_id:
-            await courses_repo.ensure_course_enrollment(
-                user_id,
-                str(course_id),
-                source="purchase",
             )
 
 

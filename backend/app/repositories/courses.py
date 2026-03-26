@@ -690,6 +690,7 @@ async def delete_course(course_id: str) -> bool:
 
 
 async def list_modules(course_id: str) -> Sequence[ModuleRow]:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     query = """
         SELECT
             id,
@@ -708,6 +709,7 @@ async def list_modules(course_id: str) -> Sequence[ModuleRow]:
 
 
 async def get_module(module_id: str) -> ModuleRow | None:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     query = """
         SELECT
             id,
@@ -726,6 +728,7 @@ async def get_module(module_id: str) -> ModuleRow | None:
 
 
 async def get_module_course_id(module_id: str) -> str | None:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     query = "SELECT course_id FROM app.modules WHERE id = %s"
     async with get_conn() as cur:
         await cur.execute(query, (module_id,))
@@ -742,6 +745,7 @@ async def create_module(
     position: int = 0,
     module_id: str | None = None,
 ) -> ModuleRow | None:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     if title is None:
         raise ValueError("title is required when creating a module.")
 
@@ -778,6 +782,7 @@ async def upsert_module(
     course_id: str,
     data: Mapping[str, Any],
 ) -> ModuleRow | None:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     module_id = data.get("id")
     title = data.get("title")
     position = data.get("position")
@@ -832,6 +837,7 @@ async def upsert_module(
 
 
 async def delete_module(module_id: str) -> bool:
+    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -1656,6 +1662,7 @@ async def user_owns_course_step(user_id: str, course_family: str, step_level: st
     if not normalized_level or not normalized_family:
         return False
 
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
     query = """
         SELECT 1
         FROM app.course_entitlements ce
@@ -1699,6 +1706,7 @@ async def user_owns_any_course_step(user_id: str, step_level: str) -> bool:
     if not normalized_level:
         return False
 
+    # LEGACY ACCESS PATH — DO NOT EXTEND.
     query = """
         SELECT 1
         FROM app.course_entitlements ce
@@ -1739,6 +1747,7 @@ async def enforce_free_intro_enrollment(user_id: str, course_id: str) -> None:
 async def ensure_course_enrollment(
     user_id: str, course_id: str, *, source: str = "purchase"
 ) -> None:
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
     source_value = source or "purchase"
     query = """
         INSERT INTO app.enrollments (user_id, course_id, source)

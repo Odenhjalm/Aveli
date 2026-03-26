@@ -18,6 +18,8 @@ def _virtual_module(course_id: str) -> dict[str, Any]:
     The database no longer stores modules; lessons belong directly to a course.
     Some clients still expect modules + lessons-by-module payloads, so we expose a
     stable virtual module whose id equals the course id.
+
+    LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
     """
 
     return {

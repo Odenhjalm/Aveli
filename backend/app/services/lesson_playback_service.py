@@ -102,6 +102,13 @@ async def _authorize_lesson_playback(user_id: str, row: dict[str, Any]) -> None:
         return
     if not course_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
+    if await courses_service.is_user_enrolled(user_id, str(course_id)):
+        return
+
+    # Compatibility bridge only: preserve older non-enrollment access without
+    # adding new runtime dependencies on entitlements.
     snapshot = await models.course_access_snapshot(user_id, str(course_id))
     if snapshot.get("can_access") is True:
         return
@@ -114,6 +121,7 @@ async def _authorize_home_player_upload_playback(user_id: str, teacher_id: str) 
     async with get_conn() as cur:
         await cur.execute(
             """
+            -- ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
             SELECT 1
             FROM app.enrollments e
             JOIN app.courses c ON c.id = e.course_id
@@ -216,6 +224,13 @@ async def _authorize_legacy_media_playback(
         return
     if not course_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
+    if await courses_service.is_user_enrolled(user_id, str(course_id)):
+        return
+
+    # Compatibility bridge only: preserve older non-enrollment access without
+    # adding new runtime dependencies on entitlements.
     snapshot = await models.course_access_snapshot(user_id, str(course_id))
     if snapshot.get("can_access") is not True:
         raise HTTPException(
