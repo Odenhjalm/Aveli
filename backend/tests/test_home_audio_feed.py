@@ -238,6 +238,7 @@ async def test_home_audio_returns_runtime_media_ids_and_playability_metadata(
     item = next((it for it in items if it.get("id") == runtime_media_id), None)
     assert item, payload
     assert item.get("runtime_media_id") == runtime_media_id
+    assert item.get("source_type") == "course_link"
     assert item.get("lesson_id") == lesson_id
     assert item.get("course_id") == course_id
     assert item.get("lesson_title") == "Home track"
@@ -399,8 +400,12 @@ async def test_home_audio_direct_upload_uses_runtime_media_id(async_client, monk
     item = next((it for it in items if it.get("id") == runtime_media_id), None)
     assert item, resp.json()
     assert item.get("runtime_media_id") == runtime_media_id
+    assert item.get("source_type") == "direct_upload"
     assert item.get("title") == "Direct track"
     assert item.get("lesson_title") == "Direct track"
+    assert "lesson_id" not in item
+    assert "course_id" not in item
+    assert "course_title" not in item
     assert item.get("is_playable") is True
     assert item.get("playback_state") == "ready"
     assert item.get("failure_reason") == "ok_legacy_object"
@@ -501,12 +506,28 @@ async def test_home_audio_course_link_marks_missing_source_when_deleted(async_cl
         original_name="demo.mp3",
     )
     assert media_object
+    media_asset = await media_assets_repo.create_media_asset(
+        owner_id=owner_id,
+        course_id=course_id,
+        lesson_id=lesson_id,
+        media_type="audio",
+        purpose="lesson_audio",
+        ingest_format="mp3",
+        original_object_path=media_object["storage_path"],
+        original_content_type="audio/mpeg",
+        original_filename="demo.mp3",
+        original_size_bytes=3,
+        storage_bucket=media_object["storage_bucket"],
+        state="processing",
+    )
+    assert media_asset
     lesson_media = await models.add_lesson_media_entry(
         lesson_id=lesson_id,
         kind="audio",
         storage_path=media_object["storage_path"],
         storage_bucket=media_object["storage_bucket"],
         media_id=str(media_object["id"]),
+        media_asset_id=str(media_asset["id"]),
         position=1,
     )
     assert lesson_media

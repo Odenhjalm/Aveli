@@ -6,8 +6,8 @@ home_player_emit_canonical_runtime_projection
 
 ## PROBLEM
 
-- Home feed still returns mixed ids and partially-resolved playback URLs
-- Phase-2 design expects a canonical runtime projection with one public runtime id and playability metadata
+- Historical snapshot assumed Home feed still returned mixed ids and partially-resolved playback URLs
+- Current `/home/audio` runtime already emits `runtime_media_id`, `is_playable`, `playback_state`, and `failure_reason`
 - Equivalent handler expected in: `backend/app/routes/home.py`, `backend/app/repositories/home_player_library.py`, `backend/app/repositories/runtime_media.py`, `frontend/lib/features/home/data/home_audio_repository.dart`, `media_control_plane_phase2_design.md`, `homeplayer_audit_for_media_control_plane.md`
 
 ---
@@ -20,93 +20,28 @@ home_player_emit_canonical_runtime_projection
 
 ---
 
+## TASK VALIDITY
+
+- is_real_problem: true
+- already_satisfied: true
+- requires_code_change: false
+
+---
+
+## PROBLEM TYPE
+
+problem_type: contract_mismatch
+
+classification_reason: The original issue was a Home runtime contract mismatch where the feed exposed mixed identities and partially resolved playback state. Current code already emits the canonical projection, so this task remains only as already-satisfied historical evidence.
+
+---
+
 ## REQUIRED ACTION
 
-### STEP 1 — Locate candidates
+STOP TASK GENERATION
 
-- Open route source files:
-  `backend/app/routes/home.py`, `backend/app/repositories/home_player_library.py`, `backend/app/repositories/runtime_media.py`, `frontend/lib/features/home/data/home_audio_repository.dart`, `media_control_plane_phase2_design.md`, `homeplayer_audit_for_media_control_plane.md`
-
-- Identify every field in the current Home feed that leaks mixed identity or raw playback URL assumptions
-
-### STEP 2 — Handler selection
-
-#### STEP 2A — Selection criteria
-
-Selected projection MUST:
-
-- expose one canonical runtime id
-- expose playability state and display metadata
-- NOT expose mixed asset/object identities as primary public ids
-
-#### STEP 2B — Response contract (MANDATORY)
-
-Expected response MUST be defined BEFORE implementation.
-
-Response MUST:
-
-- be JSON
-- include canonical runtime id
-- include playability metadata
-- include display metadata without raw playback URLs as primary contract
-
-FOR read routes:
-- MUST return structured data (list or object)
-
-FOR write routes:
-- MUST return confirmation or created resource
-
-#### STEP 2C — Response validation rules
-
-Selected projection MUST:
-
-- be deterministic
-- NOT require Home-specific id branching in the frontend
-- NOT expose raw storage identity as the public runtime contract
-
-IF response contract is unclear:
-→ STOP
-
-#### STEP 2D — Selection rule
-
-IF multiple identity candidates exist:
-
-- prefer `runtime_media_id`
-- fallback to documented reference-layer equivalent only if explicitly proven
-
-- IF still ambiguous:
-  → STOP
-
-### STEP 3 — Adapter implementation
-
-#### STEP 3A — Route creation
-
-- Create canonical Home feed projection for:
-  GET `/home/audio`
-
-#### STEP 3B — Adapter rules
-
-New projection MUST:
-
-- reuse existing runtime projection logic directly
-- NOT duplicate playback resolution
-- NOT encode Home-only identity semantics
-
-#### STEP 3C — Request/response passthrough
-
-- Existing display metadata MUST remain usable
-- Canonical runtime id MUST be passed unchanged
-- No speculative transformations allowed
-
-### STEP 4 — Failure handling
-
-IF:
-
-- canonical runtime id cannot be proven
-- Home requires mixed ids to remain functional
-- projection requires new business logic
-
-→ STOP
+- retain this file only as completed historical evidence
+- do not generate new implementation work from this task
 
 ---
 
@@ -121,8 +56,6 @@ IF:
 
 ## VERIFICATION
 
-After change:
-
 - Home feed exposes one canonical runtime projection
 - frontend no longer needs mixed id interpretation
 - playability metadata is explicit
@@ -131,9 +64,8 @@ After change:
 
 ## STOP CONDITIONS
 
-- canonical runtime id cannot be proven
-- Home depends on mixed ids
-- task requires new business logic
+- this task is treated as unresolved implementation work
+- current runtime evidence is ignored
 
 ---
 

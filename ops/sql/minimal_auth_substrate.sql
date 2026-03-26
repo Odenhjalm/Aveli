@@ -21,9 +21,29 @@ create schema if not exists auth;
 create table if not exists auth.users (
   id uuid primary key,
   email text,
+  encrypted_password text,
+  email_confirmed_at timestamp with time zone,
+  confirmed_at timestamp with time zone,
+  raw_app_meta_data jsonb not null default '{}'::jsonb,
+  raw_user_meta_data jsonb not null default '{}'::jsonb,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now()
 );
+
+alter table auth.users
+  add column if not exists encrypted_password text;
+
+alter table auth.users
+  add column if not exists email_confirmed_at timestamp with time zone;
+
+alter table auth.users
+  add column if not exists confirmed_at timestamp with time zone;
+
+alter table auth.users
+  add column if not exists raw_app_meta_data jsonb not null default '{}'::jsonb;
+
+alter table auth.users
+  add column if not exists raw_user_meta_data jsonb not null default '{}'::jsonb;
 
 create or replace function auth.uid()
 returns uuid

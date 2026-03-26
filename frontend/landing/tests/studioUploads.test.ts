@@ -8,19 +8,22 @@ describe('uploadLessonMedia', () => {
   });
 
   it('performs presign, upload and completion', async () => {
-    const presignPayload = {
-      url: 'https://storage.test/upload',
-      method: 'PUT',
+    const uploadTargetPayload = {
+      media_id: 'media-1',
+      upload_url: 'https://storage.test/upload',
       headers: { 'x-upsert': 'true' },
       expires_at: new Date().toISOString(),
       storage_path: 'courses/course-1/lessons/lesson-id/video/file.mp4',
-      storage_bucket: 'course-media',
     };
 
     const responses = [
-      new Response(JSON.stringify(presignPayload), { status: 200 }),
+      new Response(JSON.stringify(uploadTargetPayload), { status: 200 }),
       new Response(null, { status: 200 }),
-      new Response(JSON.stringify({ id: 'media-1' }), { status: 200 }),
+      new Response(JSON.stringify({ state: 'ready' }), { status: 200 }),
+      new Response(
+        JSON.stringify({ lesson_media: { id: 'lesson-media-1' } }),
+        { status: 200 }
+      ),
     ];
 
     const fetchMock = vi.fn().mockImplementation(() => {
@@ -42,14 +45,15 @@ describe('uploadLessonMedia', () => {
       accessToken: 'token',
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock.mock.calls[0]?.[0]).toContain(
-      '/studio/lessons/lesson-id/media/presign'
+      '/api/media/upload-url'
     );
     expect(fetchMock.mock.calls[2]?.[0]).toContain(
-      '/studio/lessons/lesson-id/media/complete'
+      '/api/media/complete'
     );
-    expect(result).toEqual({ id: 'media-1' });
+    expect(fetchMock.mock.calls[3]?.[0]).toContain('/api/media/attach');
+    expect(result).toEqual({ id: 'lesson-media-1' });
   });
 
   it('throws when presign fails', async () => {
@@ -66,6 +70,6 @@ describe('uploadLessonMedia', () => {
         filename: 'demo.mp4',
         contentType: 'video/mp4',
       })
-    ).rejects.toThrow(/Lesson media presign failed/);
+    ).rejects.toThrow(/Lesson media upload-url failed/);
   });
 });

@@ -100,6 +100,16 @@ class DebugMediaResponse(BaseModel):
     signed_url: str
 
 
+@router.post("/sign", response_model=schemas.MediaSignResponse)
+async def sign_media_adapter(
+    payload: schemas.MediaSignRequest,
+    current: CurrentUser,
+) -> schemas.MediaSignResponse:
+    from . import media as legacy_media_routes
+
+    return await legacy_media_routes.sign_media(payload, current)
+
+
 def _normalized_preview_string(value: object | None) -> str | None:
     if value is None:
         return None

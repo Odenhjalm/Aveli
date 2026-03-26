@@ -153,8 +153,8 @@ media_upload_pipeline / alignment
 
 ## EXECUTION ORDER
 
-- Can be executed independently: false
-- Depends on: `api_align_media_sign_route`
+- Can be executed independently: true
+- Depends on: none
 
 ---
 

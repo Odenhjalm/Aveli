@@ -8,6 +8,31 @@ Read-only MCP layer that sits above the existing observability surfaces and retu
 - `GET /mcp/verification`
 - Local-only access, same JSON-RPC shape as the existing MCP routes
 - Disabled by default in cloud runtimes via `verification_mcp_enabled`
+- `POST /mcp/verification` currently supports:
+  - `initialize`
+  - `notifications/initialized`
+  - `tools/list`
+  - `tools/call`
+- `GET /mcp/verification` is an availability endpoint, not a tool-execution surface
+
+## Current mounted behavior
+
+- The mounted route is included directly in `backend/app/main.py`.
+- Successful `tools/call` responses are wrapped in the common MCP envelope:
+  - `status`
+  - `data`
+  - `source`
+  - `confidence`
+- This MCP server is evidence-only:
+  - it does not mutate runtime state
+  - it does not implement an automatic repo-wide execution gate for VERIFIED_TASKS
+
+## VERIFIED_TASK execution guidance
+
+- Use this MCP server when a task needs bounded verification evidence for lesson media, course covers, or the phase-2 truth sample set.
+- Run only the pre-checks and post-checks required by the current task scope.
+- Treat verification output as operator evidence, not as an autonomous approval system.
+- If task instructions require other MCP inputs as well, combine them manually with the relevant mounted routes.
 
 ## Service Structure
 

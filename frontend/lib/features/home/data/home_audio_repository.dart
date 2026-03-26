@@ -6,11 +6,12 @@ import 'package:aveli/api/auth_repository.dart';
 class HomeAudioItem {
   HomeAudioItem({
     required this.id,
-    required this.lessonId,
+    this.lessonId,
     required this.lessonTitle,
-    required this.courseId,
-    required this.courseTitle,
+    this.courseId,
+    this.courseTitle = '',
     this.courseSlug,
+    required this.sourceType,
     required this.kind,
     this.durationSeconds,
     this.createdAt,
@@ -28,11 +29,12 @@ class HomeAudioItem {
   });
 
   final String id;
-  final String lessonId;
+  final String? lessonId;
   final String lessonTitle;
-  final String courseId;
+  final String? courseId;
   final String courseTitle;
   final String? courseSlug;
+  final String sourceType;
   final String kind;
   final int? durationSeconds;
   final DateTime? createdAt;
@@ -56,11 +58,16 @@ class HomeAudioItem {
 
   factory HomeAudioItem.fromJson(Map<String, dynamic> json) => HomeAudioItem(
     id: json['id'] as String,
-    lessonId: json['lesson_id'] as String,
+    lessonId: json['lesson_id'] as String?,
     lessonTitle: (json['lesson_title'] ?? '') as String,
-    courseId: json['course_id'] as String,
+    courseId: json['course_id'] as String?,
     courseTitle: (json['course_title'] ?? '') as String,
     courseSlug: json['course_slug'] as String?,
+    sourceType:
+        (json['source_type'] as String?) ??
+        ((json['course_id'] ?? json['lesson_id']) != null
+            ? 'course_link'
+            : 'direct_upload'),
     kind: (json['kind'] ?? 'audio') as String,
     durationSeconds: _asInt(json['duration_seconds']),
     createdAt: _parseDate(json['created_at']),

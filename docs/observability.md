@@ -1,5 +1,14 @@
 # Observability
 
+## Local MCP surfaces
+- Mounted local HTTP MCP routes:
+  - `GET/POST /mcp/logs`
+  - `GET/POST /mcp/media-control-plane`
+  - `GET/POST /mcp/verification`
+  - `GET/POST /mcp/domain-observability`
+- These routes are local-only and enforce local client/origin checks in the FastAPI app.
+- `.vscode/mcp.json` also includes repo-side helpers such as `aveli_semantic_search`, but the mounted backend observability contract is the four HTTP routes above.
+
 ## Sentry
 - **Backend**: Configure `SENTRY_DSN` and `APP_ENV` in environment variables. `app.config.Settings` feeds `sentry_sdk.init(...)` with `FastApiIntegration` and `traces_sample_rate`.
 - **Flutter**: `.env` exposes `SENTRY_DSN`; `main.dart` loads it and boots the app through `SentryFlutter.init`. Errors from `FlutterError.onError`, `PlatformDispatcher.onError`, and the `runZonedGuarded` boundary call `Sentry.captureException`.
@@ -12,11 +21,15 @@
 - The middleware mirrors `request_id` back to the HTTP response header and Sentry scope.
 
 ## Flowexempel – Stripe → Backend → Supabase
-1. Flutter klienten initierar en betalning och skickar `POST /checkout/session` med `request_id` header.
-2. FastAPI loggar order/status i JSON med `request_id`, `user_id`, `route="/checkout/session"`, samtidigt som Sentry trace samlas in.
-3. Vid mediauppladdning begär klienten en presign (`/studio/lessons/{lesson_id}/media/presign` eller `/api/media/upload-url`) → logg `{"message":"storage presign","context":{"request_id":...}}` + Sentry breadcrumb.
-4. Klienten laddar upp direkt till Supabase med signerad URL; eventet kopplas tillbaka via `storage.objects` webhook → FastAPI loggar `user_id` för RLS-debuggning.
-5. Stripe webhooken träffar `/stripe/webhook`; med hjälp av samma `request_id` kan backend-loggarna parsas tillsammans med Flutter/Sentry eventet och Supabase Storage loggar.
+1. Flutter klienten initierar en betalning och skickar `POST /api/checkout/create` med `request_id` header.
+2. FastAPI loggar order/status i JSON med `request_id`, `user_id`, `route="/api/checkout/create"`, samtidigt som Sentry trace samlas in.
+3. Vid lesson media-uppladdning begär klienten `POST /api/media/upload-url`, laddar upp bytes direkt till returnerad `upload_url`, och slutför sedan med `POST /api/media/complete` följt av `POST /api/media/attach`.
+4. Den direkta storage-uppladdningen korreleras tillbaka via `storage.objects`-kontroller och media-pipeline state i backendens loggar och MCP-surfacer.
+5. Stripe webhooken träffar `/stripe/webhook`; med hjälp av samma `request_id` kan backend-loggarna parsas tillsammans med Flutter/Sentry-event och övriga observability-signaler.
+
+## VERIFIED_TASK verification
+- VERIFIED_TASK pre-check/post-check behavior is driven by task instructions and operator workflow.
+- The mounted MCP routes provide evidence for those checks, but they do not implement a global automatic execution gate for every mutation.
 
 ## DSN-hantering
 - Lokal utveckling: lämna `SENTRY_DSN` blank → Sentry initieras inte men loggarna fortsätter.

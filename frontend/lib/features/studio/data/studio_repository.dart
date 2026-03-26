@@ -212,14 +212,14 @@ class StudioRepository {
     }
 
     final mediaType = _detectUploadMediaType(contentType);
-    if (mediaType == 'video' || mediaType == 'document') {
+    if (mediaType != null) {
       return _uploadLessonMediaViaDirectPipeline(
+        courseId: courseId,
         lessonId: lessonId,
         data: data,
         filename: filename,
         contentType: contentType,
-        isIntro: isIntro,
-        mediaType: mediaType!,
+        mediaType: mediaType,
         onProgress: onProgress,
         cancelToken: cancelToken,
       );
@@ -263,52 +263,33 @@ class StudioRepository {
   }
 
   Future<Map<String, dynamic>> _uploadLessonMediaViaDirectPipeline({
+    required String courseId,
     required String lessonId,
     required Uint8List data,
     required String filename,
     required String contentType,
-    required bool isIntro,
     required String mediaType,
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final presignBody = <String, dynamic>{
-      'filename': filename,
-      'content_type': contentType,
-      'media_type': mediaType,
-      'is_intro': isIntro,
-    };
-    final presign = await _client.post<Map<String, dynamic>>(
-      '/studio/lessons/$lessonId/media/presign',
-      body: presignBody,
+    final pipeline = MediaPipelineRepository(client: _client);
+    final upload = await pipeline.requestUploadUrl(
+      filename: filename,
+      mimeType: contentType,
+      sizeBytes: data.length,
+      mediaType: mediaType,
+      courseId: courseId.isEmpty ? null : courseId,
+      lessonId: lessonId,
     );
-    final uploadUrlRaw = (presign['url'] as String?)?.trim() ?? '';
-    final storagePath = (presign['storage_path'] as String?)?.trim() ?? '';
-    final storageBucket = (presign['storage_bucket'] as String?)?.trim() ?? '';
-    final method = ((presign['method'] as String?) ?? 'PUT').toUpperCase();
-
-    if (uploadUrlRaw.isEmpty || storagePath.isEmpty || storageBucket.isEmpty) {
-      throw StateError('Ofullständigt svar från media-pipeline (presign).');
-    }
-    if (method != 'PUT') {
-      throw StateError('Ogiltig uppladdningsmetod: $method');
-    }
-
-    final headers = <String, String>{};
-    final rawHeaders = presign['headers'];
-    if (rawHeaders is Map) {
-      rawHeaders.forEach((key, value) {
-        final normalizedKey = key.toString().trim();
-        if (normalizedKey.isEmpty) return;
-        headers[normalizedKey] = value.toString();
-      });
+    if (upload.uploadUrl.toString().isEmpty) {
+      throw StateError('Ofullständigt svar från media-pipeline (upload-url).');
     }
 
     final dio = Dio();
     await dio.putUri<void>(
-      Uri.parse(uploadUrlRaw),
+      upload.uploadUrl,
       data: data,
-      options: Options(headers: headers),
+      options: Options(headers: upload.headers),
       cancelToken: cancelToken,
       onSendProgress: (sent, total) {
         if (onProgress == null) return;
@@ -317,18 +298,19 @@ class StudioRepository {
       },
     );
 
-    final complete = await _client.post<Map<String, dynamic>>(
-      '/studio/lessons/$lessonId/media/complete',
-      body: {
-        'storage_path': storagePath,
-        'storage_bucket': storageBucket,
-        'content_type': contentType,
-        'byte_size': data.length,
-        'original_name': filename,
-        'is_intro': isIntro,
-      },
+    await pipeline.completeUpload(mediaId: upload.mediaId);
+    final attached = await pipeline.attachUpload(
+      mediaId: upload.mediaId,
+      linkScope: 'lesson',
+      lessonId: lessonId,
     );
-    return Map<String, dynamic>.from(complete);
+    final canonicalLessonMedia = attached.lessonMedia;
+    if (canonicalLessonMedia == null || canonicalLessonMedia.isEmpty) {
+      throw StateError(
+        'Media-pipeline attachment saknade canonical lesson_media payload.',
+      );
+    }
+    return Map<String, dynamic>.from(canonicalLessonMedia);
   }
 
   Future<Map<String, dynamic>> _uploadLessonAudioViaPipeline({

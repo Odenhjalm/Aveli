@@ -6,8 +6,8 @@ home_player_route_playback_through_control_plane
 
 ## PROBLEM
 
-- Home playback still branches between feed-provided URLs and non-canonical playback calls
-- Phase-2 design requires Home to use the same canonical control-plane-backed playback path as lesson playback
+- Historical snapshot assumed Home playback still branched between feed-provided URLs and non-canonical playback calls
+- Current Home UI already resolves playback through `POST /api/media/playback` using `runtime_media_id`
 - Equivalent handler expected in: `frontend/lib/features/home/presentation/home_dashboard_page.dart`, `frontend/lib/features/home/data/home_audio_repository.dart`, `backend/app/routes/home.py`, `backend/app/routes/api_media.py`, `backend/app/routes/playback.py`, `backend/app/services/playback_delivery_service.py`, `media_control_plane_phase2_design.md`
 
 ---
@@ -20,93 +20,28 @@ home_player_route_playback_through_control_plane
 
 ---
 
+## TASK VALIDITY
+
+- is_real_problem: true
+- already_satisfied: true
+- requires_code_change: false
+
+---
+
+## PROBLEM TYPE
+
+problem_type: architecture_change
+
+classification_reason: The original issue required structural convergence of Home playback onto the shared control plane rather than a Home-specific surface. Current Home playback already uses the shared runtime-media playback path, so this task remains only as already-satisfied historical evidence.
+
+---
+
 ## REQUIRED ACTION
 
-### STEP 1 — Locate candidates
+STOP TASK GENERATION
 
-- Open route source files:
-  `frontend/lib/features/home/presentation/home_dashboard_page.dart`, `frontend/lib/features/home/data/home_audio_repository.dart`, `backend/app/routes/home.py`, `backend/app/routes/api_media.py`, `backend/app/routes/playback.py`, `backend/app/services/playback_delivery_service.py`, `media_control_plane_phase2_design.md`
-
-- Identify the current Home-only playback branches and the canonical control-plane target surface
-
-### STEP 2 — Handler selection
-
-#### STEP 2A — Selection criteria
-
-Selected playback path MUST:
-
-- use the canonical runtime identity
-- use one backend playback surface shared with lesson playback
-- NOT depend on feed-attached playback URLs
-
-#### STEP 2B — Response contract (MANDATORY)
-
-Expected response MUST be defined BEFORE implementation.
-
-Response MUST:
-
-- be JSON
-- accept canonical runtime identity
-- return canonical playback URL or stream handle
-- remain compatible with Home playback needs
-
-FOR read routes:
-- MUST return structured data (list or object)
-
-FOR write routes:
-- MUST return confirmation or created resource
-
-#### STEP 2C — Response validation rules
-
-Selected playback path MUST:
-
-- be deterministic
-- NOT require Home-only fallback logic
-- NOT leak raw storage URLs as public contract
-
-IF response contract is unclear:
-→ STOP
-
-#### STEP 2D — Selection rule
-
-IF multiple playback APIs exist:
-
-- prefer the canonical runtime-media playback surface
-- treat Home-specific branches as transitional only
-
-- IF still ambiguous:
-  → STOP
-
-### STEP 3 — Adapter implementation
-
-#### STEP 3A — Route creation
-
-- Create canonical Home playback usage around:
-  the shared runtime-media playback surface
-
-#### STEP 3B — Adapter rules
-
-New Home playback path MUST:
-
-- call existing playback logic directly
-- NOT duplicate resolver logic
-- NOT keep feed-attached URLs as primary playback contract
-
-#### STEP 3C — Request/response passthrough
-
-- Canonical runtime id MUST be passed unchanged
-- Shared playback response MUST be returned unchanged
-- No speculative transformations allowed
-
-### STEP 4 — Failure handling
-
-IF:
-
-- canonical shared playback surface cannot be chosen
-- Home requires raw feed URLs to remain primary
-- task requires new business logic
-
-→ STOP
+- retain this file only as completed historical evidence
+- do not generate new implementation work from this task
 
 ---
 
@@ -121,8 +56,6 @@ IF:
 
 ## VERIFICATION
 
-After change:
-
 - Home playback uses the same canonical playback surface as the rest of the system
 - Home-specific playback branches are removed or reduced to transitional adapters
 - feed-attached URLs are no longer the primary public playback contract
@@ -131,9 +64,8 @@ After change:
 
 ## STOP CONDITIONS
 
-- canonical shared playback surface cannot be proven
-- Home depends on raw feed URLs
-- task requires new business logic
+- this task is treated as unresolved implementation work
+- current runtime evidence is ignored
 
 ---
 
@@ -152,11 +84,11 @@ home_player / control_plane_alignment
 ## EXECUTION ORDER
 
 - Can be executed independently: false
-- Depends on: `home_player_emit_canonical_runtime_projection`, `playback_converge_runtime_identity`, `playback_converge_public_playback_surfaces`
+- Depends on: `home_player_emit_canonical_runtime_projection`
 
 ---
 
 ## NOTES
 
-- Convergence task
-- Shared playback surface remains canonical
+- Completed historical task
+- Shared playback surface already remains canonical for Home playback

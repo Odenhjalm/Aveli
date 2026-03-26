@@ -1,1 +1,40 @@
-INVALIDATED — requires doc-based revalidation
+# Phase 1 - API Layer Output
+
+REFRESH STATUS
+- `api_refresh_usage_diff_current_frontend` revalidated against current repo call sites and mounted routers.
+- Canonical evidence now lives in:
+  - `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md`
+  - `docs/audit/20260109_aveli_visdom_audit/FRONTEND_REVIEW.md`
+
+CURRENT FRONTEND CONTRACT SUMMARY
+- Auth frontend paths are aligned to mounted runtime routes and use:
+  - `/auth/login`
+  - `/auth/register`
+  - `/auth/request-password-reset`
+  - `/auth/reset-password`
+  - `/auth/send-verification`
+  - `/auth/validate-invite`
+  - `/auth/verify-email`
+  - `/auth/me`
+- Payments and checkout frontend paths are aligned to mounted runtime routes and use:
+  - `/api/me/*`
+  - `/orders`
+  - `/api/checkout/create`
+  - `/api/billing/*`
+  - `/api/course-bundles/{bundle_id}/checkout-session`
+- Active media mismatch carried forward:
+  - frontend `POST /api/media/sign`
+  - mounted backend `POST /media/sign`
+
+HISTORICAL CLAIMS REMOVED FROM ACTIVE PHASE-1 TRUTH
+- `/payments/*`
+- `/checkout/session`
+- `/auth/forgot-password`
+- `/api/billing/change-plan`
+- `/api/billing/create-subscription-sheet`
+- `/media/presign`
+- `DELETE /auth/me`
+- PATCH quiz-update mismatch
+
+EXECUTION CONSEQUENCE
+- Downstream Phase 1 work should use refreshed audit evidence, not January 2026 line-number snapshots, when deciding whether a mismatch is still active.

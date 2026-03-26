@@ -4,198 +4,155 @@ Source context loaded:
 - `codex/AVELI_OPERATING_SYSTEM.md`
 - `aveli_system_manifest.json`
 - `.vscode/mcp.json`
+- `backend/app/main.py`
+- `backend/app/routes/logs_mcp.py`
+- `backend/app/routes/media_control_plane_mcp.py`
+- `backend/app/routes/verification_mcp.py`
+- `backend/app/routes/domain_observability_mcp.py`
 - `actual_truth_2026-04-26/DETERMINED_PLAN/VERIFIED_TASKS/*`
 
-This contract defines how Codex uses MCP before and after mutations.
+This contract defines the current repo-backed MCP execution surface that Codex can rely on during local task execution.
 
-## 1. MCP Server Roles
+## 1. Mounted Local HTTP MCP Routes
 
-### aveli-logs
-- Purpose: Collect deterministic runtime signals (errors, request logs, warnings, and execution traces) from the local Aveli runtime.
-- When Codex should use it: When a query requires factual diagnosis of failure modes, trace correlation, or post-incident evidence.
-- Questions it answers:
-  - "What happened around timestamp `T` or request `id`?"
-  - "Which runtime errors are currently active for a component/route/action?"
-  - "What is the concrete execution evidence for an observed mismatch?"
+The FastAPI app currently mounts four local-only MCP HTTP routes:
 
-### aveli-media-control-plane
-- Purpose: Provide the authoritative control-plane perspective for media behavior and policy enforcement, aligned with manifest rules marking media control plane as protected authority.
-- When Codex should use it: For any media mutation, media route investigation, or consistency check where media behavior is the expected outcome.
-- Questions it answers:
-  - "What is the media control-plane state and policy for this action/path?"
-  - "Which media policy or rule is governing current behavior?"
-  - "Has the media control layer accepted or rejected the requested change/operation?"
+| MCP config key | GET route | POST route | JSON-RPC `serverInfo.name` | Responsibility |
+| --- | --- | --- | --- | --- |
+| `aveli_logs` | `/mcp/logs` | `/mcp/logs` | `aveli-logs-mcp` | recent backend errors, media failures, cleanup activity, worker health |
+| `aveli_media_control_plane` | `/mcp/media-control-plane` | `/mcp/media-control-plane` | `aveli-media-control-plane-mcp` | asset snapshots, asset lifecycle traces, orphaned assets, runtime projection validation |
+| `aveli_verification` | `/mcp/verification` | `/mcp/verification` | `aveli-verification-mcp` | high-level lesson/course verification verdicts and bounded test-case discovery |
+| `aveli_domain_observability` | `/mcp/domain-observability` | `/mcp/domain-observability` | `aveli-domain-observability-mcp` | user-domain and media-domain inspection across existing read paths |
 
-### aveli-domain-observability
-- Purpose: Expose domain-level Aveli state for invariants, component trust boundaries, and cross-component impact.
-- When Codex should use it: Before and after domain-touching mutations or when a task spans API/media/auth/editor invariants.
-- Questions it answers:
-  - "What is the current domain state relevant to a task?"
-  - "Are required invariants currently satisfied for the relevant component?"
-  - "What is the broader impact boundary for a proposed change?"
+Repo note:
+- `.vscode/mcp.json` also configures `aveli_semantic_search`.
+- That server is a repo-side stdio helper, not a mounted FastAPI HTTP MCP route.
+- It is not part of the backend runtime contract documented here.
 
-### aveli-verification
-- Purpose: Verify contracts, rules, and expected behavior before and after changes.
-- When Codex should use it: For deterministic route correctness checks, policy checks, and invariant checks after every mutation.
-- Questions it answers:
-  - "Does the target route/component satisfy declared invariants now?"
-  - "Which expected contract check passed or failed?"
-  - "Which specific rule is violated by current state?"
+## 2. Mounted Transport Contract
 
-### semantic-search
-- Purpose: Return exact local evidence from indexed documentation, past plans, and verified task artifacts.
-- When Codex should use it: At decision points requiring evidence from prior work, standards, or known task outcomes.
-- Questions it answers:
-  - "Where is an exact match for this issue in VERIFIED_TASKS?"
-  - "What was the last proven approach for a similar failure?"
-  - "Which constraints/docs govern this component?"
+All four mounted MCP routes currently share these transport rules:
 
-## 2. Usage Rules (Deterministic)
+- `GET /mcp/<server>` returns a local-only availability response with:
+  - `status`
+  - `data`
+  - `source`
+  - `confidence`
+- `POST /mcp/<server>` accepts JSON-RPC requests for:
+  - `initialize`
+  - `notifications/initialized`
+  - `tools/list`
+  - `tools/call`
+- Local-only access is enforced by:
+  - client host checks
+  - `Origin` host checks
+  - per-server `*_mcp_enabled` flags
+- The fallback response header is `MCP-Protocol-Version: 2025-03-26`.
+- `initialize` may negotiate `2025-11-25` when that protocol version is provided.
 
-- IF scenario = debugging media workflow → use `aveli-media-control-plane`.
-- IF scenario = verifying route correctness → use `aveli-verification`.
-- IF scenario = tracing runtime errors → use `aveli-logs`.
-- IF scenario = checking cross-domain invariants or impact scope before/after mutation → use `aveli-domain-observability`.
-- IF scenario = retrieving prior verified patterns / task evidence → use `semantic-search`.
-- IF scenario = no MCP data is needed or MCP has explicit authoritative answer → default to the highest available Aveli MCP before API, SQL, or UI.
-- IF MCP query fails or is unavailable → log reason and follow fallback order from the operating contract after explicitly recording uncertainty.
+Current response envelope for successful `tools/call` results:
 
-## 3. Output Contract
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "status": "ok | error",
+    "data": {},
+    "source": {
+      "server": "mounted-server-name",
+      "timestamp": "ISO-8601 timestamp"
+    },
+    "confidence": "high | low"
+  }
+}
+```
 
-All MCP calls must be normalized to the same response schema:
+## 3. Current Server Roles
 
-- `status`: `ok | warning | mismatch | blocked | error`
-- `data`: server-specific payload or empty object when absent.
-- `source`: object describing provenance
-  - `server`: MCP server name
-  - `query`: exact question or intent
-  - `trace_id` (optional): request/operation correlation identifier
-  - `timestamp`: UTC time of response
-  - `evidence_uri` (optional): server-specific pointer to supporting output
-- `confidence`: `high | medium | low`
+### `aveli_logs`
 
-No field may be omitted from the contract.
+Use for deterministic runtime signals:
+- `get_recent_errors`
+- `get_media_failures`
+- `get_cleanup_activity`
+- `get_worker_health`
 
-### Normalization rules
+### `aveli_media_control_plane`
 
-- `status = ok` only when the server returns a direct positive validation with no unresolved mismatches.
-- `status = warning` only when behavior is valid but incomplete.
-- `status = mismatch` only when expected and actual behavior differ.
-- `status = blocked` only when required confirmation cannot be obtained and mutation must halt.
-- `status = error` only on query failure, transport failure, or unverifiable output.
+Use for canonical media-control truth:
+- `get_asset`
+- `trace_asset_lifecycle`
+- `list_orphaned_assets`
+- `validate_runtime_projection`
 
-## 4. Codex Behavior Rules
+### `aveli_verification`
 
-Codex MUST:
+Use for bounded truth-verification verdicts:
+- `verify_lesson_media_truth`
+- `verify_course_cover_truth`
+- `verify_phase2_truth_alignment`
+- `get_test_cases`
 
-- Prefer MCP over assumptions.
-- Prefer Aveli MCPs before API, SQL, or UI checks.
-- Halt immediately if MCP data contradicts expected behavior or expected invariant.
-- Never infer missing data.
-- Never mix diagnosis and repair without a prior MCP-supported observation.
-- Never call UI as primary truth source.
-- Never modify endpoints or server configuration in this contract artifact.
+### `aveli_domain_observability`
 
-## 5. Integration with VERIFIED_TASKS
+Use for cross-domain state inspection:
+- `inspect_user`
+- `inspect_media`
 
-- Pre-check trigger:
-  - For every task derived from `actual_truth_2026-04-26/DETERMINED_PLAN/VERIFIED_TASKS/*`, call `semantic-search` to load prior verified context.
-  - Then call `aveli-verification` for the relevant target invariant(s).
-  - For media-related tasks, additionally call `aveli-media-control-plane`.
-  - For any task touching broader domain behavior, call `aveli-domain-observability`.
+## 4. Current Usage Rules
 
-- Execution guard:
-  - If pre-check returns `mismatch`, `blocked`, or `error`, halt mutation and emit `status` with source + confidence.
+- Prefer the mounted Aveli MCP routes before API, SQL, or UI when the task needs runtime or domain evidence.
+- Use the highest-authority mounted route that directly answers the task:
+  - route/runtime failures -> `aveli_logs`
+  - media asset/runtime truth -> `aveli_media_control_plane`
+  - bounded verification verdicts -> `aveli_verification`
+  - cross-domain state inspection -> `aveli_domain_observability`
+- Use repo documentation and task artifacts only after mounted MCP or repo contract evidence has been checked.
+- The mounted MCP routes are read-only and must not be documented as mutation surfaces.
 
-- Post-check trigger:
-  - Re-run the same check set after each mutation.
-  - If any post-check returns `mismatch`, `blocked`, or `error`, treat the task as failed verification.
+## 5. VERIFIED_TASK Execution Behavior
 
-- Post-check parity rule:
-  - State is accepted only when pre-check and post-check `status` are both `ok` (or acceptable `warning` with rationale recorded) and no unresolved mismatch exists.
+Current repo behavior is manual and task-scoped:
 
-## 6. MCP Priority
+- VERIFIED_TASK files and operator instructions determine which pre-checks and post-checks must run.
+- The backend does not implement a global automatic execution gate that blocks every mutation until all MCPs return `ok`.
+- The mounted MCP routes provide evidence; they do not autonomously approve or deny task execution.
 
-Priority order for conflict resolution:
+Current execution expectation:
 
-1. aveli-verification (source of truth)
-2. aveli-media-control-plane (authority for media)
-3. aveli-domain-observability (system invariants)
-4. aveli-logs (runtime evidence)
-5. semantic-search (historical reference)
+- Pre-check only the mounted MCP surfaces relevant to the current task.
+- Perform the scoped mutation.
+- Re-run the same scoped checks after mutation.
+- Stop if the relevant mounted MCP evidence contradicts the expected task outcome.
 
-Rules:
+## 6. Example Contract Corrections
 
-* IF multiple MCP responses conflict:
-  → follow highest priority source
+Current examples that should be treated as canonical:
 
-* IF conflict cannot be resolved:
-  → STOP
+- checkout creation:
+  - `POST /api/checkout/create`
+- lesson media upload lifecycle:
+  - `POST /api/media/upload-url`
+  - direct upload to the returned `upload_url`
+  - `POST /api/media/complete`
+  - `POST /api/media/attach`
+- mounted MCP routes:
+  - `GET/POST /mcp/logs`
+  - `GET/POST /mcp/media-control-plane`
+  - `GET/POST /mcp/verification`
+  - `GET/POST /mcp/domain-observability`
 
-## 7. Confidence Definition
+Historical examples that are not part of this mounted execution contract:
 
-confidence levels MUST be interpreted as:
+- `POST /checkout/session`
+- lesson-upload examples centered on `/studio/lessons/{lesson_id}/media/presign`
+- docs-only claims that VERIFIED_TASK execution is automatically gated by MCP responses
 
-* high → directly verified from canonical source (verification or control-plane)
-* medium → derived from domain-observability or logs
-* low → inferred or incomplete
+## 7. Stop Conditions
 
-Rules:
+Stop and re-check source truth if:
 
-* Codex MUST NOT act on low confidence results
-* Codex MUST escalate or STOP when confidence is low
-
-## 8. Semantic-Search Enforcement
-
-semantic-search MUST be used:
-
-* before handler selection
-* before adapter creation
-* when similar VERIFIED_TASK exists
-
-Rules:
-
-* IF matching VERIFIED_TASK is found:
-  → reuse pattern
-* IF no relevant result:
-  → continue but mark uncertainty
-
-## 9. Execution Gate
-
-Codex MUST NOT perform mutation until ALL conditions are met:
-
-* semantic-search completed
-* verification pre-check status = ok
-* required MCP sources agree on system state
-
-Rules:
-
-* IF any MCP returns:
-
-  * mismatch
-  * blocked
-  * error
-
-→ STOP
-
-## 10. Allowed Mutation Condition
-
-Codex MAY proceed with mutation IF:
-
-- status = mismatch
-- AND a VERIFIED_TASK exists that explicitly targets the mismatch
-
-In this case:
-
-- mismatch is treated as expected condition
-- execution is allowed
-
----
-
-Rules:
-
-- IF mismatch matches VERIFIED_TASK scope:
-  → proceed
-
-- IF mismatch is unrelated:
-  → STOP
+- mounted route code and docs disagree
+- a required MCP route is not mounted in `backend/app/main.py`
+- a contract claim requires inventing automatic behavior not implemented in route code

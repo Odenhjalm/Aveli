@@ -108,6 +108,7 @@ class MediaPipelineRepository {
   static const String _homePlayerPurpose = 'home_player_audio';
   static const Set<String> _allowedPurposes = {
     'lesson_audio',
+    'lesson_media',
     _homePlayerPurpose,
   };
 
@@ -156,12 +157,18 @@ class MediaPipelineRepository {
       throw ArgumentError.value(sizeBytes, 'sizeBytes', 'Must be > 0.');
     }
 
-    final normalizedMediaType = mediaType.trim().toLowerCase();
-    if (normalizedMediaType != 'audio') {
+    final normalizedMediaType = switch (mediaType.trim().toLowerCase()) {
+      'pdf' => 'document',
+      final value => value,
+    };
+    if (normalizedMediaType != 'audio' &&
+        normalizedMediaType != 'image' &&
+        normalizedMediaType != 'video' &&
+        normalizedMediaType != 'document') {
       throw ArgumentError.value(
         mediaType,
         'mediaType',
-        'Unsupported mediaType for /api/media/upload-url (expected "audio").',
+        'Unsupported mediaType for /api/media/upload-url.',
       );
     }
 
@@ -193,15 +200,35 @@ class MediaPipelineRepository {
         ? null
         : normalizedLessonId;
 
-    if (normalizedPurpose == _homePlayerPurpose) {
-      if (resolvedCourseId != null || resolvedLessonId != null) {
-        throw ArgumentError(
-          'courseId/lessonId must be omitted for home_player_audio uploads.',
-        );
+    if (normalizedMediaType == 'audio') {
+      if (normalizedPurpose == _homePlayerPurpose) {
+        if (resolvedCourseId != null || resolvedLessonId != null) {
+          throw ArgumentError(
+            'courseId/lessonId must be omitted for home_player_audio uploads.',
+          );
+        }
+      } else {
+        if (normalizedPurpose != null && normalizedPurpose != 'lesson_audio') {
+          throw ArgumentError.value(
+            purpose,
+            'purpose',
+            'Unsupported purpose "$normalizedPurpose" for lesson audio uploads.',
+          );
+        }
+        if (resolvedLessonId == null) {
+          throw ArgumentError('lessonId is required for lesson_audio uploads.');
+        }
       }
     } else {
+      if (normalizedPurpose != null && normalizedPurpose != 'lesson_media') {
+        throw ArgumentError.value(
+          purpose,
+          'purpose',
+          'Unsupported purpose "$normalizedPurpose" for lesson media uploads.',
+        );
+      }
       if (resolvedLessonId == null) {
-        throw ArgumentError('lessonId is required for lesson_audio uploads.');
+        throw ArgumentError('lessonId is required for lesson media uploads.');
       }
     }
 
@@ -209,7 +236,7 @@ class MediaPipelineRepository {
       'filename': normalizedFilename,
       'mime_type': normalizedMimeType,
       'size_bytes': sizeBytes,
-      'media_type': 'audio',
+      'media_type': normalizedMediaType,
       if (normalizedPurpose != null) 'purpose': normalizedPurpose,
       if (resolvedCourseId != null) 'course_id': resolvedCourseId,
       if (resolvedLessonId != null) 'lesson_id': resolvedLessonId,

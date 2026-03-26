@@ -586,14 +586,15 @@ class MeditationListResponse(BaseModel):
 
 class HomeAudioItem(BaseModel):
     id: UUID
-    lesson_id: UUID
+    lesson_id: Optional[UUID] = None
     lesson_title: str
     title: Optional[str] = None
-    course_id: UUID
-    course_title: str
+    course_id: Optional[UUID] = None
+    course_title: Optional[str] = None
     course_slug: Optional[str] = None
     teacher_id: Optional[UUID] = None
     teacher_name: Optional[str] = None
+    source_type: Literal["course_link", "direct_upload"]
     kind: str
     storage_path: Optional[str] = None
     storage_bucket: Optional[str] = None

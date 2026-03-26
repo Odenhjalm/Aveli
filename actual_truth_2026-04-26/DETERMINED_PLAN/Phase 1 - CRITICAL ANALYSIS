@@ -1,140 +1,49 @@
 # Phase 1 - CRITICAL ANALYSIS
 
 Source:
-- actual_truth_2026-04-26/DETERMINED_PLAN/Phase 1 - PRIORITY MAP
+- `actual_truth_2026-04-26/DETERMINED_PLAN/Phase 1 - PRIORITY MAP`
+- `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md`
 
 ## critical route analysis
 
-- DELETE /auth/me
-  - source: frontend/lib/mvp/api_client.dart:70
-  - affects_auth: true
-  - affects_media: false
-  - affects_payment: false
-  - breaks_user_flow: true
-  - severity: blocking
-
-- GET /payments/orders/{}
-  - source: frontend/lib/features/payments/data/payments_repository.dart:187
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
-
-- GET /payments/plans
-  - source: frontend/lib/features/payments/data/payments_repository.dart:39
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
-
-- GET /payments/subscription
-  - source: frontend/lib/features/payments/data/payments_repository.dart:53
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
-
-- PATCH /studio/quizzes/{}/questions/{}
-  - source: frontend/lib/features/studio/data/studio_repository.dart:386
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: false
-  - breaks_user_flow: true
-  - severity: medium
-
-- POST /api/billing/change-plan
-  - source: frontend/lib/features/payments/data/billing_api.dart:61
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
-
-- POST /api/billing/create-subscription-sheet
-  - source: frontend/lib/features/payments/data/billing_api.dart:27
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
-
-- POST /checkout/session
-  - source: frontend/lib/features/payments/services/stripe_service.dart:26
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: blocking
-
-- POST /media/presign
-  - source: frontend/landing/lib/media.ts:30, frontend/lib/services/media_service.dart:54, frontend/lib/services/media_service.dart:119
+- POST /api/media/sign
+  - source: `frontend/lib/features/media/data/media_repository.dart`, `frontend/lib/services/media_service.dart`
+  - mounted backend route: `POST /media/sign`
   - affects_auth: false
   - affects_media: true
   - affects_payment: false
   - breaks_user_flow: true
   - severity: blocking
+  - note: current frontend and mounted runtime disagree only on the public path, not on signer intent
 
-- POST /payments/coupons/preview
-  - source: frontend/lib/features/payments/data/payments_repository.dart:104
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: medium
+## historical stale claims removed from active critical set
 
-- POST /payments/coupons/redeem
-  - source: frontend/lib/features/payments/data/payments_repository.dart:126
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
+- DELETE /auth/me
+  - reason: old scan false-positive; current MVP client only clears local token state on logout
 
-- POST /payments/create-subscription
-  - source: frontend/lib/features/payments/data/payments_repository.dart:258
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: blocking
+- PATCH /studio/quizzes/{}/questions/{}
+  - reason: current frontend update method uses `PUT`, not `PATCH`
 
-- POST /payments/orders/course
-  - source: frontend/lib/features/payments/data/payments_repository.dart:148
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
+- POST /auth/forgot-password
+  - reason: current frontend uses `POST /auth/request-password-reset`
 
-- POST /payments/orders/service
-  - source: frontend/lib/features/payments/data/payments_repository.dart:170
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
+- POST /checkout/session
+  - reason: current checkout creation uses `POST /api/checkout/create`
 
-- POST /payments/purchases/claim
-  - source: frontend/lib/features/payments/data/payments_repository.dart:243
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: high
+- POST /media/presign
+  - reason: current Flutter signer uses `POST /api/media/sign`; lesson uploads use studio-scoped upload routes
 
-- POST /payments/stripe/create-session
-  - source: frontend/lib/data/repositories/orders_repository.dart:39, frontend/lib/mvp/api_client.dart:122
-  - affects_auth: false
-  - affects_media: false
-  - affects_payment: true
-  - breaks_user_flow: true
-  - severity: blocking
+- POST /payments/*
+  - reason: current payments and checkout code uses `/orders`, `/api/me/*`, `/api/checkout/create`, and `/api/billing/*`
+
+- POST /api/billing/change-plan
+  - reason: current code does not call this route
+
+- POST /api/billing/create-subscription-sheet
+  - reason: current code uses `POST /api/billing/create-subscription`
 
 ## aggregate severity counts
-- blocking: 5
-- high: 9
-- medium: 2
+- blocking: 1
+- high: 0
+- medium: 0
 - low: 0

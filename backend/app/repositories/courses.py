@@ -1572,12 +1572,12 @@ async def list_home_audio_media(
 
           SELECT
             rm.id AS id,
-            rm.id AS lesson_id,
+            NULL::uuid AS lesson_id,
             rm.id AS runtime_media_id,
             hpu.title AS title,
             hpu.title AS lesson_title,
-            rm.id AS course_id,
-            ''::text AS course_title,
+            NULL::uuid AS course_id,
+            NULL::text AS course_title,
             NULL::text AS course_slug,
             hpu.teacher_id AS teacher_id,
             coalesce(prof.display_name, prof.email, '') AS teacher_name,

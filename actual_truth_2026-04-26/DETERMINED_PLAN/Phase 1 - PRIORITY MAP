@@ -1,28 +1,24 @@
 # Phase 1 - PRIORITY MAP
 
 ## Source Mapping
-- frontend_missing -> critical
+- current_frontend_mismatch -> critical
 - runtime_only -> important
 - catalog_only -> planned
 - unused_runtime -> deferred
+- historical_stale_claim -> informational
 
-## critical (16)
-- DELETE	`/auth/me`	`frontend/lib/mvp/api_client.dart:70`
-- GET	`/payments/orders/{}`	`frontend/lib/features/payments/data/payments_repository.dart:187`
-- GET	`/payments/plans`	`frontend/lib/features/payments/data/payments_repository.dart:39`
-- GET	`/payments/subscription`	`frontend/lib/features/payments/data/payments_repository.dart:53`
-- PATCH	`/studio/quizzes/{}/questions/{}`	`frontend/lib/features/studio/data/studio_repository.dart:386`
-- POST	`/api/billing/change-plan`	`frontend/lib/features/payments/data/billing_api.dart:61`
-- POST	`/api/billing/create-subscription-sheet`	`frontend/lib/features/payments/data/billing_api.dart:27`
-- POST	`/checkout/session`	`frontend/lib/features/payments/services/stripe_service.dart:26`
-- POST	`/media/presign`	`frontend/landing/lib/media.ts:30`, `frontend/lib/services/media_service.dart:54`, `frontend/lib/services/media_service.dart:119`
-- POST	`/payments/coupons/preview`	`frontend/lib/features/payments/data/payments_repository.dart:104`
-- POST	`/payments/coupons/redeem`	`frontend/lib/features/payments/data/payments_repository.dart:126`
-- POST	`/payments/create-subscription`	`frontend/lib/features/payments/data/payments_repository.dart:258`
-- POST	`/payments/orders/course`	`frontend/lib/features/payments/data/payments_repository.dart:148`
-- POST	`/payments/orders/service`	`frontend/lib/features/payments/data/payments_repository.dart:170`
-- POST	`/payments/purchases/claim`	`frontend/lib/features/payments/data/payments_repository.dart:243`
-- POST	`/payments/stripe/create-session`	`frontend/lib/data/repositories/orders_repository.dart:39`, `frontend/lib/mvp/api_client.dart:122`
+## critical (1)
+- POST `/api/media/sign`	`frontend/lib/features/media/data/media_repository.dart`, `frontend/lib/services/media_service.dart`
+
+## informational historical (8)
+- DELETE `/auth/me`	removed from active set; old audit scan misread local logout behavior in `frontend/lib/mvp/api_client.dart`
+- PATCH `/studio/quizzes/{}/questions/{}`	removed from active set; current frontend uses `PUT`
+- POST `/auth/forgot-password`	removed from active set; current frontend uses `/auth/request-password-reset`
+- POST `/checkout/session`	removed from active set; current frontend uses `/api/checkout/create`
+- POST `/media/presign`	removed from active set; current frontend uses `/api/media/sign` or lesson-scoped studio upload routes
+- POST `/payments/*`	removed from active set; current frontend uses `/orders`, `/api/me/*`, `/api/checkout/create`, and `/api/billing/*`
+- POST `/api/billing/change-plan`	removed from active set; current code does not call this route
+- POST `/api/billing/create-subscription-sheet`	removed from active set; current code uses `/api/billing/create-subscription`
 
 ## important (53)
 - DELETE	/studio/home-player/course-links/{link_id}
@@ -132,4 +128,3 @@
 - POST	`/webhooks/stripe`	`backend/app/routes/stripe_webhooks.py:66`
 - PUT	`/studio/quizzes/{}/questions/{}`	`backend/app/routes/studio.py:1049`
 - PUT	`/studio/sessions/{}`	`backend/app/routes/studio_sessions.py:38`
-

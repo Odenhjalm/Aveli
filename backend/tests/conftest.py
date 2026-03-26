@@ -1,4 +1,5 @@
 import asyncio
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -8,9 +9,32 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+LOCAL_TEST_DATABASE_URL = os.environ.get(
+    "AVELI_TEST_DATABASE_URL",
+    "postgresql://postgres:postgres@127.0.0.1:54322/aveli_local",
+)
+os.environ["APP_ENV"] = "development"
+os.environ["MCP_MODE"] = "local"
+os.environ["DATABASE_URL"] = LOCAL_TEST_DATABASE_URL
+os.environ["SUPABASE_DB_URL"] = LOCAL_TEST_DATABASE_URL
+os.environ["SUPABASE_URL"] = os.environ.get(
+    "AVELI_TEST_SUPABASE_URL",
+    "http://127.0.0.1:54321",
+)
+os.environ["SUPABASE_SECRET_API_KEY"] = os.environ.get(
+    "AVELI_TEST_SUPABASE_SECRET_API_KEY",
+    "local-test-secret",
+)
+os.environ["SUPABASE_PUBLISHABLE_API_KEY"] = os.environ.get(
+    "AVELI_TEST_SUPABASE_PUBLISHABLE_API_KEY",
+    "local-test-publishable",
+)
+os.environ["SENTRY_DSN"] = os.environ.get("AVELI_TEST_SENTRY_DSN", "")
+
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from app.config import settings  # noqa: E402
+from app.auth import hash_password  # noqa: E402
 from app.db import (  # noqa: E402
     TEST_SESSION_HEADER,
     get_test_session_id,
@@ -161,3 +185,49 @@ def _temp_media_root(tmp_path):
         settings.media_signing_ttl_seconds = original_signing_ttl
         settings.media_allow_legacy_media = original_legacy
         shutil.rmtree(temp_root, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _local_supabase_registration_stub(monkeypatch):
+    from app.repositories import auth as auth_repo
+    from app.routes import api_auth
+
+    async def fake_create_supabase_auth_user(
+        *,
+        email: str,
+        password: str,
+        display_name: str | None,
+    ) -> dict[str, str]:
+        try:
+            result = await auth_repo.create_user(
+                email=email,
+                hashed_password=hash_password(password),
+                display_name=display_name,
+            )
+        except auth_repo.UniqueViolationError as exc:
+            raise AssertionError(
+                f"duplicate local auth seed for {email}"
+            ) from exc
+
+        await auth_repo.mark_user_email_verified(email)
+        user = result.get("user") or {}
+        return {
+            "id": str(user["id"]),
+            "email": str(user["email"]),
+        }
+
+    async def fake_enqueue_verification_email(email: str) -> None:
+        return None
+
+    monkeypatch.setattr(
+        api_auth,
+        "_create_supabase_auth_user",
+        fake_create_supabase_auth_user,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        api_auth,
+        "_enqueue_verification_email",
+        fake_enqueue_verification_email,
+        raising=True,
+    )

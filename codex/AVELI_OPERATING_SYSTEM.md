@@ -425,3 +425,172 @@ If any layer:
 - fails cleanup
 
 → system is NOT verified
+
+## Local Execution Mode (MANDATORY FOR TASK EXECUTION)
+
+Purpose:
+Ensure Codex always runs against a safe, local, fully aligned database before executing tasks.
+
+---
+
+### Database Selection Rule
+
+Codex MUST:
+
+1. Prefer local database if available:
+   DATABASE_URL = postgresql://postgres:postgres@127.0.0.1:54322/aveli_local
+
+2. Verify connection:
+   - DB must be reachable
+   - Required schemas must exist:
+     - app.*
+     - auth.*
+     - runtime_media
+     - media_assets
+     - home_player_uploads
+     - livekit_webhook_jobs
+
+If local DB exists and is valid:
+→ MUST use it
+
+If local DB is missing or incomplete:
+→ Codex MUST initialize it using baseline
+
+Codex MUST NOT use remote Supabase DB for mutation tasks.
+
+---
+
+### Local DB Bootstrap
+
+If DB not ready:
+
+1. Create database:
+   aveli_local
+
+2. Apply baseline:
+   backend/supabase/baseline_slots/0001 → 0016
+
+3. Verify schema:
+   - required tables exist
+   - no missing runtime dependencies
+
+If bootstrap fails:
+→ STOP
+
+---
+
+### Backend Startup Rule
+
+Codex MUST start backend using local DB:
+
+DATABASE_URL=<local_db>
+MCP_MODE=local
+poetry run uvicorn app.main:app --host 127.0.0.1 --port 8080
+
+Verification:
+
+- GET /healthz → 200
+- GET /readyz → 200
+
+Worker errors are allowed ONLY if non-blocking.
+
+Blocking errors:
+- missing tables used in startup path
+
+If blocking error:
+→ Codex MUST extend baseline (not modify runtime code)
+
+---
+
+### MCP Continuity Rule
+
+Codex MUST:
+
+- keep MCP services online
+- verify endpoints:
+  - /mcp/verification
+  - /mcp/logs
+  - /mcp/media-control-plane
+  - /mcp/domain-observability
+
+If MCP unavailable:
+→ STOP
+
+Codex MUST NOT restart MCP unless explicitly required.
+
+---
+
+### Test Execution Rule
+
+Codex MUST run ONLY local, task-scoped tests:
+
+Allowed:
+
+- poetry run pytest <target_test>
+- flutter test <target_test>
+
+Forbidden:
+
+- full test suite
+- tests requiring remote Supabase
+- environment mutation
+
+If tests require remote services:
+→ STOP
+
+---
+
+### Verification Scope Rule
+
+Verification MUST:
+
+- match task scope only
+- use local DB
+- use MCP if available
+- avoid infra-level debugging
+
+If verification requires:
+
+- DB rebuild
+- external API
+- environment change
+
+→ STOP
+
+---
+
+### Pre-Supabase Push Preparation
+
+Codex MUST:
+
+1. Ensure baseline == local DB
+2. Ensure runtime == baseline
+3. Ensure tests pass locally
+4. Ensure no legacy schema gaps remain
+
+Only after ALL verified:
+
+→ system is eligible for Supabase push
+
+---
+
+### Forbidden Actions
+
+Codex MUST NOT:
+
+- use MCP_PRODUCTION_SUPABASE_DB_URL during execution
+- mutate production DB
+- guess schema
+- bypass DB errors
+- disable workers to avoid fixing schema
+
+---
+
+### Final Guarantee
+
+All execution MUST occur in:
+
+local app + local DB + local MCP
+
+If any layer diverges:
+→ STOP

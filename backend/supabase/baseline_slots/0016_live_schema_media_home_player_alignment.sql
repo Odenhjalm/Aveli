@@ -491,6 +491,72 @@ before update on "app"."home_player_course_links"
 for each row
 execute function "app"."touch_home_player_course_links"();
 
+create table "app"."livekit_webhook_jobs" (
+  "id" uuid not null default gen_random_uuid(),
+  "event" text not null,
+  "payload" jsonb not null,
+  "status" text not null default 'pending'::text,
+  "attempt" integer not null default 0,
+  "last_error" text,
+  "scheduled_at" timestamp with time zone not null default now(),
+  "locked_at" timestamp with time zone,
+  "last_attempt_at" timestamp with time zone,
+  "created_at" timestamp with time zone not null default now(),
+  "updated_at" timestamp with time zone not null default now(),
+  "next_run_at" timestamp with time zone not null default now()
+);
+
+comment on table "app"."livekit_webhook_jobs"
+  is 'Persistent job queue for LiveKit event handling.';
+
+create unique index "livekit_webhook_jobs_pkey"
+  on "app"."livekit_webhook_jobs" using btree ("id");
+
+create index "idx_livekit_webhook_jobs_status"
+  on "app"."livekit_webhook_jobs" using btree ("status", "scheduled_at");
+
+alter table "app"."livekit_webhook_jobs"
+  add constraint "livekit_webhook_jobs_pkey"
+  primary key using index "livekit_webhook_jobs_pkey";
+
+alter table "app"."livekit_webhook_jobs" enable row level security;
+
+grant delete on table "app"."livekit_webhook_jobs" to "anon";
+grant insert on table "app"."livekit_webhook_jobs" to "anon";
+grant select on table "app"."livekit_webhook_jobs" to "anon";
+grant update on table "app"."livekit_webhook_jobs" to "anon";
+grant delete on table "app"."livekit_webhook_jobs" to "authenticated";
+grant insert on table "app"."livekit_webhook_jobs" to "authenticated";
+grant select on table "app"."livekit_webhook_jobs" to "authenticated";
+grant update on table "app"."livekit_webhook_jobs" to "authenticated";
+grant delete on table "app"."livekit_webhook_jobs" to "service_role";
+grant insert on table "app"."livekit_webhook_jobs" to "service_role";
+grant select on table "app"."livekit_webhook_jobs" to "service_role";
+grant update on table "app"."livekit_webhook_jobs" to "service_role";
+
+create policy "livekit_jobs_service"
+on "app"."livekit_webhook_jobs"
+as permissive
+for all
+to public
+using ((auth.role() = 'service_role'::text))
+with check ((auth.role() = 'service_role'::text));
+
+create policy "service_role_full_access"
+on "app"."livekit_webhook_jobs"
+as permissive
+for all
+to public
+using ((auth.role() = 'service_role'::text))
+with check ((auth.role() = 'service_role'::text));
+
+drop trigger if exists "trg_livekit_webhook_jobs_touch" on "app"."livekit_webhook_jobs";
+
+create trigger "trg_livekit_webhook_jobs_touch"
+before update on "app"."livekit_webhook_jobs"
+for each row
+execute function "app"."set_updated_at"();
+
 create table "app"."home_player_uploads" (
   "id" uuid not null default gen_random_uuid(),
   "teacher_id" uuid not null,
@@ -800,9 +866,6 @@ alter table "app"."runtime_media"
 
 alter table "app"."runtime_media"
   drop constraint "runtime_media_lesson_id_fkey";
-
-alter table "app"."runtime_media"
-  drop constraint "runtime_media_lesson_media_id_key";
 
 alter table "app"."runtime_media"
   drop constraint "runtime_media_lesson_projection_shape";

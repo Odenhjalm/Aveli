@@ -20,6 +20,22 @@ mcp_resolve_semantic_search_gap
 
 ---
 
+## TASK VALIDITY
+
+- is_real_problem: true
+- already_satisfied: false
+- requires_code_change: false
+
+---
+
+## PROBLEM TYPE
+
+problem_type: observability_issue
+
+classification_reason: The gap is a contract-level false requirement in the observability docs, not a missing runtime architecture layer. The local MCP stack exposes four Aveli servers, while `semantic-search` is only documented as mandatory.
+
+---
+
 ## REQUIRED ACTION
 
 ### STEP 1 — Locate candidates
@@ -35,8 +51,7 @@ mcp_resolve_semantic_search_gap
 
 Selected resolution MUST:
 
-- either provide a concrete semantic-search implementation plan
-- or remove the mandatory requirement from contracts
+- remove the mandatory `semantic-search` requirement from contracts unless local availability can be proven
 - NOT leave the gap implicit
 
 #### STEP 2B — Response contract (MANDATORY)
@@ -45,8 +60,8 @@ Expected response MUST be defined BEFORE implementation.
 
 Response MUST:
 
-- be markdown contract or implementation plan output
-- state whether `semantic-search` is external, planned, or removed
+- be markdown contract output
+- state whether `semantic-search` is external, historical, or removed from mandatory local execution rules
 - preserve deterministic pre-check requirements
 
 FOR read routes:
@@ -71,7 +86,6 @@ IF response contract is unclear:
 IF repo code does not provide semantic-search:
 
 - prefer explicit contract correction
-- fallback to a concrete implementation plan with named ownership
 
 - IF still ambiguous:
   → STOP
@@ -144,7 +158,7 @@ MEDIUM
 
 ## CATEGORY
 
-observability / architecture_gap
+observability / contract_refresh
 
 ---
 
@@ -157,5 +171,5 @@ observability / architecture_gap
 
 ## NOTES
 
-- Explicit gap-resolution task
-- No hidden fallback allowed
+- Contract-correction task
+- No new MCP server should be implied
