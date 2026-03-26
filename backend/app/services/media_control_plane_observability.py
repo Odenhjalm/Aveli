@@ -1569,12 +1569,13 @@ def _projection_item_classification(
     *,
     kind: str | None,
     media_state: str | None,
+    expects_asset: bool,
     has_asset: bool,
     resolution: RuntimeMediaResolution | None,
     runtime_row: dict[str, Any] | None,
     inconsistencies: list[dict[str, Any]],
 ) -> str:
-    if not has_asset:
+    if expects_asset and not has_asset:
         return "asset_missing"
     if inconsistencies:
         return "inconsistent"
@@ -1712,7 +1713,7 @@ async def validate_runtime_projection(lesson_id: str) -> dict[str, Any]:
                 )
             )
 
-        if asset_row is None:
+        if asset_id is not None and asset_row is None:
             item_inconsistencies.append(
                 _inconsistency(
                     "asset_missing",
@@ -1723,7 +1724,10 @@ async def validate_runtime_projection(lesson_id: str) -> dict[str, Any]:
                     lesson_media_id=lesson_media_id,
                 )
             )
-        elif _normalize_text(asset_row.get("lesson_id")) not in {None, normalized_lesson_id}:
+        elif asset_row is not None and _normalize_text(asset_row.get("lesson_id")) not in {
+            None,
+            normalized_lesson_id,
+        }:
             item_inconsistencies.append(
                 _inconsistency(
                     "asset_lesson_scope_mismatch",
@@ -1896,6 +1900,7 @@ async def validate_runtime_projection(lesson_id: str) -> dict[str, Any]:
                 "state_classification": _projection_item_classification(
                     kind=kind,
                     media_state=media_state,
+                    expects_asset=asset_id is not None,
                     has_asset=asset_row is not None,
                     resolution=resolution,
                     runtime_row=runtime_row,

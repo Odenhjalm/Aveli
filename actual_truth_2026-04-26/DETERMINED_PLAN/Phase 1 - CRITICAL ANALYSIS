@@ -1,0 +1,140 @@
+# Phase 1 - CRITICAL ANALYSIS
+
+Source:
+- actual_truth_2026-04-26/DETERMINED_PLAN/Phase 1 - PRIORITY MAP
+
+## critical route analysis
+
+- DELETE /auth/me
+  - source: frontend/lib/mvp/api_client.dart:70
+  - affects_auth: true
+  - affects_media: false
+  - affects_payment: false
+  - breaks_user_flow: true
+  - severity: blocking
+
+- GET /payments/orders/{}
+  - source: frontend/lib/features/payments/data/payments_repository.dart:187
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- GET /payments/plans
+  - source: frontend/lib/features/payments/data/payments_repository.dart:39
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- GET /payments/subscription
+  - source: frontend/lib/features/payments/data/payments_repository.dart:53
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- PATCH /studio/quizzes/{}/questions/{}
+  - source: frontend/lib/features/studio/data/studio_repository.dart:386
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: false
+  - breaks_user_flow: true
+  - severity: medium
+
+- POST /api/billing/change-plan
+  - source: frontend/lib/features/payments/data/billing_api.dart:61
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- POST /api/billing/create-subscription-sheet
+  - source: frontend/lib/features/payments/data/billing_api.dart:27
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- POST /checkout/session
+  - source: frontend/lib/features/payments/services/stripe_service.dart:26
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: blocking
+
+- POST /media/presign
+  - source: frontend/landing/lib/media.ts:30, frontend/lib/services/media_service.dart:54, frontend/lib/services/media_service.dart:119
+  - affects_auth: false
+  - affects_media: true
+  - affects_payment: false
+  - breaks_user_flow: true
+  - severity: blocking
+
+- POST /payments/coupons/preview
+  - source: frontend/lib/features/payments/data/payments_repository.dart:104
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: medium
+
+- POST /payments/coupons/redeem
+  - source: frontend/lib/features/payments/data/payments_repository.dart:126
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- POST /payments/create-subscription
+  - source: frontend/lib/features/payments/data/payments_repository.dart:258
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: blocking
+
+- POST /payments/orders/course
+  - source: frontend/lib/features/payments/data/payments_repository.dart:148
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- POST /payments/orders/service
+  - source: frontend/lib/features/payments/data/payments_repository.dart:170
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- POST /payments/purchases/claim
+  - source: frontend/lib/features/payments/data/payments_repository.dart:243
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: high
+
+- POST /payments/stripe/create-session
+  - source: frontend/lib/data/repositories/orders_repository.dart:39, frontend/lib/mvp/api_client.dart:122
+  - affects_auth: false
+  - affects_media: false
+  - affects_payment: true
+  - breaks_user_flow: true
+  - severity: blocking
+
+## aggregate severity counts
+- blocking: 5
+- high: 9
+- medium: 2
+- low: 0

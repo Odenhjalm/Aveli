@@ -1,0 +1,16 @@
+actual_truth_2026-04-24/Aveli_System_Decisions.md
+docs/architecture/aveli_editor_architecture_v2.md
+docs/architecture/text_contract.md
+docs/markdown_contract_v1.md
+frontend/lib/features/studio/presentation/course_editor_page.dart
+frontend/lib/editor/session/editor_session.dart
+frontend/lib/editor/session/editor_operation_controller.dart
+frontend/lib/editor/adapter/markdown_to_editor.dart
+frontend/lib/editor/adapter/editor_to_markdown.dart
+frontend/lib/features/studio/presentation/lesson_media_preview.dart
+frontend/lib/features/studio/presentation/lesson_media_preview_cache.dart
+frontend/lib/features/studio/presentation/lesson_media_preview_hydration.dart
+frontend/lib/shared/utils/lesson_content_pipeline.dart
+frontend/lib/shared/utils/quill_embed_insertion.dart
+frontend/test/widgets/course_editor_screen_test.dart
+frontend/test/widgets/lesson_media_preview_editor_regression_test.dart

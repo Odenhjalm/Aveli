@@ -1,0 +1,9 @@
+codex/AVELI_OPERATING_SYSTEM.md
+docs/media_control_plane_mcp.md
+actual_truth_2026-04-26/observability/mcp_observability_contract.md
+backend/app/routes/media_control_plane_mcp.py
+backend/app/repositories/home_player_library.py
+backend/app/repositories/media_assets.py
+backend/app/repositories/runtime_media.py
+backend/app/services/media_control_plane_observability.py
+backend/tests/test_media_control_plane_observability.py

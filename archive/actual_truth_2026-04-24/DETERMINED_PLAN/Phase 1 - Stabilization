@@ -1,0 +1,22 @@
+# Phase 1 - Stabilization
+
+Goal: stabilize active runtime contracts and observability inputs without changing architecture.
+
+Execution order:
+1. `api_refresh_usage_diff_current_frontend`
+2. `api_align_media_sign_route`
+3. `api_fix_checkout_session`
+4. `api_fix_media_presign`
+5. `api_fix_media_complete`
+6. `api_fix_payments_plans`
+7. `api_fix_payments_subscription`
+8. `api_fix_payments_orders`
+9. `api_fix_payments_create_subscription`
+10. `api_fix_payments_stripe_create_session`
+11. `media_align_lesson_upload_surfaces`
+12. `mcp_refresh_execution_contract`
+
+Rationale:
+- Phase 1 is limited to runtime-safe contract stabilization and evidence refresh.
+- No task in this phase is allowed to redesign playback architecture or media authority.
+- The media-isolation dependency here is lesson-upload convergence plus stable route and observability evidence.

@@ -1,0 +1,36 @@
+{
+  "component": "auth",
+  "status": "partial",
+  "used_in_runtime": true,
+  "confidence": "high",
+  "planned_sources": [
+    "actual_truth_2026-04-24/Aveli_System_Decisions.md",
+    "actual_truth_2026-04-24/auth/auth_system_rules.md",
+    "docs/SECURITY.md",
+    "docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md",
+    "docs/audit/20260109_aveli_visdom_audit/E2E_FLOWS.md",
+    "docs/audit/20260109_aveli_visdom_audit/README.md"
+  ],
+  "implemented_sources": [
+    "backend/app/auth.py",
+    "backend/app/routes/api_auth.py",
+    "backend/app/routes/auth.py",
+    "backend/app/routes/email_verification.py",
+    "backend/app/repositories/auth.py",
+    "backend/app/repositories/sessions.py",
+    "backend/app/services/email_tokens.py",
+    "frontend/lib/api/api_paths.dart",
+    "frontend/lib/api/auth_repository.dart",
+    "frontend/lib/core/auth/auth_controller.dart",
+    "frontend/lib/core/auth/token_storage.dart",
+    "frontend/lib/features/auth/presentation/forgot_password_page.dart",
+    "frontend/lib/features/auth/presentation/new_password_page.dart",
+    "frontend/lib/features/auth/presentation/verify_email_page.dart"
+  ],
+  "mismatch_count": 2,
+  "active_task_ids": [
+    "auth_refresh_canonical_contract_docs",
+    "api_resolve_legacy_auth_router_drift"
+  ],
+  "notes": "Current runtime auth behavior is mounted in api_auth.py, while older audit docs still describe forgot/reset as legacy-unmounted behavior."
+}

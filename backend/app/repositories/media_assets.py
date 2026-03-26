@@ -302,7 +302,6 @@ async def list_orphaned_control_plane_assets(
              AND app.is_test_row_visible(rm.is_test, rm.test_session_id)
             LEFT JOIN app.home_player_uploads hpu
               ON hpu.media_asset_id = ma.id
-             AND app.is_test_row_visible(hpu.is_test, hpu.test_session_id)
             WHERE lower(coalesce(ma.purpose, '')) IN ('lesson_audio', 'lesson_media', 'home_player_audio')
               AND {_test_visibility_clause("ma")}
             GROUP BY

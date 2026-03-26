@@ -1,0 +1,22 @@
+{
+  "component": "observability",
+  "status": "aligned",
+  "used_in_runtime": true,
+  "confidence": "high",
+  "planned_sources": [
+    "codex/AVELI_OPERATING_SYSTEM.md",
+    "docs/media_control_plane_mcp.md",
+    "actual_truth_2026-04-26/observability/mcp_observability_contract.md"
+  ],
+  "implemented_sources": [
+    "backend/app/routes/media_control_plane_mcp.py",
+    "backend/app/repositories/home_player_library.py",
+    "backend/app/repositories/media_assets.py",
+    "backend/app/repositories/runtime_media.py",
+    "backend/app/services/media_control_plane_observability.py",
+    "backend/tests/test_media_control_plane_observability.py"
+  ],
+  "mismatch_count": 0,
+  "active_task_ids": [],
+  "notes": "Media-control-plane observability already exposes lesson projection drift and Home runtime-gap detection for the current isolation scope."
+}

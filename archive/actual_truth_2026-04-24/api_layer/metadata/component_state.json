@@ -1,0 +1,40 @@
+{
+  "component": "api_layer",
+  "status": "partial",
+  "used_in_runtime": true,
+  "confidence": "high",
+  "planned_sources": [
+    "actual_truth_2026-04-24/Aveli_System_Decisions.md",
+    "aveli_system_manifest.json",
+    "docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json",
+    "docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md",
+    "docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md",
+    "docs/audit/20260109_aveli_visdom_audit/FRONTEND_REVIEW.md"
+  ],
+  "implemented_sources": [
+    "backend/app/main.py",
+    "backend/app/routes/api_auth.py",
+    "backend/app/routes/api_checkout.py",
+    "backend/app/routes/api_media.py",
+    "backend/app/routes/api_orders.py",
+    "backend/app/routes/billing.py",
+    "backend/app/routes/media.py",
+    "backend/app/routes/playback.py",
+    "backend/app/routes/auth.py",
+    "backend/app/routes/api_payments.py",
+    "frontend/lib/api/api_paths.dart",
+    "frontend/lib/api/auth_repository.dart",
+    "frontend/lib/features/payments/data/payments_repository.dart",
+    "frontend/lib/features/payments/data/billing_api.dart",
+    "frontend/lib/features/payments/services/stripe_service.dart",
+    "frontend/lib/data/repositories/orders_repository.dart"
+  ],
+  "mismatch_count": 4,
+  "active_task_ids": [
+    "api_align_media_sign_route",
+    "api_refresh_usage_diff_current_frontend",
+    "api_resolve_legacy_auth_router_drift",
+    "api_resolve_legacy_payments_router_drift"
+  ],
+  "notes": "Current frontend call sites largely use canonical /api/checkout, /api/billing, /orders, and /auth/request-password-reset paths; the January audit baseline is now stale."
+}

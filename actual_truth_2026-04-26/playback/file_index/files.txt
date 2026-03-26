@@ -1,0 +1,15 @@
+actual_truth_2026-04-26/Aveli_System_Decisions.md
+docs/media_pipeline.md
+docs/media_control_plane/media_pipeline_audit_2026-03-14.md
+media_control_plane_phase2_design.md
+runtime_media_reference_design.md
+backend/app/routes/api_media.py
+backend/app/routes/media.py
+backend/app/routes/playback.py
+backend/app/media_control_plane/services/media_resolver_service.py
+backend/app/services/lesson_playback_service.py
+backend/app/services/playback_delivery_service.py
+frontend/lib/api/api_paths.dart
+frontend/lib/features/media/data/media_pipeline_repository.dart
+frontend/lib/shared/utils/lesson_media_playback_resolver.dart
+frontend/lib/features/home/presentation/home_dashboard_page.dart

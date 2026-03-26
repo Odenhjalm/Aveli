@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..auth import CurrentUser
-from ..db import get_conn, get_test_session_id
+from ..db import get_conn
 from ..routes import media as media_routes
 from ..services import courses_service, entitlement_service, runtime_media_service
 from ..services.entitlement_service import fetch_one
@@ -29,7 +29,6 @@ async def _resolve_course_id_for_lesson_media(
     db,
     *,
     lesson_media_id: str,
-    current_session_id: str | None,
 ) -> str:
     lesson_row = await fetch_one(
         db,
@@ -41,12 +40,11 @@ async def _resolve_course_id_for_lesson_media(
         FROM app.lesson_media lm
         JOIN app.lessons l ON l.id = lm.lesson_id
         WHERE lm.id = $1
-          AND app.is_test_row_visible(lm.is_test, lm.test_session_id, $2)
-          AND app.is_test_row_visible(l.is_test, l.test_session_id, $2)
+          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
+          AND app.is_test_row_visible(l.is_test, l.test_session_id)
         LIMIT 1
         """,
         lesson_media_id,
-        current_session_id,
     )
     if lesson_row is None:
         raise HTTPException(
@@ -87,7 +85,6 @@ async def _get_active_runtime_media_by_id(
     db,
     *,
     runtime_media_id: str,
-    current_session_id: str | None,
 ) -> tuple[dict, str]:
     runtime_row = await fetch_one(
         db,
@@ -109,12 +106,11 @@ async def _get_active_runtime_media_by_id(
         JOIN app.lessons l ON l.id = lm.lesson_id
         WHERE rm.id = $1
           AND rm.active = true
-          AND app.is_test_row_visible(lm.is_test, lm.test_session_id, $2)
-          AND app.is_test_row_visible(l.is_test, l.test_session_id, $2)
+          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
+          AND app.is_test_row_visible(l.is_test, l.test_session_id)
         LIMIT 1
         """,
         runtime_media_id,
-        current_session_id,
     )
     if runtime_row is None:
         raise HTTPException(
@@ -138,13 +134,11 @@ async def resolve_lesson_playback(
 ):
     user_id = str(current["id"])
     lesson_media_id = str(payload.lesson_media_id)
-    current_session_id = get_test_session_id()
 
     async with get_conn() as db:
         course_id = await _resolve_course_id_for_lesson_media(
             db,
             lesson_media_id=lesson_media_id,
-            current_session_id=current_session_id,
         )
         await _enforce_course_access(
             db,
@@ -174,13 +168,11 @@ async def stream_runtime_media(
     current: CurrentUser,
 ) -> StreamingResponse:
     user_id = str(current["id"])
-    current_session_id = get_test_session_id()
 
     async with get_conn() as db:
         runtime_row, course_id = await _get_active_runtime_media_by_id(
             db,
             runtime_media_id=str(runtime_media_id),
-            current_session_id=current_session_id,
         )
         await _enforce_course_access(
             db,

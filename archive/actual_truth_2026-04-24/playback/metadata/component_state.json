@@ -1,0 +1,31 @@
+{
+  "component": "playback",
+  "status": "partial",
+  "used_in_runtime": true,
+  "confidence": "high",
+  "planned_sources": [
+    "actual_truth_2026-04-24/Aveli_System_Decisions.md",
+    "docs/media_pipeline.md",
+    "docs/media_control_plane/media_pipeline_audit_2026-03-14.md",
+    "media_control_plane_phase2_design.md",
+    "runtime_media_reference_design.md"
+  ],
+  "implemented_sources": [
+    "backend/app/routes/api_media.py",
+    "backend/app/routes/media.py",
+    "backend/app/routes/playback.py",
+    "backend/app/media_control_plane/services/media_resolver_service.py",
+    "backend/app/services/lesson_playback_service.py",
+    "backend/app/services/playback_delivery_service.py",
+    "frontend/lib/api/api_paths.dart",
+    "frontend/lib/features/media/data/media_pipeline_repository.dart",
+    "frontend/lib/shared/utils/lesson_media_playback_resolver.dart",
+    "frontend/lib/features/home/presentation/home_dashboard_page.dart"
+  ],
+  "mismatch_count": 2,
+  "active_task_ids": [
+    "playback_converge_runtime_identity",
+    "playback_converge_public_playback_surfaces"
+  ],
+  "notes": "Runtime playback is now the live Home path, but lesson callers and extra public playback surfaces still have not converged on a single runtime-media contract."
+}
