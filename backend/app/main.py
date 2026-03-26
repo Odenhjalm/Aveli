@@ -44,6 +44,7 @@ from .routes import (
     api_checkout,
     api_orders,
     api_profiles,
+    playback,
     api_services,
     api_sfu,
     billing,
@@ -173,6 +174,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(api_feed.router)
     app.include_router(api_sfu.router)
     app.include_router(api_profiles.router)
+    app.include_router(playback.router)
     app.include_router(api_me.router)
     app.include_router(api_media.router)
     app.include_router(api_media.debug_router)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -16,7 +17,6 @@ from ..repositories import media_resolution_failures
 from ..repositories import storage_objects
 from ..services import lesson_playback_service, storage_service
 from ..utils.http_headers import build_content_disposition
-from ..utils.audio_content_types import resolve_runtime_audio_content_type
 from ..utils import media_robustness
 from ..utils.media_signer import (
     MediaTokenError,
@@ -37,6 +37,34 @@ _KNOWN_BUCKET_PREFIXES = {
     settings.media_source_bucket,
     settings.media_public_bucket,
 }
+
+_FALLBACK_EXTENSION_CONTENT_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".wave": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".ogv": "video/ogg",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".json": "application/json",
+    ".txt": "text/plain",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".zip": "application/zip",
+}
+
+for extension, content_type in _FALLBACK_EXTENSION_CONTENT_TYPES.items():
+    mimetypes.add_type(content_type, extension, strict=False)
 
 
 def _normalize_storage_path(storage_path: str) -> str:
@@ -114,6 +142,35 @@ def _recommended_action_for_reason(reason: str | None) -> str:
     if normalized == "missing_object":
         return "reupload_required"
     return "manual_review"
+
+
+def _normalize_content_type(value: str | None) -> str | None:
+    normalized = str(value or "").split(";", 1)[0].strip().lower()
+    return normalized or None
+
+
+def _guess_content_type(filename: str | None) -> str | None:
+    raw = str(filename or "").strip()
+    if not raw:
+        return None
+    guessed, _ = mimetypes.guess_type(raw, strict=False)
+    return _normalize_content_type(guessed)
+
+
+def _resolve_streaming_content_type(row: dict, storage_path: str | None) -> str:
+    stored_content_type = _normalize_content_type(row.get("content_type"))
+    if stored_content_type:
+        return stored_content_type
+
+    filename = str(row.get("original_name") or "").strip()
+    if not filename:
+        filename = Path(str(storage_path or "")).name
+
+    guessed_content_type = _guess_content_type(filename)
+    if guessed_content_type:
+        return guessed_content_type
+
+    return "application/octet-stream"
 
 
 async def _augment_failure_details_with_invariant(
@@ -438,11 +495,7 @@ async def _build_streaming_response(
             )
             raise HTTPException(status_code=503, detail="Storage unavailable") from None
 
-        content_type = resolve_runtime_audio_content_type(
-            kind=kind,
-            content_type=upstream.headers.get("content-type") or row.get("content_type"),
-            storage_path=str(storage_path),
-        ) or "application/octet-stream"
+        content_type = _resolve_streaming_content_type(row, str(storage_path))
         lower_content_type = str(content_type).strip().lower()
         document_response = kind in {"document", "pdf"} or lower_content_type.startswith(
             "application/pdf"
@@ -477,11 +530,7 @@ async def _build_streaming_response(
         )
 
     file_size = file_path.stat().st_size
-    content_type = resolve_runtime_audio_content_type(
-        kind=kind,
-        content_type=row.get("content_type"),
-        storage_path=str(storage_path),
-    ) or "application/octet-stream"
+    content_type = _resolve_streaming_content_type(row, str(storage_path))
     lower_content_type = str(content_type).strip().lower()
     document_response = kind in {"document", "pdf"} or lower_content_type.startswith(
         "application/pdf"

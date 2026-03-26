@@ -4,11 +4,15 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse
 from jose import JWTError
+from psycopg.rows import dict_row
+from pydantic import BaseModel
 
 from .. import models, repositories, schemas
 from ..auth import (
@@ -16,12 +20,12 @@ from ..auth import (
     create_access_token,
     create_refresh_token,
     decode_jwt,
-    hash_password,
     hash_refresh_token,
     is_token_expired,
     verify_password,
 )
 from ..config import settings
+from ..db import pool
 from ..services.email_verification import (
     InvalidInviteTokenError,
     InvalidPasswordResetTokenError,
@@ -47,6 +51,11 @@ _PASSWORD_RESET_RATE_LIMIT = 5
 _SEND_INVITE_RATE_LIMIT = 10
 _password_reset_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
 _send_invite_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
+
+
+class RegisterTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 async def _client_ip(request: Request) -> str | None:
@@ -77,6 +86,197 @@ async def _enqueue_verification_email(email: str) -> None:
         logger.exception(
             "Failed to send verification email after signup email=%s",
             email,
+        )
+
+
+def _supabase_admin_base_url() -> str:
+    if settings.supabase_url is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Registration unavailable",
+        )
+    return settings.supabase_url.unicode_string().rstrip("/")
+
+
+def _supabase_admin_headers() -> dict[str, str]:
+    service_key = settings.supabase_service_role_key
+    if not service_key:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Registration unavailable",
+        )
+    return {
+        "Authorization": f"Bearer {service_key}",
+        "apikey": service_key,
+        "Content-Type": "application/json",
+    }
+
+
+def _is_duplicate_signup_response(response: httpx.Response) -> bool:
+    if response.status_code == status.HTTP_409_CONFLICT:
+        return True
+    if response.status_code not in {
+        status.HTTP_400_BAD_REQUEST,
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+    }:
+        return False
+    body = response.text.lower()
+    return any(
+        marker in body
+        for marker in (
+            "already registered",
+            "already exists",
+            "user already",
+            "duplicate",
+            "email exists",
+        )
+    )
+
+
+async def _create_supabase_auth_user(
+    *,
+    email: str,
+    password: str,
+    display_name: str | None,
+) -> dict[str, Any]:
+    payload = {
+        "email": _normalized_email(email),
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": {"display_name": display_name or ""},
+    }
+    try:
+        async with httpx.AsyncClient(
+            base_url=_supabase_admin_base_url(),
+            headers=_supabase_admin_headers(),
+            timeout=20.0,
+        ) as client:
+            response = await client.post("/auth/v1/admin/users", json=payload)
+    except HTTPException:
+        logger.exception("Register failed: Supabase admin config missing email=%s", email)
+        raise
+    except httpx.HTTPError as exc:
+        logger.exception("Register failed: Supabase admin request error email=%s", email)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Registration unavailable",
+        ) from exc
+
+    if _is_duplicate_signup_response(response):
+        logger.warning(
+            "Register conflict from Supabase admin email=%s status=%s",
+            email,
+            response.status_code,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    if response.status_code not in {status.HTTP_200_OK, status.HTTP_201_CREATED}:
+        logger.error(
+            "Register failed: Supabase admin status=%s email=%s body=%s",
+            response.status_code,
+            email,
+            response.text[:500],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Registration unavailable",
+        )
+
+    data = response.json()
+    if not isinstance(data, dict) or not data.get("id"):
+        logger.error(
+            "Register failed: Supabase admin returned invalid payload email=%s payload=%s",
+            email,
+            data,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Registration unavailable",
+        )
+    return data
+
+
+async def _ensure_profile_row(
+    *,
+    user_id: str,
+    email: str,
+    display_name: str | None,
+) -> dict[str, Any]:
+    normalized_email = _normalized_email(email)
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.profiles (
+                    user_id,
+                    email,
+                    display_name,
+                    onboarding_state,
+                    role,
+                    role_v2,
+                    is_admin,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    'registered_unverified',
+                    'student',
+                    'user',
+                    false,
+                    now(),
+                    now()
+                )
+                ON CONFLICT (user_id) DO UPDATE
+                  SET email = excluded.email,
+                      display_name = COALESCE(app.profiles.display_name, excluded.display_name),
+                      updated_at = now()
+                RETURNING user_id,
+                          email,
+                          display_name,
+                          onboarding_state,
+                          role_v2,
+                          is_admin,
+                          created_at,
+                          updated_at
+                """,
+                (user_id, normalized_email, display_name),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    return dict(row) if row else {}
+
+
+async def _insert_auth_event_best_effort(
+    *,
+    user_id: str | None,
+    email: str | None,
+    event: str,
+    request: Request,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    try:
+        await repositories.insert_auth_event(
+            user_id=user_id,
+            email=email,
+            event=event,
+            ip_address=await _client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            metadata=metadata,
+        )
+    except Exception:
+        logger.warning(
+            "Auth event logging skipped event=%s user_id=%s email=%s",
+            event,
+            user_id,
+            email,
+            exc_info=True,
         )
 
 
@@ -163,7 +363,9 @@ async def oauth_legacy_disabled():
 
 
 @router.post(
-    "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
+    "/register",
+    response_model=RegisterTokenResponse,
+    status_code=status.HTTP_201_CREATED,
 )
 async def register(
     payload: schemas.AuthRegisterRequest,
@@ -174,51 +376,50 @@ async def register(
 
     existing = await repositories.get_user_by_email(payload.email)
     if existing:
+        logger.warning("Register conflict email=%s", payload.email)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
 
-    hashed = hash_password(payload.password)
     try:
-        result = await repositories.create_user(
+        auth_user = await _create_supabase_auth_user(
             email=payload.email,
-            hashed_password=hashed,
+            password=payload.password,
             display_name=payload.display_name,
-            referral_code=payload.referral_code,
         )
-    except repositories.UniqueViolationError as exc:
+        user_id = str(auth_user["id"])
+        profile = await _ensure_profile_row(
+            user_id=user_id,
+            email=str(auth_user.get("email") or payload.email),
+            display_name=payload.display_name,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Register failed unexpectedly email=%s", payload.email)
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        ) from exc
-    except repositories.InvalidReferralCodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Referral code is invalid, inactive, or already used",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Registration unavailable",
         ) from exc
 
-    user = result["user"]
-    profile = result["profile"] or {}
-    user_id = str(user["id"])
-    claims = await _claims_for_user(user_id, profile)
+    claims = {
+        "role": profile.get("role_v2", "user") or "user",
+        "is_admin": bool(profile.get("is_admin")),
+        "is_teacher": False,
+    }
     access_token = create_access_token(user_id, claims=claims)
-    refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id)
-    await repositories.upsert_refresh_token(
+    await _insert_auth_event_best_effort(
         user_id=user_id,
-        jti=refresh_jti,
-        token_hash=hash_refresh_token(refresh_token),
-        expires_at=refresh_exp,
-    )
-
-    await repositories.insert_auth_event(
-        user_id=user_id,
-        email=payload.email,
+        email=str(auth_user.get("email") or payload.email),
         event="register_success",
-        ip_address=await _client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-        metadata={"refresh_jti": refresh_jti},
+        request=request,
+        metadata=None,
     )
-    background_tasks.add_task(_enqueue_verification_email, str(user["email"]))
-    return schemas.Token(access_token=access_token, refresh_token=refresh_token)
+    background_tasks.add_task(
+        _enqueue_verification_email,
+        str(auth_user.get("email") or payload.email),
+    )
+    return RegisterTokenResponse(access_token=access_token)
 
 
 @router.post("/login", response_model=schemas.Token)
