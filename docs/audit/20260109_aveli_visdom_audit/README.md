@@ -7,8 +7,8 @@
   - Landing site tests and lint pass (`npm test`, `npm run lint`).
   - Core API surface is implemented (177 endpoints in `docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md`).
 - Highest risk areas:
-  - Payment and media flows: frontend calls endpoints that do not exist in the mounted backend (`/payments/*`, `/checkout/session`, `/media/presign`).
-  - Password reset endpoints exist but are unmounted; UI currently points to those endpoints.
+  - Payment route accounting drift: mounted purchase flows live under `/api/checkout/*`, `/api/billing/*`, and `/orders`, while legacy `/payments/*` and `/checkout/session` claims remain historical-only and must not be treated as current runtime truth.
+  - Auth audit drift: `backend/app/routes/auth.py` still exists in the repo, but mounted auth truth lives in `backend/app/routes/api_auth.py` plus `backend/app/routes/email_verification.py`, and audit artifacts must treat the duplicate file as legacy-only.
   - RLS: `app.course_entitlements` is missing RLS and feed policy is permissive.
   - Flutter static analysis fails due to missing `package:aveli/*` imports, which would fail CI/build.
 
@@ -16,21 +16,21 @@ Launch blockers (must fix before launch): endpoint mismatches, unmounted routes,
 
 ## Prioritized Action Plan
 
-### P0-1: Align payment endpoints (frontend vs backend)
-What: Frontend uses `/payments/*` and `/checkout/session` while backend exposes `/api/checkout/*`, `/api/billing/*`, and `/orders`.
-Where: `frontend/lib/features/payments/data/payments_repository.dart`, `frontend/lib/data/repositories/orders_repository.dart`, `frontend/lib/features/payments/services/stripe_service.dart`, `backend/app/routes/billing.py`, `backend/app/routes/api_checkout.py`, `backend/app/routes/api_orders.py`, `backend/app/main.py`.
-Why: Core purchase and subscription flows will return 404/405 today.
-Risk: Payments and memberships fail; revenue impact.
-Fix: Either (a) update Flutter to call `/api/checkout/create`, `/api/billing/create-subscription`, `/api/billing/customer-portal`, `/orders`, or (b) mount and fully implement the `/payments` router.
-Test: Add integration tests for course checkout + membership (backend) and a Flutter contract test asserting endpoint availability (see `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md`).
+### P0-1: Reclassify legacy payments router drift
+What: January audit notes still treat `/payments/*` and `/checkout/session` as if they define current purchase/runtime truth, but mounted payment behavior comes from `backend/app/routes/api_checkout.py`, `backend/app/routes/billing.py`, and `backend/app/routes/api_orders.py`.
+Where: `backend/app/main.py`, `backend/app/routes/api_checkout.py`, `backend/app/routes/billing.py`, `backend/app/routes/api_orders.py`, `backend/app/routes/api_payments.py`, `docs/audit/20260109_aveli_visdom_audit/E2E_FLOWS.md`.
+Why: Audit consumers can misclassify unmounted or stale endpoints as active runtime truth even though the canonical handlers are already mounted elsewhere.
+Risk: Incorrect route accounting, misleading payment remediation plans, and duplicate `/payments/*` logic being treated as current.
+Fix: Keep `POST /api/checkout/create`, `POST /api/billing/create-subscription`, `POST /api/billing/customer-portal`, `POST /orders`, and `GET /orders/{order_id}` as the canonical mounted inventory. Treat `backend/app/routes/api_payments.py` as legacy-only because `backend/app/main.py` does not mount it.
+Test: Verify `backend/app/main.py` includes `api_checkout.router`, `billing.router`, and `api_orders.router` but does not include `api_payments.router`, then verify audit docs no longer describe legacy `/payments/*` paths as active runtime truth.
 
-### P0-2: Mount or replace password reset endpoints
-What: `/auth/forgot-password` and `/auth/reset-password` are called by Flutter but live only in unmounted router.
-Where: `frontend/lib/api/auth_repository.dart`, `backend/app/routes/auth.py`, `backend/app/main.py`.
-Why: Password reset flow is broken in production.
-Risk: Users cannot recover accounts.
-Fix: Mount `backend/app/routes/auth.py` or migrate Flutter to a mounted endpoint.
-Test: Add backend tests for forgot/reset and a Flutter widget test for success/error handling.
+### P0-2: Reclassify legacy auth router drift
+What: January audit notes still treat `backend/app/routes/auth.py` as if it defines current password-reset truth, but the mounted auth runtime comes from `backend/app/routes/api_auth.py` and mounted verification-email flows come from `backend/app/routes/email_verification.py`.
+Where: `backend/app/main.py`, `backend/app/routes/api_auth.py`, `backend/app/routes/email_verification.py`, `backend/app/routes/auth.py`, `docs/audit/20260109_aveli_visdom_audit/E2E_FLOWS.md`.
+Why: Audit consumers can misclassify unmounted handlers as active API truth even though runtime auth behavior is already mounted elsewhere.
+Risk: Incorrect route accounting, misleading remediation plans, and duplicate auth logic being treated as current.
+Fix: Keep mounted auth truth in `backend/app/routes/api_auth.py` and `backend/app/routes/email_verification.py`, and document the mounted inventory: `POST /auth/login`, `POST /auth/request-password-reset`, compatibility alias `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/send-verification`, `GET /auth/verify-email`, `POST /auth/refresh`, and `GET /auth/me`. Treat `backend/app/routes/auth.py` as legacy-only because it is not mounted by `backend/app/main.py`.
+Test: Verify `backend/app/main.py` includes `api_auth.router` and `email_verification.router` and does not include `auth.router`, then verify audit docs no longer describe `backend/app/routes/auth.py` as active truth or omit verification-email ownership.
 
 ### P0-3: Fix media presign mismatch
 What: Flutter/landing request `/media/presign`, but backend exposes `/media/sign` and studio-specific presign endpoints.
@@ -80,13 +80,13 @@ Risk: Account compromise, DoS.
 Fix: Add rate limiting middleware or per-endpoint throttling to mounted routes.
 Test: Add tests for rate limit thresholds and 429 responses.
 
-### P1-4: Quiz update method mismatch
-What: Flutter uses `PATCH /studio/quizzes/{id}/questions/{id}` but backend expects `PUT`.
-Where: `frontend/lib/features/studio/data/studio_repository.dart`, `backend/app/routes/studio.py`.
-Why: Quiz question updates fail.
-Risk: Teacher studio breakage.
-Fix: Align method in Flutter or add PATCH handler in backend.
-Test: Add integration test for quiz question update.
+### P1-4: Quiz route audit drift
+What: January audit notes still record `PATCH /studio/quizzes/{id}/questions/{id}`, but current frontend and mounted backend both use `PUT /studio/quizzes/{id}/questions/{id}`.
+Where: `frontend/lib/features/studio/data/studio_repository.dart`, `backend/app/routes/studio.py`, `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md`.
+Why: Audit consumers can treat a historical PATCH claim as current route truth even though the live contract is already aligned.
+Risk: Incorrect route accounting and misleading backlog prioritization for teacher studio.
+Fix: Keep `PUT /studio/quizzes/{id}/questions/{id}` as the canonical route and preserve the old PATCH claim only as historical context.
+Test: Verify frontend uses `_client.put(...)` for quiz question updates and backend exposes `@router.put("/quizzes/{quiz_id}/questions/{question_id}")` with no quiz-question PATCH route.
 
 ### P2-1: Typed API contracts
 What: Many Flutter repositories use raw `Map<String,dynamic>`.

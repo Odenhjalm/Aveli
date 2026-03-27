@@ -8,13 +8,13 @@
 
 ## Phase 2 — Alignment
 
-* [ ] api_resolve_legacy_auth_router_drift
-* [ ] api_resolve_legacy_payments_router_drift
-* [ ] api_resolve_profiles_duplicates
-* [ ] auth_deprecate_forgot_password_alias
-* [ ] auth_refresh_canonical_contract_docs
-* [ ] courses_refresh_quiz_route_audit
-* [ ] courses_resolve_virtual_module_contract
+* [x] api_resolve_legacy_auth_router_drift
+* [x] api_resolve_legacy_payments_router_drift
+* [x] api_resolve_profiles_duplicates
+* [x] auth_deprecate_forgot_password_alias
+* [x] auth_refresh_canonical_contract_docs
+* [x] courses_refresh_quiz_route_audit
+* [x] courses_resolve_virtual_module_contract
 * [x] media_align_home_upload_completion_surface (already satisfied)
 * [x] home_player_emit_canonical_runtime_projection (already satisfied)
 * [] mcp_resolve_semantic_search_gap

@@ -49,7 +49,7 @@ These entries appeared in the January 2026 audit snapshot, but they do not match
 | `GET /payments/orders/{}` | Current payments flows use `/orders/{order_id}` | `frontend/lib/features/payments/data/payments_repository.dart`, `frontend/lib/data/repositories/orders_repository.dart` |
 | `GET /payments/plans` | `plans()` no longer issues any API request | `frontend/lib/features/payments/data/payments_repository.dart` |
 | `GET /payments/subscription` | Current membership fetch uses `GET /api/me/membership` | `frontend/lib/features/payments/data/payments_repository.dart` |
-| `PATCH /studio/quizzes/{}/questions/{}` | Current studio question update uses `PUT` | `frontend/lib/features/studio/data/studio_repository.dart` |
+| `PATCH /studio/quizzes/{}/questions/{}` | Current studio question update uses `PUT /studio/quizzes/{quiz_id}/questions/{question_id}` in both frontend and mounted backend | `frontend/lib/features/studio/data/studio_repository.dart`, `backend/app/routes/studio.py` |
 | `POST /api/billing/change-plan` | Current plan changes are handled locally as unsupported and delegated to customer portal | `frontend/lib/features/payments/data/billing_api.dart` |
 | `POST /api/billing/create-subscription-sheet` | Current subscription start uses `POST /api/billing/create-subscription` | `frontend/lib/features/payments/data/billing_api.dart`, `frontend/lib/features/paywall/data/checkout_api.dart` |
 | `POST /checkout/session` | Current checkout creation uses `POST /api/checkout/create` | `frontend/lib/features/payments/services/stripe_service.dart`, `frontend/lib/data/repositories/orders_repository.dart`, `frontend/lib/features/paywall/data/checkout_api.dart`, `frontend/lib/mvp/api_client.dart` |

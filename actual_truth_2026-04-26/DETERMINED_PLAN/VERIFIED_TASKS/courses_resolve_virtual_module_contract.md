@@ -6,17 +6,19 @@ courses_resolve_virtual_module_contract
 
 ## PROBLEM
 
-- Course docs and import mental model still imply persisted modules as the primary runtime structure
-- Current runtime uses `_virtual_module()` in `backend/app/routes/courses.py` because lessons now belong directly to courses
+- Current runtime still exposes `_virtual_module()` in `backend/app/routes/courses.py`
+- Course and lesson traversal still preserve a module-based compatibility contract even though the target canonical structure is now direct course -> lessons
+- The task is no longer a documentation-only alignment pass; it requires architectural removal of module abstraction from active traversal
 - Equivalent evidence expected in: `backend/app/routes/courses.py`, `backend/app/repositories/courses.py`, `backend/app/services/courses_service.py`, `docs/README.md`, `frontend/lib/features/courses/presentation/course_page.dart`, `frontend/lib/features/courses/presentation/lesson_page.dart`
 
 ---
 
 ## SYSTEM DECISION
 
-- Existing runtime behavior is canonical until explicitly redesigned
-- No new course business logic is allowed
-- Documentation must describe current runtime structure accurately
+- This task is explicitly reclassified as `architecture_change`
+- Canonical traversal target is: `course -> lessons (direct)`
+- `_virtual_module()` and module-based traversal are no longer preserved contracts for this task
+- Architecture work MUST remove module abstraction from active course and lesson traversal without redesigning unrelated course access rules
 
 ---
 
@@ -27,7 +29,7 @@ courses_resolve_virtual_module_contract
 - Open source files:
   `backend/app/routes/courses.py`, `backend/app/repositories/courses.py`, `backend/app/services/courses_service.py`, `docs/README.md`, `frontend/lib/features/courses/presentation/course_page.dart`, `frontend/lib/features/courses/presentation/lesson_page.dart`
 
-- Identify the exact runtime contract for course -> module -> lesson traversal
+- Identify every active runtime dependency on module-based traversal and every place where course -> lessons direct traversal must replace it
 
 ### STEP 2 — Handler selection
 
@@ -35,9 +37,10 @@ courses_resolve_virtual_module_contract
 
 Selected contract MUST:
 
-- describe the current virtual-module runtime accurately
-- preserve current course and lesson behavior
-- NOT reintroduce persisted-module assumptions without proof
+- define direct course -> lessons traversal as the canonical structure
+- remove virtual-module dependencies from active traversal
+- preserve current course access and lesson access behavior
+- NOT retain module-based payload requirements in the canonical contract
 
 #### STEP 2B — Response contract (MANDATORY)
 
@@ -45,9 +48,9 @@ Expected response MUST be defined BEFORE implementation.
 
 Response MUST:
 
-- be markdown contract output
-- identify the virtual-module compatibility layer explicitly
-- describe how clients should interpret module and lesson data today
+- define the canonical direct traversal payloads for course and lesson reads
+- identify lessons as belonging directly to a course
+- remove module abstraction from active contract language
 
 FOR read routes:
 - MUST return structured data (list or object)
@@ -59,9 +62,9 @@ FOR write routes:
 
 Selected contract MUST:
 
-- match current runtime code
-- NOT describe obsolete persisted-module behavior as active truth
-- NOT require schema redesign in this task
+- match the new direct traversal architecture introduced by this task
+- NOT preserve `_virtual_module()` or module-based traversal as active truth
+- NOT rely on persisted-module assumptions as the canonical model
 
 IF response contract is unclear:
 → STOP
@@ -70,8 +73,8 @@ IF response contract is unclear:
 
 IF docs and runtime disagree:
 
-- prefer current runtime code
-- keep historical module model only as background context
+- prefer the new direct course -> lessons architecture defined in this task
+- keep historical module model only as deprecated background context
 
 - IF still ambiguous:
   → STOP
@@ -80,29 +83,35 @@ IF docs and runtime disagree:
 
 #### STEP 3A — Route creation
 
-- Create updated course-structure contract artifacts describing the virtual-module runtime
+- Remove module abstraction from active course and lesson traversal surfaces
+- Define and implement the canonical direct structure:
+  - `course`
+  - `lessons`
+- Update active client and documentation surfaces to follow the direct structure
 
 #### STEP 3B — Adapter rules
 
-Contract update MUST:
+Architecture update MUST:
 
-- preserve current API behavior
+- remove `_virtual_module()` from active traversal
+- remove module-based contract requirements from course and lesson payload interpretation
 - NOT change course access logic
-- NOT add new module storage semantics
+- NOT introduce new module storage semantics
+- NOT preserve module abstraction as compatibility truth
 
 #### STEP 3C — Request/response passthrough
 
-- Current course and lesson payloads MUST remain unchanged
-- Virtual-module behavior MUST be described unchanged
+- Course and lesson traversal MUST become direct
+- Active clients MUST no longer depend on module abstraction for navigation or gating
 - No speculative transformations allowed
 
 ### STEP 4 — Failure handling
 
 IF:
 
-- current virtual-module behavior cannot be proven
-- docs require schema redesign to become accurate
-- client contract is ambiguous
+- module abstraction cannot be removed without forbidden schema work
+- direct course -> lessons traversal cannot be proven end-to-end
+- client contract remains ambiguous after source inspection
 
 → STOP
 
@@ -110,10 +119,11 @@ IF:
 
 ## DO NOT
 
-- redesign the course schema
+- preserve `_virtual_module()`
+- maintain module-based contract
 - modify access logic
 - introduce new module persistence
-- change frontend runtime behavior
+- modify database schema
 
 ---
 
@@ -121,16 +131,16 @@ IF:
 
 After change:
 
-- course docs describe the virtual-module runtime accurately
-- client expectations match current course/lesson traversal
-- no persisted-module assumptions remain in active contract docs
+- course and lesson traversal use direct `course -> lessons` structure
+- no active traversal depends on `_virtual_module()` or module-based contract
+- client expectations match the direct course -> lessons model
 
 ---
 
 ## STOP CONDITIONS
 
-- virtual-module runtime cannot be proven
-- task requires schema redesign
+- task requires database schema modification
+- direct traversal cannot replace module abstraction safely
 - client contract is ambiguous
 
 ---
@@ -143,7 +153,7 @@ MEDIUM
 
 ## CATEGORY
 
-courses / contract_alignment
+architecture_change
 
 ---
 
@@ -156,5 +166,5 @@ courses / contract_alignment
 
 ## NOTES
 
-- Documentation and contract task
-- Current runtime remains canonical
+- Architectural reclassification
+- Canonical target is direct `course -> lessons` traversal

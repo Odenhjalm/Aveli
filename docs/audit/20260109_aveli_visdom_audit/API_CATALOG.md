@@ -220,16 +220,6 @@ Notes on methodology:
 | POST | `/media/sign` | required | schemas.MediaSignRequest | schemas.MediaSignResponse | - | models.get_media | app.lesson_media, app.media_objects | 404, 503 | - |
 | GET | `/media/stream/{token}` | public | str, Request | - | - | models.get_media, models.get_media_object | app.lesson_media, app.media_objects | 400, 401, 404, 503 | no response_model |
 
-## backend/app/routes/profiles.py
-
-| Method | Path | Auth | Request | Response | Status | Services/Repos | Tables | Errors | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GET | `/profiles/me` | required | - | schemas.Profile | - | models.get_profile | - | - | - |
-| PATCH | `/profiles/me` | required | schemas.ProfileUpdate | schemas.Profile | - | models.get_profile, models.update_profile | - | status.HTTP_404_NOT_FOUND | - |
-| POST | `/profiles/me/avatar` | required | UploadFile | schemas.Profile | - | models.cleanup_media_object, models.create_media_object, models.get_media_object, models.get_profile, models.update_profile | app.lesson_media, app.media_objects, app.profiles | status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, status.HTTP_500_INTERNAL_SERVER_ERROR | multipart upload |
-| GET | `/profiles/avatar/{media_id}` | public | str | - | - | models.get_media_object | app.media_objects | status.HTTP_404_NOT_FOUND | no response_model |
-| GET | `/profiles/{user_id}/certificates` | required | str, bool | - | - | models.certificates_of | - | status.HTTP_403_FORBIDDEN | no response_model |
-
 ## backend/app/routes/seminars.py
 
 | Method | Path | Auth | Request | Response | Status | Services/Repos | Tables | Errors | Notes |

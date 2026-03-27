@@ -29,9 +29,14 @@ Source of truth for this ruleset:
 - Canonical refresh endpoint:
   - `POST /auth/refresh` handled by `backend/app/routes/api_auth.py`.
 - Canonical password reset request endpoint:
-  - `POST /auth/request-password-reset` handled by `backend/app/routes/api_auth.py` and registered as alias path `/auth/request-password-reset` plus `/auth/forgot-password` in same handler.
+  - `POST /auth/request-password-reset` handled by `backend/app/routes/api_auth.py`.
+  - Compatibility alias `POST /auth/forgot-password` is registered on the same handler in `backend/app/routes/api_auth.py` and remains non-primary.
 - Canonical password reset completion endpoint:
   - `POST /auth/reset-password` handled by `backend/app/routes/api_auth.py`.
+- Canonical verification email request endpoint:
+  - `POST /auth/send-verification` handled by mounted `backend/app/routes/email_verification.py`.
+- Canonical verification completion endpoint:
+  - `GET /auth/verify-email` handled by mounted `backend/app/routes/email_verification.py`.
 
 If a route maps to a non-canonical auth file that is not mounted in `backend/app/main.py`, classify as non-authoritative.
 
@@ -93,6 +98,8 @@ The following MUST be treated as allowed auth flows:
 - Token refresh via `/auth/refresh` triggered by API interceptor.
 - Password reset request via `/auth/request-password-reset`.
 - Password reset completion via `/auth/reset-password`.
+- Verification email request via `/auth/send-verification`.
+- Verification email completion via `/auth/verify-email`.
 - Profile hydration via `/auth/me` after login/register.
 - Logout clear via local token clear (`TokenStorage.clear`) through `AuthController.logout`.
 
@@ -120,4 +127,5 @@ The following MUST be treated as allowed auth flows:
 | refresh | `POST /auth/refresh` | authenticated/expired context | rotate refresh row, issue new tokens | replace stored tokens, retry request | clear tokens, session expired |
 | forgot-password | `POST /auth/request-password-reset` | unauthenticated | none | return ok | surface error only |
 | reset-password | `POST /auth/reset-password` | unauthenticated | none | return status and route to login | return error payload |
-
+| send-verification | `POST /auth/send-verification` | unauthenticated | none | return ok | surface error only |
+| verify-email | `GET /auth/verify-email` | unauthenticated | none | return status result | return invalid_or_expired_token payload |

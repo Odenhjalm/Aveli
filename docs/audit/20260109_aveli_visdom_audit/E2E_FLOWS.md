@@ -40,11 +40,21 @@ flowchart TB
 - Frontend auth state + token handling:
   - `frontend/lib/core/auth/auth_controller.dart`, `frontend/lib/api/auth_repository.dart`, `frontend/lib/core/auth/token_storage.dart`, `frontend/lib/api/api_client.dart`
 - Backend endpoints:
-  - `backend/app/routes/api_auth.py` (`/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/me`)
+  - Canonical mounted auth routers: `backend/app/routes/api_auth.py` and `backend/app/routes/email_verification.py`
+    - `POST /auth/register`
+    - `POST /auth/login`
+    - `POST /auth/request-password-reset`
+    - `POST /auth/forgot-password` (mounted compatibility alias for the request-password-reset handler, not the canonical frontend path)
+    - `POST /auth/reset-password`
+    - `POST /auth/send-verification`
+    - `GET /auth/verify-email`
+    - `POST /auth/refresh`
+    - `GET /auth/me`
 - DB tables touched (from API catalog):
   - `auth.users`, `app.profiles`, `app.refresh_tokens`, `app.auth_events`, `app.teacher_approvals`, `app.teacher_permissions` in `docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json`
 - Gaps / risks:
-  - Password reset endpoints (`/auth/forgot-password`, `/auth/reset-password`) live in unmounted router `backend/app/routes/auth.py` and are not included in `backend/app/main.py`.
+  - `backend/app/routes/auth.py` still exists as an unmounted duplicate, but it is legacy-only and must not be treated as active auth truth because `backend/app/main.py` mounts `backend/app/routes/api_auth.py` instead.
+  - Verification-email flow ownership belongs to mounted `backend/app/routes/email_verification.py`, not the unmounted legacy router.
   - OAuth path `/auth/oauth` is disabled (410) in `backend/app/routes/api_auth.py`.
   - Flutter deep-link OAuth uses Supabase session parsing (`frontend/lib/core/deeplinks/deep_link_service.dart`), but backend JWT validation only accepts its own token format in `backend/app/auth.py`.
 
@@ -55,16 +65,21 @@ flowchart TB
 - Frontend (Landing/Next):
   - Checkout return polling `/api/billing/session-status` and `/api/me/membership` in `frontend/landing/pages/checkout/return.tsx`
 - Backend endpoints:
-  - `/api/checkout/create` in `backend/app/routes/api_checkout.py`
-  - `/api/billing/*` in `backend/app/routes/billing.py`
+  - Canonical mounted checkout route: `POST /api/checkout/create` in `backend/app/routes/api_checkout.py`
+  - Canonical mounted billing routes in `backend/app/routes/billing.py`:
+    - `POST /api/billing/create-subscription`
+    - `POST /api/billing/customer-portal`
+  - Canonical mounted order routes in `backend/app/routes/api_orders.py`:
+    - `POST /orders`
+    - `GET /orders/{order_id}`
   - Stripe webhook handlers: `backend/app/routes/stripe_webhooks.py` and `backend/app/routes/stripe_webhook.py`
 - DB tables touched (from API catalog):
   - `app.orders`, `app.memberships`, `app.billing_logs`, `app.stripe_customers`
 - Integrations:
   - Stripe Checkout + Billing portal in `backend/app/services/subscription_service.py` and `backend/app/services/billing_portal_service.py`
 - Gaps / risks:
-  - Flutter uses `/payments/*` endpoints that do not exist in mounted backend routes (see `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md`).
-  - Flutter `BillingApi` expects `/api/billing/create-subscription-sheet` and `/api/billing/change-plan` which are not implemented in backend.
+  - `backend/app/routes/api_payments.py` still exists as an unmounted duplicate, but it is legacy-only and must not be treated as active payment truth because `backend/app/main.py` mounts `backend/app/routes/api_checkout.py`, `backend/app/routes/billing.py`, and `backend/app/routes/api_orders.py` instead.
+  - Historical claims about `/payments/*`, `/checkout/session`, `/api/billing/create-subscription-sheet`, and `/api/billing/change-plan` are stale route-accounting notes only; current frontend/runtime truth is captured in `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md` and `docs/audit/20260109_aveli_visdom_audit/FRONTEND_REVIEW.md`.
 
 ## Flow 3: Course purchase / access / lessons / quizzes
 - Frontend screens: catalog, course page, lesson page, quiz UI.
