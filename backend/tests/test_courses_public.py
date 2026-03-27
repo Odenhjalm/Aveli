@@ -70,7 +70,6 @@ async def test_course_public_endpoints(async_client):
     )
 
     course_id = None
-    module_id = None
     lesson_id = None
 
     try:
@@ -91,8 +90,6 @@ async def test_course_public_endpoints(async_client):
         assert create_resp.status_code == 200, create_resp.text
         course = create_resp.json()
         course_id = str(course["id"])
-        # Modules are removed; public APIs expose a single virtual module per course.
-        module_id = course_id
 
         lesson_resp = await async_client.post(
             "/studio/lessons",
@@ -115,12 +112,6 @@ async def test_course_public_endpoints(async_client):
 
         detail_resp = await async_client.get(f"/courses/{course_id}")
         assert detail_resp.status_code == 403
-
-        modules_resp = await async_client.get(f"/courses/{course_id}/modules")
-        assert modules_resp.status_code == 403
-
-        lessons_resp = await async_client.get(f"/courses/modules/{module_id}/lessons")
-        assert lessons_resp.status_code == 403
 
         intro_resp = await async_client.get("/courses/intro-first")
         assert intro_resp.status_code == 200
@@ -193,28 +184,17 @@ async def test_course_public_endpoints(async_client):
         assert detail_after_enroll.status_code == 200, detail_after_enroll.text
         detail_json = detail_after_enroll.json()
         assert detail_json["course"]["id"] == course_id
-        assert any(m["id"] == module_id for m in detail_json["modules"])
-
-        modules_after_enroll = await async_client.get(
-            f"/courses/{course_id}/modules",
-            headers=auth_header(student_token),
-        )
-        assert modules_after_enroll.status_code == 200, modules_after_enroll.text
-        assert any(m["id"] == module_id for m in modules_after_enroll.json()["items"])
-
-        lessons_after_enroll = await async_client.get(
-            f"/courses/modules/{module_id}/lessons",
-            headers=auth_header(student_token),
-        )
-        assert lessons_after_enroll.status_code == 200, lessons_after_enroll.text
-        assert any(lesson["id"] == lesson_id for lesson in lessons_after_enroll.json()["items"])
+        assert any(lesson["id"] == lesson_id for lesson in detail_json["lessons"])
 
         lesson_detail_after_enroll = await async_client.get(
             f"/courses/lessons/{lesson_id}",
             headers=auth_header(student_token),
         )
         assert lesson_detail_after_enroll.status_code == 200, lesson_detail_after_enroll.text
-        assert lesson_detail_after_enroll.json()["lesson"]["id"] == lesson_id
+        lesson_detail_json = lesson_detail_after_enroll.json()
+        assert lesson_detail_json["lesson"]["id"] == lesson_id
+        assert lesson_detail_json["course_id"] == course_id
+        assert any(lesson["id"] == lesson_id for lesson in lesson_detail_json["lessons"])
 
         by_slug_after_enroll = await async_client.get(
             f"/courses/by-slug/{slug}",
@@ -222,6 +202,10 @@ async def test_course_public_endpoints(async_client):
         )
         assert by_slug_after_enroll.status_code == 200, by_slug_after_enroll.text
         assert by_slug_after_enroll.json()["course"]["id"] == course_id
+        assert any(
+            lesson["id"] == lesson_id
+            for lesson in by_slug_after_enroll.json()["lessons"]
+        )
 
         second_course_resp = await async_client.post(
             "/studio/courses",

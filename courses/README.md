@@ -10,7 +10,7 @@ How to validate and import
   - `python scripts/import_course.py --base-url http://127.0.0.1:8080 --email teacher@example.com --password teacher123 --manifest courses/<file>.yaml --dry-run`
 - Import:
   - `python scripts/import_course.py --base-url http://127.0.0.1:8080 --email teacher@example.com --password teacher123 --manifest courses/<file>.yaml`
-- Optional: upload cover to a dedicated `_Assets` lesson and auto-set `cover_url`:
+- Optional: upload cover to a dedicated `_Course Assets` lesson and auto-set `cover_url`:
   - add `--create-assets-lesson`
 - Optional: skip uploading duplicates / clean old ones:
   - add `--cleanup-duplicates`

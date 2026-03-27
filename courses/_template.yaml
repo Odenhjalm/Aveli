@@ -8,13 +8,10 @@ price_cents: 0
 # cover_path: media/cover.jpg   # local path to upload (set later when file exists)
 cover_url: 
 
-modules:
-  - title: Start
-    lessons:
-      - title: Välkommen
-        # Add when file exists:
-        # markdown: lessons/welcome.md
-        # is_intro: true
-        # media:
-        #   - path: media/welcome.jpg
-
+lessons:
+  - title: Välkommen
+    # Add when file exists:
+    # markdown: lessons/welcome.md
+    # is_intro: true
+    # media:
+    #   - path: media/welcome.jpg

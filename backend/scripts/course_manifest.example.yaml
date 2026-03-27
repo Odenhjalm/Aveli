@@ -9,18 +9,14 @@ price_cents: 0
 # course-cover media pipeline.
 cover_path: media/cover.jpg
 # cover_url: null  # legacy compatibility field; importer ignores it
-modules:
-  - title: Start
-    lessons:
-      - title: Välkommen
-        markdown: lessons/welcome.md
-        is_intro: true
-        media:
-          - path: media/welcome.jpg
-          - path: media/intro_audio.mp3
-  - title: Meditationer
-    lessons:
-      - title: Rensa energifältet
-        markdown: lessons/cleanse.md
-        media:
-          - path: media/cleanse_audio.mp3
+lessons:
+  - title: Välkommen
+    markdown: lessons/welcome.md
+    is_intro: true
+    media:
+      - path: media/welcome.jpg
+      - path: media/intro_audio.mp3
+  - title: Rensa energifältet
+    markdown: lessons/cleanse.md
+    media:
+      - path: media/cleanse_audio.mp3

@@ -7,8 +7,6 @@ import 'package:aveli/shared/utils/course_journey_step.dart';
 
 import 'course_access_api.dart';
 
-const String flatLessonsModuleId = '__flat__';
-
 class CoursesRepository {
   CoursesRepository({required ApiClient client, CourseAccessApi? accessApi})
     : _client = client,
@@ -95,47 +93,16 @@ class CoursesRepository {
     final course = CourseSummary.fromJson(
       Map<String, dynamic>.from(payload['course'] as Map),
     );
-    final lessonsRaw = payload['lessons'];
-    if (lessonsRaw is List) {
-      final flatLessons = lessonsRaw
-          .map(
-            (e) => LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-      return CourseDetailData(
-        course: course,
-        modules: [
-          CourseModule(
-            id: flatLessonsModuleId,
-            title: '',
-            position: 0,
-            courseId: course.id,
-          ),
-        ],
-        lessonsByModule: {flatLessonsModuleId: flatLessons},
-      );
-    }
-
-    final modules = (payload['modules'] as List? ?? [])
-        .map((e) => CourseModule.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-    final lessonsMap = <String, List<LessonSummary>>{};
-    if (lessonsRaw is Map) {
-      lessonsRaw.forEach((key, value) {
-        final list = (value as List? ?? [])
+    final lessons = (payload['lessons'] as List? ?? []).toList();
+    final lessonItems =
+        lessons
             .map(
               (e) =>
                   LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
             )
-            .toList();
-        lessonsMap[key.toString()] = list;
-      });
-    }
-    return CourseDetailData(
-      course: course,
-      modules: modules,
-      lessonsByModule: lessonsMap,
-    );
+            .toList(growable: false)
+          ..sort((a, b) => a.position.compareTo(b.position));
+    return CourseDetailData(course: course, lessons: lessonItems);
   }
 
   Future<CourseDetailData> _augmentCourseDetail(CourseDetailData detail) async {
@@ -174,36 +141,6 @@ class CoursesRepository {
     }
   }
 
-  Future<List<CourseModule>> listModules(String courseId) async {
-    try {
-      final res = await _client.get<Map<String, dynamic>>(
-        '/courses/$courseId/modules',
-      );
-      return (res['items'] as List? ?? [])
-          .map(
-            (e) => CourseModule.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
-  }
-
-  Future<List<LessonSummary>> listLessonsForModule(String moduleId) async {
-    try {
-      final res = await _client.get<Map<String, dynamic>>(
-        '/courses/modules/$moduleId/lessons',
-      );
-      return (res['items'] as List? ?? [])
-          .map(
-            (e) => LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
-  }
-
   Future<LessonDetailData> fetchLessonDetail(String lessonId) async {
     try {
       final res = await _client.get<Map<String, dynamic>>(
@@ -212,21 +149,15 @@ class CoursesRepository {
       final lesson = LessonDetail.fromJson(
         Map<String, dynamic>.from(res['lesson'] as Map),
       );
-      final moduleRaw = res['module'];
-      CourseModule? module;
-      if (moduleRaw is Map) {
-        module = CourseModule.fromJson(Map<String, dynamic>.from(moduleRaw));
-      }
-      final moduleLessons = (res['module_lessons'] as List? ?? [])
-          .map(
-            (e) => LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-      final courseLessons = (res['course_lessons'] as List? ?? [])
-          .map(
-            (e) => LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
+      final courseId = (res['course_id'] as String?)?.trim();
+      final lessons =
+          (res['lessons'] as List? ?? [])
+              .map(
+                (e) =>
+                    LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
+              )
+              .toList(growable: false)
+            ..sort((a, b) => a.position.compareTo(b.position));
       final media = (res['media'] as List? ?? [])
           .map(
             (e) =>
@@ -235,9 +166,8 @@ class CoursesRepository {
           .toList();
       return LessonDetailData(
         lesson: lesson,
-        module: module,
-        moduleLessons: moduleLessons,
-        courseLessons: courseLessons,
+        courseId: courseId == null || courseId.isEmpty ? null : courseId,
+        lessons: lessons,
         media: media,
       );
     } catch (error, stackTrace) {
@@ -351,8 +281,7 @@ class CoursesRepository {
 class CourseDetailData {
   CourseDetailData({
     required this.course,
-    required this.modules,
-    required this.lessonsByModule,
+    required this.lessons,
     this.hasAccess = false,
     this.accessReason = 'none',
     this.isEnrolled = false,
@@ -361,8 +290,7 @@ class CourseDetailData {
   });
 
   final CourseSummary course;
-  final List<CourseModule> modules;
-  final Map<String, List<LessonSummary>> lessonsByModule;
+  final List<LessonSummary> lessons;
   final bool hasAccess;
   final String accessReason;
   final bool isEnrolled;
@@ -378,8 +306,7 @@ class CourseDetailData {
   }) {
     return CourseDetailData(
       course: course,
-      modules: modules,
-      lessonsByModule: lessonsByModule,
+      lessons: lessons,
       hasAccess: hasAccess ?? this.hasAccess,
       accessReason: accessReason ?? this.accessReason,
       isEnrolled: isEnrolled ?? this.isEnrolled,
@@ -427,16 +354,14 @@ class CourseAccessData {
 class LessonDetailData {
   const LessonDetailData({
     required this.lesson,
-    this.module,
-    this.moduleLessons = const [],
-    this.courseLessons = const [],
+    this.courseId,
+    this.lessons = const [],
     this.media = const [],
   });
 
   final LessonDetail lesson;
-  final CourseModule? module;
-  final List<LessonSummary> moduleLessons;
-  final List<LessonSummary> courseLessons;
+  final String? courseId;
+  final List<LessonSummary> lessons;
   final List<LessonMediaItem> media;
 }
 
@@ -507,27 +432,6 @@ class CourseSummary {
     if (value is String) return int.tryParse(value);
     return null;
   }
-}
-
-class CourseModule {
-  const CourseModule({
-    required this.id,
-    required this.title,
-    required this.position,
-    this.courseId,
-  });
-
-  final String id;
-  final String title;
-  final int position;
-  final String? courseId;
-
-  factory CourseModule.fromJson(Map<String, dynamic> json) => CourseModule(
-    id: json['id'] as String,
-    title: (json['title'] ?? '') as String,
-    position: CourseSummary._asInt(json['position']) ?? 0,
-    courseId: json['course_id'] as String?,
-  );
 }
 
 class LessonSummary {

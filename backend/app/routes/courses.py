@@ -1,5 +1,3 @@
-from typing import Any
-
 from fastapi import APIRouter, HTTPException, Query, status
 
 from .. import schemas
@@ -10,24 +8,6 @@ from ..services import courses_service
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 api_router = APIRouter(prefix="/api/courses", tags=["courses"])
-
-
-def _virtual_module(course_id: str) -> dict[str, Any]:
-    """Compatibility shim: represent a flat course as a single pseudo-module.
-
-    The database no longer stores modules; lessons belong directly to a course.
-    Some clients still expect modules + lessons-by-module payloads, so we expose a
-    stable virtual module whose id equals the course id.
-
-    LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    """
-
-    return {
-        "id": course_id,
-        "course_id": course_id,
-        "title": "Lektioner",
-        "position": 0,
-    }
 
 
 async def assert_can_access_course(user: OptionalCurrentUser, course_id: str) -> None:
@@ -106,19 +86,6 @@ async def bind_course_price(slug: str, payload: dict[str, str], current: AdminUs
     return {"ok": True, "stripe_price_id": price_id}
 
 
-@router.get("/{course_id}/modules")
-async def modules_for_course(course_id: str, current: OptionalCurrentUser = None):
-    await assert_can_access_course(current, course_id)
-    return {"items": [_virtual_module(course_id)]}
-
-
-@router.get("/modules/{module_id}/lessons")
-async def lessons_for_module(module_id: str, current: OptionalCurrentUser = None):
-    await assert_can_access_course(current, module_id)
-    lessons = await courses_service.list_course_lessons(module_id)
-    return {"items": lessons}
-
-
 @router.get("/lessons/{lesson_id}")
 async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     lesson = await courses_service.fetch_lesson(lesson_id)
@@ -131,10 +98,7 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
 
     await assert_can_access_course(current, course_id)
 
-    module = _virtual_module(course_id)
-    modules = [module]
-    course_lessons = await courses_service.list_course_lessons(course_id)
-    module_lessons = course_lessons
+    lessons = await courses_service.list_course_lessons(course_id)
 
     media_rows = await courses_service.list_lesson_media(
         lesson_id,
@@ -143,10 +107,8 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     media: list[dict] = list(media_rows)
     return {
         "lesson": lesson,
-        "module": module,
-        "modules": modules,
-        "module_lessons": module_lessons,
-        "course_lessons": course_lessons,
+        "course_id": course_id,
+        "lessons": lessons,
         "media": media,
     }
 
@@ -253,17 +215,8 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
         raise HTTPException(status_code=404, detail="Course not found")
     course_id = str(row["id"])
     await assert_can_access_course(current, course_id)
-    module = _virtual_module(course_id)
-    modules = [module]
-    lessons_map: dict[str, list] = {
-        course_id: await courses_service.list_course_lessons(course_id)
-    }
-    response = {
-        "course": row,
-        "modules": modules,
-        "lessons": lessons_map,
-    }
-    return response
+    lessons = await courses_service.list_course_lessons(course_id)
+    return {"course": row, "lessons": lessons}
 
 
 @router.get("/{course_id}")
@@ -272,13 +225,5 @@ async def course_detail(course_id: str, current: OptionalCurrentUser = None):
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    module = _virtual_module(course_id)
-    modules = [module]
-    lessons_map: dict[str, list] = {
-        course_id: await courses_service.list_course_lessons(course_id)
-    }
-    return {
-        "course": row,
-        "modules": modules,
-        "lessons": lessons_map,
-    }
+    lessons = await courses_service.list_course_lessons(course_id)
+    return {"course": row, "lessons": lessons}

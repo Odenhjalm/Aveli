@@ -60,11 +60,12 @@ class _LessonPageState extends ConsumerState<LessonPage> {
   }
 
   Future<void> _updateProgress(LessonDetailData data) async {
-    final courseId = data.module?.courseId;
-    if (courseId == null || data.courseLessons.isEmpty) return;
-    final index = data.courseLessons.indexWhere((l) => l.id == data.lesson.id);
+    final courseId = data.courseId;
+    final visibleLessons = _visibleCourseLessons(data.lessons);
+    if (courseId == null || visibleLessons.isEmpty) return;
+    final index = visibleLessons.indexWhere((l) => l.id == data.lesson.id);
     if (index < 0) return;
-    final progress = (index + 1) / data.courseLessons.length;
+    final progress = (index + 1) / visibleLessons.length;
     final progressRepo = ref.read(progressRepositoryProvider);
     unawaited(progressRepo.setProgress(courseId, progress));
   }
@@ -234,7 +235,7 @@ class _LessonContent extends ConsumerWidget {
         : 1200.0;
     final contentWidth = (safeScreenWidth - 32).clamp(720.0, 1200.0).toDouble();
     final mediaItems = detail.media;
-    final courseLessons = detail.courseLessons;
+    final courseLessons = _visibleCourseLessons(detail.lessons);
     LessonSummary? previous;
     LessonSummary? next;
     if (courseLessons.isNotEmpty) {
@@ -349,7 +350,7 @@ class _LessonContent extends ConsumerWidget {
       ),
     );
 
-    final courseId = detail.module?.courseId;
+    final courseId = detail.courseId;
     final gatedContent = (!lesson.isIntro && courseId != null)
         ? CourseAccessGate(courseId: courseId, child: coreContent)
         : coreContent;
@@ -364,6 +365,17 @@ class _LessonContent extends ConsumerWidget {
       maxContentWidth: contentWidth,
     );
   }
+}
+
+List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
+  final visible = lessons
+      .where(
+        (lesson) =>
+            lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_'),
+      )
+      .toList(growable: false);
+  visible.sort((a, b) => a.position.compareTo(b.position));
+  return visible;
 }
 
 class _BundleLink {

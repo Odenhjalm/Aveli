@@ -124,32 +124,9 @@ class _CoursePageState extends ConsumerState<CoursePage> {
   }
 
   String? _resolveFirstLessonId(CourseDetailData detail) {
-    final modules = [...detail.modules]
-      ..sort((a, b) => a.position.compareTo(b.position));
-    for (final module in modules) {
-      final lessons = [
-        ...(detail.lessonsByModule[module.id] ?? const <LessonSummary>[]).where(
-          (lesson) =>
-              lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_'),
-        ),
-      ]..sort((a, b) => a.position.compareTo(b.position));
-      if (lessons.isNotEmpty) {
-        return lessons.first.id;
-      }
-    }
-
-    LessonSummary? first;
-    for (final lessons in detail.lessonsByModule.values) {
-      for (final lesson in lessons) {
-        if (lesson.title.isEmpty || lesson.title.trim().startsWith('_')) {
-          continue;
-        }
-        if (first == null || lesson.position < first.position) {
-          first = lesson;
-        }
-      }
-    }
-    return first?.id;
+    final lessons = _visibleCourseLessons(detail.lessons);
+    if (lessons.isEmpty) return null;
+    return lessons.first.id;
   }
 
   Widget _buildBuyButton({
@@ -342,7 +319,8 @@ class _CourseContent extends StatelessWidget {
         : '';
     final isEnrolling = enrollState.isLoading;
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
-    final hasNavigableLesson = _hasNavigableLesson(detail);
+    final lessons = _visibleCourseLessons(detail.lessons);
+    final hasNavigableLesson = lessons.isNotEmpty;
     Widget? primaryCta;
     if (isOwner) {
       if (!hasNavigableLesson) {
@@ -447,70 +425,38 @@ class _CourseContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          ...detail.modules
-              .where(
-                (m) =>
-                    m.id == flatLessonsModuleId ||
-                    (m.title.isNotEmpty && !m.title.trim().startsWith('_')),
-              )
-              .map((module) {
-                final isSyntheticFlatModule = module.id == flatLessonsModuleId;
-                final lessons = (detail.lessonsByModule[module.id] ?? const [])
-                    .where(
-                      (l) =>
-                          l.title.isNotEmpty && !l.title.trim().startsWith('_'),
-                    )
-                    .toList(growable: false);
-                if (lessons.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: GlassCard(
-                    padding: const EdgeInsets.all(12),
-                    opacity: 0.16,
-                    borderRadius: BorderRadius.circular(22),
-                    borderColor: Colors.white.withValues(alpha: 0.16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (!isSyntheticFlatModule) ...[
-                          Text(
-                            module.title,
-                            style: t.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        ...lessons.map((lesson) {
-                          final isLocked = !lesson.isIntro && !hasAccess;
-                          return ListTile(
-                            leading: Icon(
-                              isLocked
-                                  ? Icons.lock_outline_rounded
-                                  : Icons.play_circle_outline_rounded,
-                            ),
-                            title: Text(lesson.title),
-                            subtitle: lesson.isIntro
-                                ? const Text('Förhandsvisning')
-                                : (isLocked
-                                      ? const Text('Låst innehåll')
-                                      : null),
-                            enabled: !isLocked,
-                            onTap: () => _handleLessonTap(
-                              context,
-                              lesson,
-                              detail,
-                              isLocked,
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                );
-              }),
+          if (lessons.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassCard(
+                padding: const EdgeInsets.all(12),
+                opacity: 0.16,
+                borderRadius: BorderRadius.circular(22),
+                borderColor: Colors.white.withValues(alpha: 0.16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...lessons.map((lesson) {
+                      final isLocked = !lesson.isIntro && !hasAccess;
+                      return ListTile(
+                        leading: Icon(
+                          isLocked
+                              ? Icons.lock_outline_rounded
+                              : Icons.play_circle_outline_rounded,
+                        ),
+                        title: Text(lesson.title),
+                        subtitle: lesson.isIntro
+                            ? const Text('Förhandsvisning')
+                            : (isLocked ? const Text('Låst innehåll') : null),
+                        enabled: !isLocked,
+                        onTap: () =>
+                            _handleLessonTap(context, lesson, detail, isLocked),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -566,17 +512,15 @@ class _CourseContent extends StatelessWidget {
       _ => 0,
     };
   }
+}
 
-  bool _hasNavigableLesson(CourseDetailData detail) {
-    for (final module in detail.modules) {
-      final lessons =
-          detail.lessonsByModule[module.id] ?? const <LessonSummary>[];
-      for (final lesson in lessons) {
-        if (lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_')) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
+List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
+  final visible = lessons
+      .where(
+        (lesson) =>
+            lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_'),
+      )
+      .toList(growable: false);
+  visible.sort((a, b) => a.position.compareTo(b.position));
+  return visible;
 }

@@ -285,14 +285,14 @@ async def test_course_and_studio_endpoints(async_client):
         assert access_snapshot["has_access"] is True
         assert access_snapshot["access_reason"] == "enrolled"
 
-        # Course detail includes lessons (virtual module for backwards compatibility)
+        # Course detail includes direct course lessons
         resp = await async_client.get(
             f"/courses/{course_id}", headers=auth_header(student_token)
         )
         assert resp.status_code == 200
         detail = resp.json()
         assert str(detail["course"]["id"]) == course_id
-        assert detail["modules"], "Course lessons should be present"
+        assert detail["lessons"], "Course lessons should be present"
 
         # Quiz info available to student
         if quiz_available and quiz_id is not None:
