@@ -16,7 +16,7 @@ Examples
   # Validate all manifests (no uploads)
   python scripts/bulk_import.py --dry-run
 
-  # Import all with a dedicated _Assets lesson for covers
+  # Import all with a dedicated _Course Assets lesson for covers
   python scripts/bulk_import.py \
     --base-url http://127.0.0.1:8080 \
     --email teacher@example.com \
@@ -162,7 +162,7 @@ def main() -> None:
     ap.add_argument(
         "--create-assets-lesson",
         action="store_true",
-        help="Upload cover into _Assets/_Course Assets lesson and queue it through the course-cover media pipeline.",
+        help="Upload cover into _Course Assets lesson and queue it through the course-cover media pipeline.",
     )
     ap.add_argument("--cleanup-duplicates", action="store_true", help="Delete duplicate lesson media entries after import.")
     ap.add_argument("--continue-on-error", action="store_true", help="Continue processing other manifests on failure.")

@@ -469,7 +469,11 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
 
 
 @router.post("/request-password-reset", status_code=status.HTTP_202_ACCEPTED)
-@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
 async def request_password_reset(payload: schemas.AuthForgotPasswordRequest):
     normalized_email = _normalized_email(payload.email)
     if not _consume_rate_limit(
