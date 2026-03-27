@@ -43,6 +43,16 @@
   - docs/verification_mcp.md
   - docs/WORKFLOW.md
 
+## COURSE MODEL (CANONICAL)
+
+- course contains lessons directly
+- lessons ordered via position
+- no module abstraction exists
+- any module-like grouping is UI-only and optional
+- modules are not persisted, exposed, simulated, or inferred as system truth
+- `module_id` is not part of the canonical course domain model
+- remaining legacy module references in backend/frontend code or docs are implementation debt and must not be used to redefine system truth
+
 ## Source of truth per component
 
 ### 1) API definitions

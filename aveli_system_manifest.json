@@ -52,6 +52,27 @@
             "constraints": [
                 "canonical_markdown_required"
             ]
+        },
+        "course_model": {
+            "state": "canonical_flat_hierarchy",
+            "source_of_truth": [
+                "actual_truth_2026-04-26/Aveli_System_Decisions.md",
+                "backend/app/routes/courses.py",
+                "frontend/lib/features/courses/data/courses_repository.dart",
+                "courses/_template.yaml"
+            ],
+            "canonical_structure": {
+                "hierarchy": "course_to_lessons",
+                "lesson_ordering": "position",
+                "grouping": "ui_only_optional"
+            },
+            "forbidden_constructs": [
+                "intermediate_grouping_layer",
+                "virtual_grouping_layer",
+                "simulated_grouping_layer",
+                "inferred_grouping_layer"
+            ],
+            "mutation_policy": "flat_hierarchy_only"
         }
     },
     "rules": {
@@ -59,13 +80,19 @@
         "media_authority": "control_plane",
         "media_authority_enforcement": "pipeline_must_converge",
         "content_format": "canonical_markdown",
-        "auth_behavior": "trust_boundary"
+        "auth_behavior": "trust_boundary",
+        "course_structure": "course_to_lessons_direct",
+        "lesson_ordering": "position",
+        "intermediate_grouping_layer": "forbidden"
     },
     "constraints": {
         "no_deletion_of_planned_features": true,
         "no_modification_of_control_plane": true,
         "auth_no_structural_change": true,
-        "no_assumption_rule": true
+        "no_assumption_rule": true,
+        "flat_course_hierarchy_enforced": true,
+        "no_simulated_grouping_layers": true,
+        "no_inferred_grouping_layers": true
     },
     "execution_policy": {
         "step_by_step": true,

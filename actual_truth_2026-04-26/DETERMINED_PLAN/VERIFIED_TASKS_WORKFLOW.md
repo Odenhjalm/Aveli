@@ -17,7 +17,7 @@
 * [x] courses_resolve_virtual_module_contract
 * [x] media_align_home_upload_completion_surface (already satisfied)
 * [x] home_player_emit_canonical_runtime_projection (already satisfied)
-* [] mcp_resolve_semantic_search_gap
+* [x] mcp_resolve_semantic_search_gap
 
 ## Phase 3 — Evolution
 
