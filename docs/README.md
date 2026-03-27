@@ -29,14 +29,12 @@ Minimal manifest keys
 - `price_cents` (int, optional)
 - `cover_path` (string, optional) – local image file path to upload; auto-sets `cover_url`
 - `cover_url` (string, optional) – public URL alternative to `cover_path`
-- `modules` (list)
+- `lessons` (list)
   - `title` (string)
-  - `lessons` (list)
-    - `title` (string)
-    - `markdown` (string, optional) – relative path to a .md file
-    - `is_intro` (bool, optional)
-    - `media` (list, optional)
-      - items: `{ path: <relative file path> }` or just a string path
+  - `markdown` (string, optional) – relative path to a .md file
+  - `is_intro` (bool, optional)
+  - `media` (list, optional)
+    - items: `{ path: <relative file path> }` or just a string path
 
 Example (YAML)
 
@@ -47,15 +45,13 @@ is_free_intro: true
 is_published: false
 price_cents: 0
 cover_path: media/cover.jpg
-modules:
-  - title: Start
-    lessons:
-      - title: Välkommen
-        markdown: lessons/welcome.md
-        is_intro: true
-        media:
-          - path: media/welcome.jpg
-          - path: media/intro_audio.mp3
+lessons:
+  - title: Välkommen
+    markdown: lessons/welcome.md
+    is_intro: true
+    media:
+      - path: media/welcome.jpg
+      - path: media/intro_audio.mp3
 
 Run the import
 
@@ -69,8 +65,8 @@ Run the import
      --email teacher@example.com \
      --password teacher123 \
      --manifest /full/path/to/course_manifest.yaml`
-- Add `--create-assets-lesson` to upload the cover into a dedicated module/lesson (`_Assets`/`_Course Assets`).
-- Student course page hides any module or lesson whose title begins with `_`.
+- Add `--create-assets-lesson` to upload the cover into a dedicated lesson (`_Course Assets`).
+- Student course page hides any lesson whose title begins with `_`.
 
 Notes
 - Media uploads are subject to `LESSON_MEDIA_MAX_BYTES` (bytes) in backend env.

@@ -49,7 +49,7 @@ python scripts/import_course.py \
 
 Exempelmanifest: `scripts/course_manifest.example.yaml`.
 - Stöd för `cover_path`: laddar upp omslagsbild och sätter `cover_url` automatiskt.
-  - Lägg till flaggan `--create-assets-lesson` för att skapa en separat modul/lektion (`_Assets`/`_Course Assets`) där omslaget laddas upp, istället för i första lektionen.
+  - Lägg till flaggan `--create-assets-lesson` för att skapa en separat lektion (`_Course Assets`) där omslaget laddas upp, istället för i första lektionen.
   - Lägg till `--cleanup-duplicates` för att automatiskt ta bort dubletter (samma originalfil) på befintliga lektioner.
   - Validera manifest och filer utan att ladda upp något:
     - `python scripts/import_course.py --manifest /path/to/manifest.yaml --base-url http://127.0.0.1:8000 --email x --password y --dry-run`
