@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "protected_min_slot": 1,
-  "protected_max_slot": 15,
+  "protected_max_slot": 18,
   "baseline_dir": "backend/supabase/baseline_slots",
   "slots": [
     {
@@ -93,6 +93,24 @@
       "filename": "0015_runtime_media_lesson_backfill_core.sql",
       "path": "backend/supabase/baseline_slots/0015_runtime_media_lesson_backfill_core.sql",
       "sha256": "762427fa626b3d172b000ca02a6f2d19a26306da23c20511876ee2a558059206"
+    },
+    {
+      "slot": 16,
+      "filename": "0016_live_schema_media_home_player_alignment.sql",
+      "path": "backend/supabase/baseline_slots/0016_live_schema_media_home_player_alignment.sql",
+      "sha256": "e8730d6be2bfa56ba8d57650aa23886bf8de9e60b2a1f7998e0124d7723ef6ed"
+    },
+    {
+      "slot": 17,
+      "filename": "0017_auth_commerce_runtime_blockers.sql",
+      "path": "backend/supabase/baseline_slots/0017_auth_commerce_runtime_blockers.sql",
+      "sha256": "0eeaccca761bb9a70f96e9316e9687a7cda6d9b193d82e12203aa941880c51d6"
+    },
+    {
+      "slot": 18,
+      "filename": "0018_external_fk_cleanup.sql",
+      "path": "backend/supabase/baseline_slots/0018_external_fk_cleanup.sql",
+      "sha256": "7d4b022214f63e7eb8989370bbb3bf708e69df0dee408a890a5cae4eb19cfffe"
     }
   ]
 }

@@ -1,5 +1,9 @@
 # AVELI Operating System
+
 Use aveli_system_manifest.json as primary system truth.
+
+---
+
 ## Purpose
 
 This document defines the deterministic operating contract for Codex inside Aveli.
@@ -15,19 +19,25 @@ Principles:
 - No unsafe shortcuts
 - No mixing diagnosis and repair without evidence
 - No UI-first debugging
+- No environment ambiguity
 
-The default operating loop is:
+---
 
-1. Bootstrap environment
-2. Establish truth
-3. Run baseline verification
-4. Apply minimal safe mutation
-5. Re-verify the exact invariant
-6. Cleanup
-7. Report evidence, outcome, and residual risk
+## Core Execution Model (ADDED)
 
-Manual exploration is not verification.
-UI symptoms are not root truth.
+Codex MUST behave as a deterministic operator.
+
+Codex MUST NOT:
+
+- infer environment
+- guess database targets
+- improvise execution commands
+
+Codex MUST:
+
+- follow canonical execution protocols
+- validate environment before execution
+- STOP on ambiguity
 
 ---
 
@@ -54,6 +64,8 @@ Rules:
 
 If anchor verification fails:
 - fallback to MCP or runtime inspection
+
+---
 
 ## Truth Hierarchy
 
@@ -115,6 +127,88 @@ Rules:
 
 ---
 
+## 🔥 CANONICAL BACKEND EXECUTION PROTOCOL (NEW — CRITICAL)
+
+Codex MUST follow this exact protocol when starting backend.
+
+### Environment Rules
+
+Codex MUST ensure:
+
+- DATABASE_URL is set
+- DATABASE_URL uses 127.0.0.1 (local DB)
+- MCP_MODE=local
+- APP_ENV=dev
+
+Codex MUST check:
+
+- FLY_APP_NAME is NOT set
+- K_SERVICE is NOT set
+
+If any cloud env detected:
+→ MUST override or STOP
+
+---
+
+### Database Rule
+
+Codex MUST:
+
+- Use LOCAL database ONLY
+- NEVER use remote DB unless explicitly instructed
+
+If DATABASE_URL is missing or ambiguous:
+→ STOP
+
+---
+
+### Startup Command (CANONICAL)
+
+cd backend
+poetry run uvicorn app.main:app --host 127.0.0.1 --port 8080
+
+
+Codex MUST NOT modify this command.
+
+---
+
+### Pre-Flight Check (MANDATORY)
+
+Before starting backend:
+
+- DATABASE_URL exists
+- DATABASE_URL is local
+- MCP_MODE=local
+- No cloud env active
+
+If any fail:
+→ STOP
+
+---
+
+### Post-Start Verification (MANDATORY)
+
+Codex MUST verify:
+
+- GET /healthz → 200
+- GET /readyz → 200
+
+MCP endpoints:
+
+- /mcp/verification
+- /mcp/logs
+- /mcp/media-control-plane
+- /mcp/domain-observability
+
+Worker health:
+
+- get_worker_health → all "ok"
+
+If any fail:
+→ STOP
+
+---
+
 ## Bootstrap Order (HARD CONTRACT)
 
 Codex MUST fully bootstrap before any work.
@@ -125,37 +219,17 @@ Codex MUST fully bootstrap before any work.
 2. Validate env
    `ops/env_validate.sh`
 
-3. Start backend if needed
-   `poetry run uvicorn app.main:app --host 127.0.0.1 --port 8080`
+3. Run pre-flight validation (NEW)
 
-4. Verify backend
-   - `/healthz = 200`
-   - `/readyz = 200`
+4. Start backend
 
-5. Start frontend (STATIC ONLY)
+5. Verify backend
 
-   Kill existing:
-   - terminate process on port 3000
+6. Start frontend (STATIC ONLY)
 
-   Build:
-flutter build web --relese-o /tmp/aveli-web
---dart-define=API_BASE_URL=http://127.0.0.1:8080/
---dart-define=FRONTEND_URL=http://127.0.0.1:3000/
---dart-define=SUPABASE_URL=https://aiftpfyrqjhstcnblyhb.supabase.co
---dart-define=SUPABASE_ANON_KEY=sb_publishable_BZydrmej9Wr20eKsAD6wpw_rzyvMWGl
---dart-define=STRIPE_PUBLISHABLE_KEY=pk_live_51ST1rjRZyaYOU0ia8oBtklEM0BNbNUAMSN0KgX8s8sDtTbWnob0c6yG97XRgTkPw5RRYpANrGnL8ff8dYGCMCsCo00aOCDoAWp
---dart-define=OAUTH_REDIRECT_WEB=http://localhost:3000/auth/callback
+7. Verify frontend
 
-
-
-Serve (SPA):
-- Python server with index.html fallback
-
-6. Verify frontend
-- returns HTML
-- calls correct backend
-
-7. Verify MCP endpoints
+8. Verify MCP endpoints
 
 If ANY step fails:
 - STOP
@@ -228,31 +302,14 @@ Each log MUST include:
 - actual_state
 - result
 
-Timing:
-
-- before → expected
-- during → action
-- after → result
-
-No logging → no mutation.
-
 ---
 
 ## Ledger Consistency Rule
 
-Codex MUST maintain session ledger:
-
-- session_id
-- environment
-- created entities
-- mutations
-- timestamps
-- cleanup status
-
-Ledger MUST update after EVERY mutation.
+Codex MUST maintain session ledger.
 
 If entity cannot be reconstructed:
-- STOP
+→ STOP
 
 ---
 
@@ -262,12 +319,6 @@ Codex MUST:
 
 - delete all created entities
 - verify deletion
-- log results
-
-If anything remains:
-- STOP and report IDs
-
-Codex MUST assume production safety always.
 
 ---
 
@@ -277,90 +328,26 @@ Always use:
 
 - `poetry run <command>`
 
-Never:
-
-- raw python
-- raw pytest
-
-If poetry missing:
-- STOP
-
 ---
 
 ## Frontend Runtime (MANDATORY)
 
-Frontend MUST:
-
-- run on `127.0.0.1:3000`
-- be STATIC BUILD
-- use correct backend
-
-Flutter dev server is FORBIDDEN.
-
----
-
-## Static Frontend Execution
-
-Build + serve via SPA fallback (index.html).
-
-Validation:
-
-- HTML loads
-- correct API target
-
-If not:
-- STOP
+- static build only
+- port 3000
+- correct backend
 
 ---
 
 ## Playwright Rules
 
-Allowed:
-
-- render verification
-- network verification
-- E2E flow
-
-Forbidden:
-
-- auth hacks
-- guessed selectors
-- fake flows
-
----
-
-## Playwright Auth Injection
-
-Must:
-
-1. login via API
-2. inject token
-3. reload
-4. verify authenticated state
-
-If fails:
-- STOP
+- real flows only
+- no hacks
 
 ---
 
 ## Process Control (MANDATORY)
 
-Codex MUST track all processes:
-
-- frontend
-- backend
-- python
-- playwright
-
-Rules:
-
-- capture PID/port
-- store in ledger
-- kill on cleanup
-- verify termination
-
-If process remains:
-- STOP
+Codex MUST track all processes.
 
 ---
 
@@ -371,17 +358,6 @@ Always:
 1. expected state
 2. actual state
 3. failure boundary
-
-Logs are secondary.
-
----
-
-## When To Use MCP vs API vs SQL vs UI
-
-- MCP → first
-- API → contract
-- SQL → storage truth
-- UI → last
 
 ---
 
@@ -394,25 +370,11 @@ Logs are secondary.
 5. SQL write
 6. Playwright
 
-Must log fallback reason.
-
 ---
 
 ## Forward Progression Rule
 
 Codex MUST NOT stall.
-
-If blocked:
-
-1. fallback to next layer
-2. log uncertainty
-3. continue safely
-
-STOP only if:
-
-- unsafe mutation
-- unknown identity
-- cleanup impossible
 
 ---
 
@@ -426,10 +388,12 @@ If any layer:
 
 → system is NOT verified
 
+---
+
 ## Local Execution Mode (MANDATORY FOR TASK EXECUTION)
 
 Purpose:
-Ensure Codex always runs against a safe, local, fully aligned database before executing tasks.
+Ensure Codex always runs against a safe, local, fully aligned database.
 
 ---
 
@@ -437,140 +401,138 @@ Ensure Codex always runs against a safe, local, fully aligned database before ex
 
 Codex MUST:
 
-1. Prefer local database if available:
-   DATABASE_URL = postgresql://postgres:postgres@127.0.0.1:54322/aveli_local
+1. Prefer local database:
+   postgresql://postgres:postgres@127.0.0.1:54322/aveli_local
 
-2. Verify connection:
-   - DB must be reachable
-   - Required schemas must exist:
-     - app.*
-     - auth.*
-     - runtime_media
-     - media_assets
-     - home_player_uploads
-     - livekit_webhook_jobs
+2. Verify required schemas:
 
-If local DB exists and is valid:
-→ MUST use it
+- app.*
+- auth.*
+- runtime_media
+- media_assets
+- home_player_uploads
+- livekit_webhook_jobs
 
-If local DB is missing or incomplete:
-→ Codex MUST initialize it using baseline
-
-Codex MUST NOT use remote Supabase DB for mutation tasks.
+If missing:
+→ bootstrap baseline
 
 ---
 
 ### Local DB Bootstrap
 
-If DB not ready:
-
-1. Create database:
-   aveli_local
-
-2. Apply baseline:
-   backend/supabase/baseline_slots/0001 → 0016
-
-3. Verify schema:
-   - required tables exist
-   - no missing runtime dependencies
-
-If bootstrap fails:
-→ STOP
+1. Create DB
+2. Apply baseline (0001 → latest slot)
+3. Verify schema completeness
 
 ---
 
 ### Backend Startup Rule
 
-Codex MUST start backend using local DB:
+Codex MUST start backend using local DB.
 
-DATABASE_URL=<local_db>
-MCP_MODE=local
-poetry run uvicorn app.main:app --host 127.0.0.1 --port 8080
+Worker errors:
 
-Verification:
+- Allowed only if non-blocking
+- Blocking = missing tables used in runtime
 
-- GET /healthz → 200
-- GET /readyz → 200
-
-Worker errors are allowed ONLY if non-blocking.
-
-Blocking errors:
-- missing tables used in startup path
-
-If blocking error:
-→ Codex MUST extend baseline (not modify runtime code)
+If blocking:
+→ extend baseline (NOT runtime code)
 
 ---
 
-### MCP Continuity Rule
+---
 
-Codex MUST:
+## BASELINE REPLAY CONTRACT
 
-- keep MCP services online
-- verify endpoints:
-  - /mcp/verification
+A baseline replay is the only valid method of proving baseline correctness.
+
+A valid replay MUST include:
+
+1. minimal auth substrate
+   - schema auth
+   - table auth.users (id required)
+
+2. baseline slots
+   - 0001 through latest accepted slot
+   - applied in strict order
+
+3. minimal storage substrate IF required by runtime
+   - schema storage
+   - storage.objects
+   - storage.buckets
+   - only if runtime queries depend on them
+
+---
+
+## REPLAY VALIDATION REQUIREMENTS
+
+A replay is NOT valid unless ALL conditions are met:
+
+- schema applies cleanly (no errors)
+- backend boots successfully
+- /healthz returns 200
+- /readyz returns 200
+- MCP endpoints respond (200):
   - /mcp/logs
+  - /mcp/verification
   - /mcp/media-control-plane
   - /mcp/domain-observability
+- worker health surface reports all "ok"
 
-If MCP unavailable:
+---
+
+## FAILURE RULE
+
+If any validation step fails:
+
+  baseline is INVALID
+  execution MUST STOP
+  baseline must be fixed before proceeding
+
+Ensure baseline is:
+
+- deterministic
+- reproducible from scratch
+- aligned with runtime behavior
+
+---
+
+## CONSTRAINTS
+
+- replay must not rely on pre-existing DB state
+- replay must not depend on production services
+- replay must not modify accepted baseline slots
+- all fixes must be append-only (new slots)
+
+---
+### MCP Continuity Rule
+
+Codex MUST verify MCP endpoints.
+
+If unavailable:
 → STOP
-
-Codex MUST NOT restart MCP unless explicitly required.
 
 ---
 
 ### Test Execution Rule
 
-Codex MUST run ONLY local, task-scoped tests:
-
-Allowed:
-
-- poetry run pytest <target_test>
-- flutter test <target_test>
-
-Forbidden:
-
-- full test suite
-- tests requiring remote Supabase
-- environment mutation
-
-If tests require remote services:
-→ STOP
+Only local scoped tests allowed.
 
 ---
 
 ### Verification Scope Rule
 
-Verification MUST:
-
-- match task scope only
-- use local DB
-- use MCP if available
-- avoid infra-level debugging
-
-If verification requires:
-
-- DB rebuild
-- external API
-- environment change
-
-→ STOP
+Must match task scope only.
 
 ---
 
 ### Pre-Supabase Push Preparation
 
-Codex MUST:
+Codex MUST ensure:
 
-1. Ensure baseline == local DB
-2. Ensure runtime == baseline
-3. Ensure tests pass locally
-4. Ensure no legacy schema gaps remain
-
-Only after ALL verified:
-
-→ system is eligible for Supabase push
+- baseline == runtime
+- tests pass
+- no schema gaps
 
 ---
 
@@ -578,11 +540,30 @@ Only after ALL verified:
 
 Codex MUST NOT:
 
-- use MCP_PRODUCTION_SUPABASE_DB_URL during execution
-- mutate production DB
+- use production DB
 - guess schema
 - bypass DB errors
-- disable workers to avoid fixing schema
+- disable workers
+
+---
+
+LOCAL STORAGE SUBSTRATE RULE
+
+If system depends on external storage (storage.objects, storage.buckets):
+
+- Baseline MUST NOT define these tables
+- Local verification MUST provision minimal compatible schema
+
+Codex MUST:
+
+1. Detect storage dependency
+2. Check presence of storage schema
+3. If missing:
+   → provision minimal local substrate
+4. Verify workers start cleanly
+
+If storage is missing and not provisioned:
+→ STOP
 
 ---
 

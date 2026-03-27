@@ -67,6 +67,18 @@
 - `auth.users`
 - `storage.objects`
 - `storage.buckets`
+- These remain external dependencies and are not baseline-owned schema.
+- Local scratch verification may require a minimal local storage substrate when storage-backed workers are enabled.
+
+## EXTERNAL ID INTEGRITY RULE
+
+- Fields referencing external systems (for example `auth.users.id`) MUST NOT use database foreign key constraints.
+- `user_id` is a soft reference to `auth.users(id)`.
+- Validity is enforced at:
+  - auth layer (token validation)
+  - backend services (creation and mutation checks)
+- Reads MUST be tolerant of missing external records and MUST NOT hard crash because an external record is absent.
+- Database MUST NOT enforce foreign key constraints for external dependencies.
 
 ## LEGACY MIGRATION RULE
 

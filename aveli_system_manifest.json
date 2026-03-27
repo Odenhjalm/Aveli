@@ -93,6 +93,15 @@
         "storage.objects",
         "storage.buckets"
     ],
+    "external_reference_policy": {
+        "enforcement": "application_layer",
+        "database_fk": "forbidden",
+        "read_behavior": "tolerant"
+    },
+    "local_verification_dependencies": {
+        "external_dependencies_are_not_baseline_owned_schema": true,
+        "storage_backed_worker_scratch_verification_may_require_minimal_local_storage_substrate": true
+    },
     "legacy_migration_policy": {
         "legacy_remains_only_while_needed": true,
         "canonical_coverage_triggers_migration_out": true

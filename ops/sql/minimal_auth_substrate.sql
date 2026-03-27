@@ -1,3 +1,7 @@
+-- Local replay substrate only.
+-- This keeps auth as an external dependency while providing the minimum
+-- schema surface needed to replay baseline slots against a scratch database.
+
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then
@@ -14,36 +18,16 @@ $$;
 
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
-create extension if not exists "uuid-ossp" with schema extensions;
 
 create schema if not exists auth;
 
 create table if not exists auth.users (
   id uuid primary key,
-  email text,
-  encrypted_password text,
-  email_confirmed_at timestamp with time zone,
-  confirmed_at timestamp with time zone,
-  raw_app_meta_data jsonb not null default '{}'::jsonb,
-  raw_user_meta_data jsonb not null default '{}'::jsonb,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now()
+  email text
 );
 
 alter table auth.users
-  add column if not exists encrypted_password text;
-
-alter table auth.users
-  add column if not exists email_confirmed_at timestamp with time zone;
-
-alter table auth.users
-  add column if not exists confirmed_at timestamp with time zone;
-
-alter table auth.users
-  add column if not exists raw_app_meta_data jsonb not null default '{}'::jsonb;
-
-alter table auth.users
-  add column if not exists raw_user_meta_data jsonb not null default '{}'::jsonb;
+  add column if not exists email text;
 
 create or replace function auth.uid()
 returns uuid
