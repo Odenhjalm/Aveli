@@ -1,79 +1,161 @@
-# Aveli System Laws
+# Aveli_System_Decisions.md
 
-## System Identity
+## Product Context
 
-Aveli är en upplevelsebaserad plattform för personlig och spirituell utveckling,
-där människor möts genom guidade sessioner, kurser och gemenskap.
+- Aveli is a social learning platform with courses and lessons as the core runtime learning model, plus a marketplace where advanced users can sell cultivated knowledge.
+- Aveli is for teachers and learners, including course/lesson interactions, checkout/onboarding flows, and session-level experiences.
+- Teachers use Aveli to create, manage, publish, and refine learning experiences, media-rich course content, and cultivated knowledge offers.
+- Learners use Aveli to onboard, access lesson content, complete guided learning paths, and purchase or subscribe to learning access.
+- The user actions explicitly represented in the approved product framing are:
+  - onboard into the trusted teacher/learner journey
+  - learn via structured course/editor content
+  - access purchased, subscribed, or enrolled lesson experiences
+  - progress through repeated, persistent learning experiences
+- Activities, posts, messages, and notifications remain future-facing surfaces unless current runtime evidence explicitly promotes them into baseline truth.
+- The decisions in this file intentionally keep technical choices aligned to these usage intents.
 
-Systemet är relation-drivet, inte content-drivet.
+## System Philosophy
 
----
+- Aveli is:
+  - relationship-driven (not content-first)
+  - experience-driven (not file-driven)
+  - progression-based (not static)
 
-## Law 1 — API Truth
+- The system should optimize user trust, continuity, and repeatable workflows before feature surface expansion.
+- Stabilization tasks are allowed only when they preserve these three properties.
 
-API-kontraktet definieras av audit-lagret (API_CATALOG + API_USAGE_DIFF).
+## Non-Negotiable Constraints
 
-Runtime måste alignas mot detta.
-Referensdokument är inte bindande.
+- Media is an EXPERIENCE, not a file.
+  - Media routes, identifiers, and control points must remain aligned to user-facing media behavior.
+- Auth is a RELATIONSHIP ENTRY, not a login endpoint.
+  - Auth-related structure is not to be redesigned in this phase.
+- API must reflect REAL system behavior, not hypothetical design.
+  - Canonical API truth remains the audit catalog + usage-diff evidence.
+- Planned features MUST NOT be removed during stabilization.
+  - Planned and control-plane components are preserved unless explicitly canceled by a documented process outside this phase.
 
----
+## System definition
 
-## Law 2 — Media Is Experience
+- Aveli is the documented system for social learning, course/editor workflows, media delivery, checkout/onboarding support, and marketplace expansion with dedicated API governance, auth/security controls, and control-plane/observability surfaces.
+- Evidence:
+  - docs/README.md
+  - docs/architecture/aveli_editor_architecture_v2.md
+  - docs/verification_mcp.md
+  - docs/WORKFLOW.md
 
-Media är inte filer.
-Media är upplevelser som styrs genom ett kontrakt.
+## COURSE MODEL (CANONICAL)
 
-Media_control_plane är den framtida auktoriteten.
-Pipeline är implementation.
+- course contains lessons directly
+- lessons ordered via position
+- no module abstraction exists
+- any module-like grouping is UI-only and optional
+- modules are not persisted, exposed, simulated, or inferred as system truth
+- `module_id` is not part of the canonical course domain model
+- remaining legacy module references in backend/frontend code or docs are implementation debt and must not be used to redefine system truth
 
----
+## OPERATIONAL AUTHORITIES
 
-## Law 3 — Canonical Content
+- Course access authority = `enrollments`
+- Subscription state authority = `memberships`
+- Playback authority = `runtime_media`
+- Media intent authority = `control_plane`
 
-All persistent text är canonical markdown.
-HTML och ad-hoc strukturer är förbjudna.
+## EXTERNAL DEPENDENCIES
 
----
+- `auth.users`
+- `storage.objects`
+- `storage.buckets`
 
-## Law 4 — Auth Is Trust
+## LEGACY MIGRATION RULE
 
-Auth definierar tillträde till relationer och progression.
-Auth får stabiliseras men inte redesignas i denna fas.
+- Legacy tables remain only while their intended functionality is still needed by live systems.
+- Once canonical authorities cover that functionality, legacy tables should migrate out rather than persist as competing truth sources.
 
----
+## CURRENT RUNTIME / BASELINE FOCUS
 
-## Law 5 — Pipeline Integrity
+- lesson editor
+- lesson view
+- Stripe checkout
+- onboarding
 
-Media måste passera genom definierade states:
-uploaded → processing → ready → failed
+## CANONICAL MEDIA RESOLUTION PATH
 
-Ingen bypass tillåts.
+- Resolution chain:
+  - `lesson_content_markdown (lesson_media_id)`
+  - `lesson_media`
+  - `control_plane`
+  - `storage.objects`
+  - `runtime_media`
+  - playback API
+  - client
+- `runtime_media` is the only playback authority.
+- `storage.objects` is an external physical-storage dependency and is never a valid playback source.
+- `control_plane` defines media intent, not playback.
+- No layer may bypass `runtime_media`.
+- All lesson/content media references must use `lesson_media_id` only.
+- Home player may have separate source/storage truth, but playback must still resolve through `runtime_media`.
+- Home player must not introduce alternative playback paths.
+- These rules are operational laws and do not elevate home player into a separate top-level system model.
 
----
+## Source of truth per component
 
-## Law 6 — Planned Systems Protection
+### 1) API definitions
+- Selected option: **B**
+- Chosen source of truth:
+  - docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json
+  - docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md
+  - docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md
+- Classification:
+  - API contract intent: `planned`
+  - Runtime status: `runtime-audited` (uses catalog + diff as validation surface)
+- Why this supports product intent:
+  - B was chosen because API behavior must reflect real interactions between teachers and learners instead of hypothetical endpoint design.
 
-Planned features (control plane, onboarding, etc)
-får aldrig tas bort under stabilisering.
+### 2) Media control plane scope
+- Selected option: **A**
+- Chosen source of truth:
+  - docs/media_control_plane_mcp.md
+  - docs/media_architecture.md
+- Classification:
+  - Scope intent: `planned`
+  - Runtime status: `planned`
+  - Canonical role: `media_intent_authority`
+- Why this supports product intent:
+  - A was chosen because experience control and operational consistency are required for live/spiritual context and session quality, while present playback authority remains `runtime_media`.
 
----
+### 3) Auth flow definition
+- Selected option: **B** (with user constraint: evolve into UX-driven system)
+- Chosen source of truth:
+  - docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md
+  - docs/SECURITY.md
+- Classification:
+  - Auth/security intent: `planned`
+  - Runtime status: `planned`
+- Why this supports product intent:
+  - B was chosen because trust and user journey integrity must be preserved through documented security and audit baselines.
 
-## Law 7 — No Assumption Rule
+## Planned vs runtime classification (resolved)
 
-Om systemet är oklart → stop.
-Ingen implicit logik tillåts.
+- API definitions: `planned` + `runtime-audited`
+- Media control plane: `planned` + `intent-authoritative`
+- Playback delivery: `runtime-active` via `runtime_media`
+- Auth flow: `planned` + `runtime-audited`
 
----
+## Resolved conflicts
 
-## Law 8 — Audit Over Spec
+1. **API definition conflict**
+   - Resolved to option B.
+   - Canonical decision: audit catalog/diff files are the accepted API truth source for verification and mismatch tracking.
 
-Audit och runtime väger alltid tyngre än spec.
+2. **Media control plane conflict**
+   - Resolved to option A.
+   - Canonical decision: control-plane responsibilities and interfaces are defined by MCP/control-plane docs as primary media intent, while runtime playback authority remains `runtime_media`.
 
----
+3. **Auth flow conflict**
+   - Resolved to option B with UX-driven evolution constraint.
+   - Canonical decision: security and audit docs remain the governing baseline; UX-driven evolution proceeds within this baseline.
 
-## Law 9 — Phase Execution Discipline
+## Pending note
 
-Varje förändring sker:
-- stegvis
-- verifierat
-- utan sidoförändringar
+- This file is now the preserved decision layer for Phase 1 execution and is required as input for deterministic rule processing.

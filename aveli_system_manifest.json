@@ -1,7 +1,8 @@
 {
     "system": {
         "name": "Aveli",
-        "type": "experience_platform",
+        "type": "social_learning_platform",
+        "product_identity": "social_learning_platform_with_marketplace",
         "core_principles": {
             "relationship_driven": true,
             "experience_driven": true,
@@ -36,7 +37,12 @@
         "media_pipeline": {
             "state": "runtime_active",
             "role": "implementation_layer",
-            "mutation_policy": "alignment_only"
+            "mutation_policy": "alignment_only",
+            "home_player_runtime_model": {
+                "source_storage_truth": "separate_from_runtime_media",
+                "playback_projection": "runtime_media_only",
+                "alternative_playback_paths": "forbidden"
+            }
         },
         "auth": {
             "state": "runtime_active",
@@ -75,14 +81,73 @@
             "mutation_policy": "flat_hierarchy_only"
         }
     },
+    "authorities": {
+        "media_authority_model": "split_intent_and_playback",
+        "course_access_authority": "enrollments",
+        "subscription_state_authority": "memberships",
+        "playback_authority": "runtime_media",
+        "media_intent_authority": "control_plane"
+    },
+    "external_dependencies": [
+        "auth.users",
+        "storage.objects",
+        "storage.buckets"
+    ],
+    "legacy_migration_policy": {
+        "legacy_remains_only_while_needed": true,
+        "canonical_coverage_triggers_migration_out": true
+    },
+    "current_runtime_focus": [
+        "lesson_editor",
+        "lesson_view",
+        "stripe_checkout",
+        "onboarding"
+    ],
+    "future_facing_surfaces": [
+        "activities",
+        "posts",
+        "messages",
+        "notifications"
+    ],
+    "canonical_media_resolution_path": {
+        "reference_chain": [
+            "lesson_content_markdown:lesson_media_id",
+            "lesson_media",
+            "control_plane",
+            "storage.objects",
+            "runtime_media",
+            "playback_api",
+            "client"
+        ],
+        "laws": {
+            "runtime_media_only_playback_authority": true,
+            "storage_objects_never_valid_playback_source": true,
+            "control_plane_intent_not_playback": true,
+            "runtime_media_bypass_forbidden": true,
+            "lesson_content_media_references_use_lesson_media_id_only": true
+        },
+        "home_player": {
+            "source_storage_truth": "separate_allowed",
+            "playback_must_resolve_through_runtime_media": true,
+            "alternative_playback_paths_forbidden": true
+        }
+    },
     "rules": {
         "api_truth": "audit_over_spec",
-        "media_authority": "control_plane",
-        "media_authority_enforcement": "pipeline_must_converge",
+        "media_authority_model": "split_intent_and_playback",
+        "course_access_authority": "enrollments",
+        "subscription_state_authority": "memberships",
+        "playback_authority": "runtime_media",
+        "media_intent_authority": "control_plane",
+        "media_authority_enforcement": "all_playback_must_resolve_through_runtime_media",
+        "storage_objects_playback_source": "forbidden",
+        "runtime_media_bypass": "forbidden",
+        "lesson_content_media_reference": "lesson_media_id_only",
         "content_format": "canonical_markdown",
         "auth_behavior": "trust_boundary",
         "course_structure": "course_to_lessons_direct",
         "lesson_ordering": "position",
+        "module_abstraction": "forbidden",
         "intermediate_grouping_layer": "forbidden"
     },
     "constraints": {
