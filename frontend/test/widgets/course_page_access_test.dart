@@ -99,24 +99,14 @@ void main() {
           isPublished: false,
           priceCents: 12900,
         ),
-        modules: const [
-          CourseModule(
-            id: 'course-1',
-            courseId: 'course-1',
-            title: 'Lektioner',
-            position: 0,
+        lessons: const [
+          LessonSummary(
+            id: 'lesson-1',
+            title: 'Premium Lesson',
+            position: 1,
+            isIntro: false,
           ),
         ],
-        lessonsByModule: const {
-          'course-1': [
-            LessonSummary(
-              id: 'lesson-1',
-              title: 'Premium Lesson',
-              position: 1,
-              isIntro: false,
-            ),
-          ],
-        },
         hasAccess: true,
         accessReason: 'teacher',
         isEnrolled: false,
@@ -167,30 +157,20 @@ void main() {
         isPublished: false,
         priceCents: 12900,
       ),
-      modules: const [
-        CourseModule(
-          id: 'module-1',
-          courseId: 'course-owner-step3',
-          title: 'Modul 1',
+      lessons: const [
+        LessonSummary(
+          id: 'lesson-1',
+          title: 'Lektion 1',
           position: 1,
+          isIntro: false,
+        ),
+        LessonSummary(
+          id: 'lesson-2',
+          title: 'Lektion 2',
+          position: 2,
+          isIntro: false,
         ),
       ],
-      lessonsByModule: const {
-        'module-1': [
-          LessonSummary(
-            id: 'lesson-1',
-            title: 'Lektion 1',
-            position: 1,
-            isIntro: false,
-          ),
-          LessonSummary(
-            id: 'lesson-2',
-            title: 'Lektion 2',
-            position: 2,
-            isIntro: false,
-          ),
-        ],
-      },
       hasAccess: true,
       accessReason: 'teacher',
       isEnrolled: false,
@@ -228,80 +208,54 @@ void main() {
     expect(find.text('Anmäl'), findsNothing);
   });
 
-  testWidgets(
-    'renders flat lessons with synthetic module and no module title requirement',
-    (tester) async {
-      final detail = CourseDetailData(
-        course: const CourseSummary(
-          id: 'course-flat',
-          slug: 'flat-lessons-course',
-          title: 'Flat Lessons',
-          description: 'Course with flat lesson payload',
-          isFreeIntro: false,
-          isPublished: true,
-          priceCents: 0,
-        ),
-        modules: const [
-          CourseModule(
-            id: flatLessonsModuleId,
-            courseId: 'course-flat',
-            title: '',
-            position: 0,
+  testWidgets('renders flat lessons without module grouping', (tester) async {
+    final detail = CourseDetailData(
+      course: const CourseSummary(
+        id: 'course-flat',
+        slug: 'flat-lessons-course',
+        title: 'Flat Lessons',
+        description: 'Course with flat lesson payload',
+        isFreeIntro: false,
+        isPublished: true,
+        priceCents: 0,
+      ),
+      lessons: const [
+        LessonSummary(id: 'lesson-1', title: 'L1', position: 1, isIntro: true),
+        LessonSummary(id: 'lesson-2', title: 'L2', position: 2, isIntro: false),
+      ],
+      hasAccess: true,
+      accessReason: 'enrolled',
+      isEnrolled: true,
+      hasActiveSubscription: false,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              stripePublishableKey: 'pk_test',
+              stripeMerchantDisplayName: 'Aveli Test',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith((ref, slug) async => detail),
+          coursePricingProvider.overrideWith(
+            (ref, slug) async => CoursePricing(amountCents: 0, currency: 'sek'),
           ),
         ],
-        lessonsByModule: const {
-          flatLessonsModuleId: [
-            LessonSummary(
-              id: 'lesson-1',
-              title: 'L1',
-              position: 1,
-              isIntro: true,
-            ),
-            LessonSummary(
-              id: 'lesson-2',
-              title: 'L2',
-              position: 2,
-              isIntro: false,
-            ),
-          ],
-        },
-        hasAccess: true,
-        accessReason: 'enrolled',
-        isEnrolled: true,
-        hasActiveSubscription: false,
-      );
+        child: const MaterialApp(home: CoursePage(slug: 'flat-lessons-course')),
+      ),
+    );
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appConfigProvider.overrideWithValue(
-              const AppConfig(
-                apiBaseUrl: 'http://localhost:8080',
-                stripePublishableKey: 'pk_test',
-                stripeMerchantDisplayName: 'Aveli Test',
-                subscriptionsEnabled: true,
-              ),
-            ),
-            authOverride(),
-            courseDetailProvider.overrideWith((ref, slug) async => detail),
-            coursePricingProvider.overrideWith(
-              (ref, slug) async =>
-                  CoursePricing(amountCents: 0, currency: 'sek'),
-            ),
-          ],
-          child: const MaterialApp(
-            home: CoursePage(slug: 'flat-lessons-course'),
-          ),
-        ),
-      );
+    await tester.pumpAndSettle();
 
-      await tester.pumpAndSettle();
-
-      expect(find.text('L1'), findsOneWidget);
-      expect(find.text('L2'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    expect(find.text('L1'), findsOneWidget);
+    expect(find.text('L2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'renders the backend resolved cover without a legacy fallback field',
@@ -322,24 +276,14 @@ void main() {
           isPublished: true,
           priceCents: 0,
         ),
-        modules: const [
-          CourseModule(
-            id: flatLessonsModuleId,
-            courseId: 'course-cover-contract',
-            title: '',
-            position: 0,
+        lessons: const [
+          LessonSummary(
+            id: 'lesson-1',
+            title: 'Intro',
+            position: 1,
+            isIntro: true,
           ),
         ],
-        lessonsByModule: const {
-          flatLessonsModuleId: [
-            LessonSummary(
-              id: 'lesson-1',
-              title: 'Intro',
-              position: 1,
-              isIntro: true,
-            ),
-          ],
-        },
         hasAccess: false,
         accessReason: '',
         isEnrolled: false,

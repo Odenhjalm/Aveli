@@ -466,8 +466,7 @@ void _stubMultiLessonEditorData(
       isPublished: true,
       priceCents: 1200,
     ),
-    modules: const [CourseModule(id: 'module-1', title: 'Intro', position: 1)],
-    lessonsByModule: {'module-1': lessonSummaries},
+    lessons: lessonSummaries,
     isEnrolled: false,
     latestOrder: null,
   );
@@ -546,18 +545,15 @@ void _stubSingleLessonEditorData(
       isPublished: true,
       priceCents: 1200,
     ),
-    modules: const [CourseModule(id: 'module-1', title: 'Intro', position: 1)],
-    lessonsByModule: {
-      'module-1': [
-        LessonSummary(
-          id: 'lesson-1',
-          title: 'Välkommen',
-          position: 1,
-          isIntro: true,
-          contentMarkdown: contentMarkdown,
-        ),
-      ],
-    },
+    lessons: [
+      LessonSummary(
+        id: 'lesson-1',
+        title: 'Välkommen',
+        position: 1,
+        isIntro: true,
+        contentMarkdown: contentMarkdown,
+      ),
+    ],
     isEnrolled: false,
     latestOrder: null,
   );
@@ -716,21 +712,16 @@ void main() {
         isPublished: true,
         priceCents: 1200,
       ),
-      modules: const [
-        CourseModule(id: 'module-1', title: 'Intro', position: 1),
+      lessons: const [
+        LessonSummary(
+          id: 'lesson-1',
+          title: 'Välkommen',
+          position: 1,
+          isIntro: true,
+          contentMarkdown:
+              'Introtext\n\n![](https://cdn.test/editor-image.webp)\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
+        ),
       ],
-      lessonsByModule: {
-        'module-1': const [
-          LessonSummary(
-            id: 'lesson-1',
-            title: 'Välkommen',
-            position: 1,
-            isIntro: true,
-            contentMarkdown:
-                'Introtext\n\n![](https://cdn.test/editor-image.webp)\n\n<audio controls src="https://cdn.test/editor.mp3"></audio>\n\n<video src="https://cdn.test/editor.mp4"></video>\n\nEftertext',
-          ),
-        ],
-      },
       isEnrolled: false,
       latestOrder: null,
     );
@@ -1056,21 +1047,16 @@ void main() {
           isPublished: true,
           priceCents: 1200,
         ),
-        modules: const [
-          CourseModule(id: 'module-1', title: 'Intro', position: 1),
+        lessons: const [
+          LessonSummary(
+            id: 'lesson-1',
+            title: 'Välkommen',
+            position: 1,
+            isIntro: true,
+            contentMarkdown:
+                'Introtext\n\n<video src="ftp://cdn.test/editor.mp4"></video>\n\nEftertext',
+          ),
         ],
-        lessonsByModule: {
-          'module-1': const [
-            LessonSummary(
-              id: 'lesson-1',
-              title: 'Välkommen',
-              position: 1,
-              isIntro: true,
-              contentMarkdown:
-                  'Introtext\n\n<video src="ftp://cdn.test/editor.mp4"></video>\n\nEftertext',
-            ),
-          ],
-        },
         isEnrolled: false,
         latestOrder: null,
       );
@@ -1427,20 +1413,15 @@ void main() {
         isPublished: true,
         priceCents: 1200,
       ),
-      modules: const [
-        CourseModule(id: 'module-1', title: 'Intro', position: 1),
+      lessons: const [
+        LessonSummary(
+          id: 'lesson-1',
+          title: 'Välkommen',
+          position: 1,
+          isIntro: true,
+          contentMarkdown: 'Ren text utan media',
+        ),
       ],
-      lessonsByModule: {
-        'module-1': const [
-          LessonSummary(
-            id: 'lesson-1',
-            title: 'Välkommen',
-            position: 1,
-            isIntro: true,
-            contentMarkdown: 'Ren text utan media',
-          ),
-        ],
-      },
       isEnrolled: false,
       latestOrder: null,
     );
@@ -1673,20 +1654,15 @@ void main() {
           isPublished: true,
           priceCents: 1200,
         ),
-        modules: const [
-          CourseModule(id: 'module-1', title: 'Intro', position: 1),
+        lessons: const [
+          LessonSummary(
+            id: 'lesson-1',
+            title: 'Välkommen',
+            position: 1,
+            isIntro: true,
+            contentMarkdown: null,
+          ),
         ],
-        lessonsByModule: {
-          'module-1': const [
-            LessonSummary(
-              id: 'lesson-1',
-              title: 'Välkommen',
-              position: 1,
-              isIntro: true,
-              contentMarkdown: null,
-            ),
-          ],
-        },
         isEnrolled: false,
         latestOrder: null,
       );
@@ -1831,20 +1807,15 @@ void main() {
           isPublished: true,
           priceCents: 1200,
         ),
-        modules: const [
-          CourseModule(id: 'module-1', title: 'Intro', position: 1),
+        lessons: const [
+          LessonSummary(
+            id: 'lesson-1',
+            title: 'Välkommen',
+            position: 1,
+            isIntro: true,
+            contentMarkdown: null,
+          ),
         ],
-        lessonsByModule: {
-          'module-1': const [
-            LessonSummary(
-              id: 'lesson-1',
-              title: 'Välkommen',
-              position: 1,
-              isIntro: true,
-              contentMarkdown: null,
-            ),
-          ],
-        },
         isEnrolled: false,
         latestOrder: null,
       );
@@ -2010,8 +1981,7 @@ void main() {
         isPublished: true,
         priceCents: 1200,
       ),
-      modules: const [],
-      lessonsByModule: const {},
+      lessons: const [],
       isEnrolled: false,
       latestOrder: null,
     );

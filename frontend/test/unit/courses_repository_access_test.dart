@@ -154,26 +154,15 @@ void main() {
             'is_published': true,
             'price_cents': 0,
           },
-          'modules': [
+          'lessons': [
             {
-              'id': 'module-1',
-              'course_id': courseId,
-              'title': 'Module 1',
+              'id': 'lesson-1',
+              'title': 'Welcome',
               'position': 1,
+              'is_intro': true,
+              'content_markdown': '# Intro',
             },
           ],
-          'lessons': {
-            'module-1': [
-              {
-                'id': 'lesson-1',
-                'module_id': 'module-1',
-                'title': 'Welcome',
-                'position': 1,
-                'is_intro': true,
-                'content_markdown': '# Intro',
-              },
-            ],
-          },
         },
       );
 
@@ -205,8 +194,8 @@ void main() {
       expect(detail.isEnrolled, isTrue);
       expect(detail.latestOrder, isNotNull);
       expect(detail.latestOrder!.id, 'order-7');
-      expect(detail.modules, isNotEmpty);
-      expect(detail.lessonsByModule['module-1'], isNotEmpty);
+      expect(detail.lessons, isNotEmpty);
+      expect(detail.lessons.single.title, 'Welcome');
     });
 
     test(
@@ -235,8 +224,7 @@ void main() {
               'is_published': true,
               'price_cents': 1500,
             },
-            'modules': [],
-            'lessons': {},
+            'lessons': [],
           },
         );
 
@@ -256,7 +244,7 @@ void main() {
       },
     );
 
-    test('maps flat lessons payload into synthetic module', () async {
+    test('maps direct lessons payload', () async {
       final client = _MockApiClient();
       final repo = CoursesRepository(
         client: client,
@@ -303,14 +291,7 @@ void main() {
 
       final detail = await repo.fetchCourseDetailBySlug(slug);
 
-      expect(detail.modules, hasLength(1));
-      expect(detail.modules.single.id, flatLessonsModuleId);
-      expect(detail.modules.single.title, isEmpty);
-      expect(detail.lessonsByModule.keys, contains(flatLessonsModuleId));
-      expect(
-        detail.lessonsByModule[flatLessonsModuleId]!.map((l) => l.title),
-        orderedEquals(['L1', 'L2']),
-      );
+      expect(detail.lessons.map((l) => l.title), orderedEquals(['L1', 'L2']));
     });
   });
 }
