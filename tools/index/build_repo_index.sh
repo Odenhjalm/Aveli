@@ -2,22 +2,7 @@
 set -euo pipefail
 
 # ---------------------------------------------------------
-# Aveli Repo Index Builder
-# ---------------------------------------------------------
-# Generates a lightweight repository index to help AI agents
-# and developers quickly navigate the codebase.
-#
-# Output directory (ignored by git):
-#   .repo_index/
-#
-# Generated files:
-#   files.txt      → list of all source files
-#   tags           → symbol index (functions, classes etc)
-#   tree.txt       → directory structure
-#   stats.txt      → repo statistics
-#
-# Safe to commit this script to the repo.
-# The generated index directory should stay in .gitignore.
+# Aveli Repo Index Builder (STABLE VERSION)
 # ---------------------------------------------------------
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -29,8 +14,15 @@ echo "Repo root: $ROOT"
 echo "Index dir: $INDEX_DIR"
 echo "--------------------------------------------"
 
-rm -rf "$INDEX_DIR"
+# 🔥 Only clean index files (NOT vector DB)
 mkdir -p "$INDEX_DIR"
+
+rm -f \
+  "$INDEX_DIR/files.txt" \
+  "$INDEX_DIR/searchable_files.txt" \
+  "$INDEX_DIR/tags" \
+  "$INDEX_DIR/tree.txt" \
+  "$INDEX_DIR/stats.txt"
 
 # ---------------------------------------------------------
 # File index
@@ -40,9 +32,11 @@ echo "Indexing files..."
 
 if command -v fd >/dev/null 2>&1; then
     fd --type f \
+        --hidden \
         --exclude .git \
         --exclude node_modules \
         --exclude .venv \
+        --exclude .repo_index \
         --exclude build \
         --exclude dist \
         --exclude target \
@@ -54,9 +48,19 @@ else
         -not -path "*/.git/*" \
         -not -path "*/node_modules/*" \
         -not -path "*/.venv/*" \
+        -not -path "*/.repo_index/*" \
         -not -path "*/build/*" \
         -not -path "*/dist/*" \
         > "$INDEX_DIR/files.txt"
+fi
+
+# 🔥 sanity check
+FILE_COUNT=$(wc -l < "$INDEX_DIR/files.txt")
+echo "Indexed files: $FILE_COUNT"
+
+if [ "$FILE_COUNT" -eq 0 ]; then
+    echo "ERROR: No files indexed"
+    exit 1
 fi
 
 # ---------------------------------------------------------
@@ -71,6 +75,7 @@ if command -v rg >/dev/null 2>&1; then
         --glob '!.git/*' \
         --glob '!node_modules/*' \
         --glob '!.venv/*' \
+        --glob '!.repo_index/*' \
         > "$INDEX_DIR/searchable_files.txt"
 fi
 
@@ -85,6 +90,7 @@ if command -v ctags >/dev/null 2>&1; then
         --exclude=.git \
         --exclude=node_modules \
         --exclude=.venv \
+        --exclude=.repo_index \
         --exclude=build \
         --exclude=dist \
         --exclude=target \
@@ -102,14 +108,15 @@ echo "Generating directory tree..."
 
 if command -v tree >/dev/null 2>&1; then
     tree -a \
-        -I ".git|node_modules|.venv|build|dist|coverage" \
+        -I ".git|node_modules|.venv|.repo_index|build|dist|coverage" \
         "$ROOT" \
         > "$INDEX_DIR/tree.txt"
 else
-    echo "tree not installed, generating fallback tree..."
+    echo "tree not installed, fallback tree..."
     find "$ROOT" -type d \
         -not -path "*/.git/*" \
         -not -path "*/node_modules/*" \
+        -not -path "*/.repo_index/*" \
         > "$INDEX_DIR/tree.txt"
 fi
 
@@ -140,11 +147,8 @@ du -h --max-depth=2 "$ROOT" 2>/dev/null | sort -hr | head -20
 echo ""
 echo "Repository index built successfully."
 echo ""
-echo "Location:"
-echo "  $INDEX_DIR"
-echo ""
-echo "Files generated:"
-echo "  files.txt"
+echo "Files:"
+echo "  files.txt            ($FILE_COUNT entries)"
 echo "  searchable_files.txt"
 echo "  tags"
 echo "  tree.txt"

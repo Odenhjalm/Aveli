@@ -15,10 +15,18 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = ROOT / "backend" / ".env"
+DEFAULT_ENV_LOCAL_PATH = ROOT / "backend" / ".env.local"
 ENV_PATH = Path(os.environ.get("BACKEND_ENV_FILE") or DEFAULT_ENV_PATH)
+ENV_OVERLAY_PATH = (
+    Path(os.environ["BACKEND_ENV_OVERLAY_FILE"])
+    if os.environ.get("BACKEND_ENV_OVERLAY_FILE")
+    else (DEFAULT_ENV_LOCAL_PATH if DEFAULT_ENV_LOCAL_PATH.exists() else None)
+)
 
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH, override=False)
+if ENV_OVERLAY_PATH and ENV_OVERLAY_PATH.exists():
+    load_dotenv(ENV_OVERLAY_PATH, override=True)
 
 
 def _val(key: str) -> str:

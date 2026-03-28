@@ -4,8 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/tools/runtime/python_paths.sh"
 aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
-BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-"${ROOT_DIR}/backend/.env"}"
-BACKEND_ENV_OVERLAY_FILE="${BACKEND_ENV_OVERLAY_FILE:-""}"
+BACKEND_ENV_FILE_DEFAULT="${ROOT_DIR}/backend/.env"
+BACKEND_ENV_FILE_DEFAULT_LOCAL="${ROOT_DIR}/backend/.env.local"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-"${BACKEND_ENV_FILE_DEFAULT}"}"
+BACKEND_ENV_OVERLAY_FILE_DEFAULT=""
+if [[ -f "$BACKEND_ENV_FILE_DEFAULT_LOCAL" ]]; then
+  BACKEND_ENV_OVERLAY_FILE_DEFAULT="$BACKEND_ENV_FILE_DEFAULT_LOCAL"
+fi
+BACKEND_ENV_OVERLAY_FILE="${BACKEND_ENV_OVERLAY_FILE:-"${BACKEND_ENV_OVERLAY_FILE_DEFAULT}"}"
 
 CI_MODE=false
 if [[ -n "${CI:-}" ]]; then
@@ -276,14 +282,12 @@ fi
 if [[ -z "$stripe_mode" ]]; then
   if [[ "$ENV_MODE" == "prod" ]]; then
     stripe_mode="live"
-  elif [[ "$OVERLAY_SET" == "true" ]]; then
-    stripe_mode="test"
   else
     stripe_mode="live"
   fi
 fi
 
-if [[ "$explicit_mode" != "true" && "$ENV_MODE" != "prod" && "$OVERLAY_SET" != "true" ]]; then
+if [[ "$explicit_mode" != "true" && "$ENV_MODE" != "prod" ]]; then
   if [[ "${#test_candidates[@]}" -gt 0 && "${#live_candidates[@]}" -eq 0 ]]; then
     stripe_mode="test"
   elif [[ "${#live_candidates[@]}" -gt 0 && "${#test_candidates[@]}" -eq 0 ]]; then

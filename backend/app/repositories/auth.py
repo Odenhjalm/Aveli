@@ -13,6 +13,17 @@ from ..db import get_conn, pool
 from ..utils.referrals import referral_membership_window
 from .referrals import normalize_referral_code, normalize_referral_email
 
+_USER_BY_ID_COLUMNS = (
+    "id",
+    "email",
+    "encrypted_password",
+    "email_confirmed_at",
+    "confirmed_at",
+    "created_at",
+    "updated_at",
+)
+_TABLE_COLUMNS_CACHE: dict[tuple[str, str], set[str]] = {}
+
 
 class UniqueViolationError(Exception):
     """Raised when attempting to insert a record that already exists."""
@@ -20,6 +31,39 @@ class UniqueViolationError(Exception):
 
 class InvalidReferralCodeError(Exception):
     """Raised when a supplied referral code cannot be redeemed."""
+
+
+async def _table_columns(schema: str, table: str) -> set[str]:
+    cache_key = (schema, table)
+    cached = _TABLE_COLUMNS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = %s
+              AND table_name = %s
+            """,
+            (schema, table),
+        )
+        rows = await cur.fetchall()
+
+    columns = {
+        str((row or {}).get("column_name"))
+        for row in rows
+        if (row or {}).get("column_name")
+    }
+    _TABLE_COLUMNS_CACHE[cache_key] = columns
+    return columns
+
+
+def _with_missing_keys(row: dict[str, Any], expected_columns: tuple[str, ...]) -> dict[str, Any]:
+    for column in expected_columns:
+        row.setdefault(column, None)
+    return row
 
 
 async def create_user(
@@ -200,16 +244,15 @@ async def get_user_by_email(email: str) -> dict[str, Any] | None:
 
 
 async def get_user_by_id(user_id: str | UUID) -> dict[str, Any] | None:
+    available_columns = await _table_columns("auth", "users")
+    if "id" not in available_columns:
+        return None
+
+    selected_columns = [column for column in _USER_BY_ID_COLUMNS if column in available_columns]
     async with get_conn() as cur:
         await cur.execute(
-            """
-            SELECT id,
-                   email,
-                   encrypted_password,
-                   email_confirmed_at,
-                   confirmed_at,
-                   created_at,
-                   updated_at
+            f"""
+            SELECT {", ".join(selected_columns)}
             FROM auth.users
             WHERE id = %s
             LIMIT 1
@@ -220,7 +263,7 @@ async def get_user_by_id(user_id: str | UUID) -> dict[str, Any] | None:
             row = await cur.fetchone()
         except InterfaceError:
             row = None
-        return dict(row) if row else None
+        return _with_missing_keys(dict(row), _USER_BY_ID_COLUMNS) if row else None
 
 
 async def mark_user_email_verified(email: str) -> dict[str, Any] | None:
