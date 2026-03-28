@@ -50,22 +50,7 @@ def _resolution_is_image(resolution: LessonMediaResolution) -> bool:
 def _playback_resolution_source(resolution: LessonMediaResolution) -> str:
     if resolution.playback_mode == LessonMediaPlaybackMode.PIPELINE_ASSET:
         return "control_plane"
-    if resolution.playback_mode == LessonMediaPlaybackMode.LEGACY_STORAGE:
-        return "legacy"
     return "unknown"
-
-
-def _legacy_audio_requires_derived_playback(
-    resolution: LessonMediaResolution,
-) -> bool:
-    kind = str(resolution.kind or "").strip().lower()
-    if kind != "audio":
-        return False
-    return not media_resolver.is_direct_home_mp3_path(
-        str(resolution.storage_path or ""),
-        storage_bucket=resolution.storage_bucket,
-        content_type=resolution.content_type,
-    )
 
 
 def _log_image_playback_resolution(
@@ -353,6 +338,11 @@ def _resolution_http_exception(resolution: LessonMediaResolution) -> HTTPExcepti
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Media not found",
         )
+    if resolution.reference_type == "home_player_upload":
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Playable media not found",
+        )
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Lesson media has no playable source",
@@ -419,94 +409,22 @@ async def _resolve_pipeline_playback_from_resolution(
     )
 
 
-async def _resolve_legacy_storage_playback_from_resolution(
-    *,
-    resolution: LessonMediaResolution,
-    user_id: str,
-) -> dict[str, Any]:
-    storage_path = resolution.storage_path
-    storage_bucket = resolution.storage_bucket
-    if storage_path is None or storage_bucket is None:
-        raise _resolution_http_exception(resolution)
-
-    if resolution.auth_scope == "home_teacher_library":
-        teacher_id = resolution.teacher_id
-        if teacher_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Media missing owner",
-            )
-        await _authorize_home_player_upload_playback(user_id, teacher_id)
-    else:
-        await _authorize_legacy_media_playback(
-            storage_path=storage_path,
-            storage_bucket=storage_bucket,
-            user_id=user_id,
-        )
-
-    try:
-        playback_url = await media_resolver.resolve_storage_playback_url(
-            lesson_media_id=resolution.lesson_media_id or resolution.runtime_media_id,
-            storage_path=storage_path,
-            storage_bucket=storage_bucket,
-            cache_version=resolution.legacy_media_object_id,
-            require_derived_audio=_legacy_audio_requires_derived_playback(
-                resolution
-            ),
-        )
-    except (ValueError, storage_service.StorageServiceError) as exc:
-        logger.warning(
-            "LESSON_MEDIA_LEGACY_PLAYBACK_FAILED",
-            extra={
-                **resolution.log_fields(),
-                "error": str(exc),
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Storage signing unavailable",
-        ) from exc
-
-    return {
-        "media_id": resolution.lesson_media_id,
-        "url": playback_url,
-        "playback_url": playback_url,
-        "storage_path": storage_path,
-    }
-
-
 async def _resolve_playback_from_resolution(
     *,
     resolution: LessonMediaResolution,
     user_id: str,
 ) -> dict[str, Any]:
-    playback: dict[str, Any]
-    if resolution.playback_mode == LessonMediaPlaybackMode.PIPELINE_ASSET:
-        playback = await _resolve_pipeline_playback_from_resolution(
-            resolution=resolution,
-            user_id=user_id,
+    if resolution.playback_mode != LessonMediaPlaybackMode.PIPELINE_ASSET:
+        logger.warning(
+            "NON_PIPELINE_PLAYBACK_BLOCKED",
+            extra=resolution.log_fields(),
         )
-    elif resolution.playback_mode == LessonMediaPlaybackMode.LEGACY_STORAGE:
-        allow_lesson_media_passthrough = (
-            resolution.reference_type == "lesson_media"
-            and _resolution_is_image(resolution)
-        )
-        if resolution.reference_type == "lesson_media" and not allow_lesson_media_passthrough:
-            logger.warning(
-                "LEGACY_LESSON_MEDIA_PLAYBACK_BLOCKED",
-                extra=resolution.log_fields(),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Lesson media has no playable source",
-            )
-        playback = await _resolve_legacy_storage_playback_from_resolution(
-            resolution=resolution,
-            user_id=user_id,
-        )
-    else:
         raise _resolution_http_exception(resolution)
 
+    playback = await _resolve_pipeline_playback_from_resolution(
+        resolution=resolution,
+        user_id=user_id,
+    )
     _log_image_playback_resolution(
         resolution=resolution,
         playback=playback,
@@ -547,10 +465,9 @@ async def resolve_lesson_media_playback(
         lesson_media_id
     )
     if runtime_media_id is None:
-        resolution = await canonical_media_resolver.resolve_lesson_media(lesson_media_id)
-        return await _resolve_playback_from_resolution(
-            resolution=resolution,
-            user_id=user_id,
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active runtime media not found",
         )
     return await resolve_runtime_media_playback(
         runtime_media_id=runtime_media_id,

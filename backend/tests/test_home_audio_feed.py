@@ -52,6 +52,12 @@ async def test_home_audio_requires_auth(async_client):
 
 
 @pytest.mark.anyio("asyncio")
+async def test_home_upload_direct_storage_route_is_absent(async_client):
+    resp = await async_client.get(f"/home/uploads/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio("asyncio")
 async def test_home_audio_returns_list(async_client):
     email = f"home_audio_{uuid.uuid4().hex[:6]}@example.com"
     password = "Passw0rd!"
