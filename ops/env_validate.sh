@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
 BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-"${ROOT_DIR}/backend/.env"}"
 BACKEND_ENV_OVERLAY_FILE="${BACKEND_ENV_OVERLAY_FILE:-""}"
 
@@ -23,7 +25,7 @@ load_env_file() {
     return 1
   fi
   eval "$(
-    python3 - <<'PY' "$env_file"
+    "$AVELI_REPO_PYTHON" - <<'PY' "$env_file"
 import shlex
 import sys
 
@@ -116,7 +118,7 @@ lower() {
 
 get_url_host() {
   local url="$1"
-  python3 - <<'PY' "$url"
+  "$AVELI_REPO_PYTHON" - <<'PY' "$url"
 import sys
 from urllib.parse import urlparse
 

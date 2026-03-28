@@ -8,6 +8,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/backend"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
 
 PORT="${PORT:-8080}"
 HOST="${HOST:-0.0.0.0}"
@@ -29,10 +30,12 @@ fi
 
 cd "${BACKEND_DIR}"
 
-if [[ ! -f ".venv/bin/activate" ]]; then
+if [[ ! -x ".venv/bin/python" ]]; then
   echo "==> Installing backend dependencies via Poetry"
   poetry install >/dev/null
 fi
 
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
+
 echo "==> Launching FastAPI backend on ${HOST}:${PORT}"
-exec poetry run uvicorn app.main:app --host "${HOST}" --port "${PORT}" --reload
+exec "$AVELI_BACKEND_PYTHON" -m uvicorn app.main:app --host "${HOST}" --port "${PORT}" --reload

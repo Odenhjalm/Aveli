@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
 REPORT_PATH="${REPORT_PATH:-${ROOT_DIR}/docs/verify/LAUNCH_READINESS_REPORT.md}"
 MASTER_ENV_FILE="${MASTER_ENV_FILE:-${BACKEND_ENV_FILE:-${ROOT_DIR}/backend/.env}}"
 LOG_PATH="/tmp/aveli_remote_db_verify_$(date +%Y%m%d-%H%M%S).json"
@@ -22,7 +24,7 @@ is_prod_env() {
 write_log() {
   local status="$1"
   local reason="${2:-}"
-  python3 - <<'PY' "$LOG_PATH" "$status" "$reason"
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$LOG_PATH" "$status" "$reason"
 import json
 import os
 import sys
@@ -94,7 +96,7 @@ TXT
   fi
 
   eval "$(
-    python3 - <<'PY' "$MASTER_ENV_FILE"
+    "$AVELI_BACKEND_PYTHON" - <<'PY' "$MASTER_ENV_FILE"
 import shlex
 import sys
 
@@ -195,7 +197,7 @@ else
 fi
 
 repo_migrations=$(
-  python3 - <<'PY' "$ROOT_DIR/supabase/migrations"
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$ROOT_DIR/supabase/migrations"
 import re
 import sys
 from pathlib import Path

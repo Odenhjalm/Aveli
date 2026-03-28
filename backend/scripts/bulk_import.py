@@ -34,9 +34,13 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
-import sys
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+BACKEND_PYTHON = BACKEND_DIR / ".venv" / "bin" / "python"
+IMPORT_COURSE_SCRIPT = BACKEND_DIR / "scripts" / "import_course.py"
 
 
 def find_manifests(root: Path) -> list[Path]:
@@ -126,8 +130,8 @@ def run_import(
     cleanup_duplicates: bool,
 ) -> int:
     cmd = [
-        sys.executable or "python",
-        "scripts/import_course.py",
+        sys.executable or str(BACKEND_PYTHON),
+        str(IMPORT_COURSE_SCRIPT),
         "--manifest",
         str(manifest),
         "--base-url",

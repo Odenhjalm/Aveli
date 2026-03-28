@@ -1,18 +1,37 @@
 #!/usr/bin/env python3
 
+import os
+import shutil
+import sys
 from pathlib import Path
 from typing import Iterable
+
+ROOT = Path(__file__).resolve().parents[2]
+REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
+SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "bin" / "python"
+
+approved_pythons = {path.resolve() for path in (REPO_PYTHON, SEARCH_PYTHON) if path.exists()}
+if Path(sys.executable).resolve() not in approved_pythons:
+    if not REPO_PYTHON.exists():
+        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
+    os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
+
+index_device = (os.getenv("AVELI_INDEX_DEVICE") or "cpu").strip().lower() or "cpu"
+if index_device != "cuda":
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
 from sentence_transformers import SentenceTransformer
 import chromadb
 from tqdm import tqdm
+import torch
 
 # ---------------------------------------------------------
 # Paths
 # ---------------------------------------------------------
 
-ROOT = Path(__file__).resolve().parents[2]
 INDEX_DIR = ROOT / ".repo_index"
-FILES_LIST = INDEX_DIR / "files.txt"
+FILES_LIST = INDEX_DIR / "searchable_files.txt"
+FALLBACK_FILES_LIST = INDEX_DIR / "files.txt"
 VECTOR_DB_DIR = INDEX_DIR / "chroma_db"
 
 # ---------------------------------------------------------
@@ -21,11 +40,83 @@ VECTOR_DB_DIR = INDEX_DIR / "chroma_db"
 
 COLLECTION_NAME = "aveli_repo"
 
-CHUNK_SIZE = 1200
-CHUNK_OVERLAP = 150
-BATCH_SIZE = 4000
+# Coarser chunks keep rebuild times practical while search_code.py
+# still resolves precise local context from the matched file afterward.
+CHUNK_SIZE = 8000
+CHUNK_OVERLAP = 200
+BATCH_SIZE_GPU = 128
+BATCH_SIZE_CPU = 32
 
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBED_MODEL = "intfloat/e5-large-v2"
+
+# 🔥 IMPORTANT: set manually when needed
+REBUILD = True   # True = wipe index, False = reuse
+
+# ---------------------------------------------------------
+# Device selection (smart + safe)
+# ---------------------------------------------------------
+
+DEVICE = "cuda" if index_device == "cuda" and torch.cuda.is_available() else "cpu"
+print(f"[INFO] Using device: {DEVICE}")
+
+SEARCHABLE_SUFFIXES = {
+    ".css",
+    ".csv",
+    ".dart",
+    ".env",
+    ".go",
+    ".graphql",
+    ".html",
+    ".ini",
+    ".js",
+    ".json",
+    ".jsx",
+    ".kt",
+    ".md",
+    ".mjs",
+    ".py",
+    ".rb",
+    ".scss",
+    ".sh",
+    ".sql",
+    ".svg",
+    ".swift",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
+
+SEARCHABLE_FILENAMES = {
+    ".env.example",
+    ".env.example.backend",
+    ".env.example.flutter",
+    ".env.docker.example",
+    ".gitignore",
+    "dockerfile",
+    "makefile",
+    "procfile",
+}
+
+
+def is_searchable_file(path: Path, relative_file: str) -> bool:
+    if "node_modules" in relative_file or "archive" in relative_file:
+        return False
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+    if not (name in SEARCHABLE_FILENAMES or name.startswith(".env") or suffix in SEARCHABLE_SUFFIXES):
+        return False
+    try:
+        head = path.read_bytes()[:8192]
+    except OSError:
+        return False
+    if not head:
+        return False
+    if b"\x00" in head:
+        return False
+    return True
 
 # ---------------------------------------------------------
 # Chunking
@@ -58,57 +149,69 @@ def chunk_text(text: str,
 
 def main():
 
-    if not FILES_LIST.exists():
+    file_list_path = FILES_LIST if FILES_LIST.exists() else FALLBACK_FILES_LIST
+
+    if not file_list_path.exists():
         raise RuntimeError(
-            f"{FILES_LIST} missing. Run repoindex first."
+            f"{FILES_LIST} missing. Run repo index first."
         )
 
-    print("Loading file list...")
+    print("\n[STEP] Loading file list...")
 
     files = [
         line.strip()
-        for line in FILES_LIST.read_text().splitlines()
+        for line in file_list_path.read_text().splitlines()
         if line.strip()
     ]
 
-    print(f"{len(files)} files discovered")
+    print(f"[INFO] {len(files)} files discovered")
 
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ---------------------------------------------------------
+    # Optional rebuild
+    # ---------------------------------------------------------
+
+    if REBUILD and VECTOR_DB_DIR.exists():
+        print("[INFO] Removing existing vector DB...")
+        shutil.rmtree(VECTOR_DB_DIR)
+
     VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---------------------------------------------------------
-    # Persistent Chroma
+    # Chroma
     # ---------------------------------------------------------
 
-    print("Opening persistent Chroma DB...")
+    print("[STEP] Opening Chroma DB...")
 
     client = chromadb.PersistentClient(
         path=str(VECTOR_DB_DIR)
     )
-
-    existing = [c.name for c in client.list_collections()]
-
-    if COLLECTION_NAME in existing:
-        print("Deleting existing collection...")
-        client.delete_collection(COLLECTION_NAME)
 
     collection = client.get_or_create_collection(
         name=COLLECTION_NAME
     )
 
     # ---------------------------------------------------------
-    # Load embedding model
+    # Model load
     # ---------------------------------------------------------
 
-    print("Loading embedding model...")
+    print("[STEP] Loading embedding model...")
 
-    model = SentenceTransformer(EMBED_MODEL)
+    model = SentenceTransformer(
+        EMBED_MODEL,
+        device=DEVICE
+    )
+
+    # ---------------------------------------------------------
+    # Build documents
+    # ---------------------------------------------------------
 
     documents = []
     metadatas = []
     ids = []
 
-    print("Indexing files...")
+    print("[STEP] Indexing files...")
 
     counter = 0
 
@@ -137,6 +240,12 @@ def main():
             if not chunk.strip():
                 continue
 
+            if not is_searchable_file(path, file):
+                continue
+
+            # 🔥 E5 FORMAT
+            chunk = "passage: " + chunk
+
             documents.append(chunk)
 
             metadatas.append({
@@ -149,30 +258,53 @@ def main():
             counter += 1
             chunk_index += 1
 
-    print(f"{len(documents)} chunks generated")
+    print(f"[INFO] {len(documents)} chunks generated")
 
     # ---------------------------------------------------------
-    # Generate embeddings
+    # Embedding (GPU optimized)
     # ---------------------------------------------------------
 
-    print("Generating embeddings...")
+    print("[STEP] Generating embeddings...")
 
-    embeddings = model.encode(
-        documents,
-        show_progress_bar=True,
-        batch_size=64,
-        normalize_embeddings=True
-    )
+    batch_size = BATCH_SIZE_GPU if DEVICE == "cuda" else BATCH_SIZE_CPU
+
+    print(f"[INFO] Batch size: {batch_size}")
+
+    try:
+        embeddings = model.encode(
+            documents,
+            show_progress_bar=True,
+            batch_size=batch_size,
+            normalize_embeddings=True,
+            convert_to_numpy=True
+        )
+
+    except RuntimeError as e:
+        print("\n[WARNING] GPU failed, falling back to CPU...")
+        print(e)
+
+        model = SentenceTransformer(
+            EMBED_MODEL,
+            device="cpu"
+        )
+
+        embeddings = model.encode(
+            documents,
+            show_progress_bar=True,
+            batch_size=BATCH_SIZE_CPU,
+            normalize_embeddings=True,
+            convert_to_numpy=True
+        )
 
     # ---------------------------------------------------------
-    # Store vectors
+    # Store
     # ---------------------------------------------------------
 
-    print("Writing to vector DB in batches...")
+    print("[STEP] Writing to vector DB...")
 
-    for i in tqdm(range(0, len(documents), BATCH_SIZE)):
+    for i in tqdm(range(0, len(documents), 4000)):
 
-        j = i + BATCH_SIZE
+        j = i + 4000
 
         collection.add(
             documents=documents[i:j],
@@ -181,12 +313,9 @@ def main():
             ids=ids[i:j]
         )
 
-    print("\nVector index built successfully.")
-
-    print("Location:", VECTOR_DB_DIR)
-    print("Collection:", COLLECTION_NAME)
-    print("Chunks indexed:", len(documents))
-
+    print("\n[SUCCESS] Vector index built.")
+    print(f"[INFO] Location: {VECTOR_DB_DIR}")
+    print(f"[INFO] Chunks indexed: {len(documents)}")
 
 # ---------------------------------------------------------
 

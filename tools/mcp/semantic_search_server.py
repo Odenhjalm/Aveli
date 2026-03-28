@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal stdio MCP server exposing semantic repository search."""
+"""Semantic MCP server with E5 embeddings (CPU optimized, stable)."""
 
 from __future__ import annotations
 
@@ -9,26 +9,70 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import List, Dict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT_PATH = REPO_ROOT / "tools" / "index" / "semantic_search.sh"
+SEARCH_PYTHON = REPO_ROOT / ".repo_index" / ".search_venv" / "bin" / "python"
 
+if Path(sys.executable).resolve() != SEARCH_PYTHON.resolve():
+    if not SEARCH_PYTHON.exists():
+        raise SystemExit(f"Missing semantic-search interpreter: {SEARCH_PYTHON}")
+    os.execv(str(SEARCH_PYTHON), [str(SEARCH_PYTHON), __file__, *sys.argv[1:]])
 
-def _build_env() -> dict[str, str]:
-    env = os.environ.copy()
-    search_bin = REPO_ROOT / ".repo_index" / ".search_venv" / "bin"
-    env["PATH"] = f"{search_bin}:{env.get('PATH', '')}"
-    return env
+from sentence_transformers import SentenceTransformer
+import torch
+import numpy as np
 
+# ----------------------------------------
+# CONFIG
+# ----------------------------------------
 
-def _parse_results(stdout: str) -> list[dict[str, str]]:
-    results: list[dict[str, str]] = []
-    current_file: str | None = None
-    current_lines: list[str] = []
+SEARCH_SCRIPT_PATH = REPO_ROOT / "tools" / "index" / "search_code.py"
+
+TOP_K = 10
+
+# CPU optimization
+torch.set_num_threads(8)
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # disable GPU cleanly
+
+# ----------------------------------------
+# MODEL (LOAD ONCE)
+# ----------------------------------------
+
+_MODEL = None
+
+def get_model():
+    global _MODEL
+    if _MODEL is None:
+        _MODEL = SentenceTransformer("intfloat/e5-large-v2")
+    return _MODEL
+
+# ----------------------------------------
+# EMBEDDING HELPERS (E5 FORMAT)
+# ----------------------------------------
+
+def embed_query(query: str):
+    model = get_model()
+    query = "query: " + query
+    return model.encode([query], normalize_embeddings=True)[0]
+
+def embed_documents(docs: List[str]):
+    model = get_model()
+    docs = ["passage: " + d for d in docs]
+    return model.encode(docs, normalize_embeddings=True)
+
+# ----------------------------------------
+# RUN BASE SEARCH (ripgrep wrapper)
+# ----------------------------------------
+
+def _parse_results(stdout: str) -> List[Dict[str, str]]:
+    results = []
+    current_file = None
+    current_lines = []
 
     file_prefix = re.compile(r"^FILE:\s*(.+?)\s*$")
 
-    def flush() -> None:
+    def flush():
         nonlocal current_file, current_lines
         if current_file is None:
             return
@@ -47,49 +91,88 @@ def _parse_results(stdout: str) -> list[dict[str, str]]:
         if current_file is None:
             continue
 
-        # Keep output directly following FILE: as snippet context.
         current_lines.append(line)
 
     flush()
     return results
 
 
-def _run_search(query: str) -> list[dict[str, str]]:
+def _run_base_search(query: str):
     proc = subprocess.run(
-        [str(SCRIPT_PATH), query],
+        [str(SEARCH_PYTHON), str(SEARCH_SCRIPT_PATH), query],
         capture_output=True,
         text=True,
-        env=_build_env(),
         cwd=str(REPO_ROOT),
     )
 
-    output = (proc.stdout or "")
+    output = proc.stdout or ""
 
     if proc.returncode != 0 and "FILE:" not in output:
         stderr = (proc.stderr or "").strip()
-        raise RuntimeError(f"semantic search failed ({proc.returncode}): {stderr}")
+        raise RuntimeError(f"base search failed: {stderr}")
 
     return _parse_results(output)
 
+# ----------------------------------------
+# SEMANTIC RERANK
+# ----------------------------------------
 
-def _write_json(payload: dict) -> None:
+def semantic_rerank(query: str, results: List[Dict[str, str]]):
+    if not results:
+        return []
+
+    query_emb = embed_query(query)
+
+    texts = [r["snippet"] for r in results]
+    doc_embs = embed_documents(texts)
+
+    scores = np.dot(doc_embs, query_emb)
+
+    ranked = sorted(
+        zip(results, scores),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    return [r for r, _ in ranked[:TOP_K]]
+
+# ----------------------------------------
+# JSON RPC HELPERS
+# ----------------------------------------
+
+def _write_json(payload: dict):
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
     sys.stdout.write("\n")
     sys.stdout.flush()
 
 
-def _error(request_id, code: int, message: str, data: object | None = None) -> None:
+def _error(request_id, code: int, message: str, data=None):
     response = {
         "jsonrpc": "2.0",
         "id": request_id,
-        "error": {
-            "code": code,
-            "message": message,
-        },
+        "error": {"code": code, "message": message},
     }
     if data is not None:
         response["error"]["data"] = data
     _write_json(response)
+
+# ----------------------------------------
+# MCP RESPONSES
+# ----------------------------------------
+
+def _initialize_response(request_id):
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "result": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {
+                "name": "aveli-semantic-search",
+                "version": "0.2.0",
+            },
+        },
+    }
 
 
 def _tools_list_response(request_id):
@@ -100,11 +183,11 @@ def _tools_list_response(request_id):
             "tools": [
                 {
                     "name": "semantic_search",
-                    "description": "Execute semantic search across the repository index and return file path snippets.",
+                    "description": "Semantic search with E5 embeddings over repo.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "Search query text."}
+                            "query": {"type": "string"},
                         },
                         "required": ["query"],
                     },
@@ -114,55 +197,48 @@ def _tools_list_response(request_id):
     }
 
 
-def _initialize_response(request_id):
-    return {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {
-                "tools": {}
-            },
-            "serverInfo": {
-                "name": "aveli-semantic-search",
-                "version": "0.1.0",
-            },
-        },
-    }
-
-
-def _tools_call_response(request_id, params: dict):
+def _tools_call_response(request_id, params):
     name = params.get("name")
     args = params.get("arguments") or {}
 
     if name != "semantic_search":
         raise ValueError(f"Unknown tool: {name}")
 
-    if not isinstance(args, dict):
-        raise ValueError("arguments must be an object")
-
     query = (args.get("query") or "").strip()
     if not query:
-        raise ValueError("query must be a non-empty string")
+        raise ValueError("query must not be empty")
 
-    results = _run_search(query)
+    base_results = _run_base_search(query)
+
+    if not base_results:
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"results": []},
+        }
+
+    ranked = semantic_rerank(query, base_results)
+
     return {
         "jsonrpc": "2.0",
         "id": request_id,
         "result": {
+            "results": ranked,
+            "structuredContent": {"results": ranked},
             "content": [
                 {
                     "type": "text",
-                    "text": json.dumps({"results": results}, ensure_ascii=False),
+                    "text": json.dumps({"results": ranked}, ensure_ascii=False),
                 }
             ],
-            "structuredContent": {"results": results},
-            "results": results,
         },
     }
 
+# ----------------------------------------
+# MAIN LOOP
+# ----------------------------------------
 
-def main() -> int:
+def main():
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
@@ -171,12 +247,7 @@ def main() -> int:
         try:
             request = json.loads(raw)
         except json.JSONDecodeError:
-            _write_json(
-                {
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32700, "message": "Parse error"},
-                }
-            )
+            _error(None, -32700, "Parse error")
             continue
 
         request_id = request.get("id")
@@ -191,13 +262,12 @@ def main() -> int:
             continue
 
         if method == "tools/call":
-            params = request.get("params") or {}
             try:
-                _write_json(_tools_call_response(request_id, params))
-            except ValueError as exc:
-                _error(request_id, -32602, str(exc))
-            except Exception as exc:
-                _error(request_id, -32603, "Search execution failed", str(exc))
+                _write_json(_tools_call_response(request_id, request.get("params") or {}))
+            except ValueError as e:
+                _error(request_id, -32602, str(e))
+            except Exception as e:
+                _error(request_id, -32603, "Execution failed", str(e))
             continue
 
         if method == "shutdown":
@@ -205,8 +275,6 @@ def main() -> int:
             return 0
 
         _error(request_id, -32601, f"Method not found: {method}")
-
-    return 0
 
 
 if __name__ == "__main__":

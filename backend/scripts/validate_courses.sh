@@ -4,12 +4,18 @@ set -euo pipefail
 # Validate all manifests under courses/ using the importer in --dry-run mode.
 # No network calls are made in --dry-run; base-url/email/password are placeholders.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$BACKEND_DIR/.." && pwd)"
+source "$REPO_ROOT/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
+
 BASE_URL="http://127.0.0.1:8080"
 EMAIL="dryrun@example.com"
 PASSWORD="not-used"
 
 shopt -s nullglob
-files=(courses/*.yaml courses/*.yml courses/*.json)
+files=("$REPO_ROOT"/courses/*.yaml "$REPO_ROOT"/courses/*.yml "$REPO_ROOT"/courses/*.json)
 shopt -u nullglob
 
 if [ ${#files[@]} -eq 0 ]; then
@@ -17,17 +23,10 @@ if [ ${#files[@]} -eq 0 ]; then
   exit 0
 fi
 
-PY_BIN="python"
-if ! command -v "$PY_BIN" >/dev/null 2>&1; then
-  if command -v python3 >/dev/null 2>&1; then
-    PY_BIN="python3"
-  fi
-fi
-
 echo "Validating ${#files[@]} manifest(s) in courses/"
 for f in "${files[@]}"; do
   echo "\n==> $f"
-  "$PY_BIN" scripts/import_course.py \
+  "$AVELI_BACKEND_PYTHON" "$BACKEND_DIR/scripts/import_course.py" \
     --manifest "$f" \
     --base-url "$BASE_URL" \
     --email "$EMAIL" \

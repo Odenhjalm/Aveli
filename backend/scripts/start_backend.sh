@@ -4,6 +4,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$BACKEND_DIR/.." && pwd)"
 OPS_DIR="$ROOT_DIR/ops"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
 PORT="${PORT:-8080}"
 
 truthy() {
@@ -31,7 +33,7 @@ db_url_value() {
 }
 
 db_target() {
-  python3 - <<'PY' "$1"
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$1"
 from urllib.parse import urlparse
 import sys
 
@@ -44,7 +46,7 @@ PY
 }
 
 db_host() {
-  python3 - <<'PY' "$1"
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$1"
 from urllib.parse import urlparse
 import sys
 
@@ -98,9 +100,6 @@ if ! is_local_host "$host" && ! truthy "${AVELI_ALLOW_REMOTE_DB:-}"; then
 fi
 
 cd "$BACKEND_DIR"
-if command -v poetry >/dev/null 2>&1; then
-  source "$(poetry env info --path)"/bin/activate
-fi
 
 echo "[Backend] Starting Uvicorn on port ${PORT}..."
-uvicorn app.main:app --reload --host 127.0.0.1 --port "${PORT}"
+exec "$AVELI_BACKEND_PYTHON" -m uvicorn app.main:app --reload --host 127.0.0.1 --port "${PORT}"

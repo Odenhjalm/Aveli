@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 FRONTEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 REPO_ROOT="$(cd "$FRONTEND_ROOT/.." && pwd -P)"
+source "$REPO_ROOT/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
 CANONICAL_BUILD_DIR="$FRONTEND_ROOT/build/web"
 EXPECTED_MAIN_BRANCH="main"
 EXPECTED_PROD_API_BASE_URL="https://aveli.fly.dev"
@@ -158,18 +160,8 @@ install_flutter() {
     curl -fsSL "${url}" -o "${archive_path}"
 
     if ! tar -xf "${archive_path}" -C "${cache_dir}" >/dev/null 2>&1; then
-      local py=""
-      if command -v python3 >/dev/null 2>&1; then
-        py="python3"
-      elif command -v python >/dev/null 2>&1; then
-        py="python"
-      else
-        echo "Failed to extract Flutter archive and no python interpreter is available." >&2
-        exit 1
-      fi
-
       rm -rf "${flutter_root}"
-      "${py}" - <<PY
+      "${AVELI_REPO_PYTHON}" - <<PY
 import tarfile
 from pathlib import Path
 

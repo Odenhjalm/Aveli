@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$BACKEND_DIR/.." && pwd)"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
 
 CMD="${1:-clone}"
 
@@ -43,7 +45,7 @@ require_bin() {
 }
 
 url_host() {
-  python3 - <<'PY' "$1"
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$1"
 from urllib.parse import urlparse
 import sys
 
@@ -53,7 +55,7 @@ PY
 }
 
 url_target() {
-  python3 - <<'PY' "$1"
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$1"
 from urllib.parse import urlparse
 import sys
 
@@ -126,7 +128,7 @@ restore_local() {
 }
 
 schemas_sql_list() {
-  python3 - <<'PY' "$VERIFY_SCHEMAS"
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$VERIFY_SCHEMAS"
 import sys
 schemas = [s.strip() for s in sys.argv[1].split() if s.strip()]
 print(", ".join(repr(s) for s in schemas))
@@ -248,7 +250,7 @@ verify_clone() {
 
 case "$CMD" in
   clone)
-    require_bin python3
+    aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
     require_bin pg_dump
     require_bin pg_restore
     require_bin psql
@@ -259,13 +261,13 @@ case "$CMD" in
     verify_clone
     ;;
   dump)
-    require_bin python3
+    aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
     require_bin pg_dump
     ensure_urls
     dump_remote
     ;;
   restore)
-    require_bin python3
+    aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
     require_bin pg_restore
     require_bin psql
     ensure_urls
@@ -273,7 +275,7 @@ case "$CMD" in
     restore_local
     ;;
   verify)
-    require_bin python3
+    aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
     require_bin psql
     ensure_urls
     verify_clone

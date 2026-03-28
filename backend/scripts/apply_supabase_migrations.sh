@@ -2,9 +2,11 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$REPO_ROOT/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
 MIGRATIONS_DIR="${REPO_ROOT}/supabase/migrations"
 LEGACY_MIGRATIONS_DIR="${REPO_ROOT}/backend/supabase/migrations"
-PYTHON_BIN="$(command -v python3 || command -v python || true)"
+PYTHON_BIN="$AVELI_BACKEND_PYTHON"
 
 is_truthy() {
   local raw="${1:-}"

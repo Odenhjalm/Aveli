@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OPS_DIR="$ROOT_DIR/ops"
 BACKEND_DIR="$ROOT_DIR/backend"
 REPORT_PATH="$ROOT_DIR/docs/verify/LAUNCH_READINESS_REPORT.md"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
 
 # Load env first (prints env paths).
 # shellcheck source=/dev/null
@@ -17,7 +19,7 @@ if ! bash "$OPS_DIR/env_validate.sh"; then
 fi
 
 # Contract check; fail fast.
-if ! python "$BACKEND_DIR/scripts/env_contract_check.py"; then
+if ! "$AVELI_BACKEND_PYTHON" "$BACKEND_DIR/scripts/env_contract_check.py"; then
   echo "verify_all: FAIL (env contract check)" >&2
   exit 1
 fi

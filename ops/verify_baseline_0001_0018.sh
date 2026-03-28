@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
 MANIFEST_PATH="$ROOT_DIR/backend/supabase/baseline_slots.lock.json"
 BASELINE_DIR="$ROOT_DIR/backend/supabase/baseline_slots"
 CHECKER="$ROOT_DIR/ops/check_baseline_slots.py"
@@ -54,7 +56,7 @@ resolve_db_url() {
 }
 
 derive_urls() {
-  python3 - <<'PY' "$1" "$2"
+  "$AVELI_REPO_PYTHON" - <<'PY' "$1" "$2"
 from urllib.parse import urlparse, urlunparse
 import sys
 
@@ -69,7 +71,7 @@ PY
 }
 
 db_host() {
-  python3 - <<'PY' "$1"
+  "$AVELI_REPO_PYTHON" - <<'PY' "$1"
 from urllib.parse import urlparse
 import sys
 
@@ -154,7 +156,7 @@ if [[ -z "$DB_URL" ]]; then
   exit 2
 fi
 
-python3 "$CHECKER" --manifest "$MANIFEST_PATH" --baseline-dir "$BASELINE_DIR"
+"$AVELI_REPO_PYTHON" "$CHECKER" --manifest "$MANIFEST_PATH" --baseline-dir "$BASELINE_DIR"
 
 SCRATCH_DB="baseline_replay_0018_$(date +%Y%m%d_%H%M%S)_$$"
 mapfile -t DERIVED_URLS < <(derive_urls "$DB_URL" "$SCRATCH_DB")
@@ -247,7 +249,7 @@ worker_payload="$(curl -sS -X POST "$BACKEND_URL/mcp/logs" \
   -H 'Content-Type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_worker_health","arguments":{}}}')"
 
-python3 - <<'PY' "$worker_payload"
+"$AVELI_REPO_PYTHON" - <<'PY' "$worker_payload"
 import json
 import sys
 

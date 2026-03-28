@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
 API_BASE_URL="${API_BASE_URL:-https://aveli.fly.dev}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -59,7 +62,7 @@ curl -fsS -D "${TMP_DIR}/gzip.headers" -o /dev/null \
 tr -d '\r' < "${TMP_DIR}/gzip.headers" | grep -iq '^content-encoding: gzip$'
 
 FIRST_COVER_URL="$(
-python3 - "${TMP_DIR}/healthz.json" "${TMP_DIR}/readyz.json" "${TMP_DIR}/courses.json" "${TMP_DIR}/popular.json" "${TMP_DIR}/intro.json" <<'PY'
+"$AVELI_REPO_PYTHON" - "${TMP_DIR}/healthz.json" "${TMP_DIR}/readyz.json" "${TMP_DIR}/courses.json" "${TMP_DIR}/popular.json" "${TMP_DIR}/intro.json" <<'PY'
 import json
 import sys
 
@@ -94,7 +97,7 @@ PY
 
 if [[ -n "${FIRST_COVER_URL}" ]]; then
   NORMALIZED_COVER_URL="$(
-  python3 - "${FIRST_COVER_URL}" <<'PY'
+  "$AVELI_REPO_PYTHON" - "${FIRST_COVER_URL}" <<'PY'
 import sys
 from urllib.parse import quote, urlsplit, urlunsplit
 

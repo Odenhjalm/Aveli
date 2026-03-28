@@ -7,6 +7,9 @@ BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 LANDING_DIR="$ROOT_DIR/frontend/landing"
 REPORT_PATH="${REPORT_PATH:-$ROOT_DIR/docs/verify/LAUNCH_READINESS_REPORT.md}"
+source "$ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
 
 # Default: install backend project (so "import app" works without PYTHONPATH hacks).
 POETRY_INSTALL_ARGS="${POETRY_INSTALL_ARGS:-}"
@@ -101,7 +104,7 @@ run_step() {
 
 # Pick a free localhost port for smoke (avoids “address already in use”).
 pick_free_port() {
-  python3 - <<'PY'
+  "$AVELI_REPO_PYTHON" - <<'PY'
 import socket
 s = socket.socket()
 s.bind(("127.0.0.1", 0))
@@ -122,7 +125,7 @@ detect_flutter_device() {
   devices_json="$(flutter devices --machine 2>/dev/null || true)"
   [[ -n "$devices_json" ]] || return 1
 
-  DEVICES_JSON="$devices_json" python3 - <<'PY'
+  DEVICES_JSON="$devices_json" "$AVELI_REPO_PYTHON" - <<'PY'
 import json, os, sys
 raw = os.environ.get("DEVICES_JSON","")
 try:
@@ -198,12 +201,12 @@ fi
 
 # 4) Env contract (FAIL FAST)
 log "Env contract check"
-run_or_fail "env contract" bash -c "cd '$BACKEND_DIR' && poetry run python scripts/env_contract_check.py"
+run_or_fail "env contract" bash -c "cd '$BACKEND_DIR' && '$AVELI_BACKEND_PYTHON' scripts/env_contract_check.py"
 env_contract_status="PASS"
 
 # 5) Stripe verify
 log "Stripe verification"
-if (cd "$BACKEND_DIR" && poetry run python scripts/stripe_verify_test_mode.py); then
+if (cd "$BACKEND_DIR" && "$AVELI_BACKEND_PYTHON" scripts/stripe_verify_test_mode.py); then
   stripe_verify_status="PASS"
 else
   stripe_verify_status="FAIL"
@@ -213,7 +216,7 @@ fi
 
 # 6) Supabase env verify
 log "Supabase env verification"
-if (cd "$BACKEND_DIR" && poetry run python scripts/supabase_verify_env.py); then
+if (cd "$BACKEND_DIR" && "$AVELI_BACKEND_PYTHON" scripts/supabase_verify_env.py); then
   supabase_verify_status="PASS"
 else
   supabase_verify_status="FAIL"
@@ -246,7 +249,7 @@ fi
 # 8) Backend tests
 log "Backend tests"
 # Force non-prod mode for tests so Stripe test keys are allowed.
-if (cd "$BACKEND_DIR" && APP_ENV=development poetry run pytest); then
+if (cd "$BACKEND_DIR" && APP_ENV=development "$AVELI_BACKEND_PYTHON" -m pytest); then
   backend_tests_status="PASS"
 else
   backend_tests_status="FAIL"
@@ -261,7 +264,7 @@ backend_url="${QA_API_BASE_URL:-http://127.0.0.1:${backend_port}}"
 backend_pid=""
 
 ( cd "$BACKEND_DIR"
-  poetry run uvicorn app.main:app --host 127.0.0.1 --port "${backend_port}" >/tmp/backend_uvicorn.log 2>&1 &
+  "$AVELI_BACKEND_PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port "${backend_port}" >/tmp/backend_uvicorn.log 2>&1 &
   echo $! >/tmp/backend_uvicorn.pid
 )
 backend_pid="$(cat /tmp/backend_uvicorn.pid || true)"
@@ -281,7 +284,7 @@ if [[ "$ready" != "true" ]]; then
   exit 1
 fi
 
-if (cd "$BACKEND_DIR" && QA_BASE_URL="$backend_url" QA_API_BASE_URL="$backend_url" poetry run python scripts/qa_teacher_smoke.py); then
+if (cd "$BACKEND_DIR" && QA_BASE_URL="$backend_url" QA_API_BASE_URL="$backend_url" "$AVELI_BACKEND_PYTHON" scripts/qa_teacher_smoke.py); then
   backend_smoke_status="PASS"
 else
   backend_smoke_status="FAIL"

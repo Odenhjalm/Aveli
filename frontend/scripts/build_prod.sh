@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 FRONTEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 REPO_ROOT="$(cd "$FRONTEND_ROOT/.." && pwd -P)"
+source "$REPO_ROOT/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
 CANONICAL_BUILD_DIR="$FRONTEND_ROOT/build/web"
 export CANONICAL_BUILD_DIR
 
@@ -128,17 +130,7 @@ flutter build web --release --no-wasm-dry-run \
 
 cp "$FRONTEND_ROOT/web/flutter_service_worker.js" "$CANONICAL_BUILD_DIR/flutter_service_worker.js"
 
-PYTHON_BIN=""
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="python3"
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN="python"
-else
-  echo "Python is required to post-process Flutter Web artifacts (python3 or python not found)." >&2
-  exit 1
-fi
-
-"$PYTHON_BIN" <<'PY'
+"$AVELI_REPO_PYTHON" <<'PY'
 import os
 from pathlib import Path
 
