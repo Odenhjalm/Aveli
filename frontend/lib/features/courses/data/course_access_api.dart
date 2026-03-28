@@ -13,9 +13,6 @@ class CourseAccessApi {
   }
 
   Future<bool> fallbackHasAccess(String courseId) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/courses/$courseId/access',
-    );
-    return res['has_access'] == true;
+    return hasAccess(courseId);
   }
 }

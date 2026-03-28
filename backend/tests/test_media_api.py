@@ -1687,7 +1687,7 @@ async def test_runtime_playback_returns_not_found(async_client, monkeypatch):
         await cleanup_user(user_id)
 
 
-async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
+async def test_runtime_playback_home_direct_upload_legacy_object_is_rejected(
     async_client,
     monkeypatch,
 ):
@@ -1716,64 +1716,13 @@ async def test_runtime_playback_home_direct_upload_legacy_object_access_control(
         assert upload
         runtime_media_id = await _runtime_media_id_for_home_upload(str(upload["id"]))
 
-        async def fake_storage_exists(
-            *, storage_bucket: str, storage_path: str
-        ) -> bool:
-            assert storage_bucket == "course-media"
-            assert storage_path.endswith(".mp3")
-            return True
-
-        monkeypatch.setattr(
-            lesson_playback_service.canonical_media_resolver,
-            "_storage_object_exists",
-            fake_storage_exists,
-            raising=True,
-        )
-        monkeypatch.setattr(
-            lesson_playback_service.media_resolver.storage_service,
-            "get_storage_service",
-            lambda _bucket: _FakePlaybackStorageClient(
-                "https://stream.local/home-object.mp3"
-            ),
-            raising=True,
-        )
-
         teacher_resp = await async_client.post(
             "/api/media/playback",
             headers=headers,
             json={"runtime_media_id": runtime_media_id},
         )
-        assert teacher_resp.status_code == 200, teacher_resp.text
-        assert teacher_resp.json()["runtime_media_id"] == runtime_media_id
-        assert (
-            teacher_resp.json()["playback_url"]
-            == "https://stream.local/home-object.mp3"
-        )
-
-        other_headers, other_user_id, _ = await register_user(async_client)
-        denied_resp = await async_client.post(
-            "/api/media/playback",
-            headers=other_headers,
-            json={"runtime_media_id": runtime_media_id},
-        )
-        assert denied_resp.status_code == 403, denied_resp.text
-        assert denied_resp.json()["detail"] == "Access denied"
-
-        course_id, _ = await create_lesson(async_client, headers)
-        await _publish_course(async_client, headers, course_id)
-        await courses_repo.ensure_course_enrollment(other_user_id, course_id)
-
-        allowed_resp = await async_client.post(
-            "/api/media/playback",
-            headers=other_headers,
-            json={"runtime_media_id": runtime_media_id},
-        )
-        assert allowed_resp.status_code == 200, allowed_resp.text
-        assert allowed_resp.json()["runtime_media_id"] == runtime_media_id
-        assert (
-            allowed_resp.json()["playback_url"]
-            == "https://stream.local/home-object.mp3"
-        )
+        assert teacher_resp.status_code == 404, teacher_resp.text
+        assert teacher_resp.json()["detail"] == "Playable media not found"
     finally:
         if other_user_id is not None:
             await cleanup_user(other_user_id)
@@ -3036,7 +2985,9 @@ async def test_wav_upload_position_allows_upload_after_deletion(
         await cleanup_user(user_id)
 
 
-async def test_playback_url_allows_subscription_only_access(async_client, monkeypatch):
+async def test_playback_url_denies_legacy_subscription_only_access(
+    async_client, monkeypatch
+):
     headers, owner_id = await register_teacher(async_client)
     student_headers, student_id, _ = await register_user(async_client)
     try:
@@ -3095,7 +3046,7 @@ async def test_playback_url_allows_subscription_only_access(async_client, monkey
             streaming_storage_bucket=storage_module.storage_service.bucket,
         )
 
-        # Grant the student an active subscription (but do not enroll them).
+        # Legacy subscription rows must not grant playback access without enrollment.
         async with db.pool.connection() as conn:  # type: ignore[attr-defined]
             async with conn.cursor() as cur:  # type: ignore[attr-defined]
                 await cur.execute(
@@ -3107,7 +3058,7 @@ async def test_playback_url_allows_subscription_only_access(async_client, monkey
                 )
                 await conn.commit()
 
-        # Unpublished courses must remain inaccessible even for subscription users.
+        # Unpublished courses remain inaccessible without enrollment.
         playback_unpublished = await async_client.post(
             "/api/media/playback-url",
             headers=student_headers,
@@ -3115,7 +3066,7 @@ async def test_playback_url_allows_subscription_only_access(async_client, monkey
         )
         assert playback_unpublished.status_code == 403, playback_unpublished.text
 
-        # Publish the course so non-owners can attempt playback access.
+        # Publishing alone must not open playback without enrollment.
         publish_resp = await async_client.patch(
             f"/studio/courses/{course_id}",
             headers=headers,
@@ -3130,8 +3081,8 @@ async def test_playback_url_allows_subscription_only_access(async_client, monkey
         assert access_resp.status_code == 200, access_resp.text
         access_payload = access_resp.json()
         print("course_access_snapshot", access_payload)
-        assert access_payload["has_active_subscription"] is True
-        assert access_payload["has_access"] is True
+        assert access_payload["has_active_subscription"] is False
+        assert access_payload["has_access"] is False
         assert access_payload["enrolled"] is False
 
         playback_resp = await async_client.post(
@@ -3139,11 +3090,7 @@ async def test_playback_url_allows_subscription_only_access(async_client, monkey
             headers=student_headers,
             json={"media_id": str(asset["id"])},
         )
-        assert playback_resp.status_code == 200, playback_resp.text
-        playback_payload = playback_resp.json()
-        assert playback_payload.get("playback_url", "").startswith(
-            "https://stream.local/"
-        )
+        assert playback_resp.status_code == 403, playback_resp.text
     finally:
         await cleanup_user(student_id)
         await cleanup_user(owner_id)

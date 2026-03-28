@@ -416,7 +416,7 @@ async def test_active_subscription_only_grants_intro_course_access(async_client)
             await cleanup_user(student_id)
 
 
-async def test_step1_ownership_bypasses_intro_monthly_limit(async_client):
+async def test_step1_ownership_does_not_bypass_intro_membership_rules(async_client):
     teacher_email = f"teacher_step1_{uuid.uuid4().hex[:8]}@example.com"
     student_email = f"student_step1_{uuid.uuid4().hex[:8]}@example.com"
     password = "Passw0rd!"
@@ -487,18 +487,18 @@ async def test_step1_ownership_bypasses_intro_monthly_limit(async_client):
             f"/courses/{intro_one_id}/enroll",
             headers=auth_header(student_token),
         )
-        assert enroll_intro_one.status_code == 200, enroll_intro_one.text
+        assert enroll_intro_one.status_code == 403, enroll_intro_one.text
         enroll_intro_two = await async_client.post(
             f"/courses/{intro_two_id}/enroll",
             headers=auth_header(student_token),
         )
-        assert enroll_intro_two.status_code == 200, enroll_intro_two.text
+        assert enroll_intro_two.status_code == 403, enroll_intro_two.text
 
         intro_two_access = await async_client.get(
             f"/courses/{intro_two_id}",
             headers=auth_header(student_token),
         )
-        assert intro_two_access.status_code == 200, intro_two_access.text
+        assert intro_two_access.status_code == 403, intro_two_access.text
     finally:
         if teacher_id:
             await cleanup_user(teacher_id)

@@ -354,7 +354,7 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
     assert sign_ok.status_code == 200, sign_ok.text
 
 
-async def test_trialing_membership_grants_course_access(async_client):
+async def test_trialing_membership_does_not_grant_non_intro_course_access(async_client):
     password = "Passw0rd!"
     _, owner_id = await register_user(
         async_client,
@@ -386,14 +386,16 @@ async def test_trialing_membership_grants_course_access(async_client):
     assert access_resp.status_code == 200, access_resp.text
     access_payload = access_resp.json()
     assert access_payload["has_active_subscription"] is True
-    assert access_payload["has_access"] is True
-    assert access_payload["can_access"] is True
-    assert access_payload["access_reason"] == "subscription"
+    assert access_payload["has_access"] is False
+    assert access_payload["can_access"] is False
+    assert access_payload["access_reason"] == "none"
     assert access_payload["enrolled"] is False
 
 
-async def test_trialing_membership_grants_media_playback(async_client, tmp_path, monkeypatch):
-    """Regression: trialing memberships must match active-media access behavior."""
+async def test_trialing_membership_does_not_grant_non_intro_media_playback(
+    async_client, tmp_path, monkeypatch
+):
+    """Regression: membership metadata must not bypass enrollment for paid media."""
     password = "Passw0rd!"
     owner_token, owner_id = await register_user(
         async_client,
@@ -459,7 +461,7 @@ async def test_trialing_membership_grants_media_playback(async_client, tmp_path,
     assert access_resp.status_code == 200, access_resp.text
     access_payload = access_resp.json()
     assert access_payload["has_active_subscription"] is True
-    assert access_payload["has_access"] is True
+    assert access_payload["has_access"] is False
     assert access_payload["enrolled"] is False
 
     # Owner can sign.
@@ -491,20 +493,19 @@ async def test_trialing_membership_grants_media_playback(async_client, tmp_path,
     )
     assert publish_resp.status_code == 200, publish_resp.text
 
-    # Student has access via subscription and can sign/fetch once the course is published.
+    # Publishing the course must not reopen access without enrollment.
     sign_ok = await async_client.post(
         "/media/sign",
         json={"media_id": str(legacy_media["id"])},
         headers=auth_header(student_token),
     )
-    assert sign_ok.status_code == 200, sign_ok.text
+    assert sign_ok.status_code == 403, sign_ok.text
 
     studio_get_ok = await async_client.get(
         f"/studio/media/{legacy_media['id']}",
         headers=auth_header(student_token),
     )
-    assert studio_get_ok.status_code == 200, studio_get_ok.text
-    assert studio_get_ok.content == b"png"
+    assert studio_get_ok.status_code == 403, studio_get_ok.text
 
 
 @pytest.mark.parametrize("membership_status", ["canceled", "incomplete"])

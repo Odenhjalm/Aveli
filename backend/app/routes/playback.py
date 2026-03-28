@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from ..auth import CurrentUser
 from ..db import get_conn
 from ..routes import media as media_routes
-from ..services import courses_service, entitlement_service, runtime_media_service
+from ..services import courses_service, runtime_media_service
 from ..services.entitlement_service import fetch_one
 from ..services.playback_delivery_service import (
     resolve_runtime_media_playback_url,
@@ -62,19 +62,13 @@ async def _resolve_course_id_for_lesson_media(
 
 
 async def _enforce_course_access(db, *, user_id: str, course_id: str) -> None:
-    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-    if await courses_service.is_course_teacher_or_instructor(user_id, course_id):
-        return
-    if await courses_service.is_user_enrolled(user_id, course_id):
-        return
-
-    # LEGACY ACCESS PATH — DO NOT EXTEND.
-    has_access = await entitlement_service.has_course_access(
-        db=db,
-        user_id=user_id,
-        course_id=course_id,
-    )
-    if not has_access:
+    course = await courses_service.fetch_course_access_subject(course_id)
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found",
+        )
+    if not await courses_service.can_user_read_course(user_id, course):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden",
@@ -95,7 +89,6 @@ async def _get_active_runtime_media_by_id(
             rm.lesson_id,
             rm.course_id,
             rm.media_asset_id,
-            rm.media_object_id,
             rm.reference_type,
             rm.auth_scope,
             rm.fallback_policy,
