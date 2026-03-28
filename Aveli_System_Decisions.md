@@ -1,15 +1,17 @@
-# Aveli_System_Decisions.md
+# Aveli System Decisions
 
 ## Product Context
 
-- Aveli is a social learning platform with courses and lessons as the core runtime learning model, plus a marketplace where advanced users can sell cultivated knowledge.
-- Aveli is for teachers and learners, including course/lesson interactions, checkout/onboarding flows, and session-level experiences.
-- Teachers use Aveli to create, manage, publish, and refine learning experiences, media-rich course content, and cultivated knowledge offers.
-- Learners use Aveli to onboard, access lesson content, complete guided learning paths, and purchase or subscribe to learning access.
+- Aveli is a social learning platform with courses and lessons as the core runtime learning model, plus live lesson/session experiences and a marketplace for cultivated knowledge.
+- Aveli is for teachers and learners, including course/lesson interactions, checkout/onboarding flows, session-level experiences, and guided app access.
+- Teachers use Aveli to create, manage, publish, and refine learning experiences, media-rich course content, home-player tracks, and cultivated knowledge offers.
+- Learners use Aveli to onboard, access the app through membership, access lesson content through enrollment or explicitly defined membership-included intro access, and progress through repeated learning experiences.
 - The user actions explicitly represented in the approved product framing are:
   - onboard into the trusted teacher/learner journey
+  - enter the app through valid membership access
   - learn via structured course/editor content
-  - access purchased, subscribed, or enrolled lesson experiences
+  - access course experiences through canonical course-access rules
+  - access curated home-player experiences through the home-player pipeline
   - progress through repeated, persistent learning experiences
 - Activities, posts, messages, and notifications remain future-facing surfaces unless current runtime evidence explicitly promotes them into baseline truth.
 - The decisions in this file intentionally keep technical choices aligned to these usage intents.
@@ -20,9 +22,9 @@
   - relationship-driven (not content-first)
   - experience-driven (not file-driven)
   - progression-based (not static)
-
 - The system should optimize user trust, continuity, and repeatable workflows before feature surface expansion.
 - Stabilization tasks are allowed only when they preserve these three properties.
+- Semantic precision is mandatory. Aveli must not rely on overlapping names for different authorities.
 
 ## Non-Negotiable Constraints
 
@@ -31,55 +33,128 @@
 - Auth is a RELATIONSHIP ENTRY, not a login endpoint.
   - Auth-related structure is not to be redesigned in this phase.
 - API must reflect REAL system behavior, not hypothetical design.
-  - Canonical API truth remains the audit catalog + usage-diff evidence.
+  - Canonical API truth remains the audit catalog + usage-diff evidence, but audit evidence describes observed reality and does not itself legitimize legacy behavior.
 - Planned features MUST NOT be removed during stabilization.
   - Planned and control-plane components are preserved unless explicitly canceled by a documented process outside this phase.
+- Legacy behavior MUST NOT survive through fallback.
+  - If canonical replacement exists, legacy must be removed rather than silently tolerated.
+- Legacy removal requires a clear replacement.
+  - No legacy endpoint, authority, or shortcut may be deleted unless a canonical replacement path is explicitly defined.
 
-## System definition
+## System Definition
 
-- Aveli is the documented system for social learning, course/editor workflows, media delivery, checkout/onboarding support, and marketplace expansion with dedicated API governance, auth/security controls, and control-plane/observability surfaces.
+- Aveli is the documented system for social learning, course/editor workflows, media delivery, checkout/onboarding support, membership-gated app access, enrollment-gated course access, home-player curation, and marketplace expansion with dedicated API governance, auth/security controls, and control-plane/observability surfaces.
 - Evidence:
   - docs/README.md
   - docs/architecture/aveli_editor_architecture_v2.md
   - docs/verification_mcp.md
   - docs/WORKFLOW.md
 
-## COURSE MODEL (CANONICAL)
+## Governance Model
+
+- `Aveli_System_Decisions.md` is the semantic truth layer.
+- `aveli_system_manifest.json` is the execution-rule layer.
+- If the two documents must be interpreted together:
+  - semantic meaning is governed by decisions
+  - execution and enforcement policy is governed by manifest
+- API audit artifacts describe observed runtime reality and are used for verification and mismatch tracking.
+- Observed runtime reality does NOT automatically become canonical truth.
+
+## Canonical Language Rules
+
+- `membership` is the canonical term for app-access authority.
+- `enrollment` / `enrollments` is the canonical term for standard course-access authority.
+- `subscription` is NOT a canonical Aveli runtime term.
+  - It may appear only in legacy, migration, audit, or historical references.
+- `module` is NOT a valid Aveli system term.
+  - It is forbidden in runtime/domain language and may appear only in historical or legacy references.
+- Terms that imply duplicate authority for app access or course access must not be introduced.
+
+## Course Model (Canonical)
 
 - course contains lessons directly
-- lessons ordered via position
+- lessons are ordered via position
 - no module abstraction exists
-- any module-like grouping is UI-only and optional
-- modules are not persisted, exposed, simulated, or inferred as system truth
+- any module-like grouping is NOT valid system truth
+- modules are not persisted, exposed, simulated, inferred, or tolerated as runtime/domain truth
 - `module_id` is not part of the canonical course domain model
 - remaining legacy module references in backend/frontend code or docs are implementation debt and must not be used to redefine system truth
 
-## OPERATIONAL AUTHORITIES
+## Operational Authorities
 
-- Course access authority = `enrollments`
-- Subscription state authority = `memberships`
+- Media authority model = `split_intent_and_playback`
+- App-access authority = `memberships`
+- Course-access authority = `enrollments`
+- Standard course access must not be derived from membership alone
+- Membership may grant explicit access to a defined introduction-course set without converting membership into the general course-access authority
 - Playback authority = `runtime_media`
 - Media intent authority = `control_plane`
 
-## EXTERNAL DEPENDENCIES
+## Access Model (Canonical)
+
+- `membership` is required to pass landing and enter the app.
+- `membership` is global platform access, not creator-scoped.
+- `enrollments` is the only canonical authority for normal course access.
+- Membership-included intro-course access is allowed only as an explicit, defined mapping.
+- Membership-included intro-course access must NOT be implemented as implicit rule magic such as tag-based or inferred access.
+- Checkout may canonically produce:
+  - membership
+  - enrollment
+  - both
+- Checkout outcome is product-dependent, not guessed from legacy terminology.
+
+## Home Player Model (Canonical)
+
+- Home player is part of the same media domain.
+- Home player has:
+  - its own upload pipeline
+  - its own frontend management surface
+  - teacher-controlled active/inactive curation
+- Home player curation is controlled by `control_plane`.
+- Home-player playback is still owned by `runtime_media`.
+- Home player does not create a separate playback authority, alternate playback law, or separate media domain.
+- Home player must not introduce special playback shortcuts, direct storage playback, or bypass paths around `runtime_media`.
+
+## External Dependencies
 
 - `auth.users`
 - `storage.objects`
 - `storage.buckets`
+- These remain external dependencies and are not baseline-owned schema.
+- Local scratch verification may require a minimal local storage substrate when storage-backed workers are enabled.
 
-## LEGACY MIGRATION RULE
+## External ID Integrity Rule
 
-- Legacy tables remain only while their intended functionality is still needed by live systems.
-- Once canonical authorities cover that functionality, legacy tables should migrate out rather than persist as competing truth sources.
+- Fields referencing external systems (for example `auth.users.id`) MUST NOT use database foreign key constraints.
+- `user_id` is a soft reference to `auth.users(id)`.
+- Validity is enforced at:
+  - auth layer (token validation)
+  - backend services (creation and mutation checks)
+- Reads MUST be tolerant of missing external records and MUST NOT hard crash because an external record is absent.
+- Database MUST NOT enforce foreign key constraints for external dependencies.
 
-## CURRENT RUNTIME / BASELINE FOCUS
+## Legacy Migration Rule
+
+- Legacy tables, endpoints, and compatibility behaviors remain only while their intended functionality is still needed by live systems.
+- Once canonical authorities cover that functionality, legacy must migrate out rather than persist as competing truth.
+- Legacy must not survive through fallback behavior.
+- Legacy removal must proceed in this order:
+  - canonical replacement exists
+  - legacy surface is identified and marked
+  - legacy surface is blocked and/or logged where appropriate
+  - legacy surface is removed
+
+## Current Runtime / Baseline Focus
 
 - lesson editor
 - lesson view
 - Stripe checkout
 - onboarding
+- membership-gated app entry
+- canonical course access
+- home-player curation and playback compliance
 
-## CANONICAL MEDIA RESOLUTION PATH
+## Canonical Media Resolution Path
 
 - Resolution chain:
   - `lesson_content_markdown (lesson_media_id)`
@@ -94,68 +169,68 @@
 - `control_plane` defines media intent, not playback.
 - No layer may bypass `runtime_media`.
 - All lesson/content media references must use `lesson_media_id` only.
-- Home player may have separate source/storage truth, but playback must still resolve through `runtime_media`.
-- Home player must not introduce alternative playback paths.
-- These rules are operational laws and do not elevate home player into a separate top-level system model.
+- Fallback is forbidden.
+  - If canonical media resolution fails, the system must fail explicitly rather than route through legacy or storage shortcuts.
 
-## Source of truth per component
+## Source of Truth Per Component
 
 ### 1) API definitions
-- Selected option: **B**
 - Chosen source of truth:
   - docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json
   - docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md
   - docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md
 - Classification:
-  - API contract intent: `planned`
-  - Runtime status: `runtime-audited` (uses catalog + diff as validation surface)
-- Why this supports product intent:
-  - B was chosen because API behavior must reflect real interactions between teachers and learners instead of hypothetical endpoint design.
+  - API verification source: `runtime-observed`
+  - Canonical legitimacy: `separate_from_observation`
+- Canonical decision:
+  - audit artifacts describe what exists and how it behaves
+  - audit artifacts do not automatically justify keeping legacy endpoints or duplicate authorities
 
 ### 2) Media control plane scope
-- Selected option: **A**
 - Chosen source of truth:
   - docs/media_control_plane_mcp.md
   - docs/media_architecture.md
 - Classification:
-  - Scope intent: `planned`
-  - Runtime status: `planned`
+  - Scope intent: `planned_protected`
   - Canonical role: `media_intent_authority`
-- Why this supports product intent:
-  - A was chosen because experience control and operational consistency are required for live/spiritual context and session quality, while present playback authority remains `runtime_media`.
+- Canonical decision:
+  - control plane is preserved and protected
+  - control plane must not be removed or semantically redefined
+  - control plane does not own playback
 
 ### 3) Auth flow definition
-- Selected option: **B** (with user constraint: evolve into UX-driven system)
 - Chosen source of truth:
   - docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md
   - docs/SECURITY.md
 - Classification:
   - Auth/security intent: `planned`
-  - Runtime status: `planned`
-- Why this supports product intent:
-  - B was chosen because trust and user journey integrity must be preserved through documented security and audit baselines.
+  - Runtime status: `runtime-audited`
+- Canonical decision:
+  - security and audit docs remain the governing baseline for auth constraints
+  - UX-driven evolution must not redesign the structural trust boundary in this phase
 
-## Planned vs runtime classification (resolved)
+## Planned vs Runtime Classification (Resolved)
 
-- API definitions: `planned` + `runtime-audited`
-- Media control plane: `planned` + `intent-authoritative`
-- Playback delivery: `runtime-active` via `runtime_media`
-- Auth flow: `planned` + `runtime-audited`
+- API definitions: observed via audit, verified separately from legitimacy
+- Media control plane: planned, protected, intent-authoritative
+- Playback delivery: runtime-active via `runtime_media`
+- Auth flow: planned constraints + runtime-audited behavior
+- Home player ingest/curation: runtime-active within the same media domain
+- Membership app access: runtime/canonical authority
+- Enrollment course access: runtime/canonical authority
 
-## Resolved conflicts
+## Explicitly Forbidden Surfaces
 
-1. **API definition conflict**
-   - Resolved to option B.
-   - Canonical decision: audit catalog/diff files are the accepted API truth source for verification and mismatch tracking.
+- `subscription` as active runtime/domain authority
+- `module` as runtime/domain construct
+- duplicate app-access authorities parallel to `memberships`
+- duplicate normal course-access authorities parallel to `enrollments`
+- implicit course access by inferred tags or hidden rules
+- direct playback from `storage.objects`
+- alternate playback authorities outside `runtime_media`
+- fallback to legacy paths when canonical resolution fails
+- any endpoint or function that presents storage as business truth instead of dependency detail
 
-2. **Media control plane conflict**
-   - Resolved to option A.
-   - Canonical decision: control-plane responsibilities and interfaces are defined by MCP/control-plane docs as primary media intent, while runtime playback authority remains `runtime_media`.
+## Preserved Decision Layer
 
-3. **Auth flow conflict**
-   - Resolved to option B with UX-driven evolution constraint.
-   - Canonical decision: security and audit docs remain the governing baseline; UX-driven evolution proceeds within this baseline.
-
-## Pending note
-
-- This file is now the preserved decision layer for Phase 1 execution and is required as input for deterministic rule processing.
+- This file is the preserved semantic decision layer for rule interpretation, contradiction review, and deterministic cleanup of legacy surfaces.

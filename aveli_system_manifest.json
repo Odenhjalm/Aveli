@@ -16,14 +16,20 @@
         "runtime_code",
         "documentation"
     ],
+    "governance": {
+        "semantic_truth": "Aveli_System_Decisions.md",
+        "execution_rules": "aveli_system_manifest.json",
+        "api_audit_role": "runtime_observation_for_verification_not_automatic_legitimacy"
+    },
     "components": {
         "api_layer": {
             "source_of_truth": [
                 "docs/audit/20260109_aveli_visdom_audit/API_CATALOG.json",
                 "docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md"
             ],
-            "state": "runtime_active",
-            "mutation_policy": "alignment_only"
+            "state": "runtime_observed",
+            "mutation_policy": "alignment_only",
+            "audit_interpretation": "observed_reality_not_automatic_canonical_truth"
         },
         "media_control_plane": {
             "source_of_truth": [
@@ -32,16 +38,23 @@
             ],
             "state": "planned_protected",
             "protected": true,
-            "mutation_policy": "no_modification"
+            "mutation_policy": "no_modification_or_redefinition",
+            "role": "media_intent_authority"
         },
         "media_pipeline": {
             "state": "runtime_active",
             "role": "implementation_layer",
             "mutation_policy": "alignment_only",
+            "playback_authority": "runtime_media",
             "home_player_runtime_model": {
-                "source_storage_truth": "separate_from_runtime_media",
+                "same_media_domain": true,
+                "has_separate_upload_pipeline": true,
+                "has_separate_frontend_management_surface": true,
+                "teacher_curated_active_state": true,
+                "curation_authority": "control_plane",
                 "playback_projection": "runtime_media_only",
-                "alternative_playback_paths": "forbidden"
+                "alternative_playback_paths": "forbidden",
+                "direct_storage_playback": "forbidden"
             }
         },
         "auth": {
@@ -62,7 +75,7 @@
         "course_model": {
             "state": "canonical_flat_hierarchy",
             "source_of_truth": [
-                "actual_truth_2026-04-26/Aveli_System_Decisions.md",
+                "Aveli_System_Decisions.md",
                 "backend/app/routes/courses.py",
                 "frontend/lib/features/courses/data/courses_repository.dart",
                 "courses/_template.yaml"
@@ -70,21 +83,41 @@
             "canonical_structure": {
                 "hierarchy": "course_to_lessons",
                 "lesson_ordering": "position",
-                "grouping": "ui_only_optional"
+                "grouping": "forbidden"
             },
             "forbidden_constructs": [
+                "module",
                 "intermediate_grouping_layer",
                 "virtual_grouping_layer",
                 "simulated_grouping_layer",
                 "inferred_grouping_layer"
             ],
             "mutation_policy": "flat_hierarchy_only"
+        },
+        "access_model": {
+            "state": "runtime_canonical",
+            "app_access_authority": "memberships",
+            "course_access_authority": "enrollments",
+            "membership_scope": "global",
+            "membership_required_for_app_entry": true,
+            "standard_course_access_via_membership_alone": false,
+            "membership_intro_course_access": {
+                "allowed": true,
+                "mode": "explicit_defined_mapping",
+                "implicit_tag_or_inference": false
+            },
+            "checkout_outcomes": [
+                "membership",
+                "enrollment",
+                "both"
+            ]
         }
     },
     "authorities": {
         "media_authority_model": "split_intent_and_playback",
+        "app_access_authority": "memberships",
         "course_access_authority": "enrollments",
-        "subscription_state_authority": "memberships",
+        "membership_intro_access_mode": "explicit_defined_mapping_only",
         "playback_authority": "runtime_media",
         "media_intent_authority": "control_plane"
     },
@@ -104,13 +137,24 @@
     },
     "legacy_migration_policy": {
         "legacy_remains_only_while_needed": true,
-        "canonical_coverage_triggers_migration_out": true
+        "canonical_coverage_triggers_migration_out": true,
+        "fallback_forbidden": true,
+        "removal_requires_clear_replacement": true,
+        "removal_sequence": [
+            "replacement_exists",
+            "legacy_surface_identified",
+            "legacy_surface_blocked_or_logged",
+            "legacy_surface_removed"
+        ]
     },
     "current_runtime_focus": [
         "lesson_editor",
         "lesson_view",
         "stripe_checkout",
-        "onboarding"
+        "onboarding",
+        "membership_gated_app_entry",
+        "canonical_course_access",
+        "home_player_curation_and_playback_compliance"
     ],
     "future_facing_surfaces": [
         "activities",
@@ -133,19 +177,31 @@
             "storage_objects_never_valid_playback_source": true,
             "control_plane_intent_not_playback": true,
             "runtime_media_bypass_forbidden": true,
-            "lesson_content_media_references_use_lesson_media_id_only": true
+            "lesson_content_media_references_use_lesson_media_id_only": true,
+            "fallback_forbidden": true
         },
         "home_player": {
-            "source_storage_truth": "separate_allowed",
+            "same_media_domain": true,
+            "separate_upload_pipeline_allowed": true,
+            "separate_frontend_management_surface_allowed": true,
+            "curation_controlled_by": "control_plane",
             "playback_must_resolve_through_runtime_media": true,
-            "alternative_playback_paths_forbidden": true
+            "alternative_playback_paths_forbidden": true,
+            "direct_storage_playback_forbidden": true
         }
     },
+    "canonical_language_rules": {
+        "membership": "canonical_app_access_term",
+        "enrollments": "canonical_course_access_term",
+        "subscription": "legacy_or_migration_only",
+        "module": "forbidden_runtime_domain_term"
+    },
     "rules": {
-        "api_truth": "audit_over_spec",
+        "api_truth": "audit_is_observation_not_automatic_legitimacy",
         "media_authority_model": "split_intent_and_playback",
+        "app_access_authority": "memberships",
         "course_access_authority": "enrollments",
-        "subscription_state_authority": "memberships",
+        "membership_intro_access": "explicit_defined_mapping_only",
         "playback_authority": "runtime_media",
         "media_intent_authority": "control_plane",
         "media_authority_enforcement": "all_playback_must_resolve_through_runtime_media",
@@ -157,16 +213,43 @@
         "course_structure": "course_to_lessons_direct",
         "lesson_ordering": "position",
         "module_abstraction": "forbidden",
-        "intermediate_grouping_layer": "forbidden"
+        "fallback": "forbidden"
+    },
+    "forbidden_surfaces": {
+        "terms": [
+            "subscription",
+            "module"
+        ],
+        "authorities": [
+            "duplicate_app_access_authority",
+            "duplicate_normal_course_access_authority",
+            "implicit_course_access_by_tag_or_inference",
+            "storage_as_business_truth"
+        ],
+        "media_patterns": [
+            "direct_storage_playback",
+            "alternate_playback_authority",
+            "runtime_media_bypass",
+            "legacy_playback_fallback"
+        ],
+        "api_patterns": [
+            "returns_storage_path_as_canonical_playback_identity",
+            "returns_object_url_as_canonical_playback_identity",
+            "duplicates_membership_logic",
+            "duplicates_enrollment_logic"
+        ]
     },
     "constraints": {
         "no_deletion_of_planned_features": true,
         "no_modification_of_control_plane": true,
+        "control_plane_redefinition_forbidden": true,
         "auth_no_structural_change": true,
         "no_assumption_rule": true,
         "flat_course_hierarchy_enforced": true,
         "no_simulated_grouping_layers": true,
-        "no_inferred_grouping_layers": true
+        "no_inferred_grouping_layers": true,
+        "fallback_forbidden": true,
+        "legacy_removal_requires_replacement": true
     },
     "execution_policy": {
         "step_by_step": true,
