@@ -110,7 +110,6 @@ LessonDetailData _buildLessonData({required String mediaState}) {
     title: 'Lektion',
     contentMarkdown: '# Lektion',
     isIntro: false,
-    moduleId: null,
     position: 1,
   );
   final media = [
@@ -236,7 +235,6 @@ void main() {
         contentMarkdown:
             'Introtext\n\n<video src="/studio/media/legacy-path"></video>\n\nEftertext',
         isIntro: false,
-        moduleId: null,
         position: 1,
       ),
       media: const [],
@@ -282,7 +280,6 @@ void main() {
         title: 'Image lesson',
         contentMarkdown: 'Intro\n',
         isIntro: false,
-        moduleId: null,
         position: 1,
       ),
       media: const [
@@ -334,7 +331,6 @@ void main() {
         title: 'Raw image lesson',
         contentMarkdown: 'Intro\n\n![](https://cdn.test/raw-image.webp)\n',
         isIntro: false,
-        moduleId: null,
         position: 1,
       ),
       media: const [],
@@ -380,7 +376,6 @@ void main() {
         title: 'PDF lesson',
         contentMarkdown: 'Intro\n',
         isIntro: false,
-        moduleId: null,
         position: 1,
       ),
       media: const [
@@ -437,7 +432,6 @@ void main() {
         title: 'Trailing docs lesson',
         contentMarkdown: 'Intro\n',
         isIntro: false,
-        moduleId: null,
         position: 1,
       ),
       media: const [
@@ -504,7 +498,6 @@ void main() {
           title: 'Image row lesson',
           contentMarkdown: 'Intro\n',
           isIntro: false,
-          moduleId: null,
           position: 1,
         ),
         media: const [

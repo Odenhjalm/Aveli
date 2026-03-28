@@ -63,15 +63,13 @@ def _log_course_owner_denied(
     user_id: str,
     *,
     course_id: str | None = None,
-    module_id: str | None = None,
     lesson_id: str | None = None,
     media_id: str | None = None,
 ) -> None:
     logger.warning(
-        "Permission denied: course owner required user_id=%s course_id=%s module_id=%s lesson_id=%s media_id=%s",
+        "Permission denied: course owner required user_id=%s course_id=%s lesson_id=%s media_id=%s",
         user_id,
         course_id,
-        module_id,
         lesson_id,
         media_id,
     )
@@ -1470,116 +1468,6 @@ async def reorder_course_lessons(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return {"ok": True}
-
-
-@router.get("/courses/{course_id}/modules")
-async def course_modules(course_id: str, current: TeacherUser):
-    if not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    modules_raw = await courses_service.list_modules(course_id)
-    modules = [dict(module) for module in modules_raw]
-    for module in modules:
-        lessons_raw = await courses_service.list_lessons(module["id"])
-        lessons = [dict(lesson) for lesson in lessons_raw]
-        for lesson in lessons:
-            lesson["media"] = list(
-                await courses_service.list_lesson_media(
-                    lesson["id"],
-                    mode="editor_preview",
-                )
-            )
-        module["lessons"] = lessons
-    return {"items": modules}
-
-
-@router.get("/modules/{module_id}/lessons")
-async def module_lessons(module_id: str, current: TeacherUser):
-    course_id = await courses_service.get_module_course_id(module_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    lessons_raw = await courses_service.list_lessons(module_id)
-    lessons = [dict(lesson) for lesson in lessons_raw]
-    for lesson in lessons:
-        lesson["media"] = list(
-            await courses_service.list_lesson_media(
-                lesson["id"],
-                mode="editor_preview",
-            )
-        )
-    return {"items": lessons}
-
-
-@router.post("/modules")
-async def create_module(
-    payload: schemas.StudioModuleCreate,
-    current: TeacherUser,
-):
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    if not await models.is_course_owner(current["id"], payload.course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=payload.course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    module_id = str(payload.id) if payload.id else None
-    row = await courses_service.create_module(
-        payload.course_id,
-        title=payload.title,
-        position=payload.position,
-        module_id=module_id,
-    )
-    if not row:
-        raise HTTPException(status_code=400, detail="Failed to create module")
-    return row
-
-
-@router.patch("/modules/{module_id}")
-async def update_module(
-    module_id: str,
-    payload: schemas.StudioModuleUpdate,
-    current: TeacherUser,
-):
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    course_id = await courses_service.get_module_course_id(module_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    patch = payload.model_dump(exclude_unset=True)
-    if not patch:
-        row = await courses_service.fetch_module(module_id)
-    else:
-        patch_payload = {"id": module_id, **patch}
-        row = await courses_service.upsert_module(course_id, patch_payload)
-    if not row:
-        raise HTTPException(status_code=404, detail="Module not found")
-    return row
-
-
-@router.delete("/modules/{module_id}")
-async def delete_module(module_id: str, current: TeacherUser):
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    course_id = await courses_service.get_module_course_id(module_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    deleted = await courses_service.delete_module(module_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Module not found")
-    return {"deleted": True}
 
 
 @router.post("/lessons")

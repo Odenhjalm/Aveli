@@ -441,7 +441,6 @@ class LessonSummary {
     required this.position,
     this.isIntro = false,
     this.contentMarkdown,
-    this.moduleId,
   });
 
   final String id;
@@ -449,7 +448,6 @@ class LessonSummary {
   final int position;
   final bool isIntro;
   final String? contentMarkdown;
-  final String? moduleId;
 
   factory LessonSummary.fromJson(Map<String, dynamic> json) => LessonSummary(
     id: json['id'] as String,
@@ -457,7 +455,6 @@ class LessonSummary {
     position: CourseSummary._asInt(json['position']) ?? 0,
     isIntro: json['is_intro'] == true,
     contentMarkdown: json['content_markdown'] as String?,
-    moduleId: json['module_id'] as String?,
   );
 }
 
@@ -467,7 +464,6 @@ class LessonDetail {
     required this.title,
     this.contentMarkdown,
     this.isIntro = false,
-    this.moduleId,
     this.position = 0,
   });
 
@@ -475,7 +471,6 @@ class LessonDetail {
   final String title;
   final String? contentMarkdown;
   final bool isIntro;
-  final String? moduleId;
   final int position;
 
   factory LessonDetail.fromJson(Map<String, dynamic> json) => LessonDetail(
@@ -483,7 +478,6 @@ class LessonDetail {
     title: (json['title'] ?? '') as String,
     contentMarkdown: json['content_markdown'] as String?,
     isIntro: json['is_intro'] == true,
-    moduleId: json['module_id'] as String?,
     position: CourseSummary._asInt(json['position']) ?? 0,
   );
 }

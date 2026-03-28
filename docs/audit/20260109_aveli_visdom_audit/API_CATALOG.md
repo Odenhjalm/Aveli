@@ -180,9 +180,7 @@ Notes on methodology:
 | GET | `/courses/{slug}/pricing` | public | str | - | - | courses_repo.get_course_by_slug | - | 404 | no response_model |
 | GET | `/api/courses/{slug}/pricing` | public | str | - | - | courses_repo.get_course_by_slug | - | - | no response_model |
 | POST | `/courses/{slug}/bind-price` | admin | str, dict[str, str] | - | - | courses_repo.get_course_by_slug, courses_repo.update_course_stripe_ids | app.courses | 404, status.HTTP_400_BAD_REQUEST | no response_model; untyped body (dict) |
-| GET | `/courses/{course_id}/modules` | public | str | - | - | courses_service.list_modules | app.modules | - | no response_model |
-| GET | `/courses/modules/{module_id}/lessons` | public | str | - | - | courses_service.list_lessons | app.lessons | - | no response_model |
-| GET | `/courses/lessons/{lesson_id}` | public | str | - | - | courses_service.fetch_lesson, courses_service.fetch_module, courses_service.list_course_lessons, courses_service.list_lesson_media, courses_service.list_lessons, courses_service.list_modules | app.lesson_media, app.lessons, app.media_objects, app.modules | 404 | no response_model |
+| GET | `/courses/lessons/{lesson_id}` | public | str | - | - | courses_service.fetch_lesson, courses_service.list_course_lessons, courses_service.list_lesson_media | app.lesson_media, app.lessons, app.media_objects | 404 | no response_model |
 | GET | `/courses/me` | required | - | schemas.CourseListResponse | - | courses_service.list_my_courses | app.courses, app.enrollments | - | - |
 | GET | `/courses/{course_id}/enrollment` | required | str | - | - | courses_service.is_user_enrolled | app.enrollments | - | no response_model |
 | POST | `/courses/{course_id}/enroll` | required | str | - | - | courses_service.enroll_free_intro | app.app_config, app.courses, app.enrollments, app.profiles, app.subscriptions | status.HTTP_400_BAD_REQUEST, status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND | no response_model |
@@ -195,8 +193,8 @@ Notes on methodology:
 | GET | `/courses/{course_id}/quiz` | required | str | - | - | courses_service.course_quiz_info | app.certificates, app.course_quizzes | - | no response_model |
 | GET | `/courses/quiz/{quiz_id}/questions` | public | str | - | - | courses_service.quiz_questions | app.quiz_questions | - | no response_model |
 | POST | `/courses/quiz/{quiz_id}/submit` | required | str, schemas.QuizSubmission | - | - | courses_service.submit_quiz | app.grade_quiz_and_issue_certificate | - | no response_model |
-| GET | `/courses/by-slug/{slug}` | public | str | - | - | courses_service.fetch_course, courses_service.list_lessons, courses_service.list_modules | app.courses, app.lessons, app.modules | 404 | no response_model |
-| GET | `/courses/{course_id}` | public | str | - | - | courses_service.fetch_course, courses_service.list_lessons, courses_service.list_modules | app.courses, app.lessons, app.modules | 404 | no response_model |
+| GET | `/courses/by-slug/{slug}` | public | str | - | - | courses_service.fetch_course, courses_service.list_course_lessons | app.courses, app.lessons | 404 | no response_model |
+| GET | `/courses/{course_id}` | public | str | - | - | courses_service.fetch_course, courses_service.list_course_lessons | app.courses, app.lessons | 404 | no response_model |
 
 ## backend/app/routes/landing.py
 
@@ -279,19 +277,16 @@ Notes on methodology:
 | GET | `/studio/courses/{course_id}` | teacher | str | - | - | models.get_course, models.is_course_owner | - | 403, 404 | no response_model |
 | PATCH | `/studio/courses/{course_id}` | teacher | str, schemas.StudioCourseUpdate | - | - | models.update_course_for_user | - | 403 | no response_model |
 | DELETE | `/studio/courses/{course_id}` | teacher | str | - | - | models.delete_course_for_user | - | 403 | no response_model |
-| GET | `/studio/courses/{course_id}/modules` | teacher | str | - | - | courses_service.list_lessons, courses_service.list_modules, models.is_course_owner, models.list_lesson_media | app.lessons, app.modules | 403 | no response_model |
-| GET | `/studio/modules/{module_id}/lessons` | teacher | str | - | - | courses_service.get_module_course_id, courses_service.list_lessons, models.is_course_owner, models.list_lesson_media | app.lessons, app.modules | 403 | no response_model |
-| POST | `/studio/modules` | teacher | schemas.StudioModuleCreate | - | - | courses_service.upsert_module, models.is_course_owner | app.modules | 400, 403 | no response_model |
-| PATCH | `/studio/modules/{module_id}` | teacher | str, schemas.StudioModuleUpdate | - | - | courses_service.fetch_module, courses_service.get_module_course_id, courses_service.upsert_module, models.is_course_owner | app.modules | 403, 404 | no response_model |
-| DELETE | `/studio/modules/{module_id}` | teacher | str | - | - | courses_service.delete_module, courses_service.get_module_course_id, models.is_course_owner | app.modules | 403, 404 | no response_model |
-| POST | `/studio/lessons` | teacher | schemas.StudioLessonCreate | - | - | courses_service.get_module_course_id, courses_service.upsert_lesson, models.is_course_owner | app.lessons, app.modules | 400, 403 | no response_model |
-| PATCH | `/studio/lessons/{lesson_id}` | teacher | str, schemas.StudioLessonUpdate | - | - | courses_service.fetch_lesson, courses_service.lesson_course_ids, courses_service.upsert_lesson, models.is_course_owner | app.lessons, app.modules | 400, 403, 404 | no response_model |
-| DELETE | `/studio/lessons/{lesson_id}` | teacher | str | - | - | courses_service.delete_lesson, courses_service.lesson_course_ids, models.is_course_owner | app.lessons, app.modules | 403, 404 | no response_model |
-| PATCH | `/studio/lessons/{lesson_id}/intro` | teacher | str, schemas.LessonIntroUpdate | - | - | courses_service.lesson_course_ids, models.is_course_owner, models.set_lesson_intro | app.lessons, app.modules | 403, 404 | no response_model |
-| GET | `/studio/lessons/{lesson_id}/media` | teacher | str | - | - | courses_service.lesson_course_ids, models.is_course_owner, models.list_lesson_media | app.lessons, app.modules | 403 | no response_model |
-| POST | `/studio/lessons/{lesson_id}/media` | teacher | str, UploadFile, bool | - | - | courses_service.fetch_lesson, courses_service.lesson_course_ids, models.is_course_owner | app.lessons, app.modules | 403, 404 | no response_model; multipart upload |
-| DELETE | `/studio/media/{media_id}` | teacher | str | - | - | courses_service.lesson_course_ids, models.delete_lesson_media_entry, models.get_media, models.is_course_owner | app.lesson_media, app.lessons, app.media_objects, app.modules | 403, 404 | no response_model |
-| PATCH | `/studio/lessons/{lesson_id}/media/reorder` | teacher | str, schemas.MediaReorder | - | - | courses_service.lesson_course_ids, models.is_course_owner, models.reorder_media | app.lesson_media, app.lessons, app.modules | 403 | no response_model |
+| GET | `/studio/courses/{course_id}/lessons` | teacher | str | - | - | courses_service.list_course_lessons, models.is_course_owner | app.lessons | 403 | no response_model |
+| PATCH | `/studio/courses/{course_id}/lessons/reorder` | teacher | str, schemas.LessonReorder | - | - | courses_service.list_course_lessons, courses_service.reorder_lessons, models.is_course_owner | app.lessons | 403, 422 | no response_model |
+| POST | `/studio/lessons` | teacher | schemas.StudioLessonCreate | - | - | courses_service.create_lesson, models.is_course_owner | app.lessons | 400, 403, 422 | no response_model |
+| PATCH | `/studio/lessons/{lesson_id}` | teacher | str, schemas.StudioLessonUpdate | - | - | courses_service.fetch_lesson, courses_service.lesson_course_ids, courses_service.upsert_lesson, models.is_course_owner | app.lessons | 400, 403, 404, 422 | no response_model |
+| DELETE | `/studio/lessons/{lesson_id}` | teacher | str | - | - | courses_service.delete_lesson, courses_service.lesson_course_ids, models.is_course_owner | app.lessons | 403, 404 | no response_model |
+| PATCH | `/studio/lessons/{lesson_id}/intro` | teacher | str, schemas.LessonIntroUpdate | - | - | courses_service.lesson_course_ids, models.is_course_owner, models.set_lesson_intro | app.lessons | 403, 404 | no response_model |
+| GET | `/studio/lessons/{lesson_id}/media` | teacher | str | - | - | courses_service.lesson_course_ids, models.is_course_owner, models.list_lesson_media | app.lessons | 403 | no response_model |
+| POST | `/studio/lessons/{lesson_id}/media` | teacher | str, UploadFile, bool | - | - | courses_service.fetch_lesson, courses_service.lesson_course_ids, models.is_course_owner | app.lessons | 403, 404 | no response_model; multipart upload |
+| DELETE | `/studio/media/{media_id}` | teacher | str | - | - | courses_service.lesson_course_ids, models.delete_lesson_media_entry, models.get_media, models.is_course_owner | app.lesson_media, app.lessons, app.media_objects | 403, 404 | no response_model |
+| PATCH | `/studio/lessons/{lesson_id}/media/reorder` | teacher | str, schemas.MediaReorder | - | - | courses_service.lesson_course_ids, models.is_course_owner, models.reorder_media | app.lesson_media, app.lessons | 403 | no response_model |
 | GET | `/studio/media/{media_id}` | required | str, Request | - | - | models.get_media | app.lesson_media, app.media_objects | 404, 410 | no response_model |
 | POST | `/studio/courses/{course_id}/quiz` | teacher | str | - | - | models.ensure_quiz_for_user, models.is_course_owner | app.course_quizzes | 400, 403 | no response_model |
 | GET | `/studio/quizzes/{quiz_id}/questions` | teacher | str | - | - | models.quiz_belongs_to_user, models.quiz_questions | app.course_quizzes, app.courses | 403 | no response_model |

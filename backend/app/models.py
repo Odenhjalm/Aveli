@@ -968,20 +968,8 @@ async def get_course(course_id: str | None = None, slug: str | None = None):
     return await courses_service.fetch_course(course_id=course_id, slug=slug)
 
 
-async def list_modules(course_id: str) -> Iterable[dict]:
-    return await courses_service.list_modules(course_id)
-
-
-async def list_lessons(module_id: str) -> Iterable[dict]:
-    return await courses_service.list_lessons(module_id)
-
-
 async def list_course_lessons(course_id: str) -> Iterable[dict]:
     return await courses_service.list_course_lessons(course_id)
-
-
-async def get_module_row(module_id: str):
-    return await courses_service.fetch_module(module_id)
 
 
 async def get_lesson(lesson_id: str):
@@ -1349,35 +1337,8 @@ async def is_course_teacher_or_instructor(user_id: str, course_id: str) -> bool:
     return await courses_service.is_course_teacher_or_instructor(user_id, course_id)
 
 
-async def module_course_id(module_id: str) -> str | None:
-    return await courses_service.get_module_course_id(module_id)
-
-
 async def lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
     return await courses_service.lesson_course_ids(lesson_id)
-
-
-async def add_module(course_id: str, title: str, position: int) -> dict | None:
-    payload = {
-        "title": title,
-        "position": position,
-    }
-    return await courses_service.upsert_module(course_id, payload)
-
-
-async def update_module(module_id: str, patch: dict) -> dict | None:
-    if not patch:
-        return await get_module_row(module_id)
-    course_id = await courses_service.get_module_course_id(module_id)
-    if not course_id:
-        return None
-    payload: dict[str, Any] = {"id": module_id}
-    payload.update(patch)
-    return await courses_service.upsert_module(course_id, payload)
-
-
-async def delete_module(module_id: str) -> bool:
-    return await courses_service.delete_module(module_id)
 
 
 async def upsert_lesson(
@@ -1414,27 +1375,15 @@ async def delete_lesson(lesson_id: str) -> bool:
 async def set_lesson_intro(lesson_id: str, is_intro: bool) -> dict | None:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    UPDATE app.lessons
-                    SET is_intro = %s, updated_at = now()
-                    WHERE id = %s
-                    RETURNING id, course_id, title, position, is_intro
-                    """,
-                    (is_intro, lesson_id),
-                )
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                await cur.execute(
-                    """
-                    UPDATE app.lessons
-                    SET is_intro = %s
-                    WHERE id = %s
-                    RETURNING id, module_id, title, position, is_intro
-                    """,
-                    (is_intro, lesson_id),
-                )
+            await cur.execute(
+                """
+                UPDATE app.lessons
+                SET is_intro = %s, updated_at = now()
+                WHERE id = %s
+                RETURNING id, course_id, title, position, is_intro
+                """,
+                (is_intro, lesson_id),
+            )
             row = await _fetchone(cur)
             await conn.commit()
             return row

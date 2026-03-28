@@ -15,7 +15,6 @@ from ..config import settings
 from ..repositories import (
     courses as courses_repo,
     get_latest_order_for_course,
-    get_latest_subscription,
     get_membership,
     get_profile,
     media_assets as media_assets_repo,
@@ -44,7 +43,6 @@ from ..utils.membership_status import is_membership_active
 
 
 CoursePayload = Mapping[str, Any]
-ModulePayload = Mapping[str, Any]
 LessonPayload = Mapping[str, Any]
 
 logger = logging.getLogger(__name__)
@@ -78,21 +76,29 @@ def _is_admin_profile(profile: Mapping[str, Any] | None) -> bool:
     return role == "admin"
 
 
-def _has_active_subscription(
-    profile: Mapping[str, Any] | None,
-    subscription: Mapping[str, Any] | None,
-) -> bool:
-    if _is_admin_profile(profile):
-        return True
-    status_value = (subscription or {}).get("status")
+def _has_active_membership(membership: Mapping[str, Any] | None) -> bool:
+    status_value = (membership or {}).get("status")
     if status_value == "incomplete":
         user_id = (
-            (profile or {}).get("user_id")
-            or (subscription or {}).get("user_id")
+            (membership or {}).get("user_id")
             or "unknown"
         )
         logger.warning("Incomplete membership encountered for user %s", user_id)
-    return is_membership_active(status_value or "", (subscription or {}).get("end_date"))
+    return is_membership_active(status_value or "", (membership or {}).get("end_date"))
+
+
+async def _has_explicit_intro_membership_access(
+    user_id: str,
+    course: Mapping[str, Any],
+    *,
+    membership: Mapping[str, Any] | None = None,
+) -> bool:
+    if not bool(course.get("is_free_intro")):
+        return False
+    if course.get("is_published") is False:
+        return False
+    membership_row = membership if membership is not None else await get_membership(user_id)
+    return _has_active_membership(membership_row)
 
 
 def _normalize_value(value: Any) -> Any:
@@ -946,58 +952,6 @@ async def delete_course(course_id: str) -> bool:
     return deleted
 
 
-async def list_modules(course_id: str) -> Sequence[dict[str, Any]]:
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    """Return ordered modules for a course."""
-    rows = await courses_repo.list_modules(course_id)
-    return _materialize_rows(rows)
-
-
-async def create_module(
-    course_id: str,
-    *,
-    title: str,
-    position: int = 0,
-    module_id: str | None = None,
-) -> dict[str, Any]:
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    row = await courses_repo.create_module(
-        course_id,
-        title=title,
-        position=position,
-        module_id=module_id,
-    )
-    materialized = _materialize_optional_row(row)
-    return materialized or {}
-
-
-async def upsert_module(
-    course_id: str,
-    payload: ModulePayload,
-) -> dict[str, Any]:
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    """Create or update a module."""
-    row = await courses_repo.upsert_module(course_id, payload)
-    materialized = _materialize_optional_row(row)
-    return materialized or {}
-
-
-async def delete_module(module_id: str) -> bool:
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    """Remove a module using the repository."""
-    deleted = await courses_repo.delete_module(module_id)
-    if deleted:
-        await media_cleanup.garbage_collect_media()
-    return deleted
-
-
-async def list_lessons(module_id: str) -> Sequence[dict[str, Any]]:
-    # LEGACY STRUCTURE — DO NOT USE FOR NEW FEATURES.
-    """Return lessons for the supplied module."""
-    rows = await courses_repo.list_lessons(module_id)
-    return _materialize_rows(rows)
-
-
 async def canonicalize_lesson_content(
     markdown: str,
     lesson_id: str | None,
@@ -1293,13 +1247,6 @@ async def list_lesson_media(
     return items
 
 
-async def user_has_global_course_access(user_id: str) -> bool:
-    """Return True when the user can access all courses (subscription/admin)."""
-    profile = await get_profile(user_id)
-    subscription = await get_latest_subscription(user_id)
-    return _has_active_subscription(profile, subscription)
-
-
 async def list_home_audio_media(
     user_id: str,
     *,
@@ -1355,17 +1302,6 @@ async def reorder_lessons(
     await courses_repo.reorder_lessons(course_id, lesson_ids_in_order)
 
 
-async def fetch_module(module_id: str) -> dict[str, Any] | None:
-    """Fetch single module by id."""
-    row = await courses_repo.get_module(module_id)
-    return _materialize_optional_row(row)
-
-
-async def get_module_course_id(module_id: str) -> str | None:
-    """Return parent course id for module."""
-    return await courses_repo.get_module_course_id(module_id)
-
-
 async def list_course_lessons(course_id: str) -> Sequence[dict[str, Any]]:
     """List lessons across all modules for a course."""
     rows = await courses_repo.list_course_lessons(course_id)
@@ -1396,7 +1332,7 @@ async def fetch_lesson(lesson_id: str) -> dict[str, Any] | None:
 
 
 async def lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
-    """Return (module_id, course_id) for a lesson."""
+    """Return `(None, course_id)` for a lesson under the flat lesson contract."""
     return await courses_repo.get_lesson_course_ids(lesson_id)
 
 
@@ -1433,18 +1369,9 @@ async def can_user_read_course(
     if await is_user_enrolled(normalized_user_id, course_id):
         return True
 
-    if not bool(course.get("is_free_intro")):
-        return False
-
-    # LEGACY ACCESS PATH — DO NOT EXTEND.
-    # Free-intro and membership fallbacks stay in place for compatibility only.
-    if await courses_repo.user_owns_any_course_step(normalized_user_id, "step1"):
-        return True
-
-    membership = await get_membership(normalized_user_id)
-    return is_membership_active(
-        (membership or {}).get("status") or "",
-        (membership or {}).get("end_date"),
+    return await _has_explicit_intro_membership_access(
+        normalized_user_id,
+        course,
     )
 
 
@@ -1456,19 +1383,8 @@ async def enroll_free_intro(user_id: str, course_id: str) -> dict[str, Any]:
     if not bool(course.get("is_free_intro")):
         return {"ok": False, "status": "not_free_intro"}
 
-    # LEGACY ACCESS PATH — DO NOT EXTEND.
-    # Step-ownership checks remain compatibility-only while intro grants write to
-    # enrollments as the canonical authority.
-    if await courses_repo.user_owns_any_course_step(user_id, "step1"):
-        # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-        await courses_repo.ensure_course_enrollment(user_id, course_id, source="free_intro")
-        return {"ok": True, "status": "step1_unlimited"}
-
     membership = await get_membership(user_id)
-    if not is_membership_active(
-        (membership or {}).get("status") or "",
-        (membership or {}).get("end_date"),
-    ):
+    if not _has_active_membership(membership):
         return {"ok": False, "status": "subscription_required"}
 
     return await courses_repo.claim_intro_monthly_access(user_id, course_id, monthly_limit=1)
@@ -1481,8 +1397,6 @@ async def latest_order_for_course(user_id: str, course_id: str) -> dict[str, Any
 
 async def course_access_snapshot(user_id: str, course_id: str) -> dict[str, Any]:
     """Return an access snapshot for course gating logic."""
-    # Intro course limits were intentionally removed.
-    # Access is no longer restricted by intro quotas.
     if await is_course_teacher_or_instructor(user_id, course_id):
         return {
             "can_access": True,
@@ -1494,23 +1408,29 @@ async def course_access_snapshot(user_id: str, course_id: str) -> dict[str, Any]
         }
 
     # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
+    course = await fetch_course_access_subject(course_id)
     enrolled = await is_user_enrolled(user_id, course_id)
     latest_order = await latest_order_for_course(user_id, course_id)
     profile = await get_profile(user_id)
-    subscription = await get_latest_subscription(user_id)
+    membership = await get_membership(user_id)
     is_admin = _is_admin_profile(profile)
-    # LEGACY ACCESS PATH — DO NOT EXTEND.
-    # Subscription/admin compatibility stays here until the runtime is fully
-    # enrollment-backed.
     has_active_subscription = (
-        _has_active_subscription(profile, subscription) and not is_admin
+        _has_active_membership(membership) and not is_admin
     )
-    has_access = enrolled or has_active_subscription or is_admin
+    has_intro_membership_access = (
+        course is not None
+        and await _has_explicit_intro_membership_access(
+            user_id,
+            course,
+            membership=membership,
+        )
+    )
+    has_access = enrolled or has_intro_membership_access or is_admin
     access_reason = "none"
     if enrolled:
         access_reason = "enrolled"
-    elif has_active_subscription:
-        access_reason = "subscription"
+    elif has_intro_membership_access:
+        access_reason = "membership_intro"
     elif is_admin:
         access_reason = "admin"
 
@@ -1620,7 +1540,6 @@ async def ensure_course_stripe_assets(course: Mapping[str, Any]) -> dict[str, An
 
 __all__ = [
     "CoursePayload",
-    "ModulePayload",
     "LessonPayload",
     "fetch_course",
     "fetch_course_access_subject",
@@ -1629,19 +1548,12 @@ __all__ = [
     "create_course",
     "update_course",
     "delete_course",
-    "list_modules",
-    "create_module",
-    "upsert_module",
-    "delete_module",
-    "list_lessons",
     "create_lesson",
     "list_lesson_media",
     "list_home_audio_media",
     "upsert_lesson",
     "delete_lesson",
     "reorder_lessons",
-    "fetch_module",
-    "get_module_course_id",
     "list_course_lessons",
     "list_my_courses",
     "fetch_lesson",
@@ -1657,5 +1569,4 @@ __all__ = [
     "ensure_course_stripe_assets",
     "quiz_questions",
     "submit_quiz",
-    "user_has_global_course_access",
 ]
