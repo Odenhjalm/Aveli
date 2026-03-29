@@ -1,3 +1,0 @@
-# Optional import order; match by filename or slug (comments allowed)
-foundations-of-soulwisdom.yaml
-tarot-basics.yaml

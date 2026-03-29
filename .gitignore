@@ -172,3 +172,5 @@ storage-catalog.json
 actual_truth/*
 implementation_plan.md
 verified_tasks/
+reconstruction
+production_inventory/*
