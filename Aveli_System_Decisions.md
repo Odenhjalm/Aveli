@@ -5,7 +5,7 @@
 - Aveli is a social learning platform with courses and lessons as the core runtime learning model, plus live lesson/session experiences and a marketplace for cultivated knowledge.
 - Aveli is for teachers and learners, including course/lesson interactions, checkout/onboarding flows, session-level experiences, and guided app access.
 - Teachers use Aveli to create, manage, publish, and refine learning experiences, media-rich course content, home-player tracks, and cultivated knowledge offers.
-- Learners use Aveli to onboard, access the app through membership, access lesson content through enrollment or explicitly defined membership-included intro access, and progress through repeated learning experiences.
+- Learners use Aveli to onboard, access the app through membership, access lesson content through explicit course enrollment, and progress through repeated learning experiences.
 - The user actions explicitly represented in the approved product framing are:
   - onboard into the trusted teacher/learner journey
   - enter the app through valid membership access
@@ -25,6 +25,19 @@
 - The system should optimize user trust, continuity, and repeatable workflows before feature surface expansion.
 - Stabilization tasks are allowed only when they preserve these three properties.
 - Semantic precision is mandatory. Aveli must not rely on overlapping names for different authorities.
+
+## Expansion Model (Canonical)
+
+- New features must attach to the system via new canonical entities.
+- Core domain entities must remain stable and represent only canonical domain truth.
+- Feature logic must not be embedded into:
+  - `courses`
+  - `lessons`
+  - `course_enrollments`
+  - `media_assets`
+  - `lesson_media`
+- Feature expansion must happen via new entities such as `live_sessions`, `notifications`, or `marketplace_products`.
+- Mutation of core domain entities to support new features is forbidden.
 
 ## Non-Negotiable Constraints
 
@@ -63,7 +76,7 @@
 ## Canonical Language Rules
 
 - `membership` is the canonical term for app-access authority.
-- `enrollment` / `enrollments` is the canonical term for standard course-access authority.
+- `course_enrollment` / `course_enrollments` is the canonical term for course-access authority.
 - `subscription` is NOT a canonical Aveli runtime term.
   - It may appear only in legacy, migration, audit, or historical references.
 - `module` is NOT a valid Aveli system term.
@@ -73,9 +86,18 @@
 ## Course Model (Canonical)
 
 - course contains lessons directly
+- `course.step` is the only canonical progression field
+- `course.course_group_id` is the only canonical grouping field
+- `course.course_group_id` represents a progression set of courses
+- courses within the same `course_group_id` belong to the same product progression
+- progression within a `course_group_id` is strictly ordered by `course.step`
+- `course.course_group_id` is used only for progression linkage and UI sequencing
+- `course.course_group_id` must not be used for categories, tags, or arbitrary grouping
 - lessons are ordered via position
+- `lesson.lesson_title` is the canonical lesson display name
 - no module abstraction exists
 - any module-like grouping is NOT valid system truth
+- explicit course grouping via `course_group_id` is valid system truth
 - modules are not persisted, exposed, simulated, inferred, or tolerated as runtime/domain truth
 - `module_id` is not part of the canonical course domain model
 - remaining legacy module references in backend/frontend code or docs are implementation debt and must not be used to redefine system truth
@@ -84,9 +106,8 @@
 
 - Media authority model = `split_intent_and_playback`
 - App-access authority = `memberships`
-- Course-access authority = `enrollments`
+- Course-access authority = `course_enrollments`
 - Standard course access must not be derived from membership alone
-- Membership may grant explicit access to a defined introduction-course set without converting membership into the general course-access authority
 - Playback authority = `runtime_media`
 - Media intent authority = `control_plane`
 
@@ -94,14 +115,55 @@
 
 - `membership` is required to pass landing and enter the app.
 - `membership` is global platform access, not creator-scoped.
-- `enrollments` is the only canonical authority for normal course access.
-- Membership-included intro-course access is allowed only as an explicit, defined mapping.
-- Membership-included intro-course access must NOT be implemented as implicit rule magic such as tag-based or inferred access.
+- `course_enrollments` is the only canonical authority for all course access.
+- Intro courses require `course_enrollments` rows and are never implicitly accessible.
+- No course access exists outside `course_enrollments`.
 - Checkout may canonically produce:
   - membership
-  - enrollment
+  - course_enrollment
   - both
 - Checkout outcome is product-dependent, not guessed from legacy terminology.
+
+## Course Enrollment And Drip Model (Canonical)
+
+- `course_enrollments` is the only source of course access truth.
+- Intro courses require explicit enrollment with `source = intro_enrollment`.
+- Paid courses require explicit enrollment with `source = purchase`.
+- Drip progression is stored state, not derived state.
+- On creation of an `intro_enrollment`:
+  - if the course has at least one lesson, `current_unlock_position = 1`
+  - if the course has zero lessons, `current_unlock_position = 0`
+- On creation of an `intro_enrollment`, `drip_started_at = granted_at`.
+- Purchase enrollments must keep `drip_started_at = NULL` and `current_unlock_position = NULL`.
+- Drip progression is advanced only by a worker process.
+- The worker runs on a fixed cron-based interval.
+- The worker evaluates all `course_enrollments` where `source = intro_enrollment`.
+- Worker-based scheduling is the canonical way to advance drip progression.
+- No lazy evaluation of unlock state is allowed in runtime.
+- Runtime requests must never advance drip state.
+- Frontend must never compute unlock state.
+- `lesson.position` is the canonical progression index.
+- `current_unlock_position` is the canonical persisted unlock boundary.
+- Worker progression updates are determined by:
+  - `drip_started_at`
+  - `lesson.position`
+  - canonical drip interval `7 days`
+- Canonical worker formula:
+  - `unlocked_count = 1 + floor((now - drip_started_at) / 7 days)`
+  - `computed_unlock_position = min(max_lesson_position, unlocked_count)`
+- `current_unlock_position` must never exceed the highest existing `lesson.position` in the course.
+- If `current_unlock_position` already equals `max_lesson_position`, worker execution must be a no-op.
+- Worker runs must be deterministic.
+- Repeated worker executions in the same cron window must produce the same persisted result.
+- Worker may only update when `computed_unlock_position > current_unlock_position`.
+- Worker must never decrease `current_unlock_position`.
+- Canonical drip interval default = `7 days`.
+
+## Canonical Media Processing Mode
+
+- All audio must pass the worker pipeline.
+- WAV must become MP3 before `ready`.
+- No direct `ready` writes are allowed for audio.
 
 ## Home Player Model (Canonical)
 
@@ -217,14 +279,19 @@
 - Auth flow: planned constraints + runtime-audited behavior
 - Home player ingest/curation: runtime-active within the same media domain
 - Membership app access: runtime/canonical authority
-- Enrollment course access: runtime/canonical authority
+- Course enrollment access: runtime/canonical authority
 
 ## Explicitly Forbidden Surfaces
 
 - `subscription` as active runtime/domain authority
 - `module` as runtime/domain construct
 - duplicate app-access authorities parallel to `memberships`
-- duplicate normal course-access authorities parallel to `enrollments`
+- duplicate normal course-access authorities parallel to `course_enrollments`
+- implicit intro access
+- entitlement fallback paths
+- step-based ownership logic
+- runtime-derived progression
+- runtime-derived unlock state
 - implicit course access by inferred tags or hidden rules
 - direct playback from `storage.objects`
 - alternate playback authorities outside `runtime_media`

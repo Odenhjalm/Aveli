@@ -83,7 +83,14 @@
             "canonical_structure": {
                 "hierarchy": "course_to_lessons",
                 "lesson_ordering": "position",
-                "grouping": "forbidden"
+                "lesson_display_name": "lesson_title",
+                "course_progression_field": "step",
+                "course_grouping_field": "course_group_id",
+                "grouping_authority": "course_group_id_only",
+                "grouping_semantics": "progression_set_ordered_by_step",
+                "non_progression_grouping": "forbidden",
+                "grouping": "course_group_id_explicit_only",
+                "runtime_title_or_slug_inference": "forbidden"
             },
             "forbidden_constructs": [
                 "module",
@@ -97,18 +104,54 @@
         "access_model": {
             "state": "runtime_canonical",
             "app_access_authority": "memberships",
-            "course_access_authority": "enrollments",
+            "course_access_authority": "course_enrollments",
             "membership_scope": "global",
             "membership_required_for_app_entry": true,
+            "course_access_requires_enrollment_row": true,
+            "intro_access_requires_enrollment_row": true,
             "standard_course_access_via_membership_alone": false,
-            "membership_intro_course_access": {
-                "allowed": true,
-                "mode": "explicit_defined_mapping",
-                "implicit_tag_or_inference": false
+            "intro_enrollment_source": "intro_enrollment",
+            "purchase_enrollment_source": "purchase",
+            "implicit_course_access": false,
+            "drip_model": {
+                "applies_only_to_source": "intro_enrollment",
+                "stored_state_only": true,
+                "scheduler": "worker_only",
+                "execution_mode": "cron_based",
+                "state_updates": "worker_only",
+                "lazy_runtime_unlock_evaluation": false,
+                "runtime_drip_updates": "forbidden",
+                "frontend_drip_logic": "forbidden",
+                "unlock_anchor": "drip_started_at",
+                "unlock_index": "current_unlock_position",
+                "lesson_progression_index": "position",
+                "default_interval_days": 7,
+                "initial_unlock_state": {
+                    "intro_enrollment_with_lessons": 1,
+                    "intro_enrollment_with_zero_lessons": 0,
+                    "intro_enrollment_drip_started_at": "granted_at",
+                    "purchase_drip_started_at": null,
+                    "purchase_current_unlock_position": null
+                },
+                "advance_formula": {
+                    "unlocked_count": "1 + floor((now - drip_started_at) / interval)",
+                    "interval_days": 7,
+                    "computed_unlock_position": "min(max_lesson_position, unlocked_count)"
+                },
+                "clamp_behavior": {
+                    "never_exceed_max_lesson_position": true,
+                    "max_reached_is_no_op": true
+                },
+                "idempotence": {
+                    "deterministic_runs": true,
+                    "same_cron_window_same_result": true,
+                    "update_only_when_computed_gt_stored": true,
+                    "never_decrease_current_unlock_position": true
+                }
             },
             "checkout_outcomes": [
                 "membership",
-                "enrollment",
+                "course_enrollment",
                 "both"
             ]
         }
@@ -116,8 +159,7 @@
     "authorities": {
         "media_authority_model": "split_intent_and_playback",
         "app_access_authority": "memberships",
-        "course_access_authority": "enrollments",
-        "membership_intro_access_mode": "explicit_defined_mapping_only",
+        "course_access_authority": "course_enrollments",
         "playback_authority": "runtime_media",
         "media_intent_authority": "control_plane"
     },
@@ -192,7 +234,7 @@
     },
     "canonical_language_rules": {
         "membership": "canonical_app_access_term",
-        "enrollments": "canonical_course_access_term",
+        "course_enrollments": "canonical_course_access_term",
         "subscription": "legacy_or_migration_only",
         "module": "forbidden_runtime_domain_term"
     },
@@ -200,11 +242,41 @@
         "api_truth": "audit_is_observation_not_automatic_legitimacy",
         "media_authority_model": "split_intent_and_playback",
         "app_access_authority": "memberships",
-        "course_access_authority": "enrollments",
-        "membership_intro_access": "explicit_defined_mapping_only",
+        "course_access_authority": "course_enrollments",
+        "no_access_without_enrollment_row": true,
+        "intro_access_requires_enrollment_row": true,
+        "no_lesson_access_beyond_current_unlock_position": true,
+        "no_fallback_unlock_logic": true,
+        "no_title_or_slug_based_progression": true,
+        "no_runtime_inference_of_access_or_unlock_state": true,
+        "grouping_authority": "course_group_id_only",
+        "grouping_semantics": "progression_set_ordered_by_step",
+        "non_progression_grouping": "forbidden",
+        "drip_scheduler": "worker_only",
+        "drip_execution_mode": "cron_based",
+        "drip_state_updates": "worker_only",
+        "runtime_drip_updates": "forbidden",
+        "frontend_drip_logic": "forbidden",
+        "drip_interval_days": 7,
+        "drip_initial_unlock_intro_with_lessons": 1,
+        "drip_initial_unlock_intro_with_zero_lessons": 0,
+        "drip_initial_anchor": "granted_at",
+        "purchase_drip_started_at": "must_be_null",
+        "purchase_current_unlock_position": "must_be_null",
+        "drip_formula_unlocked_count": "1 + floor((now - drip_started_at) / interval)",
+        "drip_formula_computed_unlock_position": "min(max_lesson_position, unlocked_count)",
+        "drip_clamp_to_max_lesson_position": true,
+        "drip_no_op_when_max_reached": true,
+        "drip_runs_must_be_deterministic": true,
+        "drip_same_cron_window_same_result": true,
+        "drip_update_only_when_computed_gt_stored": true,
+        "drip_never_decrease_current_unlock_position": true,
         "playback_authority": "runtime_media",
         "media_intent_authority": "control_plane",
         "media_authority_enforcement": "all_playback_must_resolve_through_runtime_media",
+        "all_audio_must_pass_worker_pipeline": true,
+        "wav_must_become_mp3_before_ready": true,
+        "direct_audio_ready_writes": "forbidden",
         "storage_objects_playback_source": "forbidden",
         "runtime_media_bypass": "forbidden",
         "lesson_content_media_reference": "lesson_media_id_only",
@@ -212,8 +284,24 @@
         "auth_behavior": "trust_boundary",
         "course_structure": "course_to_lessons_direct",
         "lesson_ordering": "position",
+        "lesson_display_name": "lesson_title",
+        "course_progression_field": "step",
+        "course_grouping_field": "course_group_id",
+        "feature_expansion_model": "new_entities_only",
+        "core_domain_entities": [
+            "courses",
+            "lessons",
+            "course_enrollments",
+            "media_assets",
+            "lesson_media"
+        ],
+        "core_domain_mutation_for_features": "forbidden",
+        "feature_attachment_strategy": "external_entities_only",
         "module_abstraction": "forbidden",
-        "fallback": "forbidden"
+        "fallback": "forbidden",
+        "one_path_per_concept": true,
+        "multiple_paths_make_system_invalid": true,
+        "missing_data_must_fail_never_infer": true
     },
     "forbidden_surfaces": {
         "terms": [
@@ -223,6 +311,11 @@
         "authorities": [
             "duplicate_app_access_authority",
             "duplicate_normal_course_access_authority",
+            "implicit_intro_access",
+            "legacy_entitlement_fallback",
+            "step_based_ownership_logic",
+            "runtime_derived_progression",
+            "runtime_derived_unlock_state",
             "implicit_course_access_by_tag_or_inference",
             "storage_as_business_truth"
         ],
