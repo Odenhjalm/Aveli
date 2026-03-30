@@ -5,12 +5,12 @@
 - Aveli is a social learning platform with courses and lessons as the core runtime learning model, plus live lesson/session experiences and a marketplace for cultivated knowledge.
 - Aveli is for teachers and learners, including course/lesson interactions, checkout/onboarding flows, session-level experiences, and guided app access.
 - Teachers use Aveli to create, manage, publish, and refine learning experiences, media-rich course content, home-player tracks, and cultivated knowledge offers.
-- Learners use Aveli to onboard, access the app through membership, access lesson content through explicit course enrollment, and progress through repeated learning experiences.
+- Learners use Aveli to onboard, access the app through membership, discover courses and lesson structure without course enrollment, access `lesson_content_surface` through explicit course enrollment and `current_unlock_position`, and progress through repeated learning experiences.
 - The user actions explicitly represented in the approved product framing are:
   - onboard into the trusted teacher/learner journey
   - enter the app through valid membership access
   - learn via structured course/editor content
-  - access course experiences through canonical course-access rules
+  - access course content through `canonical_protected_course_content_access`
   - access curated home-player experiences through the home-player pipeline
   - progress through repeated, persistent learning experiences
 - Activities, posts, messages, and notifications remain future-facing surfaces unless current runtime evidence explicitly promotes them into baseline truth.
@@ -56,7 +56,7 @@
 
 ## System Definition
 
-- Aveli is the documented system for social learning, course/editor workflows, media delivery, checkout/onboarding support, membership-gated app access, enrollment-gated course access, home-player curation, and marketplace expansion with dedicated API governance, auth/security controls, and control-plane/observability surfaces.
+- Aveli is the documented system for social learning, course/editor workflows, media delivery, checkout/onboarding support, membership-gated app access, course catalog and lesson structure exposed via explicit read surface, course content accessible through defined API surface only when `course_enrollments` AND `lesson.position <= current_unlock_position`, home-player curation, and marketplace expansion with dedicated API governance, auth/security controls, and control-plane/observability surfaces.
 - Evidence:
   - docs/README.md
   - docs/architecture/aveli_editor_architecture_v2.md
@@ -76,25 +76,47 @@
 ## Canonical Language Rules
 
 - `membership` is the canonical term for app-access authority.
-- `course_enrollment` / `course_enrollments` is the canonical term for course-access authority.
+- `course_enrollment` / `course_enrollments` is the canonical term for `canonical_protected_course_content_access` authority.
+- Canonical data categories are:
+  - `course_identity`
+  - `course_display`
+  - `course_grouping`
+  - `course_pricing`
+  - `lesson_identity`
+  - `lesson_structure`
+  - `lesson_content`
+  - `lesson_media`
+- Category definitions are semantic law, not fixed field lists. Future fields must map into these categories without changing surface rules.
+- `course_discovery_surface` is the canonical term for a surface that allows only `course_identity`, `course_display`, `course_grouping`, and `course_pricing`.
+- `lesson_structure_surface` is the canonical term for a surface that allows only `lesson_identity` and `lesson_structure`.
+- `lesson_content_surface` is the canonical term for a surface that allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`, and requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `lesson_media` exists only inside `lesson_content_surface`.
+- No independent lesson-media surface exists.
+- `media_assets` never defines access.
+- No rule referring to visibility may be interpreted as permission for raw table access.
 - `subscription` is NOT a canonical Aveli runtime term.
   - It may appear only in legacy, migration, audit, or historical references.
 - `module` is NOT a valid Aveli system term.
   - It is forbidden in runtime/domain language and may appear only in historical or legacy references.
-- Terms that imply duplicate authority for app access or course access must not be introduced.
+- Terms that imply duplicate authority for app access or `canonical_protected_course_content_access` must not be introduced.
 
 ## Course Model (Canonical)
 
 - course contains lessons directly
 - `course.step` is the only canonical progression field
 - `course.course_group_id` is the only canonical grouping field
+- `course.drip_enabled` and `course.drip_interval_days` are the only canonical drip-configuration fields
 - `course.course_group_id` represents a progression set of courses
 - courses within the same `course_group_id` belong to the same product progression
 - progression within a `course_group_id` is strictly ordered by `course.step`
 - `course.course_group_id` is used only for progression linkage and UI sequencing
 - `course.course_group_id` must not be used for categories, tags, or arbitrary grouping
+- drip behavior is course-level configuration only and must not be inferred from course type or enrollment source
 - lessons are ordered via position
 - `lesson.lesson_title` is the canonical lesson display name
+- `lessons` stores lesson identity and structure only
+- `lesson_contents` stores lesson body content only
+- `content_markdown` is canonical only on `lesson_contents`
 - no module abstraction exists
 - any module-like grouping is NOT valid system truth
 - explicit course grouping via `course_group_id` is valid system truth
@@ -106,8 +128,10 @@
 
 - Media authority model = `split_intent_and_playback`
 - App-access authority = `memberships`
-- Course-access authority = `course_enrollments`
-- Standard course access must not be derived from membership alone
+- Canonical course-content access authority = `course_enrollments`
+- `course_discovery_surface` exposure is not governed by `course_enrollments`
+- `lesson_structure_surface` exposure is not governed by `course_enrollments`
+- `lesson_content_surface` access must not be derived from membership alone
 - Playback authority = `runtime_media`
 - Media intent authority = `control_plane`
 
@@ -115,41 +139,112 @@
 
 - `membership` is required to pass landing and enter the app.
 - `membership` is global platform access, not creator-scoped.
-- `course_enrollments` is the only canonical authority for all course access.
-- Intro courses require `course_enrollments` rows and are never implicitly accessible.
-- No course access exists outside `course_enrollments`.
+- `course_discovery_surface` is separate from `lesson_content_surface`.
+- `course_discovery_surface` allows only:
+  - `course_identity`
+  - `course_display`
+  - `course_grouping`
+  - `course_pricing`
+- Forbidden categories must never appear on `course_discovery_surface`:
+  - `lesson_content`
+  - `lesson_media`
+  - `enrollment_state`
+  - `unlock_state`
+- `lesson_structure_surface` allows only:
+  - `lesson_identity`
+  - `lesson_structure`
+- `lesson_structure_surface` maps to `lessons` only.
+- Forbidden categories must never appear on `lesson_structure_surface`:
+  - `lesson_content`
+  - `lesson_media`
+  - `enrollment_state`
+  - `unlock_state`
+- `course_enrollments` is the only canonical authority for `canonical_protected_course_content_access`.
+- `canonical_protected_course_content_access` means a lesson is accessible if and only if:
+  - a `course_enrollments` row exists for `(user_id, course_id)`
+  - `lesson.position <= current_unlock_position`
+- `current_unlock_position` is stored on `course_enrollments`.
+- `lesson_content_surface` allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`.
+- `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
+- `lesson_media` exists only inside `lesson_content_surface`.
+- Intro courses require `course_enrollments` rows with `source = intro_enrollment`, and `lesson_content_surface` still requires `lesson.position <= current_unlock_position`.
+- No lesson content or lesson media access exists outside `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `media_assets` never defines access.
+- No rule referring to visibility may be interpreted as permission for raw table access.
 - Checkout may canonically produce:
   - membership
   - course_enrollment
   - both
 - Checkout outcome is product-dependent, not guessed from legacy terminology.
 
-## Course Enrollment And Drip Model (Canonical)
+## API Read Contract (Canonical)
 
-- `course_enrollments` is the only source of course access truth.
-- Intro courses require explicit enrollment with `source = intro_enrollment`.
-- Paid courses require explicit enrollment with `source = purchase`.
+- `GET /courses` is `course_discovery_surface`.
+- `GET /courses/{course_id}` is a course-detail endpoint composed of `course_discovery_surface` and `lesson_structure_surface` and must not require enrollment.
+- `GET /courses/by-slug/{slug}` is a course-detail endpoint composed of `course_discovery_surface` and `lesson_structure_surface` and must not require enrollment.
+- Course-detail endpoints may return lessons only as `LessonSummary[]` on `lesson_structure_surface`.
+- `LessonSummary` is the `lesson_structure_surface` shape and allows only:
+  - `lesson_identity`
+  - `lesson_structure`
+- `LessonSummary` is sourced from `lessons` only.
+- Forbidden categories must never appear in `LessonSummary`:
+  - `lesson_content`
+  - `lesson_media`
+  - `enrollment_state`
+  - `unlock_state`
+- `GET /courses/lessons/{lesson_id}` is `lesson_content_surface`.
+- `LessonContent` is the `lesson_content_surface` shape and allows only:
+  - `lesson_identity`
+  - `lesson_structure`
+  - `lesson_content`
+  - `lesson_media`
+- `LessonContent` is sourced from canonical `lessons` + `lesson_contents` + `lesson_media`.
+- `LessonContent` requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `lesson_media` exists only inside `LessonContent`.
+- No endpoint may return `lesson_content` or `lesson_media` without `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- No rule referring to visibility may be interpreted as permission for raw table access.
+- `app.lessons` must remain structure-only and `app.lesson_contents` must remain content-only.
+- `app.lessons` and `app.lesson_contents` must not be collapsed into one raw-table lesson access surface that bypasses canonical surface boundaries.
+
+## Drip Model (Canonical)
+
+- Drip is a course-level configuration.
+- Drip is not tied to enrollment source.
+- Teacher controls:
+  - `drip_enabled`
+  - `drip_interval_days`
+- `course_enrollments` is the only source of `canonical_protected_course_content_access` truth.
+- Intro courses require explicit enrollment with `source = intro_enrollment`, and `lesson_content_surface` access still requires `lesson.position <= current_unlock_position`.
+- Paid courses require explicit enrollment with `source = purchase`, and `lesson_content_surface` access still requires `lesson.position <= current_unlock_position`.
+- Enrollment stores state only.
+- Enrollment always stores `drip_started_at` and `current_unlock_position`.
+- Enrollment source records access origin and does not define drip behavior.
+- The system must not assume default drip behavior.
+- The system must not infer drip from course type.
 - Drip progression is stored state, not derived state.
-- On creation of an `intro_enrollment`:
+- On creation of any enrollment, `drip_started_at = granted_at`.
+- On creation of an enrollment for a course with `drip_enabled = true`:
   - if the course has at least one lesson, `current_unlock_position = 1`
   - if the course has zero lessons, `current_unlock_position = 0`
-- On creation of an `intro_enrollment`, `drip_started_at = granted_at`.
-- Purchase enrollments must keep `drip_started_at = NULL` and `current_unlock_position = NULL`.
+- On creation of an enrollment for a course with `drip_enabled = false`:
+  - if the course has at least one lesson, `current_unlock_position = max_lesson_position`
+  - if the course has zero lessons, `current_unlock_position = 0`
 - Drip progression is advanced only by a worker process.
 - The worker runs on a fixed cron-based interval.
-- The worker evaluates all `course_enrollments` where `source = intro_enrollment`.
+- The worker evaluates enrollments only for courses where `drip_enabled = true`.
 - Worker-based scheduling is the canonical way to advance drip progression.
 - No lazy evaluation of unlock state is allowed in runtime.
 - Runtime requests must never advance drip state.
 - Frontend must never compute unlock state.
+- UI must reflect drip configuration consistently in course cards and course views.
 - `lesson.position` is the canonical progression index.
-- `current_unlock_position` is the canonical persisted unlock boundary.
+- `current_unlock_position` is the canonical persisted highest accessible `lesson.position`.
 - Worker progression updates are determined by:
   - `drip_started_at`
   - `lesson.position`
-  - canonical drip interval `7 days`
+  - `course.drip_interval_days`
 - Canonical worker formula:
-  - `unlocked_count = 1 + floor((now - drip_started_at) / 7 days)`
+  - `unlocked_count = 1 + floor((now - drip_started_at) / (course.drip_interval_days days))`
   - `computed_unlock_position = min(max_lesson_position, unlocked_count)`
 - `current_unlock_position` must never exceed the highest existing `lesson.position` in the course.
 - If `current_unlock_position` already equals `max_lesson_position`, worker execution must be a no-op.
@@ -157,7 +252,6 @@
 - Repeated worker executions in the same cron window must produce the same persisted result.
 - Worker may only update when `computed_unlock_position > current_unlock_position`.
 - Worker must never decrease `current_unlock_position`.
-- Canonical drip interval default = `7 days`.
 
 ## Canonical Media Processing Mode
 
@@ -213,13 +307,13 @@
 - Stripe checkout
 - onboarding
 - membership-gated app entry
-- canonical course access
+- canonical_protected_course_content_access
 - home-player curation and playback compliance
 
 ## Canonical Media Resolution Path
 
 - Resolution chain:
-  - `lesson_content_markdown (lesson_media_id)`
+  - `lesson_contents.content_markdown (lesson_media_id)`
   - `lesson_media`
   - `control_plane`
   - `storage.objects`
@@ -253,10 +347,10 @@
   - docs/media_control_plane_mcp.md
   - docs/media_architecture.md
 - Classification:
-  - Scope intent: `planned_protected`
+  - Scope intent: `planned_preserved`
   - Canonical role: `media_intent_authority`
 - Canonical decision:
-  - control plane is preserved and protected
+  - control plane is preserved and not open to semantic redefinition
   - control plane must not be removed or semantically redefined
   - control plane does not own playback
 
@@ -274,25 +368,40 @@
 ## Planned vs Runtime Classification (Resolved)
 
 - API definitions: observed via audit, verified separately from legitimacy
-- Media control plane: planned, protected, intent-authoritative
+- Media control plane: planned, preserved, intent-authoritative
 - Playback delivery: runtime-active via `runtime_media`
 - Auth flow: planned constraints + runtime-audited behavior
 - Home player ingest/curation: runtime-active within the same media domain
 - Membership app access: runtime/canonical authority
-- Course enrollment access: runtime/canonical authority
+- `course_discovery_surface`: canonical surface type
+- `lesson_structure_surface`: canonical surface type
+- `lesson_content_surface`: canonical surface type
+- `canonical_protected_course_content_access`: runtime/canonical authority
 
 ## Explicitly Forbidden Surfaces
 
 - `subscription` as active runtime/domain authority
 - `module` as runtime/domain construct
 - duplicate app-access authorities parallel to `memberships`
-- duplicate normal course-access authorities parallel to `course_enrollments`
+- duplicate `canonical_protected_course_content_access` authorities parallel to `course_enrollments`
 - implicit intro access
+- treating `course_discovery_surface` as enrollment-gated
+- hiding course catalog behind enrollment
+- treating `lesson_structure_surface` as `lesson_content_surface`
+- conflating `course_discovery_surface` or `lesson_structure_surface` with `lesson_content_surface`
+- exposing `lesson_content` or `lesson_media` on `lesson_structure_surface`
+- returning `lesson_content_surface` data from course-detail endpoints
+- treating any rule that does not require `course_enrollments` AND `lesson.position <= current_unlock_position` as sufficient authority for `lesson_content_surface`
 - entitlement fallback paths
 - step-based ownership logic
 - runtime-derived progression
 - runtime-derived unlock state
-- implicit course access by inferred tags or hidden rules
+- drip logic tied to `intro_enrollment` vs `purchase`
+- hardcoded drip defaults
+- fallback drip behavior
+- implicit unlock strategies
+- inferred drip behavior from course type
+- implicit `lesson_content_surface` access by inferred tags or hidden rules
 - direct playback from `storage.objects`
 - alternate playback authorities outside `runtime_media`
 - fallback to legacy paths when canonical resolution fails

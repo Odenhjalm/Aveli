@@ -36,8 +36,8 @@
                 "docs/media_control_plane_mcp.md",
                 "docs/media_architecture.md"
             ],
-            "state": "planned_protected",
-            "protected": true,
+            "state": "planned_preserved",
+            "preserved_from_modification": true,
             "mutation_policy": "no_modification_or_redefinition",
             "role": "media_intent_authority"
         },
@@ -104,17 +104,99 @@
         "access_model": {
             "state": "runtime_canonical",
             "app_access_authority": "memberships",
-            "course_access_authority": "course_enrollments",
             "membership_scope": "global",
             "membership_required_for_app_entry": true,
-            "course_access_requires_enrollment_row": true,
-            "intro_access_requires_enrollment_row": true,
-            "standard_course_access_via_membership_alone": false,
+            "canonical_data_categories": {
+                "course_identity": "stable course identifiers and routing identity",
+                "course_display": "learner-facing course presentation data",
+                "course_grouping": "course progression and grouping data",
+                "course_pricing": "learner-facing course pricing data",
+                "lesson_identity": "stable lesson identifiers and parent-course linkage",
+                "lesson_structure": "lesson ordering and structural metadata",
+                "lesson_content": "gated lesson body content",
+                "lesson_media": "gated lesson-linked media references delivered with lesson content"
+            },
+            "lesson_storage_model": {
+                "lessons": "lesson_identity_and_lesson_structure_only",
+                "lesson_contents": "lesson_content_only"
+            },
+            "surface_model": {
+                "course_discovery_surface": {
+                    "allowed_categories": [
+                        "course_identity",
+                        "course_display",
+                        "course_grouping",
+                        "course_pricing"
+                    ],
+                    "forbidden_categories": [
+                        "lesson_content",
+                        "lesson_media",
+                        "enrollment_state",
+                        "unlock_state"
+                    ],
+                    "requires_course_enrollments": false
+                },
+                "lesson_structure_surface": {
+                    "allowed_categories": [
+                        "lesson_identity",
+                        "lesson_structure"
+                    ],
+                    "storage_authorities": [
+                        "lessons"
+                    ],
+                    "forbidden_categories": [
+                        "lesson_content",
+                        "lesson_media",
+                        "enrollment_state",
+                        "unlock_state"
+                    ],
+                    "requires_course_enrollments": false
+                },
+                "lesson_content_surface": {
+                    "allowed_categories": [
+                        "lesson_identity",
+                        "lesson_structure",
+                        "lesson_content",
+                        "lesson_media"
+                    ],
+                    "storage_authorities": [
+                        "lessons",
+                        "lesson_contents",
+                        "lesson_media"
+                    ],
+                    "requires": [
+                        "course_enrollments",
+                        "lesson.position <= current_unlock_position"
+                    ]
+                }
+            },
+            "canonical_protected_course_content_access_authority": "course_enrollments",
+            "canonical_protected_course_content_access": {
+                "rule": [
+                    "course_enrollments",
+                    "lesson.position <= current_unlock_position"
+                ],
+                "current_unlock_position_source": "course_enrollments.current_unlock_position"
+            },
+            "lesson_content_surface_access_rule": "requires course_enrollments AND lesson.position <= current_unlock_position",
+            "lesson_media_only_inside_lesson_content_surface": true,
+            "independent_lesson_media_surface": false,
+            "media_assets_never_defines_access": true,
+            "intro_lesson_content_surface_access_rule": "requires source = intro_enrollment AND course_enrollments AND lesson.position <= current_unlock_position",
+            "purchase_lesson_content_surface_access_rule": "requires source = purchase AND course_enrollments AND lesson.position <= current_unlock_position",
+            "membership_alone_never_grants_canonical_protected_course_content_access": true,
             "intro_enrollment_source": "intro_enrollment",
             "purchase_enrollment_source": "purchase",
-            "implicit_course_access": false,
+            "implicit_canonical_protected_course_content_access": false,
+            "no_visibility_rule_implies_raw_table_access": true,
             "drip_model": {
-                "applies_only_to_source": "intro_enrollment",
+                "configuration_authority": "course",
+                "configured_by_fields": [
+                    "drip_enabled",
+                    "drip_interval_days"
+                ],
+                "applies_only_when_course_drip_enabled": true,
+                "enrollment_source_controls_drip": false,
                 "stored_state_only": true,
                 "scheduler": "worker_only",
                 "execution_mode": "cron_based",
@@ -123,19 +205,19 @@
                 "runtime_drip_updates": "forbidden",
                 "frontend_drip_logic": "forbidden",
                 "unlock_anchor": "drip_started_at",
-                "unlock_index": "current_unlock_position",
+                "current_unlock_position_field": "current_unlock_position",
                 "lesson_progression_index": "position",
-                "default_interval_days": 7,
+                "default_interval_days": null,
                 "initial_unlock_state": {
-                    "intro_enrollment_with_lessons": 1,
-                    "intro_enrollment_with_zero_lessons": 0,
-                    "intro_enrollment_drip_started_at": "granted_at",
-                    "purchase_drip_started_at": null,
-                    "purchase_current_unlock_position": null
+                    "drip_enabled_with_lessons": 1,
+                    "drip_enabled_with_zero_lessons": 0,
+                    "drip_disabled_with_lessons": "max_lesson_position",
+                    "drip_disabled_with_zero_lessons": 0,
+                    "all_enrollment_drip_started_at": "granted_at"
                 },
                 "advance_formula": {
                     "unlocked_count": "1 + floor((now - drip_started_at) / interval)",
-                    "interval_days": 7,
+                    "interval_days": "course.drip_interval_days",
                     "computed_unlock_position": "min(max_lesson_position, unlocked_count)"
                 },
                 "clamp_behavior": {
@@ -159,7 +241,7 @@
     "authorities": {
         "media_authority_model": "split_intent_and_playback",
         "app_access_authority": "memberships",
-        "course_access_authority": "course_enrollments",
+        "canonical_protected_course_content_access_authority": "course_enrollments",
         "playback_authority": "runtime_media",
         "media_intent_authority": "control_plane"
     },
@@ -195,7 +277,7 @@
         "stripe_checkout",
         "onboarding",
         "membership_gated_app_entry",
-        "canonical_course_access",
+        "canonical_protected_course_content_access",
         "home_player_curation_and_playback_compliance"
     ],
     "future_facing_surfaces": [
@@ -206,7 +288,7 @@
     ],
     "canonical_media_resolution_path": {
         "reference_chain": [
-            "lesson_content_markdown:lesson_media_id",
+            "lesson_contents.content_markdown:lesson_media_id",
             "lesson_media",
             "control_plane",
             "storage.objects",
@@ -234,21 +316,188 @@
     },
     "canonical_language_rules": {
         "membership": "canonical_app_access_term",
-        "course_enrollments": "canonical_course_access_term",
+        "course_enrollments": "canonical_enrollment_authority_term",
+        "canonical_data_categories": {
+            "course_identity": "stable course identifiers and routing identity",
+            "course_display": "learner-facing course presentation data",
+            "course_grouping": "course progression and grouping data",
+            "course_pricing": "learner-facing course pricing data",
+            "lesson_identity": "stable lesson identifiers and parent-course linkage",
+            "lesson_structure": "lesson ordering and structural metadata",
+            "lesson_content": "gated lesson body content",
+            "lesson_media": "gated lesson-linked media references delivered with lesson content"
+        },
+        "canonical_protected_course_content_access": {
+            "authority": "course_enrollments",
+            "rule": [
+                "course_enrollments",
+                "lesson.position <= current_unlock_position"
+            ]
+        },
+        "course_discovery_surface": {
+            "allowed_categories": [
+                "course_identity",
+                "course_display",
+                "course_grouping",
+                "course_pricing"
+            ],
+            "forbidden_categories": [
+                "lesson_content",
+                "lesson_media",
+                "enrollment_state",
+                "unlock_state"
+            ]
+        },
+        "lesson_structure_surface": {
+            "allowed_categories": [
+                "lesson_identity",
+                "lesson_structure"
+            ],
+            "forbidden_categories": [
+                "lesson_content",
+                "lesson_media",
+                "enrollment_state",
+                "unlock_state"
+            ]
+        },
+        "lesson_content_surface": {
+            "allowed_categories": [
+                "lesson_identity",
+                "lesson_structure",
+                "lesson_content",
+                "lesson_media"
+            ],
+            "requires": [
+                "course_enrollments",
+                "lesson.position <= current_unlock_position"
+            ]
+        },
+        "lesson_media_rule": "lesson_media_exists_only_inside_lesson_content_surface",
+        "media_assets_rule": "media_assets_never_defines_access",
+        "LessonSummary": "canonical_lesson_structure_surface_shape",
+        "LessonContent": "canonical_lesson_content_surface_shape",
         "subscription": "legacy_or_migration_only",
         "module": "forbidden_runtime_domain_term"
+    },
+    "api_read_contract": {
+        "unenrolled_endpoints": {
+            "course_discovery_surface": [
+                "GET /courses"
+            ],
+            "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface": [
+                "GET /courses/{course_id}",
+                "GET /courses/by-slug/{slug}"
+            ]
+        },
+        "lesson_content_surface_endpoints": {
+            "lesson_content_surface": [
+                "GET /courses/lessons/{lesson_id}"
+            ]
+        },
+        "shapes": {
+            "LessonSummary": {
+                "surface": "lesson_structure_surface",
+                "storage_authorities": [
+                    "lessons"
+                ],
+                "allowed_categories": [
+                    "lesson_identity",
+                    "lesson_structure"
+                ],
+                "forbidden_categories": [
+                    "lesson_content",
+                    "lesson_media",
+                    "enrollment_state",
+                    "unlock_state"
+                ]
+            },
+            "LessonContent": {
+                "surface": "lesson_content_surface",
+                "storage_authorities": [
+                    "lessons",
+                    "lesson_contents",
+                    "lesson_media"
+                ],
+                "allowed_categories": [
+                    "lesson_identity",
+                    "lesson_structure",
+                    "lesson_content",
+                    "lesson_media"
+                ],
+                "requires": [
+                    "course_enrollments",
+                    "lesson.position <= current_unlock_position"
+                ]
+            }
+        },
+        "laws": {
+            "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_does_not_require_enrollment": true,
+            "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_returns_only_lesson_summary_array": true,
+            "lesson_content_or_lesson_media_never_appear_on_course_discovery_surface_or_lesson_structure_surface": true,
+            "lesson_media_only_on_lesson_content_surface": true,
+            "media_assets_never_defines_access": true,
+            "lessons_structure_only_storage": true,
+            "lesson_contents_content_only_storage": true,
+            "app_lessons_and_app_lesson_contents_collapsed_raw_table_access_surface_for_lesson_structure_and_lesson_content": "forbidden",
+            "no_visibility_rule_implies_raw_table_access": true
+        }
     },
     "rules": {
         "api_truth": "audit_is_observation_not_automatic_legitimacy",
         "media_authority_model": "split_intent_and_playback",
         "app_access_authority": "memberships",
-        "course_access_authority": "course_enrollments",
-        "no_access_without_enrollment_row": true,
-        "intro_access_requires_enrollment_row": true,
-        "no_lesson_access_beyond_current_unlock_position": true,
+        "course_discovery_surface_allowed_categories": [
+            "course_identity",
+            "course_display",
+            "course_grouping",
+            "course_pricing"
+        ],
+        "course_discovery_surface_forbidden_categories": [
+            "lesson_content",
+            "lesson_media",
+            "enrollment_state",
+            "unlock_state"
+        ],
+        "lesson_structure_surface_allowed_categories": [
+            "lesson_identity",
+            "lesson_structure"
+        ],
+        "lesson_structure_surface_storage_authorities": [
+            "lessons"
+        ],
+        "lesson_structure_surface_forbidden_categories": [
+            "lesson_content",
+            "lesson_media",
+            "enrollment_state",
+            "unlock_state"
+        ],
+        "canonical_protected_course_content_access_authority": "course_enrollments",
+        "lesson_content_surface_access_rule": "requires course_enrollments AND lesson.position <= current_unlock_position",
+        "lesson_content_surface_allowed_categories": [
+            "lesson_identity",
+            "lesson_structure",
+            "lesson_content",
+            "lesson_media"
+        ],
+        "lesson_content_surface_storage_authorities": [
+            "lessons",
+            "lesson_contents",
+            "lesson_media"
+        ],
+        "lesson_media_only_inside_lesson_content_surface": true,
+        "independent_lesson_media_surface": false,
+        "media_assets_never_defines_access": true,
+        "intro_lesson_content_surface_access_rule": "requires source = intro_enrollment AND course_enrollments AND lesson.position <= current_unlock_position",
+        "paid_lesson_content_surface_access_rule": "requires source = purchase AND course_enrollments AND lesson.position <= current_unlock_position",
+        "course_discovery_surface_must_not_be_conflated_with_lesson_content_surface": true,
+        "lesson_structure_surface_must_not_be_conflated_with_lesson_content_surface": true,
+        "lesson_content_or_lesson_media_on_course_discovery_surface_or_lesson_structure_surface": "forbidden",
+        "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_must_return_lesson_summary_only": true,
+        "lesson_content_surface_never_granted_without_course_enrollments_and_current_unlock_position": true,
+        "no_visibility_rule_implies_raw_table_access": true,
         "no_fallback_unlock_logic": true,
         "no_title_or_slug_based_progression": true,
-        "no_runtime_inference_of_access_or_unlock_state": true,
+        "no_runtime_inference_of_lesson_content_surface_access_or_unlock_state": true,
         "grouping_authority": "course_group_id_only",
         "grouping_semantics": "progression_set_ordered_by_step",
         "non_progression_grouping": "forbidden",
@@ -257,12 +506,18 @@
         "drip_state_updates": "worker_only",
         "runtime_drip_updates": "forbidden",
         "frontend_drip_logic": "forbidden",
-        "drip_interval_days": 7,
-        "drip_initial_unlock_intro_with_lessons": 1,
-        "drip_initial_unlock_intro_with_zero_lessons": 0,
+        "drip_configuration_authority": "course",
+        "drip_configuration_fields": [
+            "drip_enabled",
+            "drip_interval_days"
+        ],
+        "drip_no_default_interval": true,
+        "drip_applies_only_when_course_drip_enabled": true,
+        "drip_initial_unlock_when_enabled_with_lessons": 1,
+        "drip_initial_unlock_when_enabled_with_zero_lessons": 0,
+        "drip_initial_unlock_when_disabled_with_lessons": "max_lesson_position",
+        "drip_initial_unlock_when_disabled_with_zero_lessons": 0,
         "drip_initial_anchor": "granted_at",
-        "purchase_drip_started_at": "must_be_null",
-        "purchase_current_unlock_position": "must_be_null",
         "drip_formula_unlocked_count": "1 + floor((now - drip_started_at) / interval)",
         "drip_formula_computed_unlock_position": "min(max_lesson_position, unlocked_count)",
         "drip_clamp_to_max_lesson_position": true,
@@ -291,6 +546,7 @@
         "core_domain_entities": [
             "courses",
             "lessons",
+            "lesson_contents",
             "course_enrollments",
             "media_assets",
             "lesson_media"
@@ -310,13 +566,21 @@
         ],
         "authorities": [
             "duplicate_app_access_authority",
-            "duplicate_normal_course_access_authority",
+            "duplicate_canonical_protected_course_content_access_authority",
             "implicit_intro_access",
+            "course_discovery_surface_treated_as_enrollment_gated",
+            "course_catalog_hidden_by_enrollment",
+            "lesson_structure_surface_treated_as_lesson_content_surface",
+            "course_discovery_surface_and_lesson_content_surface_conflated",
+            "lesson_content_or_lesson_media_exposed_on_course_discovery_surface_or_lesson_structure_surface",
+            "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_returning_lesson_content_surface_data",
+            "app_lessons_or_app_lesson_contents_used_to_bypass_canonical_lesson_split",
             "legacy_entitlement_fallback",
             "step_based_ownership_logic",
             "runtime_derived_progression",
             "runtime_derived_unlock_state",
-            "implicit_course_access_by_tag_or_inference",
+            "implicit_lesson_content_surface_access_by_tag_or_inference",
+            "visibility_rule_interpreted_as_raw_table_access",
             "storage_as_business_truth"
         ],
         "media_patterns": [

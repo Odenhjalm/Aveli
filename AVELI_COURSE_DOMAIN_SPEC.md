@@ -18,7 +18,7 @@ It is intentionally independent from historical behavior, compatibility fallback
    If the product depends on a value, that value must exist as stored canonical truth.
 6. Expansion Principle.
    New features must attach to the system via new canonical entities.
-   Core domain entities (`courses`, `lessons`, `course_enrollments`, `media_assets`, `lesson_media`) must not be mutated to support new features.
+   Core domain entities (`courses`, `lessons`, `lesson_contents`, `course_enrollments`, `media_assets`, `lesson_media`) must not be mutated to support new features.
    Feature-specific data must be modeled in separate domain entities.
    No feature may introduce new fields into core domain entities unless the change is a canonical domain evolution.
 
@@ -29,24 +29,32 @@ Canonical course fields:
 | Field | Type | Constraints | Meaning |
 | --- | --- | --- | --- |
 | `id` | UUID | required | Stable course identity |
-| `title` | text | required | Human-readable course title |
+| `title` | text | required | Display course title |
 | `slug` | text | required, unique | Stable machine identifier with no business meaning |
 | `course_group_id` | UUID | required | Canonical explicit grouping identity |
 | `step` | enum | required: `intro | step1 | step2 | step3` | The only source of course progression semantics |
 | `price_amount_cents` | integer | nullable | Canonical price in cents |
+| `drip_enabled` | boolean | required | Canonical course-level drip mode |
+| `drip_interval_days` | integer | nullable | Canonical course-level drip interval |
 | `cover_media_id` | UUID | nullable FK to `media_assets.id` | Canonical cover linkage |
 
 Canonical rules:
 
 - `step` is the only source of course progression.
 - `course_group_id` is the only source of course grouping.
+- Drip behavior is defined only by course configuration.
 - `intro` means `step == intro`.
 - `paid` means `step != intro`.
 - `price_amount_cents` must be `NULL` when `step == intro`.
 - `price_amount_cents` must be non-null and greater than `0` when `step` is `step1`, `step2`, or `step3`.
+- `drip_enabled = true` means the course uses drip progression.
+- `drip_enabled = false` means the course unlocks all lessons immediately.
+- `drip_interval_days` must be defined when `drip_enabled = true`.
+- `drip_interval_days` must be `NULL` when `drip_enabled = false`.
 - `cover_media_id`, when present, must reference a `media_assets` row with `purpose = course_cover`.
 - UI layout and progression linking between related courses must use `course_group_id`.
 - Courses that belong to the same product progression must share the same `course_group_id`.
+- Course type, enrollment source, title, and slug never define drip behavior.
 - `slug` is never parsed for grouping, progression, pricing, or access.
 - `title` is never parsed for grouping, progression, pricing, or access.
 
@@ -71,10 +79,18 @@ The following concepts are removed from the canonical course domain and must not
 - any implicit entitlement rules
 - any runtime-derived progression state
 - any runtime-derived unlock state
+- treating `course_discovery_surface` as enrollment-gated
+- hiding course catalog behind enrollment
+- treating `lesson_structure_surface` as `lesson_content_surface`
+- conflating `course_discovery_surface` or `lesson_structure_surface` with `lesson_content_surface`
+- drip tied to `intro_enrollment` vs `purchase`
+- hardcoded drip defaults
+- fallback drip behavior
+- implicit unlock strategies
 
 ## 4. Lesson Model
 
-Canonical lesson fields:
+Canonical `lessons` fields:
 
 | Field | Type | Constraints | Meaning |
 | --- | --- | --- | --- |
@@ -82,7 +98,6 @@ Canonical lesson fields:
 | `course_id` | UUID | required FK to `courses.id` | Parent course |
 | `lesson_title` | text | required | Canonical lesson display name |
 | `position` | integer | required, unique per course, strict `1..N` | Canonical lesson order |
-| `content_markdown` | text | required | Canonical lesson body |
 
 Canonical rules:
 
@@ -94,6 +109,22 @@ Canonical rules:
 - Lesson validity does not depend on audio, video, image, or document attachments.
 - No lesson grouping layer exists between course and lesson.
 - `lesson_title` is never inferred from content, file path, or position.
+- `lessons` stores lesson identity and structure only.
+- `lessons` must never store canonical lesson body content.
+
+Canonical `lesson_contents` fields:
+
+| Field | Type | Constraints | Meaning |
+| --- | --- | --- | --- |
+| `lesson_id` | UUID | required PK, FK to `lessons.id` | Canonical lesson-content owner |
+| `content_markdown` | text | required | Canonical lesson body |
+
+Canonical lesson-content rules:
+
+- `lesson_contents` stores lesson body content only.
+- Every canonical lesson body must exist in exactly one `lesson_contents` row.
+- `lesson_contents` must not duplicate lesson identity or structural ordering fields.
+- `content_markdown` is canonical only on `lesson_contents`.
 
 ## 5. Media Model
 
@@ -153,14 +184,64 @@ Forbidden processing behavior:
 - writing `runtime_media` as a substitute for processing completion
 - deterministic replication as an alternative to worker processing
 
-## 7. Course Access Rules
+## 7. Surface Exposure and Canonical Course Content Access Rules
 
-Canonical course-access rules:
+Canonical data categories:
 
-- `course_enrollments` is the only source of course access truth.
-- No course access exists without a `course_enrollments` row.
-- `step = intro` means the course requires an `intro_enrollment` row.
-- `step = step1`, `step2`, or `step3` means the course requires a `purchase` enrollment row.
+- `course_identity`: stable course identifiers and routing identity
+- `course_display`: learner-facing course presentation data
+- `course_grouping`: course progression and grouping data
+- `course_pricing`: learner-facing course pricing data
+- `lesson_identity`: stable lesson identifiers and parent-course linkage
+- `lesson_structure`: lesson ordering and structural metadata
+- `lesson_content`: gated lesson body content
+- `lesson_media`: gated lesson-linked media references delivered with lesson content
+- Category definitions are semantic law, not fixed field lists. Future fields must map into these categories without changing surface rules.
+
+Canonical surface types:
+
+- `course_discovery_surface` exposes only allowed categories:
+  - `course_identity`
+  - `course_display`
+  - `course_grouping`
+  - `course_pricing`
+- Forbidden categories must never appear on `course_discovery_surface`:
+  - `lesson_content`
+  - `lesson_media`
+  - `enrollment_state`
+  - `unlock_state`
+- `lesson_structure_surface` exposes only allowed categories:
+  - `lesson_identity`
+  - `lesson_structure`
+- `lesson_structure_surface` maps to `lessons` only.
+- Forbidden categories must never appear on `lesson_structure_surface`:
+  - `lesson_content`
+  - `lesson_media`
+  - `enrollment_state`
+  - `unlock_state`
+- `lesson_content_surface` exposes only allowed categories:
+  - `lesson_identity`
+  - `lesson_structure`
+  - `lesson_content`
+  - `lesson_media`
+- `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
+- `lesson_content_surface` is accessible only when `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `lesson_media` exists only inside `lesson_content_surface`.
+- No independent lesson-media surface exists.
+- `media_assets` never defines access.
+- No rule referring to visibility may be interpreted as permission for raw table access.
+
+Canonical course-content access rules:
+
+- `course_enrollments` is the only source of `canonical_protected_course_content_access` truth.
+- `course_enrollments` is not the authority for `course_discovery_surface` or `lesson_structure_surface`.
+- `canonical_protected_course_content_access` means a lesson is accessible if and only if:
+  - a `course_enrollments` row exists for `(user_id, course_id)`
+  - `lesson.position <= current_unlock_position`
+- `current_unlock_position` is stored on `course_enrollments`.
+- `step = intro` means the required `course_enrollments` row has `source = intro_enrollment`.
+- `step = step1`, `step2`, or `step3` means the required `course_enrollments` row has `source = purchase`.
+- No lesson content or lesson media access exists outside `course_enrollments` AND `lesson.position <= current_unlock_position`.
 - No fallback access logic exists.
 - No implicit entitlement rules exist.
 - No access rule may be inferred from title, slug, tags, or naming conventions.
@@ -176,33 +257,39 @@ Canonical `course_enrollments` fields:
 | `course_id` | UUID | required FK to `courses.id` | Canonical enrolled course |
 | `source` | enum | required: `purchase | intro_enrollment` | Canonical enrollment origin |
 | `granted_at` | timestamptz | required | Enrollment creation timestamp |
-| `drip_started_at` | timestamptz | nullable | Canonical drip anchor |
-| `current_unlock_position` | integer | nullable | Canonical persisted unlock position |
+| `drip_started_at` | timestamptz | required | Canonical stored unlock anchor |
+| `current_unlock_position` | integer | required | Canonical persisted highest accessible `lesson.position` |
 
 Canonical enrollment rules:
 
-- Enrollment is required for all courses, including intro courses.
+- Enrollment is not required for `course_discovery_surface` or `lesson_structure_surface`.
+- Enrollment is required for `lesson_content_surface` for all courses, including intro courses, and access also requires `lesson.position <= current_unlock_position`.
 - Intro enrollment must create a row with `source = intro_enrollment`.
 - Purchase must create a row with `source = purchase`.
-- No access exists outside `course_enrollments`.
-- `drip_started_at` and `current_unlock_position` are required stored state for `intro_enrollment`.
-- On creation of an `intro_enrollment`:
+- No lesson content or lesson media access exists outside `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- Enrollment always stores `drip_started_at` and `current_unlock_position`, regardless of source.
+- Enrollment state must exist regardless of source.
+- Enrollment does not define whether drip applies.
+- Enrollment stores state only. Course configuration defines unlock behavior.
+- On creation of any enrollment, `drip_started_at = granted_at`.
+- On creation of an enrollment for a course with `drip_enabled = true`:
   - if the course has at least one lesson, `current_unlock_position = 1`
   - if the course has zero lessons, `current_unlock_position = 0`
-- On creation of an `intro_enrollment`, `drip_started_at = granted_at`.
-- `drip_started_at` and `current_unlock_position` must be `NULL` for `purchase`.
+- On creation of an enrollment for a course with `drip_enabled = false`:
+  - if the course has at least one lesson, `current_unlock_position = max_lesson_position`
+  - if the course has zero lessons, `current_unlock_position = 0`
 
 Canonical drip rules:
 
-- Drip applies only when `source = intro_enrollment`.
+- Drip applies only when `course.drip_enabled = true`.
+- Enrollment source never defines whether drip applies.
 - `drip_started_at` defines the time anchor.
-- Lesson unlocking is based on `lessons.position` and persisted drip state.
+- Lesson unlocking is based on `drip_started_at`, `lessons.position`, and `course.drip_interval_days`.
 - `current_unlock_position` must be stored explicitly.
 - The system must never derive unlock state dynamically without persistence.
-- Worker-based scheduling is the only canonical way to advance drip progression.
-- Canonical drip interval default = `7 days`.
+- Worker-based scheduling is the only canonical way to advance drip progression for courses with `drip_enabled = true`.
 - Worker execution uses the canonical formula:
-  - `unlocked_count = 1 + floor((now - drip_started_at) / 7 days)`
+  - `unlocked_count = 1 + floor((now - drip_started_at) / (course.drip_interval_days days))`
   - `computed_unlock_position = min(max_lesson_position, unlocked_count)`
 - `current_unlock_position` must never exceed the highest existing `lessons.position` in the enrolled course.
 - If `current_unlock_position` already equals `max_lesson_position`, worker execution must be a no-op.
@@ -211,32 +298,117 @@ Canonical drip rules:
 - The worker may update only when `computed_unlock_position > current_unlock_position`.
 - The worker must never decrease `current_unlock_position`.
 
-## 9. UI Contract
+## 9. API Read Contract
+
+Canonical read shapes:
+
+### 9.1 `LessonSummary` (Structure Surface)
+
+Purpose:
+
+- `LessonSummary` is the canonical `lesson_structure_surface` shape for course-detail surfaces.
+- `LessonSummary` is sourced from `lessons` only.
+
+Allowed categories:
+
+- `lesson_identity`
+- `lesson_structure`
+
+Forbidden categories:
+
+- `lesson_content`
+- `lesson_media`
+- `enrollment_state`
+- `unlock_state`
+
+Access rules:
+
+- `LessonSummary` is exposed via explicit read surface without `course_enrollments`.
+- `LessonSummary` must never require `course_enrollments` or `lesson.position <= current_unlock_position`.
+- Forbidden categories must never appear in `LessonSummary`.
+
+### 9.2 `LessonContent` (Lesson Content Surface)
+
+Purpose:
+
+- `LessonContent` is the canonical `lesson_content_surface` shape.
+- `LessonContent` is sourced from canonical `lessons` + `lesson_contents` + `lesson_media`.
+
+Allowed categories:
+
+- `lesson_identity`
+- `lesson_structure`
+- `lesson_content`
+- `lesson_media`
+
+Forbidden categories:
+
+- `enrollment_state`
+- `unlock_state`
+- hidden policy evaluation fields
+
+Access rules:
+
+- `LessonContent` is accessible only when `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `LessonContent` must never be returned from `course_discovery_surface` or `lesson_structure_surface`.
+- `lesson_media` exists only inside `LessonContent`.
+- `media_assets` never defines access.
+
+Canonical endpoint contract:
+
+- `GET /courses` is `course_discovery_surface`.
+- `GET /courses/{course_id}` is a course-detail endpoint composed of `course_discovery_surface` and `lesson_structure_surface`, does not require enrollment, and may return lessons only as `LessonSummary[]`.
+- `GET /courses/by-slug/{slug}` is a course-detail endpoint composed of `course_discovery_surface` and `lesson_structure_surface`, does not require enrollment, and may return lessons only as `LessonSummary[]`.
+- `GET /courses/lessons/{lesson_id}` is `lesson_content_surface` and returns `LessonContent`.
+- `lesson_media` exists only inside `lesson_content_surface`.
+- No endpoint may return `lesson_content` or `lesson_media` without `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- No endpoint using `course_discovery_surface` or `lesson_structure_surface` may return `lesson_content` or `lesson_media`.
+- No rule referring to visibility may be interpreted as permission for raw table access.
+- `app.lessons` must remain structure-only and `app.lesson_contents` must remain content-only.
+- `app.lessons` and `app.lesson_contents` must not be collapsed into one raw-table lesson access surface that bypasses canonical surface boundaries.
+
+## 10. UI Contract
 
 Canonical UI rules:
 
 - UI reads only canonical fields.
 - UI writes only canonical fields.
-- UI must read enrollment-backed access state only.
-- UI must write intro access by creating an `intro_enrollment` row, not by toggling implicit access.
+- UI must read course discovery data via `course_discovery_surface` without enrollment-derived gating.
+- UI must read lesson structure via `lesson_structure_surface` without enrollment-derived gating.
+- UI must read enrollment-and-unlock-backed access state only for `lesson_content_surface`.
+- UI must treat `LessonSummary` as a `lesson_structure_surface` shape exposing only `lesson_identity` and `lesson_structure`.
+- UI must treat `LessonContent` as a `lesson_content_surface` shape exposing `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`.
+- UI must never expect `lesson_content` or `lesson_media` inside `LessonSummary`.
+- UI must never assume lesson body content lives on the lesson-structure row.
+- UI must grant intro-course `lesson_content_surface` access by creating an `intro_enrollment` row, not by toggling implicit access.
 - UI must read `course_group_id` directly.
 - UI must write `course_group_id` directly.
 - UI must read `step` directly.
 - UI must write `step` directly.
+- UI must read `drip_enabled` directly.
+- UI must write `drip_enabled` directly.
+- UI must read `drip_interval_days` directly.
+- UI must write `drip_interval_days` directly.
 - UI must read `lesson_title` directly.
 - UI must write `lesson_title` directly.
 - UI must not maintain separate intro and step state.
-- Any state where course progression and course access semantics disagree is forbidden by contract.
+- UI must not hide courses behind `course_enrollments`.
+- UI must not hide lesson structure behind `course_enrollments`.
+- UI must not use a single lesson read shape for both `lesson_structure_surface` and `lesson_content_surface`.
+- Any state where `course_discovery_surface`, `lesson_structure_surface`, and `lesson_content_surface` are conflated is forbidden by contract.
+- No rule referring to visibility may be interpreted as permission for raw table access.
 - UI grouping and progression linking must use `course_group_id` only.
+- UI must reflect drip configuration consistently in course cards and course views.
+- UI must not infer drip behavior from course type, enrollment source, title, slug, or step.
 - UI must not parse `title` or `slug` to infer grouping, pricing, access, or progression.
 
-## 10. Migration Contract
+## 11. Migration Contract
 
 Migration source:
 
 - `reconstruction_metadata_final_v7.json`
 
-### 10.1 Mapped Fields
+### 11.1 Mapped Fields
 
 Canonical course mapping:
 
@@ -244,6 +416,8 @@ Canonical course mapping:
 - `courses.slug <- course.slug`
 - `courses.course_group_id <- deterministic migration-time derivation from course.course_title only`
 - `courses.price_amount_cents <- course.pricing.amount_cents` for paid courses
+- `courses.drip_enabled <- authoritative explicit course configuration input`
+- `courses.drip_interval_days <- authoritative explicit course configuration input`
 - `courses.cover_media_id <- generated media asset id for the migrated course cover`
 
 Canonical lesson mapping:
@@ -251,7 +425,8 @@ Canonical lesson mapping:
 - `lessons.course_id <- generated canonical course id`
 - `lessons.lesson_title <- lesson.lesson_title`
 - `lessons.position <- lesson.position`
-- `lessons.content_markdown <- file contents loaded from lesson.content_path`
+- `lesson_contents.lesson_id <- generated canonical lesson id`
+- `lesson_contents.content_markdown <- file contents loaded from lesson.content_path`
 
 Canonical media mapping:
 
@@ -320,24 +495,41 @@ Media processing-state derivation:
 
 - worker-pipeline mode: insert canonical pre-ready states and let the pipeline advance them
 
-### 10.4 Migration Validity Rules
+### 11.4 Migration Validity Rules
 
 - Migration must reject any course that cannot produce exactly one canonical `step`.
 - Migration must reject any paid course without `pricing.amount_cents`.
-- Migration must reject any lesson without readable `content_path`.
+- Migration must reject any course without explicit `drip_enabled`.
+- Migration must reject any course with `drip_enabled = true` and missing `drip_interval_days`.
+- Migration must reject any course with `drip_enabled = false` and non-null `drip_interval_days`.
+- Migration must reject any lesson without loadable `content_path`.
 - Migration must reject any media item without a valid source path and ingest format.
 - Migration must reject any attempt to preserve dropped fields as business truth.
 - Content migration must not invent `course_enrollments`.
 - Enrollment migration requires a separate authoritative access source and must not be inferred from course content or titles.
+- Migration must not infer drip behavior from course type, enrollment source, pricing, title, slug, or step.
 
-## 11. Verification Summary
+## 12. Verification Summary
 
 - Zero duplicated semantics: yes
 - Zero fallback paths: yes
 - Zero title/slug inference in runtime behavior: yes
 - `lesson_title` is canonical: yes
 - `course_group_id` is canonical: yes
+- course-level drip configuration is canonical: yes
 - `course_enrollments` is canonical: yes
+- course discovery uses category-based `course_discovery_surface` rules without `course_enrollments`: yes
+- lesson structure uses category-based `lesson_structure_surface` rules without `course_enrollments`: yes
+- lesson content access requires `course_enrollments` AND `lesson.position <= current_unlock_position`: yes
+- no visibility rule is interpreted as permission for raw table access: yes
+- `LessonSummary` excludes `lesson_content` and `lesson_media`: yes
+- `lessons` remains structure-only: yes
+- `lesson_contents` is the only canonical lesson body holder: yes
+- `LessonContent` requires enrollment and unlock: yes
+- course-detail endpoints return lessons only as `LessonSummary[]`: yes
 - drip progression is stored state: yes
+- enrollment is state-only for drip semantics: yes
+- no source-based drip logic: yes
+- no hardcoded drip default: yes
 - worker pipeline is the only canonical audio processing path: yes
 - Title parsing exists only as an explicit one-time migration derivation rule for `step` and `course_group_id` and is not part of runtime or stored business logic

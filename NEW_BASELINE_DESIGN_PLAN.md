@@ -20,14 +20,15 @@ Each slot owns one responsibility and must not carry mixed old/new semantics.
 | --- | --- | --- | --- |
 | `0001` | `canonical_foundation.sql` | app schema preconditions, canonical enums, shared immutable helpers | business tables, legacy compatibility |
 | `0002` | `courses_core.sql` | canonical `courses` table and course-level constraints | lesson fields, access fields, fallback fields |
-| `0003` | `lessons_core.sql` | canonical `lessons` table and lesson ordering constraints | intro flags, lesson pricing, media state |
-| `0004` | `course_enrollments_core.sql` | canonical `course_enrollments` table and drip invariants | membership logic, entitlement fallback |
-| `0005` | `media_assets_core.sql` | canonical `media_assets` table and processing-state constraints | lesson linkage, runtime fallback |
-| `0006` | `lesson_media_core.sql` | canonical `lesson_media` table and media ordering constraints | storage shortcuts, hybrid legacy linkage |
-| `0007` | `runtime_media_projection_core.sql` | read-only `runtime_media` projection boundary | source-of-truth writes, legacy fallback |
-| `0008` | `runtime_media_projection_sync.sql` | projection sync functions/triggers from canonical sources | legacy storage logic, dual projections |
-| `0009` | `canonical_access_policies.sql` | RLS and access policies using canonical authorities only | compatibility paths, mixed semantics |
-| `0010` | `worker_query_support.sql` | worker-only indexes/views needed for canonical audio/drip execution | queue truth tables, business semantics |
+| `0003` | `lessons_core.sql` | canonical `lessons` table and lesson ordering constraints | lesson body content, intro flags, lesson pricing, media state |
+| `0004` | `lesson_contents_core.sql` | canonical `lesson_contents` table and lesson body content storage | structure fields, media linkage, fallback content storage |
+| `0005` | `course_enrollments_core.sql` | canonical `course_enrollments` table and drip invariants | membership logic, entitlement fallback |
+| `0006` | `media_assets_core.sql` | canonical `media_assets` table and processing-state constraints | lesson linkage, runtime fallback |
+| `0007` | `lesson_media_core.sql` | canonical `lesson_media` table and media ordering constraints | storage shortcuts, hybrid legacy linkage |
+| `0008` | `runtime_media_projection_core.sql` | read-only `runtime_media` projection boundary | source-of-truth writes, legacy fallback |
+| `0009` | `runtime_media_projection_sync.sql` | projection sync functions/triggers from canonical sources | legacy storage logic, dual projections |
+| `0010` | `canonical_access_policies.sql` | `course_discovery_surface`, `lesson_structure_surface`, and `lesson_content_surface` policies using canonical authorities only | compatibility paths, mixed semantics |
+| `0011` | `worker_query_support.sql` | worker-only indexes/views needed for canonical audio/drip execution | queue truth tables, business semantics |
 
 Slot laws:
 
@@ -64,12 +65,16 @@ The new `courses` table is defined only by canonical laws:
 | `course_group_id` | uuid | not null |
 | `step` | `course_step` | not null |
 | `price_amount_cents` | integer | nullable |
+| `drip_enabled` | boolean | not null |
+| `drip_interval_days` | integer | nullable |
 | `cover_media_id` | uuid | nullable FK -> `media_assets.id` |
 
 Required constraints:
 
 - `step = intro` -> `price_amount_cents IS NULL`
 - `step IN (step1, step2, step3)` -> `price_amount_cents > 0`
+- `drip_enabled = true` -> `drip_interval_days IS NOT NULL`
+- `drip_enabled = false` -> `drip_interval_days IS NULL`
 - `UNIQUE (course_group_id, step)`
 - `cover_media_id`, when present, must point to a `media_assets` row with `purpose = course_cover`
 
@@ -77,6 +82,7 @@ Canonical meaning:
 
 - `step` is the only progression field.
 - `course_group_id` is the only grouping field.
+- drip is configured only by `drip_enabled` and `drip_interval_days`
 - `slug` is an identifier only and has no business meaning.
 
 ### 2.3 `lessons`
@@ -89,7 +95,6 @@ The new `lessons` table is defined only by canonical laws:
 | `course_id` | uuid | not null FK -> `courses.id` |
 | `lesson_title` | text | not null |
 | `position` | integer | not null |
-| `content_markdown` | text | not null |
 
 Required constraints:
 
@@ -101,6 +106,26 @@ Canonical meaning:
 - `lesson_title` is the only lesson display name.
 - `position` is the only lesson progression index.
 - Lessons are valid with zero media.
+- `lessons` stores lesson identity and structure only.
+
+### 2.3A `lesson_contents`
+
+The new `lesson_contents` table is defined only by canonical laws:
+
+| Field | Type | Constraints |
+| --- | --- | --- |
+| `lesson_id` | uuid | primary key, FK -> `lessons.id` |
+| `content_markdown` | text | not null |
+
+Required constraints:
+
+- exactly one canonical lesson-content row per lesson
+
+Canonical meaning:
+
+- `lesson_contents` is the only canonical holder of lesson body content.
+- `content_markdown` is canonical only on `lesson_contents`.
+- `lesson_contents` must not duplicate identity or structure fields from `lessons`.
 
 ### 2.4 `course_enrollments`
 
@@ -113,21 +138,75 @@ The new `course_enrollments` table is defined only by canonical laws:
 | `course_id` | uuid | not null FK -> `courses.id` |
 | `source` | `course_enrollment_source` | not null |
 | `granted_at` | timestamptz | not null |
-| `drip_started_at` | timestamptz | nullable |
-| `current_unlock_position` | integer | nullable |
+| `drip_started_at` | timestamptz | not null |
+| `current_unlock_position` | integer | not null |
 
 Required constraints:
 
 - `UNIQUE (user_id, course_id)`
-- `source = purchase` -> `drip_started_at IS NULL AND current_unlock_position IS NULL`
-- `source = intro_enrollment` -> `drip_started_at IS NOT NULL AND current_unlock_position IS NOT NULL`
-- `source = intro_enrollment AND current_unlock_position >= 0`
+- `current_unlock_position >= 0`
+- no DB constraint may infer drip behavior from `source`
 
 Canonical meaning:
 
-- This is the only course-access authority.
+- This is the only `canonical_protected_course_content_access` authority.
+- It does not govern `course_discovery_surface` or `lesson_structure_surface`.
 - Purchase and intro access are represented in one table, one concept, one path.
+- Enrollment stores state only. Course configuration decides whether drip applies.
 - No app membership truth is duplicated here.
+
+### 2.4A Surface Exposure Layers
+
+- Canonical data categories are:
+  - `course_identity`
+  - `course_display`
+  - `course_grouping`
+  - `course_pricing`
+  - `lesson_identity`
+  - `lesson_structure`
+  - `lesson_content`
+  - `lesson_media`
+- Category definitions are semantic law, not fixed field lists. Future fields must map into these categories without changing surface rules.
+- `course_discovery_surface` allows only `course_identity`, `course_display`, `course_grouping`, and `course_pricing`.
+- Forbidden categories must never appear on `course_discovery_surface`: `lesson_content`, `lesson_media`, `enrollment_state`, `unlock_state`.
+- `lesson_structure_surface` allows only `lesson_identity` and `lesson_structure`.
+- `lesson_structure_surface` maps to `lessons` only.
+- Forbidden categories must never appear on `lesson_structure_surface`: `lesson_content`, `lesson_media`, `enrollment_state`, `unlock_state`.
+- `lesson_content_surface` allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`.
+- `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
+- `lesson_content_surface` is accessible only when `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `lesson_media` exists only inside `lesson_content_surface`.
+- No independent lesson-media surface exists.
+- `media_assets` never defines access.
+- `course_enrollments` is the only authority for `canonical_protected_course_content_access`.
+- `course_enrollments` must not be used to hide `course_discovery_surface` or `lesson_structure_surface`.
+- No rule referring to visibility may be interpreted as permission for raw table access.
+
+### 2.4B Canonical API Read Shapes
+
+- `LessonSummary` is the `lesson_structure_surface` shape.
+- `LessonSummary` allows only:
+  - `lesson_identity`
+  - `lesson_structure`
+- `LessonSummary` is sourced from `lessons` only.
+- Forbidden categories must never appear in `LessonSummary`:
+  - `lesson_content`
+  - `lesson_media`
+  - `enrollment_state`
+  - `unlock_state`
+- `LessonContent` is the `lesson_content_surface` shape.
+- `LessonContent` allows only:
+  - `lesson_identity`
+  - `lesson_structure`
+  - `lesson_content`
+  - `lesson_media`
+- `LessonContent` is sourced from canonical `lessons` + `lesson_contents` + `lesson_media`.
+- `LessonContent` requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- Course-detail endpoints composed of `course_discovery_surface` and `lesson_structure_surface` may return lessons only as `LessonSummary[]`.
+- `lesson_media` exists only inside `lesson_content_surface`.
+- `app.lessons` must remain structure-only and `app.lesson_contents` must remain content-only.
+- `app.lessons` and `app.lesson_contents` must not be collapsed into one raw-table lesson access surface that bypasses canonical surface boundaries.
+- No rule referring to visibility may be interpreted as permission for raw table access.
 
 ### 2.5 `media_assets`
 
@@ -153,7 +232,7 @@ Canonical meaning:
 - This table stores canonical media identity and processing truth.
 - It does not store lesson ordering.
 - It does not store legacy storage fallback fields.
-- It does not encode course access.
+- It does not encode `canonical_protected_course_content_access`.
 
 ### 2.6 `lesson_media`
 
@@ -256,10 +335,10 @@ The following structures, fields, and semantics must not be carried into the new
 
 ### 3.3 Enrollment / Access Non-Porting
 
-- old table name `enrollments` as canonical access truth
+- old table name `enrollments` as `canonical_protected_course_content_access` truth
 - enrollment `status`
 - enrollment sources `free_intro`, `membership`, `grant`
-- membership-derived course access
+- membership-derived `lesson_content_surface` access
 - access grant compatibility surfaces
 - legacy entitlement logic
 - step-based ownership logic
@@ -349,9 +428,10 @@ Verification:
 
 1. Create `courses`.
 2. Create `lessons`.
-3. Create `course_enrollments`.
-4. Create `media_assets`.
-5. Create `lesson_media`.
+3. Create `lesson_contents`.
+4. Create `course_enrollments`.
+5. Create `media_assets`.
+6. Create `lesson_media`.
 
 Verification:
 
@@ -373,15 +453,35 @@ Verification:
 
 ### Phase 5: Access and RLS
 
-1. Add RLS for `courses`, `lessons`, `course_enrollments`, `media_assets`, and `lesson_media`.
-2. Express course access only through `course_enrollments`.
-3. Express intro drip boundaries only through `current_unlock_position`.
+1. Add RLS for `courses`, `lessons`, `lesson_contents`, `course_enrollments`, `media_assets`, and `lesson_media`.
+2. Keep `course_discovery_surface` exposed without `course_enrollments` using allowed discovery categories only.
+3. Keep `lesson_structure_surface` exposed without `course_enrollments` using allowed structure categories only.
+4. Express `lesson_content_surface` only through `course_enrollments` AND `lesson.position <= current_unlock_position`.
+5. Express drip boundaries only through `current_unlock_position`.
 
 Verification:
 
-- no course access path exists outside `course_enrollments`
-- no lesson access path exists beyond `current_unlock_position`
-- no membership-only path grants course access
+- `course_discovery_surface` remains exposed without `course_enrollments`
+- `lesson_structure_surface` remains exposed without `course_enrollments`
+- no `lesson_content_surface` access path exists outside `course_enrollments` AND `lesson.position <= current_unlock_position`
+- no lesson content access path exists beyond `current_unlock_position`
+- no membership-only path grants `lesson_content_surface` access
+- no visibility rule is interpreted as permission for raw table access
+
+### Phase 8A: API Read Contract Alignment
+
+1. Keep `GET /courses` as `course_discovery_surface`.
+2. Make `GET /courses/{course_id}` return `course_discovery_surface` + `lesson_structure_surface` without enrollment and with `LessonSummary[]` only.
+3. Make `GET /courses/by-slug/{slug}` return `course_discovery_surface` + `lesson_structure_surface` without enrollment and with `LessonSummary[]` only.
+4. Make `GET /courses/lessons/{lesson_id}` return `lesson_content_surface` detail with `LessonContent`.
+5. Ensure no discovery or structure endpoint returns `lesson_content` or `lesson_media`.
+
+Verification:
+
+- `lesson_content` and `lesson_media` never appear in discovery or structure endpoints
+- lesson structure remains exposed via `lesson_structure_surface` without enrollment
+- `lesson_content_surface` detail requires `course_enrollments` AND `lesson.position <= current_unlock_position`
+- no endpoint mixes `LessonSummary` and `lesson_content_surface` data in the same lesson shape
 
 ### Phase 6: Media Pipeline Enforcement
 
@@ -396,14 +496,14 @@ Verification:
 
 ### Phase 7: Enrollment and Drip Enforcement
 
-1. Enforce canonical intro enrollment initialization.
+1. Enforce canonical enrollment-state initialization from course drip configuration.
 2. Implement worker-only drip advancement using the canonical formula.
 3. Enforce clamp and idempotence rules.
 
 Verification:
 
-- intro enrollments initialize deterministically
-- purchase enrollments have no drip state
+- enrollments initialize deterministically from canonical course drip configuration
+- no source-based drip behavior exists
 - repeated worker runs in the same cron window are no-ops when the stored value is already current
 
 ### Phase 8: Contract Rewrite
@@ -421,9 +521,9 @@ Verification:
 ### Phase 9: Migration Execution
 
 1. Migrate content only after the canonical baseline is live.
-2. Migrate `courses`, then `lessons`, then `media_assets`, then `lesson_media`.
+2. Migrate `courses`, then `lessons`, then `lesson_contents`, then `media_assets`, then `lesson_media`.
 3. Migrate `course_enrollments` only from separate authoritative access input.
-4. Let workers advance audio processing and intro drip after canonical rows exist.
+4. Let workers advance audio processing and course-configured drip after canonical rows exist.
 
 Verification:
 
@@ -452,7 +552,7 @@ Replace these old-baseline structures with clean-room canonical equivalents:
 
 - old `courses` table -> new canonical `courses`
 - old `enrollments` table -> new canonical `course_enrollments`
-- old `lessons` table -> new canonical `lessons`
+- old `lessons` table -> new canonical `lessons` + `lesson_contents`
 - old hybrid `lesson_media` -> new canonical `lesson_media`
 - old `media_assets` superset -> new canonical `media_assets`
 - old fallback-capable `runtime_media` -> new projection-only `runtime_media`
@@ -480,7 +580,12 @@ The new baseline is valid only if all checks below pass.
 - `step` is the only progression field
 - `course_group_id` is the only grouping field
 - `lesson_title` is the only lesson display field
-- `course_enrollments` is the only course-access authority
+- `course_enrollments` is the only `canonical_protected_course_content_access` authority
+- `course_discovery_surface` is separate from `lesson_content_surface`
+- `lesson_structure_surface` is separate from `lesson_content_surface`
+- `lessons` is structure-only and `lesson_contents` is content-only
+- `LessonSummary` exposes only `lesson_identity` and `lesson_structure`
+- `LessonContent` is `lesson_content_surface`, exposes `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`, and requires `course_enrollments` AND `lesson.position <= current_unlock_position`
 
 ### 6.2 Forward-Only Check
 
@@ -493,8 +598,9 @@ The new baseline is valid only if all checks below pass.
 
 - no dual intro/step state
 - no duplicate grouping mechanism
-- no duplicate access authority
+- no duplicate `canonical_protected_course_content_access` authority
 - no duplicate unlock authority
+- no conflation of `course_discovery_surface` or `lesson_structure_surface` with `lesson_content_surface`
 
 ### 6.4 No-Fallback Check
 
