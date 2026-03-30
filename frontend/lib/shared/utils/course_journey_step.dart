@@ -1,7 +1,7 @@
 /// Placement on "Alla kurser" (journey grouping).
 ///
 /// NOTE: This is not the same thing as whether a course is an intro course.
-/// Use `is_free_intro` for the global intro vs paid course type logic.
+/// Use the canonical `step` value for intro vs paid course logic.
 enum CourseJourneyStep { intro, step1, step2, step3 }
 
 CourseJourneyStep? courseJourneyStepFromApi(Object? value) {

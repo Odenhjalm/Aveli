@@ -10,7 +10,6 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/route_paths.dart';
-import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class CheckoutWebViewPage extends ConsumerStatefulWidget {
@@ -92,20 +91,21 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
         normalized.contains('checkout/cancel');
   }
 
-  Future<void> _refreshEntitlements() async {
+  Future<void> _refreshSession() async {
     if (_refreshed) return;
     _refreshed = true;
     await ref.read(authControllerProvider.notifier).loadSession();
-    await ref.read(entitlementsNotifierProvider.notifier).refresh();
   }
 
   void _handleCheckoutResult({required bool success}) {
     if (_navigatedAway) return;
     _navigatedAway = true;
     Future.microtask(() async {
-      await _refreshEntitlements();
+      await _refreshSession();
       if (!mounted || !context.mounted) return;
-      context.go(success ? RoutePath.checkoutSuccess : RoutePath.checkoutCancel);
+      context.go(
+        success ? RoutePath.checkoutSuccess : RoutePath.checkoutCancel,
+      );
     });
   }
 
@@ -152,7 +152,7 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
 
     return PopScope(
       onPopInvokedWithResult: (didPop, _) async {
-        await _refreshEntitlements();
+        await _refreshSession();
         if (!context.mounted) return;
         if (!didPop && !_navigatedAway) {
           Navigator.of(context).pop();

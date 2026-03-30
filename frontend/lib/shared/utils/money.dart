@@ -63,10 +63,9 @@ int? parseSekInputToOre(String raw) {
 /// for suspiciously low paid-course prices (likely unit mismatch).
 String formatCoursePriceFromOre({
   required int amountOre,
-  required bool isFreeIntro,
   String? debugContext,
 }) {
-  if (!isFreeIntro && amountOre > 0 && amountOre < 1000 && kDebugMode) {
+  if (amountOre > 0 && amountOre < 1000 && kDebugMode) {
     final ctx = debugContext == null ? '' : ' ($debugContext)';
     debugPrint(
       '[pricing] Suspicious course price: $amountOre öre (< 10 kr)$ctx. '

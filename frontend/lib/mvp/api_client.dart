@@ -9,25 +9,27 @@ import 'app_config.dart';
 
 class MvpApiClient {
   MvpApiClient({MvpAppConfig? config})
-      : _config = config ?? MvpAppConfig.auto(),
-        _dio = Dio(
-          BaseOptions(
-            baseUrl: (config ?? MvpAppConfig.auto()).baseUrl,
-            connectTimeout: const Duration(seconds: 10),
-            receiveTimeout: const Duration(seconds: 10),
-            headers: const {'accept': 'application/json'},
-          ),
-        ) {
+    : _config = config ?? MvpAppConfig.auto(),
+      _dio = Dio(
+        BaseOptions(
+          baseUrl: (config ?? MvpAppConfig.auto()).baseUrl,
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+          headers: const {'accept': 'application/json'},
+        ),
+      ) {
     _storage = const FlutterSecureStorage();
-    _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        final token = accessToken.value;
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-        handler.next(options);
-      },
-    ));
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final token = accessToken.value;
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          handler.next(options);
+        },
+      ),
+    );
   }
 
   final Dio _dio;
@@ -47,18 +49,17 @@ class MvpApiClient {
     required String password,
     required String displayName,
   }) async {
-    await _dio.post(ApiPaths.authRegister, data: {
-      'email': email,
-      'password': password,
-      'display_name': displayName,
-    });
+    await _dio.post(
+      ApiPaths.authRegister,
+      data: {'email': email, 'password': password, 'display_name': displayName},
+    );
   }
 
   Future<void> login({required String email, required String password}) async {
-    final response = await _dio.post(ApiPaths.authLogin, data: {
-      'email': email,
-      'password': password,
-    });
+    final response = await _dio.post(
+      ApiPaths.authLogin,
+      data: {'email': email, 'password': password},
+    );
     final token = response.data['access_token'] as String?;
     if (token == null) {
       throw StateError('access_token saknas i svaret');
@@ -89,7 +90,10 @@ class MvpApiClient {
   }
 
   Future<List<ServiceSummary>> listActiveServices() async {
-    final response = await _dio.get('/services', queryParameters: {'status': 'active'});
+    final response = await _dio.get(
+      '/services',
+      queryParameters: {'status': 'active'},
+    );
     final items = response.data['items'] as List<dynamic>?;
     if (items == null) {
       return const [];
@@ -111,38 +115,20 @@ class MvpApiClient {
   }
 
   Future<OrderReceipt> createOrderForService(String serviceId) async {
-    final response = await _dio.post(ApiPaths.orders, data: {'service_id': serviceId});
-    return OrderReceipt.fromJson(response.data['order'] as Map<String, dynamic>);
-  }
-
-  Future<String> createStripeCheckout({
-    required String orderId,
-    required String successUrl,
-    required String cancelUrl,
-  }) async {
-    if (successUrl.isEmpty || cancelUrl.isEmpty) {
-      throw StateError('Checkout-URL saknar callback-adresser.');
-    }
-    final orderResponse = await _dio.get(ApiPaths.order(orderId));
-    final order = orderResponse.data['order'] as Map<String, dynamic>;
-    final serviceId = order['service_id'] as String?;
-    final courseId = order['course_id'] as String?;
-    final slug = serviceId ?? courseId;
-    final type = serviceId != null ? 'service' : 'course';
-    if (slug == null || slug.isEmpty) {
-      throw StateError('Ordern saknar checkout-detaljer.');
-    }
-    final response = await _dio.post(ApiPaths.checkoutCreate, data: {
-      'type': type,
-      'slug': slug,
-    });
-    return response.data['url'] as String;
+    final response = await _dio.post(
+      ApiPaths.orders,
+      data: {'service_id': serviceId},
+    );
+    return OrderReceipt.fromJson(
+      response.data['order'] as Map<String, dynamic>,
+    );
   }
 
   Future<LiveKitTokenPayload> requestLiveKitToken(String seminarId) async {
-    final response = await _dio.post('/sfu/token', data: {
-      'seminar_id': seminarId,
-    });
+    final response = await _dio.post(
+      '/sfu/token',
+      data: {'seminar_id': seminarId},
+    );
     return LiveKitTokenPayload.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -239,7 +225,11 @@ class FeedActivity {
 }
 
 class OrderReceipt {
-  const OrderReceipt({required this.id, required this.status, required this.amount});
+  const OrderReceipt({
+    required this.id,
+    required this.status,
+    required this.amount,
+  });
 
   factory OrderReceipt.fromJson(Map<String, dynamic> json) {
     return OrderReceipt(

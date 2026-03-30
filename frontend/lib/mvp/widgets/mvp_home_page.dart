@@ -47,33 +47,6 @@ class _MvpHomePageState extends State<MvpHomePage> {
     }
   }
 
-  Future<void> _purchase(ServiceSummary service) async {
-    try {
-      final order = await widget.client.createOrderForService(service.id);
-      final checkoutUrl = await widget.client.createStripeCheckout(
-        orderId: order.id,
-        successUrl: 'https://example.org/success',
-        cancelUrl: 'https://example.org/cancel',
-      );
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Checkout-session skapad'),
-          content: Text('Öppna URL:n i webbläsare för att testa Payment Element:\n$checkoutUrl'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Stäng')),
-          ],
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kunde inte skapa order: $error')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -105,7 +78,9 @@ class _MvpHomePageState extends State<MvpHomePage> {
                         .map(
                           (course) => ListTile(
                             title: Text(course.title),
-                            subtitle: LinearProgressIndicator(value: course.progressPercent / 100),
+                            subtitle: LinearProgressIndicator(
+                              value: course.progressPercent / 100,
+                            ),
                           ),
                         )
                         .toList(),
@@ -122,7 +97,9 @@ class _MvpHomePageState extends State<MvpHomePage> {
                           (item) => ListTile(
                             leading: const Icon(Icons.auto_awesome),
                             title: Text(item.summary),
-                            subtitle: Text(item.occurredAt?.toIso8601String() ?? ''),
+                            subtitle: Text(
+                              item.occurredAt?.toIso8601String() ?? '',
+                            ),
                           ),
                         )
                         .toList(),
@@ -139,10 +116,8 @@ class _MvpHomePageState extends State<MvpHomePage> {
                           (service) => Card(
                             child: ListTile(
                               title: Text(service.title),
-                              subtitle: Text('${service.priceCents / 100} ${service.currency.toUpperCase()}'),
-                              trailing: FilledButton(
-                                onPressed: () => _purchase(service),
-                                child: const Text('Köp'),
+                              subtitle: Text(
+                                '${service.priceCents / 100} ${service.currency.toUpperCase()}',
                               ),
                             ),
                           ),

@@ -349,9 +349,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
             'title': course.title,
             'description': course.description ?? '',
             'slug': course.slug ?? '',
-            'is_free_intro': course.isFreeIntro,
-            'journey_step': course.journeyStep?.name ?? course.stepLevel?.name,
-            'step_level': course.stepLevel?.name,
+            'step': course.step?.name,
             'price_amount_cents': course.priceCents,
             'resolved_cover_url': resolved.imageUrl,
             if (course.cover != null)
@@ -760,12 +758,11 @@ class _CourseTileGlass extends StatelessWidget {
     final desc = (course['description'] as String?) ?? '';
     final cover = (course['resolved_cover_url'] as String?) ?? '';
     final slug = (course['slug'] as String?) ?? '';
-    final isIntro = course['is_free_intro'] == true;
+    final isIntro = (course['step'] as String?) == 'intro';
     final priceCents =
         _asInt(course['price_amount_cents']) ?? _asInt(course['price_cents']);
     final priceLabel = formatCoursePriceFromOre(
       amountOre: priceCents ?? 0,
-      isFreeIntro: isIntro,
       debugContext: slug.isEmpty ? 'CoursesShowcaseSection' : 'slug=$slug',
     );
     final coverProvider = CourseCoverAssets.resolve(

@@ -86,11 +86,6 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(
-    name: AppRoute.courseQuiz,
-    path: RoutePath.courseQuiz,
-    access: RouteAccessLevel.public,
-  ),
-  RouteManifestEntry(
     name: AppRoute.course,
     path: RoutePath.course,
     access: RouteAccessLevel.public,

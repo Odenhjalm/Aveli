@@ -11,17 +11,10 @@ class ApiPaths {
   static const authValidateInvite = '/auth/validate-invite';
   static const authVerifyEmail = '/auth/verify-email';
 
-  static const checkoutCreate = '/api/checkout/create';
-  static String courseBundleCheckout(String bundleId) =>
-      '/api/course-bundles/$bundleId/checkout-session';
-
-  static const billingCreateSubscription = '/api/billing/create-subscription';
   static const billingCustomerPortal = '/api/billing/customer-portal';
   static const billingSessionStatus = '/api/billing/session-status';
   static const billingCancelSubscription = '/api/billing/cancel-subscription';
 
-  static const meMembership = '/api/me/membership';
-  static const meEntitlements = '/api/me/entitlements';
   static const meClaimPurchase = '/api/me/claim-purchase';
   static const meWelcomeComplete = '/api/me/onboarding/welcome-complete';
 

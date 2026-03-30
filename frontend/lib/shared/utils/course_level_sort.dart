@@ -55,15 +55,11 @@ int compareCourseMapsByLevelThenTitle(
 }
 
 String _courseLevel(Map<String, dynamic> course) {
-  for (final key in const ['level', 'journey_step', 'step_level']) {
+  for (final key in const ['level', 'step']) {
     final value = course[key]?.toString().trim();
     if (value != null && value.isNotEmpty) {
       return value;
     }
-  }
-
-  if (course['is_free_intro'] == true) {
-    return 'intro';
   }
 
   return '';

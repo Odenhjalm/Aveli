@@ -129,7 +129,7 @@ class _JourneyPage extends ConsumerWidget {
     assert(() {
       if (unclassified.isEmpty) return true;
       debugPrint(
-        'CourseCatalogPage: ${unclassified.length} course(s) missing/invalid journey_step, omitted from rendering: '
+        'CourseCatalogPage: ${unclassified.length} course(s) missing/invalid step, omitted from rendering: '
         '${unclassified.map((c) => c.id).join(', ')}',
       );
       return true;
@@ -627,7 +627,6 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final isIntro = course.isIntroCourse;
     final priceLabel = formatCoursePriceFromOre(
       amountOre: course.priceCents ?? 0,
-      isFreeIntro: isIntro,
       debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
     );
 
@@ -786,7 +785,6 @@ class _JourneyCourseCard extends StatelessWidget {
     final isIntro = course.isIntroCourse;
     final priceLabel = formatCoursePriceFromOre(
       amountOre: course.priceCents ?? 0,
-      isFreeIntro: isIntro,
       debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
     );
 

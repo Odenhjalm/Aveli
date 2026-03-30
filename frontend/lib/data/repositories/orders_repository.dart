@@ -27,43 +27,10 @@ class OrdersRepository {
   }
 
   Future<Order> fetchOrder(String id) async {
-    final response = await _client.get<Map<String, dynamic>>(ApiPaths.order(id));
-    return Order.fromJson(response['order'] as Map<String, dynamic>);
-  }
-
-  Future<String> createStripeCheckout({
-    required String orderId,
-    required String successUrl,
-    required String cancelUrl,
-    String? email,
-  }) async {
-    if (successUrl.isEmpty || cancelUrl.isEmpty) {
-      throw Exception('Checkout-URL saknar callback-adresser.');
-    }
-    if (email != null && email.trim().isEmpty) {
-      throw Exception('E-postadressen är tom.');
-    }
-    final order = await fetchOrder(orderId);
-    String? type;
-    String? slug;
-    if (order.serviceId != null) {
-      type = 'service';
-      slug = order.metadata['service_slug'] as String? ?? order.serviceId;
-    } else if (order.courseId != null) {
-      type = 'course';
-      slug = order.metadata['course_slug'] as String? ?? order.courseId;
-    }
-    if (type == null || slug == null || slug.isEmpty) {
-      throw Exception('Ordern saknar checkout-detaljer.');
-    }
-    final response = await _client.post<Map<String, dynamic>>(
-      ApiPaths.checkoutCreate,
-      body: {
-        'type': type,
-        'slug': slug,
-      },
+    final response = await _client.get<Map<String, dynamic>>(
+      ApiPaths.order(id),
     );
-    return (response['url'] ?? '') as String;
+    return Order.fromJson(response['order'] as Map<String, dynamic>);
   }
 }
 

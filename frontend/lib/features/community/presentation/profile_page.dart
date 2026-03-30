@@ -714,7 +714,7 @@ class _CoursesSection extends StatelessWidget {
                                 style: theme.textTheme.bodyMedium,
                               ),
                             ],
-                            if (course.isFreeIntro) ...[
+                            if (course.isIntroCourse) ...[
                               const SizedBox(height: 10),
                               const _ProfileChip(
                                 icon: Icons.auto_awesome,

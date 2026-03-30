@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -66,8 +65,9 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
                             ? 'Vi vantar fortfarande pa betalningsbekraftelse'
                             : 'Betalningen avbrots',
                         textAlign: TextAlign.center,
-                        style: textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       gap16,
                       Text(
@@ -101,19 +101,17 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
     }
 
     final authController = ref.read(authControllerProvider.notifier);
-    final entitlementsController = ref.read(
-      entitlementsNotifierProvider.notifier,
-    );
 
     final attempts = widget.success ? 6 : 1;
     for (var attempt = 0; attempt < attempts; attempt++) {
       await authController.loadSession();
-      await entitlementsController.refresh();
 
       if (!mounted) return;
 
-      final onboardingState =
-          ref.read(authControllerProvider).profile?.onboardingState;
+      final onboardingState = ref
+          .read(authControllerProvider)
+          .profile
+          ?.onboardingState;
       final waitingForWebhook =
           widget.success &&
           onboardingState == OnboardingStateValue.verifiedUnpaid;

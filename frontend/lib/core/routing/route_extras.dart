@@ -24,14 +24,6 @@ class CourseIntroRouteArgs {
   final String? title;
 }
 
-/// Payload for quiz routes that require identifiers.
-class QuizRouteArgs {
-  const QuizRouteArgs({required this.quizId, required this.courseId});
-
-  final String quizId;
-  final String courseId;
-}
-
 /// Optional extras for the community page (e.g. active tab).
 class CommunityRouteArgs {
   const CommunityRouteArgs({this.initialTab});

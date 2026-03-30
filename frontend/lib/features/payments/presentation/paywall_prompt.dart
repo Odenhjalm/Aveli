@@ -69,7 +69,6 @@ class _PaywallBody extends StatelessWidget {
     final priceLabel = coursePrice != null && courseIsIntro != true
         ? formatCoursePriceFromOre(
             amountOre: coursePrice!,
-            isFreeIntro: false,
             debugContext: courseSlug == null
                 ? 'PaywallPrompt'
                 : 'slug=$courseSlug',

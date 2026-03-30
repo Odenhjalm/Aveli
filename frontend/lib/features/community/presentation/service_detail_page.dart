@@ -4,14 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
-import 'package:aveli/data/models/service.dart';
 import 'package:aveli/core/routing/route_session.dart';
-import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/features/community/application/certification_gate.dart';
-import 'package:aveli/features/paywall/data/checkout_api.dart';
 
 class ServiceDetailPage extends ConsumerStatefulWidget {
   const ServiceDetailPage({super.key, required this.id});
@@ -23,8 +19,6 @@ class ServiceDetailPage extends ConsumerStatefulWidget {
 }
 
 class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
-  bool _buying = false;
-
   @override
   Widget build(BuildContext context) {
     final serviceAsync = ref.watch(serviceDetailProvider(widget.id));
@@ -57,22 +51,17 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
         final title = service.title;
         final desc = service.description;
         final price = service.priceCents / 100.0;
-        final buttonBusy = _buying || gate.pending;
         final buttonLabel = gate.pending
             ? 'Kontrollerar behörighet...'
             : gate.requiresAuth
-            ? 'Logga in för att boka'
-            : gate.allowed
-            ? 'Boka/Köp'
+            ? 'Logga in'
             : 'Certifiering krävs';
         final onPressed = gate.pending
             ? null
             : gate.requiresAuth
             ? _goToLogin
-            : gate.allowed && !_buying
-            ? () => _buy(service)
             : null;
-        final buttonChild = buttonBusy
+        final buttonChild = gate.pending
             ? const SizedBox(
                 height: 18,
                 width: 18,
@@ -134,12 +123,25 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                             ),
                           ),
                           const Spacer(),
-                          ElevatedButton(
-                            onPressed: onPressed,
-                            child: buttonChild,
-                          ),
+                          if (onPressed != null)
+                            ElevatedButton(
+                              onPressed: onPressed,
+                              child: buttonChild,
+                            ),
                         ],
                       ),
+                      if (gate.allowed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            'Bokning är inte tillgänglig i appen just nu.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
                       if (gate.message != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 12),
@@ -160,46 +162,6 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
         );
       },
     );
-  }
-
-  Future<void> _buy(Service service) async {
-    final gate = evaluateCertificationGate(
-      service: service,
-      viewerCertificates: ref.read(myCertificatesProvider),
-      isAuthenticated: ref.read(routeSessionSnapshotProvider).isAuthenticated,
-    );
-    if (!gate.allowed) {
-      if (gate.requiresAuth) {
-        _goToLogin();
-      } else if (gate.message != null) {
-        _showSnack(gate.message!);
-      } else if (gate.pending) {
-        _showSnack('Vänta tills behörigheten har kontrollerats.');
-      }
-      return;
-    }
-    final price = service.priceCents;
-    final id = service.id;
-    if (price <= 0) {
-      _showSnack('Tjänsten saknar pris och kan inte bokas just nu.');
-      return;
-    }
-    setState(() => _buying = true);
-    try {
-      final checkoutApi = ref.read(checkoutApiProvider);
-      final url = await checkoutApi.startServiceCheckout(serviceId: id);
-      if (!mounted) return;
-      context.push(RoutePath.checkout, extra: url);
-    } catch (error) {
-      _showSnack('Kunde inte initiera köp: ${_friendlyError(error)}');
-    } finally {
-      if (mounted) setState(() => _buying = false);
-    }
-  }
-
-  void _showSnack(String message) {
-    if (!mounted) return;
-    showSnack(context, message);
   }
 
   String _friendlyError(Object error) => AppFailure.from(error).message;

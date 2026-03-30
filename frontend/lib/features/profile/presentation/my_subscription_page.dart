@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:aveli/core/routing/route_paths.dart';
-import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/features/paywall/data/customer_portal_api.dart';
 import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -17,52 +16,6 @@ class MySubscriptionPage extends ConsumerStatefulWidget {
 
 class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
   bool _loadingPortal = false;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(
-      () => ref.read(entitlementsNotifierProvider.notifier).refresh(),
-    );
-  }
-
-  Color _statusColor(String status, ColorScheme cs) {
-    final normalized = status.toLowerCase();
-    switch (normalized) {
-      case 'active':
-        return Colors.green;
-      case 'trialing':
-        return Colors.blue;
-      case 'past_due':
-        return Colors.orange;
-      case 'canceled':
-      case 'incomplete':
-      case 'incomplete_expired':
-      case 'unpaid':
-      case 'unknown':
-        return cs.outline;
-      default:
-        return normalized.isEmpty ? cs.outline : cs.outline;
-    }
-  }
-
-  String _statusLabel(String status) {
-    final normalized = status.toLowerCase();
-    switch (normalized) {
-      case 'active':
-        return 'Aktiv';
-      case 'trialing':
-        return 'Provperiod';
-      case 'past_due':
-        return 'Betalning krävs';
-      case 'canceled':
-        return 'Avslutad';
-      case 'unknown':
-        return 'Ej aktiv';
-      default:
-        return normalized.isEmpty ? 'Ej aktiv' : status;
-    }
-  }
 
   Future<void> _openPortal() async {
     if (_loadingPortal) return;
@@ -98,21 +51,7 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(entitlementsNotifierProvider);
-    final data = state.data;
-    final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
-
-    final membership = data?.membership;
-    final rawStatus = membership?.status ?? 'unknown';
-    final status = rawStatus.isEmpty ? 'unknown' : rawStatus;
-    final isUnknownStatus = status.toLowerCase() == 'unknown';
-    final nextBilling = membership?.nextBillingAt;
-    final statusColor = _statusColor(status, cs);
-    final isTrial = status.toLowerCase() == 'trialing';
-    final statusLabelStyle =
-        t.labelLarge?.copyWith(fontWeight: FontWeight.w700) ??
-        const TextStyle(fontWeight: FontWeight.w700);
 
     return AppScaffold(
       title: 'Min prenumeration',
@@ -134,72 +73,28 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Medlemskap Aveli',
-                          style: t.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Få tillgång till allt premiuminnehåll.',
-                          style: t.bodyMedium,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Chip(
-                    backgroundColor: statusColor.withValues(alpha: 0.15),
-                    labelStyle: statusLabelStyle,
-                    label: Text(_statusLabel(status)),
-                  ),
-                ],
+              Text(
+                'Medlemskap Aveli',
+                style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 12),
-              if (isTrial)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '14 dagars provperiod',
-                    style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              if (nextBilling != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Nästa debitering: '
-                  '${MaterialLocalizations.of(context).formatFullDate(nextBilling.toLocal())}',
-                  style: t.bodyMedium,
-                ),
-              ],
-              const SizedBox(height: 12),
+              Text(
+                'Prenumerationsstatus visas inte längre i appen. Använd kundportalen för betalningsärenden när den är tillgänglig.',
+                style: t.bodyMedium,
+              ),
+              const SizedBox(height: 20),
               Text(
                 'Hantera prenumeration',
                 style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
-                isUnknownStatus
-                    ? 'Starta och hantera betalningsuppgifter i Stripe-portalen.'
-                    : 'Byt plan, avsluta, uppdatera betalningar och hitta kvitton direkt i kundportalen.',
+                'Öppna kundportalen för att uppdatera betalningsuppgifter och hantera din prenumeration.',
                 style: t.bodyMedium,
               ),
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: state.loading || _loadingPortal ? null : _openPortal,
+                onPressed: _loadingPortal ? null : _openPortal,
                 child: _loadingPortal
                     ? const SizedBox(
                         width: 20,
@@ -208,19 +103,6 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
                       )
                     : const Text('Hantera prenumeration'),
               ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () =>
-                      ref.read(entitlementsNotifierProvider.notifier).refresh(),
-                  child: const Text('Uppdatera status'),
-                ),
-              ),
-              if (state.loading) ...[
-                const SizedBox(height: 8),
-                const LinearProgressIndicator(minHeight: 2),
-              ],
             ],
           ),
         ),

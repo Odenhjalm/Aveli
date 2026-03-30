@@ -11,7 +11,6 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart';
-import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -21,14 +20,7 @@ import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
-import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/bootstrap/effects_policy.dart';
-
-const _aveliPrimaryGradient = LinearGradient(
-  colors: [kBrandTurquoise, kBrandAzure, kBrandLilac],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
 
 const Size _backgroundImageSize = Size(1536, 1024);
 
@@ -255,32 +247,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
     );
   }
 
-  Future<void> _startLandingMembershipCheckout(BuildContext context) async {
-    if (!_ensureAuthenticatedForCheckout(context)) return;
-    try {
-      final url = await ref
-          .read(checkoutApiProvider)
-          .startMembershipCheckout(interval: 'month');
-      if (!mounted) return;
-      context.push(RoutePath.checkout, extra: url);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kunde inte starta medlemskap: $e')),
-      );
-    }
-  }
-
-  bool _ensureAuthenticatedForCheckout(BuildContext context) {
-    final authState = ref.read(authControllerProvider);
-    if (authState.isAuthenticated) return true;
-    context.goNamed(
-      AppRoute.signup,
-      queryParameters: {'redirect': RoutePath.subscribe},
-    );
-    return false;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -412,12 +378,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       runSpacing: 12,
                       alignment: WrapAlignment.center,
                       children: [
-                        FilledButton(
-                          onPressed: hasEnvIssues
-                              ? null
-                              : () => _startLandingMembershipCheckout(context),
-                          child: const Text('Bli medlem'),
-                        ),
                         _GradientOutlineButton(
                           label: 'Logga in',
                           onTap: hasEnvIssues
@@ -617,18 +577,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
                           spacing: 10,
                           runSpacing: 10,
                           children: [
-                            _PrimaryGradientButton(
-                              label: 'Starta pröveperiod',
-                              onTap: hasEnvIssues
-                                  ? null
-                                  : () => _startLandingMembershipCheckout(
-                                      context,
-                                    ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 18,
-                                vertical: 12,
-                              ),
-                            ),
                             _GradientOutlineButton(
                               label: 'Se introduktionskurser',
                               onTap: hasEnvIssues ? null : _openIntroModal,
@@ -687,61 +635,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
 }
 
 /* ---------- Små UI-komponenter i denna fil ---------- */
-
-class _PrimaryGradientButton extends StatelessWidget {
-  const _PrimaryGradientButton({
-    required this.label,
-    required this.onTap,
-    this.padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-  });
-
-  final String label;
-  final VoidCallback? onTap;
-  final EdgeInsetsGeometry padding;
-
-  @override
-  Widget build(BuildContext context) {
-    final borderRadius = BorderRadius.circular(14);
-    Widget result = DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: _aveliPrimaryGradient,
-        borderRadius: borderRadius,
-        boxShadow: [
-          BoxShadow(
-            color: kBrandLilac.withAlpha(110),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: borderRadius,
-          onTap: onTap,
-          child: Padding(
-            padding: padding,
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: DesignTokens.buttonForegroundColor,
-                fontWeight: FontWeight.w800,
-                letterSpacing: .2,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    if (onTap == null) {
-      result = Opacity(opacity: 0.5, child: result);
-    }
-
-    return SizedBox(height: 48, child: result);
-  }
-}
 
 class _GradientOutlineButton extends StatelessWidget {
   const _GradientOutlineButton({

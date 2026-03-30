@@ -40,7 +40,6 @@ import 'package:aveli/features/courses/presentation/course_intro_redirect_page.d
 import 'package:aveli/features/courses/presentation/course_catalog_page.dart';
 import 'package:aveli/features/courses/presentation/course_page.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
-import 'package:aveli/features/courses/presentation/quiz_take_page.dart';
 import 'package:aveli/features/landing/presentation/landing_page.dart';
 import 'package:aveli/features/landing/presentation/legal/privacy_page.dart';
 import 'package:aveli/features/landing/presentation/legal/terms_page.dart';
@@ -402,19 +401,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.courseCatalog,
         name: AppRoute.courseCatalog,
         builder: (context, state) => const CourseCatalogPage(),
-      ),
-      GoRoute(
-        path: RoutePath.courseQuiz,
-        name: AppRoute.courseQuiz,
-        builder: (context, state) {
-          final extra = state.extra;
-          if (extra is! QuizRouteArgs ||
-              extra.quizId.trim().isEmpty ||
-              extra.courseId.trim().isEmpty) {
-            return const NotFoundPage();
-          }
-          return QuizTakePage(quizId: extra.quizId, courseId: extra.courseId);
-        },
       ),
       GoRoute(
         path: RoutePath.course,

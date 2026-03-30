@@ -10,12 +10,8 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
-import 'package:aveli/features/paywall/application/pricing_providers.dart';
-import 'package:aveli/features/paywall/data/course_pricing_api.dart';
-import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
-import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -30,8 +26,6 @@ class CoursePage extends ConsumerStatefulWidget {
 }
 
 class _CoursePageState extends ConsumerState<CoursePage> {
-  bool _ordering = false;
-
   @override
   Widget build(BuildContext context) {
     final asyncDetail = ref.watch(courseDetailProvider(widget.slug));
@@ -45,14 +39,10 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         body: Center(child: Text(_friendlyError(error))),
       ),
       data: (detail) {
-        final slug = (detail.course.slug?.isNotEmpty ?? false)
-            ? detail.course.slug!
-            : widget.slug;
         final cover = resolveCourseSummaryCover(
           detail.course,
           ref.read(mediaRepositoryProvider),
         );
-        final pricingAsync = ref.watch(coursePricingProvider(slug));
         final courseStateAsync = ref.watch(
           courseStateProvider(detail.course.id),
         );
@@ -63,12 +53,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
           onEnroll: () => _handleEnroll(detail),
           onOpenLesson: _openLesson,
           enrollState: ref.watch(enrollProvider(detail.course.id)),
-          buyButton: _buildBuyButton(
-            course: detail.course,
-            courseStateAsync: courseStateAsync,
-            courseSlug: slug,
-            pricingAsync: pricingAsync,
-          ),
+          buyButton: null,
         );
       },
     );
@@ -103,73 +88,6 @@ class _CoursePageState extends ConsumerState<CoursePage> {
   void _openLesson(String lessonId) {
     if (!mounted || !context.mounted) return;
     context.pushNamed(AppRoute.lesson, pathParameters: {'id': lessonId});
-  }
-
-  Widget? _buildBuyButton({
-    required CourseSummary course,
-    required AsyncValue<CourseAccessData?> courseStateAsync,
-    required String courseSlug,
-    required AsyncValue<CoursePricing> pricingAsync,
-  }) {
-    final courseState = courseStateAsync.valueOrNull;
-    final hasEnrollment = courseState?.hasEnrollment == true;
-    final isIntroCourse = course.step == CourseJourneyStep.intro;
-    final fallbackPrice = pricingAsync.maybeWhen(
-      data: (pricing) => pricing.amountCents,
-      orElse: () => null,
-    );
-    final priceCents = course.priceCents ?? fallbackPrice ?? 0;
-    final canPurchase = !isIntroCourse && !hasEnrollment && priceCents > 0;
-    if (!canPurchase) {
-      return null;
-    }
-
-    return pricingAsync.when(
-      loading: () => const SizedBox(
-        height: 44,
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => TextButton(
-        onPressed: () => ref.refresh(coursePricingProvider(courseSlug)),
-        child: const Text('Ladda pris igen'),
-      ),
-      data: (pricing) {
-        final formatted = formatCoursePriceFromOre(
-          amountOre: pricing.amountCents,
-          isFreeIntro: false,
-          debugContext: courseSlug.isEmpty ? 'CoursePage' : 'slug=$courseSlug',
-        );
-        return FilledButton(
-          onPressed: _ordering ? null : () => _startCourseCheckout(courseSlug),
-          child: _ordering
-              ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text('Köp hela kursen ($formatted)'),
-        );
-      },
-    );
-  }
-
-  Future<void> _startCourseCheckout(String slug) async {
-    if (!_ensureAuthenticated()) return;
-    setState(() => _ordering = true);
-    try {
-      final checkoutApi = ref.read(checkoutApiProvider);
-      final url = await checkoutApi.startCourseCheckout(slug: slug);
-      if (!mounted || !context.mounted) return;
-      context.push(RoutePath.checkout, extra: url);
-    } catch (error) {
-      if (!mounted || !context.mounted) return;
-      showSnack(
-        context,
-        'Kunde inte starta betalning: ${_friendlyError(error)}',
-      );
-    } finally {
-      if (mounted) setState(() => _ordering = false);
-    }
   }
 
   bool _ensureAuthenticated({

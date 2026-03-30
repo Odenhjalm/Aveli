@@ -14,7 +14,6 @@ class Course {
     this.coverMediaId,
     this.cover,
     this.videoUrl,
-    this.isFreeIntro = false,
     this.isPublished = false,
   });
 
@@ -29,9 +28,6 @@ class Course {
   final String? coverMediaId;
   final CourseCoverData? cover;
   final String? videoUrl;
-
-  @JsonKey(defaultValue: false)
-  final bool isFreeIntro;
 
   @JsonKey(defaultValue: false)
   final bool isPublished;

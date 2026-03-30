@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,23 +5,16 @@ import 'package:intl/intl.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/data/models/activity.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
-import 'package:aveli/features/home/application/home_audio_playlist_queue.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
-import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/features/media/application/media_playback_controller.dart';
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
-import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
@@ -32,10 +23,8 @@ import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
-import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/core/bootstrap/auth_boot_page.dart';
 
 class HomeDashboardPage extends ConsumerStatefulWidget {
@@ -46,70 +35,19 @@ class HomeDashboardPage extends ConsumerStatefulWidget {
 }
 
 class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
-  final Set<String> _loadingServiceIds = <String>{};
-  bool _redirecting = false;
-  Timer? _homeAudioPoller;
-
-  @override
-  void dispose() {
-    _homeAudioPoller?.cancel();
-    super.dispose();
-  }
-
-  void _syncHomeAudioPolling(AsyncValue<List<HomeAudioItem>> audioAsync) {
-    final items = audioAsync.valueOrNull;
-    final shouldPoll =
-        items?.any((item) {
-          final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
-          if (runtimeMediaId.isEmpty) return false;
-          final state = (item.playbackState ?? '').trim().toLowerCase();
-          return state == 'processing' || state == 'uploaded';
-        }) ??
-        false;
-
-    if (shouldPoll) {
-      _homeAudioPoller ??= Timer.periodic(const Duration(seconds: 5), (_) {
-        if (!mounted) return;
-        ref.invalidate(homeAudioProvider);
-      });
-      return;
-    }
-
-    _homeAudioPoller?.cancel();
-    _homeAudioPoller = null;
-  }
-
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final profile = authState.profile;
     if (profile == null) {
-      _homeAudioPoller?.cancel();
-      _homeAudioPoller = null;
       return const AuthBootPage();
     }
 
     final isTeacher = profile.isTeacher || profile.isAdmin;
-
-    final entitlementsState = ref.watch(entitlementsNotifierProvider);
     final feedAsync = ref.watch(homeFeedProvider);
     final servicesAsync = ref.watch(homeServicesProvider);
     final seminarsAsync = ref.watch(publicSeminarsProvider);
     final certificatesAsync = ref.watch(myCertificatesProvider);
-    final homeAudioAsync = ref.watch(homeAudioProvider);
-    _syncHomeAudioPolling(homeAudioAsync);
-    final homeAudioSection = _HomeAudioSection(audioAsync: homeAudioAsync);
-
-    if (!_redirecting &&
-        entitlementsState.data != null &&
-        entitlementsState.data?.membership.isActive != true &&
-        !isTeacher) {
-      _redirecting = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        context.go(RoutePath.subscribe);
-      });
-    }
 
     return AppScaffold(
       title: '',
@@ -173,21 +111,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final targetWidth = (constraints.maxWidth * 0.46)
-                                .clamp(520.0, constraints.maxWidth)
-                                .toDouble();
-                            return Align(
-                              alignment: Alignment.center,
-                              child: SizedBox(
-                                width: targetWidth,
-                                child: homeAudioSection,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 26),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -241,13 +164,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                     const SizedBox(height: 24),
                                     _ServicesSection(
                                       servicesAsync: servicesAsync,
-                                      isLoading: (id) =>
-                                          _loadingServiceIds.contains(id),
-                                      onCheckout: (service) =>
-                                          _handleServiceCheckout(
-                                            context,
-                                            service,
-                                          ),
                                       certificatesAsync: certificatesAsync,
                                       isAuthenticated:
                                           authState.isAuthenticated,
@@ -274,8 +190,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      homeAudioSection,
-                      const SizedBox(height: 22),
                       const CoursesShowcaseSection(
                         title: 'Utforska kurser',
                         layout: CoursesShowcaseLayout.vertical,
@@ -299,9 +213,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                       const SizedBox(height: 22),
                       _ServicesSection(
                         servicesAsync: servicesAsync,
-                        isLoading: (id) => _loadingServiceIds.contains(id),
-                        onCheckout: (service) =>
-                            _handleServiceCheckout(context, service),
                         certificatesAsync: certificatesAsync,
                         isAuthenticated: authState.isAuthenticated,
                       ),
@@ -311,857 +222,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
               ),
             );
           },
-        ),
-      ),
-    );
-  }
-
-  Future<void> _handleServiceCheckout(
-    BuildContext context,
-    Service service,
-  ) async {
-    if (_loadingServiceIds.contains(service.id)) return;
-    void showMessage(String message) {
-      if (!context.mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(message)));
-    }
-
-    setState(() => _loadingServiceIds.add(service.id));
-    try {
-      final checkoutApi = ref.read(checkoutApiProvider);
-      final url = await checkoutApi.startServiceCheckout(serviceId: service.id);
-      if (!context.mounted) return;
-      context.push(RoutePath.checkout, extra: url);
-    } catch (error, stackTrace) {
-      debugPrint('checkout failed: $error\n$stackTrace');
-      if (!context.mounted) return;
-      final failure = AppFailure.from(error, stackTrace);
-      showMessage('Kunde inte skapa beställning: ${failure.message}');
-    } finally {
-      if (mounted) {
-        setState(() => _loadingServiceIds.remove(service.id));
-      }
-    }
-  }
-}
-
-class _HomeAudioSection extends StatelessWidget {
-  const _HomeAudioSection({required this.audioAsync});
-
-  final AsyncValue<List<HomeAudioItem>> audioAsync;
-
-  @override
-  Widget build(BuildContext context) {
-    final cached = audioAsync.valueOrNull;
-    if (cached != null) {
-      if (cached.isEmpty) {
-        return const _NowPlayingShell(
-          child: MetaText('Inga ljudspår tillgängliga ännu.'),
-        );
-      }
-      return _HomeAudioList(items: cached);
-    }
-
-    return audioAsync.when(
-      loading: () => const _NowPlayingShell(
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => _NowPlayingShell(
-        child: Text(
-          'Kunde inte hämta ljud: ${AppFailure.from(error).message}',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ),
-      data: (items) {
-        if (items.isEmpty) {
-          return const _NowPlayingShell(
-            child: MetaText('Inga ljudspår tillgängliga ännu.'),
-          );
-        }
-        return _HomeAudioList(items: items);
-      },
-    );
-  }
-}
-
-class _HomeAudioList extends ConsumerStatefulWidget {
-  const _HomeAudioList({required this.items});
-
-  final List<HomeAudioItem> items;
-
-  @override
-  ConsumerState<_HomeAudioList> createState() => _HomeAudioListState();
-}
-
-class _HomeAudioListState extends ConsumerState<_HomeAudioList> {
-  static const Duration _errorSkipDelay = Duration(milliseconds: 500);
-  static const Set<String> _supportedAudioContentTypes = <String>{
-    'audio/mpeg',
-    'audio/mp3',
-  };
-
-  final HomeAudioPlaylistQueue _playlist = HomeAudioPlaylistQueue();
-  List<HomeAudioItem> _playlistItems = const <HomeAudioItem>[];
-  Map<String, HomeAudioItem> _itemById = const <String, HomeAudioItem>{};
-  String? _selectedId;
-  String? _statusMessage;
-  String? _loadingTrackId;
-  String? _activeSourceTrackId;
-  DateTime? _activeSourceExpiresAt;
-  InlineAudioPlayerVolumeState _playerVolumeState =
-      const InlineAudioPlayerVolumeState();
-  Timer? _errorSkipTimer;
-  int _playRequestToken = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncPlaylist();
-  }
-
-  @override
-  void didUpdateWidget(covariant _HomeAudioList oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final preferredCurrentId =
-        _selectedId ?? ref.read(mediaPlaybackControllerProvider).currentMediaId;
-    _syncPlaylist(preferredCurrentId: preferredCurrentId);
-  }
-
-  @override
-  void dispose() {
-    _errorSkipTimer?.cancel();
-    super.dispose();
-  }
-
-  void _syncPlaylist({String? preferredCurrentId}) {
-    final filtered = widget.items.toList(growable: false);
-    final index = <String, HomeAudioItem>{
-      for (final item in filtered) item.id: item,
-    };
-    _playlistItems = filtered;
-    _itemById = Map<String, HomeAudioItem>.unmodifiable(index);
-    _playlist.setItems(
-      filtered
-          .map(
-            (item) => HomeAudioQueueItem(
-              id: item.id,
-              isPlayable: _canAttemptPlayback(item),
-            ),
-          )
-          .toList(growable: false),
-      preferredCurrentId: preferredCurrentId,
-    );
-
-    if ((preferredCurrentId ?? '').trim().isEmpty &&
-        (_selectedId == null || !_itemById.containsKey(_selectedId))) {
-      final firstPlayableIndex = _playlist.items.indexWhere(
-        (item) => item.isPlayable,
-      );
-      if (firstPlayableIndex >= 0) {
-        _playlist.playAt(firstPlayableIndex);
-      }
-    }
-
-    if (_selectedId != null && !_itemById.containsKey(_selectedId)) {
-      _selectedId = null;
-    }
-    if (_playlist.hasRemainingPlayableItems &&
-        _statusMessage == 'Kan inte spela upp just nu.') {
-      _statusMessage = null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_playlistItems.isEmpty) {
-      return _buildUnavailableState(context);
-    }
-
-    final playback = ref.watch(mediaPlaybackControllerProvider);
-    final selected = _resolveSelected(playback);
-    if (selected == null) {
-      return _buildUnavailableState(context);
-    }
-
-    final durationHint = _durationHintFor(selected);
-    final isActive =
-        playback.currentMediaId == selected.id &&
-        playback.isPlaying &&
-        playback.mediaType == MediaPlaybackType.audio;
-    final activeUrl = playback.url?.trim() ?? '';
-    final hasUrl = activeUrl.isNotEmpty;
-    final isLoadingSelectedTrack = _loadingTrackId == selected.id;
-    final showLoading =
-        isLoadingSelectedTrack || (isActive && playback.isLoading);
-    final canPlay = _canAttemptPlayback(selected);
-    final statusMessage = _statusMessage ?? _statusMessageForItem(selected);
-    final canSkip = _playlist.hasRemainingPlayableItems;
-    final sourceExpiresAt = _activeSourceTrackId == selected.id
-        ? _activeSourceExpiresAt
-        : null;
-
-    return _NowPlayingShell(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const _NowPlayingArtwork(),
-              const SizedBox(width: 24),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      selected.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (selected.courseTitle.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          selected.courseTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    if (statusMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          statusMessage,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: DesignTokens.bodyTextColor,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Bibliotek',
-                onPressed: _playlistItems.isEmpty
-                    ? null
-                    : () => _openLibrary(context, _playlistItems),
-                icon: const Icon(Icons.library_music_outlined),
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              IconButton(
-                tooltip: 'Föregående',
-                onPressed: canSkip ? () => unawaited(_playPrev()) : null,
-                icon: const Icon(Icons.skip_previous_rounded),
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              IconButton(
-                tooltip: 'Nästa',
-                onPressed: canSkip
-                    ? () => unawaited(_playNext(auto: false))
-                    : null,
-                icon: const Icon(Icons.skip_next_rounded),
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 6),
-              if (isActive)
-                IconButton.filled(
-                  tooltip: 'Stoppa',
-                  onPressed: _stopPlayback,
-                  style: IconButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                  icon: const Icon(Icons.stop_rounded),
-                )
-              else
-                IconButton.filled(
-                  tooltip: 'Spela',
-                  onPressed: canPlay && !isLoadingSelectedTrack
-                      ? () => unawaited(_playItem(selected))
-                      : null,
-                  style: IconButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                  icon: const Icon(Icons.play_arrow_rounded),
-                ),
-            ],
-          ),
-          if (showLoading)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: LinearProgressIndicator(),
-            ),
-          if (isActive && hasUrl) ...[
-            const SizedBox(height: 12),
-            InlineAudioPlayer(
-              url: activeUrl,
-              sourceExpiresAt: sourceExpiresAt,
-              sourceLoader: () => _resolvePlaybackSource(selected),
-              initialVolumeState: _playerVolumeState,
-              onVolumeStateChanged: _handleVolumeStateChanged,
-              title: null,
-              durationHint: durationHint,
-              autoPlay: true,
-              compact: true,
-              onEnded: () => _handleTrackEnded(selected.id),
-              onError: (message) => _handleTrackError(selected.id, message),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUnavailableState(BuildContext context) {
-    final statusMessage = _statusMessage ?? 'Kan inte spela upp just nu.';
-    return _NowPlayingShell(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const _NowPlayingArtwork(),
-          const SizedBox(width: 24),
-          Expanded(
-            child: Text(
-              statusMessage,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Bibliotek',
-            onPressed: _playlistItems.isEmpty
-                ? null
-                : () => _openLibrary(context, _playlistItems),
-            icon: const Icon(Icons.library_music_outlined),
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  HomeAudioItem? _resolveSelected(MediaPlaybackState playback) {
-    final activeId = playback.currentMediaId;
-    if (activeId != null && _itemById.containsKey(activeId)) {
-      return _itemById[activeId];
-    }
-
-    final selectedId = _selectedId;
-    if (selectedId != null && _itemById.containsKey(selectedId)) {
-      return _itemById[selectedId];
-    }
-
-    final currentQueueId = _playlist.currentItem?.id;
-    if (currentQueueId != null && _itemById.containsKey(currentQueueId)) {
-      return _itemById[currentQueueId];
-    }
-    return _playlistItems.isNotEmpty ? _playlistItems.first : null;
-  }
-
-  bool _isSupportedHomePlaylistItem(HomeAudioItem item) {
-    // Home playlist is intentionally audio-only for now to avoid web video
-    // decode/pipeline failures; we keep selection deterministic to mp3 audio.
-    final kind = item.kind.trim().toLowerCase();
-    if (kind != 'audio') return false;
-    final contentType = (item.contentType ?? '').trim().toLowerCase();
-    if (contentType.isEmpty) return true;
-    return _supportedAudioContentTypes.contains(contentType);
-  }
-
-  bool _canAttemptPlayback(HomeAudioItem item) {
-    if (!_isSupportedHomePlaylistItem(item)) return false;
-    final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
-    if (runtimeMediaId.isEmpty) return false;
-    return item.isPlayable;
-  }
-
-  String? _statusMessageForItem(HomeAudioItem item) {
-    if (!_isSupportedHomePlaylistItem(item)) {
-      return 'Hemspelaren använder mp3-ljud just nu.';
-    }
-    if (item.isPlayable) return null;
-    final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
-    if (runtimeMediaId.isEmpty) {
-      return 'Runtime-ljud saknas för detta spår.';
-    }
-    final state = (item.playbackState ?? '').trim().toLowerCase();
-    final reason = (item.failureReason ?? '').trim().toLowerCase();
-    switch (state) {
-      case 'processing':
-      case 'uploaded':
-        return 'Ljudet bearbetas…';
-      case 'failed':
-        if (reason == 'missing_storage_object' ||
-            reason == 'legacy_object_not_found') {
-          return 'Ljudfilen saknas för detta spår.';
-        }
-        if (reason == 'missing_asset_link') {
-          return 'Ljudreferensen saknas för detta spår.';
-        }
-        if (reason == 'unsupported_media_contract' ||
-            reason == 'invalid_content_type' ||
-            reason == 'invalid_kind') {
-          return 'Ljudformatet stöds inte i hemspelaren.';
-        }
-        return 'Ljudet kunde inte göras spelbart.';
-      case 'missing':
-        return 'Ljudspåret finns inte längre.';
-      case 'inactive':
-        return 'Ljudspåret är inte aktivt.';
-      case 'unavailable':
-        return 'Ljudet är inte tillgängligt just nu.';
-    }
-    if (reason == 'asset_not_ready' || reason == 'legacy_fallback_required') {
-      return 'Ljudet bearbetas…';
-    }
-    return 'Ljudet är inte spelbart just nu.';
-  }
-
-  Duration? _durationHintFor(HomeAudioItem item) {
-    final seconds = item.durationSeconds;
-    if (seconds == null || seconds <= 0) return null;
-    return Duration(seconds: seconds);
-  }
-
-  void _handleVolumeStateChanged(InlineAudioPlayerVolumeState state) {
-    if (_playerVolumeState == state || !mounted) return;
-    setState(() => _playerVolumeState = state);
-  }
-
-  void _alignQueueToItem(String itemId) {
-    final index = _playlist.indexOf(itemId);
-    if (index < 0) return;
-    _playlist.playAt(index);
-    _selectedId = itemId;
-  }
-
-  Future<void> _playItem(HomeAudioItem item) async {
-    final requestToken = ++_playRequestToken;
-    _errorSkipTimer?.cancel();
-    _alignQueueToItem(item.id);
-    _playlist.clearFailure(item.id);
-    if (mounted) {
-      setState(() {
-        _statusMessage = null;
-        _loadingTrackId = item.id;
-        _activeSourceTrackId = null;
-        _activeSourceExpiresAt = null;
-      });
-    }
-
-    if (!_canAttemptPlayback(item)) {
-      if (requestToken != _playRequestToken) return;
-      if (mounted) {
-        setState(() => _loadingTrackId = null);
-      }
-      _handleTrackError(
-        item.id,
-        _statusMessageForItem(item) ?? 'Fel vid uppspelning.',
-      );
-      return;
-    }
-
-    final durationHint = _durationHintFor(item);
-    try {
-      ref.read(mediaPlaybackControllerProvider.notifier).stop();
-      final source = await _resolvePlaybackSource(item);
-      if (!mounted || requestToken != _playRequestToken) return;
-      await ref
-          .read(mediaPlaybackControllerProvider.notifier)
-          .play(
-            mediaId: item.id,
-            mediaType: MediaPlaybackType.audio,
-            url: source.url,
-            title: item.displayTitle,
-            durationHint: durationHint,
-          );
-      if (!mounted || requestToken != _playRequestToken) return;
-      if (mounted) {
-        setState(() {
-          _statusMessage = null;
-          _loadingTrackId = null;
-          _activeSourceTrackId = item.id;
-          _activeSourceExpiresAt = source.expiresAt?.toUtc();
-        });
-      }
-    } catch (error, stackTrace) {
-      if (!mounted || requestToken != _playRequestToken) return;
-      if (mounted) {
-        setState(() => _loadingTrackId = null);
-      }
-      final failure = AppFailure.from(error, stackTrace);
-      _handleTrackError(item.id, failure.message);
-    }
-  }
-
-  Future<void> _playNext({required bool auto}) async {
-    final next = _playlist.playNext(auto: auto);
-    if (next == null) {
-      _stopWithUnavailableState();
-      return;
-    }
-    final item = _itemById[next.id];
-    if (item == null) {
-      _stopWithUnavailableState();
-      return;
-    }
-    await _playItem(item);
-  }
-
-  Future<void> _playPrev() async {
-    final previous = _playlist.playPrev();
-    if (previous == null) {
-      _stopWithUnavailableState();
-      return;
-    }
-    final item = _itemById[previous.id];
-    if (item == null) {
-      _stopWithUnavailableState();
-      return;
-    }
-    await _playItem(item);
-  }
-
-  void _handleTrackEnded(String mediaId) {
-    _errorSkipTimer?.cancel();
-    _alignQueueToItem(mediaId);
-    unawaited(_playNext(auto: true));
-  }
-
-  void _handleTrackError(String mediaId, String rawMessage) {
-    final message = rawMessage.trim();
-    if (message.isNotEmpty) {
-      debugPrint('Home player playback error ($mediaId): $message');
-    }
-    _alignQueueToItem(mediaId);
-    _playlist.markCurrentFailed();
-
-    if (_playlist.allPlayableItemsFailed ||
-        !_playlist.hasRemainingPlayableItems) {
-      _stopWithUnavailableState();
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        _statusMessage = 'Spåret kunde inte spelas upp, hoppar vidare…';
-      });
-    }
-
-    _errorSkipTimer?.cancel();
-    _errorSkipTimer = Timer(_errorSkipDelay, () {
-      if (!mounted) return;
-      unawaited(_playNext(auto: true));
-    });
-  }
-
-  void _stopWithUnavailableState() {
-    _errorSkipTimer?.cancel();
-    _stopPlayback();
-    if (!mounted) return;
-    setState(() {
-      _statusMessage = 'Kan inte spela upp just nu.';
-    });
-  }
-
-  void _stopPlayback() {
-    _playRequestToken++;
-    ref.read(mediaPlaybackControllerProvider.notifier).stop();
-    if (!mounted) return;
-    setState(() {
-      _loadingTrackId = null;
-      _activeSourceTrackId = null;
-      _activeSourceExpiresAt = null;
-    });
-  }
-
-  Future<InlineAudioPlaybackSource> _resolvePlaybackSource(
-    HomeAudioItem item,
-  ) async {
-    final runtimeMediaId = (item.runtimeMediaId ?? '').trim();
-    if (runtimeMediaId.isEmpty) {
-      throw StateError('Runtime-ljud saknas för detta spår.');
-    }
-    final repo = ref.read(mediaPipelineRepositoryProvider);
-    final playbackUrl = await repo.fetchRuntimePlaybackUrl(runtimeMediaId);
-    return InlineAudioPlaybackSource(url: playbackUrl);
-  }
-
-  void _openLibrary(BuildContext context, List<HomeAudioItem> items) {
-    final selectedId = _resolveLibrarySelection(items).id;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        final theme = Theme.of(sheetContext);
-        final height = MediaQuery.of(sheetContext).size.height * 0.7;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: _GlassSection(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                height: height,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'Bibliotek',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '${items.length} spår',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: items.length,
-                        separatorBuilder: (_, index) =>
-                            const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final item = items[index];
-                          final isSelected = item.id == selectedId;
-                          return _AudioRow(
-                            item: item,
-                            isSelected: isSelected,
-                            onTap: () {
-                              if (!mounted) return;
-                              setState(() {
-                                _selectedId = item.id;
-                                _statusMessage = _statusMessageForItem(item);
-                                _alignQueueToItem(item.id);
-                              });
-                              Navigator.of(sheetContext).pop();
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  HomeAudioItem _resolveLibrarySelection(List<HomeAudioItem> items) {
-    final selectedId = _selectedId;
-    if (selectedId != null) {
-      final selected = _itemById[selectedId];
-      if (selected != null) return selected;
-    }
-    final current = _playlist.currentItem;
-    if (current != null) {
-      final currentItem = _itemById[current.id];
-      if (currentItem != null) return currentItem;
-    }
-    return items.first;
-  }
-}
-
-class _AudioRow extends StatelessWidget {
-  const _AudioRow({
-    required this.item,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final HomeAudioItem item;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final durationSeconds = item.durationSeconds;
-    final duration = durationSeconds != null && durationSeconds > 0
-        ? _formatDuration(Duration(seconds: durationSeconds))
-        : null;
-    final border = BorderSide(
-      color: isSelected
-          ? scheme.primary.withValues(alpha: 0.5)
-          : Colors.white.withValues(alpha: 0.12),
-    );
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? scheme.primary.withValues(alpha: 0.14)
-              : Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.fromBorderSide(border),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
-              size: 18,
-              color: isSelected ? scheme.primary : null,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.displayTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (item.courseTitle.trim().isNotEmpty)
-                    Text(
-                      item.courseTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (duration != null)
-              Text(
-                duration,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _formatDuration(Duration duration) {
-  String two(int n) => n.toString().padLeft(2, '0');
-  final totalSeconds = duration.inSeconds;
-  final hours = totalSeconds ~/ 3600;
-  final minutes = (totalSeconds % 3600) ~/ 60;
-  final seconds = totalSeconds % 60;
-  final mm = two(minutes);
-  final ss = two(seconds);
-  return hours > 0 ? '$hours:$mm:$ss' : '$mm:$ss';
-}
-
-class _NowPlayingShell extends StatelessWidget {
-  const _NowPlayingShell({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final surface = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.white.withValues(alpha: 0.32);
-    final border = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.18);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: border),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              surface,
-              surface.withValues(
-                alpha: theme.brightness == Brightness.dark ? 0.04 : 0.26,
-              ),
-            ],
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: const Alignment(0, -0.2),
-                      radius: 1.2,
-                      colors: [
-                        theme.colorScheme.primary.withValues(alpha: 0.12),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(padding: const EdgeInsets.all(18), child: child),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NowPlayingArtwork extends StatelessWidget {
-  const _NowPlayingArtwork();
-
-  @override
-  Widget build(BuildContext context) {
-    const size = 76.0;
-    return SizedBox(
-      height: size,
-      width: size,
-      child: Opacity(
-        opacity: 0.92,
-        child: Image(
-          image: SafeMedia.resizedProvider(
-            AppImages.logo,
-            cacheWidth: SafeMedia.cacheDimension(context, size, max: 384),
-            cacheHeight: SafeMedia.cacheDimension(context, size, max: 384),
-          ),
-          fit: BoxFit.cover,
-          filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
-          gaplessPlayback: true,
         ),
       ),
     );
@@ -1417,15 +477,11 @@ class _SeminarHighlightTile extends StatelessWidget {
 class _ServicesSection extends StatelessWidget {
   const _ServicesSection({
     required this.servicesAsync,
-    required this.onCheckout,
-    required this.isLoading,
     required this.certificatesAsync,
     required this.isAuthenticated,
   });
 
   final AsyncValue<List<Service>> servicesAsync;
-  final Future<void> Function(Service service) onCheckout;
-  final bool Function(String id) isLoading;
   final AsyncValue<List<Certificate>> certificatesAsync;
   final bool isAuthenticated;
 
@@ -1455,32 +511,10 @@ class _ServicesSection extends StatelessWidget {
             children: services
                 .take(5)
                 .map((service) {
-                  final loading = isLoading(service.id);
                   final gate = _resolveGate(service);
-                  VoidCallback? action;
-                  switch (gate.action) {
-                    case _GateAction.checkout:
-                      action = () => onCheckout(service);
-                      break;
-                    case _GateAction.login:
-                      action = () => _goToLogin(context, service);
-                      break;
-                    case null:
-                      action = null;
-                  }
-                  final effectiveAction = (loading || action == null)
-                      ? null
-                      : action;
-                  final buttonChild = loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(gate.label);
+                  final action = gate.action == _GateAction.login
+                      ? () => _goToLogin(context, service)
+                      : null;
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: _GlassTile(
@@ -1531,10 +565,11 @@ class _ServicesSection extends StatelessWidget {
                                 style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(fontWeight: FontWeight.bold),
                               ),
-                              GradientButton(
-                                onPressed: effectiveAction,
-                                child: buttonChild,
-                              ),
+                              if (action != null)
+                                GradientButton(
+                                  onPressed: action,
+                                  child: Text(gate.label),
+                                ),
                             ],
                           ),
                           if (gate.helper != null) ...[
@@ -1560,12 +595,16 @@ class _ServicesSection extends StatelessWidget {
     Service service,
   ) {
     if (!service.requiresCertification) {
-      return (action: _GateAction.checkout, label: 'Boka', helper: null);
+      return (
+        action: null,
+        label: 'Boka',
+        helper: 'Bokning är inte tillgänglig i appen just nu.',
+      );
     }
     if (!isAuthenticated) {
       return (
         action: _GateAction.login,
-        label: 'Logga in för att boka',
+        label: 'Logga in',
         helper: 'Logga in för att visa dina certifieringar.',
       );
     }
@@ -1585,7 +624,11 @@ class _ServicesSection extends StatelessWidget {
           return cert.title.trim().toLowerCase() == requiredArea.toLowerCase();
         });
         if (hasMatch) {
-          return (action: _GateAction.checkout, label: 'Boka', helper: null);
+          return (
+            action: null,
+            label: 'Boka',
+            helper: 'Bokning är inte tillgänglig i appen just nu.',
+          );
         }
         final helper = requiredArea.isEmpty
             ? 'Verifierad certifiering krävs innan bokning.'
@@ -1608,7 +651,7 @@ class _ServicesSection extends StatelessWidget {
   }
 }
 
-enum _GateAction { checkout, login }
+enum _GateAction { login }
 
 class _SectionCard extends StatelessWidget {
   const _SectionCard({required this.title, required this.child, this.trailing});

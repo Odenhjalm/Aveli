@@ -9,7 +9,6 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:aveli/core/routing/route_paths.dart';
-import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class SubscriptionWebViewPage extends ConsumerStatefulWidget {
@@ -25,7 +24,6 @@ class SubscriptionWebViewPage extends ConsumerStatefulWidget {
 class _SubscriptionWebViewPageState
     extends ConsumerState<SubscriptionWebViewPage> {
   late final WebViewController _controller;
-  bool _refreshed = false;
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
@@ -69,12 +67,6 @@ class _SubscriptionWebViewPageState
         ),
       )
       ..loadRequest(Uri.parse(widget.url));
-  }
-
-  Future<void> _refreshEntitlements() async {
-    if (_refreshed) return;
-    _refreshed = true;
-    await ref.read(entitlementsNotifierProvider.notifier).refresh();
   }
 
   void _ensureWebViewPlatform() {
@@ -125,7 +117,6 @@ class _SubscriptionWebViewPageState
 
     return PopScope(
       onPopInvokedWithResult: (didPop, _) async {
-        await _refreshEntitlements();
         if (!context.mounted) return;
         if (!didPop) {
           Navigator.of(context).pop();

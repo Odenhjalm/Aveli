@@ -7,7 +7,6 @@ import 'package:aveli/shared/widgets/media_player.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/service.dart';
@@ -19,7 +18,6 @@ import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
-import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/widgets/app_network_image.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
 
@@ -33,8 +31,6 @@ class TeacherProfilePage extends ConsumerStatefulWidget {
 }
 
 class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
-  bool _buying = false;
-
   @override
   Widget build(BuildContext context) {
     final asyncProfile = ref.watch(teacherProfileProvider(widget.userId));
@@ -102,10 +98,8 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
               const SizedBox(height: 8),
               _ServicesCard(
                 services: state.services,
-                buying: _buying,
                 viewerCertificates: viewerCerts,
                 isAuthenticated: session.isAuthenticated,
-                onBuy: _buyService,
                 onRequireLogin: _goToLogin,
               ),
               if (state.profileMedia.isNotEmpty) ...[
@@ -126,40 +120,6 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
         );
       },
     );
-  }
-
-  Future<void> _buyService(Service service) async {
-    final gate = evaluateCertificationGate(
-      service: service,
-      viewerCertificates: ref.read(myCertificatesProvider),
-      isAuthenticated: ref.read(routeSessionSnapshotProvider).isAuthenticated,
-    );
-    if (!gate.allowed) {
-      if (gate.requiresAuth) {
-        _goToLogin();
-      } else if (gate.message != null) {
-        _showSnack(gate.message!);
-      } else if (gate.pending) {
-        _showSnack('Vänta tills behörigheten har kontrollerats.');
-      }
-      return;
-    }
-    final price = service.priceCents;
-    if (price <= 0) {
-      _showSnack('Tjänsten saknar pris och kan inte bokas just nu.');
-      return;
-    }
-    setState(() => _buying = true);
-    try {
-      final checkoutApi = ref.read(checkoutApiProvider);
-      final url = await checkoutApi.startServiceCheckout(serviceId: service.id);
-      if (!mounted) return;
-      context.push(RoutePath.checkout, extra: url);
-    } catch (error) {
-      _showSnack('Kunde inte initiera köp: ${_friendlyError(error)}');
-    } finally {
-      if (mounted) setState(() => _buying = false);
-    }
   }
 
   void _goToLogin() {
@@ -280,18 +240,14 @@ class _CertificatesCard extends StatelessWidget {
 class _ServicesCard extends StatelessWidget {
   const _ServicesCard({
     required this.services,
-    required this.buying,
     required this.viewerCertificates,
     required this.isAuthenticated,
-    required this.onBuy,
     required this.onRequireLogin,
   });
 
   final List<Service> services;
-  final bool buying;
   final AsyncValue<List<Certificate>> viewerCertificates;
   final bool isAuthenticated;
-  final Future<void> Function(Service) onBuy;
   final VoidCallback onRequireLogin;
 
   @override
@@ -320,8 +276,6 @@ class _ServicesCard extends StatelessWidget {
                 return _ServiceTile(
                   service: service,
                   gate: gate,
-                  buying: buying,
-                  onBuy: () => onBuy(service),
                   onRequireLogin: onRequireLogin,
                 );
               }),
@@ -634,15 +588,11 @@ class _ServiceTile extends StatelessWidget {
   const _ServiceTile({
     required this.service,
     required this.gate,
-    required this.buying,
-    required this.onBuy,
     required this.onRequireLogin,
   });
 
   final Service service;
   final CertificationGateResult gate;
-  final bool buying;
-  final Future<void> Function() onBuy;
   final VoidCallback onRequireLogin;
 
   @override
@@ -650,25 +600,20 @@ class _ServiceTile extends StatelessWidget {
     final theme = Theme.of(context);
     final t = theme.textTheme;
     final priceLabel = '${(service.priceCents / 100).toStringAsFixed(2)} kr';
-    final isBusy = buying || gate.pending;
     final buttonLabel = gate.pending
         ? 'Kontrollerar behörighet...'
         : gate.requiresAuth
-        ? 'Logga in för att boka'
-        : gate.allowed
-        ? 'Boka – $priceLabel'
+        ? 'Logga in'
         : 'Certifiering krävs';
     final onPressed = gate.pending
         ? null
         : gate.requiresAuth
         ? onRequireLogin
-        : gate.allowed && !buying
-        ? onBuy
         : null;
     final showLock = !gate.allowed && !gate.pending;
 
     Widget buttonChild;
-    if (isBusy) {
+    if (gate.pending) {
       buttonChild = const SizedBox(
         height: 18,
         width: 18,
@@ -735,19 +680,31 @@ class _ServiceTile extends StatelessWidget {
                       if (i < subtitleChildren.length - 1)
                         const SizedBox(height: 4),
                     ],
+                    if (gate.allowed) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Bokning är inte tillgänglig i appen just nu.',
+                        style: t.bodyMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 160),
-              child: ElevatedButton(onPressed: onPressed, child: buttonChild),
+          if (onPressed != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 160),
+                child: ElevatedButton(onPressed: onPressed, child: buttonChild),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

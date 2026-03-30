@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/core/routing/route_paths.dart';
-import 'package:aveli/features/payments/application/payments_providers.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_sessions_repository.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -24,7 +20,7 @@ class SeminarBookingPage extends ConsumerStatefulWidget {
 
 class _SeminarBookingPageState extends ConsumerState<SeminarBookingPage> {
   String? _selectedSlotId;
-  bool _processingPayment = false;
+  final bool _processingPayment = false;
   String? _errorMessage;
 
   @override
@@ -69,26 +65,9 @@ class _SeminarBookingPageState extends ConsumerState<SeminarBookingPage> {
       return;
     }
     setState(() {
-      _processingPayment = true;
-      _errorMessage = null;
+      _errorMessage =
+          'Betalning för livesessioner är inte tillgänglig i appen.';
     });
-    try {
-      final service = ref.read(stripeCheckoutServiceProvider);
-      final result = await service.createSessionCheckout(
-        sessionId: session.id,
-        sessionSlotId: slotId,
-      );
-      if (!mounted) return;
-      context.push(RoutePath.checkout, extra: result.checkoutUrl);
-    } on AppFailure catch (failure) {
-      setState(() => _errorMessage = failure.message);
-    } catch (error) {
-      setState(() => _errorMessage = error.toString());
-    } finally {
-      if (mounted) {
-        setState(() => _processingPayment = false);
-      }
-    }
   }
 }
 

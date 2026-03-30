@@ -78,24 +78,6 @@ final lessonDetailProvider =
       return repo.fetchLessonDetail(lessonId);
     });
 
-final courseQuizInfoProvider =
-    AutoDisposeFutureProvider.family<CourseQuizInfo, String>((
-      ref,
-      courseId,
-    ) async {
-      final repo = ref.watch(coursesRepositoryProvider);
-      return repo.fetchQuizInfo(courseId);
-    });
-
-final quizQuestionsProvider =
-    AutoDisposeFutureProvider.family<List<QuizQuestion>, String>((
-      ref,
-      quizId,
-    ) async {
-      final repo = ref.watch(coursesRepositoryProvider);
-      return repo.fetchQuizQuestions(quizId);
-    });
-
 class CourseProgressRequest {
   CourseProgressRequest(List<String> ids)
     : courseIds = List.unmodifiable(ids..sort());
@@ -157,32 +139,3 @@ final enrollProvider =
       CourseAccessData?,
       String
     >(EnrollController.new);
-
-class QuizSubmissionController
-    extends AutoDisposeFamilyAsyncNotifier<Map<String, dynamic>?, String> {
-  late final String _quizId;
-
-  @override
-  FutureOr<Map<String, dynamic>?> build(String quizId) {
-    _quizId = quizId;
-    return null;
-  }
-
-  Future<void> submit(Map<String, dynamic> answers) async {
-    final repo = ref.read(coursesRepositoryProvider);
-    state = const AsyncLoading();
-    try {
-      final result = await repo.submitQuiz(quizId: _quizId, answers: answers);
-      state = AsyncData(result);
-    } catch (error, stackTrace) {
-      state = AsyncError(AppFailure.from(error, stackTrace), stackTrace);
-    }
-  }
-}
-
-final quizSubmissionProvider =
-    AutoDisposeAsyncNotifierProviderFamily<
-      QuizSubmissionController,
-      Map<String, dynamic>?,
-      String
-    >(QuizSubmissionController.new);

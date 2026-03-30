@@ -175,47 +175,6 @@ class CoursesRepository {
     );
     return CourseAccessData.fromJson(res);
   }
-
-  Future<CourseQuizInfo> fetchQuizInfo(String courseId) async {
-    try {
-      final res = await _client.get<Map<String, dynamic>>(
-        '/courses/$courseId/quiz',
-      );
-      return CourseQuizInfo.fromJson(res);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
-  }
-
-  Future<List<QuizQuestion>> fetchQuizQuestions(String quizId) async {
-    try {
-      final res = await _client.get<Map<String, dynamic>>(
-        '/courses/quiz/$quizId/questions',
-      );
-      return (res['items'] as List? ?? [])
-          .map(
-            (e) => QuizQuestion.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
-  }
-
-  Future<Map<String, dynamic>> submitQuiz({
-    required String quizId,
-    required Map<String, dynamic> answers,
-  }) async {
-    try {
-      final res = await _client.post<Map<String, dynamic>>(
-        '/courses/quiz/$quizId/submit',
-        body: {'answers': answers},
-      );
-      return res;
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
-  }
 }
 
 class CourseDetailData {
@@ -318,11 +277,7 @@ class CourseSummary {
     this.cover,
     this.videoUrl,
     this.branch,
-    this.stepLevel,
-    this.courseFamily,
     this.createdBy,
-    this.isFreeIntro = false,
-    this.journeyStep,
     this.isPublished = false,
     this.priceCents,
   });
@@ -337,11 +292,7 @@ class CourseSummary {
   final CourseCoverData? cover;
   final String? videoUrl;
   final String? branch;
-  final CourseJourneyStep? stepLevel;
-  final String? courseFamily;
   final String? createdBy;
-  final bool isFreeIntro;
-  final CourseJourneyStep? journeyStep;
   final bool isPublished;
   final int? priceCents;
 
@@ -362,12 +313,7 @@ class CourseSummary {
         : null,
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
-    stepLevel: courseJourneyStepFromApi(json['step']),
-    courseFamily: json['course_family'] as String?,
     createdBy: json['created_by'] as String?,
-    isFreeIntro:
-        courseJourneyStepFromApi(json['step']) == CourseJourneyStep.intro,
-    journeyStep: courseJourneyStepFromApi(json['step']),
     isPublished: json['is_published'] == true,
     priceCents: _asInt(json['price_amount_cents']),
   );
@@ -577,55 +523,4 @@ class CourseOrderSummary {
     }
     return DateTime.now();
   }
-}
-
-class CourseQuizInfo {
-  const CourseQuizInfo({this.quizId, this.certified = false});
-
-  final String? quizId;
-  final bool certified;
-
-  factory CourseQuizInfo.fromJson(Map<String, dynamic> json) => CourseQuizInfo(
-    quizId: json['quiz_id'] as String?,
-    certified: json['certified'] == true,
-  );
-}
-
-class QuizQuestion {
-  const QuizQuestion({
-    required this.id,
-    required this.position,
-    required this.kind,
-    required this.prompt,
-    required this.options,
-  });
-
-  final String id;
-  final int position;
-  final String kind;
-  final String prompt;
-  final List<String> options;
-
-  factory QuizQuestion.fromJson(Map<String, dynamic> json) => QuizQuestion(
-    id: json['id'] as String,
-    position: CourseSummary._asInt(json['position']) ?? 0,
-    kind: (json['kind'] ?? '') as String,
-    prompt: (json['prompt'] ?? '') as String,
-    options: _parseOptions(json['options']),
-  );
-}
-
-List<String> _parseOptions(Object? rawOptions) {
-  if (rawOptions is List) {
-    return rawOptions.map((value) => value.toString()).toList(growable: false);
-  }
-  if (rawOptions is Map) {
-    return rawOptions.values
-        .map((value) => value.toString())
-        .toList(growable: false);
-  }
-  if (rawOptions is String && rawOptions.trim().isNotEmpty) {
-    return rawOptions.split('\n').map((value) => value.trim()).toList();
-  }
-  return const <String>[];
 }

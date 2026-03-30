@@ -59,8 +59,6 @@ class CourseIntroPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 24),
                   _IntroVideoPreview(courseId: courseId),
-                  const SizedBox(height: 16),
-                  _QuizActions(courseId: courseId),
                   const SizedBox(height: 24),
                   Align(
                     alignment: Alignment.centerRight,
@@ -117,71 +115,5 @@ class _IntroVideoPreview extends ConsumerWidget {
   String _friendlyError(Object error) {
     if (error is AppFailure) return error.message;
     return 'Kunde inte ladda kursintro just nu.';
-  }
-}
-
-class _QuizActions extends ConsumerWidget {
-  const _QuizActions({required this.courseId});
-
-  final String courseId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (courseId.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final info = ref.watch(courseQuizInfoProvider(courseId));
-    return info.when(
-      loading: () => const SizedBox(
-        height: 36,
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          _friendlyError(error),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.error,
-          ),
-        ),
-      ),
-      data: (data) {
-        final quizId = data.quizId;
-        final certified = data.certified;
-        if (quizId == null) {
-          return const Align(
-            alignment: Alignment.centerLeft,
-            child: Text('Det finns inget quiz för denna kurs ännu.'),
-          );
-        }
-        return Row(
-          children: [
-            if (certified)
-              const Padding(
-                padding: EdgeInsets.only(right: 12),
-                child: Chip(
-                  avatar: Icon(Icons.verified, color: Color(0xFF16A34A)),
-                  label: Text('Certifierad'),
-                  backgroundColor: Color(0xFFDCFCE7),
-                ),
-              ),
-            const Spacer(),
-            OutlinedButton.icon(
-              onPressed: () => context.pushNamed(
-                AppRoute.courseQuiz,
-                extra: QuizRouteArgs(quizId: quizId, courseId: courseId),
-              ),
-              icon: const Icon(Icons.quiz_outlined),
-              label: const Text('Gör provet'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  String _friendlyError(Object error) {
-    if (error is AppFailure) return error.message;
-    return 'Kunde inte ladda quiz-information just nu.';
   }
 }

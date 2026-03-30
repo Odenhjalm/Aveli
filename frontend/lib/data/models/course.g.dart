@@ -18,7 +18,6 @@ Course _$CourseFromJson(Map<String, dynamic> json) => Course(
           Map<String, dynamic>.from(json['cover'] as Map),
         ),
   videoUrl: json['video_url'] as String?,
-  isFreeIntro: json['is_free_intro'] as bool? ?? false,
   isPublished: json['is_published'] as bool? ?? false,
 );
 
@@ -30,6 +29,5 @@ Map<String, dynamic> _$CourseToJson(Course instance) => <String, dynamic>{
   'cover_media_id': instance.coverMediaId,
   'cover': instance.cover?.toJson(),
   'video_url': instance.videoUrl,
-  'is_free_intro': instance.isFreeIntro,
   'is_published': instance.isPublished,
 };

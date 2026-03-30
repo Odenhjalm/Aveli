@@ -21,7 +21,6 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/guards/guard_context.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
-import 'package:aveli/features/paywall/application/entitlements_notifier.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/deeplinks/deep_link_service.dart';
@@ -343,9 +342,6 @@ class AveliApp extends ConsumerWidget {
         }
       });
     });
-
-    // Keep entitlements in sync with verified auth.
-    ref.watch(entitlementsAuthSyncProvider);
 
     final router = ref.watch(appRouterProvider);
     final baseTheme = buildLightTheme();

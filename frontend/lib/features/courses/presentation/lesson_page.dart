@@ -15,8 +15,6 @@ import 'package:aveli/editor/adapter/markdown_to_editor.dart'
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/paywall/data/checkout_api.dart';
-import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
@@ -103,43 +101,6 @@ class _LessonContent extends ConsumerWidget {
     return value;
   }
 
-  List<_BundleLink> _extractBundleLinks(String content) {
-    final regex = RegExp(r'https?://[^\s)]+/pay/bundle/([A-Za-z0-9-]+)');
-    return regex
-        .allMatches(content)
-        .map((match) {
-          final matchedUrl = match.group(0);
-          final bundleId = match.group(1) ?? '';
-          if (matchedUrl == null || matchedUrl.trim().isEmpty) {
-            return null;
-          }
-          return _BundleLink(url: matchedUrl.trim(), bundleId: bundleId.trim());
-        })
-        .whereType<_BundleLink>()
-        .where((item) => item.bundleId.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  Future<void> _startBundleCheckout(
-    BuildContext context,
-    WidgetRef ref,
-    String bundleId,
-  ) async {
-    try {
-      final checkoutApi = ref.read(checkoutApiProvider);
-      final checkoutUrl = await checkoutApi.startBundleCheckout(
-        bundleId: bundleId,
-      );
-      if (context.mounted) {
-        context.push(RoutePath.checkout, extra: checkoutUrl);
-      }
-    } catch (e) {
-      if (context.mounted) {
-        showSnack(context, 'Kunde inte öppna paketbetalning: $e');
-      }
-    }
-  }
-
   Future<void> _handleLinkTap(
     BuildContext context,
     WidgetRef ref,
@@ -149,13 +110,10 @@ class _LessonContent extends ConsumerWidget {
     if (parsed != null &&
         parsed.pathSegments.contains('pay') &&
         parsed.pathSegments.contains('bundle')) {
-      final bundleId = parsed.pathSegments.isNotEmpty
-          ? parsed.pathSegments.last
-          : parsed.queryParameters['bundle_id'];
-      if (bundleId != null && bundleId.isNotEmpty) {
-        await _startBundleCheckout(context, ref, bundleId);
-        return;
+      if (context.mounted) {
+        showSnack(context, 'Paketköp är inte tillgängligt i appen.');
       }
+      return;
     }
 
     final lessonMediaId = lessonMediaIdFromDocumentLinkUrl(url)?.trim();
@@ -250,7 +208,6 @@ class _LessonContent extends ConsumerWidget {
     }
 
     final markdownContent = _normalizeMarkdown(lesson.contentMarkdown);
-    final bundleLinks = _extractBundleLinks(markdownContent);
     final embeddedMediaIds = extractLessonEmbeddedMediaIds(markdownContent);
 
     bool isEmbedded(LessonMediaItem item) {
@@ -284,20 +241,6 @@ class _LessonContent extends ConsumerWidget {
                   unawaited(_handleLinkTap(context, ref, url)),
             ),
           ),
-          if (bundleLinks.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            ...bundleLinks.map(
-              (link) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.shopping_bag_outlined),
-                  label: const Text('Köp paketet'),
-                  onPressed: () =>
-                      _startBundleCheckout(context, ref, link.bundleId),
-                ),
-              ),
-            ),
-          ],
           if (trailingMedia.isNotEmpty) ...[
             const SizedBox(height: 16),
             GlassCard(
@@ -370,12 +313,6 @@ List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
       .toList(growable: false);
   visible.sort((a, b) => a.position.compareTo(b.position));
   return visible;
-}
-
-class _BundleLink {
-  const _BundleLink({required this.url, required this.bundleId});
-  final String url;
-  final String bundleId;
 }
 
 const bool _hideUnavailableTrailingMedia = false;
