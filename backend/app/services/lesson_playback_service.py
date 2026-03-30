@@ -73,55 +73,29 @@ def _log_image_playback_resolution(
 
 
 async def _authorize_lesson_playback(user_id: str, row: dict[str, Any]) -> None:
-    course_id = row.get("course_id")
-    if course_id and await courses_service.is_course_teacher_or_instructor(
-        user_id, str(course_id)
-    ):
-        return
-    if not row.get("is_published"):
+    lesson_id = str(row.get("lesson_id") or "").strip()
+    if not lesson_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course not published",
+            detail="Canonical lesson identity required",
         )
-    if row.get("is_intro") or row.get("is_free_intro"):
-        return
-    if not course_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-    if await courses_service.is_user_enrolled(user_id, str(course_id)):
-        return
-
-    # Compatibility bridge only: preserve older non-enrollment access without
-    # adding new runtime dependencies on entitlements.
-    snapshot = await models.course_access_snapshot(user_id, str(course_id))
-    if snapshot.get("can_access") is True:
+    access = await courses_service.read_canonical_lesson_access(user_id, lesson_id)
+    if access["lesson"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lesson not found",
+        )
+    if access["can_access"]:
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 async def _authorize_home_player_upload_playback(user_id: str, teacher_id: str) -> None:
-    if user_id == teacher_id:
-        return
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            -- ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-            SELECT 1
-            FROM app.enrollments e
-            JOIN app.courses c ON c.id = e.course_id
-            WHERE e.user_id = %s
-              AND e.status = 'active'
-              AND c.is_published = true
-              AND c.created_by = %s
-              AND app.is_test_row_visible(c.is_test, c.test_session_id)
-            LIMIT 1
-            """,
-            (user_id, teacher_id),
-        )
-        row = await cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    del user_id, teacher_id
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Home player playback is outside canonical learner authority",
+    )
 
 
 async def resolve_pipeline_playback(
@@ -184,44 +158,11 @@ async def _authorize_legacy_media_playback(
     storage_bucket: str,
     user_id: str,
 ) -> None:
-    access_row = await courses_repo.get_lesson_media_access_by_path(
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
+    del storage_path, storage_bucket, user_id
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Legacy playback is unavailable in canonical runtime",
     )
-    if not access_row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-
-    course_id = access_row.get("course_id")
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, str(course_id))
-        if course_id
-        else False
-    )
-    if teacher_access:
-        return
-
-    if not access_row.get("is_published"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course not published",
-        )
-    if access_row.get("is_intro") or access_row.get("is_free_intro"):
-        return
-    if not course_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-    if await courses_service.is_user_enrolled(user_id, str(course_id)):
-        return
-
-    # Compatibility bridge only: preserve older non-enrollment access without
-    # adding new runtime dependencies on entitlements.
-    snapshot = await models.course_access_snapshot(user_id, str(course_id))
-    if snapshot.get("can_access") is not True:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
-        )
 
 
 async def resolve_object_media_playback(

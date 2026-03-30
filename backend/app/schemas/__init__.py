@@ -937,7 +937,7 @@ class Course(BaseModel):
     step: str
     cover_media_id: UUID | None = None
     cover: CourseCoverResolved | None = None
-    price_amount_cents: int = 0
+    price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: int
 

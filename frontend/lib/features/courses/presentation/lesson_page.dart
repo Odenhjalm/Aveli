@@ -14,7 +14,6 @@ import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/core/routing/route_paths.dart';
@@ -350,14 +349,9 @@ class _LessonContent extends ConsumerWidget {
       ),
     );
 
-    final courseId = detail.courseId;
-    final gatedContent = (!lesson.isIntro && courseId != null)
-        ? CourseAccessGate(courseId: courseId, child: coreContent)
-        : coreContent;
-
     return AppScaffold(
       title: lesson.title.trim().isEmpty ? 'Lektion' : lesson.title,
-      body: gatedContent,
+      body: coreContent,
       background: BackgroundLayer(
         image: AppImages.lessonBackground,
         imagePath: AppImages.lessonBackgroundPath,

@@ -22,6 +22,17 @@ def _source_matches_course_step(*, course_step: str, enrollment_source: str) -> 
     return normalized_source == "purchase"
 
 
+def _course_expected_source(course: Mapping[str, Any] | None) -> str | None:
+    if not course:
+        return None
+    normalized_step = str(course.get("step") or "").strip().lower()
+    if normalized_step == "intro":
+        return "intro_enrollment"
+    if normalized_step in {"step1", "step2", "step3"}:
+        return "purchase"
+    return None
+
+
 async def fetch_course(
     *,
     course_id: str | None = None,
@@ -97,46 +108,124 @@ async def get_course_enrollment(user_id: str, course_id: str) -> dict[str, Any] 
     return await courses_repo.get_course_enrollment(str(user_id), str(course_id))
 
 
+def _canonical_course_state_payload(
+    *,
+    course: Mapping[str, Any],
+    enrollment: Mapping[str, Any] | None,
+    expected_source: str | None,
+) -> dict[str, Any]:
+    return {
+        "course_id": str(course.get("id") or ""),
+        "course_step": str(course.get("step") or ""),
+        "required_enrollment_source": expected_source,
+        "enrollment": dict(enrollment) if enrollment is not None else None,
+    }
+
+
+async def read_canonical_course_access(user_id: str, course_id: str) -> dict[str, Any]:
+    course = await fetch_course(course_id=course_id)
+    normalized_user_id = str(user_id or "").strip()
+    enrollment = (
+        await get_course_enrollment(normalized_user_id, course_id)
+        if course is not None and normalized_user_id
+        else None
+    )
+    expected_source = _course_expected_source(course)
+    source_matches = (
+        enrollment is not None
+        and expected_source is not None
+        and str(enrollment.get("source") or "").strip().lower() == expected_source
+    )
+    return {
+        "course": course,
+        "enrollment": enrollment,
+        "expected_source": expected_source,
+        "can_access": bool(source_matches),
+    }
+
+
+async def read_canonical_course_state(user_id: str, course_id: str) -> dict[str, Any] | None:
+    access = await read_canonical_course_access(user_id, course_id)
+    course = access["course"]
+    if course is None:
+        return None
+    return _canonical_course_state_payload(
+        course=course,
+        enrollment=access["enrollment"],
+        expected_source=access["expected_source"],
+    )
+
+
+async def read_canonical_lesson_access(user_id: str, lesson_id: str) -> dict[str, Any]:
+    lesson = await fetch_lesson(lesson_id)
+    if lesson is None:
+        return {
+            "lesson": None,
+            "course": None,
+            "enrollment": None,
+            "expected_source": None,
+            "current_unlock_position": 0,
+            "can_access": False,
+        }
+
+    course_id = str(lesson.get("course_id") or "").strip()
+    course_access = await read_canonical_course_access(user_id, course_id)
+    enrollment = course_access["enrollment"]
+    current_unlock_position = (
+        int(enrollment.get("current_unlock_position") or 0)
+        if enrollment is not None
+        else 0
+    )
+    lesson_position = int(lesson.get("position") or 0)
+    can_access = bool(
+        course_access["can_access"]
+        and lesson_position >= 1
+        and lesson_position <= current_unlock_position
+    )
+    return {
+        **course_access,
+        "lesson": lesson,
+        "current_unlock_position": current_unlock_position,
+        "can_access": can_access,
+    }
+
+
 async def can_user_read_course(user_id: str, course: Mapping[str, Any]) -> bool:
     course_id = str(course.get("id") or "").strip()
     if not course_id:
         return False
-    enrollment = await get_course_enrollment(user_id, course_id)
-    if not enrollment:
-        return False
-    return _source_matches_course_step(
-        course_step=str(course.get("step") or ""),
-        enrollment_source=str(enrollment.get("source") or ""),
-    )
+    access = await read_canonical_course_access(user_id, course_id)
+    return bool(access["can_access"])
 
 
 async def can_user_read_lesson(user_id: str, lesson: Mapping[str, Any]) -> bool:
-    course_id = str(lesson.get("course_id") or "").strip()
-    if not course_id:
+    lesson_id = str(lesson.get("id") or "").strip()
+    if not lesson_id:
         return False
-    enrollment = await get_course_enrollment(user_id, course_id)
-    if not enrollment:
-        return False
-    if not _source_matches_course_step(
-        course_step=str((await fetch_course(course_id=course_id) or {}).get("step") or ""),
-        enrollment_source=str(enrollment.get("source") or ""),
-    ):
-        return False
-    lesson_position = int(lesson.get("position") or 0)
-    current_unlock_position = int(enrollment.get("current_unlock_position") or 0)
-    return lesson_position > 0 and lesson_position <= current_unlock_position
+    access = await read_canonical_lesson_access(user_id, lesson_id)
+    return bool(access["can_access"])
 
 
-async def course_enrollment_snapshot(user_id: str, course_id: str) -> dict[str, Any]:
+async def create_intro_course_enrollment(
+    *,
+    user_id: str,
+    course_id: str,
+) -> dict[str, Any]:
     course = await fetch_course(course_id=course_id)
-    enrollment = await get_course_enrollment(user_id, course_id)
-    can_access = False
-    if course and enrollment:
-        can_access = _source_matches_course_step(
-            course_step=str(course.get("step") or ""),
-            enrollment_source=str(enrollment.get("source") or ""),
-        )
-    return {
-        "can_access": can_access,
-        "enrollment": enrollment,
-    }
+    if course is None:
+        raise LookupError("course not found")
+
+    course_step = str(course.get("step") or "").strip().lower()
+    if course_step != "intro":
+        raise PermissionError("purchase enrollment required")
+
+    enrollment = await courses_repo.create_course_enrollment(
+        user_id=str(user_id),
+        course_id=str(course_id),
+        source="intro_enrollment",
+    )
+    return _canonical_course_state_payload(
+        course=course,
+        enrollment=enrollment,
+        expected_source="intro_enrollment",
+    )

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/data/progress_repository.dart';
@@ -55,21 +56,18 @@ final courseByIdProvider =
       return repo.getCourseById(courseId);
     });
 
-final hasCourseAccessProvider = AutoDisposeFutureProvider.family<bool, String>((
-  ref,
-  courseId,
-) async {
-  final repo = ref.watch(coursesRepositoryProvider);
-  try {
-    final accessSnapshot = await repo.fetchCourseAccessSnapshot(courseId);
-    if (accessSnapshot.accessReason.trim().toLowerCase() == 'teacher') {
-      return true;
-    }
-    return accessSnapshot.hasAccess;
-  } catch (_) {
-    return repo.isEnrolled(courseId);
-  }
-});
+final courseStateProvider =
+    AutoDisposeFutureProvider.family<CourseAccessData?, String>((
+      ref,
+      courseId,
+    ) async {
+      final auth = ref.watch(authControllerProvider);
+      if (!auth.isAuthenticated) {
+        return null;
+      }
+      final repo = ref.watch(coursesRepositoryProvider);
+      return repo.fetchCourseState(courseId);
+    });
 
 final lessonDetailProvider =
     AutoDisposeFutureProvider.family<LessonDetailData, String>((
@@ -131,11 +129,12 @@ final courseProgressProvider =
       return repo.getProgressForCourses(request.courseIds);
     });
 
-class EnrollController extends AutoDisposeFamilyAsyncNotifier<String?, String> {
+class EnrollController
+    extends AutoDisposeFamilyAsyncNotifier<CourseAccessData?, String> {
   late final String _courseId;
 
   @override
-  FutureOr<String?> build(String courseId) {
+  FutureOr<CourseAccessData?> build(String courseId) {
     _courseId = courseId;
     return null;
   }
@@ -144,8 +143,8 @@ class EnrollController extends AutoDisposeFamilyAsyncNotifier<String?, String> {
     final repo = ref.read(coursesRepositoryProvider);
     state = const AsyncLoading();
     try {
-      final status = await repo.enrollCourse(_courseId);
-      state = AsyncData(status);
+      final courseState = await repo.enrollCourse(_courseId);
+      state = AsyncData(courseState);
     } catch (error, stackTrace) {
       state = AsyncError(AppFailure.from(error, stackTrace), stackTrace);
     }
@@ -153,9 +152,11 @@ class EnrollController extends AutoDisposeFamilyAsyncNotifier<String?, String> {
 }
 
 final enrollProvider =
-    AutoDisposeAsyncNotifierProviderFamily<EnrollController, String?, String>(
-      EnrollController.new,
-    );
+    AutoDisposeAsyncNotifierProviderFamily<
+      EnrollController,
+      CourseAccessData?,
+      String
+    >(EnrollController.new);
 
 class QuizSubmissionController
     extends AutoDisposeFamilyAsyncNotifier<Map<String, dynamic>?, String> {

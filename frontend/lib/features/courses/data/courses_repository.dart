@@ -5,32 +5,31 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
-import 'course_access_api.dart';
-
 class CoursesRepository {
-  CoursesRepository({required ApiClient client, CourseAccessApi? accessApi})
-    : _client = client,
-      _accessApi = accessApi ?? CourseAccessApi(client);
+  CoursesRepository({required ApiClient client}) : _client = client;
 
   final ApiClient _client;
-  final CourseAccessApi _accessApi;
 
   Future<List<CourseSummary>> fetchPublishedCourses({
     bool onlyFreeIntro = false,
   }) async {
     try {
       final params = <String, dynamic>{'published_only': true};
-      if (onlyFreeIntro) params['free_intro'] = true;
       final res = await _client.get<Map<String, dynamic>>(
         '/courses',
         queryParameters: params,
       );
-      final items = (res['items'] as List? ?? [])
+      final items = (res['items'] as List? ?? const [])
           .map(
             (e) => CourseSummary.fromJson(Map<String, dynamic>.from(e as Map)),
           )
           .toList();
-      return items;
+      if (!onlyFreeIntro) {
+        return items;
+      }
+      return items
+          .where((course) => course.step == CourseJourneyStep.intro)
+          .toList(growable: false);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -72,8 +71,7 @@ class CoursesRepository {
       final res = await _client.get<Map<String, dynamic>>(
         '/courses/by-slug/$encoded',
       );
-      final detail = _mapCourseDetail(res);
-      return _augmentCourseDetail(detail);
+      return _mapCourseDetail(res);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -82,8 +80,7 @@ class CoursesRepository {
   Future<CourseDetailData> fetchCourseDetailById(String courseId) async {
     try {
       final res = await _client.get<Map<String, dynamic>>('/courses/$courseId');
-      final detail = _mapCourseDetail(res);
-      return _augmentCourseDetail(detail);
+      return _mapCourseDetail(res);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -105,35 +102,13 @@ class CoursesRepository {
     return CourseDetailData(course: course, lessons: lessonItems);
   }
 
-  Future<CourseDetailData> _augmentCourseDetail(CourseDetailData detail) async {
-    final courseId = detail.course.id;
-
-    try {
-      final snapshot = await _fetchCourseAccess(courseId);
-      return detail.copyWith(
-        hasAccess: snapshot.hasAccess,
-        accessReason: snapshot.accessReason,
-        isEnrolled: snapshot.enrolled,
-        hasActiveSubscription: snapshot.hasActiveSubscription,
-        latestOrder: snapshot.latestOrder,
-      );
-    } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
-      if (failure.kind == AppFailureKind.unauthorized) {
-        return detail;
-      }
-      throw failure;
-    }
-  }
-
   Future<CourseSummary?> firstFreeIntroCourse() async {
     try {
-      final res = await _client.get<Map<String, dynamic>>(
-        '/courses/intro-first',
-      );
-      final course = res['course'];
-      if (course is Map) {
-        return CourseSummary.fromJson(Map<String, dynamic>.from(course));
+      final courses = await fetchPublishedCourses();
+      for (final course in courses) {
+        if (course.step == CourseJourneyStep.intro) {
+          return course;
+        }
       }
       return null;
     } catch (error, stackTrace) {
@@ -175,57 +150,22 @@ class CoursesRepository {
     }
   }
 
-  Future<String> enrollCourse(String courseId) async {
+  Future<CourseAccessData> enrollCourse(String courseId) async {
     try {
       final res = await _client.post<Map<String, dynamic>>(
         '/courses/$courseId/enroll',
       );
-      final statusRaw = res['status'];
-      final status = statusRaw == null ? '' : statusRaw.toString().trim();
-      if (status.isNotEmpty) {
-        return status;
-      }
-      return 'enrolled';
+      return CourseAccessData.fromJson(res);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
   }
 
-  Future<bool> hasAccess(String courseId) async {
+  Future<CourseAccessData> fetchCourseState(String courseId) async {
     try {
-      final snapshot = await _fetchCourseAccess(courseId);
-      return snapshot.hasAccess;
+      return await _fetchCourseAccess(courseId);
     } catch (error, stackTrace) {
-      try {
-        return await _accessApi.fallbackHasAccess(courseId);
-      } catch (_) {
-        final failure = AppFailure.from(error, stackTrace);
-        if (failure.kind == AppFailureKind.unauthorized) {
-          return false;
-        }
-        return false;
-      }
-    }
-  }
-
-  Future<bool> isEnrolled(String courseId) async {
-    return hasAccess(courseId);
-  }
-
-  Future<CourseAccessData> fetchCourseAccessSnapshot(String courseId) {
-    return _fetchCourseAccess(courseId);
-  }
-
-  Future<CourseOrderSummary?> latestOrderForCourse(String courseId) async {
-    try {
-      final snapshot = await _fetchCourseAccess(courseId);
-      return snapshot.latestOrder;
-    } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
-      if (failure.kind == AppFailureKind.unauthorized) {
-        return null;
-      }
-      throw failure;
+      throw AppFailure.from(error, stackTrace);
     }
   }
 
@@ -279,73 +219,74 @@ class CoursesRepository {
 }
 
 class CourseDetailData {
-  CourseDetailData({
-    required this.course,
-    required this.lessons,
-    this.hasAccess = false,
-    this.accessReason = 'none',
-    this.isEnrolled = false,
-    this.hasActiveSubscription = false,
-    this.latestOrder,
-  });
+  CourseDetailData({required this.course, required this.lessons});
 
   final CourseSummary course;
   final List<LessonSummary> lessons;
-  final bool hasAccess;
-  final String accessReason;
-  final bool isEnrolled;
-  final bool hasActiveSubscription;
-  final CourseOrderSummary? latestOrder;
+}
 
-  CourseDetailData copyWith({
-    bool? hasAccess,
-    String? accessReason,
-    bool? isEnrolled,
-    bool? hasActiveSubscription,
-    CourseOrderSummary? latestOrder,
-  }) {
-    return CourseDetailData(
-      course: course,
-      lessons: lessons,
-      hasAccess: hasAccess ?? this.hasAccess,
-      accessReason: accessReason ?? this.accessReason,
-      isEnrolled: isEnrolled ?? this.isEnrolled,
-      hasActiveSubscription:
-          hasActiveSubscription ?? this.hasActiveSubscription,
-      latestOrder: latestOrder ?? this.latestOrder,
-    );
-  }
+class CourseEnrollmentRecord {
+  const CourseEnrollmentRecord({
+    required this.id,
+    required this.userId,
+    required this.courseId,
+    required this.source,
+    required this.grantedAt,
+    required this.dripStartedAt,
+    required this.currentUnlockPosition,
+  });
+
+  final String id;
+  final String userId;
+  final String courseId;
+  final String source;
+  final DateTime grantedAt;
+  final DateTime dripStartedAt;
+  final int currentUnlockPosition;
+
+  factory CourseEnrollmentRecord.fromJson(Map<String, dynamic> json) =>
+      CourseEnrollmentRecord(
+        id: json['id'] as String,
+        userId: json['user_id'] as String,
+        courseId: json['course_id'] as String,
+        source: (json['source'] as String?) ?? '',
+        grantedAt: DateTime.parse(json['granted_at'] as String).toUtc(),
+        dripStartedAt: DateTime.parse(
+          json['drip_started_at'] as String,
+        ).toUtc(),
+        currentUnlockPosition:
+            CourseSummary._asInt(json['current_unlock_position']) ?? 0,
+      );
 }
 
 class CourseAccessData {
   const CourseAccessData({
-    required this.hasAccess,
-    required this.accessReason,
-    required this.enrolled,
-    required this.hasActiveSubscription,
-    this.latestOrder,
+    required this.courseId,
+    required this.courseStep,
+    required this.requiredEnrollmentSource,
+    required this.enrollment,
   });
 
-  final bool hasAccess;
-  final String accessReason;
-  final bool enrolled;
-  final bool hasActiveSubscription;
-  final CourseOrderSummary? latestOrder;
+  final String courseId;
+  final CourseJourneyStep? courseStep;
+  final String? requiredEnrollmentSource;
+  final CourseEnrollmentRecord? enrollment;
+
+  bool get hasEnrollment => enrollment != null;
+
+  int get currentUnlockPosition => enrollment?.currentUnlockPosition ?? 0;
 
   factory CourseAccessData.fromJson(Map<String, dynamic> json) {
-    final order = json['latest_order'];
-    final orderMap = order is Map ? Map<String, dynamic>.from(order) : null;
-    final canAccess = json['can_access'] == true || json['has_access'] == true;
+    final enrollmentMap = json['enrollment'];
     return CourseAccessData(
-      hasAccess: canAccess,
-      accessReason:
-          (json['access_reason'] as String?)?.trim().isNotEmpty == true
-          ? (json['access_reason'] as String).trim()
-          : 'none',
-      enrolled: json['enrolled'] == true,
-      hasActiveSubscription: json['has_active_subscription'] == true,
-      latestOrder: orderMap != null
-          ? CourseOrderSummary.fromJson(orderMap)
+      courseId: (json['course_id'] as String?) ?? '',
+      courseStep: courseJourneyStepFromApi(json['course_step']),
+      requiredEnrollmentSource: (json['required_enrollment_source'] as String?)
+          ?.trim(),
+      enrollment: enrollmentMap is Map
+          ? CourseEnrollmentRecord.fromJson(
+              Map<String, dynamic>.from(enrollmentMap),
+            )
           : null,
     );
   }
@@ -370,6 +311,8 @@ class CourseSummary {
     required this.id,
     this.slug,
     required this.title,
+    this.step,
+    this.courseGroupId,
     this.description,
     this.coverMediaId,
     this.cover,
@@ -387,6 +330,8 @@ class CourseSummary {
   final String id;
   final String? slug;
   final String title;
+  final CourseJourneyStep? step;
+  final String? courseGroupId;
   final String? description;
   final String? coverMediaId;
   final CourseCoverData? cover;
@@ -400,10 +345,14 @@ class CourseSummary {
   final bool isPublished;
   final int? priceCents;
 
+  bool get isIntroCourse => step == CourseJourneyStep.intro;
+
   factory CourseSummary.fromJson(Map<String, dynamic> json) => CourseSummary(
     id: json['id'] as String,
     slug: json['slug'] as String?,
     title: (json['title'] ?? '') as String,
+    step: courseJourneyStepFromApi(json['step']),
+    courseGroupId: json['course_group_id'] as String?,
     description: json['description'] as String?,
     coverMediaId: json['cover_media_id'] as String?,
     cover: json['cover'] is Map
@@ -413,17 +362,14 @@ class CourseSummary {
         : null,
     videoUrl: json['video_url'] as String?,
     branch: json['branch'] as String?,
-    stepLevel: courseJourneyStepFromApi(json['step_level']),
+    stepLevel: courseJourneyStepFromApi(json['step']),
     courseFamily: json['course_family'] as String?,
     createdBy: json['created_by'] as String?,
-    isFreeIntro: json['is_free_intro'] == true,
-    journeyStep:
-        courseJourneyStepFromApi(json['journey_step']) ??
-        courseJourneyStepFromApi(json['step_level']),
+    isFreeIntro:
+        courseJourneyStepFromApi(json['step']) == CourseJourneyStep.intro,
+    journeyStep: courseJourneyStepFromApi(json['step']),
     isPublished: json['is_published'] == true,
-    // Prefer the newer price_amount_cents field when present; fallback to price_cents.
-    priceCents:
-        _asInt(json['price_amount_cents']) ?? _asInt(json['price_cents']),
+    priceCents: _asInt(json['price_amount_cents']),
   );
 
   static int? _asInt(dynamic value) {

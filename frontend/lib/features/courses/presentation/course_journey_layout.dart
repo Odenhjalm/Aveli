@@ -22,19 +22,16 @@ List<CourseJourneySeriesRow> buildCourseJourneySeriesRows(
   final rowIndexBySeriesKey = <String, int>{};
 
   for (final course in courses) {
-    final step = course.journeyStep ?? course.stepLevel;
-    if (step == null || step == CourseJourneyStep.intro) {
+    final step = course.step;
+    final groupId = (course.courseGroupId ?? '').trim();
+    if (step == null || step == CourseJourneyStep.intro || groupId.isEmpty) {
       continue;
     }
 
-    final seriesKey = _seriesKeyForCourse(course);
-    final existingIndex = rowIndexBySeriesKey[seriesKey];
-
+    final existingIndex = rowIndexBySeriesKey[groupId];
     if (existingIndex == null) {
-      rows.add(
-        _rowWithCourse(seriesKey: seriesKey, course: course, step: step),
-      );
-      rowIndexBySeriesKey[seriesKey] = rows.length - 1;
+      rows.add(_rowWithCourse(seriesKey: groupId, course: course, step: step));
+      rowIndexBySeriesKey[groupId] = rows.length - 1;
       continue;
     }
 
@@ -45,21 +42,7 @@ List<CourseJourneySeriesRow> buildCourseJourneySeriesRows(
         course: course,
         step: step,
       );
-      continue;
     }
-
-    assert(() {
-      final courseId = course.id;
-      final occupiedId = _slotForStep(existing, step)?.id;
-      // Duplicate step data for one series would otherwise collapse multiple
-      // courses into the same 3-slot row, so we keep the first and log it.
-      // ignore: avoid_print
-      print(
-        'Course journey duplicate step ignored for series "$seriesKey": '
-        'kept=$occupiedId ignored=$courseId step=${step.name}',
-      );
-      return true;
-    }());
   }
 
   return List.unmodifiable(rows);
@@ -125,110 +108,4 @@ CourseSummary? _slotForStep(
     CourseJourneyStep.step3 => row.step3,
     CourseJourneyStep.intro => null,
   };
-}
-
-String _seriesKeyForCourse(CourseSummary course) {
-  final step = course.journeyStep ?? course.stepLevel;
-  final derivedSeriesRoot = _derivedSeriesRoot(course, step);
-  if (derivedSeriesRoot != null) {
-    return 'series:$derivedSeriesRoot';
-  }
-
-  final branch = _normalizeSeriesToken(course.branch);
-  if (branch != null) {
-    return 'branch:$branch';
-  }
-
-  final slug = _normalizeSeriesToken(course.slug);
-  if (slug != null) {
-    return 'course:$slug';
-  }
-  return 'course:${course.id}';
-}
-
-String? _derivedSeriesRoot(CourseSummary course, CourseJourneyStep? step) {
-  final courseFamily = _normalizeSeriesRoot(course.courseFamily, step);
-  if (courseFamily != null) {
-    return courseFamily;
-  }
-
-  if (step == null) {
-    return null;
-  }
-
-  final titleSeries = _stripJourneyStepMarker(course.title, step);
-  if (titleSeries != null) {
-    return titleSeries;
-  }
-
-  final slugSeries = _stripJourneyStepMarker(course.slug, step);
-  if (slugSeries != null) {
-    return slugSeries;
-  }
-
-  return null;
-}
-
-String? _normalizeSeriesRoot(String? rawValue, CourseJourneyStep? step) {
-  if (step != null) {
-    final stripped = _stripJourneyStepMarker(rawValue, step);
-    if (stripped != null) {
-      return stripped;
-    }
-  }
-  return _normalizeSeriesToken(rawValue);
-}
-
-String? _stripJourneyStepMarker(String? rawValue, CourseJourneyStep step) {
-  final normalized = _normalizeSeriesToken(rawValue);
-  if (normalized == null) {
-    return null;
-  }
-
-  final stepNumber = switch (step) {
-    CourseJourneyStep.step1 => '1',
-    CourseJourneyStep.step2 => '2',
-    CourseJourneyStep.step3 => '3',
-    CourseJourneyStep.intro => null,
-  };
-  if (stepNumber == null) {
-    return null;
-  }
-
-  final infix = RegExp(
-    '^(.*?)-(?:steg|step|del)-?$stepNumber(?:-|\\b).*\$',
-  );
-  final infixMatch = infix.firstMatch(normalized);
-  if (infixMatch != null) {
-    return _cleanSeriesRoot(infixMatch.group(1));
-  }
-
-  final prefix = RegExp('^(?:steg|step|del)-?$stepNumber-(.*)\$');
-  final prefixMatch = prefix.firstMatch(normalized);
-  if (prefixMatch != null) {
-    return _cleanSeriesRoot(prefixMatch.group(1));
-  }
-
-  return null;
-}
-
-String? _cleanSeriesRoot(String? rawValue) {
-  final cleaned = _normalizeSeriesToken(rawValue);
-  if (cleaned == null || cleaned.isEmpty) {
-    return null;
-  }
-  return cleaned;
-}
-
-String? _normalizeSeriesToken(String? rawValue) {
-  final raw = rawValue?.trim().toLowerCase();
-  if (raw == null || raw.isEmpty) {
-    return null;
-  }
-
-  final normalized = raw
-      .replaceAll(RegExp(r'[^0-9a-zåäö]+', caseSensitive: false), '-')
-      .replaceAll(RegExp(r'-+'), '-')
-      .replaceAll(RegExp(r'^-+|-+$'), '');
-  return normalized.isEmpty ? null : normalized;
 }

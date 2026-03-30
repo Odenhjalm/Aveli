@@ -106,7 +106,7 @@ class _JourneyPage extends ConsumerWidget {
     final unclassified = <CourseSummary>[];
 
     for (final course in published) {
-      switch (course.journeyStep) {
+      switch (course.step) {
         case CourseJourneyStep.intro:
           introCourses.add(course);
           break;
@@ -624,7 +624,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
     );
     final imageProvider = coverProvider ?? AppImages.logo;
     final isFallbackLogo = coverProvider == null;
-    final isIntro = course.isFreeIntro;
+    final isIntro = course.isIntroCourse;
     final priceLabel = formatCoursePriceFromOre(
       amountOre: course.priceCents ?? 0,
       isFreeIntro: isIntro,
@@ -783,7 +783,7 @@ class _JourneyCourseCard extends StatelessWidget {
     final isFallbackLogo = coverProvider == null;
 
     final radius = BorderRadius.circular(18);
-    final isIntro = course.isFreeIntro;
+    final isIntro = course.isIntroCourse;
     final priceLabel = formatCoursePriceFromOre(
       amountOre: course.priceCents ?? 0,
       isFreeIntro: isIntro,

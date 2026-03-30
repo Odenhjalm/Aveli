@@ -18,17 +18,23 @@ class CourseAccessGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final access = ref.watch(hasCourseAccessProvider(courseId));
-    return access.when(
-      data: (hasAccess) {
-        if (hasAccess) {
+    final courseState = ref.watch(courseStateProvider(courseId));
+    return courseState.when(
+      data: (state) {
+        if (state?.hasEnrollment == true) {
           return child;
         }
         return PaywallPrompt(courseId: courseId);
       },
       loading: () =>
           loading ?? const Center(child: CircularProgressIndicator()),
-      error: (error, stackTrace) => PaywallPrompt(courseId: courseId),
+      error: (error, stackTrace) => Center(
+        child: Text(
+          'Kunde inte verifiera kurstillgången.',
+          style: Theme.of(context).textTheme.bodyMedium,
+          textAlign: TextAlign.center,
+        ),
+      ),
     );
   }
 }

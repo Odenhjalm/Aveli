@@ -170,7 +170,6 @@ class _QuizActions extends ConsumerWidget {
               onPressed: () => context.pushNamed(
                 AppRoute.courseQuiz,
                 extra: QuizRouteArgs(quizId: quizId, courseId: courseId),
-                queryParameters: {'quizId': quizId, 'courseId': courseId},
               ),
               icon: const Icon(Icons.quiz_outlined),
               label: const Text('Gör provet'),

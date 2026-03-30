@@ -50,13 +50,17 @@ async def _resolve_lesson_media_subject(lesson_media_id: str) -> dict:
 
 async def _enforce_lesson_media_access(*, user_id: str, lesson_media_id: str) -> None:
     subject = await _resolve_lesson_media_subject(lesson_media_id)
-    lesson = await courses_service.fetch_lesson(str(subject["lesson_id"]))
-    if not lesson:
+    access = await courses_service.read_canonical_lesson_access(
+        user_id,
+        str(subject["lesson_id"]),
+    )
+    lesson = access["lesson"]
+    if lesson is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lesson not found",
         )
-    if await courses_service.can_user_read_lesson(user_id, lesson):
+    if access["can_access"]:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

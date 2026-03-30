@@ -6,16 +6,15 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
-import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
-import 'package:aveli/features/paywall/presentation/paywall_gate.dart';
-import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/features/paywall/application/pricing_providers.dart';
 import 'package:aveli/features/paywall/data/course_pricing_api.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/utils/course_cover_resolver.dart';
+import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -35,13 +34,6 @@ class _CoursePageState extends ConsumerState<CoursePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.slug == 'vit_magi') {
-      return const AppScaffold(
-        title: 'Vit Magi',
-        body: PaywallGate(courseSlug: 'vit_magi', unlocked: _VitMagiContent()),
-      );
-    }
-
     final asyncDetail = ref.watch(courseDetailProvider(widget.slug));
     return asyncDetail.when(
       loading: () => const AppScaffold(
@@ -56,55 +48,49 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         final slug = (detail.course.slug?.isNotEmpty ?? false)
             ? detail.course.slug!
             : widget.slug;
-        final currentUserId = ref.watch(authControllerProvider).profile?.id;
         final cover = resolveCourseSummaryCover(
           detail.course,
           ref.read(mediaRepositoryProvider),
         );
         final pricingAsync = ref.watch(coursePricingProvider(slug));
-        final buyButton = _buildBuyButton(
-          courseSlug: slug,
-          pricingAsync: pricingAsync,
-          detail: detail,
+        final courseStateAsync = ref.watch(
+          courseStateProvider(detail.course.id),
         );
         return _CourseContent(
           detail: detail,
+          courseStateAsync: courseStateAsync,
           coverUrl: cover.imageUrl,
-          buyButton: buyButton,
           onEnroll: () => _handleEnroll(detail),
-          onRefreshOrderStatus: () async {
-            final repo = ref.read(coursesRepositoryProvider);
-            await repo.latestOrderForCourse(detail.course.id);
-            ref.invalidate(courseDetailProvider(widget.slug));
-          },
-          onOpenCourse: () => _openFirstLesson(detail),
+          onOpenLesson: _openLesson,
           enrollState: ref.watch(enrollProvider(detail.course.id)),
-          subscriptionsEnabled: ref
-              .watch(appConfigProvider)
-              .subscriptionsEnabled,
-          currentUserId: currentUserId,
+          buyButton: _buildBuyButton(
+            course: detail.course,
+            courseStateAsync: courseStateAsync,
+            courseSlug: slug,
+            pricingAsync: pricingAsync,
+          ),
         );
       },
     );
   }
 
   Future<void> _handleEnroll(CourseDetailData detail) async {
+    if (!_ensureAuthenticated(
+      message: 'Logga in för att starta introduktionen.',
+    )) {
+      return;
+    }
     final notifier = ref.read(enrollProvider(detail.course.id).notifier);
     await notifier.enroll();
     final state = ref.read(enrollProvider(detail.course.id));
     state.when(
-      data: (status) {
+      data: (courseState) {
         if (!mounted || !context.mounted) return;
-        final normalized = (status ?? '').trim().toLowerCase();
-        final shouldShowSuccess =
-            normalized == 'enrolled' ||
-            normalized == 'intro_enrolled' ||
-            normalized == 'step1_unlimited';
-        if (shouldShowSuccess) {
-          showSnack(context, 'Du är nu anmäld till introduktionen.');
+        if (courseState?.hasEnrollment == true) {
+          showSnack(context, 'Du är nu anmäld till kursen.');
         }
+        ref.invalidate(courseStateProvider(detail.course.id));
         ref.invalidate(courseDetailProvider(widget.slug));
-        ref.invalidate(hasCourseAccessProvider(detail.course.id));
       },
       error: (error, _) {
         if (!mounted || !context.mounted) return;
@@ -114,46 +100,28 @@ class _CoursePageState extends ConsumerState<CoursePage> {
     );
   }
 
-  void _openFirstLesson(CourseDetailData detail) {
-    final lessonId = _resolveFirstLessonId(detail);
-    if (lessonId == null || lessonId.isEmpty) {
-      return;
-    }
+  void _openLesson(String lessonId) {
     if (!mounted || !context.mounted) return;
     context.pushNamed(AppRoute.lesson, pathParameters: {'id': lessonId});
   }
 
-  String? _resolveFirstLessonId(CourseDetailData detail) {
-    final lessons = _visibleCourseLessons(detail.lessons);
-    if (lessons.isEmpty) return null;
-    return lessons.first.id;
-  }
-
-  Widget _buildBuyButton({
+  Widget? _buildBuyButton({
+    required CourseSummary course,
+    required AsyncValue<CourseAccessData?> courseStateAsync,
     required String courseSlug,
     required AsyncValue<CoursePricing> pricingAsync,
-    required CourseDetailData detail,
   }) {
-    final hasAccess = detail.hasAccess;
-    final hasSubscription =
-        ref.watch(appConfigProvider).subscriptionsEnabled &&
-        detail.hasActiveSubscription;
-    final isEnrolled = detail.isEnrolled;
+    final courseState = courseStateAsync.valueOrNull;
+    final hasEnrollment = courseState?.hasEnrollment == true;
+    final isIntroCourse = course.step == CourseJourneyStep.intro;
     final fallbackPrice = pricingAsync.maybeWhen(
       data: (pricing) => pricing.amountCents,
       orElse: () => null,
     );
-    final priceCents = detail.course.priceCents ?? fallbackPrice ?? 0;
-    final canPurchase =
-        !detail.course.isFreeIntro && priceCents > 0 && !hasAccess;
-
+    final priceCents = course.priceCents ?? fallbackPrice ?? 0;
+    final canPurchase = !isIntroCourse && !hasEnrollment && priceCents > 0;
     if (!canPurchase) {
-      final label = hasAccess
-          ? (hasSubscription && !isEnrolled
-                ? 'Prenumeration aktiv'
-                : 'Åtkomst aktiverad')
-          : 'Kursen kan inte köpas just nu';
-      return FilledButton(onPressed: null, child: Text(label));
+      return null;
     }
 
     return pricingAsync.when(
@@ -204,15 +172,17 @@ class _CoursePageState extends ConsumerState<CoursePage> {
     }
   }
 
-  bool _ensureAuthenticated() {
+  bool _ensureAuthenticated({
+    String message = 'Logga in för att fortsätta med köpet.',
+  }) {
     final authState = ref.read(authControllerProvider);
     if (authState.isAuthenticated) {
       return true;
     }
     if (!mounted || !context.mounted) return false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Logga in för att fortsätta med köpet.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
     final redirectTarget = _currentRoute();
     context.goNamed(
       AppRoute.login,
@@ -232,109 +202,48 @@ class _CoursePageState extends ConsumerState<CoursePage> {
   String _friendlyError(Object error) => AppFailure.from(error).message;
 }
 
-class _VitMagiContent extends StatelessWidget {
-  const _VitMagiContent();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: const [
-        Text(
-          'Välkommen till Vit Magi',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-        ),
-        SizedBox(height: 12),
-        Text(
-          'Du har låst upp kursen. Utforska materialen och följ instruktionerna '
-          'för att komma igång.',
-        ),
-      ],
-    );
-  }
-}
-
 class _CourseContent extends StatelessWidget {
   const _CourseContent({
     required this.detail,
+    required this.courseStateAsync,
     required this.coverUrl,
     required this.onEnroll,
-    required this.onRefreshOrderStatus,
-    required this.onOpenCourse,
+    required this.onOpenLesson,
     required this.enrollState,
-    required this.subscriptionsEnabled,
     required this.buyButton,
-    required this.currentUserId,
   });
 
   final CourseDetailData detail;
+  final AsyncValue<CourseAccessData?> courseStateAsync;
   final String? coverUrl;
   final VoidCallback onEnroll;
-  final Future<void> Function() onRefreshOrderStatus;
-  final VoidCallback onOpenCourse;
-  final AsyncValue<String?> enrollState;
-  final bool subscriptionsEnabled;
-  final Widget buyButton;
-  final String? currentUserId;
-
-  String _orderStatusLabel(String status) {
-    final normalized = status.toLowerCase();
-    return switch (normalized) {
-      'paid' => 'Betald',
-      'pending' => 'Pågår',
-      'failed' => 'Misslyckad',
-      'canceled' || 'cancelled' => 'Avbruten',
-      _ => status.isEmpty ? 'Okänd' : status,
-    };
-  }
+  final ValueChanged<String> onOpenLesson;
+  final AsyncValue<CourseAccessData?> enrollState;
+  final Widget? buyButton;
 
   @override
   Widget build(BuildContext context) {
     final course = detail.course;
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
-    final priceCents = course.priceCents ?? 0;
-    final accessReason = detail.accessReason.trim().toLowerCase();
-    final isOwner =
-        accessReason == 'teacher' ||
-        currentUserId != null &&
-            currentUserId!.isNotEmpty &&
-            course.createdBy == currentUserId;
-    final hasAccess = detail.hasAccess || isOwner;
-    final isFreeIntro = course.isFreeIntro;
-    final journeyStepValue = _journeyStepValue(course.journeyStep?.name);
-    final canStartIntro = isFreeIntro && journeyStepValue <= 1;
-    final canShowPurchase = priceCents > 0;
-    final isEnrolled = detail.isEnrolled;
-    final hasSubscription =
-        subscriptionsEnabled && detail.hasActiveSubscription;
-    final enrolledText = hasAccess
-        ? (accessReason == 'teacher'
-              ? '• Läraråtkomst'
-              : hasSubscription && !isEnrolled
-              ? '• Prenumeration aktiv'
-              : isEnrolled
-              ? '• Du är anmäld'
-              : '• Full åtkomst')
-        : '';
+    final courseState = courseStateAsync.valueOrNull;
+    final hasEnrollment = courseState?.hasEnrollment == true;
+    final currentUnlockPosition = courseState?.currentUnlockPosition ?? 0;
+    final isIntroCourse = course.step == CourseJourneyStep.intro;
+    final lessons = _visibleCourseLessons(detail.lessons);
+    final unlockedLessons = lessons
+        .where((lesson) => lesson.position <= currentUnlockPosition)
+        .toList(growable: false);
     final isEnrolling = enrollState.isLoading;
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
-    final lessons = _visibleCourseLessons(detail.lessons);
-    final hasNavigableLesson = lessons.isNotEmpty;
+
     Widget? primaryCta;
-    if (isOwner) {
-      if (!hasNavigableLesson) {
-        primaryCta = FilledButton(
-          onPressed: hasNavigableLesson ? onOpenCourse : null,
-          child: const Text('Öppna kurs'),
-        );
-      }
-    } else if (hasAccess) {
-      primaryCta = const FilledButton(
-        onPressed: null,
-        child: Text('Åtkomst aktiverad'),
+    if (hasEnrollment && unlockedLessons.isNotEmpty) {
+      primaryCta = FilledButton(
+        onPressed: () => onOpenLesson(unlockedLessons.first.id),
+        child: const Text('Fortsätt kursen'),
       );
-    } else if (canStartIntro) {
+    } else if (isIntroCourse && !hasEnrollment) {
       primaryCta = ElevatedButton(
         onPressed: isEnrolling ? null : onEnroll,
         child: isEnrolling
@@ -345,9 +254,19 @@ class _CourseContent extends StatelessWidget {
               )
             : const Text('Starta introduktion'),
       );
-    } else if (canShowPurchase) {
-      primaryCta = SizedBox(height: 48, child: buyButton);
+    } else if (buyButton != null) {
+      primaryCta = SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: buyButton,
+      );
+    } else if (hasEnrollment) {
+      primaryCta = const FilledButton(
+        onPressed: null,
+        child: Text('Kurs aktiverad'),
+      );
     }
+
     return AppScaffold(
       title: course.title,
       body: ListView(
@@ -377,42 +296,16 @@ class _CourseContent extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 8),
-                if (course.description != null)
-                  Text(course.description!, style: t.bodyLarge),
                 const SizedBox(height: 12),
                 if (primaryCta != null)
                   SizedBox(width: double.infinity, child: primaryCta),
-                const SizedBox(height: 8),
-                if (enrolledText.isNotEmpty)
-                  Text(enrolledText, style: t.bodySmall),
-                if (hasAccess && canShowPurchase) ...[
+                if (hasEnrollment) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Du har redan full åtkomst till kursen.',
+                    'Upplåsta lektioner: $currentUnlockPosition',
                     style: t.bodySmall,
                   ),
-                  if (hasSubscription && !isEnrolled)
-                    Text(
-                      'Din prenumeration ger dig åtkomst till allt innehåll.',
-                      style: t.bodySmall,
-                    ),
                 ],
-                const SizedBox(height: 8),
-                if (detail.latestOrder != null)
-                  Row(
-                    children: [
-                      Text(
-                        'Betalstatus: ${_orderStatusLabel(detail.latestOrder!.status)}',
-                        style: t.bodySmall,
-                      ),
-                      const SizedBox(width: 10),
-                      TextButton(
-                        onPressed: () => onRefreshOrderStatus(),
-                        child: const Text('Uppdatera status'),
-                      ),
-                    ],
-                  ),
                 if (enrollError != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -437,7 +330,9 @@ class _CourseContent extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ...lessons.map((lesson) {
-                      final isLocked = !lesson.isIntro && !hasAccess;
+                      final isLocked =
+                          !hasEnrollment ||
+                          lesson.position > currentUnlockPosition;
                       return ListTile(
                         leading: Icon(
                           isLocked
@@ -445,9 +340,9 @@ class _CourseContent extends StatelessWidget {
                               : Icons.play_circle_outline_rounded,
                         ),
                         title: Text(lesson.title),
-                        subtitle: lesson.isIntro
-                            ? const Text('Förhandsvisning')
-                            : (isLocked ? const Text('Låst innehåll') : null),
+                        subtitle: isLocked
+                            ? const Text('Låst innehåll')
+                            : Text('Lektion ${lesson.position}'),
                         enabled: !isLocked,
                         onTap: () =>
                             _handleLessonTap(context, lesson, detail, isLocked),
@@ -462,10 +357,6 @@ class _CourseContent extends StatelessWidget {
     );
   }
 
-  void _openLesson(BuildContext context, String lessonId) {
-    context.pushNamed(AppRoute.lesson, pathParameters: {'id': lessonId});
-  }
-
   void _handleLessonTap(
     BuildContext context,
     LessonSummary lesson,
@@ -473,7 +364,7 @@ class _CourseContent extends StatelessWidget {
     bool isLocked,
   ) {
     if (!isLocked) {
-      _openLesson(context, lesson.id);
+      onOpenLesson(lesson.id);
       return;
     }
 
@@ -502,16 +393,6 @@ class _CourseContent extends StatelessWidget {
   }
 
   String _friendlyError(Object error) => AppFailure.from(error).message;
-
-  int _journeyStepValue(String? stepName) {
-    return switch ((stepName ?? '').trim().toLowerCase()) {
-      'step1' => 1,
-      'step2' => 2,
-      'step3' => 3,
-      'intro' => 0,
-      _ => 0,
-    };
-  }
 }
 
 List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {

@@ -26,10 +26,10 @@ class CourseIntroRouteArgs {
 
 /// Payload for quiz routes that require identifiers.
 class QuizRouteArgs {
-  const QuizRouteArgs({required this.quizId, this.courseId});
+  const QuizRouteArgs({required this.quizId, required this.courseId});
 
   final String quizId;
-  final String? courseId;
+  final String courseId;
 }
 
 /// Optional extras for the community page (e.g. active tab).

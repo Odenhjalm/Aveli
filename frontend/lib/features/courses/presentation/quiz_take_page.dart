@@ -6,10 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/courses/presentation/course_access_gate.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
@@ -17,35 +15,24 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class QuizTakePage extends ConsumerStatefulWidget {
-  const QuizTakePage({super.key});
+  const QuizTakePage({super.key, required this.quizId, required this.courseId});
+
+  final String quizId;
+  final String courseId;
 
   @override
   ConsumerState<QuizTakePage> createState() => _QuizTakePageState();
 }
 
 class _QuizTakePageState extends ConsumerState<QuizTakePage> {
-  String _quizId = '';
-  String _courseId = '';
-  bool _initialized = false;
+  ProviderSubscription<AsyncValue<Map<String, dynamic>?>>? _submissionSub;
   Map<String, dynamic> _answers = {};
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_initialized) return;
-    final state = GoRouterState.of(context);
-    final extra = state.extra;
-    if (extra is QuizRouteArgs) {
-      _quizId = extra.quizId;
-      _courseId = extra.courseId ?? '';
-    } else {
-      final qp = state.uri.queryParameters;
-      _quizId = qp['quizId'] ?? qp['id'] ?? '';
-      _courseId = qp['courseId'] ?? '';
-    }
-    _initialized = true;
-    ref.listen<AsyncValue<Map<String, dynamic>?>>(
-      quizSubmissionProvider(_quizId),
+  void initState() {
+    super.initState();
+    _submissionSub = ref.listenManual<AsyncValue<Map<String, dynamic>?>>(
+      quizSubmissionProvider(widget.quizId),
       (previous, next) {
         next.when(
           data: (result) {
@@ -68,19 +55,21 @@ class _QuizTakePageState extends ConsumerState<QuizTakePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final questions = _quizId.isEmpty
-        ? const AsyncValue<List<QuizQuestion>>.data([])
-        : ref.watch(quizQuestionsProvider(_quizId));
-    final submissionState = _quizId.isEmpty
-        ? const AsyncValue<Map<String, dynamic>?>.data(null)
-        : ref.watch(quizSubmissionProvider(_quizId));
+  void dispose() {
+    _submissionSub?.close();
+    super.dispose();
+  }
 
-    Widget content = questions.when(
+  @override
+  Widget build(BuildContext context) {
+    final questions = ref.watch(quizQuestionsProvider(widget.quizId));
+    final submissionState = ref.watch(quizSubmissionProvider(widget.quizId));
+
+    final content = questions.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => Center(child: Text(_friendlyError(error))),
       data: (items) => _QuizContent(
-        quizId: _quizId,
+        quizId: widget.quizId,
         questions: items,
         answers: _answers,
         onSetSingle: _setSingle,
@@ -90,14 +79,6 @@ class _QuizTakePageState extends ConsumerState<QuizTakePage> {
         submissionState: submissionState,
       ),
     );
-
-    if (_courseId.isNotEmpty) {
-      content = CourseAccessGate(
-        courseId: _courseId,
-        loading: const Center(child: CircularProgressIndicator()),
-        child: content,
-      );
-    }
 
     return AppScaffold(
       title: 'Quiz',
@@ -127,24 +108,15 @@ class _QuizTakePageState extends ConsumerState<QuizTakePage> {
   }
 
   Future<void> _submit() async {
-    if (_quizId.isEmpty) {
-      showSnack(context, 'Quiz saknas.');
-      return;
-    }
     final auth = ref.read(authControllerProvider);
     if (!auth.isAuthenticated) {
-      final redirect = GoRouter.of(context).namedLocation(
-        AppRoute.courseQuiz,
-        queryParameters: {
-          'quizId': _quizId,
-          if (_courseId.isNotEmpty) 'courseId': _courseId,
-        },
-      );
       if (!mounted || !context.mounted) return;
-      context.goNamed(AppRoute.login, queryParameters: {'redirect': redirect});
+      context.goNamed(AppRoute.login);
       return;
     }
-    await ref.read(quizSubmissionProvider(_quizId).notifier).submit(_answers);
+    await ref
+        .read(quizSubmissionProvider(widget.quizId).notifier)
+        .submit(_answers);
   }
 
   String _friendlyError(Object error) => AppFailure.from(error).message;

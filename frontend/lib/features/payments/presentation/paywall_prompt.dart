@@ -25,7 +25,7 @@ class PaywallPrompt extends ConsumerWidget {
         courseId: courseId,
         courseTitle: course?.title,
         coursePrice: course?.priceCents,
-        courseIsIntro: course?.isFreeIntro,
+        courseIsIntro: course?.isIntroCourse,
         courseSlug: course?.slug,
         isAuthenticated: isAuthenticated,
       ),
@@ -70,7 +70,9 @@ class _PaywallBody extends StatelessWidget {
         ? formatCoursePriceFromOre(
             amountOre: coursePrice!,
             isFreeIntro: false,
-            debugContext: courseSlug == null ? 'PaywallPrompt' : 'slug=$courseSlug',
+            debugContext: courseSlug == null
+                ? 'PaywallPrompt'
+                : 'slug=$courseSlug',
           )
         : null;
     final title = courseTitle ?? 'Kursen är låst';

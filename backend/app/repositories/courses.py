@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from uuid import uuid4
 from typing import Any, Sequence
 
 from psycopg.rows import dict_row
@@ -157,8 +158,11 @@ async def is_enrolled(user_id: str, course_id: str) -> bool:
 
 
 async def list_course_lessons(course_id: str) -> Sequence[LessonRow]:
-    query = f"""
-        select {_lesson_columns(include_content=False)}
+    query = """
+        select
+            l.id,
+            l.lesson_title as title,
+            l.position
         from app.lessons as l
         where l.course_id = %s
         order by l.position asc, l.id asc
@@ -215,3 +219,36 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             await cur.execute(query, (lesson_id,))
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def create_course_enrollment(
+    *,
+    user_id: str,
+    course_id: str,
+    source: str,
+) -> dict[str, Any]:
+    enrollment_id = str(uuid4())
+    query = """
+        select
+            ce.id,
+            ce.user_id,
+            ce.course_id,
+            ce.source::text as source,
+            ce.granted_at,
+            ce.drip_started_at,
+            ce.current_unlock_position
+        from app.canonical_create_course_enrollment(
+            %s::uuid,
+            %s::uuid,
+            %s::uuid,
+            %s::app.course_enrollment_source,
+            clock_timestamp()
+        ) as ce
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (enrollment_id, user_id, course_id, source))
+            row = await cur.fetchone()
+    if row is None:
+        raise RuntimeError("canonical course enrollment was not returned")
+    return dict(row)

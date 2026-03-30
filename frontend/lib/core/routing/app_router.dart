@@ -406,7 +406,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.courseQuiz,
         name: AppRoute.courseQuiz,
-        builder: (context, state) => const QuizTakePage(),
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is! QuizRouteArgs ||
+              extra.quizId.trim().isEmpty ||
+              extra.courseId.trim().isEmpty) {
+            return const NotFoundPage();
+          }
+          return QuizTakePage(quizId: extra.quizId, courseId: extra.courseId);
+        },
       ),
       GoRoute(
         path: RoutePath.course,

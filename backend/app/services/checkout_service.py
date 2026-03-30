@@ -17,15 +17,6 @@ RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
 CANCEL_PATH = "checkout/cancel"
 RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
 CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
-
-
-def _normalize_step_level(value: Any) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in {"intro", "step1", "step2", "step3"}:
-        return normalized
-    return "step1"
-
-
 def _default_checkout_urls() -> tuple[str, str]:
     base = (settings.frontend_base_url or "").rstrip("/")
     success_http = f"{base}/{RETURN_PATH}" if base else None
@@ -54,29 +45,14 @@ async def can_purchase_course(
     if not user_id:
         return False, "user id missing"
 
-    course_step = course.get("step_level")
-    if course_step in (None, ""):
-        course_step = course.get("journey_step")
-    if course_step in (None, "") and course.get("is_free_intro"):
-        course_step = "intro"
-    step_level = _normalize_step_level(course_step)
-    if step_level in {"intro", "step1"}:
+    course_step = str(course.get("step") or "").strip().lower()
+    if course_step not in {"intro", "step1", "step2", "step3"}:
+        return False, "course step missing"
+    if course_step == "intro":
+        return False, "intro courses require intro enrollment"
+    if course_step in {"step1", "step2", "step3"}:
         return True, None
-
-    family_value = str(course.get("course_family") or "").strip().lower()
-    if not family_value:
-        return False, "course family is missing"
-
-    has_step1 = await courses_repo.user_owns_course_step(user_id, family_value, "step1")
-    if step_level == "step2":
-        if has_step1:
-            return True, None
-        return False, "step2 purchase requires ownership of step1"
-
-    has_step2 = await courses_repo.user_owns_course_step(user_id, family_value, "step2")
-    if has_step1 and has_step2:
-        return True, None
-    return False, "step3 purchase requires ownership of step1 and step2"
+    return False, "course step unsupported"
 
 
 async def create_course_checkout(
@@ -87,11 +63,6 @@ async def create_course_checkout(
     course = await courses_repo.get_course_by_slug(slug)
     if not course:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="course not found")
-    if course.get("is_free_intro") is True:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="intro courses cannot be purchased",
-        )
     can_purchase, denial_reason = await can_purchase_course(user, course)
     if not can_purchase:
         raise HTTPException(
@@ -105,7 +76,7 @@ async def create_course_checkout(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="course has no Stripe price configured",
         )
-    currency = (course.get("currency") or "sek").lower()
+    currency = "sek"
 
     try:
         ensured_course = await courses_service.ensure_course_stripe_assets(course)
