@@ -736,6 +736,63 @@ class StudioLessonUpdate(BaseModel):
     position: int | None = None
 
 
+class StudioLessonMediaUploadUrlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+    media_type: Literal["audio", "image", "video", "document", "pdf"]
+
+    @field_validator("media_type", mode="before")
+    @classmethod
+    def _normalize_media_type(cls, value: Any) -> Any:
+        normalized = str(value or "").strip().lower()
+        if normalized == "pdf":
+            return "document"
+        return normalized
+
+
+class StudioLessonMediaUploadUrlResponse(BaseModel):
+    lesson_media_id: UUID
+    lesson_id: UUID
+    media_type: Literal["audio", "image", "video", "document"]
+    state: Literal["pending_upload"]
+    position: int
+    upload_url: str
+    headers: dict[str, str]
+    expires_at: datetime
+
+
+class StudioLessonMediaCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class StudioLessonMediaItem(BaseModel):
+    lesson_media_id: UUID
+    lesson_id: UUID
+    position: int
+    media_type: Literal["audio", "image", "video", "document"]
+    state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+    preview_ready: bool
+
+
+class StudioLessonMediaListResponse(BaseModel):
+    items: List[StudioLessonMediaItem]
+
+
+class StudioLessonMediaPreviewResponse(BaseModel):
+    lesson_media_id: UUID
+    preview_url: str
+    expires_at: datetime
+
+
+class StudioLessonMediaReorder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_media_ids: List[UUID]
+
+
 class MediaReorder(BaseModel):
     media_ids: List[str]
 

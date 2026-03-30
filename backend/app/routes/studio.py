@@ -23,6 +23,7 @@ from ..config import settings
 from ..db import get_conn
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
+from ..repositories import media_assets as media_assets_repo
 from ..services import (
     courses_service,
     email_service,
@@ -44,6 +45,7 @@ from . import upload as upload_routes
 
 router = APIRouter(prefix="/studio", tags=["studio"])
 course_lesson_router = APIRouter(prefix="/studio", tags=["studio"])
+studio_media_router = APIRouter(prefix="/studio", tags=["studio"])
 logger = logging.getLogger(__name__)
 _LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
     "1",
@@ -116,6 +118,78 @@ def _detect_kind(content_type: str | None) -> str:
     if lower == "application/pdf":
         return "pdf"
     return "other"
+
+
+def _normalize_studio_media_type(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "pdf":
+        return "document"
+    if normalized not in {"audio", "image", "video", "document"}:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported media type",
+        )
+    return normalized
+
+
+def _normalize_studio_mime_type(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="mime_type is required",
+        )
+    return normalized
+
+
+def _studio_audio_ingest_format(*, filename: str, mime_type: str) -> str:
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    if suffix not in {"mp3", "m4a", "wav"}:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported audio format",
+        )
+    if mime_type not in {"audio/mpeg", "audio/mp3", "audio/m4a", "audio/mp4", "audio/wav", "audio/x-wav"}:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported audio format",
+        )
+    return suffix
+
+
+def _studio_passthrough_ingest_format(
+    *,
+    media_type: str,
+    filename: str,
+    mime_type: str,
+) -> str:
+    if media_type == "image":
+        if not mime_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported image format",
+            )
+        suffix = Path(filename).suffix.lower().lstrip(".")
+        return suffix or mime_type.split("/", 1)[1].split(";", 1)[0].strip().lower()
+    if media_type == "video":
+        if not mime_type.startswith("video/"):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported video format",
+            )
+        suffix = Path(filename).suffix.lower().lstrip(".")
+        return suffix or mime_type.split("/", 1)[1].split(";", 1)[0].strip().lower()
+    if media_type == "document":
+        if mime_type != "application/pdf":
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported document format",
+            )
+        return "pdf"
+    raise HTTPException(
+        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        detail="Unsupported media type",
+    )
 
 
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
@@ -193,6 +267,27 @@ async def _apply_course_read_contract(
     await courses_service.attach_course_cover_read_contract(courses)
 
 
+async def _require_studio_lesson(lesson_id: str) -> dict[str, Any]:
+    lesson = await courses_service.fetch_studio_lesson(lesson_id)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    return lesson
+
+
+def _studio_media_item_from_row(
+    row: dict[str, Any],
+) -> schemas.StudioLessonMediaItem:
+    normalized_state = str(row.get("state") or "pending_upload")
+    return schemas.StudioLessonMediaItem(
+        lesson_media_id=UUID(str(row["id"])),
+        lesson_id=UUID(str(row["lesson_id"])),
+        position=int(row["position"]),
+        media_type=str(row["kind"]),
+        state=normalized_state,
+        preview_ready=normalized_state in {"uploaded", "ready"},
+    )
+
+
 @router.get("/courses")
 async def studio_courses(current: TeacherUser):
     rows = list(await courses_service.list_courses(teacher_id=str(current["id"])))
@@ -262,6 +357,259 @@ async def create_course(payload: schemas.StudioCourseCreate, current: StudioActo
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create course")
     return row
+
+
+@studio_media_router.post(
+    "/lessons/{lesson_id}/media/upload-url",
+    response_model=schemas.StudioLessonMediaUploadUrlResponse,
+)
+async def studio_issue_lesson_media_upload_url(
+    lesson_id: UUID,
+    payload: schemas.StudioLessonMediaUploadUrlRequest,
+    current: StudioActor,
+):
+    del current
+    lesson = await _require_studio_lesson(str(lesson_id))
+    if payload.size_bytes > _MAX_MEDIA_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large",
+        )
+
+    course_id = str(lesson["course_id"])
+    normalized_media_type = _normalize_studio_media_type(payload.media_type)
+    normalized_mime_type = _normalize_studio_mime_type(payload.mime_type)
+    if normalized_media_type == "audio":
+        ingest_format = _studio_audio_ingest_format(
+            filename=payload.filename,
+            mime_type=normalized_mime_type,
+        )
+        object_path = upload_routes.media_paths.build_lesson_audio_source_object_path(
+            course_id,
+            str(lesson_id),
+            payload.filename,
+        )
+    else:
+        ingest_format = _studio_passthrough_ingest_format(
+            media_type=normalized_media_type,
+            filename=payload.filename,
+            mime_type=normalized_mime_type,
+        )
+        object_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
+            course_id=course_id,
+            lesson_id=str(lesson_id),
+            media_kind=normalized_media_type,
+            filename=payload.filename,
+        )
+
+    try:
+        upload = await storage_service.storage_service.create_upload_url(
+            object_path,
+            content_type=normalized_mime_type,
+            upsert=False,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    media_asset_id = str(uuid4())
+    lesson_media_row = None
+    try:
+        await media_assets_repo.create_media_asset(
+            media_asset_id=media_asset_id,
+            media_type=normalized_media_type,
+            purpose="lesson_media",
+            original_object_path=upload.path,
+            ingest_format=ingest_format,
+            state="pending_upload",
+        )
+        lesson_media_row = await courses_repo.create_lesson_media(
+            lesson_id=str(lesson_id),
+            media_asset_id=media_asset_id,
+        )
+    except Exception:
+        if lesson_media_row is None:
+            await media_assets_repo.delete_media_asset(media_asset_id)
+        raise
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
+    return schemas.StudioLessonMediaUploadUrlResponse(
+        lesson_media_id=UUID(str(lesson_media_row["id"])),
+        lesson_id=UUID(str(lesson_id)),
+        media_type=normalized_media_type,
+        state="pending_upload",
+        position=int(lesson_media_row["position"]),
+        upload_url=upload.url,
+        headers=dict(upload.headers),
+        expires_at=expires_at,
+    )
+
+
+@studio_media_router.post(
+    "/lessons/{lesson_id}/media/{lesson_media_id}/complete",
+    response_model=schemas.StudioLessonMediaItem,
+)
+async def studio_complete_lesson_media_upload(
+    lesson_id: UUID,
+    lesson_media_id: UUID,
+    payload: schemas.StudioLessonMediaCompleteRequest,
+    current: StudioActor,
+):
+    del current, payload
+    await _require_studio_lesson(str(lesson_id))
+    row = await courses_repo.get_lesson_media_for_studio(
+        str(lesson_id),
+        str(lesson_media_id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Lesson media not found")
+
+    media_asset = await media_assets_repo.get_media_asset(str(row["media_asset_id"]))
+    if not media_asset:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+
+    original_object_path = str(media_asset.get("original_object_path") or "").strip()
+    if not original_object_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset is missing upload storage",
+        )
+
+    updated = await media_assets_repo.update_media_asset_state(
+        str(row["media_asset_id"]),
+        state="uploaded",
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+
+    refreshed = await courses_repo.get_lesson_media_for_studio(
+        str(lesson_id),
+        str(lesson_media_id),
+    )
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Lesson media not found")
+    return _studio_media_item_from_row(refreshed)
+
+
+@studio_media_router.get(
+    "/lessons/{lesson_id}/media",
+    response_model=schemas.StudioLessonMediaListResponse,
+)
+async def studio_list_lesson_media(
+    lesson_id: UUID,
+    current: StudioActor,
+):
+    del current
+    await _require_studio_lesson(str(lesson_id))
+    rows = await courses_service.list_lesson_media(str(lesson_id))
+    return schemas.StudioLessonMediaListResponse(
+        items=[_studio_media_item_from_row(dict(row)) for row in rows]
+    )
+
+
+@studio_media_router.get(
+    "/lessons/{lesson_id}/media/{lesson_media_id}/preview",
+    response_model=schemas.StudioLessonMediaPreviewResponse,
+)
+async def studio_preview_lesson_media(
+    lesson_id: UUID,
+    lesson_media_id: UUID,
+    current: StudioActor,
+):
+    del current
+    await _require_studio_lesson(str(lesson_id))
+    row = await courses_repo.get_lesson_media_for_studio(
+        str(lesson_id),
+        str(lesson_media_id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Lesson media not found")
+    normalized_state = str(row.get("state") or "").strip().lower()
+    if normalized_state not in {"uploaded", "ready"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Preview is not ready",
+        )
+
+    media_asset = await media_assets_repo.get_media_asset_access(str(row["media_asset_id"]))
+    if not media_asset:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+
+    object_path = str(media_asset.get("original_object_path") or "").strip()
+    if not object_path:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Preview storage is unavailable",
+        )
+    storage_client = storage_service.get_storage_service(
+        str(media_asset.get("storage_bucket") or settings.media_source_bucket)
+    )
+    try:
+        signed = await storage_client.get_presigned_url(
+            object_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+            filename=Path(object_path).name,
+            download=False,
+        )
+    except storage_service.StorageServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=signed.expires_in)
+    return schemas.StudioLessonMediaPreviewResponse(
+        lesson_media_id=lesson_media_id,
+        preview_url=signed.url,
+        expires_at=expires_at,
+    )
+
+
+@studio_media_router.patch("/lessons/{lesson_id}/media/reorder")
+async def studio_reorder_lesson_media(
+    lesson_id: UUID,
+    payload: schemas.StudioLessonMediaReorder,
+    current: StudioActor,
+):
+    del current
+    await _require_studio_lesson(str(lesson_id))
+    ordered_ids = [str(item) for item in payload.lesson_media_ids]
+    if not ordered_ids:
+        return {"ok": True}
+    if len(set(ordered_ids)) != len(ordered_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Duplicate lesson media id in reorder payload",
+        )
+    try:
+        await courses_repo.reorder_lesson_media(str(lesson_id), ordered_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@studio_media_router.delete("/lessons/{lesson_id}/media/{lesson_media_id}")
+async def studio_delete_lesson_media(
+    lesson_id: UUID,
+    lesson_media_id: UUID,
+    current: StudioActor,
+):
+    del current
+    await _require_studio_lesson(str(lesson_id))
+    deleted = await courses_repo.delete_lesson_media(
+        str(lesson_id),
+        str(lesson_media_id),
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Lesson media not found")
+
+    media_asset_id = str(deleted.get("media_asset_id") or "").strip()
+    if media_asset_id and not await courses_repo.lesson_media_asset_is_linked(media_asset_id):
+        await media_assets_repo.delete_media_asset(media_asset_id)
+    return {"deleted": True}
 
 
 @router.post("/lessons/{lesson_id}/media/presign")

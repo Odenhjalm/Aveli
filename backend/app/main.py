@@ -122,6 +122,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(courses.router)
     app.include_router(courses.api_router)
     app.include_router(studio.course_lesson_router)
+    app.include_router(studio.studio_media_router)
 
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)

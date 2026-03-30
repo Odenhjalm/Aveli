@@ -345,6 +345,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             lm.media_asset_id,
             lm.position,
             ma.media_type::text as kind,
+            ma.state::text as state,
             rm.lesson_media_id is not null as playback_ready
         from app.lesson_media as lm
         join app.media_assets as ma
@@ -359,6 +360,169 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             await cur.execute(query, (lesson_id,))
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def get_lesson_media_for_studio(
+    lesson_id: str,
+    lesson_media_id: str,
+) -> dict[str, Any] | None:
+    query = """
+        select
+            lm.id,
+            lm.lesson_id,
+            lm.media_asset_id,
+            lm.position,
+            ma.media_type::text as kind,
+            ma.state::text as state,
+            rm.lesson_media_id is not null as playback_ready
+        from app.lesson_media as lm
+        join app.media_assets as ma
+          on ma.id = lm.media_asset_id
+        left join app.runtime_media as rm
+          on rm.lesson_media_id = lm.id
+        where lm.lesson_id = %s::uuid
+          and lm.id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id, lesson_media_id))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def create_lesson_media(
+    *,
+    lesson_id: str,
+    media_asset_id: str,
+    lesson_media_id: str | None = None,
+) -> dict[str, Any]:
+    new_lesson_media_id = str(lesson_media_id or uuid4())
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                select coalesce(max(position), 0) + 1 as next_position
+                from app.lesson_media
+                where lesson_id = %s::uuid
+                """,
+                (lesson_id,),
+            )
+            position_row = await cur.fetchone()
+            position = int(position_row["next_position"]) if position_row else 1
+            await cur.execute(
+                """
+                insert into app.lesson_media (
+                    id,
+                    lesson_id,
+                    media_asset_id,
+                    position
+                )
+                values (
+                    %s::uuid,
+                    %s::uuid,
+                    %s::uuid,
+                    %s
+                )
+                """,
+                (new_lesson_media_id, lesson_id, media_asset_id, position),
+            )
+            await conn.commit()
+    row = await get_lesson_media_for_studio(lesson_id, new_lesson_media_id)
+    if row is None:
+        raise RuntimeError("created lesson_media was not returned")
+    return row
+
+
+async def reorder_lesson_media(
+    lesson_id: str,
+    ordered_lesson_media_ids: Sequence[str],
+) -> None:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                select id
+                from app.lesson_media
+                where lesson_id = %s::uuid
+                order by position asc, id asc
+                """,
+                (lesson_id,),
+            )
+            rows = await cur.fetchall()
+            existing_ids = [
+                str(row["id"])
+                for row in rows
+                if row.get("id") is not None
+            ]
+            if set(existing_ids) != set(ordered_lesson_media_ids):
+                raise ValueError(
+                    "Reorder payload must include every lesson media row exactly once"
+                )
+
+            offset = len(ordered_lesson_media_ids)
+            for index, current_lesson_media_id in enumerate(
+                ordered_lesson_media_ids,
+                start=1,
+            ):
+                await cur.execute(
+                    """
+                    update app.lesson_media
+                    set position = %s
+                    where lesson_id = %s::uuid
+                      and id = %s::uuid
+                    """,
+                    (offset + index, lesson_id, current_lesson_media_id),
+                )
+
+            for index, current_lesson_media_id in enumerate(
+                ordered_lesson_media_ids,
+                start=1,
+            ):
+                await cur.execute(
+                    """
+                    update app.lesson_media
+                    set position = %s
+                    where lesson_id = %s::uuid
+                      and id = %s::uuid
+                    """,
+                    (index, lesson_id, current_lesson_media_id),
+                )
+            await conn.commit()
+
+
+async def delete_lesson_media(
+    lesson_id: str,
+    lesson_media_id: str,
+) -> dict[str, Any] | None:
+    query = """
+        delete from app.lesson_media
+        where lesson_id = %s::uuid
+          and id = %s::uuid
+        returning id, lesson_id, media_asset_id, position
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id, lesson_media_id))
+            row = await cur.fetchone()
+            await conn.commit()
+    return dict(row) if row else None
+
+
+async def lesson_media_asset_is_linked(media_asset_id: str) -> bool:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                select 1
+                from app.lesson_media
+                where media_asset_id = %s::uuid
+                limit 1
+                """,
+                (media_asset_id,),
+            )
+            row = await cur.fetchone()
+    return row is not None
 
 
 async def create_lesson(
