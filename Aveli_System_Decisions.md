@@ -257,7 +257,15 @@
 
 - All audio must pass the worker pipeline.
 - WAV must become MP3 before `ready`.
+- Audio `ready` requires `media_assets.playback_format = mp3`.
 - No direct `ready` writes are allowed for audio.
+- Canonical worker mutation authority for media readiness is a single security-definer function.
+- Media readiness mutation must occur only through the canonical worker function.
+- The canonical worker function is the only allowed mutation boundary for audio state transitions that lead to `media_assets.state = ready`.
+- The canonical worker function assigns `media_assets.playback_format = mp3` during canonical audio processing.
+- Direct `UPDATE` to `media_assets.state = ready` is forbidden.
+- No API path, migration path, trigger path, or ad-hoc SQL path may mark audio `ready` outside the canonical worker function.
+- There is no alternate media-readiness mutation path.
 
 ## Home Player Model (Canonical)
 

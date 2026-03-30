@@ -137,6 +137,7 @@ Canonical `media_assets` fields:
 | `purpose` | enum | required: `course_cover | lesson_media` | Canonical business purpose |
 | `original_object_path` | text | required | Canonical source object path |
 | `ingest_format` | text | required | Canonical source format |
+| `playback_format` | text | nullable | Canonical worker-assigned playback format |
 | `state` | enum | required: `pending_upload | uploaded | processing | ready | failed` | Canonical processing state |
 
 Canonical `lesson_media` fields:
@@ -166,6 +167,7 @@ Canonical processing rules:
 - WAV input must be converted to MP3 before the asset is considered playback-ready.
 - All audio must reach `state = ready` before playback is valid.
 - `ready` means the media has completed all required processing for its `media_type` and `purpose`.
+- Audio `ready` requires `media_assets.playback_format = mp3`.
 - The system must never treat raw uploaded WAV as playback-ready course media.
 
 Canonical processing mode:
@@ -174,15 +176,22 @@ Canonical processing mode:
 - Migration inserts canonical `media_assets` and `lesson_media`.
 - Audio assets enter the worker pipeline.
 - The worker performs WAV -> MP3 conversion.
+- The worker assigns `media_assets.playback_format = mp3` during canonical audio processing.
 - Audio assets become `ready` only after worker processing completes.
+- Canonical worker mutation authority for media readiness is a single security-definer function.
+- Media readiness mutation must occur only through the canonical worker function.
+- The canonical worker function is the only allowed mutation boundary for audio state transitions that lead to `media_assets.state = ready`.
 
 Forbidden processing behavior:
 
 - direct raw-WAV playback
 - skipping required audio conversion
 - marking audio `ready` before conversion completes
+- marking audio `ready` while `media_assets.playback_format <> mp3`
+- direct `UPDATE` to `media_assets.state = ready`
 - writing `runtime_media` as a substitute for processing completion
 - deterministic replication as an alternative to worker processing
+- API, migration, trigger, or ad-hoc SQL writes that mark audio `ready` outside the canonical worker function
 
 ## 7. Surface Exposure and Canonical Course Content Access Rules
 
@@ -434,6 +443,7 @@ Canonical media mapping:
 - `media_assets.original_object_path <- media.path` for lesson media
 - `media_assets.original_object_path <- course.cover.path` for course covers
 - `media_assets.ingest_format <- deterministic file extension derived from the source path`
+- `media_assets.playback_format <- null on ingest; canonical worker processing assigns mp3 for audio`
 - `media_assets.purpose <- course_cover` for course covers
 - `media_assets.purpose <- lesson_media` for lesson attachments
 - `media_assets.state <- migration execution mode output`

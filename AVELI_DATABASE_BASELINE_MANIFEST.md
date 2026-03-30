@@ -97,12 +97,32 @@ Canonical content rules:
 - `lesson_contents` is the only canonical holder of lesson body content.
 - `lesson_contents` must not duplicate lesson identity or structure fields.
 
+### `media_assets`
+
+The canonical `media_assets` table must allow these media-processing fields:
+
+| Field | Type | Constraints | Meaning |
+| --- | --- | --- | --- |
+| `id` | uuid | required | Stable media identity |
+| `media_type` | enum | required | Canonical media type |
+| `purpose` | enum | required | Canonical media purpose |
+| `original_object_path` | text | required | Canonical source object path |
+| `ingest_format` | text | required | Canonical source format |
+| `playback_format` | text | nullable | Canonical worker-assigned playback format |
+| `state` | enum | required | Canonical processing state |
+
+Canonical media rules:
+
+- `ingest_format` stores the canonical source format.
+- `playback_format` stores the canonical playback format assigned by worker processing.
+- Audio rows may become `ready` only when `playback_format = mp3`.
+
 ## 3. DB Enforcement Rules
 
 - DB enforces shape only:
   - `drip_enabled = true` -> `drip_interval_days IS NOT NULL`
   - `drip_enabled = false` -> `drip_interval_days IS NULL`
-- DB may enforce local field validity such as required storage shape and non-negative stored unlock positions.
+- DB may enforce local field validity such as required storage shape, non-negative stored unlock positions, and `playback_format = mp3` for audio `ready` rows.
 - DB access policies must expose `courses` through `course_discovery_surface` without requiring `course_enrollments`, limited to the allowed discovery categories only.
 - DB access policies must expose lesson structure through `lesson_structure_surface` without requiring `course_enrollments`, limited to the allowed structure categories only.
 - DB access policies must make `lesson_content_surface` accessible only when `course_enrollments` AND `lesson.position <= current_unlock_position`.

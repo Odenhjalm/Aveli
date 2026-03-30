@@ -4,8 +4,14 @@ create table app.media_assets (
   purpose app.media_purpose not null,
   original_object_path text not null,
   ingest_format text not null,
+  playback_format text,
   state app.media_state not null,
-  constraint media_assets_pkey primary key (id)
+  constraint media_assets_pkey primary key (id),
+  constraint media_assets_audio_ready_playback_format_check check (
+    media_type <> 'audio'::app.media_type
+    or state <> 'ready'::app.media_state
+    or playback_format = 'mp3'
+  )
 );
 
 -- Structural cover linkage only. The core-table phase remains limited to

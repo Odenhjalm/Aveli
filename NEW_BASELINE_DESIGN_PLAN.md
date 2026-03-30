@@ -23,12 +23,12 @@ Each slot owns one responsibility and must not carry mixed old/new semantics.
 | `0003` | `lessons_core.sql` | canonical `lessons` table and lesson ordering constraints | lesson body content, intro flags, lesson pricing, media state |
 | `0004` | `lesson_contents_core.sql` | canonical `lesson_contents` table and lesson body content storage | structure fields, media linkage, fallback content storage |
 | `0005` | `course_enrollments_core.sql` | canonical `course_enrollments` table and drip invariants | membership logic, entitlement fallback |
-| `0006` | `media_assets_core.sql` | canonical `media_assets` table and processing-state constraints | lesson linkage, runtime fallback |
+| `0006` | `media_assets_core.sql` | canonical `media_assets` table and processing/playback-format constraints | lesson linkage, runtime fallback |
 | `0007` | `lesson_media_core.sql` | canonical `lesson_media` table and media ordering constraints | storage shortcuts, hybrid legacy linkage |
 | `0008` | `runtime_media_projection_core.sql` | read-only `runtime_media` projection boundary | source-of-truth writes, legacy fallback |
 | `0009` | `runtime_media_projection_sync.sql` | projection sync functions/triggers from canonical sources | legacy storage logic, dual projections |
 | `0010` | `canonical_access_policies.sql` | `course_discovery_surface`, `lesson_structure_surface`, and `lesson_content_surface` policies using canonical authorities only | compatibility paths, mixed semantics |
-| `0011` | `worker_query_support.sql` | worker-only indexes/views needed for canonical audio/drip execution | queue truth tables, business semantics |
+| `0011` | `worker_query_support.sql` | canonical worker function plus worker-only indexes/views needed for canonical audio/drip execution | queue truth tables, alternate mutation paths, fallback business logic |
 
 Slot laws:
 
@@ -219,6 +219,7 @@ The new `media_assets` table is defined only by canonical laws:
 | `purpose` | `media_purpose` | not null |
 | `original_object_path` | text | not null |
 | `ingest_format` | text | not null |
+| `playback_format` | text | null |
 | `state` | `media_state` | not null |
 
 Required constraints:
@@ -226,10 +227,12 @@ Required constraints:
 - `purpose = course_cover` or `purpose = lesson_media` only
 - `media_type = audio | image | video | document` only
 - `state = pending_upload | uploaded | processing | ready | failed` only
+- audio `ready` rows require `playback_format = mp3`
 
 Canonical meaning:
 
 - This table stores canonical media identity and processing truth.
+- `ingest_format` stores source format and `playback_format` stores worker-assigned playback format.
 - It does not store lesson ordering.
 - It does not store legacy storage fallback fields.
 - It does not encode `canonical_protected_course_content_access`.
@@ -293,8 +296,9 @@ No additional worker truth tables are required by canonical system laws.
 
 The new baseline must not create queue or retry truth tables unless new canonical laws explicitly require them.
 
-Allowed worker support in `0010`:
+Allowed worker support in `0011`:
 
+- the canonical security-definer worker function
 - indexes
 - read-only helper views
 - non-business execution helpers
@@ -487,12 +491,16 @@ Verification:
 
 1. Bind audio processing to worker-only execution.
 2. Enforce WAV -> MP3 before `state = ready`.
-3. Enforce no direct audio `ready` writes.
+3. Enforce `playback_format = mp3` for audio `ready`.
+4. Enforce no direct audio `ready` writes.
+5. Enforce a single mutation boundary through the canonical security-definer worker function.
 
 Verification:
 
 - audio cannot become playback-ready without worker processing
 - no alternate audio pipeline exists
+- no path outside the canonical worker function can set `media_assets.state = ready`
+- audio `ready` rows always carry `playback_format = mp3`
 
 ### Phase 7: Enrollment and Drip Enforcement
 
