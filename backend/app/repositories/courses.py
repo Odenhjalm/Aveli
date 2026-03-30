@@ -114,6 +114,104 @@ async def list_public_courses(
     return await list_courses(search=search, limit=limit)
 
 
+async def create_course(payload: dict[str, Any]) -> CourseRow:
+    course_id = str(payload.get("id") or uuid4())
+    query = """
+        insert into app.courses (
+            id,
+            title,
+            slug,
+            course_group_id,
+            step,
+            price_amount_cents,
+            drip_enabled,
+            drip_interval_days,
+            cover_media_id
+        )
+        values (
+            %s::uuid,
+            %s,
+            %s,
+            %s::uuid,
+            %s::app.course_step,
+            %s,
+            %s,
+            %s,
+            %s::uuid
+        )
+        returning id
+    """
+    params = (
+        course_id,
+        payload["title"],
+        payload["slug"],
+        str(payload["course_group_id"]),
+        payload["step"],
+        payload.get("price_amount_cents"),
+        payload["drip_enabled"],
+        payload["drip_interval_days"],
+        str(payload["cover_media_id"]) if payload.get("cover_media_id") else None,
+    )
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            await cur.fetchone()
+            await conn.commit()
+    row = await get_course(course_id=course_id)
+    if row is None:
+        raise RuntimeError("created course was not returned")
+    return row
+
+
+async def update_course(course_id: str, patch: dict[str, Any]) -> CourseRow | None:
+    assignments: list[str] = []
+    params: list[Any] = []
+    field_specs = (
+        ("title", "title = %s", lambda value: value),
+        ("slug", "slug = %s", lambda value: value),
+        ("course_group_id", "course_group_id = %s::uuid", lambda value: str(value)),
+        ("step", "step = %s::app.course_step", lambda value: value),
+        ("price_amount_cents", "price_amount_cents = %s", lambda value: value),
+        ("drip_enabled", "drip_enabled = %s", lambda value: value),
+        ("drip_interval_days", "drip_interval_days = %s", lambda value: value),
+        ("cover_media_id", "cover_media_id = %s::uuid", lambda value: str(value) if value else None),
+    )
+    for key, sql, serializer in field_specs:
+        if key not in patch:
+            continue
+        assignments.append(sql)
+        params.append(serializer(patch[key]))
+
+    if not assignments:
+        return await get_course(course_id=course_id)
+
+    params.append(course_id)
+    query = f"""
+        update app.courses
+        set {", ".join(assignments)}
+        where id = %s::uuid
+        returning id
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_course(course_id=course_id)
+
+
+async def delete_course(course_id: str) -> bool:
+    query = "delete from app.courses where id = %s::uuid"
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            deleted = cur.rowcount > 0
+            await conn.commit()
+    return deleted
+
+
 async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     query = f"""
         select distinct on (c.id)
@@ -174,6 +272,27 @@ async def list_course_lessons(course_id: str) -> Sequence[LessonRow]:
     return [dict(row) for row in rows]
 
 
+async def list_studio_course_lessons(course_id: str) -> Sequence[LessonRow]:
+    query = """
+        select
+            l.id,
+            l.course_id,
+            l.lesson_title,
+            l.position,
+            lc.content_markdown
+        from app.lessons as l
+        left join app.lesson_contents as lc
+          on lc.lesson_id = l.id
+        where l.course_id = %s::uuid
+        order by l.position asc, l.id asc
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def get_lesson(lesson_id: str) -> LessonRow | None:
     query = f"""
         select {_lesson_columns(include_content=True)}
@@ -181,6 +300,27 @@ async def get_lesson(lesson_id: str) -> LessonRow | None:
         left join app.lesson_contents as lc
           on lc.lesson_id = l.id
         where l.id = %s
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_studio_lesson(lesson_id: str) -> LessonRow | None:
+    query = """
+        select
+            l.id,
+            l.course_id,
+            l.lesson_title,
+            l.position,
+            lc.content_markdown
+        from app.lessons as l
+        left join app.lesson_contents as lc
+          on lc.lesson_id = l.id
+        where l.id = %s::uuid
         limit 1
     """
     async with pool.connection() as conn:  # type: ignore
@@ -219,6 +359,120 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             await cur.execute(query, (lesson_id,))
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def create_lesson(
+    *,
+    lesson_id: str | None,
+    course_id: str,
+    lesson_title: str,
+    content_markdown: str,
+    position: int,
+) -> LessonRow:
+    new_lesson_id = str(lesson_id or uuid4())
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                insert into app.lessons (id, course_id, lesson_title, position)
+                values (%s::uuid, %s::uuid, %s, %s)
+                """,
+                (new_lesson_id, course_id, lesson_title, position),
+            )
+            await cur.execute(
+                """
+                insert into app.lesson_contents (lesson_id, content_markdown)
+                values (%s::uuid, %s)
+                """,
+                (new_lesson_id, content_markdown),
+            )
+            await conn.commit()
+    row = await get_studio_lesson(new_lesson_id)
+    if row is None:
+        raise RuntimeError("created lesson was not returned")
+    return row
+
+
+async def update_lesson(lesson_id: str, patch: dict[str, Any]) -> LessonRow | None:
+    lesson_assignments: list[str] = []
+    lesson_params: list[Any] = []
+    if "lesson_title" in patch:
+        lesson_assignments.append("lesson_title = %s")
+        lesson_params.append(patch["lesson_title"])
+    if "position" in patch:
+        lesson_assignments.append("position = %s")
+        lesson_params.append(patch["position"])
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            if lesson_assignments:
+                await cur.execute(
+                    f"""
+                    update app.lessons
+                    set {", ".join(lesson_assignments)}
+                    where id = %s::uuid
+                    returning id
+                    """,
+                    (*lesson_params, lesson_id),
+                )
+                lesson_row = await cur.fetchone()
+                if lesson_row is None:
+                    await conn.rollback()
+                    return None
+            else:
+                await cur.execute(
+                    "select id from app.lessons where id = %s::uuid limit 1",
+                    (lesson_id,),
+                )
+                lesson_row = await cur.fetchone()
+                if lesson_row is None:
+                    return None
+
+            if "content_markdown" in patch:
+                await cur.execute(
+                    """
+                    insert into app.lesson_contents (lesson_id, content_markdown)
+                    values (%s::uuid, %s)
+                    on conflict (lesson_id)
+                    do update set content_markdown = excluded.content_markdown
+                    """,
+                    (lesson_id, patch["content_markdown"]),
+                )
+            await conn.commit()
+
+    return await get_studio_lesson(lesson_id)
+
+
+async def reorder_lessons(course_id: str, ordered_lesson_ids: Sequence[str]) -> None:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            for index, lesson_id in enumerate(ordered_lesson_ids, start=1):
+                await cur.execute(
+                    """
+                    update app.lessons
+                    set position = %s
+                    where id = %s::uuid
+                      and course_id = %s::uuid
+                    """,
+                    (index, lesson_id, course_id),
+                )
+            await conn.commit()
+
+
+async def delete_lesson(lesson_id: str) -> bool:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "delete from app.lesson_contents where lesson_id = %s::uuid",
+                (lesson_id,),
+            )
+            await cur.execute(
+                "delete from app.lessons where id = %s::uuid",
+                (lesson_id,),
+            )
+            deleted = cur.rowcount > 0
+            await conn.commit()
+    return deleted
 
 
 async def create_course_enrollment(

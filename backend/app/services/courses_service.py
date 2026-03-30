@@ -48,9 +48,11 @@ async def fetch_course_access_subject(course_id: str) -> dict[str, Any] | None:
 
 async def list_courses(
     *,
+    teacher_id: str | None = None,
     limit: int | None = None,
     search: str | None = None,
 ) -> Sequence[dict[str, Any]]:
+    del teacher_id
     return list(await courses_repo.list_courses(limit=limit, search=search))
 
 
@@ -72,8 +74,17 @@ async def list_course_lessons(course_id: str) -> Sequence[dict[str, Any]]:
     return list(await courses_repo.list_course_lessons(course_id))
 
 
+async def list_studio_course_lessons(course_id: str) -> Sequence[dict[str, Any]]:
+    return list(await courses_repo.list_studio_course_lessons(course_id))
+
+
 async def fetch_lesson(lesson_id: str) -> dict[str, Any] | None:
     row = await courses_repo.get_lesson(lesson_id)
+    return dict(row) if row else None
+
+
+async def fetch_studio_lesson(lesson_id: str) -> dict[str, Any] | None:
+    row = await courses_repo.get_studio_lesson(lesson_id)
     return dict(row) if row else None
 
 
@@ -88,6 +99,78 @@ async def list_lesson_media(
 ) -> Sequence[dict[str, Any]]:
     del mode
     return list(await courses_repo.list_lesson_media(lesson_id))
+
+
+async def attach_course_cover_read_contract(
+    courses: dict[str, Any] | list[dict[str, Any]] | None,
+) -> None:
+    del courses
+
+
+async def create_course(payload: dict[str, Any]) -> dict[str, Any]:
+    row = await courses_repo.create_course(payload)
+    return dict(row)
+
+
+async def update_course(course_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+    row = await courses_repo.update_course(course_id, patch)
+    return dict(row) if row else None
+
+
+async def delete_course(course_id: str) -> bool:
+    return await courses_repo.delete_course(course_id)
+
+
+async def create_lesson(
+    course_id: str,
+    *,
+    lesson_title: str,
+    content_markdown: str,
+    position: int,
+    lesson_id: str | None = None,
+) -> dict[str, Any]:
+    row = await courses_repo.create_lesson(
+        lesson_id=lesson_id,
+        course_id=course_id,
+        lesson_title=lesson_title,
+        content_markdown=content_markdown,
+        position=position,
+    )
+    return dict(row)
+
+
+async def upsert_lesson(course_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    existing_id = str(payload.get("id") or "").strip()
+    lesson_id = existing_id or None
+    if lesson_id is None:
+        required_fields = {"lesson_title", "content_markdown", "position"}
+        missing = sorted(field for field in required_fields if field not in payload)
+        if missing:
+            raise ValueError(f"missing lesson fields: {', '.join(missing)}")
+        return await create_lesson(
+            course_id,
+            lesson_title=str(payload["lesson_title"]),
+            content_markdown=str(payload["content_markdown"]),
+            position=int(payload["position"]),
+        )
+
+    patch: dict[str, Any] = {}
+    if "lesson_title" in payload:
+        patch["lesson_title"] = payload["lesson_title"]
+    if "content_markdown" in payload:
+        patch["content_markdown"] = payload["content_markdown"]
+    if "position" in payload:
+        patch["position"] = payload["position"]
+    row = await courses_repo.update_lesson(lesson_id, patch)
+    return dict(row) if row else None
+
+
+async def reorder_lessons(course_id: str, ordered_lesson_ids: Sequence[str]) -> None:
+    return await courses_repo.reorder_lessons(course_id, ordered_lesson_ids)
+
+
+async def delete_lesson(lesson_id: str) -> bool:
+    return await courses_repo.delete_lesson(lesson_id)
 
 
 async def is_course_owner(course_id: str, user_id: str) -> bool:

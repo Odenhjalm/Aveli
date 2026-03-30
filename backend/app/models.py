@@ -400,56 +400,8 @@ async def is_teacher_user(user_id: str) -> bool:
 
 
 async def teacher_courses(user_id: str) -> Iterable[dict]:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    SELECT id,
-                           title,
-                           slug,
-                           description,
-                           cover_media_id,
-                           video_url,
-                           branch,
-                           is_free_intro,
-                           journey_step,
-                           is_published,
-                           price_amount_cents,
-                           currency,
-                           created_at,
-                           updated_at
-                    FROM app.courses
-                    WHERE created_by = %s
-                    ORDER BY updated_at DESC
-                    """,
-                    (user_id,),
-                )
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                await cur.execute(
-                    """
-                    SELECT id,
-                           title,
-                           slug,
-                           description,
-                           NULL::uuid AS cover_media_id,
-                           video_url,
-                           branch,
-                           is_free_intro,
-                           NULL::text AS journey_step,
-                           is_published,
-                           0::int AS price_amount_cents,
-                           'sek'::text AS currency,
-                           created_at,
-                           updated_at
-                    FROM app.courses
-                    WHERE created_by = %s
-                    ORDER BY updated_at DESC
-                    """,
-                    (user_id,),
-                )
-            return await cur.fetchall()
+    del user_id
+    return await courses_service.list_courses()
 
 
 async def user_certificates(
@@ -538,22 +490,20 @@ async def update_user_password(user_id: str, password: str) -> None:
 
 
 async def create_course_for_user(user_id: str, data: dict) -> dict | None:
-    payload = {**data, "created_by": user_id}
-    return await courses_service.create_course(payload)
+    del user_id
+    return await courses_service.create_course(dict(data))
 
 
 async def update_course_for_user(
     user_id: str, course_id: str, patch: dict
 ) -> dict | None:
-    if not await courses_service.is_course_owner(user_id, course_id):
-        return None
+    del user_id
     payload = {key: value for key, value in patch.items()}
     return await courses_service.update_course(course_id, payload)
 
 
 async def delete_course_for_user(user_id: str, course_id: str) -> bool:
-    if not await courses_service.is_course_owner(user_id, course_id):
-        return False
+    del user_id
     return await courses_service.delete_course(course_id)
 
 
@@ -1345,48 +1295,28 @@ async def upsert_lesson(
     *,
     lesson_id: str | None,
     course_id: str,
-    title: str | None = None,
+    lesson_title: str | None = None,
     content_markdown: str | None = None,
     position: int | None = None,
-    is_intro: bool | None = None,
 ) -> dict | None:
     payload: dict[str, Any] = {}
     if lesson_id is not None:
         payload["id"] = lesson_id
-    if title is not None:
-        payload["title"] = title
+    if lesson_title is not None:
+        payload["lesson_title"] = lesson_title
     if content_markdown is not None:
         payload["content_markdown"] = content_markdown
     if position is not None:
         payload["position"] = position
-    if is_intro is not None:
-        payload["is_intro"] = is_intro
 
     if lesson_id is not None and not payload.keys() - {"id"}:
-        return await get_lesson(lesson_id)
+        return await courses_service.fetch_studio_lesson(lesson_id)
 
     return await courses_service.upsert_lesson(course_id, payload)
 
 
 async def delete_lesson(lesson_id: str) -> bool:
     return await courses_service.delete_lesson(lesson_id)
-
-
-async def set_lesson_intro(lesson_id: str, is_intro: bool) -> dict | None:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.lessons
-                SET is_intro = %s, updated_at = now()
-                WHERE id = %s
-                RETURNING id, course_id, title, position, is_intro
-                """,
-                (is_intro, lesson_id),
-            )
-            row = await _fetchone(cur)
-            await conn.commit()
-            return row
 
 
 async def get_profile(user_id: str):

@@ -3,10 +3,11 @@ import mimetypes
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 from uuid import UUID, uuid4
 from fastapi import (
     APIRouter,
+    Depends,
     File,
     Form,
     HTTPException,
@@ -42,6 +43,7 @@ from .media import _build_streaming_response
 from . import upload as upload_routes
 
 router = APIRouter(prefix="/studio", tags=["studio"])
+course_lesson_router = APIRouter(prefix="/studio", tags=["studio"])
 logger = logging.getLogger(__name__)
 _LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
     "1",
@@ -89,6 +91,16 @@ def _log_quiz_owner_denied(user_id: str, quiz_id: str | None) -> None:
         user_id,
         quiz_id,
     )
+
+
+async def _require_studio_actor(current: CurrentUser) -> dict[str, Any]:
+    role = str(current.get("role_v2") or "").strip().lower()
+    if current.get("is_admin") or role == "teacher":
+        return current
+    raise HTTPException(status_code=403, detail="Teacher permissions required")
+
+
+StudioActor = Annotated[dict[str, Any], Depends(_require_studio_actor)]
 
 
 def _detect_kind(content_type: str | None) -> str:
@@ -243,12 +255,12 @@ async def studio_add_certificate(
     return row
 
 
-@router.post("/courses")
-async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUser):
-    row = await models.create_course_for_user(current["id"], payload.model_dump())
+@course_lesson_router.post("/courses", response_model=schemas.Course)
+async def create_course(payload: schemas.StudioCourseCreate, current: StudioActor):
+    del current
+    row = await courses_service.create_course(payload.model_dump())
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create course")
-    await _apply_course_read_contract(row)
     return row
 
 
@@ -1352,76 +1364,64 @@ async def studio_reserve_recording(
     return _recording_from_row(row)
 
 
-@router.get("/courses/{course_id}")
-async def course_meta(course_id: str, current: TeacherUser):
-    if not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
+@course_lesson_router.get("/courses", response_model=schemas.CourseListResponse)
+async def studio_courses(current: StudioActor):
+    del current
+    rows = list(await courses_service.list_courses())
+    return schemas.CourseListResponse(items=[schemas.Course(**row) for row in rows])
+
+
+@course_lesson_router.get("/courses/{course_id}", response_model=schemas.Course)
+async def course_meta(course_id: str, current: StudioActor):
+    del current
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    await _apply_course_read_contract(row)
-    return row
+    return schemas.Course(**row)
 
 
-@router.patch("/courses/{course_id}")
+@course_lesson_router.patch("/courses/{course_id}", response_model=schemas.Course)
 async def update_course(
     course_id: str,
     payload: schemas.StudioCourseUpdate,
-    current: TeacherUser,
+    current: StudioActor,
 ):
-    row = await models.update_course_for_user(
-        current["id"], course_id, payload.model_dump(exclude_unset=True)
-    )
+    del current
+    row = await courses_service.update_course(course_id, payload.model_dump(exclude_unset=True))
     if not row:
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    await _apply_course_read_contract(row)
-    return row
+        raise HTTPException(status_code=404, detail="Course not found")
+    return schemas.Course(**row)
 
 
-@router.delete("/courses/{course_id}")
-async def delete_course(course_id: str, current: TeacherUser):
-    deleted = await models.delete_course_for_user(current["id"], course_id)
+@course_lesson_router.delete("/courses/{course_id}")
+async def delete_course(course_id: str, current: StudioActor):
+    del current
+    deleted = await courses_service.delete_course(course_id)
     if not deleted:
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
+        raise HTTPException(status_code=404, detail="Course not found")
     return {"deleted": True}
 
 
-@router.get("/courses/{course_id}/lessons")
-async def course_lessons(course_id: str, current: TeacherUser):
-    if not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    lessons = await courses_service.list_course_lessons(course_id)
+@course_lesson_router.get("/courses/{course_id}/lessons")
+async def course_lessons(course_id: str, current: StudioActor):
+    del current
+    course = await courses_service.fetch_course(course_id=course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    lessons = await courses_service.list_studio_course_lessons(course_id)
     return {"items": lessons}
 
 
-@router.patch("/courses/{course_id}/lessons/reorder")
+@course_lesson_router.patch("/courses/{course_id}/lessons/reorder")
 async def reorder_course_lessons(
     course_id: str,
     payload: schemas.LessonReorder,
-    current: TeacherUser,
+    current: StudioActor,
 ):
-    if not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
+    del current
+    course = await courses_service.fetch_course(course_id=course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
 
     requested = payload.lessons
     if not requested:
@@ -1448,7 +1448,7 @@ async def reorder_course_lessons(
             schemas.LessonReorderItem(id=lesson_id, position=item.position)
         )
 
-    existing = await courses_service.list_course_lessons(course_id)
+    existing = await courses_service.list_studio_course_lessons(course_id)
     existing_ids = {
         str(row.get("id")).strip()
         for row in existing
@@ -1470,26 +1470,23 @@ async def reorder_course_lessons(
     return {"ok": True}
 
 
-@router.post("/lessons")
+@course_lesson_router.post("/lessons")
 async def create_lesson(
     payload: schemas.StudioLessonCreate,
-    current: TeacherUser,
+    current: StudioActor,
 ):
-    course_id = payload.course_id
-    if not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
+    del current
+    course_id = str(payload.course_id)
+    course = await courses_service.fetch_course(course_id=course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
     lesson_id = str(payload.id) if payload.id else None
     try:
         row = await courses_service.create_lesson(
             course_id,
-            title=payload.title,
+            lesson_title=payload.lesson_title,
             content_markdown=payload.content_markdown,
             position=payload.position,
-            is_intro=payload.is_intro,
             lesson_id=lesson_id,
         )
     except ValueError as exc:
@@ -1499,20 +1496,14 @@ async def create_lesson(
     return row
 
 
-@router.patch("/lessons/{lesson_id}")
+@course_lesson_router.patch("/lessons/{lesson_id}")
 async def update_lesson(
     lesson_id: str,
     payload: schemas.StudioLessonUpdate,
-    current: TeacherUser,
+    current: StudioActor,
 ):
-    _, course_id = await courses_service.lesson_course_ids(lesson_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    existing = await courses_service.fetch_lesson(lesson_id)
+    del current
+    existing = await courses_service.fetch_studio_lesson(lesson_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Lesson not found")
     patch = payload.model_dump(exclude_unset=True)
@@ -1535,7 +1526,7 @@ async def update_lesson(
 
     lesson_payload = {"id": lesson_id, **patch}
     try:
-        row = await courses_service.upsert_lesson(str(course_id), lesson_payload)
+        row = await courses_service.upsert_lesson(str(existing["course_id"]), lesson_payload)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
@@ -1554,36 +1545,13 @@ async def update_lesson(
     return row
 
 
-@router.delete("/lessons/{lesson_id}")
-async def delete_lesson(lesson_id: str, current: TeacherUser):
-    _, course_id = await courses_service.lesson_course_ids(lesson_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
+@course_lesson_router.delete("/lessons/{lesson_id}")
+async def delete_lesson(lesson_id: str, current: StudioActor):
+    del current
     deleted = await courses_service.delete_lesson(lesson_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Lesson not found")
     return {"deleted": True}
-
-
-@router.patch("/lessons/{lesson_id}/intro")
-async def set_intro(
-    lesson_id: str, payload: schemas.LessonIntroUpdate, current: TeacherUser
-):
-    _, course_id = await courses_service.lesson_course_ids(lesson_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    row = await models.set_lesson_intro(lesson_id, payload.is_intro)
-    if not row:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    return row
 
 
 @router.post("/lessons/{lesson_id}/media")
@@ -1591,7 +1559,6 @@ async def upload_media(
     lesson_id: str,
     current: TeacherUser,
     file: UploadFile = File(...),
-    is_intro: bool = Form(False),
 ):
     upload_routes._raise_legacy_lesson_upload_disabled()
 
@@ -1608,14 +1575,7 @@ async def upload_media(
     lesson_row = await courses_service.fetch_lesson(lesson_id)
     if not lesson_row:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    lesson_is_intro = bool(lesson_row.get("is_intro"))
-    effective_intro = is_intro or lesson_is_intro
-
-    storage_bucket = (
-        upload_routes._PUBLIC_MEDIA_BUCKET
-        if effective_intro
-        else upload_routes._COURSE_MEDIA_BUCKET
-    )
+    storage_bucket = upload_routes._COURSE_MEDIA_BUCKET
 
     course_id_str = str(course_id)
     lesson_id_str = str(lesson_id)

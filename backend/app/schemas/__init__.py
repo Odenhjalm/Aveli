@@ -1191,9 +1191,11 @@ class StudioCourseCreate(BaseModel):
 
     title: str
     slug: str
+    course_group_id: UUID
+    step: str
     price_amount_cents: int | None = None
-    drip_enabled: bool = False
-    drip_interval_days: int = 7
+    drip_enabled: bool
+    drip_interval_days: int
 
 
 class StudioCourseUpdate(BaseModel):
@@ -1201,6 +1203,8 @@ class StudioCourseUpdate(BaseModel):
 
     title: str | None = None
     slug: str | None = None
+    course_group_id: UUID | None = None
+    step: str | None = None
     cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool | None = None
@@ -1220,23 +1224,21 @@ class StudioModuleUpdate(BaseModel):
 
 
 class StudioLessonCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID | None = None
-    course_id: str
-    title: str
-    content_markdown: str | None = None
-    position: int = 0
-    is_intro: bool = False
+    course_id: UUID
+    lesson_title: str
+    content_markdown: str
+    position: int
 
 
 class StudioLessonUpdate(BaseModel):
-    title: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_title: str | None = None
     content_markdown: str | None = None
     position: int | None = None
-    is_intro: bool | None = None
-
-
-class LessonIntroUpdate(BaseModel):
-    is_intro: bool
 
 
 class MediaReorder(BaseModel):
