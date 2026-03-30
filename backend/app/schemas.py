@@ -637,19 +637,12 @@ class Course(BaseModel):
     id: UUID
     slug: str
     title: str
-    description: str | None = None
+    course_group_id: UUID
+    step: str
     cover_media_id: UUID | None = None
-    video_url: str | None = None
-    is_free_intro: bool
-    journey_step: CourseJourneyStep | None = None
     price_amount_cents: int = 0
-    currency: str = "sek"
-    stripe_product_id: str | None = None
-    stripe_price_id: str | None = None
-    is_published: bool
-    created_by: UUID | None
-    created_at: datetime
-    updated_at: datetime
+    drip_enabled: bool
+    drip_interval_days: int
 
 
 class CourseListResponse(BaseModel):
@@ -693,13 +686,9 @@ class StudioCourseCreate(BaseModel):
 
     title: str
     slug: str
-    description: str | None = None
-    video_url: str | None = None
-    is_free_intro: bool = False
-    journey_step: CourseJourneyStep = "intro"
-    is_published: bool = False
     price_amount_cents: int | None = None
-    branch: str | None = None
+    drip_enabled: bool = False
+    drip_interval_days: int = 7
 
 
 class StudioCourseUpdate(BaseModel):
@@ -707,14 +696,10 @@ class StudioCourseUpdate(BaseModel):
 
     title: str | None = None
     slug: str | None = None
-    description: str | None = None
-    video_url: str | None = None
     cover_media_id: UUID | None = None
-    is_free_intro: bool | None = None
-    journey_step: CourseJourneyStep | None = None
-    is_published: bool | None = None
     price_amount_cents: int | None = None
-    branch: str | None = None
+    drip_enabled: bool | None = None
+    drip_interval_days: int | None = None
 
 
 class StudioModuleCreate(BaseModel):

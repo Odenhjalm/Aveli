@@ -5,23 +5,24 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from ..repositories import media_assets as media_assets_repo
+from ..config import settings
 
 
 async def resolve_runtime_media_playback_url(runtime_media: dict[str, Any]) -> str:
-    runtime_media_id = runtime_media.get("id")
-    if not runtime_media_id:
+    lesson_media_id = runtime_media.get("lesson_media_id")
+    if not lesson_media_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Playable media not found",
         )
-    return f"/api/media/stream/{runtime_media_id}"
+    return f"/api/media/stream/{lesson_media_id}"
 
 
 async def resolve_runtime_media_stream_source(
     runtime_media: dict[str, Any],
 ) -> dict[str, Any]:
-    runtime_media_id = runtime_media.get("id")
-    if not runtime_media_id:
+    lesson_media_id = runtime_media.get("lesson_media_id")
+    if not lesson_media_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Playable media not found",
@@ -50,10 +51,10 @@ async def resolve_runtime_media_stream_source(
         )
 
     return {
-        "id": str(runtime_media_id),
+        "id": str(lesson_media_id),
         "kind": media.get("media_type"),
         "storage_path": str(storage_path),
-        "storage_bucket": str(storage_bucket),
-        "content_type": media.get("original_content_type"),
-        "original_name": media.get("original_filename"),
+        "storage_bucket": str(storage_bucket or settings.media_source_bucket),
+        "content_type": None,
+        "original_name": None,
     }

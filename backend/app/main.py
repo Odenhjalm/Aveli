@@ -28,45 +28,10 @@ except (
 from .config import settings
 from .db import pool
 from .logging_utils import setup_logging
-from .media_control_plane.routes import media_admin_router
 from .middleware.request_context import RequestContextMiddleware
-from .services import livekit_events, media_transcode_worker, membership_expiry_warnings
 from .routes import (
-    admin,
-    api_ai,
-    api_context7,
-    api_auth,
-    api_events,
-    api_feed,
-    api_media,
-    api_me,
-    api_notifications,
-    api_checkout,
-    api_orders,
-    api_profiles,
     playback,
-    api_services,
-    api_sfu,
-    billing,
-    community,
-    connect,
     courses,
-    domain_observability_mcp,
-    home,
-    landing,
-    livekit_webhooks,
-    logs_mcp,
-    media_control_plane_mcp,
-    verification_mcp,
-    course_bundles,
-    email_verification,
-    media,
-    seminars,
-    session_slots,
-    studio,
-    studio_sessions,
-    stripe_webhooks,
-    upload,
 )
 from .db import get_conn
 
@@ -106,21 +71,9 @@ async def lifespan(app: FastAPI):
     for sub in ("users", "courses", "lessons"):
         (UPLOADS_ROOT / sub).mkdir(parents=True, exist_ok=True)
     await pool.open(wait=True)
-    if settings.mcp_workers_enabled:
-        await livekit_events.start_worker()
-        await media_transcode_worker.start_worker()
-        await membership_expiry_warnings.start_worker()
-    else:
-        logger.info(
-            "MCP production mode enabled: background workers are disabled for read-only inspection"
-        )
     try:
         yield
     finally:
-        if settings.mcp_workers_enabled:
-            await membership_expiry_warnings.stop_worker()
-            await media_transcode_worker.stop_worker()
-            await livekit_events.stop_worker()
         await pool.close()
 
 
@@ -164,46 +117,9 @@ def _configure_middleware(app: FastAPI) -> None:
 
 
 def _include_routers(app: FastAPI) -> None:
-    app.include_router(api_auth.router)
-    app.include_router(api_ai.router)
-    app.include_router(api_context7.router)
-    app.include_router(api_services.router)
-    app.include_router(api_orders.router)
-    app.include_router(api_events.router)
-    app.include_router(api_notifications.router)
-    app.include_router(api_feed.router)
-    app.include_router(api_sfu.router)
-    app.include_router(api_profiles.router)
     app.include_router(playback.router)
-    app.include_router(api_me.router)
-    app.include_router(api_media.router)
-    app.include_router(api_media.debug_router)
-    app.include_router(admin.router)
-    app.include_router(media_admin_router.router)
-    app.include_router(api_checkout.router)
-    app.include_router(billing.router)
-    app.include_router(connect.router)
-    app.include_router(community.router)
-    app.include_router(home.router)
     app.include_router(courses.router)
     app.include_router(courses.api_router)
-    app.include_router(course_bundles.router)
-    app.include_router(email_verification.router)
-    app.include_router(landing.router)
-    app.include_router(media.router)
-    app.include_router(seminars.router)
-    app.include_router(session_slots.router)
-    app.include_router(studio.router)
-    app.include_router(studio_sessions.router)
-    app.include_router(stripe_webhooks.router)
-    app.include_router(livekit_webhooks.router)
-    app.include_router(logs_mcp.router)
-    app.include_router(media_control_plane_mcp.router)
-    app.include_router(verification_mcp.router)
-    app.include_router(domain_observability_mcp.router)
-    app.include_router(upload.router)
-    app.include_router(upload.files_router)
-    app.include_router(upload.legacy_router)
 
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
@@ -238,7 +154,7 @@ async def healthz():
     return {
         "ok": True,
         "message": "Backend responding",
-        "livekit": livekit_events.get_metrics(),
+        "surface": "canonical-runtime",
     }
 
 

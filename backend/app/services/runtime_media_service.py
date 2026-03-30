@@ -1,32 +1,32 @@
 from typing import Any
 
-from .entitlement_service import fetch_one
-
 
 async def get_active_runtime_media_for_lesson_media(
     db: Any, lesson_media_id: str
 ) -> dict[str, Any] | None:
-    row = await fetch_one(
-        db,
+    await db.execute(
         """
-        SELECT
-            id,
-            lesson_media_id,
-            lesson_id,
-            course_id,
-            media_asset_id,
-            media_object_id,
-            reference_type,
-            auth_scope,
-            fallback_policy,
-            active
-        FROM app.runtime_media
-        WHERE lesson_media_id = $1
-          AND active = true
-        LIMIT 1
+        select
+            rm.lesson_media_id,
+            rm.lesson_id,
+            rm.course_id,
+            rm.media_asset_id,
+            rm.media_type::text as media_type
+        from app.runtime_media as rm
+        where rm.lesson_media_id = %s
+        limit 1
         """,
-        lesson_media_id,
+        (lesson_media_id,),
     )
-    if row is None:
-        return None
-    return dict(row)
+    row = await db.fetchone()
+    return dict(row) if row else None
+
+
+async def get_active_runtime_media(
+    db: Any,
+    lesson_media_id: str,
+) -> dict[str, Any] | None:
+    return await get_active_runtime_media_for_lesson_media(
+        db=db,
+        lesson_media_id=lesson_media_id,
+    )

@@ -10,8 +10,6 @@ from passlib.context import CryptContext
 
 from .config import settings
 from .utils.supabase_jwt import SupabaseJwtError, verify_supabase_access_token
-from .db import get_conn
-
 pwd_context = CryptContext(
     schemes=["bcrypt_sha256", "bcrypt"],
     deprecated="auto",
@@ -144,6 +142,61 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _bool_claim(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _mapping_claim(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    app_metadata = _mapping_claim(payload.get("app_metadata"))
+    user_metadata = _mapping_claim(payload.get("user_metadata"))
+    role_value = (
+        payload.get("role_v2")
+        or payload.get("role")
+        or app_metadata.get("role_v2")
+        or app_metadata.get("role")
+        or user_metadata.get("role_v2")
+        or user_metadata.get("role")
+        or "user"
+    )
+    normalized_role = str(role_value or "user").strip().lower() or "user"
+    is_admin = _bool_claim(payload.get("is_admin")) or _bool_claim(
+        app_metadata.get("is_admin")
+    )
+    if normalized_role == "admin":
+        is_admin = True
+
+    display_name = (
+        payload.get("display_name")
+        or user_metadata.get("display_name")
+        or user_metadata.get("full_name")
+        or payload.get("name")
+    )
+    photo_url = (
+        payload.get("photo_url")
+        or payload.get("avatar_url")
+        or user_metadata.get("photo_url")
+        or user_metadata.get("avatar_url")
+    )
+
+    return {
+        "id": user_id,
+        "email": payload.get("email"),
+        "role_v2": normalized_role,
+        "is_admin": is_admin,
+        "display_name": display_name,
+        "bio": user_metadata.get("bio"),
+        "photo_url": photo_url,
+    }
+
+
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -167,30 +220,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     except Exception as exc:  # pragma: no cover
         raise credentials_exception from exc
 
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT u.id,
-                   u.email,
-                   COALESCE(p.role_v2, 'user') AS role_v2,
-                   COALESCE(p.is_admin, false) AS is_admin,
-                   p.display_name,
-                   p.bio,
-                   p.photo_url
-            FROM auth.users AS u
-            LEFT JOIN app.profiles AS p ON p.user_id = u.id
-            WHERE u.id = %s
-            LIMIT 1
-            """,
-            (user_id,),
-        )
-        row = await cur.fetchone()
-    if not row:
-        raise credentials_exception
-    data = dict(row)
-    data.setdefault("role_v2", "user")
-    data["is_admin"] = bool(data.get("is_admin"))
-    return data
+    return _build_current_user(user_id, payload)
 
 
 async def get_optional_user(
@@ -213,30 +243,7 @@ async def get_optional_user(
     except Exception:  # pragma: no cover
         return None
 
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT u.id,
-                   u.email,
-                   COALESCE(p.role_v2, 'user') AS role_v2,
-                   COALESCE(p.is_admin, false) AS is_admin,
-                   p.display_name,
-                   p.bio,
-                   p.photo_url
-            FROM auth.users AS u
-            LEFT JOIN app.profiles AS p ON p.user_id = u.id
-            WHERE u.id = %s
-            LIMIT 1
-            """,
-            (user_id,),
-        )
-        row = await cur.fetchone()
-    if not row:
-        return None
-    data = dict(row)
-    data.setdefault("role_v2", "user")
-    data["is_admin"] = bool(data.get("is_admin"))
-    return data
+    return _build_current_user(user_id, payload)
 
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]

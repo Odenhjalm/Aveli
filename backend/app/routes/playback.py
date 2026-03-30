@@ -1,14 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from ..auth import CurrentUser
 from ..db import get_conn
-from ..routes import media as media_routes
-from ..services import courses_service, runtime_media_service
-from ..services.entitlement_service import fetch_one
+from ..services import courses_service, runtime_media_service, storage_service
 from ..services.playback_delivery_service import (
     resolve_runtime_media_playback_url,
     resolve_runtime_media_stream_source,
@@ -25,158 +23,103 @@ class LessonPlaybackResolveResponse(BaseModel):
     playback_url: str
 
 
-async def _resolve_course_id_for_lesson_media(
-    db,
-    *,
-    lesson_media_id: str,
-) -> str:
-    lesson_row = await fetch_one(
-        db,
-        """
-        SELECT
-            lm.id AS lesson_media_id,
-            l.id AS lesson_id,
-            l.course_id AS course_id
-        FROM app.lesson_media lm
-        JOIN app.lessons l ON l.id = lm.lesson_id
-        WHERE lm.id = $1
-          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
-          AND app.is_test_row_visible(l.is_test, l.test_session_id)
-        LIMIT 1
-        """,
-        lesson_media_id,
-    )
-    if lesson_row is None:
+async def _resolve_lesson_media_subject(lesson_media_id: str) -> dict:
+    async with get_conn() as db:
+        await db.execute(
+            """
+            select
+                lm.id,
+                lm.lesson_id,
+                l.course_id
+            from app.lesson_media as lm
+            join app.lessons as l
+              on l.id = lm.lesson_id
+            where lm.id = %s
+            limit 1
+            """,
+            (lesson_media_id,),
+        )
+        row = await db.fetchone()
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lesson media not found",
         )
+    return dict(row)
 
-    course_id = lesson_row["course_id"]
-    if not course_id:
+
+async def _enforce_lesson_media_access(*, user_id: str, lesson_media_id: str) -> None:
+    subject = await _resolve_lesson_media_subject(lesson_media_id)
+    lesson = await courses_service.fetch_lesson(str(subject["lesson_id"]))
+    if not lesson:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Course not found",
+            detail="Lesson not found",
         )
-    return str(course_id)
-
-
-async def _enforce_course_access(db, *, user_id: str, course_id: str) -> None:
-    course = await courses_service.fetch_course_access_subject(course_id)
-    if course is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Course not found",
-        )
-    if not await courses_service.can_user_read_course(user_id, course):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden",
-        )
-
-
-async def _get_active_runtime_media_by_id(
-    db,
-    *,
-    runtime_media_id: str,
-) -> tuple[dict, str]:
-    runtime_row = await fetch_one(
-        db,
-        """
-        SELECT
-            rm.id,
-            rm.lesson_media_id,
-            rm.lesson_id,
-            rm.course_id,
-            rm.media_asset_id,
-            rm.reference_type,
-            rm.auth_scope,
-            rm.fallback_policy,
-            rm.active,
-            l.course_id AS resolved_course_id
-        FROM app.runtime_media rm
-        JOIN app.lesson_media lm ON lm.id = rm.lesson_media_id
-        JOIN app.lessons l ON l.id = lm.lesson_id
-        WHERE rm.id = $1
-          AND rm.active = true
-          AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
-          AND app.is_test_row_visible(l.is_test, l.test_session_id)
-        LIMIT 1
-        """,
-        runtime_media_id,
+    if await courses_service.can_user_read_lesson(user_id, lesson):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Forbidden",
     )
+
+
+@router.post("/api/playback/lesson", response_model=LessonPlaybackResolveResponse)
+async def resolve_lesson_playback(
+    payload: LessonPlaybackResolveRequest,
+    current: CurrentUser,
+):
+    lesson_media_id = str(payload.lesson_media_id)
+    await _enforce_lesson_media_access(
+        user_id=str(current["id"]),
+        lesson_media_id=lesson_media_id,
+    )
+    async with get_conn() as db:
+        runtime_row = await runtime_media_service.get_active_runtime_media_for_lesson_media(
+            db=db,
+            lesson_media_id=lesson_media_id,
+        )
+    if runtime_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active runtime media not found",
+        )
+    playback_url = await resolve_runtime_media_playback_url(runtime_row)
+    return LessonPlaybackResolveResponse(playback_url=playback_url)
+
+
+@router.get("/api/media/stream/{lesson_media_id}")
+async def stream_runtime_media(
+    lesson_media_id: UUID,
+    current: CurrentUser,
+):
+    normalized_lesson_media_id = str(lesson_media_id)
+    await _enforce_lesson_media_access(
+        user_id=str(current["id"]),
+        lesson_media_id=normalized_lesson_media_id,
+    )
+    async with get_conn() as db:
+        runtime_row = await runtime_media_service.get_active_runtime_media(
+            db=db,
+            lesson_media_id=normalized_lesson_media_id,
+        )
     if runtime_row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Active runtime media not found",
         )
 
-    course_id = runtime_row["resolved_course_id"]
-    if not course_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Course not found",
-        )
-
-    return dict(runtime_row), str(course_id)
-
-
-@router.post("/api/playback/lesson", response_model=LessonPlaybackResolveResponse)
-async def resolve_lesson_playback(
-    payload: LessonPlaybackResolveRequest, current: CurrentUser
-):
-    user_id = str(current["id"])
-    lesson_media_id = str(payload.lesson_media_id)
-
-    async with get_conn() as db:
-        course_id = await _resolve_course_id_for_lesson_media(
-            db,
-            lesson_media_id=lesson_media_id,
-        )
-        await _enforce_course_access(
-            db,
-            user_id=user_id,
-            course_id=course_id,
-        )
-
-        runtime_row = await runtime_media_service.get_active_runtime_media_for_lesson_media(
-            db=db,
-            lesson_media_id=lesson_media_id,
-        )
-        if runtime_row is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Active runtime media not found",
-            )
-
-        playback_url = await resolve_runtime_media_playback_url(runtime_row)
-
-    return LessonPlaybackResolveResponse(playback_url=playback_url)
-
-
-@router.get("/api/media/stream/{runtime_media_id}")
-async def stream_runtime_media(
-    runtime_media_id: UUID,
-    request: Request,
-    current: CurrentUser,
-) -> StreamingResponse:
-    user_id = str(current["id"])
-
-    async with get_conn() as db:
-        runtime_row, course_id = await _get_active_runtime_media_by_id(
-            db,
-            runtime_media_id=str(runtime_media_id),
-        )
-        await _enforce_course_access(
-            db,
-            user_id=user_id,
-            course_id=course_id,
-        )
-
     stream_source = await resolve_runtime_media_stream_source(runtime_row)
-    return await media_routes._build_streaming_response(
-        stream_source,
-        request,
-        lesson_media_id=str(runtime_row["lesson_media_id"]),
-        mode="playback",
-    )
+    storage_client = storage_service.get_storage_service(stream_source["storage_bucket"])
+    try:
+        signed = await storage_client.get_presigned_url(
+            stream_source["storage_path"],
+            ttl=900,
+            download=False,
+        )
+    except storage_service.StorageServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage signing unavailable",
+        ) from exc
+    return RedirectResponse(url=signed.url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
