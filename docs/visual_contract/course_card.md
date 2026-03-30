@@ -1,25 +1,45 @@
 # Course Card
 
-## USER STATES
-- Authenticated member on the `Utforska kurser` grid.
+VISUAL CONTRACT (DETERMINISTIC)
 
-## UI ELEMENTS
-- Intro card sample: `Färgernas helande magi` showed visible cover imagery, the label `Introduktion`, a short description, and an `Öppna` CTA.
-- Premium card sample: `Utbildning - Spirituell coach del 1 av 3` showed visible cover imagery, the price `800.00 kr`, a short description, and an `Öppna` CTA.
-- Each sampled card showed two visible images inside the card group.
+### STATE
+- `course_card_intro_authenticated`
 
-## ACTIONS
-- Clicking the sampled intro-card CTA attempted to open a course route.
-- Clicking the sampled premium-card CTA attempted to open a course route.
+### CONDITIONS
+- Rendered inside `course_list_authenticated_home`.
+- Sampled card title was `Färgernas helande magi`.
+- The card was visibly labeled `Introduktion`.
 
-## DISABLED / HIDDEN
-- No separate `Köp`, `Enroll`, or checkout button was visible on the sampled card faces.
-- No lesson list was visible from the card state.
+### UI
+- Cover imagery.
+- Title `Färgernas helande magi`.
+- Intro label `Introduktion`.
+- Visible short description beginning `Varje färg är en vibration...`
+- CTA button `Öppna`.
 
-## TRANSITIONS
-- Both sampled `Öppna` buttons navigated away from `#/home`.
-- The resulting route rendered the course error surface instead of a full course-detail view.
+### ACTIONS
+- `Öppna`
 
-## RULES
-- Cover, title, short description, and CTA were all observable directly on the sampled card faces.
-- Premium pricing was visible on the sampled premium card and not visible on the sampled intro card.
+### TRANSITIONS
+- `Öppna` -> `course_detail_error_authenticated`
+
+### STATE
+- `course_card_premium_authenticated`
+
+### CONDITIONS
+- Rendered inside `course_list_authenticated_home`.
+- Sampled card title was `Utbildning - Spirituell coach del 1 av 3`.
+- A visible price `800.00 kr` was present on the card.
+
+### UI
+- Cover imagery.
+- Title `Utbildning - Spirituell coach del 1 av 3`.
+- Price `800.00 kr`.
+- Visible short description beginning `Att arbeta som spirituell coach...`
+- CTA button `Öppna`.
+
+### ACTIONS
+- `Öppna`
+
+### TRANSITIONS
+- `Öppna` -> `course_detail_error_authenticated`

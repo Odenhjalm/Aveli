@@ -1,29 +1,85 @@
 # Auth
 
-## USER STATES
-- Anonymous signup state.
-- Anonymous login state.
-- Login submission state where auth buttons became disabled.
+VISUAL CONTRACT (DETERMINISTIC)
 
-## UI ELEMENTS
-- Signup view showed `Skapa konto`, fields for `E-postadress`, `Namn`, `Lösenord`, and `Inbjudningskod (valfritt)`.
-- Signup view showed buttons `Skapa konto`, `Har du konto? Logga in`, and `Skicka magisk länk (ej tillgängligt)`.
-- Login view showed `Logga in`, fields for `E-postadress` and `Lösenord`, plus `Skapa konto` and `Glömt lösenord?`.
-- Both auth views kept `Tillbaka` and legal/footer links visible.
+### STATE
+- `auth_signup_anonymous`
 
-## ACTIONS
-- Clicking `Har du konto? Logga in` navigated to `#/login`.
-- Filling the `.env` E2E credentials and clicking `Logga in` successfully routed the session to `#/teacher`.
+### CONDITIONS
+- Reached from `landing_anonymous` by clicking `Skapa konto`.
+- No authenticated navigation was visible on this surface.
+- `UNVERIFIED`: whether the same state is reachable by a direct route outside the landing flow.
 
-## DISABLED / HIDDEN
-- During login submission, the main login action, `Skapa konto`, and `Glömt lösenord?` were disabled.
-- The signup view exposed a button labeled `Skicka magisk länk (ej tillgängligt)`.
-- No course list or authenticated profile content was visible on the auth screens.
+### UI
+- Header `Skapa konto`.
+- Fields `E-postadress`, `Namn`, `Lösenord`, and `Inbjudningskod (valfritt)`.
+- Buttons `Skapa konto`, `Har du konto? Logga in`, and `Skicka magisk länk (ej tillgängligt)`.
+- `Tillbaka` button.
+- Footer/legal buttons `Terms of Service`, `Privacy Policy`, and `Data Deletion`.
 
-## TRANSITIONS
-- Landing `Skapa konto` opened the signup form.
-- Signup `Har du konto? Logga in` opened the login route.
-- Successful login transitioned from `#/login` to `#/teacher`.
+### ACTIONS
+- `Skapa konto`
+- `Har du konto? Logga in`
+- `Skicka magisk länk (ej tillgängligt)`
+- `Tillbaka`
+- `Terms of Service`
+- `Privacy Policy`
+- `Data Deletion`
 
-## RULES
-- No account creation, password reset, or magic-link flow was executed.
+### TRANSITIONS
+- `Har du konto? Logga in` -> `auth_login_anonymous`
+- `Skapa konto` -> `UNVERIFIED`
+- `Skicka magisk länk (ej tillgängligt)` -> `UNVERIFIED`
+- `Tillbaka` -> `UNVERIFIED`
+
+### STATE
+- `auth_login_anonymous`
+
+### CONDITIONS
+- Reached from `auth_signup_anonymous` by clicking `Har du konto? Logga in`.
+- Route changed to `#/login`.
+- No authenticated navigation was visible on this surface.
+
+### UI
+- Header `Logga in`.
+- Fields `E-postadress` and `Lösenord`.
+- Buttons `Logga in`, `Skapa konto`, and `Glömt lösenord?`.
+- Two visible `Tillbaka` buttons in the shell/login layout.
+- Footer/legal buttons `Terms of Service`, `Privacy Policy`, and `Data Deletion`.
+
+### ACTIONS
+- `Logga in`
+- `Skapa konto`
+- `Glömt lösenord?`
+- `Tillbaka`
+- `Terms of Service`
+- `Privacy Policy`
+- `Data Deletion`
+
+### TRANSITIONS
+- `Logga in` with the observed E2E credentials -> `auth_login_submitting`
+- `Skapa konto` -> `UNVERIFIED`
+- `Glömt lösenord?` -> `UNVERIFIED`
+- `Tillbaka` -> `UNVERIFIED`
+
+### STATE
+- `auth_login_submitting`
+
+### CONDITIONS
+- `auth_login_anonymous` was visible.
+- Valid E2E credentials were entered.
+- `Logga in` was clicked.
+- Route remained `#/login` while submission was in progress.
+
+### UI
+- Login form remained visible.
+- Primary login button no longer exposed a readable label in the snapshot.
+- `Skapa konto` button was visible and disabled.
+- `Glömt lösenord?` button was visible and disabled.
+- Password textbox still showed the entered password value.
+
+### ACTIONS
+- No enabled user-triggered action was observed in this submission state.
+
+### TRANSITIONS
+- Successful completion -> `teacher_home_authenticated`

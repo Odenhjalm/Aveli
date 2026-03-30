@@ -1,35 +1,40 @@
 # Course List
 
-## USER STATES
-- Authenticated member session on `#/home`.
-- Same session also exposed teacher access through the `Studio` button.
+VISUAL CONTRACT (DETERMINISTIC)
 
-## UI ELEMENTS
-- Top home-player module with cover image, current track text `32 min ceremoni Come Come`, and buttons `Bibliotek`, `Föregående`, `Nästa`, `Spela`.
-- `Utforska kurser` heading with helper text `Se vad andra gillar just nu.` and a `Visa alla` button.
-- Multiple rows of course cards mixing `Introduktion` cards and priced premium cards.
-- `Gemensam vägg` section with `Visa allt` and the empty-state text `Inga aktiviteter ännu.`
-- `Tjänster` section with `Visa alla` and the empty-state text `Inga tjänster publicerade just nu.`
-- Navigation/footer buttons visible in this state included `Home`, `Studio`, and `Profil`.
+### STATE
+- `course_list_authenticated_home`
 
-## ACTIONS
-- `Bibliotek` opened a media-library dialog.
-- `Spela` entered the playback state.
-- `Studio` opened the teacher dashboard.
-- `Profil` opened the profile page.
-- Course-card `Öppna` buttons were visible throughout the grid.
+### CONDITIONS
+- Authentication had already succeeded in the active browser session.
+- Route was `#/home`.
+- The same session exposed both learner-facing `Home` content and a visible `Studio` button.
+- `UNVERIFIED`: the underlying permission model that makes the `Studio` button visible in this home state.
 
-## DISABLED / HIDDEN
-- Anonymous CTAs such as `Logga in` and `Skapa konto` were not visible here.
-- No enrollment or checkout CTA was visible in the list state itself.
-- No disabled course-list controls were observed.
+### UI
+- Home-player module with cover image, current track text `32 min ceremoni Come Come`, and buttons `Bibliotek`, `Föregående`, `Nästa`, and `Spela`.
+- Section `Utforska kurser` with helper text `Se vad andra gillar just nu.` and a `Visa alla` button.
+- Multiple rows of course cards including both `Introduktion` cards and priced premium cards.
+- Section `Gemensam vägg` with `Visa allt` and empty text `Inga aktiviteter ännu.`
+- Section `Tjänster` with `Visa alla` and empty text `Inga tjänster publicerade just nu.`
+- Navigation/footer buttons including `Home`, `Studio`, and `Profil`.
 
-## TRANSITIONS
-- `Bibliotek` opened a modal dialog over `#/home`.
-- `Studio` navigated to `#/studio`.
-- `Profil` navigated to `#/profile`.
-- Sampled course-card `Öppna` actions left `#/home` and attempted to open a course route.
+### ACTIONS
+- `Bibliotek`
+- `Föregående`
+- `Nästa`
+- `Spela`
+- `Visa alla`
+- `Studio`
+- `Profil`
+- Course-card `Öppna`
 
-## RULES
-- Intro cards were visible without a price in their observed card text.
-- Premium cards were visible with a currency amount in their observed card text.
+### TRANSITIONS
+- `Bibliotek` -> `playback_library_modal`
+- `Spela` -> `playback_active_home`
+- `Studio` -> `teacher_home_authenticated`
+- `Profil` -> `profile_authenticated_pro_member`
+- Sampled course-card `Öppna` -> `course_detail_error_authenticated`
+- `Föregående` -> `UNVERIFIED`
+- `Nästa` -> `UNVERIFIED`
+- `Visa alla` -> `UNVERIFIED`

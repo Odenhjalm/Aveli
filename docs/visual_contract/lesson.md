@@ -1,33 +1,109 @@
-# Lesson Page
+# Lesson
 
-## USER STATES
-- Authenticated member with teacher access.
-- Direct learner lesson route was not reached in the observed UI paths.
-- Teacher-side lesson editing/detail was reached inside `#/teacher/editor`.
+VISUAL CONTRACT (DETERMINISTIC)
 
-## UI ELEMENTS
-- No standalone learner lesson page was observed.
-- In the editor, a selected lesson for `Lär dig tyda tarot` exposed lesson rows, the field `Lektiontitel`, labels `Introduktion` and `Innehåller ljud`, a rich-text toolbar, media insertion controls, and a long lesson body.
-- The sampled selected lesson showed embedded content including `lektion tarot 1.wav 4:34`, multiple headings and paragraphs, and an image labeled `ChatGPT Image 21 mars 2026 22_50_21.png Stillbild`.
-- The sampled lesson-media list showed ready items with actions such as `Infoga i lektionen`, `Byt ljud`, `Ladda ner`, `Använd som kursbild`, and `Ta bort`.
-- A sampled premium lesson-edit state for `Utbildning - Spirituell coach del 1 av 3` showed `Lektionsvideo`, file name `Medium powerpoint 1 ljud.mp4`, status `checking`, and the text `Förhandsvisning saknas`.
+### STATE
+- `lesson_route_blocked_authenticated`
 
-## ACTIONS
-- Clicking a lesson row in the editor activated that lesson inside the same editor surface.
-- `Infoga video`, `Infoga ljud`, `Infoga bild`, `Infoga PDF`, `Ladda upp ljud`, `Infoga i lektionen`, `Ladda ner`, `Byt ljud`, and `Ta bort` were visible in lesson-edit states but were not used.
-- No learner-side lesson CTA was observed.
+### CONDITIONS
+- Authentication had already succeeded in the active browser session.
+- Entry occurred by clicking a sampled course CTA from `course_list_authenticated_home` or a sampled ongoing-course button from `profile_authenticated_pro_member`.
+- Route changed to `#/course/...`.
+- `UNVERIFIED`: whether any standalone learner lesson route is reachable from the same session.
 
-## DISABLED / HIDDEN
-- `Ångra`, `Gör om`, `Spara lektionsinnehåll`, and `Återställ` were observed disabled in the sampled lesson-edit state.
-- `Infoga i lektionen` was observed disabled in one premium-media row while its status showed `checking`.
-- A learner-facing locked lesson state was not observed.
-- A learner-facing unlocked lesson page with dedicated playback/navigation chrome was not observed.
+### UI
+- Page title `Kurs`.
+- `Tillbaka` button.
+- Aveli logo/button.
+- Visible error text `TypeError: Instance of 'minified:aDL': type 'minified:aDL' is not a subtype of type 'List<dynamic>?'`.
+- Footer/legal buttons `Hem`, `Terms of Service`, `Privacy Policy`, and `Data Deletion`.
 
-## TRANSITIONS
-- Sampled home-route course-entry actions, including `Lär dig tyda tarot`, stopped at the course error surface before any learner lesson UI appeared.
-- Inside the editor, clicking a lesson row kept the route on `#/teacher/editor` and swapped the active lesson content in place.
-- Some sampled editor courses exposed no lessons, while other sampled editor courses exposed populated lesson rows and full lesson content.
+### ACTIONS
+- `Tillbaka`
+- `Hem`
+- `Terms of Service`
+- `Privacy Policy`
+- `Data Deletion`
 
-## RULES
-- The standalone learner lesson page remains blocked by the currently reachable course route in this session.
-- The only full lesson-like surface successfully observed was the teacher-side lesson editor.
+### TRANSITIONS
+- `Hem` -> `course_list_authenticated_home`
+- `Tillbaka` -> `UNVERIFIED`
+
+### STATE
+- `lesson_editor_premium_selected`
+
+### CONDITIONS
+- Authentication had already succeeded in the active browser session.
+- Route was `#/teacher/editor`.
+- The selected course was `Utbildning - Spirituell coach del 1 av 3`.
+- Lesson row `1 Ditt mediumskap` was active.
+- `UNVERIFIED`: whether the visible `checking` media status is transient or stable.
+
+### UI
+- Active lesson row `1 Ditt mediumskap`.
+- Lesson field `Lektiontitel`.
+- Lesson label `Innehåller video`.
+- Rich-text toolbar with disabled `Ångra` and `Gör om`.
+- Insertion controls `Infoga video`, `Infoga ljud`, `Infoga bild`, and `Infoga PDF`.
+- Preview-related text `Medium powerpoint 1 ljud.mp4 Förhandsvisning saknas`.
+- Disabled buttons `Spara lektionsinnehåll` and `Återställ`.
+- Toggle `Lektionen är introduktion Intro laddas upp till public-media, betalt till course-media.`
+- Media row `Medium powerpoint 1 ljud.mp4 Lektionsmedia Position 1 • VIDEO` with status `checking`, disabled `Infoga i lektionen`, and buttons `Ladda ner` and `Ta bort`.
+
+### ACTIONS
+- Lesson-row selection
+- `Ladda ner original`
+- `Infoga video`
+- `Infoga ljud`
+- `Infoga bild`
+- `Infoga PDF`
+- `Ladda upp ljud`
+- `Ladda ner`
+- `Ta bort`
+- `Home`
+- `Teacher Home`
+
+### TRANSITIONS
+- Another lesson-row selection -> `UNVERIFIED`
+- `Home` -> `course_list_authenticated_home`
+- `Teacher Home` -> `teacher_home_authenticated`
+
+### STATE
+- `lesson_editor_intro_selected`
+
+### CONDITIONS
+- Authentication had already succeeded in the active browser session.
+- Route was `#/teacher/editor`.
+- The selected course was `Lär dig tyda tarot`.
+- Lesson row `1 Grunden i tarot Intro` was active.
+
+### UI
+- Active lesson row `1 Grunden i tarot Intro`.
+- Lesson field `Lektiontitel`.
+- Labels `Introduktion` and `Innehåller ljud`.
+- Rich-text toolbar with disabled `Ångra` and `Gör om`.
+- Visible lesson body including the audio line `lektion tarot 1.wav 4:34`, multiple headings/paragraphs, and an image labeled `ChatGPT Image 21 mars 2026 22_50_21.png Stillbild`.
+- Disabled buttons `Spara lektionsinnehåll` and `Återställ`.
+- Toggle `Lektionen är introduktion Intro laddas upp till public-media, betalt till course-media.` shown as checked.
+- Media row `lektion tarot 1.wav Lektionsmedia Position 3 • AUDIO Klar för uppspelning` with `Infoga i lektionen`, `Byt ljud`, `Ladda ner`, and `Ta bort`.
+- Media row `ChatGPT Image 21 mars 2026 22_50_21.png Lektionsmedia Position 4 • IMAGE` with `Använd som kursbild`, `Infoga i lektionen`, `Ladda ner`, and `Ta bort`.
+
+### ACTIONS
+- Another lesson-row selection
+- `Infoga video`
+- `Infoga ljud`
+- `Infoga bild`
+- `Infoga PDF`
+- `Ladda upp ljud`
+- `Infoga i lektionen`
+- `Byt ljud`
+- `Använd som kursbild`
+- `Ladda ner`
+- `Ta bort`
+- `Home`
+- `Teacher Home`
+
+### TRANSITIONS
+- Another lesson-row selection -> `UNVERIFIED`
+- `Home` -> `course_list_authenticated_home`
+- `Teacher Home` -> `teacher_home_authenticated`

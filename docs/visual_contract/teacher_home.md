@@ -1,33 +1,45 @@
 # Teacher Home
 
-## USER STATES
-- Authenticated teacher-capable session after successful login.
-- Observed on `#/teacher` and `#/studio`.
+VISUAL CONTRACT (DETERMINISTIC)
 
-## UI ELEMENTS
-- Top navigation showed `Home`, `Teacher Home`, and Aveli.
-- Header text: `Studio för lärare`.
-- `Paketpriser` section with `Skapa paket`, an existing session label `Session Spirituell Healing`, status `Aktivt`, value `xx`, and `Kopiera länk`.
-- `Media-spelaren` section with descriptive helper text and `Öppna spelarens kontrollpanel`.
-- `Mina kurser` section with `Skapa kurs` and many course rows, each showing a visible `Ta bort kurs` button.
-- `Liveseminarier` section with descriptive text and `Öppna liveseminarier`.
+### STATE
+- `teacher_home_authenticated`
+
+### CONDITIONS
+- Authentication had already succeeded in the active browser session.
+- This state was observed on `#/teacher` and `#/studio`.
+- Visiting `https://app.aveli.app/` while still authenticated redirected to `#/teacher`.
+- `UNVERIFIED`: the exact role or permission condition that grants access to this surface.
+
+### UI
+- Top navigation with `Home`, `Teacher Home`, and Aveli.
+- Heading `Studio för lärare`.
+- `Paketpriser` section with `Skapa paket`, existing item `Session Spirituell Healing`, visible status `Aktivt`, value `xx`, and `Kopiera länk`.
+- `Media-spelaren` section with helper text and `Öppna spelarens kontrollpanel`.
+- `Mina kurser` section with `Skapa kurs` and many course rows, each with a visible `Ta bort kurs` button.
+- `Liveseminarier` section with helper text and `Öppna liveseminarier`.
 - `Create invitation code` section with `Email`, `Duration`, `Unit Days`, and `Send invitation`.
-- Footer buttons included `Min profil`, `Terms of Service`, `Privacy Policy`, and `Data Deletion`.
+- Footer buttons `Min profil`, `Terms of Service`, `Privacy Policy`, and `Data Deletion`.
 
-## ACTIONS
-- Clicking a course row opened the course editor.
-- Clicking `Öppna spelarens kontrollpanel` opened the Home-player control surface.
-- `Skapa paket`, `Skapa kurs`, `Ta bort kurs`, `Öppna liveseminarier`, and `Send invitation` were visible but not used.
+### ACTIONS
+- `Home`
+- Course-row selection
+- `Skapa paket`
+- `Kopiera länk`
+- `Öppna spelarens kontrollpanel`
+- `Skapa kurs`
+- `Ta bort kurs`
+- `Öppna liveseminarier`
+- `Send invitation`
+- `Min profil`
 
-## DISABLED / HIDDEN
-- No anonymous login/signup CTAs were visible.
-- No disabled teacher controls were observed on this surface.
-
-## TRANSITIONS
-- Visiting `https://app.aveli.app/` while authenticated redirected to `#/teacher`.
-- `Home` navigated to `#/home`.
-- Clicking a sampled course row navigated to `#/teacher/editor`.
-- `Öppna spelarens kontrollpanel` navigated to `#/studio/profile`.
-
-## RULES
-- Destructive and outbound actions were visible on this page but were not executed.
+### TRANSITIONS
+- `Home` -> `course_list_authenticated_home`
+- Sampled course-row selection -> `course_editor_empty_lessons_view`
+- `Öppna spelarens kontrollpanel` -> `home_player_control_authenticated`
+- `Min profil` -> `profile_authenticated_pro_member`
+- `Skapa paket` -> `UNVERIFIED`
+- `Skapa kurs` -> `UNVERIFIED`
+- `Ta bort kurs` -> `UNVERIFIED`
+- `Öppna liveseminarier` -> `UNVERIFIED`
+- `Send invitation` -> `UNVERIFIED`

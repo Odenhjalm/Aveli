@@ -1,36 +1,52 @@
 # Profile
 
-## USER STATES
-- Authenticated user on `#/profile`.
-- Profile labels showed `Pro-medlem` and exposed teacher-access navigation (`Teacher Home`).
+VISUAL CONTRACT (DETERMINISTIC)
 
-## UI ELEMENTS
+### STATE
+- `profile_authenticated_pro_member`
+
+### CONDITIONS
+- Authentication had already succeeded in the active browser session.
+- Route was `#/profile`.
+- Visible labels included `Pro-medlem`.
+- The same page also exposed teacher navigation through `Teacher Home`.
+- `UNVERIFIED`: whether non-Pro or non-teacher users see the same profile layout.
+
+### UI
 - Heading `Din profil`.
-- `Ändra` button.
+- Button `Ändra`.
 - Profile-image area with `Ta bort profilbild`.
-- Visible identity text: `Lisa Odenhjälm`, `avelibooks@gmail.com`, and `Medlem sedan måndag 19 januari 2026`.
-- Membership label `Pro-medlem`.
-- `Om mig` section with long bio text.
-- `Mina certifikat` section with empty-state text.
-- `Mina tjänster` section with `Hantera i Studio`.
-- `Pågående kurser` section with multiple course buttons and `Utforska fler`.
-- `Min prenumeration` button.
-- `Köphistorik` section with `Visa mina köp`.
-- `Byt lösenord` section with fields for current password, new password, confirm new password, plus `Uppdatera lösenord`.
-- `Logga ut` button.
+- Identity text `Lisa Odenhjälm`, `avelibooks@gmail.com`, and `Medlem sedan måndag 19 januari 2026`.
+- Label `Pro-medlem`.
+- Section `Om mig` with long bio text.
+- Section `Mina certifikat` with empty text about no registered certificates.
+- Section `Mina tjänster` with `Hantera i Studio`.
+- Section `Pågående kurser` with `Utforska fler` and multiple course buttons.
+- Button `Min prenumeration`.
+- Section `Köphistorik` with `Visa mina köp`.
+- Section `Byt lösenord` with `Nuvarande lösenord`, `Nytt lösenord`, `Bekräfta nytt lösenord`, and `Uppdatera lösenord`.
+- Button `Logga ut`.
 
-## ACTIONS
-- Clicking an ongoing-course button attempted to open a course route.
-- `Hantera i Studio`, `Visa mina köp`, `Min prenumeration`, `Uppdatera lösenord`, and `Logga ut` were visible but not used.
+### ACTIONS
+- `Ändra`
+- `Ta bort profilbild`
+- `Hantera i Studio`
+- `Utforska fler`
+- Ongoing-course button selection
+- `Min prenumeration`
+- `Visa mina köp`
+- `Uppdatera lösenord`
+- `Logga ut`
+- `Home`
+- `Teacher Home`
 
-## DISABLED / HIDDEN
-- No membership-purchase CTA was visible.
-- No disabled profile controls were observed.
-- Certificates were empty in the observed state.
-
-## TRANSITIONS
-- Home `Profil` navigated to `#/profile`.
-- Clicking the sampled ongoing-course button navigated to `#/course/l%C3%A4r-dig-kommunicera-med-djur-eclp-hfq55r41dc`, which rendered the same course TypeError surface.
-
-## RULES
-- This surface combined learner-oriented account sections and teacher-oriented navigation in one page.
+### TRANSITIONS
+- Sampled ongoing-course button selection -> `course_detail_error_authenticated`
+- `Hantera i Studio` -> `UNVERIFIED`
+- `Utforska fler` -> `UNVERIFIED`
+- `Min prenumeration` -> `UNVERIFIED`
+- `Visa mina köp` -> `UNVERIFIED`
+- `Uppdatera lösenord` -> `UNVERIFIED`
+- `Logga ut` -> `UNVERIFIED`
+- `Home` -> `UNVERIFIED`
+- `Teacher Home` -> `UNVERIFIED`

@@ -1,28 +1,34 @@
 # Landing
 
-## USER STATES
-- Anonymous / signed-out state after clearing browser storage.
+VISUAL CONTRACT (DETERMINISTIC)
 
-## UI ELEMENTS
+### STATE
+- `landing_anonymous`
+
+### CONDITIONS
+- Browser storage was cleared before observation.
+- The app loaded at `https://app.aveli.app/`.
+- No authenticated redirect occurred in this clean browser state.
+- `UNVERIFIED`: whether any server-side session artifact alone can bypass this state.
+
+### UI
 - Aveli logo/button.
 - `Logga in` button.
-- Hero text: `Upptäck din andliga resa`.
-- Supporting hero copy about learning from spiritual teachers.
-- Primary CTA: `Bli medlem`.
-- Trust text visible in the hero: `Över 1000+ nöjda elever`, `Certifierade lärare`, `14 dagar pröveperiod`.
-- Footer/legal buttons: `Terms of Service`, `Skapa konto`, `Privacy Policy`, `Data Deletion`.
+- Hero headline `Upptäck din andliga resa`.
+- Hero body copy about learning from spiritual teachers.
+- Primary CTA `Bli medlem`.
+- Trust text `Över 1000+ nöjda elever`, `Certifierade lärare`, and `14 dagar pröveperiod`.
+- Footer/legal buttons `Terms of Service`, `Skapa konto`, `Privacy Policy`, and `Data Deletion`.
 
-## ACTIONS
-- Clicking `Skapa konto` opened the create-account view in place.
-- `Logga in` was visible on this surface.
-- `Bli medlem` was visible on this surface.
+### ACTIONS
+- `Skapa konto`
+- `Logga in`
+- `Bli medlem`
+- `Terms of Service`
+- `Privacy Policy`
+- `Data Deletion`
 
-## DISABLED / HIDDEN
-- No authenticated navigation (`Home`, `Studio`, `Profil`, `Teacher Home`) was visible.
-- No course list, profile content, or teacher controls were visible.
-
-## TRANSITIONS
-- `Skapa konto` replaced the landing content with the signup form inside the same app shell.
-
-## RULES
-- Observation was made from a clean browser state after local browser storage was cleared.
+### TRANSITIONS
+- `Skapa konto` -> `auth_signup_anonymous`
+- `Logga in` -> `UNVERIFIED`
+- `Bli medlem` -> `UNVERIFIED`
