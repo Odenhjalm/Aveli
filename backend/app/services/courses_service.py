@@ -33,6 +33,17 @@ def _course_expected_source(course: Mapping[str, Any] | None) -> str | None:
     return None
 
 
+def _validate_course_drip_configuration(
+    *,
+    drip_enabled: bool,
+    drip_interval_days: int | None,
+) -> None:
+    if drip_enabled and drip_interval_days is None:
+        raise ValueError("drip_interval_days is required when drip_enabled is true")
+    if not drip_enabled and drip_interval_days is not None:
+        raise ValueError("drip_interval_days must be null when drip_enabled is false")
+
+
 async def fetch_course(
     *,
     course_id: str | None = None,
@@ -125,11 +136,34 @@ async def attach_course_cover_read_contract(
 
 
 async def create_course(payload: dict[str, Any]) -> dict[str, Any]:
+    _validate_course_drip_configuration(
+        drip_enabled=bool(payload["drip_enabled"]),
+        drip_interval_days=payload["drip_interval_days"],
+    )
     row = await courses_repo.create_course(payload)
     return dict(row)
 
 
 async def update_course(course_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+    existing_course = await courses_repo.get_course(course_id=course_id)
+    if existing_course is None:
+        return None
+
+    drip_enabled = (
+        patch["drip_enabled"]
+        if "drip_enabled" in patch
+        else existing_course["drip_enabled"]
+    )
+    drip_interval_days = (
+        patch["drip_interval_days"]
+        if "drip_interval_days" in patch
+        else existing_course["drip_interval_days"]
+    )
+    _validate_course_drip_configuration(
+        drip_enabled=bool(drip_enabled),
+        drip_interval_days=drip_interval_days,
+    )
+
     row = await courses_repo.update_course(course_id, patch)
     return dict(row) if row else None
 

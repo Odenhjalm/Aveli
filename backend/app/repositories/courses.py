@@ -377,10 +377,21 @@ async def get_studio_lesson(lesson_id: str) -> LessonRow | None:
 
 
 async def get_lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
-    lesson = await get_lesson(lesson_id)
-    if lesson is None:
+    query = """
+        select
+            l.id,
+            l.course_id
+        from app.lessons as l
+        where l.id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            row = await cur.fetchone()
+    if row is None:
         return None, None
-    return lesson_id, str(lesson.get("course_id") or "") or None
+    return str(row["id"]), str(row["course_id"])
 
 
 async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:

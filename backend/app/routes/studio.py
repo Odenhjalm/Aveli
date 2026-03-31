@@ -353,7 +353,10 @@ async def studio_add_certificate(
 @course_lesson_router.post("/courses", response_model=schemas.Course)
 async def create_course(payload: schemas.StudioCourseCreate, current: StudioActor):
     del current
-    row = await courses_service.create_course(payload.model_dump())
+    try:
+        row = await courses_service.create_course(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create course")
     return row
@@ -622,7 +625,7 @@ async def presign_lesson_media_upload(
 
     # Ensure lesson exists and current user owns the course.
     lesson_id_str = str(lesson_id)
-    lesson = await models.get_lesson(lesson_id_str)
+    lesson = await courses_service.fetch_studio_lesson(lesson_id_str)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
@@ -676,7 +679,7 @@ async def complete_lesson_media_upload(
 
     # Ensure lesson exists and current user owns the course.
     lesson_id_str = str(lesson_id)
-    lesson = await models.get_lesson(lesson_id_str)
+    lesson = await courses_service.fetch_studio_lesson(lesson_id_str)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
@@ -1755,7 +1758,13 @@ async def update_course(
     current: StudioActor,
 ):
     del current
-    row = await courses_service.update_course(course_id, payload.model_dump(exclude_unset=True))
+    try:
+        row = await courses_service.update_course(
+            course_id,
+            payload.model_dump(exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
     return schemas.Course(**row)
@@ -1770,14 +1779,19 @@ async def delete_course(course_id: str, current: StudioActor):
     return {"deleted": True}
 
 
-@course_lesson_router.get("/courses/{course_id}/lessons")
+@course_lesson_router.get(
+    "/courses/{course_id}/lessons",
+    response_model=schemas.StudioLessonListResponse,
+)
 async def course_lessons(course_id: str, current: StudioActor):
     del current
     course = await courses_service.fetch_course(course_id=course_id)
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
     lessons = await courses_service.list_studio_course_lessons(course_id)
-    return {"items": lessons}
+    return schemas.StudioLessonListResponse(
+        items=[schemas.StudioLesson(**lesson) for lesson in lessons]
+    )
 
 
 @course_lesson_router.patch("/courses/{course_id}/lessons/reorder")
@@ -1838,7 +1852,7 @@ async def reorder_course_lessons(
     return {"ok": True}
 
 
-@course_lesson_router.post("/lessons")
+@course_lesson_router.post("/lessons", response_model=schemas.StudioLesson)
 async def create_lesson(
     payload: schemas.StudioLessonCreate,
     current: StudioActor,
@@ -1861,10 +1875,10 @@ async def create_lesson(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create lesson")
-    return row
+    return schemas.StudioLesson(**row)
 
 
-@course_lesson_router.patch("/lessons/{lesson_id}")
+@course_lesson_router.patch("/lessons/{lesson_id}", response_model=schemas.StudioLesson)
 async def update_lesson(
     lesson_id: str,
     payload: schemas.StudioLessonUpdate,
@@ -1910,7 +1924,7 @@ async def update_lesson(
             _visible_lesson_text(stored_after_str),
         )
 
-    return row
+    return schemas.StudioLesson(**row)
 
 
 @course_lesson_router.delete("/lessons/{lesson_id}")
@@ -1940,7 +1954,7 @@ async def upload_media(
         )
         raise HTTPException(status_code=403, detail="Not course owner")
 
-    lesson_row = await courses_service.fetch_lesson(lesson_id)
+    lesson_row = await courses_service.fetch_studio_lesson(lesson_id)
     if not lesson_row:
         raise HTTPException(status_code=404, detail="Lesson not found")
     storage_bucket = upload_routes._COURSE_MEDIA_BUCKET
@@ -2138,12 +2152,14 @@ async def media_file(
     if not teacher_access:
         if not access_row.get("is_published"):
             raise HTTPException(status_code=403, detail="Course not published")
-        if not (access_row.get("is_intro") or access_row.get("is_free_intro")):
-            if not course_id:
-                raise HTTPException(status_code=403, detail="Access denied")
-            snapshot = await models.course_access_snapshot(user_id, str(course_id))
-            if snapshot.get("can_access") is not True:
-                raise HTTPException(status_code=403, detail="Access denied")
+        if not course_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        access = await courses_service.read_canonical_course_access(
+            user_id,
+            str(course_id),
+        )
+        if access.get("can_access") is not True:
+            raise HTTPException(status_code=403, detail="Access denied")
     logger.info(
         "LEGACY_MEDIA_ROUTE_HIT route=/studio/media/%s user_id=%s",
         media_id,

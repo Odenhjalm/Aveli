@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     SerializerFunctionWrapHandler,
     field_validator,
+    model_validator,
     model_serializer,
 )
 from uuid import UUID
@@ -939,7 +940,7 @@ class Course(BaseModel):
     cover: CourseCoverResolved | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
-    drip_interval_days: int
+    drip_interval_days: Optional[int]
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -1163,7 +1164,6 @@ class LessonMediaPresignRequest(BaseModel):
     filename: str
     content_type: str | None = None
     media_type: Literal["image", "audio", "video", "document", "pdf"] | None = None
-    is_intro: bool | None = None
 
 
 class LessonMediaUploadCompleteRequest(BaseModel):
@@ -1173,7 +1173,6 @@ class LessonMediaUploadCompleteRequest(BaseModel):
     byte_size: int
     original_name: str | None = None
     checksum: str | None = None
-    is_intro: bool | None = None
 
 
 class MediaPreviewBatchRequest(BaseModel):
@@ -1206,7 +1205,15 @@ class StudioCourseCreate(BaseModel):
     step: str
     price_amount_cents: int | None = None
     drip_enabled: bool
-    drip_interval_days: int
+    drip_interval_days: Optional[int]
+
+    @model_validator(mode="after")
+    def _validate_drip_configuration(self):
+        if self.drip_enabled and self.drip_interval_days is None:
+            raise ValueError("drip_interval_days is required when drip_enabled is true")
+        if not self.drip_enabled and self.drip_interval_days is not None:
+            raise ValueError("drip_interval_days must be null when drip_enabled is false")
+        return self
 
 
 class StudioCourseUpdate(BaseModel):
@@ -1250,6 +1257,18 @@ class StudioLessonUpdate(BaseModel):
     lesson_title: str | None = None
     content_markdown: str | None = None
     position: int | None = None
+
+
+class StudioLesson(BaseModel):
+    id: UUID
+    course_id: UUID
+    lesson_title: str
+    content_markdown: str
+    position: int
+
+
+class StudioLessonListResponse(BaseModel):
+    items: List[StudioLesson]
 
 
 class StudioLessonMediaUploadUrlRequest(BaseModel):

@@ -642,7 +642,7 @@ class Course(BaseModel):
     cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
-    drip_interval_days: int
+    drip_interval_days: Optional[int]
 
 
 class CourseListResponse(BaseModel):
@@ -701,7 +701,7 @@ class StudioCourseCreate(BaseModel):
     step: str
     price_amount_cents: int | None = None
     drip_enabled: bool
-    drip_interval_days: int
+    drip_interval_days: Optional[int]
 
 
 class StudioCourseUpdate(BaseModel):
@@ -745,6 +745,18 @@ class StudioLessonUpdate(BaseModel):
     lesson_title: str | None = None
     content_markdown: str | None = None
     position: int | None = None
+
+
+class StudioLesson(BaseModel):
+    id: UUID
+    course_id: UUID
+    lesson_title: str
+    content_markdown: str
+    position: int
+
+
+class StudioLessonListResponse(BaseModel):
+    items: List[StudioLesson]
 
 
 class StudioLessonMediaUploadUrlRequest(BaseModel):
