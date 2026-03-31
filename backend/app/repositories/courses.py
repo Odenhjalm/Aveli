@@ -212,6 +212,52 @@ async def delete_course(course_id: str) -> bool:
     return deleted
 
 
+async def get_course_public_content(course_id: str) -> dict[str, Any] | None:
+    query = """
+        select
+            cpc.course_id,
+            cpc.short_description
+        from app.course_public_content as cpc
+        where cpc.course_id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def upsert_course_public_content(
+    course_id: str,
+    *,
+    short_description: str,
+) -> dict[str, Any]:
+    query = """
+        insert into app.course_public_content (
+            course_id,
+            short_description
+        )
+        values (
+            %s::uuid,
+            %s
+        )
+        on conflict (course_id) do update
+        set short_description = excluded.short_description
+        returning
+            course_id,
+            short_description
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id, short_description))
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        raise RuntimeError("course public content was not returned")
+    return dict(row)
+
+
 async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     query = f"""
         select distinct on (c.id)

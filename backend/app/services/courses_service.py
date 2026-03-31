@@ -42,6 +42,23 @@ async def fetch_course(
     return dict(row) if row else None
 
 
+async def fetch_course_public_content(course_id: str) -> dict[str, Any] | None:
+    row = await courses_repo.get_course_public_content(course_id)
+    return dict(row) if row else None
+
+
+async def upsert_course_public_content(
+    course_id: str,
+    *,
+    short_description: str,
+) -> dict[str, Any]:
+    row = await courses_repo.upsert_course_public_content(
+        course_id,
+        short_description=short_description,
+    )
+    return dict(row)
+
+
 async def fetch_course_access_subject(course_id: str) -> dict[str, Any] | None:
     return await fetch_course(course_id=course_id)
 

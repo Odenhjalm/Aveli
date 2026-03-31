@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/data/models/profile.dart';
 
 class TopNavActionButtons extends ConsumerWidget {
   const TopNavActionButtons({super.key, this.iconColor});
@@ -14,20 +15,8 @@ class TopNavActionButtons extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
     final profile = authState.profile;
-    if (profile == null) {
-      return IconButton(
-        tooltip: 'Logga in',
-        icon: Icon(
-          Icons.login,
-          color: iconColor ?? Theme.of(context).colorScheme.onSurface,
-        ),
-        onPressed: () => context.goNamed(AppRoute.login),
-      );
-    }
-
     final color = iconColor ?? Theme.of(context).colorScheme.onSurface;
-    final isTeacher = profile.isTeacher || profile.isAdmin;
-    final isAdmin = profile.isAdmin;
+    final isTeacher = profile?.userRole == UserRole.teacher;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -35,37 +24,20 @@ class TopNavActionButtons extends ConsumerWidget {
         IconButton(
           tooltip: 'Home',
           icon: Icon(Icons.home_outlined, color: color),
-          onPressed: () => context.goNamed(AppRoute.home),
+          onPressed: () => context.goNamed(AppRoute.courseCatalog),
         ),
-        if (isAdmin)
-          IconButton(
-            tooltip: 'Admin',
-            icon: Icon(Icons.shield_outlined, color: color),
-            onPressed: () => context.goNamed(AppRoute.admin),
-          ),
-        if (isAdmin)
-          IconButton(
-            tooltip: 'Media Control Plane',
-            icon: Icon(Icons.perm_media_outlined, color: color),
-            onPressed: () => context.goNamed(AppRoute.adminMedia),
-          ),
-        if (isAdmin)
-          IconButton(
-            tooltip: 'Admininställningar',
-            icon: Icon(Icons.tune_outlined, color: color),
-            onPressed: () => context.goNamed(AppRoute.adminSettings),
-          ),
         if (isTeacher)
           IconButton(
             tooltip: 'Teacher Home',
             icon: Icon(Icons.home_work_outlined, color: color),
             onPressed: () => context.goNamed(AppRoute.teacherHome),
           ),
-        IconButton(
-          tooltip: 'Min profil',
-          icon: Icon(Icons.person_outline, color: color),
-          onPressed: () => context.goNamed(AppRoute.profile),
-        ),
+        if (profile != null)
+          IconButton(
+            tooltip: 'Profil',
+            icon: Icon(Icons.person_outline, color: color),
+            onPressed: () => context.goNamed(AppRoute.profile),
+          ),
       ],
     );
   }

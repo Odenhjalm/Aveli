@@ -1728,6 +1728,26 @@ async def course_meta(course_id: str, current: StudioActor):
     return schemas.Course(**row)
 
 
+@course_lesson_router.post(
+    "/courses/{course_id}/public",
+    response_model=schemas.CoursePublicContent,
+)
+async def upsert_course_public_content(
+    course_id: str,
+    payload: schemas.StudioCoursePublicContentUpsert,
+    current: StudioActor,
+):
+    del current
+    row = await courses_service.fetch_course(course_id=course_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Course not found")
+    public_content = await courses_service.upsert_course_public_content(
+        course_id,
+        short_description=payload.short_description,
+    )
+    return schemas.CoursePublicContent(**public_content)
+
+
 @course_lesson_router.patch("/courses/{course_id}", response_model=schemas.Course)
 async def update_course(
     course_id: str,

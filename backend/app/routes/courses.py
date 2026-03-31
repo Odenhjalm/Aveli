@@ -132,6 +132,17 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     return {"course": row, "lessons": lessons}
 
 
+@router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)
+async def course_public_content(course_id: UUID):
+    course = await courses_service.fetch_course(course_id=str(course_id))
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    row = await courses_service.fetch_course_public_content(str(course_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Public content not found")
+    return schemas.CoursePublicContent(**row)
+
+
 @router.get("/{course_id}")
 async def course_detail(course_id: UUID, current: OptionalCurrentUser = None):
     del current

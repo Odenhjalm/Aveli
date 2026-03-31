@@ -953,6 +953,17 @@ class CourseListResponse(BaseModel):
     items: List[Course]
 
 
+class CoursePublicContent(BaseModel):
+    course_id: UUID
+    short_description: str
+
+
+class StudioCoursePublicContentUpsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    short_description: str
+
+
 class MediaSignRequest(BaseModel):
     media_id: str
     mode: Literal["editor_insert", "editor_preview", "student_render"] | None = None

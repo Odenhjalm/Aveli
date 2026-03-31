@@ -386,7 +386,7 @@ class _HomeActionButton extends StatelessWidget {
     return IconButton(
       tooltip: 'Hem',
       icon: Icon(Icons.home_outlined, color: color),
-      onPressed: () => context.goNamed(AppRoute.home),
+      onPressed: () => context.goNamed(AppRoute.courseCatalog),
     );
   }
 }
