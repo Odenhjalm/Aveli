@@ -1,35 +1,20 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/core/errors/app_failure.dart';
-
 class NotificationsRepository {
-  NotificationsRepository(this._client);
+  NotificationsRepository(ApiClient _);
 
-  final ApiClient _client;
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
+    );
+  }
 
   Future<List<Map<String, dynamic>>> myNotifications({
     bool unreadOnly = false,
   }) async {
-    try {
-      final response = await _client.get<Map<String, dynamic>>(
-        '/community/notifications',
-        queryParameters: {if (unreadOnly) 'unread_only': true},
-      );
-      return (response['items'] as List? ?? [])
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .toList(growable: false);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community notifications');
   }
 
   Future<void> markRead(String id, {bool read = true}) async {
-    try {
-      await _client.patch(
-        '/community/notifications/$id',
-        body: {'is_read': read},
-      );
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community notifications');
   }
 }

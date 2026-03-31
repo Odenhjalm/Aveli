@@ -5,35 +5,25 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/data/models/certificate.dart';
 
 class CertificatesRepository {
-  CertificatesRepository(this._client);
-
-  final ApiClient _client;
+  CertificatesRepository(ApiClient _);
 
   static const String _applicationTitle = 'Läraransökan';
 
-  Future<List<Certificate>> myCertificates({bool verifiedOnly = false}) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/certificates',
-      queryParameters: {'verified_only': verifiedOnly},
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
     );
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map((e) => Certificate.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList(growable: false);
+  }
+
+  Future<List<Certificate>> myCertificates({bool verifiedOnly = false}) async {
+    return _unsupportedRuntime('Studio certificates');
   }
 
   Future<List<Certificate>> certificatesOf(
     String userId, {
     bool verifiedOnly = true,
   }) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/profiles/$userId/certificates',
-      queryParameters: {'verified_only': verifiedOnly},
-    );
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map((e) => Certificate.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList(growable: false);
+    return _unsupportedRuntime('Profile certificates');
   }
 
   Future<Certificate?> teacherApplicationOf(String userId) async {
@@ -47,18 +37,7 @@ class CertificatesRepository {
   }
 
   Future<Certificate?> myTeacherApplication() async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/certificates',
-      queryParameters: {'verified_only': false},
-    );
-    final list = res['items'] as List? ?? const [];
-    for (final item in list) {
-      final cert = Certificate.fromJson(Map<String, dynamic>.from(item as Map));
-      if (cert.title.toLowerCase() == _applicationTitle.toLowerCase()) {
-        return cert;
-      }
-    }
-    return null;
+    return _unsupportedRuntime('Studio certificates');
   }
 
   Future<Certificate?> addCertificate({
@@ -67,16 +46,7 @@ class CertificatesRepository {
     String? notes,
     String? evidenceUrl,
   }) async {
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/certificates',
-      body: {
-        'title': title,
-        'status': status,
-        if (notes != null) 'notes': notes,
-        if (evidenceUrl != null) 'evidence_url': evidenceUrl,
-      },
-    );
-    return Certificate.fromJson(res);
+    return _unsupportedRuntime('Studio certificates');
   }
 }
 

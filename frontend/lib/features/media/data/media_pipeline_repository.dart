@@ -1,5 +1,70 @@
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
+import 'package:aveli/shared/models/request_headers.dart';
+
+Object? _requireResponseField(Object? payload, String key, String label) {
+  switch (payload) {
+    case final Map data when data.containsKey(key):
+      return data[key];
+    case final Map _:
+      throw StateError('$label is missing required field: $key');
+    default:
+      throw StateError('$label returned a non-object payload');
+  }
+}
+
+String _requiredResponseString(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is String && value.isNotEmpty) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be a non-empty string');
+}
+
+String? _nullableResponseString(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value == null) {
+    return null;
+  }
+  if (value is String) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be a string or null');
+}
+
+int? _nullableResponseInt(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value == null) {
+    return null;
+  }
+  if (value is int) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be an int or null');
+}
+
+DateTime _requiredResponseUtcDateTime(
+  Object? payload,
+  String key,
+  String label,
+) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is! String || value.isEmpty) {
+    throw StateError('$label field "$key" must be an ISO datetime string');
+  }
+  return DateTime.parse(value).toUtc();
+}
+
+RequestHeaders _requiredResponseHeaders(
+  Object? payload,
+  String key,
+  String label,
+) {
+  return RequestHeaders.fromResponseObject(
+    _requireResponseField(payload, key, label),
+    label: '$label field "$key"',
+  );
+}
 
 class MediaUploadTarget {
   const MediaUploadTarget({
@@ -13,19 +78,26 @@ class MediaUploadTarget {
   final String mediaId;
   final Uri uploadUrl;
   final String objectPath;
-  final Map<String, String> headers;
+  final RequestHeaders headers;
   final DateTime expiresAt;
 
-  factory MediaUploadTarget.fromJson(Map<String, dynamic> json) =>
-      MediaUploadTarget(
-        mediaId: (json['media_asset_id'] ?? json['media_id']) as String,
-        uploadUrl: Uri.parse(json['upload_url'] as String),
-        objectPath: (json['storage_path'] ?? json['object_path']) as String,
-        headers: Map<String, String>.from(
-          json['headers'] as Map<String, dynamic>? ?? const {},
-        ),
-        expiresAt: DateTime.parse(json['expires_at'] as String).toUtc(),
-      );
+  factory MediaUploadTarget.fromResponse(Object? payload) => MediaUploadTarget(
+    mediaId: _requiredResponseString(payload, 'media_id', 'MediaUploadTarget'),
+    uploadUrl: Uri.parse(
+      _requiredResponseString(payload, 'upload_url', 'MediaUploadTarget'),
+    ),
+    objectPath: _requiredResponseString(
+      payload,
+      'object_path',
+      'MediaUploadTarget',
+    ),
+    headers: _requiredResponseHeaders(payload, 'headers', 'MediaUploadTarget'),
+    expiresAt: _requiredResponseUtcDateTime(
+      payload,
+      'expires_at',
+      'MediaUploadTarget',
+    ),
+  );
 }
 
 class MediaPlaybackUrl {
@@ -39,12 +111,17 @@ class MediaPlaybackUrl {
   final DateTime expiresAt;
   final String format;
 
-  factory MediaPlaybackUrl.fromJson(Map<String, dynamic> json) =>
-      MediaPlaybackUrl(
-        playbackUrl: Uri.parse(json['playback_url'] as String),
-        expiresAt: DateTime.parse(json['expires_at'] as String).toUtc(),
-        format: json['format'] as String? ?? 'mp3',
-      );
+  factory MediaPlaybackUrl.fromResponse(Object? payload) => MediaPlaybackUrl(
+    playbackUrl: Uri.parse(
+      _requiredResponseString(payload, 'playback_url', 'MediaPlaybackUrl'),
+    ),
+    expiresAt: _requiredResponseUtcDateTime(
+      payload,
+      'expires_at',
+      'MediaPlaybackUrl',
+    ),
+    format: _requiredResponseString(payload, 'format', 'MediaPlaybackUrl'),
+  );
 }
 
 class MediaStatus {
@@ -58,7 +135,6 @@ class MediaStatus {
     this.codec,
     this.lessonMediaId,
     this.runtimeMediaId,
-    this.lessonMedia,
   });
 
   final String mediaId;
@@ -70,21 +146,41 @@ class MediaStatus {
   final String? codec;
   final String? lessonMediaId;
   final String? runtimeMediaId;
-  final Map<String, dynamic>? lessonMedia;
 
-  factory MediaStatus.fromJson(Map<String, dynamic> json) => MediaStatus(
-    mediaId: (json['media_asset_id'] ?? json['media_id']) as String,
-    state: json['state'] as String? ?? 'uploaded',
-    errorMessage: json['error_message'] as String?,
-    ingestFormat: json['ingest_format'] as String?,
-    streamingFormat: json['streaming_format'] as String?,
-    durationSeconds: json['duration_seconds'] as int?,
-    codec: json['codec'] as String?,
-    lessonMediaId: json['lesson_media_id'] as String?,
-    runtimeMediaId: json['runtime_media_id'] as String?,
-    lessonMedia: json['lesson_media'] is Map
-        ? Map<String, dynamic>.from(json['lesson_media'] as Map)
-        : null,
+  factory MediaStatus.fromResponse(Object? payload) => MediaStatus(
+    mediaId: _requiredResponseString(payload, 'media_id', 'MediaStatus'),
+    state: _requiredResponseString(payload, 'state', 'MediaStatus'),
+    errorMessage: _nullableResponseString(
+      payload,
+      'error_message',
+      'MediaStatus',
+    ),
+    ingestFormat: _nullableResponseString(
+      payload,
+      'ingest_format',
+      'MediaStatus',
+    ),
+    streamingFormat: _nullableResponseString(
+      payload,
+      'streaming_format',
+      'MediaStatus',
+    ),
+    durationSeconds: _nullableResponseInt(
+      payload,
+      'duration_seconds',
+      'MediaStatus',
+    ),
+    codec: _nullableResponseString(payload, 'codec', 'MediaStatus'),
+    lessonMediaId: _nullableResponseString(
+      payload,
+      'lesson_media_id',
+      'MediaStatus',
+    ),
+    runtimeMediaId: _nullableResponseString(
+      payload,
+      'runtime_media_id',
+      'MediaStatus',
+    ),
   );
 }
 
@@ -94,10 +190,14 @@ class CoverMediaResponse {
   final String mediaId;
   final String state;
 
-  factory CoverMediaResponse.fromJson(Map<String, dynamic> json) =>
+  factory CoverMediaResponse.fromResponse(Object? payload) =>
       CoverMediaResponse(
-        mediaId: json['media_id'] as String,
-        state: json['state'] as String? ?? 'uploaded',
+        mediaId: _requiredResponseString(
+          payload,
+          'media_id',
+          'CoverMediaResponse',
+        ),
+        state: _requiredResponseString(payload, 'state', 'CoverMediaResponse'),
       );
 }
 
@@ -112,26 +212,11 @@ class MediaPipelineRepository {
     _homePlayerPurpose,
   };
 
-  static Map<String, dynamic> _jsonObject(dynamic raw) {
-    if (raw is Map<String, dynamic>) {
-      return raw;
-    }
-    if (raw is Map) {
-      return Map<String, dynamic>.from(raw);
-    }
-    throw const FormatException('Playback response had invalid shape');
-  }
-
   static String _extractPlaybackUrl(
-    Map<String, dynamic> data, {
+    Object? payload, {
     required String endpointLabel,
   }) {
-    final rawUrlValue = data['playback_url'];
-    final rawUrl = rawUrlValue is String ? rawUrlValue.trim() : '';
-    if (rawUrl.isEmpty) {
-      throw FormatException('$endpointLabel saknar playback_url');
-    }
-    return rawUrl;
+    return _requiredResponseString(payload, 'playback_url', endpointLabel);
   }
 
   static Map<String, dynamic> _buildUploadUrlPayload({
@@ -143,13 +228,11 @@ class MediaPipelineRepository {
     String? courseId,
     String? lessonId,
   }) {
-    final normalizedFilename = filename.trim();
-    if (normalizedFilename.isEmpty) {
+    if (filename.isEmpty) {
       throw ArgumentError.value(filename, 'filename', 'Must not be empty.');
     }
 
-    final normalizedMimeType = mimeType.trim();
-    if (normalizedMimeType.isEmpty) {
+    if (mimeType.isEmpty) {
       throw ArgumentError.value(mimeType, 'mimeType', 'Must not be empty.');
     }
 
@@ -157,14 +240,10 @@ class MediaPipelineRepository {
       throw ArgumentError.value(sizeBytes, 'sizeBytes', 'Must be > 0.');
     }
 
-    final normalizedMediaType = switch (mediaType.trim().toLowerCase()) {
-      'pdf' => 'document',
-      final value => value,
-    };
-    if (normalizedMediaType != 'audio' &&
-        normalizedMediaType != 'image' &&
-        normalizedMediaType != 'video' &&
-        normalizedMediaType != 'document') {
+    if (mediaType != 'audio' &&
+        mediaType != 'image' &&
+        mediaType != 'video' &&
+        mediaType != 'document') {
       throw ArgumentError.value(
         mediaType,
         'mediaType',
@@ -172,74 +251,76 @@ class MediaPipelineRepository {
       );
     }
 
-    final normalizedPurpose = purpose?.trim();
-    if (normalizedPurpose != null && normalizedPurpose.isEmpty) {
+    if (purpose != null && purpose.isEmpty) {
       throw ArgumentError.value(
         purpose,
         'purpose',
         'If provided, purpose must not be empty.',
       );
     }
-    if (normalizedPurpose != null &&
-        !_allowedPurposes.contains(normalizedPurpose)) {
+    if (purpose != null && !_allowedPurposes.contains(purpose)) {
       throw ArgumentError.value(
         purpose,
         'purpose',
-        'Unsupported purpose "$normalizedPurpose".',
+        'Unsupported purpose "$purpose".',
       );
     }
 
-    final normalizedCourseId = courseId?.trim();
-    final normalizedLessonId = lessonId?.trim();
-    final resolvedCourseId =
-        normalizedCourseId == null || normalizedCourseId.isEmpty
-        ? null
-        : normalizedCourseId;
-    final resolvedLessonId =
-        normalizedLessonId == null || normalizedLessonId.isEmpty
-        ? null
-        : normalizedLessonId;
+    if (courseId != null && courseId.isEmpty) {
+      throw ArgumentError.value(
+        courseId,
+        'courseId',
+        'If provided, courseId must not be empty.',
+      );
+    }
+    if (lessonId != null && lessonId.isEmpty) {
+      throw ArgumentError.value(
+        lessonId,
+        'lessonId',
+        'If provided, lessonId must not be empty.',
+      );
+    }
 
-    if (normalizedMediaType == 'audio') {
-      if (normalizedPurpose == _homePlayerPurpose) {
-        if (resolvedCourseId != null || resolvedLessonId != null) {
+    if (mediaType == 'audio') {
+      if (purpose == _homePlayerPurpose) {
+        if (courseId != null || lessonId != null) {
           throw ArgumentError(
             'courseId/lessonId must be omitted for home_player_audio uploads.',
           );
         }
       } else {
-        if (normalizedPurpose != null && normalizedPurpose != 'lesson_audio') {
+        if (purpose != null && purpose != 'lesson_audio') {
           throw ArgumentError.value(
             purpose,
             'purpose',
-            'Unsupported purpose "$normalizedPurpose" for lesson audio uploads.',
+            'Unsupported purpose "$purpose" for lesson audio uploads.',
           );
         }
-        if (resolvedLessonId == null) {
+        if (lessonId == null) {
           throw ArgumentError('lessonId is required for lesson_audio uploads.');
         }
       }
     } else {
-      if (normalizedPurpose != null && normalizedPurpose != 'lesson_media') {
+      if (purpose != null && purpose != 'lesson_media') {
         throw ArgumentError.value(
           purpose,
           'purpose',
-          'Unsupported purpose "$normalizedPurpose" for lesson media uploads.',
+          'Unsupported purpose "$purpose" for lesson media uploads.',
         );
       }
-      if (resolvedLessonId == null) {
+      if (lessonId == null) {
         throw ArgumentError('lessonId is required for lesson media uploads.');
       }
     }
 
     return <String, dynamic>{
-      'filename': normalizedFilename,
-      'mime_type': normalizedMimeType,
+      'filename': filename,
+      'mime_type': mimeType,
       'size_bytes': sizeBytes,
-      'media_type': normalizedMediaType,
-      if (normalizedPurpose != null) 'purpose': normalizedPurpose,
-      if (resolvedCourseId != null) 'course_id': resolvedCourseId,
-      if (resolvedLessonId != null) 'lesson_id': resolvedLessonId,
+      'media_type': mediaType,
+      if (purpose != null) 'purpose': purpose,
+      if (courseId != null) 'course_id': courseId,
+      if (lessonId != null) 'lesson_id': lessonId,
     };
   }
 
@@ -261,27 +342,27 @@ class MediaPipelineRepository {
       courseId: courseId,
       lessonId: lessonId,
     );
-    final response = await _client.post<Map<String, dynamic>>(
+    final response = await _client.post<Object?>(
       ApiPaths.mediaUploadUrl,
       body: payload,
     );
-    return MediaUploadTarget.fromJson(response);
+    return MediaUploadTarget.fromResponse(response);
   }
 
   Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) async {
-    final response = await _client.post<Map<String, dynamic>>(
+    final response = await _client.post<Object?>(
       ApiPaths.mediaUploadUrlRefresh,
       body: {'media_id': mediaId},
     );
-    return MediaUploadTarget.fromJson(response);
+    return MediaUploadTarget.fromResponse(response);
   }
 
   Future<MediaStatus> completeUpload({required String mediaId}) async {
-    final response = await _client.post<Map<String, dynamic>>(
+    final response = await _client.post<Object?>(
       ApiPaths.mediaComplete,
       body: {'media_id': mediaId},
     );
-    return MediaStatus.fromJson(response);
+    return MediaStatus.fromResponse(response);
   }
 
   Future<MediaStatus> attachUpload({
@@ -290,9 +371,7 @@ class MediaPipelineRepository {
     String? lessonId,
     String? lessonMediaId,
   }) async {
-    final normalizedLinkScope = linkScope.trim();
-    if (normalizedLinkScope != 'lesson' &&
-        normalizedLinkScope != 'home_upload') {
+    if (linkScope != 'lesson' && linkScope != 'home_upload') {
       throw ArgumentError.value(
         linkScope,
         'linkScope',
@@ -300,32 +379,33 @@ class MediaPipelineRepository {
       );
     }
 
-    final normalizedLessonId = lessonId?.trim();
-    final normalizedLessonMediaId = lessonMediaId?.trim();
-    if (normalizedLinkScope == 'lesson' &&
-        (normalizedLessonId == null || normalizedLessonId.isEmpty)) {
+    if (linkScope == 'lesson' && (lessonId == null || lessonId.isEmpty)) {
       throw ArgumentError.value(
         lessonId,
         'lessonId',
         'lessonId is required for lesson attachments.',
       );
     }
+    if (lessonMediaId != null && lessonMediaId.isEmpty) {
+      throw ArgumentError.value(
+        lessonMediaId,
+        'lessonMediaId',
+        'lessonMediaId must not be empty.',
+      );
+    }
 
     final payload = <String, dynamic>{
       'media_id': mediaId,
-      'link_scope': normalizedLinkScope,
-      'lesson_id': normalizedLessonId == null || normalizedLessonId.isEmpty
-          ? null
-          : normalizedLessonId,
-      if (normalizedLessonMediaId != null && normalizedLessonMediaId.isNotEmpty)
-        'lesson_media_id': normalizedLessonMediaId,
+      'link_scope': linkScope,
+      'lesson_id': lessonId,
+      if (lessonMediaId != null) 'lesson_media_id': lessonMediaId,
     };
 
-    final response = await _client.post<Map<String, dynamic>>(
+    final response = await _client.post<Object?>(
       ApiPaths.mediaAttach,
       body: payload,
     );
-    return MediaStatus.fromJson(response);
+    return MediaStatus.fromResponse(response);
   }
 
   Future<MediaUploadTarget> requestCoverUploadUrl({
@@ -340,11 +420,11 @@ class MediaPipelineRepository {
       'size_bytes': sizeBytes,
       'course_id': courseId,
     };
-    final response = await _client.post<Map<String, dynamic>>(
+    final response = await _client.post<Object?>(
       ApiPaths.mediaCoverUploadUrl,
       body: payload,
     );
-    return MediaUploadTarget.fromJson(response);
+    return MediaUploadTarget.fromResponse(response);
   }
 
   Future<CoverMediaResponse> requestCoverFromLessonMedia({
@@ -355,11 +435,11 @@ class MediaPipelineRepository {
       'course_id': courseId,
       'lesson_media_id': lessonMediaId,
     };
-    final response = await _client.post<Map<String, dynamic>>(
+    final response = await _client.post<Object?>(
       ApiPaths.mediaCoverFromMedia,
       body: payload,
     );
-    return CoverMediaResponse.fromJson(response);
+    return CoverMediaResponse.fromResponse(response);
   }
 
   Future<void> clearCourseCover(String courseId) async {
@@ -370,35 +450,34 @@ class MediaPipelineRepository {
   }
 
   Future<MediaStatus> fetchStatus(String mediaId) async {
-    final response = await _client.get<Map<String, dynamic>>(
-      ApiPaths.mediaStatus(mediaId),
-    );
-    return MediaStatus.fromJson(response);
+    final response = await _client.get<Object?>(ApiPaths.mediaStatus(mediaId));
+    return MediaStatus.fromResponse(response);
   }
 
   Future<MediaPlaybackUrl> fetchPlaybackUrl(String mediaId) async {
-    final response = await _client.post<Map<String, dynamic>>(
+    final response = await _client.post<Object?>(
       ApiPaths.mediaPlaybackUrl,
       body: {'media_id': mediaId},
     );
-    return MediaPlaybackUrl.fromJson(response);
+    return MediaPlaybackUrl.fromResponse(response);
   }
 
   Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
-    final response = await _client.raw.post<dynamic>(
+    final response = await _client.raw.post<Object?>(
       ApiPaths.mediaLessonPlaybackUrl,
       data: {'lesson_media_id': lessonMediaId},
     );
-    final data = _jsonObject(response.data);
-    return _extractPlaybackUrl(data, endpointLabel: 'Lesson playback');
+    return _extractPlaybackUrl(response.data, endpointLabel: 'Lesson playback');
   }
 
   Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) async {
-    final response = await _client.raw.post<dynamic>(
+    final response = await _client.raw.post<Object?>(
       ApiPaths.mediaRuntimePlayback,
       data: {'runtime_media_id': runtimeMediaId},
     );
-    final data = _jsonObject(response.data);
-    return _extractPlaybackUrl(data, endpointLabel: 'Runtime playback');
+    return _extractPlaybackUrl(
+      response.data,
+      endpointLabel: 'Runtime playback',
+    );
   }
 }

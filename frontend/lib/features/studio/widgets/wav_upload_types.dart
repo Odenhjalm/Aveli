@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:aveli/shared/models/request_headers.dart';
+
 enum WavUploadFailureKind { cancelled, expired, failed }
 
 class WavUploadFailure implements Exception {
@@ -22,7 +24,7 @@ class WavUploadSigningRefresh {
 
   final Uri uploadUrl;
   final String objectPath;
-  final Map<String, String> headers;
+  final RequestHeaders headers;
   final DateTime expiresAt;
 }
 
@@ -172,8 +174,12 @@ class WavResumableSession {
         cacheControl: json['cacheControl'] as String?,
         lastModified: lastModified,
         offset: offset,
-        expiresAt: expiresAtRaw == null ? null : DateTime.tryParse(expiresAtRaw),
-        createdAt: createdAtRaw == null ? null : DateTime.tryParse(createdAtRaw),
+        expiresAt: expiresAtRaw == null
+            ? null
+            : DateTime.tryParse(expiresAtRaw),
+        createdAt: createdAtRaw == null
+            ? null
+            : DateTime.tryParse(createdAtRaw),
       );
     } catch (_) {
       return null;
@@ -192,13 +198,13 @@ class WavResumableSession {
     }
   }
 
-  Map<String, String> resumableHeaders() {
-    final headers = <String, String>{
-      'x-upsert': upsert ? 'true' : 'false',
-    };
+  RequestHeaders resumableHeaders() {
+    final headers = <RequestHeader>[
+      RequestHeader(name: 'x-upsert', value: upsert ? 'true' : 'false'),
+    ];
     if (cacheControl != null && cacheControl!.isNotEmpty) {
-      headers['cache-control'] = cacheControl!;
+      headers.add(RequestHeader(name: 'cache-control', value: cacheControl!));
     }
-    return headers;
+    return RequestHeaders(entries: headers);
   }
 }

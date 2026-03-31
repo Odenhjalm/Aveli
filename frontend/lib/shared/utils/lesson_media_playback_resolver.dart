@@ -3,8 +3,8 @@ import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 
 bool isLessonMediaPdf(LessonMediaItem item) {
-  final kind = item.kind.trim().toLowerCase();
-  if (kind == 'document' || kind == 'pdf') {
+  final mediaType = item.mediaType.trim().toLowerCase();
+  if (mediaType == 'document' || mediaType == 'pdf') {
     return true;
   }
   final fileName = item.originalName?.trim().toLowerCase();
@@ -18,7 +18,7 @@ bool canAttemptLessonMediaPlayback(LessonMediaItem item) {
   if (item.id.trim().isEmpty) {
     return false;
   }
-  return item.playbackReady;
+  return item.previewReady;
 }
 
 String? _resolveBrowserPlayableUrl(
@@ -69,7 +69,7 @@ Future<String?> resolveLessonMediaDocumentUrl({
   if (!isLessonMediaPdf(item)) {
     return null;
   }
-  if (!item.playbackReady) {
+  if (!item.previewReady) {
     return null;
   }
   return resolveLessonMediaSignedPlaybackUrl(

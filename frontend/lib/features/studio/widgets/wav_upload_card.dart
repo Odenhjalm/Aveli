@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/shared/models/request_headers.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
@@ -39,7 +40,7 @@ class WavUploadCard extends ConsumerStatefulWidget {
     required String lessonId,
     required Uri uploadUrl,
     required String objectPath,
-    required Map<String, String> headers,
+    required RequestHeaders headers,
     required WavUploadFile file,
     required String contentType,
     required void Function(int sent, int total) onProgress,
@@ -297,7 +298,7 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
     Uri uploadUrl;
     String objectPath;
-    Map<String, String> uploadHeaders;
+    RequestHeaders uploadHeaders;
     String mediaId;
 
     if (resumableSession != null) {

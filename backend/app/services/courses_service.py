@@ -53,6 +53,11 @@ async def fetch_course(
     return dict(row) if row else None
 
 
+async def fetch_course_pricing(slug: str) -> dict[str, Any] | None:
+    row = await courses_repo.get_course_pricing_by_slug(slug)
+    return dict(row) if row else None
+
+
 async def fetch_course_public_content(course_id: str) -> dict[str, Any] | None:
     row = await courses_repo.get_course_public_content(course_id)
     return dict(row) if row else None
@@ -127,6 +132,10 @@ async def list_lesson_media(
 ) -> Sequence[dict[str, Any]]:
     del mode
     return list(await courses_repo.list_lesson_media(lesson_id))
+
+
+async def list_studio_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
+    return list(await courses_repo.list_lesson_media_for_studio(lesson_id))
 
 
 async def attach_course_cover_read_contract(

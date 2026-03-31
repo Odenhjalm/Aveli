@@ -8,6 +8,7 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
 class CourseBundlePage extends ConsumerStatefulWidget {
@@ -24,6 +25,14 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
   final _selectedCourses = <String>{};
   bool _isActive = true;
   bool _submitting = false;
+
+  String _courseSelectionLabel(CourseStudio course) {
+    final step = course.step.trim();
+    if (step.isEmpty) {
+      return 'Kurs';
+    }
+    return 'Steg $step';
+  }
 
   @override
   void dispose() {
@@ -160,8 +169,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                         }
                         return Column(
                           children: courses.map((course) {
-                            final id = course['id'] as String?;
-                            if (id == null) return const SizedBox.shrink();
+                            final id = course.id;
                             final selected = _selectedCourses.contains(id);
                             return CheckboxListTile(
                               value: selected,
@@ -175,14 +183,10 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                 });
                               },
                               title: Text(
-                                course['title'] as String? ?? 'Kurs',
+                                course.title,
                                 style: theme.textTheme.bodyLarge,
                               ),
-                              subtitle: Text(
-                                course['is_published'] == true
-                                    ? 'Publicerad'
-                                    : 'Utkast',
-                              ),
+                              subtitle: Text(_courseSelectionLabel(course)),
                             );
                           }).toList(),
                         );

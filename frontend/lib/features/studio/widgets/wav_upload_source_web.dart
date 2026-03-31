@@ -8,6 +8,8 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import 'package:aveli/shared/models/request_headers.dart';
+
 import 'wav_upload_types.dart';
 
 const String _tusVersion = '1.0.0';
@@ -142,7 +144,7 @@ Future<void> uploadWavFile({
   required String lessonId,
   required Uri uploadUrl,
   required String objectPath,
-  required Map<String, String> headers,
+  required RequestHeaders headers,
   required WavUploadFile file,
   required String contentType,
   required void Function(int sent, int total) onProgress,
@@ -442,7 +444,7 @@ Map<String, String> _baseTusHeaders(WavResumableSession session) {
     'Tus-Resumable': _tusVersion,
     'x-signature': session.token,
   };
-  headers.addAll(session.resumableHeaders());
+  headers.addAll(session.resumableHeaders().toMap());
   return headers;
 }
 
@@ -473,13 +475,14 @@ Future<WavResumableSession> _createResumableSession({
   required String lessonId,
   required Uri uploadUrl,
   required String objectPath,
-  required Map<String, String> headers,
+  required RequestHeaders headers,
   required WavUploadFile file,
   required String contentType,
 }) async {
   final signedInfo = _parseSignedUploadInfo(uploadUrl);
-  final cacheControl = _headerValue(headers, 'cache-control');
-  final upsertHeader = _headerValue(headers, 'x-upsert') ?? 'false';
+  final headerMap = headers.toMap();
+  final cacheControl = _headerValue(headerMap, 'cache-control');
+  final upsertHeader = _headerValue(headerMap, 'x-upsert') ?? 'false';
   final upsert = upsertHeader.toLowerCase() == 'true';
   final normalizedPath = _normalizeObjectPath(signedInfo.bucket, objectPath);
   final fingerprint = await file.contentFingerprint();

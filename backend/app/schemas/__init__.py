@@ -1031,6 +1031,20 @@ class Course(BaseModel):
     drip_interval_days: Optional[int]
 
 
+class CoursePricingResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount_cents: int
+    currency: str = Field(min_length=3, max_length=3)
+
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, value: str) -> str:
+        if value.strip() != value or value.lower() != value:
+            raise ValueError("currency must be a lowercase 3-letter code")
+        return value
+
+
 class LandingCourseCard(BaseModel):
     id: UUID
     slug: str
@@ -1100,10 +1114,10 @@ class LearnerLessonMediaItem(BaseModel):
     lesson_id: UUID
     media_asset_id: UUID | None = None
     position: int
-    kind: Literal["audio", "image", "video", "document"]
+    media_type: Literal["audio", "image", "video", "document"]
     state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
     original_name: str | None = None
-    playback_ready: bool
+    preview_ready: bool
 
 
 class LessonContentResponse(BaseModel):
@@ -1170,18 +1184,10 @@ class MediaUploadUrlRequest(BaseModel):
     filename: str
     mime_type: str
     size_bytes: int = Field(ge=1)
-    media_type: Literal["audio", "image", "video", "document", "pdf"]
+    media_type: Literal["audio", "image", "video", "document"]
     course_id: UUID | None = None
     lesson_id: UUID | None = None
     purpose: Literal["lesson_audio", "home_player_audio", "lesson_media"] | None = None
-
-    @field_validator("media_type", mode="before")
-    @classmethod
-    def _normalize_media_type(cls, value: Any) -> Any:
-        normalized = str(value or "").strip().lower()
-        if normalized == "pdf":
-            return "document"
-        return normalized
 
 
 class MediaUploadUrlRefreshRequest(BaseModel):
@@ -1366,7 +1372,7 @@ class LessonMediaUploadCompleteRequest(BaseModel):
 
 
 class MediaPreviewBatchRequest(BaseModel):
-    ids: list[str]
+    ids: list[UUID]
 
 
 class MediaPreviewItem(BaseModel):
@@ -1467,15 +1473,7 @@ class StudioLessonMediaUploadUrlRequest(BaseModel):
     filename: str
     mime_type: str
     size_bytes: int = Field(ge=1)
-    media_type: Literal["audio", "image", "video", "document", "pdf"]
-
-    @field_validator("media_type", mode="before")
-    @classmethod
-    def _normalize_media_type(cls, value: Any) -> Any:
-        normalized = str(value or "").strip().lower()
-        if normalized == "pdf":
-            return "document"
-        return normalized
+    media_type: Literal["audio", "image", "video", "document"]
 
 
 class StudioLessonMediaUploadUrlResponse(BaseModel):

@@ -5,13 +5,10 @@
 enum CourseJourneyStep { intro, step1, step2, step3 }
 
 CourseJourneyStep? courseJourneyStepFromApi(Object? value) {
-  final raw = value?.toString().trim();
-  if (raw == null || raw.isEmpty) {
+  if (value is! String || value.isEmpty) {
     return null;
   }
-
-  final normalized = raw.toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
-  switch (normalized) {
+  switch (value) {
     case 'intro':
       return CourseJourneyStep.intro;
     case 'step1':

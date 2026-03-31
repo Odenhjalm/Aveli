@@ -1,24 +1,18 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/core/errors/app_failure.dart';
-
 class FollowsRepository {
-  FollowsRepository(this._client);
+  FollowsRepository(ApiClient _);
 
-  final ApiClient _client;
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
+    );
+  }
 
   Future<void> follow(String userId) async {
-    try {
-      await _client.post('/community/follows/$userId');
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community follows');
   }
 
   Future<void> unfollow(String userId) async {
-    try {
-      await _client.delete('/community/follows/$userId');
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community follows');
   }
 }

@@ -7,9 +7,9 @@ import 'package:aveli/shared/utils/course_journey_step.dart';
 
 Object? _requiredField(Object? payload, String fieldName) {
   switch (payload) {
-    case final Map<Object?, Object?> data when data.containsKey(fieldName):
+    case final Map data when data.containsKey(fieldName):
       return data[fieldName];
-    case final Map<Object?, Object?> _:
+    case final Map _:
       throw StateError('Missing required field: $fieldName');
     default:
       throw StateError('Invalid payload for $fieldName');
@@ -18,8 +18,8 @@ Object? _requiredField(Object? payload, String fieldName) {
 
 String _requireString(Object? value, String fieldName) {
   switch (value) {
-    case final String text when text.trim().isNotEmpty:
-      return text.trim();
+    case final String text when text.isNotEmpty:
+      return text;
     default:
       throw StateError('Invalid field type for $fieldName');
   }
@@ -30,8 +30,7 @@ String? _optionalString(Object? value, String fieldName) {
     case null:
       return null;
     case final String text:
-      final normalized = text.trim();
-      return normalized.isEmpty ? null : normalized;
+      return text;
     default:
       throw StateError('Invalid field type for $fieldName');
   }
@@ -68,7 +67,7 @@ bool _requireBool(Object? value, String fieldName) {
 
 DateTime _requireDateTime(Object? value, String fieldName) {
   final raw = _requireString(value, fieldName);
-  return DateTime.parse(raw).toUtc();
+  return DateTime.parse(raw);
 }
 
 CourseJourneyStep _requireCourseStep(Object? value, String fieldName) {
@@ -484,25 +483,24 @@ class LessonMediaItem {
     required this.lessonId,
     required this.mediaAssetId,
     required this.position,
-    required this.kind,
+    required this.mediaType,
     required this.state,
     required this.originalName,
-    required this.playbackReady,
+    required this.previewReady,
   });
 
   final String id;
   final String lessonId;
   final String? mediaAssetId;
   final int position;
-  final String kind;
+  final String mediaType;
   final String state;
   final String? originalName;
-  final bool playbackReady;
+  final bool previewReady;
 
   String get fileName {
-    final normalizedOriginalName = originalName?.trim();
-    if (normalizedOriginalName != null && normalizedOriginalName.isNotEmpty) {
-      return normalizedOriginalName;
+    if (originalName != null && originalName!.isNotEmpty) {
+      return originalName!;
     }
     return id;
   }
@@ -519,15 +517,18 @@ class LessonMediaItem {
         'media_asset_id',
       ),
       position: _requireInt(_requiredField(payload, 'position'), 'position'),
-      kind: _requireString(_requiredField(payload, 'kind'), 'kind'),
+      mediaType: _requireString(
+        _requiredField(payload, 'media_type'),
+        'media_type',
+      ),
       state: _requireString(_requiredField(payload, 'state'), 'state'),
       originalName: _optionalString(
         _requiredField(payload, 'original_name'),
         'original_name',
       ),
-      playbackReady: _requireBool(
-        _requiredField(payload, 'playback_ready'),
-        'playback_ready',
+      previewReady: _requireBool(
+        _requiredField(payload, 'preview_ready'),
+        'preview_ready',
       ),
     );
   }

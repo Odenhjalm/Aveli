@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart' as fs;
 
+import 'package:aveli/shared/models/request_headers.dart';
+
 import 'wav_upload_types.dart';
 
 class WavUploadFile {
@@ -75,7 +77,7 @@ Future<void> uploadWavFile({
   required String lessonId,
   required Uri uploadUrl,
   required String objectPath,
-  required Map<String, String> headers,
+  required RequestHeaders headers,
   required WavUploadFile file,
   required String contentType,
   required void Function(int sent, int total) onProgress,
@@ -100,7 +102,7 @@ Future<void> uploadWavFile({
     await dio.putUri<void>(
       uploadUrl,
       data: stream,
-      options: Options(headers: Map<String, String>.from(headers)),
+      options: Options(headers: headers.toMap()),
       cancelToken: dioCancel,
       onSendProgress: (sent, total) {
         final resolvedTotal = total > 0 ? total : file.size;

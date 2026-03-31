@@ -1,5 +1,4 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/core/errors/app_failure.dart';
 
 enum StudioSessionVisibility { draft, published }
 
@@ -11,26 +10,6 @@ Object? _requiredField(Object? payload, String fieldName) {
       throw StateError('Missing required field: $fieldName');
     default:
       throw StateError('Invalid payload for $fieldName');
-  }
-}
-
-Object? _optionalField(Object? payload, String fieldName) {
-  switch (payload) {
-    case final Map<Object?, Object?> data when data.containsKey(fieldName):
-      return data[fieldName];
-    case final Map<Object?, Object?> _:
-      return null;
-    default:
-      throw StateError('Invalid payload for $fieldName');
-  }
-}
-
-List<Object?> _requireList(Object? value, String fieldName) {
-  switch (value) {
-    case final List items:
-      return List<Object?>.unmodifiable(items);
-    default:
-      throw StateError('Invalid field type for $fieldName');
   }
 }
 
@@ -140,19 +119,19 @@ class StudioSession {
       id: _parseRequiredString(_requiredField(payload, 'id'), 'id'),
       title: _parseRequiredString(_requiredField(payload, 'title'), 'title'),
       description: _parseOptionalString(
-        _optionalField(payload, 'description'),
+        _requiredField(payload, 'description'),
         'description',
       ),
       startAt: _parseOptionalDateTime(
-        _optionalField(payload, 'start_at'),
+        _requiredField(payload, 'start_at'),
         'start_at',
       ),
       endAt: _parseOptionalDateTime(
-        _optionalField(payload, 'end_at'),
+        _requiredField(payload, 'end_at'),
         'end_at',
       ),
       capacity: _parseOptionalInt(
-        _optionalField(payload, 'capacity'),
+        _requiredField(payload, 'capacity'),
         'capacity',
       ),
       priceCents: _parseRequiredInt(
@@ -170,7 +149,7 @@ class StudioSession {
         ),
       ),
       recordingUrl: _parseOptionalString(
-        _optionalField(payload, 'recording_url'),
+        _requiredField(payload, 'recording_url'),
         'recording_url',
       ),
       teacherId: _parseRequiredString(
@@ -178,7 +157,7 @@ class StudioSession {
         'teacher_id',
       ),
       stripePriceId: _parseOptionalString(
-        _optionalField(payload, 'stripe_price_id'),
+        _requiredField(payload, 'stripe_price_id'),
         'stripe_price_id',
       ),
     );
@@ -232,84 +211,36 @@ class StudioSessionSlot {
 }
 
 class SessionsRepository {
-  SessionsRepository(this._client);
+  SessionsRepository(ApiClient _);
 
-  final ApiClient _client;
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
+    );
+  }
 
   Future<List<StudioSession>> listTeacherSessions({
     StudioSessionVisibility? visibility,
   }) async {
-    try {
-      final response = await _client.raw.get<Object?>(
-        '/studio/sessions',
-        queryParameters: {
-          if (visibility != null) 'visibility': visibility.name,
-        },
-      );
-      return _requireList(
-        _requiredField(response.data, 'items'),
-        'items',
-      ).map(StudioSession.fromResponse).toList(growable: false);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Studio sessions');
   }
 
   Future<List<StudioSession>> listPublishedSessions({
     DateTime? from,
     int limit = 30,
   }) async {
-    try {
-      final response = await _client.raw.get<Object?>(
-        '/sessions',
-        queryParameters: {
-          if (from != null) 'from_time': from.toUtc().toIso8601String(),
-          'limit': limit,
-        },
-      );
-      return _requireList(
-        _requiredField(response.data, 'items'),
-        'items',
-      ).map(StudioSession.fromResponse).toList(growable: false);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Published sessions');
   }
 
   Future<StudioSession> fetchPublishedSession(String sessionId) async {
-    try {
-      final response = await _client.raw.get<Object?>('/sessions/$sessionId');
-      return StudioSession.fromResponse(response.data);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Published session detail');
   }
 
   Future<List<StudioSessionSlot>> listTeacherSlots(String sessionId) async {
-    try {
-      final response = await _client.raw.get<Object?>(
-        '/studio/sessions/$sessionId/slots',
-      );
-      return _requireList(
-        _requiredField(response.data, 'items'),
-        'items',
-      ).map(StudioSessionSlot.fromResponse).toList(growable: false);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Studio session slots');
   }
 
   Future<List<StudioSessionSlot>> listPublicSlots(String sessionId) async {
-    try {
-      final response = await _client.raw.get<Object?>(
-        '/sessions/$sessionId/slots',
-      );
-      return _requireList(
-        _requiredField(response.data, 'items'),
-        'items',
-      ).map(StudioSessionSlot.fromResponse).toList(growable: false);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Published session slots');
   }
 }

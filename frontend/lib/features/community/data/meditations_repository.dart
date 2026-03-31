@@ -1,51 +1,18 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/core/errors/app_failure.dart';
-
 class MeditationsRepository {
-  MeditationsRepository(this._client);
+  MeditationsRepository(ApiClient _);
 
-  final ApiClient _client;
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
+    );
+  }
 
   Future<List<Map<String, dynamic>>> publicMeditations({int limit = 50}) async {
-    try {
-      final response = await _client.get<Map<String, dynamic>>(
-        '/community/meditations/public',
-        queryParameters: {'limit': limit},
-      );
-      final base = _client.raw.options.baseUrl;
-      return (response['items'] as List? ?? [])
-          .map((item) {
-            final map = Map<String, dynamic>.from(item as Map);
-            final url = map['audio_url'] as String?;
-            if (url != null && url.isNotEmpty) {
-              map['audio_url'] = Uri.parse(base).resolve(url).toString();
-            }
-            return map;
-          })
-          .toList(growable: false);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community meditations');
   }
 
   Future<List<Map<String, dynamic>>> byTeacher(String userId) async {
-    try {
-      final response = await _client.get<List<dynamic>>(
-        '/community/teachers/$userId/meditations',
-      );
-      final base = _client.raw.options.baseUrl;
-      return response
-          .map((item) {
-            final map = Map<String, dynamic>.from(item as Map);
-            final url = map['audio_url'] as String?;
-            if (url != null && url.isNotEmpty) {
-              map['audio_url'] = Uri.parse(base).resolve(url).toString();
-            }
-            return map;
-          })
-          .toList(growable: false);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community meditations');
   }
 }

@@ -40,13 +40,9 @@ _RELATED_LOGGERS = {
 _RUNTIME_CONTRACT_FIELDS = (
     "reference_type",
     "auth_scope",
-    "fallback_policy",
     "course_id",
     "lesson_id",
     "media_asset_id",
-    "media_object_id",
-    "legacy_storage_bucket",
-    "legacy_storage_path",
     "kind",
     "active",
 )
@@ -184,7 +180,6 @@ def _normalize_lesson_media_row(row: dict[str, Any]) -> dict[str, Any]:
         "kind": _normalize_kind(row.get("kind")),
         "position": _normalize_int(row.get("position")),
         "asset_id": _normalize_text(row.get("media_asset_id")),
-        "media_object_id": _normalize_text(row.get("media_id")),
         "media_state": _normalize_text(row.get("media_state")),
         "content_type": _normalize_text(row.get("content_type")),
         "duration_seconds": _normalize_int(row.get("duration_seconds")),
@@ -213,54 +208,17 @@ def _runtime_contract_kind(value: Any) -> str:
     return "other"
 
 
-def _runtime_contract_fallback_policy(
-    *,
-    lesson_kind: Any,
-    media_asset_id: Any,
-    media_object_id: Any,
-    legacy_storage_path: Any,
-) -> str:
-    normalized_kind = (_normalize_text(lesson_kind) or "").lower()
-    if _normalize_text(media_asset_id) is None:
-        return "legacy_only"
-    if normalized_kind == "audio":
-        return "never"
-    if _normalize_text(media_object_id) is not None:
-        return "if_no_ready_asset"
-    if _normalize_path(legacy_storage_path) is not None:
-        return "if_no_ready_asset"
-    return "never"
-
-
 def _expected_runtime_contract(
     *,
     lesson_row: dict[str, Any],
     lesson_media_row: dict[str, Any],
 ) -> dict[str, Any]:
-    legacy_storage_path = _normalize_path(
-        lesson_media_row.get("runtime_contract_storage_path")
-    )
-    legacy_storage_bucket = None
-    if legacy_storage_path is not None:
-        legacy_storage_bucket = (
-            _normalize_text(lesson_media_row.get("runtime_contract_storage_bucket"))
-            or "lesson-media"
-        )
     return {
         "reference_type": "lesson_media",
         "auth_scope": "lesson_course",
-        "fallback_policy": _runtime_contract_fallback_policy(
-            lesson_kind=lesson_media_row.get("kind"),
-            media_asset_id=lesson_media_row.get("media_asset_id"),
-            media_object_id=lesson_media_row.get("media_id"),
-            legacy_storage_path=lesson_media_row.get("runtime_contract_storage_path"),
-        ),
         "course_id": _normalize_text(lesson_row.get("course_id")),
         "lesson_id": _normalize_text(lesson_media_row.get("lesson_id")),
         "media_asset_id": _normalize_text(lesson_media_row.get("media_asset_id")),
-        "media_object_id": _normalize_text(lesson_media_row.get("media_id")),
-        "legacy_storage_bucket": legacy_storage_bucket,
-        "legacy_storage_path": legacy_storage_path,
         "kind": _runtime_contract_kind(lesson_media_row.get("kind")),
         "active": True,
     }
@@ -270,13 +228,9 @@ def _actual_runtime_contract(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "reference_type": _normalize_text(row.get("reference_type")),
         "auth_scope": _normalize_text(row.get("auth_scope")),
-        "fallback_policy": _normalize_text(row.get("fallback_policy")),
         "course_id": _normalize_text(row.get("course_id")),
         "lesson_id": _normalize_text(row.get("lesson_id")),
         "media_asset_id": _normalize_text(row.get("media_asset_id")),
-        "media_object_id": _normalize_text(row.get("media_object_id")),
-        "legacy_storage_bucket": _normalize_text(row.get("legacy_storage_bucket")),
-        "legacy_storage_path": _normalize_path(row.get("legacy_storage_path")),
         "kind": _runtime_contract_kind(row.get("kind")),
         "active": bool(row.get("active")),
     }
@@ -311,19 +265,13 @@ def _normalize_runtime_row(row: dict[str, Any]) -> dict[str, Any]:
         "runtime_media_id": str(row["id"]),
         "reference_type": _normalize_text(row.get("reference_type")),
         "auth_scope": _normalize_text(row.get("auth_scope")),
-        "fallback_policy": _normalize_text(row.get("fallback_policy")),
         "lesson_media_id": _normalize_text(row.get("lesson_media_id")),
         "home_player_upload_id": _normalize_text(row.get("home_player_upload_id")),
         "course_id": _normalize_text(row.get("course_id")),
         "lesson_id": _normalize_text(row.get("lesson_id")),
         "asset_id": _normalize_text(row.get("media_asset_id")),
-        "media_object_id": _normalize_text(row.get("media_object_id")),
         "kind": _normalize_kind(row.get("kind")),
         "active": bool(row.get("active")),
-        "legacy_storage": {
-            "bucket": _normalize_text(row.get("legacy_storage_bucket")),
-            "path": _normalize_path(row.get("legacy_storage_path")),
-        },
         "created_at": _iso(row.get("created_at")),
         "updated_at": _iso(row.get("updated_at")),
     }
@@ -338,8 +286,6 @@ def _projection_state_classification(
         return "inactive_non_playback"
     if resolution is None:
         return "inactive" if not bool(row.get("active")) else "unvalidated"
-    if resolution.is_playable and resolution.requires_legacy_fallback:
-        return "legacy_fallback"
     if resolution.is_playable:
         return "playable"
     if not resolution.active:
@@ -365,7 +311,7 @@ def _normalize_runtime_resolution(
         "lesson_media_id": resolution.lesson_media_id,
         "lesson_id": resolution.lesson_id,
         "asset_id": resolution.media_asset_id,
-        "kind": resolution.kind,
+        "media_type": resolution.media_type,
         "content_type": resolution.content_type,
         "media_state": resolution.media_state,
         "is_playable": bool(resolution.is_playable),
@@ -376,9 +322,7 @@ def _normalize_runtime_resolution(
             if resolution.failure_detail
             else None
         ),
-        "requires_legacy_fallback": bool(resolution.requires_legacy_fallback),
         "active": bool(resolution.active),
-        "fallback_policy": resolution.fallback_policy,
         "duration_seconds": resolution.duration_seconds,
         "resolved_storage": {
             "bucket": resolution.storage_bucket,
@@ -929,7 +873,7 @@ def _build_correlation(
                 lesson_media_id=lesson_media_id,
                 runtime_media_id=runtime_media_id,
                 state=state,
-                details={"fallback_policy": _normalize_text(row.get("fallback_policy"))},
+                details={"active": bool(row.get("active"))},
                 certainty="reconstructed",
             ),
         ):
@@ -1122,19 +1066,6 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
                     details={"failure_reason": resolution.failure_reason.value},
                 )
             )
-        elif resolution is not None and resolution.requires_legacy_fallback:
-            inconsistencies.append(
-                _inconsistency(
-                    "legacy_fallback_in_use",
-                    "Runtime projection is using legacy storage fallback",
-                    severity="warning",
-                    asset_id=normalized_asset["asset_id"],
-                    lesson_id=resolution.lesson_id,
-                    lesson_media_id=resolution.lesson_media_id,
-                    runtime_media_id=resolution.runtime_media_id,
-                    details={"failure_reason": resolution.failure_reason.value},
-                )
-            )
 
     lesson_media_references: list[dict[str, Any]] = []
     for row in lesson_media_rows:
@@ -1143,7 +1074,7 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
         lesson_media_id = normalized_row["lesson_media_id"]
         runtime_matches = runtime_by_lesson_media_id.get(lesson_media_id) or []
         expected_kind = normalized_asset["media_type"]
-        lesson_kind = normalized_row["kind"]
+        row_kind = normalized_row["kind"]
 
         if normalized_row["asset_id"] != normalized_asset["asset_id"]:
             inconsistencies.append(
@@ -1160,9 +1091,9 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
 
         if (
             expected_kind
-            and lesson_kind
-            and expected_kind != lesson_kind
-            and not {expected_kind, lesson_kind} <= {"document", "other"}
+            and row_kind
+            and expected_kind != row_kind
+            and not {expected_kind, row_kind} <= {"document", "other"}
         ):
             inconsistencies.append(
                 _inconsistency(
@@ -1174,7 +1105,7 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
                     lesson_media_id=lesson_media_id,
                     details={
                         "asset_media_type": expected_kind,
-                        "lesson_media_kind": lesson_kind,
+                        "lesson_media_kind": row_kind,
                     },
                 )
             )
@@ -1567,7 +1498,7 @@ async def list_orphaned_assets() -> dict[str, Any]:
 
 def _projection_item_classification(
     *,
-    kind: str | None,
+    media_type: str | None,
     media_state: str | None,
     expects_asset: bool,
     has_asset: bool,
@@ -1579,10 +1510,8 @@ def _projection_item_classification(
         return "asset_missing"
     if inconsistencies:
         return "inconsistent"
-    if kind == "document":
+    if media_type == "document":
         return "non_playback"
-    if resolution is not None and resolution.requires_legacy_fallback:
-        return "legacy_fallback"
     if resolution is not None and resolution.is_playable:
         return "consistent"
     if runtime_row is None:
@@ -1851,19 +1780,6 @@ async def validate_runtime_projection(lesson_id: str) -> dict[str, Any]:
                             details={"failure_reason": resolution.failure_reason.value},
                         )
                     )
-                elif resolution.requires_legacy_fallback:
-                    item_inconsistencies.append(
-                        _inconsistency(
-                            "legacy_fallback_in_use",
-                            "Runtime projection is using legacy storage fallback",
-                            severity="warning",
-                            asset_id=asset_id,
-                            lesson_id=normalized_lesson_id,
-                            lesson_media_id=lesson_media_id,
-                            runtime_media_id=str(runtime_row["id"]),
-                            details={"failure_reason": resolution.failure_reason.value},
-                        )
-                    )
 
         if normalized_lesson_media["issue_reason"]:
             item_inconsistencies.append(
@@ -1898,7 +1814,7 @@ async def validate_runtime_projection(lesson_id: str) -> dict[str, Any]:
                 "actual_runtime_contract": actual_runtime_contract,
                 "contract_diffs": contract_diffs,
                 "state_classification": _projection_item_classification(
-                    kind=kind,
+                    media_type=kind,
                     media_state=media_state,
                     expects_asset=asset_id is not None,
                     has_asset=asset_row is not None,

@@ -1,42 +1,23 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/data/models/message_record.dart';
 
 class MessagesRepository {
-  MessagesRepository(this._client);
+  MessagesRepository(ApiClient _);
 
-  final ApiClient _client;
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
+    );
+  }
 
   Future<List<MessageRecord>> listMessages(String channel) async {
-    try {
-      final response = await _client.get<Map<String, dynamic>>(
-        '/community/messages',
-        queryParameters: {'channel': channel},
-      );
-      final items = (response['items'] as List? ?? [])
-          .map(
-            (item) =>
-                MessageRecord.fromJson(Map<String, dynamic>.from(item as Map)),
-          )
-          .toList(growable: false);
-      return items;
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community messages');
   }
 
   Future<MessageRecord> sendMessage({
     required String channel,
     required String content,
   }) async {
-    try {
-      final response = await _client.post<Map<String, dynamic>>(
-        '/community/messages',
-        body: {'channel': channel, 'content': content},
-      );
-      return MessageRecord.fromJson(response);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    return _unsupportedRuntime('Community messages');
   }
 }

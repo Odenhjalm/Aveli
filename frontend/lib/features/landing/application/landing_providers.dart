@@ -1,8 +1,5 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'package:aveli/api/auth_repository.dart';
 
 String _requireString(Object? value, String fieldName) {
   switch (value) {
@@ -38,8 +35,10 @@ int? _optionalInt(Object? value, String fieldName) {
 
 Object? _field(Object? payload, String fieldName) {
   switch (payload) {
-    case final Map<Object?, Object?> data:
+    case final Map<Object?, Object?> data when data.containsKey(fieldName):
       return data[fieldName];
+    case final Map<Object?, Object?> _:
+      throw StateError('Missing required field: $fieldName');
     default:
       throw StateError('Invalid landing payload for $fieldName');
   }
@@ -156,66 +155,29 @@ class LandingSection<T> {
   bool get isEmpty => items.isEmpty;
 }
 
-LandingSection<T> _parseLandingSection<T>(
-  Object? payload,
-  T Function(Object? item) parseItem,
-) {
-  switch (payload) {
-    case {'items': final List items}:
-      return LandingSection(
-        items: items.map(parseItem).toList(growable: false),
-      );
-    default:
-      throw StateError('Invalid landing section payload');
-  }
-}
-
-Future<LandingSection<T>> _fetchLandingSection<T>(
-  Ref ref,
-  String path,
-  T Function(Object? payload) parseItem,
-) async {
-  final api = ref.read(apiClientProvider);
-  final response = await api.raw.get<Object?>(
-    path,
-    options: Options(extra: const {'skipAuth': true}),
+Future<T> _unsupportedLandingRuntime<T>() {
+  return Future<T>.error(
+    UnsupportedError('Landing edge is inert in mounted runtime'),
   );
-  return _parseLandingSection(response.data, parseItem);
 }
 
 final introCoursesProvider = FutureProvider<LandingSection<LandingCourseCard>>((
   ref,
 ) {
-  return _fetchLandingSection(
-    ref,
-    '/landing/intro-courses',
-    LandingCourseCard.fromResponse,
-  );
+  return _unsupportedLandingRuntime();
 });
 
 final popularCoursesProvider =
     FutureProvider<LandingSection<LandingCourseCard>>((ref) {
-      return _fetchLandingSection(
-        ref,
-        '/landing/popular-courses',
-        LandingCourseCard.fromResponse,
-      );
+      return _unsupportedLandingRuntime();
     });
 
 final teachersProvider = FutureProvider<LandingSection<LandingTeacher>>((ref) {
-  return _fetchLandingSection(
-    ref,
-    '/landing/teachers',
-    LandingTeacher.fromResponse,
-  );
+  return _unsupportedLandingRuntime();
 });
 
 final recentServicesProvider = FutureProvider<LandingSection<LandingService>>((
   ref,
 ) {
-  return _fetchLandingSection(
-    ref,
-    '/landing/services',
-    LandingService.fromResponse,
-  );
+  return _unsupportedLandingRuntime();
 });

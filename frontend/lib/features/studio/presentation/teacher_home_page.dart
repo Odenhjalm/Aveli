@@ -146,8 +146,8 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
   }
 
   String _courseStepLabel(CourseStudio course) {
-    final step = course.step;
-    if (step == null) return 'Steg saknas';
+    final step = course.step.trim();
+    if (step.isEmpty) return 'Steg saknas';
     return 'Steg $step';
   }
 

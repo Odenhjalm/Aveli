@@ -4,6 +4,8 @@ import 'dart:async';
 import 'dart:html';
 import 'dart:typed_data';
 
+import 'package:aveli/shared/models/request_headers.dart';
+
 class CoverUploadPreview {
   CoverUploadPreview({this.resolvedUrl, this.bytes});
 
@@ -86,7 +88,7 @@ Future<CoverUploadFile?> pickCoverFile() async {
 
 Future<void> uploadCoverFile({
   required Uri uploadUrl,
-  required Map<String, String> headers,
+  required RequestHeaders headers,
   required CoverUploadFile file,
   required void Function(int sent, int total) onProgress,
 }) async {

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart' as fs;
 
+import 'package:aveli/shared/models/request_headers.dart';
+
 class CoverUploadPreview {
   const CoverUploadPreview({this.resolvedUrl, this.bytes});
 
@@ -60,7 +62,7 @@ String? _guessMimeType(String name) {
 
 Future<void> uploadCoverFile({
   required Uri uploadUrl,
-  required Map<String, String> headers,
+  required RequestHeaders headers,
   required CoverUploadFile file,
   required void Function(int sent, int total) onProgress,
 }) async {
@@ -69,7 +71,7 @@ Future<void> uploadCoverFile({
   await dio.putUri<void>(
     uploadUrl,
     data: stream,
-    options: Options(headers: Map<String, String>.from(headers)),
+    options: Options(headers: headers.toMap()),
     onSendProgress: (sent, total) {
       final resolvedTotal = total > 0 ? total : file.size;
       onProgress(sent, resolvedTotal);

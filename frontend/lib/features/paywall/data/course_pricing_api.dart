@@ -5,16 +5,35 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/env_resolver.dart';
 
+Object? _requiredPricingField(Object? payload, String fieldName) {
+  switch (payload) {
+    case final Map data when data.containsKey(fieldName):
+      return data[fieldName];
+    case final Map _:
+      throw StateError('Course pricing is missing required field: $fieldName');
+    default:
+      throw StateError('Course pricing returned a non-object payload');
+  }
+}
+
 class CoursePricing {
   CoursePricing({required this.amountCents, required this.currency});
 
   final int amountCents;
   final String currency;
 
-  factory CoursePricing.fromJson(Map<String, dynamic> json) {
+  factory CoursePricing.fromResponse(Object? payload) {
+    final rawAmount = _requiredPricingField(payload, 'amount_cents');
+    final rawCurrency = _requiredPricingField(payload, 'currency');
+    if (rawAmount is! int) {
+      throw StateError('Course pricing field "amount_cents" must be an int');
+    }
+    if (rawCurrency is! String || rawCurrency.isEmpty) {
+      throw StateError('Course pricing field "currency" must be a string');
+    }
     return CoursePricing(
-      amountCents: json['amount_cents'] as int,
-      currency: json['currency'] as String,
+      amountCents: rawAmount,
+      currency: rawCurrency,
     );
   }
 }
@@ -41,8 +60,8 @@ class CoursePricingApi {
       },
     );
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      return CoursePricing.fromJson(body);
+      final Object? body = jsonDecode(response.body);
+      return CoursePricing.fromResponse(body);
     }
     throw Exception('Failed to load pricing (${response.statusCode})');
   }

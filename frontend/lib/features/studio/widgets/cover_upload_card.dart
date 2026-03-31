@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/shared/models/request_headers.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
@@ -29,7 +30,7 @@ class CoverUploadCard extends ConsumerStatefulWidget {
   final Future<CoverUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
     required Uri uploadUrl,
-    required Map<String, String> headers,
+    required RequestHeaders headers,
     required CoverUploadFile file,
     required void Function(int sent, int total) onProgress,
   })?

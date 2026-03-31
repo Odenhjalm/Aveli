@@ -1,50 +1,115 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:aveli/shared/models/request_headers.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 
-String _requiredString(Map<String, dynamic> json, String key) {
-  final value = json[key];
-  if (value is String) {
-    final normalized = value.trim();
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
+Object? _requireResponseField(Object? payload, String key, String label) {
+  switch (payload) {
+    case final Map data when data.containsKey(key):
+      return data[key];
+    case final Map _:
+      throw StateError('$label is missing required field: $key');
+    default:
+      throw StateError('$label returned a non-object payload');
   }
-  throw StateError('Missing required field: $key');
 }
 
-String? _optionalString(Map<String, dynamic> json, String key) {
-  final value = json[key];
-  if (value is! String) return null;
-  final normalized = value.trim();
-  return normalized.isEmpty ? null : normalized;
-}
-
-int? _optionalInt(Map<String, dynamic> json, String key) {
-  final value = json[key];
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value.trim());
-  return null;
-}
-
-bool _requiredBool(Map<String, dynamic> json, String key) {
-  final value = json[key];
-  if (value is bool) {
+String _requiredResponseString(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is String && value.isNotEmpty) {
     return value;
   }
-  throw StateError('Missing required bool field: $key');
+  throw StateError('$label field "$key" must be a non-empty string');
 }
 
-int _requiredInt(Map<String, dynamic> json, String key) {
-  final value = json[key];
+String _requiredResponseStringValue(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is String) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be a string');
+}
+
+String? _nullableResponseString(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value == null) {
+    return null;
+  }
+  if (value is String) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be a string or null');
+}
+
+int _requiredResponseInt(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
   if (value is int) {
     return value;
   }
-  if (value is num) {
-    return value.toInt();
+  throw StateError('$label field "$key" must be an int');
+}
+
+int? _nullableResponseInt(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value == null) {
+    return null;
   }
-  throw StateError('Missing required int field: $key');
+  if (value is int) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be an int or null');
+}
+
+bool _requiredResponseBool(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is bool) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be a bool');
+}
+
+RequestHeaders _requiredResponseHeaders(
+  Object? payload,
+  String key,
+  String label,
+) {
+  return RequestHeaders.fromResponseObject(
+    _requireResponseField(payload, key, label),
+    label: '$label field "$key"',
+  );
+}
+
+DateTime _requiredResponseUtcDateTime(
+  Object? payload,
+  String key,
+  String label,
+) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is! String || value.isEmpty) {
+    throw StateError('$label field "$key" must be an ISO datetime string');
+  }
+  return DateTime.parse(value);
+}
+
+CourseCoverData? _nullableResponseCourseCover(
+  Object? payload,
+  String key,
+  String label,
+) {
+  final value = _requireResponseField(payload, key, label);
+  if (value == null) {
+    return null;
+  }
+  return CourseCoverData(
+    mediaId: _nullableResponseString(value, 'media_id', '$label field "$key"'),
+    state: _requiredResponseString(value, 'state', '$label field "$key"'),
+    resolvedUrl: _nullableResponseString(
+      value,
+      'resolved_url',
+      '$label field "$key"',
+    ),
+    source: _requiredResponseString(value, 'source', '$label field "$key"'),
+  );
 }
 
 @immutable
@@ -63,8 +128,8 @@ class CourseCore {
   final String id;
   final String title;
   final String slug;
-  final String? courseGroupId;
-  final int? step;
+  final String courseGroupId;
+  final String step;
   final bool dripEnabled;
   final int? dripIntervalDays;
   final String? coverMediaId;
@@ -81,18 +146,36 @@ class CourseStudio extends CourseCore {
     required super.dripEnabled,
     required super.dripIntervalDays,
     required super.coverMediaId,
+    required this.priceAmountCents,
+    required this.cover,
   });
 
-  factory CourseStudio.fromJson(Map<String, dynamic> json) {
+  final int? priceAmountCents;
+  final CourseCoverData? cover;
+
+  factory CourseStudio.fromResponse(
+    Object? payload, {
+    String label = 'Course',
+  }) {
     return CourseStudio(
-      id: _requiredString(json, 'id'),
-      title: _requiredString(json, 'title'),
-      slug: _requiredString(json, 'slug'),
-      courseGroupId: _optionalString(json, 'course_group_id'),
-      step: _optionalInt(json, 'step'),
-      dripEnabled: _requiredBool(json, 'drip_enabled'),
-      dripIntervalDays: _optionalInt(json, 'drip_interval_days'),
-      coverMediaId: _optionalString(json, 'cover_media_id'),
+      id: _requiredResponseString(payload, 'id', label),
+      title: _requiredResponseString(payload, 'title', label),
+      slug: _requiredResponseString(payload, 'slug', label),
+      courseGroupId: _requiredResponseString(payload, 'course_group_id', label),
+      step: _requiredResponseStringValue(payload, 'step', label),
+      dripEnabled: _requiredResponseBool(payload, 'drip_enabled', label),
+      dripIntervalDays: _nullableResponseInt(
+        payload,
+        'drip_interval_days',
+        label,
+      ),
+      coverMediaId: _nullableResponseString(payload, 'cover_media_id', label),
+      priceAmountCents: _nullableResponseInt(
+        payload,
+        'price_amount_cents',
+        label,
+      ),
+      cover: _nullableResponseCourseCover(payload, 'cover', label),
     );
   }
 
@@ -101,82 +184,43 @@ class CourseStudio extends CourseCore {
     String? title,
     String? slug,
     String? courseGroupId,
-    int? step,
+    String? step,
     bool? dripEnabled,
     int? dripIntervalDays,
     String? coverMediaId,
+    int? priceAmountCents,
+    CourseCoverData? cover,
     bool clearCourseGroupId = false,
-    bool clearStep = false,
     bool clearDripIntervalDays = false,
     bool clearCoverMediaId = false,
+    bool clearPriceAmountCents = false,
+    bool clearCover = false,
   }) {
     return CourseStudio(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      slug: slug ?? this.slug,
+      id: id != null ? id : this.id,
+      title: title != null ? title : this.title,
+      slug: slug != null ? slug : this.slug,
       courseGroupId: clearCourseGroupId
-          ? null
-          : (courseGroupId ?? this.courseGroupId),
-      step: clearStep ? null : (step ?? this.step),
-      dripEnabled: dripEnabled ?? this.dripEnabled,
+          ? ''
+          : (courseGroupId != null ? courseGroupId : this.courseGroupId),
+      step: step != null ? step : this.step,
+      dripEnabled: dripEnabled != null ? dripEnabled : this.dripEnabled,
       dripIntervalDays: clearDripIntervalDays
           ? null
-          : (dripIntervalDays ?? this.dripIntervalDays),
+          : (dripIntervalDays != null
+                ? dripIntervalDays
+                : this.dripIntervalDays),
       coverMediaId: clearCoverMediaId
           ? null
-          : (coverMediaId ?? this.coverMediaId),
+          : (coverMediaId != null ? coverMediaId : this.coverMediaId),
+      priceAmountCents: clearPriceAmountCents
+          ? null
+          : (priceAmountCents != null
+                ? priceAmountCents
+                : this.priceAmountCents),
+      cover: clearCover ? null : (cover != null ? cover : this.cover),
     );
   }
-
-  Map<String, dynamic> toJson() => <String, dynamic>{
-    'id': id,
-    'title': title,
-    'slug': slug,
-    'course_group_id': courseGroupId,
-    'step': step,
-    'drip_enabled': dripEnabled,
-    'drip_interval_days': dripIntervalDays,
-    'cover_media_id': coverMediaId,
-  };
-}
-
-@immutable
-class StudioCourseDetails {
-  const StudioCourseDetails({
-    required this.course,
-    required this.priceAmountCents,
-    required this.isPublished,
-    required this.cover,
-  });
-
-  final CourseStudio course;
-  final int? priceAmountCents;
-  final bool isPublished;
-  final CourseCoverData? cover;
-
-  factory StudioCourseDetails.fromJson(Map<String, dynamic> json) {
-    final coverJson = json['cover'];
-    final normalizedCover = coverJson is Map<String, dynamic>
-        ? CourseCoverData.fromJson(coverJson)
-        : coverJson is Map
-        ? CourseCoverData.fromJson(Map<String, dynamic>.from(coverJson))
-        : null;
-    return StudioCourseDetails(
-      course: CourseStudio.fromJson(json),
-      priceAmountCents:
-          _optionalInt(json, 'price_amount_cents') ??
-          _optionalInt(json, 'price_cents'),
-      isPublished: json['is_published'] == true,
-      cover: normalizedCover,
-    );
-  }
-
-  Map<String, dynamic> toJson() => <String, dynamic>{
-    ...course.toJson(),
-    'price_amount_cents': priceAmountCents,
-    'is_published': isPublished,
-    if (cover != null) 'cover': cover!.toJson(),
-  };
 }
 
 @immutable
@@ -195,13 +239,20 @@ class LessonStudio {
   final int position;
   final String? contentMarkdown;
 
-  factory LessonStudio.fromJson(Map<String, dynamic> json) {
+  factory LessonStudio.fromResponse(
+    Object? payload, {
+    String label = 'StudioLesson',
+  }) {
     return LessonStudio(
-      id: _requiredString(json, 'id'),
-      courseId: _requiredString(json, 'course_id'),
-      lessonTitle: _requiredString(json, 'lesson_title'),
-      position: _optionalInt(json, 'position') ?? 0,
-      contentMarkdown: _optionalString(json, 'content_markdown'),
+      id: _requiredResponseString(payload, 'id', label),
+      courseId: _requiredResponseString(payload, 'course_id', label),
+      lessonTitle: _requiredResponseString(payload, 'lesson_title', label),
+      position: _requiredResponseInt(payload, 'position', label),
+      contentMarkdown: _requiredResponseStringValue(
+        payload,
+        'content_markdown',
+        label,
+      ),
     );
   }
 
@@ -214,23 +265,15 @@ class LessonStudio {
     bool clearContentMarkdown = false,
   }) {
     return LessonStudio(
-      id: id ?? this.id,
-      courseId: courseId ?? this.courseId,
-      lessonTitle: lessonTitle ?? this.lessonTitle,
-      position: position ?? this.position,
+      id: id != null ? id : this.id,
+      courseId: courseId != null ? courseId : this.courseId,
+      lessonTitle: lessonTitle != null ? lessonTitle : this.lessonTitle,
+      position: position != null ? position : this.position,
       contentMarkdown: clearContentMarkdown
           ? null
-          : (contentMarkdown ?? this.contentMarkdown),
+          : (contentMarkdown != null ? contentMarkdown : this.contentMarkdown),
     );
   }
-
-  Map<String, dynamic> toJson() => <String, dynamic>{
-    'id': id,
-    'course_id': courseId,
-    'lesson_title': lessonTitle,
-    'position': position,
-    'content_markdown': contentMarkdown,
-  };
 }
 
 @immutable
@@ -255,16 +298,44 @@ class StudioLessonMediaItem {
   final String? mediaAssetId;
   final String? originalName;
 
-  factory StudioLessonMediaItem.fromJson(Map<String, dynamic> json) {
+  factory StudioLessonMediaItem.fromResponse(Object? payload) {
     return StudioLessonMediaItem(
-      lessonMediaId: _requiredString(json, 'lesson_media_id'),
-      lessonId: _requiredString(json, 'lesson_id'),
-      position: _requiredInt(json, 'position'),
-      mediaType: _requiredString(json, 'media_type'),
-      state: _requiredString(json, 'state'),
-      previewReady: _requiredBool(json, 'preview_ready'),
-      mediaAssetId: _optionalString(json, 'media_asset_id'),
-      originalName: _optionalString(json, 'original_name'),
+      lessonMediaId: _requiredResponseString(
+        payload,
+        'lesson_media_id',
+        'StudioLessonMediaItem',
+      ),
+      lessonId: _requiredResponseString(
+        payload,
+        'lesson_id',
+        'StudioLessonMediaItem',
+      ),
+      position: _requiredResponseInt(
+        payload,
+        'position',
+        'StudioLessonMediaItem',
+      ),
+      mediaType: _requiredResponseString(
+        payload,
+        'media_type',
+        'StudioLessonMediaItem',
+      ),
+      state: _requiredResponseString(payload, 'state', 'StudioLessonMediaItem'),
+      previewReady: _requiredResponseBool(
+        payload,
+        'preview_ready',
+        'StudioLessonMediaItem',
+      ),
+      mediaAssetId: _nullableResponseString(
+        payload,
+        'media_asset_id',
+        'StudioLessonMediaItem',
+      ),
+      originalName: _nullableResponseString(
+        payload,
+        'original_name',
+        'StudioLessonMediaItem',
+      ),
     );
   }
 
@@ -281,18 +352,18 @@ class StudioLessonMediaItem {
     bool clearOriginalName = false,
   }) {
     return StudioLessonMediaItem(
-      lessonMediaId: lessonMediaId ?? this.lessonMediaId,
-      lessonId: lessonId ?? this.lessonId,
-      position: position ?? this.position,
-      mediaType: mediaType ?? this.mediaType,
-      state: state ?? this.state,
-      previewReady: previewReady ?? this.previewReady,
+      lessonMediaId: lessonMediaId != null ? lessonMediaId : this.lessonMediaId,
+      lessonId: lessonId != null ? lessonId : this.lessonId,
+      position: position != null ? position : this.position,
+      mediaType: mediaType != null ? mediaType : this.mediaType,
+      state: state != null ? state : this.state,
+      previewReady: previewReady != null ? previewReady : this.previewReady,
       mediaAssetId: clearMediaAssetId
           ? null
-          : (mediaAssetId ?? this.mediaAssetId),
+          : (mediaAssetId != null ? mediaAssetId : this.mediaAssetId),
       originalName: clearOriginalName
           ? null
-          : (originalName ?? this.originalName),
+          : (originalName != null ? originalName : this.originalName),
     );
   }
 }
@@ -316,29 +387,51 @@ class StudioLessonMediaUploadTarget {
   final String state;
   final int position;
   final String uploadUrl;
-  final Map<String, String> headers;
+  final RequestHeaders headers;
   final DateTime expiresAt;
 
-  factory StudioLessonMediaUploadTarget.fromJson(Map<String, dynamic> json) {
-    final rawHeaders = json['headers'];
-    final headers = rawHeaders is Map
-        ? rawHeaders.map(
-            (key, value) => MapEntry(key.toString(), value.toString()),
-          )
-        : const <String, String>{};
-    final expiresAtValue = json['expires_at'];
-    if (expiresAtValue is! String || expiresAtValue.trim().isEmpty) {
-      throw StateError('Missing required field: expires_at');
-    }
+  factory StudioLessonMediaUploadTarget.fromResponse(Object? payload) {
     return StudioLessonMediaUploadTarget(
-      lessonMediaId: _requiredString(json, 'lesson_media_id'),
-      lessonId: _requiredString(json, 'lesson_id'),
-      mediaType: _requiredString(json, 'media_type'),
-      state: _requiredString(json, 'state'),
-      position: _requiredInt(json, 'position'),
-      uploadUrl: _requiredString(json, 'upload_url'),
-      headers: headers,
-      expiresAt: DateTime.parse(expiresAtValue).toUtc(),
+      lessonMediaId: _requiredResponseString(
+        payload,
+        'lesson_media_id',
+        'StudioLessonMediaUploadTarget',
+      ),
+      lessonId: _requiredResponseString(
+        payload,
+        'lesson_id',
+        'StudioLessonMediaUploadTarget',
+      ),
+      mediaType: _requiredResponseString(
+        payload,
+        'media_type',
+        'StudioLessonMediaUploadTarget',
+      ),
+      state: _requiredResponseString(
+        payload,
+        'state',
+        'StudioLessonMediaUploadTarget',
+      ),
+      position: _requiredResponseInt(
+        payload,
+        'position',
+        'StudioLessonMediaUploadTarget',
+      ),
+      uploadUrl: _requiredResponseString(
+        payload,
+        'upload_url',
+        'StudioLessonMediaUploadTarget',
+      ),
+      headers: _requiredResponseHeaders(
+        payload,
+        'headers',
+        'StudioLessonMediaUploadTarget',
+      ),
+      expiresAt: _requiredResponseUtcDateTime(
+        payload,
+        'expires_at',
+        'StudioLessonMediaUploadTarget',
+      ),
     );
   }
 }
@@ -363,21 +456,62 @@ class StudioLessonMediaPreviewItem {
   final String? fileName;
   final String? failureReason;
 
-  factory StudioLessonMediaPreviewItem.fromJson(
+  factory StudioLessonMediaPreviewItem.fromResponse(
     String lessonMediaId,
-    Map<String, dynamic> json,
+    Object? payload,
   ) {
     return StudioLessonMediaPreviewItem(
       lessonMediaId: lessonMediaId,
-      mediaType: _requiredString(json, 'media_type'),
-      authoritativeEditorReady: _requiredBool(
-        json,
-        'authoritative_editor_ready',
+      mediaType: _requiredResponseString(
+        payload,
+        'media_type',
+        'StudioLessonMediaPreviewItem',
       ),
-      previewUrl: _optionalString(json, 'resolved_preview_url'),
-      durationSeconds: _optionalInt(json, 'duration_seconds'),
-      fileName: _optionalString(json, 'file_name'),
-      failureReason: _optionalString(json, 'failure_reason'),
+      authoritativeEditorReady: _requiredResponseBool(
+        payload,
+        'authoritative_editor_ready',
+        'StudioLessonMediaPreviewItem',
+      ),
+      previewUrl: _nullableResponseString(
+        payload,
+        'resolved_preview_url',
+        'StudioLessonMediaPreviewItem',
+      ),
+      durationSeconds: _nullableResponseInt(
+        payload,
+        'duration_seconds',
+        'StudioLessonMediaPreviewItem',
+      ),
+      fileName: _nullableResponseString(
+        payload,
+        'file_name',
+        'StudioLessonMediaPreviewItem',
+      ),
+      failureReason: _nullableResponseString(
+        payload,
+        'failure_reason',
+        'StudioLessonMediaPreviewItem',
+      ),
     );
+  }
+}
+
+@immutable
+class StudioLessonMediaPreviewBatch {
+  StudioLessonMediaPreviewBatch({
+    required List<StudioLessonMediaPreviewItem> items,
+  }) : items = List<StudioLessonMediaPreviewItem>.unmodifiable(items);
+
+  final List<StudioLessonMediaPreviewItem> items;
+
+  bool get isEmpty => items.isEmpty;
+
+  StudioLessonMediaPreviewItem? itemFor(String lessonMediaId) {
+    for (final item in items) {
+      if (item.lessonMediaId == lessonMediaId) {
+        return item;
+      }
+    }
+    return null;
   }
 }

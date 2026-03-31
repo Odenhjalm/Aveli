@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import logging
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -19,32 +18,30 @@ from ..db import get_conn
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
 from ..services import courses_service, media_resolver, storage_service
-from ..repositories import media_resolution_failures
-from ..utils.media_signer import (
-    issue_signed_url,
-    is_signing_enabled,
-)
 
 logger = logging.getLogger(__name__)
 
 
-def _playback_format(*, media: dict[str, Any], storage_path: str) -> str:
-    explicit = (media.get("streaming_format") or "").strip().lower()
-    if explicit:
-        return explicit
-    suffix = Path(storage_path).suffix.lower().lstrip(".")
-    if suffix:
-        return suffix
-    media_type = (media.get("media_type") or "").strip().lower()
-    if media_type:
-        return media_type
-    return "bin"
+def _exact_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value or None
+    return str(value)
+
+
+def _playback_format(*, media: dict[str, Any]) -> str:
+    explicit = _exact_text(media.get("streaming_format"))
+    if explicit is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Streaming format unavailable",
+        )
+    return explicit
 
 
 def _resolution_is_image(resolution: LessonMediaResolution) -> bool:
-    kind = str(resolution.kind or "").strip().lower()
-    content_type = str(resolution.content_type or "").strip().lower()
-    return kind == "image" or content_type.startswith("image/")
+    return resolution.media_type == "image"
 
 
 def _playback_resolution_source(resolution: LessonMediaResolution) -> str:
@@ -60,7 +57,7 @@ def _log_image_playback_resolution(
 ) -> None:
     if not _resolution_is_image(resolution):
         return
-    resolved_url = str(playback.get("playback_url") or playback.get("url") or "").strip()
+    resolved_url = _exact_text(playback.get("playback_url"))
     logger.info(
         "LESSON_IMAGE_PLAYBACK_READ lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s playback_mode=%s",
         resolution.lesson_media_id or resolution.runtime_media_id or "<missing>",
@@ -73,13 +70,45 @@ def _log_image_playback_resolution(
 
 
 async def _authorize_lesson_playback(user_id: str, row: dict[str, Any]) -> None:
-    lesson_id = str(row.get("lesson_id") or "").strip()
-    if not lesson_id:
+    lesson_id = _exact_text(row.get("lesson_id"))
+    if lesson_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Canonical lesson identity required",
         )
     access = await courses_service.read_canonical_lesson_access(user_id, lesson_id)
+    if access["lesson"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lesson not found",
+        )
+    if access["can_access"]:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+async def _authorize_lesson_resolution_playback(
+    *,
+    user_id: str,
+    lesson_id: str | None,
+    course_id: str | None,
+) -> None:
+    exact_lesson_id = _exact_text(lesson_id)
+    exact_course_id = _exact_text(course_id)
+    if exact_lesson_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Canonical lesson identity required",
+        )
+    if exact_course_id and await models.is_course_owner(
+        user_id,
+        exact_course_id,
+    ):
+        return
+    access = await courses_service.read_canonical_lesson_access(
+        user_id,
+        exact_lesson_id,
+    )
     if access["lesson"] is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -112,7 +141,7 @@ async def resolve_pipeline_playback(
             detail="Media is not ready",
         )
 
-    purpose = (media.get("purpose") or "").lower()
+    purpose = _exact_text(media.get("purpose"))
     if purpose == "home_player_audio":
         upload = await repositories.get_active_home_upload_by_media_asset_id(
             str(media_asset_id)
@@ -131,24 +160,33 @@ async def resolve_pipeline_playback(
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    storage_path = media.get("streaming_object_path") or media.get("original_object_path")
-    if not storage_path:
+    storage_path = _exact_text(media.get("streaming_object_path"))
+    if storage_path is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Streaming asset unavailable",
         )
-    media_type = (media.get("media_type") or "").strip().lower()
-    if media_type == "audio" and purpose == "lesson_audio" and not media_resolver.is_derived_audio_path(str(storage_path)):
+    media_type = _exact_text(media.get("media_type"))
+    if (
+        media_type == "audio"
+        and purpose == "lesson_audio"
+        and not media_resolver.is_derived_audio_path(storage_path)
+    ):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Streaming asset unavailable",
         )
 
-    streaming_bucket = media.get("streaming_storage_bucket") or media.get("storage_bucket")
+    streaming_bucket = _exact_text(media.get("streaming_storage_bucket"))
+    if streaming_bucket is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Streaming asset unavailable",
+        )
     return await _build_pipeline_playback_response(
         media=media,
-        storage_path=str(storage_path),
-        storage_bucket=str(streaming_bucket or settings.media_source_bucket),
+        storage_path=storage_path,
+        storage_bucket=streaming_bucket,
     )
 
 
@@ -170,43 +208,11 @@ async def resolve_object_media_playback(
     lesson_media_id: str,
     user_id: str,
 ) -> dict[str, Any]:
-    row = await models.get_media(lesson_media_id)
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-
-    storage_path = row.get("storage_path")
-    storage_bucket = row.get("storage_bucket")
-    if not storage_path or not storage_bucket:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-
-    await _authorize_legacy_media_playback(
-        storage_path=str(storage_path),
-        storage_bucket=str(storage_bucket),
-        user_id=user_id,
+    del lesson_media_id, user_id
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Legacy playback is unavailable in canonical runtime",
     )
-
-    try:
-        playback_url = await media_resolver.resolve_storage_playback_url(
-            lesson_media_id=str(row["id"]),
-            storage_path=str(storage_path),
-            storage_bucket=str(storage_bucket),
-            cache_version=(
-                str(row["media_id"]) if row.get("media_id") is not None else None
-            ),
-            require_derived_audio=(str(row.get("kind") or "").strip().lower() == "audio"),
-        )
-    except (ValueError, storage_service.StorageServiceError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Storage signing unavailable",
-        ) from exc
-
-    return {
-        "media_id": str(row["id"]),
-        "url": playback_url,
-        "playback_url": playback_url,
-        "storage_path": str(storage_path),
-    }
 
 
 async def _build_pipeline_playback_response(
@@ -232,9 +238,9 @@ async def _build_pipeline_playback_response(
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=presigned.expires_in)
     return {
-        "url": presigned.url,
+        "playback_url": presigned.url,
         "expires_at": expires_at,
-        "format": _playback_format(media=media, storage_path=storage_path),
+        "format": _playback_format(media=media),
     }
 
 
@@ -274,11 +280,6 @@ def _resolution_http_exception(resolution: LessonMediaResolution) -> HTTPExcepti
             else "Media not found"
         )
         return HTTPException(status_code=status_code, detail=detail)
-    if reason == LessonMediaResolutionReason.LEGACY_OBJECT_NOT_FOUND:
-        return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Media not found",
-        )
     if resolution.reference_type == "home_player_upload":
         return HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -319,9 +320,13 @@ async def _resolve_pipeline_playback_from_resolution(
             )
         await _authorize_home_player_upload_playback(user_id, str(teacher_id))
     elif resolution.auth_scope == "lesson_course":
-        await _authorize_lesson_playback(user_id, media)
+        await _authorize_lesson_resolution_playback(
+            user_id=user_id,
+            lesson_id=resolution.lesson_id,
+            course_id=resolution.course_id,
+        )
     else:
-        purpose = (media.get("purpose") or "").lower()
+        purpose = _exact_text(media.get("purpose"))
         if purpose == "home_player_audio":
             upload = await repositories.get_active_home_upload_by_media_asset_id(
                 str(media_asset_id)
@@ -379,22 +384,10 @@ async def resolve_runtime_media_playback(
     user_id: str,
 ) -> dict[str, Any]:
     resolution = await canonical_media_resolver.resolve_runtime_media(runtime_media_id)
-    playback = await _resolve_playback_from_resolution(
+    return await _resolve_playback_from_resolution(
         resolution=resolution,
         user_id=user_id,
     )
-
-    playback_url = str(playback["url"])
-    return {
-        **playback,
-        "runtime_media_id": resolution.runtime_media_id or runtime_media_id,
-        "lesson_media_id": resolution.lesson_media_id,
-        "playback_url": playback_url,
-        "url": playback_url,
-        "kind": resolution.kind,
-        "content_type": resolution.content_type,
-        "duration_seconds": resolution.duration_seconds,
-    }
 
 
 async def resolve_lesson_media_playback(
@@ -422,38 +415,8 @@ async def resolve_legacy_playback(
     user_id: str,
     mode: str | None = None,
 ) -> dict[str, Any]:
-    row = await models.get_media(lesson_media_id)
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-
-    normalized_mode = media_resolution_failures.normalize_mode(mode)
-    if not is_signing_enabled():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Media signing disabled",
-        )
-
-    storage_path = row.get("storage_path")
-    storage_bucket = row.get("storage_bucket")
-    if not storage_path or not storage_bucket:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-
-    await _authorize_legacy_media_playback(
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
-        user_id=user_id,
+    del lesson_media_id, user_id, mode
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Legacy playback is unavailable in canonical runtime",
     )
-
-    issued = issue_signed_url(str(row["id"]), purpose=normalized_mode)
-    if not issued:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to create signed URL",
-        )
-
-    signed_url, expires_at = issued
-    return {
-        "media_id": str(row["id"]),
-        "url": signed_url,
-        "expires_at": expires_at,
-    }

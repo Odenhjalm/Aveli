@@ -5,24 +5,20 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/data/models/seminar.dart';
 
 class SeminarRepository {
-  const SeminarRepository(this._client);
+  const SeminarRepository(ApiClient _);
 
-  final ApiClient _client;
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
+    );
+  }
 
   Future<List<Seminar>> listHostSeminars() async {
-    final response = await _client.get<Map<String, dynamic>>(
-      '/studio/seminars',
-    );
-    final items = (response['items'] as List<dynamic>? ?? [])
-        .map((item) => item as Map<String, dynamic>)
-        .toList();
-    return items.map(Seminar.fromJson).toList();
+    return _unsupportedRuntime('Studio seminars');
   }
 
   Future<SeminarDetail> getSeminarDetail(String id) async {
-    final Map<String, dynamic> response = await _client
-        .get<Map<String, dynamic>>('/studio/seminars/$id');
-    return SeminarDetail.fromJson(response);
+    return _unsupportedRuntime('Studio seminars');
   }
 
   Future<Seminar> createSeminar({
@@ -31,19 +27,7 @@ class SeminarRepository {
     DateTime? scheduledAt,
     int? durationMinutes,
   }) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/studio/seminars',
-      body: {
-        'title': title,
-        if (description != null) 'description': description,
-        if (scheduledAt != null) 'scheduled_at': scheduledAt.toIso8601String(),
-        if (durationMinutes != null) 'duration_minutes': durationMinutes,
-      },
-    );
-    if (response == null) {
-      throw StateError('Seminar creation returned empty response');
-    }
-    return Seminar.fromJson(response);
+    return _unsupportedRuntime('Studio seminars');
   }
 
   Future<Seminar> updateSeminar({
@@ -53,39 +37,15 @@ class SeminarRepository {
     DateTime? scheduledAt,
     int? durationMinutes,
   }) async {
-    final response = await _client.patch<Map<String, dynamic>?>(
-      '/studio/seminars/$id',
-      body: {
-        if (title != null) 'title': title,
-        if (description != null) 'description': description,
-        if (scheduledAt != null) 'scheduled_at': scheduledAt.toIso8601String(),
-        if (durationMinutes != null) 'duration_minutes': durationMinutes,
-      },
-    );
-    if (response == null) {
-      throw StateError('Seminar update returned empty response');
-    }
-    return Seminar.fromJson(response);
+    return _unsupportedRuntime('Studio seminars');
   }
 
   Future<Seminar> publishSeminar(String id) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/studio/seminars/$id/publish',
-    );
-    if (response == null) {
-      throw StateError('Seminar publish returned empty response');
-    }
-    return Seminar.fromJson(response);
+    return _unsupportedRuntime('Studio seminars');
   }
 
   Future<Seminar> cancelSeminar(String id) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/studio/seminars/$id/cancel',
-    );
-    if (response == null) {
-      throw StateError('Seminar cancel returned empty response');
-    }
-    return Seminar.fromJson(response);
+    return _unsupportedRuntime('Studio seminars');
   }
 
   Future<SeminarSessionStartResult> startSession(
@@ -93,17 +53,7 @@ class SeminarRepository {
     String? sessionId,
     int? maxParticipants,
   }) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/studio/seminars/$seminarId/sessions/start',
-      body: {
-        if (sessionId != null) 'session_id': sessionId,
-        if (maxParticipants != null) 'max_participants': maxParticipants,
-      },
-    );
-    if (response == null) {
-      throw StateError('Start session returned empty response');
-    }
-    return SeminarSessionStartResult.fromJson(response);
+    return _unsupportedRuntime('Studio seminar sessions');
   }
 
   Future<SeminarSession> endSession(
@@ -111,14 +61,7 @@ class SeminarRepository {
     String sessionId, {
     String? reason,
   }) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/studio/seminars/$seminarId/sessions/$sessionId/end',
-      body: {if (reason != null) 'reason': reason},
-    );
-    if (response == null) {
-      throw StateError('End session returned empty response');
-    }
-    return SeminarSession.fromJson(response);
+    return _unsupportedRuntime('Studio seminar sessions');
   }
 
   Future<SeminarRecording> reserveRecording(
@@ -126,17 +69,7 @@ class SeminarRepository {
     String? sessionId,
     String? extension,
   }) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/studio/seminars/$seminarId/recordings/reserve',
-      body: {
-        if (sessionId != null) 'session_id': sessionId,
-        if (extension != null) 'extension': extension,
-      },
-    );
-    if (response == null) {
-      throw StateError('Reserve recording returned empty response');
-    }
-    return SeminarRecording.fromJson(response);
+    return _unsupportedRuntime('Studio seminar recordings');
   }
 
   Future<SeminarRegistration> grantSeminarAccess({
@@ -145,50 +78,30 @@ class SeminarRepository {
     String role = 'participant',
     String inviteStatus = 'accepted',
   }) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/studio/seminars/$seminarId/attendees',
-      body: {'user_id': userId, 'role': role, 'invite_status': inviteStatus},
-    );
-    if (response == null) {
-      throw StateError('Grant seminar access returned empty response');
-    }
-    return SeminarRegistration.fromJson(response);
+    return _unsupportedRuntime('Studio seminar attendees');
   }
 
   Future<void> revokeSeminarAccess({
     required String seminarId,
     required String userId,
   }) async {
-    await _client.delete<void>('/studio/seminars/$seminarId/attendees/$userId');
+    return _unsupportedRuntime('Studio seminar attendees');
   }
 
   Future<List<Seminar>> listPublicSeminars() async {
-    final Map<String, dynamic> response = await _client
-        .get<Map<String, dynamic>>('/seminars');
-    final items = (response['items'] as List<dynamic>? ?? [])
-        .map((item) => item as Map<String, dynamic>)
-        .toList();
-    return items.map(Seminar.fromJson).toList();
+    return _unsupportedRuntime('Public seminars');
   }
 
   Future<SeminarDetail> getPublicSeminar(String id) async {
-    final Map<String, dynamic> response = await _client
-        .get<Map<String, dynamic>>('/seminars/$id');
-    return SeminarDetail.fromJson(response);
+    return _unsupportedRuntime('Public seminars');
   }
 
   Future<SeminarRegistration> registerForSeminar(String id) async {
-    final response = await _client.post<Map<String, dynamic>?>(
-      '/seminars/$id/register',
-    );
-    if (response == null) {
-      throw StateError('Register seminar returned empty response');
-    }
-    return SeminarRegistration.fromJson(response);
+    return _unsupportedRuntime('Public seminars');
   }
 
   Future<void> unregisterFromSeminar(String id) async {
-    await _client.delete<void>('/seminars/$id/register');
+    return _unsupportedRuntime('Public seminars');
   }
 }
 

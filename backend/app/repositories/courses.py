@@ -74,6 +74,27 @@ async def get_course_by_slug(slug: str) -> CourseRow | None:
     return await get_course(slug=normalized)
 
 
+async def get_course_pricing_by_slug(slug: str) -> dict[str, Any] | None:
+    normalized = str(slug or "").strip().lower()
+    if not normalized:
+        return None
+
+    query = """
+        select
+            c.price_amount_cents as amount_cents,
+            c.currency
+        from app.courses as c
+        where c.slug = %s
+        limit 1
+    """
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (normalized,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 async def list_courses(
     *,
     limit: int | None = None,
@@ -401,15 +422,39 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             lm.lesson_id,
             lm.media_asset_id,
             lm.position,
-            ma.media_type::text as kind,
+            ma.media_type::text as media_type,
             ma.state::text as state,
             ma.original_filename as original_name,
-            rm.lesson_media_id is not null as playback_ready
+            rm.lesson_media_id is not null as preview_ready
         from app.lesson_media as lm
         join app.media_assets as ma
           on ma.id = lm.media_asset_id
         left join app.runtime_media as rm
           on rm.lesson_media_id = lm.id
+        where lm.lesson_id = %s
+        order by lm.position asc, lm.id asc
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def list_lesson_media_for_studio(lesson_id: str) -> Sequence[dict[str, Any]]:
+    query = """
+        select
+            lm.id as lesson_media_id,
+            lm.lesson_id,
+            lm.media_asset_id,
+            lm.position,
+            ma.media_type::text as media_type,
+            ma.state::text as state,
+            ma.original_filename as original_name,
+            (ma.state in ('uploaded', 'ready')) as preview_ready
+        from app.lesson_media as lm
+        join app.media_assets as ma
+          on ma.id = lm.media_asset_id
         where lm.lesson_id = %s
         order by lm.position asc, lm.id asc
     """
@@ -426,19 +471,17 @@ async def get_lesson_media_for_studio(
 ) -> dict[str, Any] | None:
     query = """
         select
-            lm.id,
+            lm.id as lesson_media_id,
             lm.lesson_id,
             lm.media_asset_id,
             lm.position,
-            ma.media_type::text as kind,
+            ma.media_type::text as media_type,
             ma.state::text as state,
             ma.original_filename as original_name,
-            rm.lesson_media_id is not null as playback_ready
+            (ma.state in ('uploaded', 'ready')) as preview_ready
         from app.lesson_media as lm
         join app.media_assets as ma
           on ma.id = lm.media_asset_id
-        left join app.runtime_media as rm
-          on rm.lesson_media_id = lm.id
         where lm.lesson_id = %s::uuid
           and lm.id = %s::uuid
         limit 1
@@ -448,6 +491,36 @@ async def get_lesson_media_for_studio(
             await cur.execute(query, (lesson_id, lesson_media_id))
             row = await cur.fetchone()
     return dict(row) if row else None
+
+
+async def list_lesson_media_by_ids_for_studio(
+    lesson_media_ids: Sequence[str],
+) -> Sequence[dict[str, Any]]:
+    normalized_ids = [str(item).strip() for item in lesson_media_ids if str(item).strip()]
+    if not normalized_ids:
+        return []
+
+    query = """
+        select
+            lm.id as lesson_media_id,
+            lm.lesson_id,
+            lm.media_asset_id,
+            lm.position,
+            ma.media_type::text as media_type,
+            ma.state::text as state,
+            ma.original_filename as original_name,
+            (ma.state in ('uploaded', 'ready')) as preview_ready
+        from app.lesson_media as lm
+        join app.media_assets as ma
+          on ma.id = lm.media_asset_id
+        where lm.id = any(%s::uuid[])
+        order by lm.position asc, lm.id asc
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (normalized_ids,))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
 
 
 async def create_lesson_media(

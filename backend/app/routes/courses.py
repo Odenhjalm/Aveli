@@ -84,18 +84,29 @@ async def list_courses(
 router.add_api_route("/", list_courses, methods=["GET"], include_in_schema=False)
 
 
-@router.get("/{slug}/pricing")
+def _course_pricing_response(payload: dict) -> schemas.CoursePricingResponse:
+    amount_cents = payload.get("amount_cents")
+    currency = payload.get("currency")
+    if amount_cents is None or currency is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Course pricing is not configured",
+        )
+    return schemas.CoursePricingResponse(
+        amount_cents=amount_cents,
+        currency=currency,
+    )
+
+
+@router.get("/{slug}/pricing", response_model=schemas.CoursePricingResponse)
 async def course_pricing(slug: str):
-    row = await courses_service.fetch_course(slug=slug)
+    row = await courses_service.fetch_course_pricing(slug)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    return {
-        "amount_cents": int(row.get("price_amount_cents") or 0),
-        "currency": "sek",
-    }
+    return _course_pricing_response(row)
 
 
-@api_router.get("/{slug}/pricing")
+@api_router.get("/{slug}/pricing", response_model=schemas.CoursePricingResponse)
 async def course_pricing_api(slug: str):
     return await course_pricing(slug)
 

@@ -24,43 +24,33 @@ final sessionsRepositoryProvider = Provider<SessionsRepository>((ref) {
   return SessionsRepository(client);
 });
 
-final teacherSessionsProvider =
-    FutureProvider.autoDispose<List<StudioSession>>((ref) async {
+final teacherSessionsProvider = FutureProvider.autoDispose<List<StudioSession>>(
+  (ref) async {
+    final repo = ref.watch(sessionsRepositoryProvider);
+    return repo.listTeacherSessions();
+  },
+);
+
+final publishedSessionProvider = FutureProvider.autoDispose
+    .family<StudioSession, String>((ref, sessionId) async {
       final repo = ref.watch(sessionsRepositoryProvider);
-      return repo.listTeacherSessions();
+      return repo.fetchPublishedSession(sessionId);
     });
 
-final publishedSessionProvider =
-    FutureProvider.autoDispose.family<StudioSession, String>((
-  ref,
-  sessionId,
-) async {
-  final repo = ref.watch(sessionsRepositoryProvider);
-  return repo.fetchPublishedSession(sessionId);
-});
+final publicSessionSlotsProvider = FutureProvider.autoDispose
+    .family<List<StudioSessionSlot>, String>((ref, sessionId) async {
+      final repo = ref.watch(sessionsRepositoryProvider);
+      return repo.listPublicSlots(sessionId);
+    });
 
-final publicSessionSlotsProvider =
-    FutureProvider.autoDispose.family<List<StudioSessionSlot>, String>((
-  ref,
-  sessionId,
-) async {
-  final repo = ref.watch(sessionsRepositoryProvider);
-  return repo.listPublicSlots(sessionId);
-});
-
-final studioCoursesProvider = FutureProvider<List<CourseStudio>>((
-  ref,
-) async {
+final studioCoursesProvider = FutureProvider<List<CourseStudio>>((ref) async {
   final repo = ref.watch(studioRepositoryProvider);
   return repo.myCourses();
 });
 
-final myCoursesProvider = FutureProvider<List<Map<String, dynamic>>>((
-  ref,
-) async {
+final myCoursesProvider = FutureProvider<List<CourseStudio>>((ref) async {
   final repo = ref.watch(studioRepositoryProvider);
-  final courses = await repo.myCourses();
-  return courses.map((course) => course.toJson()).toList(growable: false);
+  return repo.myCourses();
 });
 
 final studioStatusProvider = FutureProvider<StudioStatus>((ref) async {

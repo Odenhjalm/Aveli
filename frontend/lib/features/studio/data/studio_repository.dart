@@ -9,68 +9,101 @@ import 'package:aveli/data/models/teacher_profile_media.dart';
 
 import 'studio_models.dart';
 
+part 'studio_repository_lesson_media.dart';
+
 class StudioRepository {
   StudioRepository({required ApiClient client}) : _client = client;
 
   final ApiClient _client;
 
-  Future<StudioStatus> fetchStatus() async {
-    final res = await _client.get<Map<String, dynamic>>('/studio/status');
-    return StudioStatus.fromJson(res);
+  _StudioLessonMediaScope get _lessonMedia => _StudioLessonMediaScope(_client);
+
+  Future<T> _unsupportedRuntime<T>(String surface) {
+    return Future<T>.error(
+      UnsupportedError('$surface is inert in mounted runtime'),
+    );
   }
 
-  Future<Map<String, dynamic>> createReferralInvitation({
+  static Object? _requiredResponseField(
+    Object? payload,
+    String field,
+    String label,
+  ) {
+    switch (payload) {
+      case final Map data when data.containsKey(field):
+        return data[field];
+      case final Map _:
+        throw StateError('$label is missing required field: $field');
+      default:
+        throw StateError('$label returned a non-object payload');
+    }
+  }
+
+  static List<Object?> _requiredResponseListField(
+    Object? payload,
+    String field,
+    String label,
+  ) {
+    final value = _requiredResponseField(payload, field, label);
+    if (value is List) {
+      return List<Object?>.from(value);
+    }
+    throw StateError('$label field "$field" must be a list');
+  }
+
+  Future<StudioStatus> fetchStatus() async {
+    return _unsupportedRuntime('Studio status');
+  }
+
+  Future<Map<String, Object?>> createReferralInvitation({
     required String email,
     int? freeDays,
     int? freeMonths,
   }) async {
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/referrals/create',
-      body: {
-        'email': email,
-        if (freeDays != null) 'free_days': freeDays,
-        if (freeMonths != null) 'free_months': freeMonths,
-      },
-    );
-    return Map<String, dynamic>.from(res);
+    return _unsupportedRuntime('Studio referrals');
   }
 
   Future<List<CourseStudio>> myCourses() async {
-    final res = await _client.get<Map<String, dynamic>>('/studio/courses');
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map((e) => CourseStudio.fromJson(Map<String, dynamic>.from(e as Map)))
+    final response = await _client.raw.get<Object?>('/studio/courses');
+    final items = _requiredResponseListField(
+      response.data,
+      'items',
+      'Studio course list',
+    );
+    return items
+        .map(
+          (item) =>
+              CourseStudio.fromResponse(item, label: 'Studio course list item'),
+        )
         .toList(growable: false);
   }
 
-  Future<StudioCourseDetails> createCourse({
+  Future<CourseStudio> createCourse({
     required String title,
     required String slug,
   }) async {
-    final body = {'title': title, 'slug': slug};
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/courses',
-      body: body,
-    );
-    return StudioCourseDetails.fromJson(res);
+    return _unsupportedRuntime('Studio course creation');
   }
 
-  Future<StudioCourseDetails> fetchCourseMeta(String courseId) async {
-    final res = await _client.get<Map<String, dynamic>>(
+  Future<CourseStudio> fetchCourseMeta(String courseId) async {
+    final response = await _client.raw.get<Object?>(
       '/studio/courses/$courseId',
     );
-    return StudioCourseDetails.fromJson(res);
+    return CourseStudio.fromResponse(response.data, label: 'Studio course');
   }
 
-  Future<StudioCourseDetails> updateCourse(
+  Future<CourseStudio> updateCourse(
     String courseId,
-    Map<String, dynamic> patch,
+    Map<String, Object?> patch,
   ) async {
-    final res = await _client.patch<Map<String, dynamic>>(
+    final response = await _client.raw.patch<Object?>(
       '/studio/courses/$courseId',
-      body: patch,
+      data: patch,
     );
-    return StudioCourseDetails.fromJson(res!);
+    return CourseStudio.fromResponse(
+      response.data,
+      label: 'Updated studio course',
+    );
   }
 
   Future<void> deleteCourse(String courseId) async {
@@ -78,12 +111,19 @@ class StudioRepository {
   }
 
   Future<List<LessonStudio>> listCourseLessons(String courseId) async {
-    final res = await _client.get<Map<String, dynamic>>(
+    final response = await _client.raw.get<Object?>(
       '/studio/courses/$courseId/lessons',
     );
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map((e) => LessonStudio.fromJson(Map<String, dynamic>.from(e as Map)))
+    final items = _requiredResponseListField(
+      response.data,
+      'items',
+      'Studio lesson list',
+    );
+    return items
+        .map(
+          (item) =>
+              LessonStudio.fromResponse(item, label: 'Studio lesson list item'),
+        )
         .toList(growable: false);
   }
 
@@ -92,33 +132,39 @@ class StudioRepository {
     String? createId,
     required String courseId,
     required String lessonTitle,
-    String? contentMarkdown,
+    required String contentMarkdown,
     int position = 0,
   }) async {
     if (id == null) {
-      final body = {
+      final body = <String, Object?>{
         'course_id': courseId,
         'lesson_title': lessonTitle,
         'content_markdown': contentMarkdown,
         'position': position,
         if (createId != null && createId.isNotEmpty) 'id': createId,
       };
-      final res = await _client.post<Map<String, dynamic>>(
+      final response = await _client.raw.post<Object?>(
         '/studio/lessons',
-        body: body,
+        data: body,
       );
-      return LessonStudio.fromJson(res);
+      return LessonStudio.fromResponse(
+        response.data,
+        label: 'Created studio lesson',
+      );
     } else {
-      final body = <String, dynamic>{
+      final body = <String, Object?>{
         'lesson_title': lessonTitle,
-        if (contentMarkdown != null) 'content_markdown': contentMarkdown,
+        'content_markdown': contentMarkdown,
         'position': position,
       };
-      final res = await _client.patch<Map<String, dynamic>>(
+      final response = await _client.raw.patch<Object?>(
         '/studio/lessons/$id',
-        body: body,
+        data: body,
       );
-      return LessonStudio.fromJson(res!);
+      return LessonStudio.fromResponse(
+        response.data,
+        label: 'Updated studio lesson',
+      );
     }
   }
 
@@ -126,47 +172,12 @@ class StudioRepository {
     await _client.delete('/studio/lessons/$lessonId');
   }
 
-  Future<List<StudioLessonMediaItem>> listLessonMedia(String lessonId) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/lessons/$lessonId/media',
-    );
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map(
-          (e) => StudioLessonMediaItem.fromJson(
-            Map<String, dynamic>.from(e as Map),
-          ),
-        )
-        .toList(growable: false);
-  }
+  Future<List<StudioLessonMediaItem>> listLessonMedia(String lessonId) =>
+      _lessonMedia.listLessonMedia(lessonId);
 
-  Future<Map<String, StudioLessonMediaPreviewItem>> fetchLessonMediaPreviews(
+  Future<StudioLessonMediaPreviewBatch> fetchLessonMediaPreviews(
     List<String> lessonMediaIds,
-  ) async {
-    final normalizedIds = lessonMediaIds
-        .map((id) => id.trim())
-        .where((id) => id.isNotEmpty)
-        .toSet()
-        .toList(growable: false);
-    if (normalizedIds.isEmpty) {
-      return const <String, StudioLessonMediaPreviewItem>{};
-    }
-
-    final res = await _client.post<Map<String, dynamic>>(
-      ApiPaths.mediaPreviews,
-      body: {'ids': normalizedIds},
-    );
-    final rawItems = res['items'] is Map ? res['items'] as Map : res;
-    final items = <String, StudioLessonMediaPreviewItem>{};
-    rawItems.forEach((key, value) {
-      if (value is! Map) return;
-      items[key.toString()] = StudioLessonMediaPreviewItem.fromJson(
-        key.toString(),
-        Map<String, dynamic>.from(value),
-      );
-    });
-    return items;
-  }
+  ) => _lessonMedia.fetchLessonMediaPreviews(lessonMediaIds);
 
   Future<StudioLessonMediaItem> uploadLessonMedia({
     required String lessonId,
@@ -175,78 +186,24 @@ class StudioRepository {
     required String contentType,
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
-  }) async {
-    final mediaType = _detectUploadMediaType(contentType);
-    if (mediaType == null) {
-      throw StateError(
-        'Unsupported lesson media content type for canonical edge contract.',
-      );
-    }
+  }) => _lessonMedia.uploadLessonMedia(
+    lessonId: lessonId,
+    data: data,
+    filename: filename,
+    contentType: contentType,
+    onProgress: onProgress,
+    cancelToken: cancelToken,
+  );
 
-    final upload = await _requestLessonMediaUploadTarget(
-      filename: filename,
-      mimeType: contentType,
-      sizeBytes: data.length,
-      mediaType: mediaType,
-      lessonId: lessonId,
-    );
-    if (upload.uploadUrl.trim().isEmpty) {
-      throw StateError('Ofullständigt svar från studio media upload-url.');
-    }
-
-    final dio = Dio();
-    await dio.putUri<void>(
-      Uri.parse(upload.uploadUrl),
-      data: data,
-      options: Options(headers: upload.headers),
-      cancelToken: cancelToken,
-      onSendProgress: (sent, total) {
-        if (onProgress == null) return;
-        final resolvedTotal = total > 0 ? total : data.length;
-        onProgress(UploadProgress(sent: sent, total: resolvedTotal));
-      },
-    );
-
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/lessons/$lessonId/media/${upload.lessonMediaId}/complete',
-      body: const <String, dynamic>{},
-    );
-    return StudioLessonMediaItem.fromJson(res);
-  }
-
-  Future<StudioLessonMediaUploadTarget> _requestLessonMediaUploadTarget({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String mediaType,
-    required String lessonId,
-  }) async {
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/lessons/$lessonId/media/upload-url',
-      body: <String, dynamic>{
-        'filename': filename,
-        'mime_type': mimeType,
-        'size_bytes': sizeBytes,
-        'media_type': mediaType,
-      },
-    );
-    return StudioLessonMediaUploadTarget.fromJson(res);
-  }
-
-  Future<void> deleteLessonMedia(String lessonId, String lessonMediaId) async {
-    await _client.delete('/studio/lessons/$lessonId/media/$lessonMediaId');
-  }
+  Future<void> deleteLessonMedia(String lessonId, String lessonMediaId) =>
+      _lessonMedia.deleteLessonMedia(lessonId, lessonMediaId);
 
   Future<TeacherProfileMediaPayload> fetchProfileMedia() async {
-    final response = await _client.raw.get<Object?>('/studio/profile/media');
-    return TeacherProfileMediaPayload.fromResponse(response.data);
+    return _unsupportedRuntime('Studio profile media');
   }
 
   Future<HomePlayerLibraryPayload> fetchHomePlayerLibrary() async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/home-player/library',
-    );
-    return HomePlayerLibraryPayload.fromJson(res);
+    return _unsupportedRuntime('Home player library');
   }
 
   Future<HomePlayerUploadItem> uploadHomePlayerUpload({
@@ -254,48 +211,22 @@ class StudioRepository {
     required String mediaAssetId,
     bool active = true,
   }) async {
-    final body = <String, dynamic>{
-      'title': title,
-      'active': active,
-      'media_asset_id': mediaAssetId,
-    };
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/home-player/uploads',
-      body: body,
-    );
-    return HomePlayerUploadItem.fromJson(res);
+    return _unsupportedRuntime('Home player uploads');
   }
 
-  Future<Map<String, dynamic>> requestHomePlayerUploadUrl({
+  Future<Map<String, Object?>> requestHomePlayerUploadUrl({
     required String filename,
     required String mimeType,
     required int sizeBytes,
   }) async {
-    final body = <String, dynamic>{
-      'filename': filename,
-      'mime_type': mimeType,
-      'size_bytes': sizeBytes,
-    };
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/home-player/uploads/upload-url',
-      body: body,
-    );
-    return Map<String, dynamic>.from(res);
+    return _unsupportedRuntime('Home player upload URLs');
   }
 
-  Future<Map<String, dynamic>> refreshHomePlayerUploadUrl({
+  Future<Map<String, Object?>> refreshHomePlayerUploadUrl({
     required String objectPath,
     required String mimeType,
   }) async {
-    final body = <String, dynamic>{
-      'object_path': objectPath,
-      'mime_type': mimeType,
-    };
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/home-player/uploads/upload-url/refresh',
-      body: body,
-    );
-    return Map<String, dynamic>.from(res);
+    return _unsupportedRuntime('Home player upload URL refresh');
   }
 
   Future<HomePlayerUploadItem> createHomePlayerUploadFromStorage({
@@ -307,20 +238,7 @@ class StudioRepository {
     bool active = true,
     String storageBucket = 'course-media',
   }) async {
-    final body = <String, dynamic>{
-      'title': title,
-      'active': active,
-      'storage_bucket': storageBucket,
-      'storage_path': storagePath,
-      'content_type': contentType,
-      'byte_size': byteSize,
-      'original_name': originalName,
-    };
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/home-player/uploads',
-      body: body,
-    );
-    return HomePlayerUploadItem.fromJson(res);
+    return _unsupportedRuntime('Home player storage uploads');
   }
 
   Future<HomePlayerUploadItem> updateHomePlayerUpload(
@@ -328,19 +246,11 @@ class StudioRepository {
     String? title,
     bool? active,
   }) async {
-    final body = <String, dynamic>{
-      if (title != null) 'title': title,
-      if (active != null) 'active': active,
-    };
-    final res = await _client.patch<Map<String, dynamic>>(
-      '/studio/home-player/uploads/$uploadId',
-      body: body,
-    );
-    return HomePlayerUploadItem.fromJson(res ?? const {});
+    return _unsupportedRuntime('Home player uploads');
   }
 
   Future<void> deleteHomePlayerUpload(String uploadId) async {
-    await _client.delete('/studio/home-player/uploads/$uploadId');
+    return _unsupportedRuntime('Home player uploads');
   }
 
   Future<HomePlayerCourseLinkItem> createHomePlayerCourseLink({
@@ -348,16 +258,7 @@ class StudioRepository {
     required String title,
     bool enabled = true,
   }) async {
-    final body = <String, dynamic>{
-      'lesson_media_id': lessonMediaId,
-      'title': title,
-      'enabled': enabled,
-    };
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/home-player/course-links',
-      body: body,
-    );
-    return HomePlayerCourseLinkItem.fromJson(res);
+    return _unsupportedRuntime('Home player course links');
   }
 
   Future<HomePlayerCourseLinkItem> updateHomePlayerCourseLink(
@@ -365,19 +266,11 @@ class StudioRepository {
     bool? enabled,
     String? title,
   }) async {
-    final body = <String, dynamic>{
-      if (enabled != null) 'enabled': enabled,
-      if (title != null) 'title': title,
-    };
-    final res = await _client.patch<Map<String, dynamic>>(
-      '/studio/home-player/course-links/$linkId',
-      body: body,
-    );
-    return HomePlayerCourseLinkItem.fromJson(res ?? const {});
+    return _unsupportedRuntime('Home player course links');
   }
 
   Future<void> deleteHomePlayerCourseLink(String linkId) async {
-    await _client.delete('/studio/home-player/course-links/$linkId');
+    return _unsupportedRuntime('Home player course links');
   }
 
   Future<TeacherProfileMediaItem> createProfileMedia({
@@ -393,25 +286,7 @@ class StudioRepository {
     required bool isPublished,
     required bool enabledForHomePlayer,
   }) async {
-    final body = <String, dynamic>{
-      'media_kind': mediaKind.apiValue,
-      if (lessonMediaId != null) 'lesson_media_id': lessonMediaId,
-      if (seminarRecordingId != null)
-        'seminar_recording_id': seminarRecordingId,
-      if (externalUrl != null) 'external_url': externalUrl,
-      if (title != null) 'title': title,
-      if (description != null) 'description': description,
-      if (coverMediaId != null) 'cover_media_id': coverMediaId,
-      if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
-      'position': position,
-      'is_published': isPublished,
-      'enabled_for_home_player': enabledForHomePlayer,
-    };
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/profile/media',
-      body: body,
-    );
-    return TeacherProfileMediaItem.fromResponse(res);
+    return _unsupportedRuntime('Studio profile media');
   }
 
   Future<TeacherProfileMediaItem> updateProfileMedia(
@@ -424,40 +299,21 @@ class StudioRepository {
     bool? isPublished,
     bool? enabledForHomePlayer,
   }) async {
-    final body = <String, dynamic>{
-      if (title != null) 'title': title,
-      if (description != null) 'description': description,
-      if (coverMediaId != null) 'cover_media_id': coverMediaId,
-      if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
-      if (position != null) 'position': position,
-      if (isPublished != null) 'is_published': isPublished,
-      if (enabledForHomePlayer != null)
-        'enabled_for_home_player': enabledForHomePlayer,
-    };
-    final res = await _client.patch<Map<String, dynamic>>(
-      '/studio/profile/media/$itemId',
-      body: body,
-    );
-    return TeacherProfileMediaItem.fromResponse(res);
+    return _unsupportedRuntime('Studio profile media');
   }
 
   Future<void> deleteProfileMedia(String itemId) async {
-    await _client.delete('/studio/profile/media/$itemId');
+    return _unsupportedRuntime('Studio profile media');
   }
 
   Future<void> reorderLessonMedia(
     String lessonId,
     List<String> orderedMediaIds,
-  ) async {
-    await _client.patch(
-      '/studio/lessons/$lessonId/media/reorder',
-      body: {'lesson_media_ids': orderedMediaIds},
-    );
-  }
+  ) => _lessonMedia.reorderLessonMedia(lessonId, orderedMediaIds);
 
   Future<void> reorderCourseLessons(
     String courseId,
-    List<Map<String, dynamic>> orderedLessons,
+    List<Map<String, Object?>> orderedLessons,
   ) async {
     await _client.patch(
       '/studio/courses/$courseId/lessons/reorder',
@@ -465,101 +321,44 @@ class StudioRepository {
     );
   }
 
-  Future<Uint8List> downloadMedia(String mediaId) {
-    return _client.getBytes('/studio/media/$mediaId');
+  Future<Uint8List> downloadMedia(String mediaId) async {
+    return _unsupportedRuntime('Studio media download');
   }
 
-  Future<Map<String, dynamic>> ensureQuiz(String courseId) async {
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/courses/$courseId/quiz',
-    );
-    return Map<String, dynamic>.from(res['quiz'] as Map);
+  Future<Map<String, Object?>> ensureQuiz(String courseId) async {
+    return _unsupportedRuntime('Studio quiz shell');
   }
 
-  Future<List<Map<String, dynamic>>> myCertificates({
+  Future<List<Map<String, Object?>>> myCertificates({
     bool verifiedOnly = false,
   }) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/certificates',
-      queryParameters: {'verified_only': verifiedOnly},
-    );
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList(growable: false);
+    return _unsupportedRuntime('Studio certificates');
   }
 
-  Future<Map<String, dynamic>> addCertificate({
+  Future<Map<String, Object?>> addCertificate({
     required String title,
     String status = 'pending',
     String? notes,
     String? evidenceUrl,
   }) async {
-    final res = await _client.post<Map<String, dynamic>>(
-      '/studio/certificates',
-      body: {
-        'title': title,
-        'status': status,
-        if (notes != null) 'notes': notes,
-        if (evidenceUrl != null) 'evidence_url': evidenceUrl,
-      },
-    );
-    return Map<String, dynamic>.from(res);
+    return _unsupportedRuntime('Studio certificates');
   }
 
-  Future<List<Map<String, dynamic>>> quizQuestions(String quizId) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/quizzes/$quizId/questions',
-    );
-    final list = res['items'] as List? ?? const [];
-    return list
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList(growable: false);
+  Future<List<Map<String, Object?>>> quizQuestions(String quizId) async {
+    return _unsupportedRuntime('Studio quiz questions');
   }
 
-  Future<Map<String, dynamic>> upsertQuestion({
+  Future<Map<String, Object?>> upsertQuestion({
     required String quizId,
     String? id,
-    required Map<String, dynamic> data,
+    required Map<String, Object?> data,
   }) async {
-    final body = {...data}..remove('quiz_id');
-    if (id == null) {
-      final res = await _client.post<Map<String, dynamic>>(
-        '/studio/quizzes/$quizId/questions',
-        body: body,
-      );
-      return Map<String, dynamic>.from(res);
-    } else {
-      final res = await _client.put<Map<String, dynamic>>(
-        '/studio/quizzes/$quizId/questions/$id',
-        body: body,
-      );
-      return Map<String, dynamic>.from(res!);
-    }
+    return _unsupportedRuntime('Studio quiz questions');
   }
 
   Future<void> deleteQuestion(String quizId, String questionId) async {
-    await _client.delete('/studio/quizzes/$quizId/questions/$questionId');
+    return _unsupportedRuntime('Studio quiz questions');
   }
-}
-
-String? _detectUploadMediaType(String contentType) {
-  if (contentType.isEmpty) return null;
-  final lower = contentType.toLowerCase();
-  if (lower.startsWith('image/')) return 'image';
-  if (lower.startsWith('video/')) return 'video';
-  if (lower.startsWith('audio/')) return 'audio';
-  if (lower == 'application/pdf') return 'document';
-  return null;
-}
-
-class UploadProgress {
-  const UploadProgress({required this.sent, required this.total});
-
-  final int sent;
-  final int total;
-
-  double get fraction => total == 0 ? 0 : sent / total;
 }
 
 class StudioStatus {
@@ -573,9 +372,39 @@ class StudioStatus {
   final int verifiedCertificates;
   final bool hasApplication;
 
-  factory StudioStatus.fromJson(Map<String, dynamic> json) => StudioStatus(
-    isTeacher: json['is_teacher'] == true,
-    verifiedCertificates: (json['verified_certificates'] as num?)?.toInt() ?? 0,
-    hasApplication: json['has_application'] == true,
-  );
+  factory StudioStatus.fromResponse(Object? payload) {
+    final isTeacher = StudioRepository._requiredResponseField(
+      payload,
+      'is_teacher',
+      'Studio status',
+    );
+    final verifiedCertificates = StudioRepository._requiredResponseField(
+      payload,
+      'verified_certificates',
+      'Studio status',
+    );
+    final hasApplication = StudioRepository._requiredResponseField(
+      payload,
+      'has_application',
+      'Studio status',
+    );
+    if (isTeacher is! bool) {
+      throw StateError('Studio status field "is_teacher" must be a bool');
+    }
+    if (verifiedCertificates is! int && verifiedCertificates is! num) {
+      throw StateError(
+        'Studio status field "verified_certificates" must be an int',
+      );
+    }
+    if (hasApplication is! bool) {
+      throw StateError('Studio status field "has_application" must be a bool');
+    }
+    return StudioStatus(
+      isTeacher: isTeacher,
+      verifiedCertificates: verifiedCertificates is int
+          ? verifiedCertificates
+          : (verifiedCertificates as num).toInt(),
+      hasApplication: hasApplication,
+    );
+  }
 }

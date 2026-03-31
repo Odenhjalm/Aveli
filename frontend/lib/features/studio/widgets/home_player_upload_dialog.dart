@@ -11,6 +11,7 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/studio/application/home_player_library_controller.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/widgets/home_player_upload_routing.dart';
+import 'package:aveli/shared/models/request_headers.dart';
 
 import 'wav_upload_source.dart';
 import 'wav_upload_types.dart';
@@ -153,7 +154,7 @@ class _HomePlayerUploadDialogState
 
     Uri uploadUrl;
     String objectPath;
-    Map<String, String> uploadHeaders;
+    RequestHeaders uploadHeaders;
     String mediaId;
 
     if (resumableSession != null) {
@@ -339,7 +340,7 @@ class _HomePlayerUploadDialogState
 
     Uri uploadUrl;
     String objectPath;
-    Map<String, String> uploadHeaders;
+    RequestHeaders uploadHeaders;
     String sessionId;
 
     if (resumableSession != null) {
@@ -366,10 +367,10 @@ class _HomePlayerUploadDialogState
         }
         uploadUrl = Uri.parse(uploadUrlRaw);
         objectPath = objectPathRaw;
-        uploadHeaders = <String, String>{
-          for (final entry in headersRaw.entries)
-            entry.key.toString(): entry.value.toString(),
-        };
+        uploadHeaders = RequestHeaders.fromResponseObject(
+          headersRaw,
+          label: 'Home player upload headers',
+        );
         sessionId = objectPathRaw;
         if (mounted) {
           setState(() => _status = 'Laddar upp…');
@@ -433,10 +434,10 @@ class _HomePlayerUploadDialogState
           return WavUploadSigningRefresh(
             uploadUrl: Uri.parse(uploadUrlRaw),
             objectPath: objectPathRaw,
-            headers: <String, String>{
-              for (final entry in headersRaw.entries)
-                entry.key.toString(): entry.value.toString(),
-            },
+            headers: RequestHeaders.fromResponseObject(
+              headersRaw,
+              label: 'Home player refresh headers',
+            ),
             expiresAt:
                 DateTime.tryParse(
                   refreshed['expires_at']?.toString() ?? '',

@@ -27,6 +27,7 @@ from ..repositories import media_assets as media_assets_repo
 from ..services import (
     courses_service,
     email_service,
+    lesson_playback_service,
     livekit as livekit_service,
     referral_service,
     storage_service,
@@ -44,7 +45,7 @@ from . import upload as upload_routes
 
 router = APIRouter(prefix="/studio", tags=["studio"])
 course_lesson_router = APIRouter(prefix="/studio", tags=["studio"])
-studio_media_router = APIRouter(prefix="/studio", tags=["studio"])
+lesson_media_router = APIRouter(prefix="/api/lesson-media", tags=["media"])
 logger = logging.getLogger(__name__)
 _LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
     "1",
@@ -120,25 +121,22 @@ def _detect_kind(content_type: str | None) -> str:
 
 
 def _normalize_studio_media_type(value: str) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized == "pdf":
-        return "document"
-    if normalized not in {"audio", "image", "video", "document"}:
+    if value not in {"audio", "image", "video", "document"}:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported media type",
         )
-    return normalized
+    return value
 
 
-def _normalize_studio_mime_type(value: str) -> str:
-    normalized = str(value or "").strip().lower()
-    if not normalized:
+def _require_studio_mime_type(value: str) -> str:
+    exact = str(value or "")
+    if not exact:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="mime_type is required",
         )
-    return normalized
+    return exact
 
 
 def _studio_audio_ingest_format(*, filename: str, mime_type: str) -> str:
@@ -169,7 +167,7 @@ def _studio_passthrough_ingest_format(
                 detail="Unsupported image format",
             )
         suffix = Path(filename).suffix.lower().lstrip(".")
-        return suffix or mime_type.split("/", 1)[1].split(";", 1)[0].strip().lower()
+        return suffix or mime_type.split("/", 1)[1].split(";", 1)[0]
     if media_type == "video":
         if not mime_type.startswith("video/"):
             raise HTTPException(
@@ -177,7 +175,7 @@ def _studio_passthrough_ingest_format(
                 detail="Unsupported video format",
             )
         suffix = Path(filename).suffix.lower().lstrip(".")
-        return suffix or mime_type.split("/", 1)[1].split(";", 1)[0].strip().lower()
+        return suffix or mime_type.split("/", 1)[1].split(";", 1)[0]
     if media_type == "document":
         if mime_type != "application/pdf":
             raise HTTPException(
@@ -273,25 +271,66 @@ async def _require_studio_lesson(lesson_id: str) -> dict[str, Any]:
     return lesson
 
 
-def _studio_media_item_from_row(
+def _preview_file_name(row: dict[str, Any]) -> str | None:
+    value = str(row.get("original_name") or "").strip()
+    return value or None
+
+
+def _preview_failure_item(
+    *,
+    media_type: str,
     row: dict[str, Any],
-) -> schemas.StudioLessonMediaItem:
-    normalized_media_type = str(row.get("kind") or "").strip().lower()
-    if normalized_media_type == "pdf":
-        normalized_media_type = "document"
-    normalized_state = str(row.get("state") or "pending_upload").strip().lower()
-    original_name = str(row.get("original_name") or "").strip() or None
-    return schemas.StudioLessonMediaItem(
-        lesson_media_id=UUID(str(row["id"])),
-        lesson_id=UUID(str(row["lesson_id"])),
-        media_asset_id=UUID(str(row["media_asset_id"]))
-        if row.get("media_asset_id") is not None
-        else None,
-        position=int(row["position"]),
-        media_type=normalized_media_type,
-        state=normalized_state,
-        preview_ready=normalized_state in {"uploaded", "ready"},
-        original_name=original_name,
+    failure_reason: str,
+) -> schemas.MediaPreviewItem:
+    return schemas.MediaPreviewItem(
+        media_type=media_type,
+        authoritative_editor_ready=False,
+        resolved_preview_url=None,
+        file_name=_preview_file_name(row),
+        failure_reason=failure_reason,
+    )
+
+
+async def _preview_item_from_row(
+    *,
+    lesson_media_id: str,
+    row: dict[str, Any],
+    user_id: str,
+) -> schemas.MediaPreviewItem:
+    media_type = str(row.get("media_type") or "").strip().lower()
+    if media_type not in {"audio", "image", "video"}:
+        return _preview_failure_item(
+            media_type=media_type,
+            row=row,
+            failure_reason="unsupported_media_type",
+        )
+
+    try:
+        playback = await lesson_playback_service.resolve_lesson_media_playback(
+            lesson_media_id=lesson_media_id,
+            user_id=user_id,
+        )
+    except HTTPException:
+        return _preview_failure_item(
+            media_type=media_type,
+            row=row,
+            failure_reason="unresolvable",
+        )
+
+    resolved_url = str(playback.get("playback_url") or "").strip()
+    if media_type in {"image", "video"} and not resolved_url:
+        return _preview_failure_item(
+            media_type=media_type,
+            row=row,
+            failure_reason="unresolvable",
+        )
+
+    return schemas.MediaPreviewItem(
+        media_type=media_type,
+        authoritative_editor_ready=True,
+        resolved_preview_url=resolved_url if media_type in {"image", "video"} else None,
+        file_name=_preview_file_name(row),
+        failure_reason=None,
     )
 
 
@@ -369,8 +408,8 @@ async def create_course(payload: schemas.StudioCourseCreate, current: StudioActo
     return row
 
 
-@studio_media_router.post(
-    "/lessons/{lesson_id}/media/upload-url",
+@lesson_media_router.post(
+    "/{lesson_id}/upload-url",
     response_model=schemas.StudioLessonMediaUploadUrlResponse,
 )
 async def studio_issue_lesson_media_upload_url(
@@ -388,11 +427,11 @@ async def studio_issue_lesson_media_upload_url(
 
     course_id = str(lesson["course_id"])
     normalized_media_type = _normalize_studio_media_type(payload.media_type)
-    normalized_mime_type = _normalize_studio_mime_type(payload.mime_type)
+    exact_mime_type = _require_studio_mime_type(payload.mime_type)
     if normalized_media_type == "audio":
         ingest_format = _studio_audio_ingest_format(
             filename=payload.filename,
-            mime_type=normalized_mime_type,
+            mime_type=exact_mime_type,
         )
         object_path = upload_routes.media_paths.build_lesson_audio_source_object_path(
             course_id,
@@ -403,7 +442,7 @@ async def studio_issue_lesson_media_upload_url(
         ingest_format = _studio_passthrough_ingest_format(
             media_type=normalized_media_type,
             filename=payload.filename,
-            mime_type=normalized_mime_type,
+            mime_type=exact_mime_type,
         )
         object_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
             course_id=course_id,
@@ -415,7 +454,7 @@ async def studio_issue_lesson_media_upload_url(
     try:
         upload = await storage_service.storage_service.create_upload_url(
             object_path,
-            content_type=normalized_mime_type,
+            content_type=exact_mime_type,
             upsert=False,
             cache_seconds=settings.media_public_cache_seconds,
         )
@@ -447,7 +486,7 @@ async def studio_issue_lesson_media_upload_url(
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
     return schemas.StudioLessonMediaUploadUrlResponse(
-        lesson_media_id=UUID(str(lesson_media_row["id"])),
+        lesson_media_id=UUID(str(lesson_media_row["lesson_media_id"])),
         lesson_id=UUID(str(lesson_id)),
         media_type=normalized_media_type,
         state="pending_upload",
@@ -458,8 +497,8 @@ async def studio_issue_lesson_media_upload_url(
     )
 
 
-@studio_media_router.post(
-    "/lessons/{lesson_id}/media/{lesson_media_id}/complete",
+@lesson_media_router.post(
+    "/{lesson_id}/{lesson_media_id}/complete",
     response_model=schemas.StudioLessonMediaItem,
 )
 async def studio_complete_lesson_media_upload(
@@ -501,11 +540,11 @@ async def studio_complete_lesson_media_upload(
     )
     if not refreshed:
         raise HTTPException(status_code=404, detail="Lesson media not found")
-    return _studio_media_item_from_row(refreshed)
+    return schemas.StudioLessonMediaItem(**refreshed)
 
 
-@studio_media_router.get(
-    "/lessons/{lesson_id}/media",
+@lesson_media_router.get(
+    "/{lesson_id}",
     response_model=schemas.StudioLessonMediaListResponse,
 )
 async def studio_list_lesson_media(
@@ -514,14 +553,14 @@ async def studio_list_lesson_media(
 ):
     del current
     await _require_studio_lesson(str(lesson_id))
-    rows = await courses_service.list_lesson_media(str(lesson_id))
+    rows = await courses_service.list_studio_lesson_media(str(lesson_id))
     return schemas.StudioLessonMediaListResponse(
-        items=[_studio_media_item_from_row(dict(row)) for row in rows]
+        items=[schemas.StudioLessonMediaItem(**dict(row)) for row in rows]
     )
 
 
-@studio_media_router.get(
-    "/lessons/{lesson_id}/media/{lesson_media_id}/preview",
+@lesson_media_router.get(
+    "/{lesson_id}/{lesson_media_id}/preview",
     response_model=schemas.StudioLessonMediaPreviewResponse,
 )
 async def studio_preview_lesson_media(
@@ -537,48 +576,90 @@ async def studio_preview_lesson_media(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Lesson media not found")
-    normalized_state = str(row.get("state") or "").strip().lower()
-    if normalized_state not in {"uploaded", "ready"}:
+    if row.get("preview_ready") is not True:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Preview is not ready",
         )
 
-    media_asset = await media_assets_repo.get_media_asset_access(str(row["media_asset_id"]))
-    if not media_asset:
-        raise HTTPException(status_code=404, detail="Media asset not found")
-
-    object_path = str(media_asset.get("original_object_path") or "").strip()
-    if not object_path:
+    playback = await lesson_playback_service.resolve_lesson_media_playback(
+        lesson_media_id=str(lesson_media_id),
+        user_id=str(current["id"]),
+    )
+    playback_url = str(playback.get("playback_url") or "").strip()
+    expires_at = playback.get("expires_at")
+    if not playback_url or not isinstance(expires_at, datetime):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Preview storage is unavailable",
         )
-    storage_client = storage_service.get_storage_service(
-        str(media_asset.get("storage_bucket") or settings.media_source_bucket)
-    )
-    try:
-        signed = await storage_client.get_presigned_url(
-            object_path,
-            ttl=settings.media_playback_url_ttl_seconds,
-            filename=Path(object_path).name,
-            download=False,
-        )
-    except storage_service.StorageServiceError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Storage signing unavailable",
-        ) from exc
-
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=signed.expires_in)
     return schemas.StudioLessonMediaPreviewResponse(
         lesson_media_id=lesson_media_id,
-        preview_url=signed.url,
+        preview_url=playback_url,
         expires_at=expires_at,
     )
 
 
-@studio_media_router.patch("/lessons/{lesson_id}/media/reorder")
+@lesson_media_router.post("/previews", response_model=schemas.MediaPreviewBatchResponse)
+async def studio_request_lesson_media_previews(
+    payload: schemas.MediaPreviewBatchRequest,
+    current: StudioActor,
+):
+    requested_ids: list[str] = []
+    seen_ids: set[str] = set()
+    preview_items: dict[str, schemas.MediaPreviewItem] = {}
+    for lesson_media_id in payload.ids:
+        requested_id = str(lesson_media_id)
+        if requested_id in seen_ids:
+            continue
+        seen_ids.add(requested_id)
+        requested_ids.append(requested_id)
+
+    if not requested_ids:
+        return schemas.MediaPreviewBatchResponse(items={})
+
+    rows = await courses_repo.list_lesson_media_by_ids_for_studio(requested_ids)
+    rows_by_id = {
+        str(row["lesson_media_id"]): dict(row)
+        for row in rows
+        if row.get("lesson_media_id") is not None
+    }
+
+    for lesson_media_id in requested_ids:
+        row = rows_by_id.get(lesson_media_id)
+        if row is None:
+            preview_items[lesson_media_id] = _preview_failure_item(
+                media_type="",
+                row={},
+                failure_reason="not_found",
+            )
+            continue
+
+        lesson_id_value = str(row.get("lesson_id") or "").strip()
+        _, course_id = await courses_service.lesson_course_ids(lesson_id_value)
+        if not course_id or not await models.is_course_owner(current["id"], course_id):
+            preview_items[lesson_media_id] = _preview_failure_item(
+                media_type=str(row.get("media_type") or "").strip().lower(),
+                row=row,
+                failure_reason="unavailable",
+            )
+            continue
+
+        preview_items[lesson_media_id] = await _preview_item_from_row(
+            lesson_media_id=lesson_media_id,
+            row=row,
+            user_id=str(current["id"]),
+        )
+
+    ordered_items = {
+        lesson_media_id: preview_items[lesson_media_id]
+        for lesson_media_id in requested_ids
+        if lesson_media_id in preview_items
+    }
+    return schemas.MediaPreviewBatchResponse(items=ordered_items)
+
+
+@lesson_media_router.patch("/{lesson_id}/reorder")
 async def studio_reorder_lesson_media(
     lesson_id: UUID,
     payload: schemas.StudioLessonMediaReorder,
@@ -601,7 +682,7 @@ async def studio_reorder_lesson_media(
     return {"ok": True}
 
 
-@studio_media_router.delete("/lessons/{lesson_id}/media/{lesson_media_id}")
+@lesson_media_router.delete("/{lesson_id}/{lesson_media_id}")
 async def studio_delete_lesson_media(
     lesson_id: UUID,
     lesson_media_id: UUID,
@@ -2076,9 +2157,7 @@ async def delete_media(media_id: str, current: TeacherUser):
 
         streaming_path = media_asset.get("streaming_object_path")
         if streaming_path:
-            streaming_bucket = (
-                media_asset.get("streaming_storage_bucket") or original_bucket
-            )
+            streaming_bucket = media_asset.get("streaming_storage_bucket")
             if streaming_bucket:
                 delete_targets.add((str(streaming_bucket), str(streaming_path)))
 
