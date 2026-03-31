@@ -183,7 +183,7 @@ ResolvedCourseCover resolveCourseSummaryCover(
     mediaRepository: mediaRepository,
     cover: course.cover,
     coverMediaId: course.coverMediaId,
-    debugContext: 'CourseSummary:${course.slug ?? course.id}',
+    debugContext: 'CourseSummary:${course.slug}',
   );
 }
 
@@ -199,21 +199,38 @@ ResolvedCourseCover resolveCourseModelCover(
   );
 }
 
+CourseCoverData? _courseCoverFromPayload(Object? payload) {
+  switch (payload) {
+    case {'state': final String state, 'source': final String source}:
+      return CourseCoverData(
+        mediaId: payload['media_id'] as String?,
+        state: state,
+        resolvedUrl: payload['resolved_url'] as String?,
+        source: source,
+      );
+    default:
+      return null;
+  }
+}
+
 ResolvedCourseCover resolveCourseMapCover(
-  Map<String, dynamic> course,
+  Object? course,
   MediaRepository mediaRepository, {
   bool allowEditorOverride = false,
   String debugContext = 'CourseMap',
 }) {
-  final coverJson = course['cover'];
+  final coverJson = switch (course) {
+    final Map<Object?, Object?> data => data['cover'],
+    _ => null,
+  };
+  final coverMediaId = switch (course) {
+    final Map<Object?, Object?> data => data['cover_media_id'] as String?,
+    _ => null,
+  };
   return resolveCourseCover(
     mediaRepository: mediaRepository,
-    cover: coverJson is Map<String, dynamic>
-        ? CourseCoverData.fromJson(coverJson)
-        : coverJson is Map
-        ? CourseCoverData.fromJson(Map<String, dynamic>.from(coverJson))
-        : null,
-    coverMediaId: course['cover_media_id'] as String?,
+    cover: _courseCoverFromPayload(coverJson),
+    coverMediaId: coverMediaId,
     allowEditorOverride: allowEditorOverride,
     debugContext: debugContext,
   );

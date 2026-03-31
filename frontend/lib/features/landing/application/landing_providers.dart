@@ -1,109 +1,221 @@
-import 'dart:async';
-
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/api/auth_repository.dart';
-import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/features/studio/application/studio_providers.dart'
-    as studio;
 
-class LandingSectionState {
-  const LandingSectionState({
-    required this.items,
-    this.errorMessage,
-    this.devHint,
+String _requireString(Object? value, String fieldName) {
+  switch (value) {
+    case final String text when text.trim().isNotEmpty:
+      return text.trim();
+    default:
+      throw StateError('Missing required field: $fieldName');
+  }
+}
+
+String? _optionalString(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final String text:
+      final normalized = text.trim();
+      return normalized.isEmpty ? null : normalized;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+int? _optionalInt(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final int number:
+      return number;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+Object? _field(Object? payload, String fieldName) {
+  switch (payload) {
+    case final Map<Object?, Object?> data:
+      return data[fieldName];
+    default:
+      throw StateError('Invalid landing payload for $fieldName');
+  }
+}
+
+@immutable
+class LandingCourseCard {
+  const LandingCourseCard({
+    required this.id,
+    required this.slug,
+    required this.title,
+    required this.step,
+    required this.priceAmountCents,
+    required this.shortDescription,
+    required this.resolvedCoverUrl,
   });
 
-  final List<Map<String, dynamic>> items;
-  final String? errorMessage;
-  final String? devHint;
+  final String id;
+  final String slug;
+  final String title;
+  final String step;
+  final int? priceAmountCents;
+  final String? shortDescription;
+  final String? resolvedCoverUrl;
 
-  bool get hasError => errorMessage != null;
+  factory LandingCourseCard.fromResponse(Object? payload) {
+    return LandingCourseCard(
+      id: _requireString(_field(payload, 'id'), 'id'),
+      slug: _requireString(_field(payload, 'slug'), 'slug'),
+      title: _requireString(_field(payload, 'title'), 'title'),
+      step: _requireString(_field(payload, 'step'), 'step'),
+      priceAmountCents: _optionalInt(
+        _field(payload, 'price_amount_cents'),
+        'price_amount_cents',
+      ),
+      shortDescription: _optionalString(
+        _field(payload, 'short_description'),
+        'short_description',
+      ),
+      resolvedCoverUrl: _optionalString(
+        _field(payload, 'resolved_cover_url'),
+        'resolved_cover_url',
+      ),
+    );
+  }
+}
+
+@immutable
+class LandingTeacher {
+  const LandingTeacher({
+    required this.userId,
+    required this.displayName,
+    required this.photoUrl,
+    required this.bio,
+  });
+
+  final String userId;
+  final String displayName;
+  final String? photoUrl;
+  final String? bio;
+
+  factory LandingTeacher.fromResponse(Object? payload) {
+    return LandingTeacher(
+      userId: _requireString(_field(payload, 'user_id'), 'user_id'),
+      displayName: _requireString(
+        _field(payload, 'display_name'),
+        'display_name',
+      ),
+      photoUrl: _optionalString(_field(payload, 'photo_url'), 'photo_url'),
+      bio: _optionalString(_field(payload, 'bio'), 'bio'),
+    );
+  }
+}
+
+@immutable
+class LandingService {
+  const LandingService({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.certifiedArea,
+    required this.priceCents,
+  });
+
+  final String id;
+  final String title;
+  final String? description;
+  final String? certifiedArea;
+  final int? priceCents;
+
+  factory LandingService.fromResponse(Object? payload) {
+    return LandingService(
+      id: _requireString(_field(payload, 'id'), 'id'),
+      title: _requireString(_field(payload, 'title'), 'title'),
+      description: _optionalString(
+        _field(payload, 'description'),
+        'description',
+      ),
+      certifiedArea: _optionalString(
+        _field(payload, 'certified_area'),
+        'certified_area',
+      ),
+      priceCents: _optionalInt(_field(payload, 'price_cents'), 'price_cents'),
+    );
+  }
+}
+
+@immutable
+class LandingSection<T> {
+  const LandingSection({required this.items});
+
+  final List<T> items;
+
   bool get isEmpty => items.isEmpty;
 }
 
-List<Map<String, dynamic>> _castList(dynamic value) {
-  final list = value as List?;
-  if (list == null) return const <Map<String, dynamic>>[];
-  return list
-      .map((e) => Map<String, dynamic>.from(e as Map))
-      .toList(growable: false);
-}
-
-LandingSectionState _landingSuccessState(List<Map<String, dynamic>> items) {
-  return LandingSectionState(
-    items: items,
-    devHint: items.isEmpty ? _devHintMessage : null,
-  );
-}
-
-LandingSectionState _landingErrorState({
-  String message = 'Kunde inte hämta innehållet just nu.',
-}) {
-  return LandingSectionState(
-    items: const <Map<String, dynamic>>[],
-    errorMessage: message,
-    devHint: _devHintMessage,
-  );
-}
-
-String? get _devHintMessage =>
-    kDebugMode ? 'Kontrollera att API_BASE_URL är konfigurerad.' : null;
-
-Future<LandingSectionState> _fetchLandingSection(
-  Ref ref,
-  String path,
-  String errorLabel,
-) async {
-  final api = ref.read(apiClientProvider);
-  try {
-    final response = await api.get<Map<String, dynamic>>(path, skipAuth: true);
-    final items = _castList(response['items']);
-    return _landingSuccessState(items);
-  } on TimeoutException {
-    return _landingErrorState(
-      message: 'Tidsgränsen gick ut när vi hämtade $errorLabel.',
-    );
-  } catch (_) {
-    return _landingErrorState(message: 'Kunde inte hämta $errorLabel just nu.');
+LandingSection<T> _parseLandingSection<T>(
+  Object? payload,
+  T Function(Object? item) parseItem,
+) {
+  switch (payload) {
+    case {'items': final List items}:
+      return LandingSection(
+        items: items.map(parseItem).toList(growable: false),
+      );
+    default:
+      throw StateError('Invalid landing section payload');
   }
 }
 
-final introCoursesProvider = FutureProvider<LandingSectionState>((ref) {
+Future<LandingSection<T>> _fetchLandingSection<T>(
+  Ref ref,
+  String path,
+  T Function(Object? payload) parseItem,
+) async {
+  final api = ref.read(apiClientProvider);
+  final response = await api.raw.get<Object?>(
+    path,
+    options: Options(extra: const {'skipAuth': true}),
+  );
+  return _parseLandingSection(response.data, parseItem);
+}
+
+final introCoursesProvider = FutureProvider<LandingSection<LandingCourseCard>>((
+  ref,
+) {
   return _fetchLandingSection(
     ref,
     '/landing/intro-courses',
-    'introduktionskurserna',
+    LandingCourseCard.fromResponse,
   );
 });
 
-final popularCoursesProvider = FutureProvider<LandingSectionState>((ref) {
-  return _fetchLandingSection(ref, '/landing/popular-courses', 'kurslistan');
+final popularCoursesProvider =
+    FutureProvider<LandingSection<LandingCourseCard>>((ref) {
+      return _fetchLandingSection(
+        ref,
+        '/landing/popular-courses',
+        LandingCourseCard.fromResponse,
+      );
+    });
+
+final teachersProvider = FutureProvider<LandingSection<LandingTeacher>>((ref) {
+  return _fetchLandingSection(
+    ref,
+    '/landing/teachers',
+    LandingTeacher.fromResponse,
+  );
 });
 
-final teachersProvider = FutureProvider<LandingSectionState>((ref) {
-  return _fetchLandingSection(ref, '/landing/teachers', 'lärarlistan');
-});
-
-final recentServicesProvider = FutureProvider<LandingSectionState>((ref) {
-  return _fetchLandingSection(ref, '/landing/services', 'tjänsterna');
-});
-
-final myStudioCoursesProvider = FutureProvider<LandingSectionState>((
+final recentServicesProvider = FutureProvider<LandingSection<LandingService>>((
   ref,
-) async {
-  final auth = ref.watch(authControllerProvider);
-  final profile = auth.profile;
-  final isTeacher = profile?.isTeacher == true || profile?.isAdmin == true;
-  if (!isTeacher) {
-    return const LandingSectionState(items: []);
-  }
-  try {
-    final repo = ref.read(studio.studioRepositoryProvider);
-    final courses = await repo.myCourses();
-    return _landingSuccessState(courses);
-  } catch (_) {
-    return _landingErrorState(message: 'Kunde inte hämta dina studio-kurser.');
-  }
+) {
+  return _fetchLandingSection(
+    ref,
+    '/landing/services',
+    LandingService.fromResponse,
+  );
 });

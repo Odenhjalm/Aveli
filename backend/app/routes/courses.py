@@ -33,6 +33,45 @@ async def _assert_can_access_lesson(user: OptionalCurrentUser, lesson_id: str) -
     )
 
 
+def _course_detail_response(
+    course: dict,
+    lessons: list[dict] | tuple[dict, ...],
+) -> schemas.CourseDetailResponse:
+    return schemas.CourseDetailResponse(
+        course=schemas.Course(**course),
+        lessons=[schemas.LessonStructureItem(**row) for row in lessons],
+    )
+
+
+def _course_access_response(payload: dict) -> schemas.CourseAccessStateResponse:
+    enrollment = payload.get("enrollment")
+    return schemas.CourseAccessStateResponse(
+        course_id=payload["course_id"],
+        course_step=payload["course_step"],
+        required_enrollment_source=payload.get("required_enrollment_source"),
+        enrollment=(
+            schemas.CourseEnrollmentRecord(**enrollment)
+            if enrollment is not None
+            else None
+        ),
+    )
+
+
+def _lesson_content_response(
+    *,
+    lesson: dict,
+    course_id: str,
+    lessons: list[dict] | tuple[dict, ...],
+    media_rows: list[dict] | tuple[dict, ...],
+) -> schemas.LessonContentResponse:
+    return schemas.LessonContentResponse(
+        lesson=schemas.LessonContentItem(**lesson),
+        course_id=course_id,
+        lessons=[schemas.LessonStructureItem(**row) for row in lessons],
+        media=[schemas.LearnerLessonMediaItem(**row) for row in media_rows],
+    )
+
+
 @router.get("", response_model=schemas.CourseListResponse)
 async def list_courses(
     search: str | None = Query(default=None, min_length=2),
@@ -61,18 +100,18 @@ async def course_pricing_api(slug: str):
     return await course_pricing(slug)
 
 
-@router.get("/lessons/{lesson_id}")
+@router.get("/lessons/{lesson_id}", response_model=schemas.LessonContentResponse)
 async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     lesson = await _assert_can_access_lesson(current, lesson_id)
     course_id = str(lesson.get("course_id") or "").strip()
     lessons = await courses_service.list_course_lessons(course_id)
     media_rows = await courses_service.list_lesson_media(lesson_id, mode="student_render")
-    return {
-        "lesson": lesson,
-        "course_id": course_id,
-        "lessons": lessons,
-        "media": list(media_rows),
-    }
+    return _lesson_content_response(
+        lesson=lesson,
+        course_id=course_id,
+        lessons=list(lessons),
+        media_rows=list(media_rows),
+    )
 
 
 @router.get("/me", response_model=schemas.CourseListResponse)
@@ -88,30 +127,36 @@ async def _read_course_state_or_404(*, user_id: str, course_id: str) -> dict:
     return state
 
 
-@router.get("/{course_id}/enrollment")
+@router.get(
+    "/{course_id}/enrollment",
+    response_model=schemas.CourseAccessStateResponse,
+)
 async def enrollment_status(course_id: UUID, current: CurrentUser):
-    return await _read_course_state_or_404(
+    state = await _read_course_state_or_404(
         user_id=str(current["id"]),
         course_id=str(course_id),
     )
+    return _course_access_response(state)
 
 
-@router.get("/{course_id}/access")
+@router.get("/{course_id}/access", response_model=schemas.CourseAccessStateResponse)
 async def course_access(course_id: UUID, current: CurrentUser):
-    return await _read_course_state_or_404(
+    state = await _read_course_state_or_404(
         user_id=str(current["id"]),
         course_id=str(course_id),
     )
+    return _course_access_response(state)
 
 
-@router.post("/{course_id}/enroll")
+@router.post("/{course_id}/enroll", response_model=schemas.CourseAccessStateResponse)
 async def enroll_course(course_id: UUID, current: CurrentUser):
     normalized_course_id = str(course_id)
     try:
-        return await courses_service.create_intro_course_enrollment(
+        state = await courses_service.create_intro_course_enrollment(
             user_id=str(current["id"]),
             course_id=normalized_course_id,
         )
+        return _course_access_response(state)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="Course not found") from exc
     except PermissionError as exc:
@@ -121,7 +166,7 @@ async def enroll_course(course_id: UUID, current: CurrentUser):
         ) from exc
 
 
-@router.get("/by-slug/{slug}")
+@router.get("/by-slug/{slug}", response_model=schemas.CourseDetailResponse)
 async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     del current
     row = await courses_service.fetch_course(slug=slug)
@@ -129,7 +174,7 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
         raise HTTPException(status_code=404, detail="Course not found")
     course_id = str(row["id"])
     lessons = await courses_service.list_course_lessons(course_id)
-    return {"course": row, "lessons": lessons}
+    return _course_detail_response(row, list(lessons))
 
 
 @router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)
@@ -143,7 +188,7 @@ async def course_public_content(course_id: UUID):
     return schemas.CoursePublicContent(**row)
 
 
-@router.get("/{course_id}")
+@router.get("/{course_id}", response_model=schemas.CourseDetailResponse)
 async def course_detail(course_id: UUID, current: OptionalCurrentUser = None):
     del current
     normalized_course_id = str(course_id)
@@ -151,4 +196,4 @@ async def course_detail(course_id: UUID, current: OptionalCurrentUser = None):
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
     lessons = await courses_service.list_course_lessons(normalized_course_id)
-    return {"course": row, "lessons": lessons}
+    return _course_detail_response(row, list(lessons))

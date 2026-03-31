@@ -1,32 +1,49 @@
 from fastapi import APIRouter
 
-from .. import models
-from ..services import courses_service
+from .. import models, schemas
 
 router = APIRouter(prefix="/landing", tags=["landing"])
 
 
-@router.get("/intro-courses")
+@router.get(
+    "/intro-courses",
+    response_model=schemas.LandingCourseSectionResponse,
+)
 async def intro_courses():
     rows = await models.list_intro_courses()
-    await courses_service.attach_course_cover_read_contract(rows)
-    return {"items": rows}
+    return schemas.LandingCourseSectionResponse(
+        items=[schemas.LandingCourseCard(**row) for row in rows]
+    )
 
 
-@router.get("/popular-courses")
+@router.get(
+    "/popular-courses",
+    response_model=schemas.LandingCourseSectionResponse,
+)
 async def popular_courses():
     rows = await models.list_popular_courses()
-    await courses_service.warn_course_cover_contracts(rows)
-    return {"items": rows}
+    return schemas.LandingCourseSectionResponse(
+        items=[schemas.LandingCourseCard(**row) for row in rows]
+    )
 
 
-@router.get("/teachers")
+@router.get(
+    "/teachers",
+    response_model=schemas.LandingTeacherSectionResponse,
+)
 async def teachers():
     rows = await models.list_teachers()
-    return {"items": rows}
+    return schemas.LandingTeacherSectionResponse(
+        items=[schemas.LandingTeacherCard(**row) for row in rows]
+    )
 
 
-@router.get("/services")
+@router.get(
+    "/services",
+    response_model=schemas.LandingServiceSectionResponse,
+)
 async def services():
     rows = await models.list_services()
-    return {"items": rows}
+    return schemas.LandingServiceSectionResponse(
+        items=[schemas.LandingServiceCard(**row) for row in rows]
+    )

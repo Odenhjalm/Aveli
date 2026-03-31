@@ -9,6 +9,7 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
@@ -38,18 +39,18 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
 
   Future<void> _confirmAndDeleteCourse(
     BuildContext context,
-    Map<String, dynamic> course,
+    CourseStudio course,
   ) async {
-    final courseId = course['id']?.toString();
-    if (courseId == null || courseId.isEmpty) return;
+    final courseId = course.id.trim();
+    if (courseId.isEmpty) return;
 
-    final title = course['title']?.toString().trim();
+    final title = course.title.trim();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Ta bort kurs'),
         content: Text(
-          title == null || title.isEmpty
+          title.isEmpty
               ? 'Vill du ta bort kursen? Detta går inte att ångra.'
               : 'Vill du ta bort "$title"? Detta går inte att ångra.',
         ),
@@ -79,6 +80,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
       if (!mounted) return;
       setState(() => _deletingCourseIds.remove(courseId));
       ref.invalidate(myCoursesProvider);
+      ref.invalidate(studioCoursesProvider);
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -143,10 +145,23 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
     return regex.hasMatch(value);
   }
 
+  String _courseStepLabel(CourseStudio course) {
+    final step = course.step;
+    if (step == null) return 'Steg saknas';
+    return 'Steg $step';
+  }
+
+  String _courseReleaseLabel(CourseStudio course) {
+    if (!course.dripEnabled) return 'Direktstart';
+    final interval = course.dripIntervalDays;
+    if (interval == null) return 'Drip aktiv';
+    return 'Drip $interval dagar';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final coursesAsync = ref.watch(myCoursesProvider);
+    final coursesAsync = ref.watch(studioCoursesProvider);
     final bundlesAsync = ref.watch(teacherBundlesProvider);
     return AppScaffold(
       title: 'Kurstudio',
@@ -281,11 +296,6 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                                           ],
                                         ),
                                         const SizedBox(height: 6),
-                                        Text(
-                                          bundle['description'] as String? ??
-                                              '',
-                                          style: theme.textTheme.bodySmall,
-                                        ),
                                         const SizedBox(height: 10),
                                         Row(
                                           children: [
@@ -428,8 +438,8 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                       data: (courses) {
                         final visibleCourses = courses
                             .where((course) {
-                              final id = course['id']?.toString();
-                              if (id == null || id.isEmpty) return true;
+                              final id = course.id.trim();
+                              if (id.isEmpty) return true;
                               return !_hiddenCourseIds.contains(id);
                             })
                             .toList(growable: false);
@@ -479,8 +489,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                                   ),
                                   padding: const EdgeInsets.all(18),
                                   onTap: () {
-                                    final id = course['id'] as String?;
-                                    if (id == null) return;
+                                    final id = course.id;
                                     context.goNamed(
                                       AppRoute.teacherEditor,
                                       extra: CourseEditorRouteArgs(
@@ -498,9 +507,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              (course['title'] ??
-                                                      'Namnlös kurs')
-                                                  as String,
+                                              course.title,
                                               style: theme.textTheme.titleMedium
                                                   ?.copyWith(
                                                     fontWeight: FontWeight.w600,
@@ -512,36 +519,16 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                                               runSpacing: 6,
                                               children: [
                                                 _CourseBadge(
-                                                  icon: Icons.sell_outlined,
-                                                  label:
-                                                      course['branch']
-                                                          as String? ??
-                                                      'Allmänt',
+                                                  icon: Icons.route_outlined,
+                                                  label: _courseStepLabel(
+                                                    course,
+                                                  ),
                                                 ),
                                                 _CourseBadge(
-                                                  icon:
-                                                      course['is_free_intro'] ==
-                                                          true
-                                                      ? Icons
-                                                            .workspace_premium_outlined
-                                                      : Icons.lock_outline,
-                                                  label:
-                                                      course['is_free_intro'] ==
-                                                          true
-                                                      ? 'Introduktion'
-                                                      : 'Premium',
-                                                ),
-                                                _CourseBadge(
-                                                  icon:
-                                                      course['is_published'] ==
-                                                          true
-                                                      ? Icons.public_outlined
-                                                      : Icons.drafts_outlined,
-                                                  label:
-                                                      course['is_published'] ==
-                                                          true
-                                                      ? 'Publicerad'
-                                                      : 'Utkast',
+                                                  icon: Icons.schedule_outlined,
+                                                  label: _courseReleaseLabel(
+                                                    course,
+                                                  ),
                                                 ),
                                               ],
                                             ),
@@ -554,10 +541,8 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                                         children: [
                                           Builder(
                                             builder: (context) {
-                                              final courseId = course['id']
-                                                  ?.toString();
+                                              final courseId = course.id;
                                               final isDeleting =
-                                                  courseId != null &&
                                                   _deletingCourseIds.contains(
                                                     courseId,
                                                   );

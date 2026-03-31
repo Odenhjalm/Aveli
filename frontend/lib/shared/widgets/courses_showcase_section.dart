@@ -16,7 +16,6 @@ import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/utils/course_cover_resolver.dart';
-import 'package:aveli/shared/utils/course_level_sort.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
@@ -51,7 +50,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
     this.desktop,
     this.includeOuterChrome = true,
     this.showHeroBadge = true,
-    this.includeStudioCourses = true,
+    this.useLandingContractsOnly = false,
     this.showSeeAll = false,
     this.ctaGradient,
     this.tileScale = 1.0,
@@ -69,7 +68,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
   final CoursesShowcaseDesktop? desktop;
   final bool includeOuterChrome;
   final bool showHeroBadge;
-  final bool includeStudioCourses;
+  final bool useLandingContractsOnly;
   final bool showSeeAll;
   final Gradient? ctaGradient;
   final double tileScale;
@@ -114,28 +113,29 @@ class CoursesShowcaseSection extends ConsumerWidget {
     final mediaRepository = ref.watch(mediaRepositoryProvider);
 
     final popularAsync = ref.watch(landing.popularCoursesProvider);
-    final myStudioAsync = includeStudioCourses
-        ? ref.watch(landing.myStudioCoursesProvider)
-        : const AsyncData(landing.LandingSectionState(items: []));
-
     final allCoursesAsync = ref.watch(coursesProvider);
-    final hasAllCoursesValue = allCoursesAsync.hasValue;
+    final hasAllCoursesValue =
+        !useLandingContractsOnly && allCoursesAsync.hasValue;
     final isInitialAllCoursesLoad =
-        allCoursesAsync.isLoading && !hasAllCoursesValue;
+        !useLandingContractsOnly &&
+        allCoursesAsync.isLoading &&
+        !hasAllCoursesValue;
     final isWaitingForPopularFallback =
+        !useLandingContractsOnly &&
         !hasAllCoursesValue &&
         allCoursesAsync.hasError &&
-        (popularAsync.isLoading || myStudioAsync.isLoading);
-    final loading = isInitialAllCoursesLoad || isWaitingForPopularFallback;
+        popularAsync.isLoading;
+    final loading = useLandingContractsOnly
+        ? popularAsync.isLoading
+        : isInitialAllCoursesLoad || isWaitingForPopularFallback;
     final popular =
-        popularAsync.valueOrNull?.items ?? const <Map<String, dynamic>>[];
-    final myStudio =
-        myStudioAsync.valueOrNull?.items ?? const <Map<String, dynamic>>[];
-
+        popularAsync.valueOrNull?.items ?? const <landing.LandingCourseCard>[];
     final allCourses = allCoursesAsync.valueOrNull ?? const <CourseSummary>[];
-    final items = hasAllCoursesValue
+    final items = useLandingContractsOnly
+        ? popular
+        : hasAllCoursesValue
         ? _mapCourseSummaries(allCourses, mediaRepository)
-        : _mergePopularWithMyCourses(popular, myStudio, mediaRepository);
+        : popular;
     final visible = _sortCoursesForDisplay(items);
 
     final sectionTextColor = tileTextColor;
@@ -244,6 +244,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
                   context,
                   visible,
                   assets,
+                  mediaRepository: mediaRepository,
                   layout: layout,
                   desktop: desktop,
                   ctaGradient: ctaGradient,
@@ -275,99 +276,42 @@ class CoursesShowcaseSection extends ConsumerWidget {
     );
   }
 
-  static List<Map<String, dynamic>> _mergePopularWithMyCourses(
-    List<Map<String, dynamic>> popular,
-    List<Map<String, dynamic>> myCourses,
-    MediaRepository mediaRepository,
-  ) {
-    final combined = <Map<String, dynamic>>[];
-    final seen = <String>{};
-
-    String keyFor(Map<String, dynamic> map) {
-      final slug = (map['slug'] as String?)?.trim();
-      if (slug != null && slug.isNotEmpty) return slug;
-      final id = (map['id'] as String?)?.trim();
-      if (id != null && id.isNotEmpty) return id;
-      return map.hashCode.toString();
-    }
-
-    void addCourse(Map<String, dynamic> map) {
-      final key = keyFor(map);
-      if (seen.contains(key)) return;
-      seen.add(key);
-      combined.add(Map<String, dynamic>.from(map));
-    }
-
-    final ownCourses = myCourses
-        .where((course) => course['is_published'] == true)
-        .toList(growable: false);
-
-    for (final course in ownCourses) {
-      addCourse(course);
-    }
-
-    for (final course in popular) {
-      addCourse(course);
-    }
-
-    return _normalizeCourseCovers(combined, mediaRepository);
-  }
-
-  static List<Map<String, dynamic>> _normalizeCourseCovers(
-    List<Map<String, dynamic>> courses,
-    MediaRepository mediaRepository,
-  ) {
-    for (final course in courses) {
-      final resolved = resolveCourseMapCover(
-        course,
-        mediaRepository,
-        debugContext:
-            'CoursesShowcase:${(course['slug'] as String?) ?? (course['id'] as String?) ?? 'unknown'}',
-      );
-      course['resolved_cover_url'] = resolved.imageUrl;
-    }
-    return courses;
-  }
-
-  static List<Map<String, dynamic>> _sortCoursesForDisplay(
-    List<Map<String, dynamic>> courses,
+  static List<landing.LandingCourseCard> _sortCoursesForDisplay(
+    List<landing.LandingCourseCard> courses,
   ) {
     if (courses.length < 2) return courses;
-    sortCourseMapsByLevelThenTitle(courses);
+    courses.sort(_compareCourses);
     return courses;
   }
 
-  static List<Map<String, dynamic>> _mapCourseSummaries(
+  static List<landing.LandingCourseCard> _mapCourseSummaries(
     List<CourseSummary> courses,
     MediaRepository mediaRepository,
   ) {
     return courses
         .map((course) {
-          final resolved = resolveCourseSummaryCover(course, mediaRepository);
-          return {
-            'id': course.id,
-            'title': course.title,
-            'description': course.description ?? '',
-            'slug': course.slug ?? '',
-            'step': course.step?.name,
-            'price_amount_cents': course.priceCents,
-            'resolved_cover_url': resolved.imageUrl,
-            if (course.cover != null)
-              'cover': {
-                'media_id': course.cover!.mediaId,
-                'state': course.cover!.state,
-                'resolved_url': course.cover!.resolvedUrl,
-                'source': course.cover!.source,
-              },
-          };
+          final resolvedCover = resolveCourseSummaryCover(
+            course,
+            mediaRepository,
+          );
+          return landing.LandingCourseCard(
+            id: course.id,
+            title: course.title,
+            slug: course.slug,
+            step: course.step.name,
+            priceAmountCents: course.priceCents,
+            shortDescription: null,
+            resolvedCoverUrl: resolvedCover.imageUrl,
+          );
         })
         .toList(growable: false);
   }
 
   static Widget _buildLayout(
     BuildContext context,
-    List<Map<String, dynamic>> items,
+    List<landing.LandingCourseCard> items,
     BackendAssetResolver assets, {
+    required MediaRepository mediaRepository,
     required CoursesShowcaseLayout layout,
     CoursesShowcaseDesktop? desktop,
     Gradient? ctaGradient,
@@ -416,6 +360,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 pageSize: pageSize,
                 gridDelegate: gridDelegate,
                 assets: assets,
+                mediaRepository: mediaRepository,
                 ctaGradient: ctaGradient,
                 textColor: tileTextColor,
                 introBadgeVariant: introBadgeVariant,
@@ -430,6 +375,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
                   course: items[i],
                   index: i,
                   assets: assets,
+                  mediaRepository: mediaRepository,
                   ctaGradient: ctaGradient,
                   textColor: tileTextColor,
                   introBadgeVariant: introBadgeVariant,
@@ -454,15 +400,17 @@ class _HorizontalPagedCourseGrid extends StatefulWidget {
     required this.pageSize,
     required this.gridDelegate,
     required this.assets,
+    required this.mediaRepository,
     this.ctaGradient,
     this.textColor,
     required this.introBadgeVariant,
   });
 
-  final List<Map<String, dynamic>> items;
+  final List<landing.LandingCourseCard> items;
   final int pageSize;
   final SliverGridDelegateWithFixedCrossAxisCount gridDelegate;
   final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
   final Gradient? ctaGradient;
   final Color? textColor;
   final CourseIntroBadgeVariant introBadgeVariant;
@@ -584,7 +532,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
   Widget build(BuildContext context) {
     final items = widget.items;
     // Keep the incoming order intact so rebuilds and pagination stay stable.
-    final slots = items.cast<Map<String, dynamic>?>();
+    final slots = items.cast<landing.LandingCourseCard?>();
     final pages = (slots.length / widget.pageSize).ceil().clamp(1, 9999);
     if (pages <= 1) {
       return GridView.builder(
@@ -596,6 +544,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
           course: items[i],
           index: i,
           assets: widget.assets,
+          mediaRepository: widget.mediaRepository,
           ctaGradient: widget.ctaGradient,
           textColor: widget.textColor,
           introBadgeVariant: widget.introBadgeVariant,
@@ -658,6 +607,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
                               course: course,
                               index: globalIndex,
                               assets: widget.assets,
+                              mediaRepository: widget.mediaRepository,
                               ctaGradient: widget.ctaGradient,
                               textColor: widget.textColor,
                               introBadgeVariant: widget.introBadgeVariant,
@@ -737,9 +687,10 @@ class _RightPeekClipper extends CustomClipper<Rect> {
 // ---- Section item widgets (glass style) ----
 
 class _CourseTileGlass extends StatelessWidget {
-  final Map<String, dynamic> course;
+  final landing.LandingCourseCard course;
   final int index;
   final BackendAssetResolver assets;
+  final MediaRepository mediaRepository;
   final Gradient? ctaGradient;
   final Color? textColor;
   final CourseIntroBadgeVariant introBadgeVariant;
@@ -747,6 +698,7 @@ class _CourseTileGlass extends StatelessWidget {
     required this.course,
     required this.index,
     required this.assets,
+    required this.mediaRepository,
     this.ctaGradient,
     this.textColor,
     required this.introBadgeVariant,
@@ -754,17 +706,20 @@ class _CourseTileGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = (course['title'] as String?) ?? 'Kurs';
-    final desc = (course['description'] as String?) ?? '';
-    final cover = (course['resolved_cover_url'] as String?) ?? '';
-    final slug = (course['slug'] as String?) ?? '';
-    final isIntro = (course['step'] as String?) == 'intro';
-    final priceCents =
-        _asInt(course['price_amount_cents']) ?? _asInt(course['price_cents']);
-    final priceLabel = formatCoursePriceFromOre(
-      amountOre: priceCents ?? 0,
-      debugContext: slug.isEmpty ? 'CoursesShowcaseSection' : 'slug=$slug',
-    );
+    final title = course.title;
+    final desc = course.shortDescription ?? '';
+    final slug = course.slug;
+    final isIntro = course.step == 'intro';
+    final priceCents = course.priceAmountCents;
+    final cover = course.resolvedCoverUrl ?? '';
+    final priceLabel = priceCents == null
+        ? 'Pris saknas'
+        : formatCoursePriceFromOre(
+            amountOre: priceCents,
+            debugContext: slug.isEmpty
+                ? 'CoursesShowcaseSection'
+                : 'slug=$slug',
+          );
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
       slug: cover.isEmpty ? slug : null,
@@ -969,9 +924,52 @@ class _CourseTileGlass extends StatelessWidget {
   }
 }
 
-int? _asInt(dynamic value) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value);
-  return null;
+int _courseLevelOrder(String? level) {
+  final normalized = level?.trim().toLowerCase().replaceAll(
+    RegExp(r'[\s_-]+'),
+    '',
+  );
+  switch (normalized) {
+    case 'intro':
+    case 'introduction':
+      return 0;
+    case 'step1':
+    case 'steg1':
+      return 1;
+    case 'step2':
+    case 'steg2':
+      return 2;
+    case 'step3':
+    case 'steg3':
+      return 3;
+    default:
+      return 999;
+  }
+}
+
+String _normalizedCourseValue(String value) => value.trim().toLowerCase();
+
+int _compareCourses(landing.LandingCourseCard a, landing.LandingCourseCard b) {
+  final levelCompare = _courseLevelOrder(
+    a.step,
+  ).compareTo(_courseLevelOrder(b.step));
+  if (levelCompare != 0) {
+    return levelCompare;
+  }
+
+  final titleCompare = _normalizedCourseValue(
+    a.title,
+  ).compareTo(_normalizedCourseValue(b.title));
+  if (titleCompare != 0) {
+    return titleCompare;
+  }
+
+  final slugCompare = _normalizedCourseValue(
+    a.slug,
+  ).compareTo(_normalizedCourseValue(b.slug));
+  if (slugCompare != 0) {
+    return slugCompare;
+  }
+
+  return _normalizedCourseValue(a.id).compareTo(_normalizedCourseValue(b.id));
 }

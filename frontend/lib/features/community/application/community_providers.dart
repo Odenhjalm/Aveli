@@ -113,7 +113,7 @@ class TeacherProfileState {
   final List<Service> services;
   final List<Map<String, dynamic>> meditations;
   final List<Certificate> certificates;
-  final List<TeacherProfileMediaItem> profileMedia;
+  final TeacherProfileMediaPayload profileMedia;
 }
 
 final teacherProfileProvider =
@@ -150,7 +150,7 @@ final teacherProfileProvider =
           services: services,
           meditations: meditations,
           certificates: certs,
-          profileMedia: mediaPayload.items,
+          profileMedia: mediaPayload,
         );
       } catch (error, stackTrace) {
         throw AppFailure.from(error, stackTrace);

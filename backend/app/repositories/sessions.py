@@ -161,9 +161,6 @@ async def list_published_sessions(
         clauses.append("(start_at IS NULL OR start_at >= %s)")
         params.append(from_time)
 
-    if limit <= 0 or limit > 200:
-        limit = 50
-
     query = """
         SELECT {cols}
           FROM app.sessions

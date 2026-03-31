@@ -9,10 +9,6 @@ from fastapi import HTTPException, status
 from .. import repositories, schemas
 
 
-def _normalize_currency(currency: str | None) -> str:
-    return (currency or "sek").lower()
-
-
 def _validate_time_range(start_at: datetime | None, end_at: datetime | None) -> None:
     if start_at and end_at and end_at <= start_at:
         raise HTTPException(
@@ -50,8 +46,8 @@ async def create_teacher_session(
         end_at=payload.end_at,
         capacity=payload.capacity,
         price_cents=payload.price_cents,
-        currency=_normalize_currency(payload.currency),
-        visibility=payload.visibility.value if payload.visibility else "draft",
+        currency=payload.currency,
+        visibility=payload.visibility.value,
         recording_url=payload.recording_url,
         stripe_price_id=payload.stripe_price_id,
     )
@@ -64,19 +60,19 @@ async def update_teacher_session(
     payload: schemas.SessionUpdateRequest,
 ) -> dict[str, Any]:
     fields = payload.model_dump(exclude_unset=True)
+    session = await _ensure_session_owner(session_id, teacher_id)
     if not fields:
-        session = await _ensure_session_owner(session_id, teacher_id)
         return session
 
     if "start_at" in fields or "end_at" in fields:
-        _validate_time_range(
-            fields.get("start_at") or payload.start_at,
-            fields.get("end_at") or payload.end_at,
+        start_at = (
+            fields["start_at"] if "start_at" in fields else session.get("start_at")
         )
-
-    currency_value = fields.get("currency")
-    if currency_value:
-        fields["currency"] = _normalize_currency(currency_value)
+        end_at = fields["end_at"] if "end_at" in fields else session.get("end_at")
+        _validate_time_range(
+            start_at,
+            end_at,
+        )
 
     visibility_value = fields.get("visibility")
     if visibility_value:
@@ -110,6 +106,11 @@ async def list_public_sessions(
     from_time: datetime | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
+    if limit <= 0 or limit > 200:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="limit must be between 1 and 200",
+        )
     return await repositories.list_published_sessions(
         from_time=from_time,
         limit=limit,

@@ -6,6 +6,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import '../data/certificates_repository.dart';
 import '../data/studio_repository.dart';
 import '../data/studio_sessions_repository.dart';
+import '../data/studio_models.dart';
 import 'studio_upload_queue.dart';
 
 final studioRepositoryProvider = Provider<StudioRepository>((ref) {
@@ -47,11 +48,19 @@ final publicSessionSlotsProvider =
   return repo.listPublicSlots(sessionId);
 });
 
-final myCoursesProvider = FutureProvider<List<Map<String, dynamic>>>((
+final studioCoursesProvider = FutureProvider<List<CourseStudio>>((
   ref,
 ) async {
   final repo = ref.watch(studioRepositoryProvider);
   return repo.myCourses();
+});
+
+final myCoursesProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
+  final repo = ref.watch(studioRepositoryProvider);
+  final courses = await repo.myCourses();
+  return courses.map((course) => course.toJson()).toList(growable: false);
 });
 
 final studioStatusProvider = FutureProvider<StudioStatus>((ref) async {

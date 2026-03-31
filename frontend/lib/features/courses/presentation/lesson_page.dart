@@ -59,7 +59,7 @@ class _LessonPageState extends ConsumerState<LessonPage> {
   Future<void> _updateProgress(LessonDetailData data) async {
     final courseId = data.courseId;
     final visibleLessons = _visibleCourseLessons(data.lessons);
-    if (courseId == null || visibleLessons.isEmpty) return;
+    if (visibleLessons.isEmpty) return;
     final index = visibleLessons.indexWhere((l) => l.id == data.lesson.id);
     if (index < 0) return;
     final progress = (index + 1) / visibleLessons.length;
@@ -211,8 +211,6 @@ class _LessonContent extends ConsumerWidget {
     final embeddedMediaIds = extractLessonEmbeddedMediaIds(markdownContent);
 
     bool isEmbedded(LessonMediaItem item) {
-      final mediaId = item.mediaId;
-      if (mediaId != null && embeddedMediaIds.contains(mediaId)) return true;
       if (embeddedMediaIds.contains(item.id)) return true;
       return false;
     }
@@ -293,7 +291,7 @@ class _LessonContent extends ConsumerWidget {
     );
 
     return AppScaffold(
-      title: lesson.title.trim().isEmpty ? 'Lektion' : lesson.title,
+      title: lesson.lessonTitle.trim().isEmpty ? 'Lektion' : lesson.lessonTitle,
       body: coreContent,
       background: BackgroundLayer(
         image: AppImages.lessonBackground,
@@ -308,7 +306,8 @@ List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
   final visible = lessons
       .where(
         (lesson) =>
-            lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_'),
+            lesson.lessonTitle.isNotEmpty &&
+            !lesson.lessonTitle.trim().startsWith('_'),
       )
       .toList(growable: false);
   visible.sort((a, b) => a.position.compareTo(b.position));
@@ -430,7 +429,7 @@ String _buildLessonMediaSignature(Iterable<LessonMediaItem> items) {
       ..write('|')
       ..write(item.originalName ?? '')
       ..write('|')
-      ..write(item.mediaState ?? '')
+      ..write(item.state)
       ..write(';');
   }
   return buffer.toString();
@@ -1151,19 +1150,8 @@ class _MediaItem extends ConsumerWidget {
       logMissingLessonMediaIdRender(
         surface: 'lesson_page_trailing_media',
         mediaType: item.kind,
-        rawSource: item.preferredUrl,
+        rawSource: null,
       );
-      final rawSource = item.preferredUrl?.trim();
-      if (rawSource != null && rawSource.isNotEmpty) {
-        logLegacyMediaBlocked(
-          surface: 'lesson_page_trailing_media',
-          mediaType: item.kind,
-          rawSource: rawSource,
-          reason: _isAuthProtectedLessonMediaPath(rawSource)
-              ? 'legacy_path'
-              : 'raw_media_url',
-        );
-      }
       return ListTile(
         leading: Icon(_iconForKind()),
         title: Text(_fileName),
@@ -1199,8 +1187,8 @@ class _MediaItem extends ConsumerWidget {
       );
     }
 
-    if (item.kind == 'audio' && item.mediaAssetId != null) {
-      final state = item.mediaState ?? 'uploaded';
+    if (item.kind == 'audio') {
+      final state = item.state;
       if (state != 'ready') {
         final label = state == 'failed'
             ? 'Ljudet kunde inte bearbetas.'
@@ -1281,57 +1269,33 @@ class _MediaItem extends ConsumerWidget {
       );
     }
 
-    if (item.kind == 'audio') {
-      if (!canAttemptLessonMediaPlayback(item)) {
-        return _buildUnavailableMediaTile();
-      }
-      final future = resolveLessonMediaPlaybackUrl(
-        item: item,
-        mediaRepository: mediaRepo,
-        pipelineRepository: pipelineRepo,
-      );
-      return FutureBuilder<String?>(
-        future: future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: LinearProgressIndicator(),
-            );
-          }
-          final playbackUrl = snapshot.data;
-          final url = _normalizeInlinePlaybackUrl(playbackUrl);
-          if (url == null) {
-            return _buildUnavailableMediaTile();
-          }
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _LessonGlassMediaWrapper(
-              child: AveliLessonMediaPlayer(
-                playbackUrl: url,
-                title: _fileName,
-                kind: 'audio',
-              ),
-            ),
-          );
-        },
-      );
-    }
-
-    final documentUrl = resolveLessonMediaDocumentUrl(
+    final documentUrlFuture = resolveLessonMediaDocumentUrl(
       item: item,
       mediaRepository: mediaRepo,
+      pipelineRepository: pipelineRepo,
     );
-    if (documentUrl == null || documentUrl.trim().isEmpty) {
-      return _buildUnavailableMediaTile();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: _LessonDownloadCard(
-        fileName: _fileName,
-        isPdf: isLessonMediaPdf(item),
-        onTap: () => launchUrlString(documentUrl),
-      ),
+    return FutureBuilder<String?>(
+      future: documentUrlFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+        final documentUrl = snapshot.data;
+        if (documentUrl == null || documentUrl.trim().isEmpty) {
+          return _buildUnavailableMediaTile();
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _LessonDownloadCard(
+            fileName: _fileName,
+            isPdf: isLessonMediaPdf(item),
+            onTap: () => launchUrlString(documentUrl),
+          ),
+        );
+      },
     );
   }
 }

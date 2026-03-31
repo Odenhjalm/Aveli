@@ -11,6 +11,34 @@ It is based only on:
 The old baseline is used only as comparison input for discard/replace planning.
 It is not an implementation source.
 
+Baseline law:
+
+- This plan defines the canonical foundation, not the entire migration envelope.
+- If active consumers still mismatch canonical contracts, that mismatch must exist only in an explicit transition layer above the baseline.
+- The transition layer must not redefine baseline truth, add fallback, or preserve legacy aliases as canonical meaning.
+
+## 0.1 Migration Layering Model
+
+The migration model has three layers only:
+
+1. `baseline`
+   - canonical schema and canonical contracts
+   - no fallback
+   - no legacy aliases
+2. `transition`
+   - explicit temporary mapping only where active consumers still mismatch canonical truth
+   - must define producer shape, consumer expectation, explicit mapping, and removal condition
+   - must not hide missing data or invent defaults
+3. `final_canonical`
+   - transition removed
+   - consumers and producers both use canonical truth directly
+
+Non-core feature law:
+
+- Profile media and studio sessions are not part of the canonical baseline core defined here.
+- If these features are added above the baseline, they must use explicit typed contracts and separate feature-specific entities.
+- Metadata blobs, raw-map contracts, fallback defaults, and silent correction are forbidden in those feature contracts.
+
 ## 1. New Baseline Slot Strategy
 
 The new baseline must use a new canonical slot sequence with clean domain boundaries.
@@ -38,6 +66,7 @@ Slot laws:
 - Schema exists first.
 - Contracts are written against the new schema second.
 - Migration happens only after the canonical baseline exists and is verified.
+- Transition-layer logic, when temporarily required, exists above the baseline and must not be stored as baseline schema behavior.
 
 ## 2. Canonical Schema Design
 
@@ -564,6 +593,7 @@ Replace these old-baseline structures with clean-room canonical equivalents:
 - old hybrid `lesson_media` -> new canonical `lesson_media`
 - old `media_assets` superset -> new canonical `media_assets`
 - old fallback-capable `runtime_media` -> new projection-only `runtime_media`
+- raw map and metadata-blob runtime contracts -> explicit typed contracts above the baseline, then removal
 
 ### 5.3 What Remains Valid In Principle
 
@@ -601,6 +631,7 @@ The new baseline is valid only if all checks below pass.
 - no legacy aliases exist
 - no old source values remain
 - no incremental old/new hybrid tables exist
+- no transition-layer rule is encoded as baseline schema behavior
 
 ### 6.3 No-Duplication Check
 
@@ -617,6 +648,9 @@ The new baseline is valid only if all checks below pass.
 - no fallback unlock logic
 - no fallback playback logic
 - no direct writes to `runtime_media`
+- no metadata blob contract truth
+- no map-based runtime contract truth
+- no defaults that hide missing required data
 
 ### 6.5 Legacy Independence Check
 

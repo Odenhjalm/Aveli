@@ -184,7 +184,6 @@ class _CalendarDayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCurrentMonth = date.month == DateTime.now().month;
     final icon = _moonPhases[(date.day + date.month) % _moonPhases.length];
     final hasSessions = sessions.isNotEmpty;
     final badgeColor = _statusColor(context);

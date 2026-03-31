@@ -117,16 +117,25 @@ class SessionVisibility(str, Enum):
 
 
 class SessionBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     description: Optional[str] = None
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     capacity: Optional[int] = Field(default=None, ge=0)
-    price_cents: int = Field(default=0, ge=0)
-    currency: str = Field(default="sek", min_length=3, max_length=3)
-    visibility: SessionVisibility = SessionVisibility.draft
+    price_cents: int = Field(ge=0)
+    currency: str = Field(min_length=3, max_length=3)
+    visibility: SessionVisibility
     recording_url: Optional[str] = None
     stripe_price_id: Optional[str] = None
+
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, value: str) -> str:
+        if value.strip() != value or value.lower() != value:
+            raise ValueError("currency must be a lowercase 3-letter code")
+        return value
 
 
 class SessionCreateRequest(SessionBase):
@@ -134,6 +143,8 @@ class SessionCreateRequest(SessionBase):
 
 
 class SessionUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: Optional[str] = None
     description: Optional[str] = None
     start_at: Optional[datetime] = None
@@ -145,6 +156,15 @@ class SessionUpdateRequest(BaseModel):
     recording_url: Optional[str] = None
     stripe_price_id: Optional[str] = None
 
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value.strip() != value or value.lower() != value:
+            raise ValueError("currency must be a lowercase 3-letter code")
+        return value
+
 
 class SessionResponse(SessionBase):
     id: UUID
@@ -154,13 +174,17 @@ class SessionResponse(SessionBase):
 
 
 class SessionListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: List[SessionResponse]
 
 
 class SessionSlotBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     start_at: datetime
     end_at: datetime
-    seats_total: int = Field(default=1, ge=0)
+    seats_total: int = Field(ge=0)
 
 
 class SessionSlotCreateRequest(SessionSlotBase):
@@ -168,6 +192,8 @@ class SessionSlotCreateRequest(SessionSlotBase):
 
 
 class SessionSlotUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     seats_total: Optional[int] = Field(default=None, ge=0)
@@ -183,6 +209,8 @@ class SessionSlotResponse(SessionSlotBase):
 
 
 class SessionSlotListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: List[SessionSlotResponse]
 
 
@@ -342,7 +370,43 @@ class TeacherProfileMediaKind(str, Enum):
     external = "external"
 
 
+def _validate_teacher_profile_media_identity(
+    *,
+    media_kind: "TeacherProfileMediaKind",
+    lesson_media_id: UUID | None,
+    seminar_recording_id: UUID | None,
+    external_url: str | None,
+) -> None:
+    has_lesson_media = lesson_media_id is not None
+    has_seminar_recording = seminar_recording_id is not None
+    has_external = external_url is not None and external_url.strip() != ""
+
+    if media_kind == TeacherProfileMediaKind.lesson_media:
+        if not has_lesson_media or has_seminar_recording or external_url is not None:
+            raise ValueError(
+                "lesson_media items require lesson_media_id and forbid "
+                "seminar_recording_id/external_url"
+            )
+        return
+
+    if media_kind == TeacherProfileMediaKind.seminar_recording:
+        if not has_seminar_recording or has_lesson_media or external_url is not None:
+            raise ValueError(
+                "seminar_recording items require seminar_recording_id and forbid "
+                "lesson_media_id/external_url"
+            )
+        return
+
+    if not has_external or has_lesson_media or has_seminar_recording:
+        raise ValueError(
+            "external items require external_url and forbid "
+            "lesson_media_id/seminar_recording_id"
+        )
+
+
 class TeacherProfileLessonSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     lesson_id: UUID
     lesson_title: Optional[str] = None
@@ -362,6 +426,8 @@ class TeacherProfileLessonSource(BaseModel):
 
 
 class TeacherProfileRecordingSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     seminar_id: UUID
     seminar_title: Optional[str] = None
@@ -371,52 +437,69 @@ class TeacherProfileRecordingSource(BaseModel):
     duration_seconds: Optional[int] = None
     byte_size: Optional[int] = None
     published: bool
-    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
 
-class TeacherProfileMediaBase(BaseModel):
+class TeacherProfileMediaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    teacher_id: UUID
     media_kind: TeacherProfileMediaKind
-    media_id: Optional[UUID] = None
+    lesson_media_id: Optional[UUID] = None
+    seminar_recording_id: Optional[UUID] = None
     external_url: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
     cover_media_id: Optional[UUID] = None
     cover_image_url: Optional[str] = None
-    position: int = 0
-    is_published: bool = True
-    enabled_for_home_player: bool = False
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class TeacherProfileMediaSource(BaseModel):
-    lesson_media: Optional[TeacherProfileLessonSource] = None
-    seminar_recording: Optional[TeacherProfileRecordingSource] = None
-
-
-class TeacherProfileMediaItem(TeacherProfileMediaBase):
-    id: UUID
-    teacher_id: UUID
+    position: int = Field(ge=0)
+    is_published: bool
+    enabled_for_home_player: bool
     created_at: datetime
     updated_at: datetime
-    source: TeacherProfileMediaSource = Field(default_factory=TeacherProfileMediaSource)
+
+    @model_validator(mode="after")
+    def _validate_identity(self) -> "TeacherProfileMediaItem":
+        _validate_teacher_profile_media_identity(
+            media_kind=self.media_kind,
+            lesson_media_id=self.lesson_media_id,
+            seminar_recording_id=self.seminar_recording_id,
+            external_url=self.external_url,
+        )
+        return self
 
 
 class TeacherProfileMediaCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     media_kind: TeacherProfileMediaKind
-    media_id: Optional[UUID] = None
+    lesson_media_id: Optional[UUID] = None
+    seminar_recording_id: Optional[UUID] = None
     external_url: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
     cover_media_id: Optional[UUID] = None
     cover_image_url: Optional[str] = None
-    position: Optional[int] = None
-    is_published: Optional[bool] = None
-    metadata: Optional[dict[str, Any]] = None
+    position: int = Field(ge=0)
+    is_published: bool
+    enabled_for_home_player: bool
+
+    @model_validator(mode="after")
+    def _validate_identity(self) -> "TeacherProfileMediaCreate":
+        _validate_teacher_profile_media_identity(
+            media_kind=self.media_kind,
+            lesson_media_id=self.lesson_media_id,
+            seminar_recording_id=self.seminar_recording_id,
+            external_url=self.external_url,
+        )
+        return self
 
 
 class TeacherProfileMediaUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: Optional[str] = None
     description: Optional[str] = None
     cover_media_id: Optional[UUID] = None
@@ -424,19 +507,22 @@ class TeacherProfileMediaUpdate(BaseModel):
     position: Optional[int] = None
     is_published: Optional[bool] = None
     enabled_for_home_player: Optional[bool] = None
-    metadata: Optional[dict[str, Any]] = None
 
 
 class TeacherProfileMediaListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: List[TeacherProfileMediaItem]
-    lesson_media: List[TeacherProfileLessonSource] = Field(default_factory=list)
-    seminar_recordings: List[TeacherProfileRecordingSource] = Field(
-        default_factory=list
-    )
+    lesson_media_sources: List[TeacherProfileLessonSource]
+    seminar_recording_sources: List[TeacherProfileRecordingSource]
 
 
 class TeacherProfileMediaPublicResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: List[TeacherProfileMediaItem]
+    lesson_media_sources: List[TeacherProfileLessonSource]
+    seminar_recording_sources: List[TeacherProfileRecordingSource]
 
 
 class HomePlayerUploadItem(BaseModel):
@@ -589,7 +675,6 @@ class HomeAudioItem(BaseModel):
     id: UUID
     lesson_id: Optional[UUID] = None
     lesson_title: str
-    title: Optional[str] = None
     course_id: Optional[UUID] = None
     course_title: Optional[str] = None
     course_slug: Optional[str] = None
@@ -609,7 +694,6 @@ class HomeAudioItem(BaseModel):
     download_url: Optional[str] = None
     signed_url: Optional[str] = None
     signed_url_expires_at: Optional[str] = None
-    is_intro: Optional[bool] = None
     is_free_intro: Optional[bool] = None
     media_state: Optional[str] = None
     streaming_format: Optional[str] = None
@@ -917,6 +1001,8 @@ class ProfileDetailResponse(ProfileDetail):
 
 
 class CourseCoverResolved(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     media_id: UUID | None = None
     state: Literal[
         "ready",
@@ -931,6 +1017,8 @@ class CourseCoverResolved(BaseModel):
 
 
 class Course(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     slug: str
     title: str
@@ -942,21 +1030,123 @@ class Course(BaseModel):
     drip_enabled: bool
     drip_interval_days: Optional[int]
 
-    @model_serializer(mode="wrap")
-    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        payload = handler(self)
-        if payload.get("cover") is None:
-            payload.pop("cover", None)
-        return payload
+
+class LandingCourseCard(BaseModel):
+    id: UUID
+    slug: str
+    title: str
+    step: str
+    price_amount_cents: int | None = None
+    short_description: str | None = None
+    resolved_cover_url: str | None = None
+
+
+class LandingCourseSectionResponse(BaseModel):
+    items: List[LandingCourseCard]
+
+
+class LandingTeacherCard(BaseModel):
+    user_id: UUID
+    display_name: str
+    photo_url: str | None = None
+    bio: str | None = None
+
+
+class LandingTeacherSectionResponse(BaseModel):
+    items: List[LandingTeacherCard]
+
+
+class LandingServiceCard(BaseModel):
+    id: UUID
+    title: str
+    description: str | None = None
+    certified_area: str | None = None
+    price_cents: int | None = None
+
+
+class LandingServiceSectionResponse(BaseModel):
+    items: List[LandingServiceCard]
+
+
+class LessonStructureItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    lesson_title: str
+    position: int
+
+
+class CourseDetailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    course: Course
+    lessons: List[LessonStructureItem]
+
+
+class LessonContentItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    course_id: UUID
+    lesson_title: str
+    position: int
+    content_markdown: str | None = None
+
+
+class LearnerLessonMediaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    lesson_id: UUID
+    media_asset_id: UUID | None = None
+    position: int
+    kind: Literal["audio", "image", "video", "document"]
+    state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+    original_name: str | None = None
+    playback_ready: bool
+
+
+class LessonContentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson: LessonContentItem
+    course_id: UUID
+    lessons: List[LessonStructureItem]
+    media: List[LearnerLessonMediaItem]
 
 
 class CourseListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: List[Course]
 
 
 class CoursePublicContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     course_id: UUID
     short_description: str
+
+
+class CourseEnrollmentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    user_id: UUID
+    course_id: UUID
+    source: str
+    granted_at: datetime
+    drip_started_at: datetime
+    current_unlock_position: int
+
+
+class CourseAccessStateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    course_id: UUID
+    course_step: CourseJourneyStep
+    required_enrollment_source: str | None = None
+    enrollment: CourseEnrollmentRecord | None = None
 
 
 class StudioCoursePublicContentUpsert(BaseModel):
@@ -1306,10 +1496,12 @@ class StudioLessonMediaCompleteRequest(BaseModel):
 class StudioLessonMediaItem(BaseModel):
     lesson_media_id: UUID
     lesson_id: UUID
+    media_asset_id: UUID | None = None
     position: int
     media_type: Literal["audio", "image", "video", "document"]
     state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
     preview_ready: bool
+    original_name: str | None = None
 
 
 class StudioLessonMediaListResponse(BaseModel):

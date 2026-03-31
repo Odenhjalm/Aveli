@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from psycopg.types.json import Jsonb
-
 from ..db import get_conn
 from ..utils import media_signer
 
-_BASE_SELECT = """
+_ITEM_SELECT = """
     select
         tpm.id,
         tpm.teacher_id,
         tpm.media_kind,
-        tpm.media_id,
+        tpm.lesson_media_id,
+        tpm.seminar_recording_id,
         tpm.external_url,
         tpm.title,
         tpm.description,
@@ -21,75 +20,15 @@ _BASE_SELECT = """
         tpm.position,
         tpm.is_published,
         tpm.enabled_for_home_player,
-        tpm.metadata,
         tpm.created_at,
-        tpm.updated_at,
-        lm.id as lesson_media_id,
-        lm.lesson_id,
-        lm.kind as lesson_media_kind,
-        lm.position as lesson_media_position,
-        lm.media_asset_id as lesson_media_media_asset_id,
-        coalesce(ma.duration_seconds, lm.duration_seconds) as lesson_media_duration_seconds,
-        lm.created_at as lesson_media_created_at,
-        case
-            when ma.id is not null then
-                case when ma.state = 'ready' then ma.streaming_object_path else null end
-            else coalesce(mo.storage_path, lm.storage_path)
-        end as lesson_media_storage_path,
-        case
-            when ma.id is not null then
-                case when ma.state = 'ready' then ma.storage_bucket else null end
-            else coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
-        end as lesson_media_storage_bucket,
-        mo.content_type as lesson_media_content_type,
-        mo.byte_size as lesson_media_byte_size,
-        mo.original_name as lesson_media_original_name,
-        ma.state as lesson_media_state,
-        ma.streaming_format as lesson_media_streaming_format,
-        l.title as lesson_title,
-        l.position as lesson_position,
-        c.id as course_id,
-        c.title as course_title,
-        c.slug as course_slug,
-        sr.id as seminar_recording_id,
-        sr.seminar_id as seminar_id,
-        sr.session_id as seminar_session_id,
-        sr.asset_url as seminar_recording_asset_url,
-        sr.status as seminar_recording_status,
-        sr.duration_seconds as seminar_recording_duration_seconds,
-        sr.byte_size as seminar_recording_byte_size,
-        sr.published as seminar_recording_published,
-        sr.metadata as seminar_recording_metadata,
-        sr.created_at as seminar_recording_created_at,
-        sr.updated_at as seminar_recording_updated_at,
-        sem.title as seminar_title
+        tpm.updated_at
     from app.teacher_profile_media tpm
-    left join app.lesson_media lm
-        on tpm.media_kind = 'lesson_media' and tpm.media_id = lm.id
-    left join app.media_objects mo on mo.id = lm.media_id
-    left join app.media_assets ma on ma.id = lm.media_asset_id
-    left join app.lessons l on l.id = lm.lesson_id
-    left join app.courses c on c.id = l.course_id
-    left join app.seminar_recordings sr
-        on tpm.media_kind = 'seminar_recording' and tpm.media_id = sr.id
-    left join app.seminars sem on sem.id = sr.seminar_id
 """
-
-
-def _normalize_row(row: Any) -> dict[str, Any]:
-    data = dict(row)
-    if data.get("metadata") is None:
-        data["metadata"] = {}
-    if data.get("seminar_recording_metadata") is None:
-        data["seminar_recording_metadata"] = {}
-    if data.get("lesson_media_storage_bucket") is None:
-        data["lesson_media_storage_bucket"] = "lesson-media"
-    return data
 
 
 async def list_teacher_profile_media(teacher_id: str) -> list[dict[str, Any]]:
     query = (
-        _BASE_SELECT
+        _ITEM_SELECT
         + """
         where tpm.teacher_id = %(teacher_id)s
         order by tpm.position asc, tpm.created_at asc
@@ -98,7 +37,7 @@ async def list_teacher_profile_media(teacher_id: str) -> list[dict[str, Any]]:
     async with get_conn() as cur:
         await cur.execute(query, {"teacher_id": teacher_id})
         rows = await cur.fetchall()
-    return [_populate_media_links(_normalize_row(row)) for row in rows]
+    return [dict(row) for row in rows]
 
 
 async def get_teacher_profile_media(
@@ -107,7 +46,7 @@ async def get_teacher_profile_media(
     teacher_id: str,
 ) -> Optional[dict[str, Any]]:
     query = (
-        _BASE_SELECT
+        _ITEM_SELECT
         + """
         where tpm.id = %(item_id)s
           and tpm.teacher_id = %(teacher_id)s
@@ -117,27 +56,29 @@ async def get_teacher_profile_media(
     async with get_conn() as cur:
         await cur.execute(query, {"item_id": item_id, "teacher_id": teacher_id})
         row = await cur.fetchone()
-    return _populate_media_links(_normalize_row(row)) if row else None
+    return dict(row) if row else None
 
 
 async def create_teacher_profile_media(
     *,
     teacher_id: str,
     media_kind: str,
-    media_id: Optional[str] = None,
-    external_url: Optional[str] = None,
-    title: Optional[str] = None,
-    description: Optional[str] = None,
-    cover_media_id: Optional[str] = None,
-    cover_image_url: Optional[str] = None,
-    position: Optional[int] = None,
-    is_published: Optional[bool] = None,
-    metadata: Optional[dict[str, Any]] = None,
+    lesson_media_id: Optional[str],
+    seminar_recording_id: Optional[str],
+    external_url: Optional[str],
+    title: Optional[str],
+    description: Optional[str],
+    cover_media_id: Optional[str],
+    cover_image_url: Optional[str],
+    position: int,
+    is_published: bool,
+    enabled_for_home_player: bool,
 ) -> Optional[dict[str, Any]]:
     params: dict[str, Any] = {
         "teacher_id": teacher_id,
         "media_kind": media_kind,
-        "media_id": media_id,
+        "lesson_media_id": lesson_media_id,
+        "seminar_recording_id": seminar_recording_id,
         "external_url": external_url,
         "title": title,
         "description": description,
@@ -145,13 +86,14 @@ async def create_teacher_profile_media(
         "cover_image_url": cover_image_url,
         "position": position,
         "is_published": is_published,
-        "metadata": Jsonb(metadata or {}),
+        "enabled_for_home_player": enabled_for_home_player,
     }
     query = """
         insert into app.teacher_profile_media (
             teacher_id,
             media_kind,
-            media_id,
+            lesson_media_id,
+            seminar_recording_id,
             external_url,
             title,
             description,
@@ -159,27 +101,21 @@ async def create_teacher_profile_media(
             cover_image_url,
             position,
             is_published,
-            metadata
+            enabled_for_home_player
         )
         values (
             %(teacher_id)s,
             %(media_kind)s,
-            %(media_id)s,
+            %(lesson_media_id)s,
+            %(seminar_recording_id)s,
             %(external_url)s,
             %(title)s,
             %(description)s,
             %(cover_media_id)s,
             %(cover_image_url)s,
-            coalesce(
-                %(position)s,
-                (
-                    select coalesce(max(position), -1) + 1
-                    from app.teacher_profile_media
-                    where teacher_id = %(teacher_id)s
-                )
-            ),
-            coalesce(%(is_published)s, true),
-            %(metadata)s
+            %(position)s,
+            %(is_published)s,
+            %(enabled_for_home_player)s
         )
         returning id
     """
@@ -207,10 +143,7 @@ async def update_teacher_profile_media(
     }
     assignments: list[str] = []
     for key, value in fields.items():
-        if key == "metadata" and value is not None:
-            params[key] = Jsonb(value)
-        else:
-            params[key] = value
+        params[key] = value
         assignments.append(f"{key} = %({key})s")
 
     query = f"""
@@ -251,7 +184,7 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
         select
             lm.id,
             lm.lesson_id,
-            l.title as lesson_title,
+            l.lesson_title,
             l.position as lesson_position,
             c.id as course_id,
             c.title as course_title,
@@ -265,7 +198,7 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
             case
                 when ma.id is not null then
                     case when ma.state = 'ready' then ma.storage_bucket else null end
-                else coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
+                else coalesce(mo.storage_bucket, lm.storage_bucket)
             end as storage_bucket,
             mo.content_type,
             mo.byte_size,
@@ -287,16 +220,13 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
         rows = await cur.fetchall()
     items: list[dict[str, Any]] = []
     for row in rows:
-        data = dict(row)
-        if data.get("storage_bucket") is None:
-            data["storage_bucket"] = "lesson-media"
-        items.append(_attach_lesson_links(data))
+        items.append(_attach_lesson_links(dict(row)))
     return items
 
 
 async def list_public_teacher_profile_media(teacher_id: str) -> list[dict[str, Any]]:
     query = (
-        _BASE_SELECT
+        _ITEM_SELECT
         + """
         where tpm.teacher_id = %(teacher_id)s
           and tpm.is_published = true
@@ -306,16 +236,20 @@ async def list_public_teacher_profile_media(teacher_id: str) -> list[dict[str, A
     async with get_conn() as cur:
         await cur.execute(query, {"teacher_id": teacher_id})
         rows = await cur.fetchall()
-    return [_populate_media_links(_normalize_row(row)) for row in rows]
+    return [dict(row) for row in rows]
 
 
 def _attach_lesson_links(data: dict[str, Any]) -> dict[str, Any]:
     if data.get("media_asset_id"):
         return data
+    storage_bucket = data.get("storage_bucket")
+    storage_path = data.get("storage_path")
+    if not storage_bucket or not storage_path:
+        return data
     lesson = {
         "id": data.get("id"),
-        "storage_bucket": data.get("storage_bucket") or "lesson-media",
-        "storage_path": data.get("storage_path"),
+        "storage_bucket": storage_bucket,
+        "storage_path": storage_path,
         "media_asset_id": data.get("media_asset_id"),
         "media_state": data.get("media_state"),
     }
@@ -349,7 +283,6 @@ async def list_teacher_seminar_recording_sources(teacher_id: str) -> list[dict[s
             sr.duration_seconds,
             sr.byte_size,
             sr.published,
-            sr.metadata,
             sr.created_at,
             sr.updated_at
         from app.seminar_recordings sr
@@ -360,39 +293,4 @@ async def list_teacher_seminar_recording_sources(teacher_id: str) -> list[dict[s
     async with get_conn() as cur:
         await cur.execute(query, (teacher_id,))
         rows = await cur.fetchall()
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        data = dict(row)
-        if data.get("metadata") is None:
-            data["metadata"] = {}
-        items.append(data)
-    return items
-
-
-def _populate_media_links(row: dict[str, Any]) -> dict[str, Any]:
-    data = dict(row)
-    if data.get("lesson_media_id"):
-        lesson = {
-            "id": data["lesson_media_id"],
-            "storage_bucket": data.get("lesson_media_storage_bucket")
-            or "lesson-media",
-            "storage_path": data.get("lesson_media_storage_path"),
-            "media_asset_id": data.get("lesson_media_media_asset_id"),
-            "media_state": data.get("lesson_media_state"),
-        }
-        media_signer.attach_media_links(lesson, purpose="editor_preview")
-        if (
-            lesson.get("media_asset_id") is None
-            or str(lesson.get("media_state") or "").strip().lower() != "ready"
-        ):
-            media_signer.strip_renderable_media_links(lesson)
-        download_url = lesson.get("download_url")
-        signed_url = lesson.get("signed_url")
-        expires_at = lesson.get("signed_url_expires_at")
-        if download_url:
-            data["lesson_media_download_url"] = download_url
-        if signed_url:
-            data["lesson_media_signed_url"] = signed_url
-        if expires_at:
-            data["lesson_media_signed_url_expires_at"] = expires_at
-    return data
+    return [dict(row) for row in rows]

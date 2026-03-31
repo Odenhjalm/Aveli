@@ -193,7 +193,7 @@ class HomePlayerLibraryPayload extends Equatable {
       courseMedia: sourcesJson
           .whereType<Map>()
           .map(
-            (e) => TeacherProfileLessonSource.fromJson(
+            (e) => TeacherProfileLessonSource.fromResponse(
               Map<String, dynamic>.from(e),
             ),
           )

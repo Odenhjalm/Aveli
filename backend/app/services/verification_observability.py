@@ -599,7 +599,7 @@ async def get_test_cases() -> dict[str, Any]:
                         "lesson_id": lesson_id,
                         "course_id": course_id,
                         "course_title": _normalize_text(course.get("title")),
-                        "lesson_title": _normalize_text(lesson.get("title")),
+                        "lesson_title": _normalize_text(lesson.get("lesson_title")),
                         "why": f"lesson has lesson_media kind={_normalize_text(first_media.get('kind')) or 'unknown'}",
                     }
                 )

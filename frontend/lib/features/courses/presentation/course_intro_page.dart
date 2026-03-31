@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_extras.dart';
-import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/gate.dart';
-import 'package:aveli/shared/widgets/course_video.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/course_video.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -81,39 +79,21 @@ class CourseIntroPage extends ConsumerWidget {
   }
 }
 
-class _IntroVideoPreview extends ConsumerWidget {
+class _IntroVideoPreview extends StatelessWidget {
   const _IntroVideoPreview({required this.courseId});
 
   final String courseId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     if (courseId.isEmpty) {
       return const CourseVideoSkeleton(
         message: 'Ingen kurs vald. Välj en kurs för att se introduktionen.',
       );
     }
-    final course = ref.watch(courseByIdProvider(courseId));
-    return course.when(
-      loading: () => const CourseVideoSkeleton(message: 'Laddar kursintro…'),
-      error: (error, _) => CourseVideoSkeleton(message: _friendlyError(error)),
-      data: (summary) {
-        if (summary == null) {
-          return const CourseVideoSkeleton(message: 'Kursen hittades inte.');
-        }
-        final url = summary.videoUrl;
-        if (url == null || url.isEmpty) {
-          return const CourseVideoSkeleton(
-            message: 'Ingen introduktionsvideo är publicerad ännu.',
-          );
-        }
-        return CourseVideo(url: url);
-      },
+    return const CourseVideoSkeleton(
+      message:
+          'Introduktionsmedia publiceras via lektionsmedia. Öppna kursen för att fortsätta.',
     );
-  }
-
-  String _friendlyError(Object error) {
-    if (error is AppFailure) return error.message;
-    return 'Kunde inte ladda kursintro just nu.';
   }
 }

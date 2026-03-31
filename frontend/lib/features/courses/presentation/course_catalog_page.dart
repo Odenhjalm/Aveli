@@ -18,7 +18,6 @@ import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
-import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
@@ -67,7 +66,7 @@ class _JourneyPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final published = courses
-        .where((course) => (course.slug ?? '').trim().isNotEmpty)
+        .where((course) => course.slug.trim().isNotEmpty)
         .toList(growable: false);
 
     if (published.isEmpty) {
@@ -103,7 +102,6 @@ class _JourneyPage extends ConsumerWidget {
     final introCourses = <CourseSummary>[];
     final journeyCourses = <CourseSummary>[];
     final step3Courses = <CourseSummary>[];
-    final unclassified = <CourseSummary>[];
 
     for (final course in published) {
       switch (course.step) {
@@ -120,20 +118,8 @@ class _JourneyPage extends ConsumerWidget {
           journeyCourses.add(course);
           step3Courses.add(course);
           break;
-        default:
-          unclassified.add(course);
-          break;
       }
     }
-
-    assert(() {
-      if (unclassified.isEmpty) return true;
-      debugPrint(
-        'CourseCatalogPage: ${unclassified.length} course(s) missing/invalid step, omitted from rendering: '
-        '${unclassified.map((c) => c.id).join(', ')}',
-      );
-      return true;
-    }());
 
     final step3Ids = step3Courses
         .map((course) => course.id)
@@ -615,7 +601,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(16);
-    final slug = (course.slug ?? '').trim();
+    final slug = course.slug.trim();
     final resolvedCover = resolveCourseSummaryCover(course, mediaRepository);
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
@@ -625,10 +611,12 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final imageProvider = coverProvider ?? AppImages.logo;
     final isFallbackLogo = coverProvider == null;
     final isIntro = course.isIntroCourse;
-    final priceLabel = formatCoursePriceFromOre(
-      amountOre: course.priceCents ?? 0,
-      debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
-    );
+    final priceLabel = course.priceCents == null
+        ? 'Pris saknas'
+        : formatCoursePriceFromOre(
+            amountOre: course.priceCents!,
+            debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
+          );
 
     return Material(
       color: Colors.transparent,
@@ -771,7 +759,7 @@ class _JourneyCourseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final slug = (course.slug ?? '').trim();
+    final slug = course.slug.trim();
     final resolvedCover = resolveCourseSummaryCover(course, mediaRepository);
     final coverProvider = CourseCoverAssets.resolve(
       assets: assets,
@@ -783,10 +771,12 @@ class _JourneyCourseCard extends StatelessWidget {
 
     final radius = BorderRadius.circular(18);
     final isIntro = course.isIntroCourse;
-    final priceLabel = formatCoursePriceFromOre(
-      amountOre: course.priceCents ?? 0,
-      debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
-    );
+    final priceLabel = course.priceCents == null
+        ? 'Pris saknas'
+        : formatCoursePriceFromOre(
+            amountOre: course.priceCents!,
+            debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
+          );
 
     return Material(
       color: Colors.transparent,
@@ -890,15 +880,6 @@ class _JourneyCourseCard extends StatelessWidget {
                               ),
                       ],
                     ),
-                    if ((course.description ?? '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      CourseDescriptionText(
-                        course.description!.trim(),
-                        baseStyle: theme.textTheme.bodyMedium,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                   ],
                 ),
               ),

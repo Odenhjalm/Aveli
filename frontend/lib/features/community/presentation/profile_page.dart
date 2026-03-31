@@ -677,7 +677,7 @@ class _CoursesSection extends StatelessWidget {
                         final slug = course.slug;
                         // TODO: Keep course detail routing strictly slug-based.
                         // Falling back to UUID course.id breaks /course/:slug navigation.
-                        if (slug == null || slug.isEmpty) {
+                        if (slug.isEmpty) {
                           debugPrint(
                             '[NAV_BLOCKED] Course missing slug: ${course.id}',
                           );
@@ -707,13 +707,6 @@ class _CoursesSection extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            if ((course.description ?? '').isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                course.description!,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ],
                             if (course.isIntroCourse) ...[
                               const SizedBox(height: 10),
                               const _ProfileChip(

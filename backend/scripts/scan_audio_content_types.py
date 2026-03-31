@@ -36,7 +36,7 @@ class AudioContentRow:
     source_table: str
     media_row_id: str
     lesson_id: str | None
-    title: str | None
+    lesson_title: str | None
     kind: str | None
     content_type: str | None
     storage_bucket: str | None
@@ -48,7 +48,7 @@ class AudioContentIssue:
     source_table: str
     media_row_id: str
     lesson_id: str | None
-    title: str | None
+    lesson_title: str | None
     kind: str | None
     content_type: str | None
     storage_bucket: str | None
@@ -108,7 +108,9 @@ def _row_from_mapping(data: dict[str, Any]) -> AudioContentRow:
         source_table=str(data["source_table"]),
         media_row_id=str(data["media_row_id"]),
         lesson_id=str(data["lesson_id"]) if data.get("lesson_id") is not None else None,
-        title=str(data["title"]) if data.get("title") is not None else None,
+        lesson_title=(
+            str(data["lesson_title"]) if data.get("lesson_title") is not None else None
+        ),
         kind=str(data["kind"]) if data.get("kind") is not None else None,
         content_type=(
             str(data["content_type"]) if data.get("content_type") is not None else None
@@ -135,11 +137,11 @@ def fetch_audio_rows(conn: psycopg.Connection[Any]) -> list[AudioContentRow]:
             min(nullif(btrim(hpu.title), '')) FILTER (
               WHERE lower(coalesce(hpu.kind, '')) = 'audio'
             ),
-            min(nullif(btrim(l.title), '')) FILTER (
+            min(nullif(btrim(l.lesson_title), '')) FILTER (
               WHERE lower(coalesce(lm.kind, '')) = 'audio'
             ),
             nullif(btrim(mo.original_name), '')
-          ) AS title,
+          ) AS lesson_title,
           'audio' AS kind,
           mo.content_type,
           mo.storage_bucket,
@@ -169,9 +171,9 @@ def fetch_audio_rows(conn: psycopg.Connection[Any]) -> list[AudioContentRow]:
             min(nullif(btrim(hpu.title), '')) FILTER (
               WHERE lower(coalesce(hpu.kind, '')) = 'audio'
             ),
-            min(nullif(btrim(l.title), '')),
+            min(nullif(btrim(l.lesson_title), '')),
             nullif(btrim(ma.original_filename), '')
-          ) AS title,
+          ) AS lesson_title,
           'audio' AS kind,
           ma.original_content_type AS content_type,
           ma.storage_bucket,
@@ -194,7 +196,7 @@ def fetch_audio_rows(conn: psycopg.Connection[Any]) -> list[AudioContentRow]:
           'app.lesson_media' AS source_table,
           lm.id::text AS media_row_id,
           lm.lesson_id::text AS lesson_id,
-          nullif(btrim(l.title), '') AS title,
+          nullif(btrim(l.lesson_title), '') AS lesson_title,
           lm.kind,
           NULL::text AS content_type,
           coalesce(lm.storage_bucket, 'lesson-media') AS storage_bucket,
@@ -266,7 +268,7 @@ def classify_audio_row(row: AudioContentRow) -> AudioContentIssue | None:
         source_table=row.source_table,
         media_row_id=row.media_row_id,
         lesson_id=row.lesson_id,
-        title=row.title,
+        lesson_title=row.lesson_title,
         kind=row.kind,
         content_type=row.content_type,
         storage_bucket=row.storage_bucket,

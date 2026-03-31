@@ -22,6 +22,47 @@ It is intentionally independent from historical behavior, compatibility fallback
    Feature-specific data must be modeled in separate domain entities.
    No feature may introduce new fields into core domain entities unless the change is a canonical domain evolution.
 
+### 1.1 Studio Core Boundary and Non-Core Domain Separation
+
+Studio core means only:
+
+- course metadata
+- lesson metadata
+- lesson content
+
+Studio core explicitly excludes:
+
+- lesson-media payloads
+- profile media
+- studio sessions
+
+Boundary rules:
+
+- Studio core may use only canonical course, lesson, and lesson-content contracts.
+- `lesson_media` remains part of the canonical course domain, but lesson-media payload handling is outside the studio-core boundary.
+- Profile media is a separate feature domain and must not redefine course, lesson, lesson-content, or lesson-media truth.
+- Studio sessions are a separate feature domain and must not redefine course, lesson, lesson-content, or lesson-media truth.
+- Non-core feature domains must attach via their own explicit contracts and entities, not by mutating or overloading the core course domain.
+
+### 1.2 Transition Layer Rules
+
+Transition layer law:
+
+- A transition layer exists only when canonical backend truth and active consumers still mismatch.
+- A transition layer is allowed only above the canonical domain, never inside canonical course, lesson, lesson-content, or lesson-media law.
+- A transition layer must be explicit, temporary, and scoped to a named producer/consumer mismatch.
+- A transition layer must define:
+  - producer shape
+  - consumer expectation
+  - explicit mapping
+  - removal condition
+- A transition layer must never:
+  - introduce fallback
+  - hide missing canonical data
+  - silently correct invalid shapes
+  - redefine canonical field names
+  - preserve legacy aliases as runtime truth
+
 ## 2. Course Model (Canonical)
 
 Canonical course fields:
@@ -87,6 +128,10 @@ The following concepts are removed from the canonical course domain and must not
 - hardcoded drip defaults
 - fallback drip behavior
 - implicit unlock strategies
+- lesson `title` as a runtime alias for `lesson_title`
+- map-based runtime contracts as domain truth
+- metadata blobs as domain-truth contracts
+- silent correction of missing canonical fields
 
 ## 4. Lesson Model
 
@@ -103,6 +148,7 @@ Canonical rules:
 
 - Lessons belong directly to a course.
 - `lesson_title` is the only display name for lessons.
+- `title` is forbidden as a runtime alias for lesson display or lesson identity semantics.
 - `position` is the only source of lesson ordering.
 - Positions must be continuous within each course: `1, 2, 3, ... N`.
 - Lessons are valid without media.
@@ -400,6 +446,7 @@ Canonical UI rules:
 - UI must write `drip_interval_days` directly.
 - UI must read `lesson_title` directly.
 - UI must write `lesson_title` directly.
+- UI must not read or write lesson `title` as a runtime alias for `lesson_title`.
 - UI must not maintain separate intro and step state.
 - UI must not hide courses behind `course_enrollments`.
 - UI must not hide lesson structure behind `course_enrollments`.

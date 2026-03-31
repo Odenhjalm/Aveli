@@ -8,6 +8,7 @@ It exists to keep DB shape deterministic while preventing the database from inve
 
 - Drip is controlled only by course configuration.
 - Enrollment stores state only.
+- The baseline database is shape-only for canonical core domain truth.
 - Canonical data categories are:
   - `course_identity`
   - `course_display`
@@ -34,6 +35,10 @@ It exists to keep DB shape deterministic while preventing the database from inve
 - The database enforces field shape, nullability contracts, and local row invariants.
 - The database does not infer business meaning from enrollment source, course type, title, slug, or legacy concepts.
 - The database must not introduce fallback logic.
+- The database must not hide missing data through defaults, implicit coercion, or inferred values.
+- The database baseline does not directly define non-core feature domains such as profile media or studio sessions.
+- Non-core features must attach through separate feature-specific schema/contracts above the baseline rather than by mutating core baseline tables.
+- Transition-layer behavior is not a database concern and must not be encoded as fallback fields, metadata blobs, or compatibility defaults in the baseline.
 
 ## 2. Allowed DB Fields
 
@@ -155,11 +160,16 @@ The database baseline must explicitly forbid:
 - inferred drip behavior from course step
 - inferred drip behavior from title or slug
 - cross-table progression enforcement that attempts to replace canonical application or worker logic
+- metadata blobs as contract truth
+- default values that hide missing required data
+- implicit coercion that converts invalid shapes into accepted state
+- map-like compatibility contracts in baseline-owned schema
 
 ## 5. Verification Targets
 
 - Drip is controlled only by `courses.drip_enabled` and `courses.drip_interval_days`.
 - Enrollment is state-only for drip semantics.
+- The database baseline remains shape-only and does not invent feature behavior.
 - `course_discovery_surface` remains defined by allowed and forbidden categories without `course_enrollments`.
 - `lesson_structure_surface` remains defined by allowed and forbidden categories without `course_enrollments`.
 - `lesson_content_surface` requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
@@ -168,4 +178,6 @@ The database baseline must explicitly forbid:
 - No visibility rule is interpreted as permission for raw table access.
 - No source-based drip logic exists in the DB baseline.
 - No default drip behavior is hardcoded in the DB baseline.
+- No non-core feature contract is smuggled into core baseline tables.
+- No metadata blob, map-style contract, or compatibility default is used as baseline truth.
 - UI, backend, and DB can share the same course-configured drip model without fallback logic.

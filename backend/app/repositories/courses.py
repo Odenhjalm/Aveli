@@ -28,7 +28,7 @@ def _lesson_columns(include_content: bool) -> str:
     columns = [
         "l.id",
         "l.course_id",
-        "l.lesson_title as title",
+        "l.lesson_title",
         "l.position",
     ]
     if include_content:
@@ -305,7 +305,7 @@ async def list_course_lessons(course_id: str) -> Sequence[LessonRow]:
     query = """
         select
             l.id,
-            l.lesson_title as title,
+            l.lesson_title,
             l.position
         from app.lessons as l
         where l.course_id = %s
@@ -403,6 +403,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             lm.position,
             ma.media_type::text as kind,
             ma.state::text as state,
+            ma.original_filename as original_name,
             rm.lesson_media_id is not null as playback_ready
         from app.lesson_media as lm
         join app.media_assets as ma
@@ -431,6 +432,7 @@ async def get_lesson_media_for_studio(
             lm.position,
             ma.media_type::text as kind,
             ma.state::text as state,
+            ma.original_filename as original_name,
             rm.lesson_media_id is not null as playback_ready
         from app.lesson_media as lm
         join app.media_assets as ma

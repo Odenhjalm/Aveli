@@ -442,10 +442,59 @@
             "no_visibility_rule_implies_raw_table_access": true
         }
     },
+    "transition_layer": {
+        "exists_only_when_canonical_backend_and_active_consumers_mismatch": true,
+        "allowed_above_canonical_truth_only": true,
+        "must_be_explicit": true,
+        "must_be_temporary": true,
+        "must_be_scoped": true,
+        "must_define": [
+            "producer_shape",
+            "consumer_expectation",
+            "explicit_mapping",
+            "removal_condition"
+        ],
+        "must_never": [
+            "introduce_fallback",
+            "hide_missing_data",
+            "silently_correct_invalid_shapes",
+            "preserve_legacy_aliases_as_runtime_truth",
+            "redefine_canonical_field_names"
+        ]
+    },
     "rules": {
         "api_truth": "audit_is_observation_not_automatic_legitimacy",
         "media_authority_model": "split_intent_and_playback",
         "app_access_authority": "memberships",
+        "studio_core_boundary": {
+            "includes": [
+                "course_metadata",
+                "lesson_metadata",
+                "lesson_content"
+            ],
+            "excludes": [
+                "lesson_media_payloads",
+                "profile_media",
+                "studio_sessions"
+            ]
+        },
+        "profile_media_contract": {
+            "explicit_structured_contract_required": true,
+            "metadata_blobs_as_truth": false,
+            "map_based_identity": false,
+            "fallback_fields": false
+        },
+        "studio_session_contract": {
+            "single_canonical_domain": true,
+            "fallback_defaults": "forbidden",
+            "all_fields_explicit": true,
+            "invalid_input_response": 422
+        },
+        "landing_contract": {
+            "typed_contract_required": true,
+            "studio_raw_data_as_runtime_truth": false,
+            "map_based_runtime_truth": false
+        },
         "course_discovery_surface_allowed_categories": [
             "course_identity",
             "course_display",
@@ -548,6 +597,7 @@
         "course_structure": "course_to_lessons_direct",
         "lesson_ordering": "position",
         "lesson_display_name": "lesson_title",
+        "lesson_runtime_title_alias": "forbidden",
         "course_progression_field": "step",
         "course_grouping_field": "course_group_id",
         "feature_expansion_model": "new_entities_only",
@@ -563,6 +613,11 @@
         "feature_attachment_strategy": "external_entities_only",
         "module_abstraction": "forbidden",
         "fallback": "forbidden",
+        "map_based_runtime_contracts": "forbidden",
+        "metadata_blobs_as_contract_truth": "forbidden",
+        "implicit_defaults_that_hide_missing_data": "forbidden",
+        "implicit_parsing": "forbidden",
+        "silent_correction": "forbidden",
         "one_path_per_concept": true,
         "multiple_paths_make_system_invalid": true,
         "missing_data_must_fail_never_infer": true
@@ -587,6 +642,7 @@
             "step_based_ownership_logic",
             "runtime_derived_progression",
             "runtime_derived_unlock_state",
+            "lesson_title_runtime_alias",
             "implicit_lesson_content_surface_access_by_tag_or_inference",
             "visibility_rule_interpreted_as_raw_table_access",
             "storage_as_business_truth"
@@ -601,7 +657,12 @@
             "returns_storage_path_as_canonical_playback_identity",
             "returns_object_url_as_canonical_playback_identity",
             "duplicates_membership_logic",
-            "duplicates_enrollment_logic"
+            "duplicates_enrollment_logic",
+            "map_based_runtime_contract",
+            "metadata_blob_contract_truth",
+            "fallback_default_hiding_missing_data",
+            "silent_correction_of_invalid_shapes",
+            "studio_raw_payload_as_landing_truth"
         ]
     },
     "constraints": {

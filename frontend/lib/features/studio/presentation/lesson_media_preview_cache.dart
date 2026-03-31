@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
 
 class LessonMediaPreviewData {
@@ -69,47 +70,27 @@ class LessonMediaPreviewData {
     );
   }
 
-  factory LessonMediaPreviewData.fromJson(
-    String lessonMediaId,
-    Map<String, dynamic> json,
+  factory LessonMediaPreviewData.fromPreviewItem(
+    StudioLessonMediaPreviewItem preview,
   ) {
-    final mediaType = (json['media_type'] ?? json['kind'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
-    final duration = json['duration_seconds'];
     return LessonMediaPreviewData(
-      lessonMediaId: lessonMediaId,
-      mediaType: mediaType,
-      resolvedPreviewUrl: _normalizedString(
-        json['resolved_preview_url'] ?? json['resolvedPreviewUrl'],
-      ),
-      authoritativeEditorReady: json['authoritative_editor_ready'] as bool?,
-      durationSeconds: duration is num ? duration.toInt() : null,
-      fileName: _normalizedString(json['file_name'] ?? json['fileName']),
-      failureReason: _normalizedString(
-        json['failure_reason'] ?? json['failureReason'],
-      ),
+      lessonMediaId: preview.lessonMediaId,
+      mediaType: preview.mediaType.trim().toLowerCase(),
+      resolvedPreviewUrl: _normalizedString(preview.previewUrl),
+      authoritativeEditorReady: preview.authoritativeEditorReady,
+      durationSeconds: preview.durationSeconds,
+      fileName: _normalizedString(preview.fileName),
+      failureReason: _normalizedString(preview.failureReason),
     );
   }
 
-  static LessonMediaPreviewData? maybeFromLessonMedia(
-    Map<String, dynamic> media,
+  static LessonMediaPreviewData fromLessonMediaItem(
+    StudioLessonMediaItem media,
   ) {
-    final lessonMediaId = _normalizedString(media['id']);
-    final mediaType = _normalizedString(media['kind'])?.toLowerCase();
-    if (lessonMediaId == null || mediaType == null) return null;
-
-    final duration = media['duration_seconds'];
-    final fileName =
-        _normalizedString(media['file_name'] ?? media['fileName']) ??
-        _normalizedString(media['original_name']);
-
     return LessonMediaPreviewData(
-      lessonMediaId: lessonMediaId,
-      mediaType: mediaType,
-      durationSeconds: duration is num ? duration.toInt() : null,
-      fileName: fileName,
+      lessonMediaId: media.lessonMediaId,
+      mediaType: media.mediaType.trim().toLowerCase(),
+      fileName: _normalizedString(media.originalName),
     );
   }
 
@@ -440,12 +421,10 @@ class LessonMediaPreviewCache {
     }
   }
 
-  void primeFromLessonMedia(Iterable<Map<String, dynamic>> mediaItems) {
+  void primeFromLessonMedia(Iterable<StudioLessonMediaItem> mediaItems) {
     final previews = <LessonMediaPreviewData>[];
     for (final media in mediaItems) {
-      final preview = LessonMediaPreviewData.maybeFromLessonMedia(media);
-      if (preview == null) continue;
-      previews.add(preview);
+      previews.add(LessonMediaPreviewData.fromLessonMediaItem(media));
     }
     prime(previews);
   }
@@ -689,7 +668,7 @@ class LessonMediaPreviewCache {
       previews = payload.map(
         (lessonMediaId, value) => MapEntry(
           lessonMediaId,
-          LessonMediaPreviewData.fromJson(lessonMediaId, value).mergeMetadata(
+          LessonMediaPreviewData.fromPreviewItem(value).mergeMetadata(
             _cache[lessonMediaId] ??
                 LessonMediaPreviewData.unresolved(lessonMediaId: lessonMediaId),
           ),

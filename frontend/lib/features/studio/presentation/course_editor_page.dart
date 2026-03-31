@@ -35,6 +35,7 @@ import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/features/editor/widgets/file_picker_web.dart'
     as web_picker;
 import 'package:aveli/features/studio/application/studio_providers.dart';
@@ -63,7 +64,6 @@ import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
 import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
 import 'package:aveli/shared/utils/pdf_link_editor_support.dart';
 import 'package:aveli/shared/utils/quill_embed_insertion.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
     as editor_test_bridge;
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
@@ -185,14 +185,6 @@ bool? safeBool(Map<dynamic, dynamic>? source, Object key) {
         normalized == 'nej') {
       return false;
     }
-  }
-  return null;
-}
-
-String? firstValidId(List<Map<String, dynamic>> items) {
-  for (final item in items) {
-    final id = safeString(item, 'id');
-    if (id != null) return id;
   }
   return null;
 }
@@ -399,13 +391,8 @@ class _StaleVideoEmbedPlaceholder extends StatelessWidget {
   }
 }
 
-bool _isVideoMedia(Map<String, dynamic> media) {
-  final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
-  if (kind == 'video') return true;
-  final contentType = ((media['content_type'] as String?) ?? '')
-      .trim()
-      .toLowerCase();
-  return contentType.startsWith('video/');
+bool _isVideoMedia(StudioLessonMediaItem media) {
+  return media.mediaType.trim().toLowerCase() == 'video';
 }
 
 enum _UploadKind { image, video, audio, pdf }
@@ -448,16 +435,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
-  List<Map<String, dynamic>> _courses = <Map<String, dynamic>>[];
+  List<CourseStudio> _courses = <CourseStudio>[];
   String? _selectedCourseId;
 
-  List<Map<String, dynamic>> _lessons = <Map<String, dynamic>>[];
+  List<LessonStudio> _lessons = <LessonStudio>[];
   String? _selectedLessonId;
   bool _lessonsLoading = false;
-  bool _lessonIntro = false;
-  bool _updatingLessonIntro = false;
 
-  List<Map<String, dynamic>> _lessonMedia = <Map<String, dynamic>>[];
+  List<StudioLessonMediaItem> _lessonMedia = <StudioLessonMediaItem>[];
   String? _lessonMediaLessonId;
   bool _mediaLoading = false;
   String? _mediaStatus;
@@ -500,17 +485,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   StreamSubscription<quill.DocChange>? _controllerChangesSubscription;
 
   final TextEditingController _newCourseTitle = TextEditingController();
-  final TextEditingController _newCourseDesc = TextEditingController();
+  final TextEditingController _newCourseSlug = TextEditingController();
   final TextEditingController _courseTitleCtrl = TextEditingController();
   final TextEditingController _courseSlugCtrl = TextEditingController();
-  final TextEditingController _courseDescCtrl = TextEditingController();
   final TextEditingController _coursePriceCtrl = TextEditingController();
 
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
-  bool _courseIsFreeIntro = false;
   bool _courseIsPublished = false;
-  CourseJourneyStep _courseJourneyStep = CourseJourneyStep.intro;
   String? _courseCoverPath;
   String? _courseCoverPreviewUrl;
   bool _updatingCourseCover = false;
@@ -1358,7 +1340,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<String?> _bestAvailableLessonMediaCoverPreviewUrl(
     String lessonMediaId,
-    Map<String, dynamic> media,
+    StudioLessonMediaItem media,
   ) async {
     final cache = ref.read(lessonMediaPreviewCacheProvider);
     final cachedPreview = cache.peek(lessonMediaId);
@@ -1381,13 +1363,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     } catch (_) {
       // The lesson-media cover action can still continue without cache hydration.
     }
-    if (_requiresAuthoritativeEditorReadiness(media)) {
-      return null;
-    }
-    return _normalizedCoverPreviewUrl(
-      safeString(media, 'resolved_preview_url') ??
-          safeString(media, 'resolvedPreviewUrl'),
-    );
+    return null;
   }
 
   void _resetCourseContext({bool clearLists = false}) {
@@ -1399,15 +1375,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _mediaStatus = null;
     _downloadStatus = null;
     _courseMetaLoading = false;
-    _courseJourneyStep = CourseJourneyStep.intro;
     _lessonsLoading = false;
     _mediaLoading = false;
     _lessonsNeedingRefresh.clear();
     if (clearLists) {
-      _lessons = <Map<String, dynamic>>[];
+      _lessons = <LessonStudio>[];
       _setSelectedLessonId(null);
-      _lessonIntro = false;
-      _lessonMedia = <Map<String, dynamic>>[];
+      _lessonMedia = <StudioLessonMediaItem>[];
       _lessonMediaLessonId = null;
       _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
       _replaceLessonDocument(quill.Document(), resetDirty: true);
@@ -1428,7 +1402,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     });
   }
 
-  void _handleMediaPreviewTap(Map<String, dynamic> media) {
+  void _handleMediaPreviewTap(StudioLessonMediaItem media) {
     if (_suppressNextMediaPreview) {
       _suppressNextMediaPreview = false;
       return;
@@ -1468,10 +1442,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _qOptions.dispose();
     _qCorrect.dispose();
     _newCourseTitle.dispose();
-    _newCourseDesc.dispose();
+    _newCourseSlug.dispose();
     _courseTitleCtrl.dispose();
     _courseSlugCtrl.dispose();
-    _courseDescCtrl.dispose();
     _coursePriceCtrl.removeListener(_onCoursePriceChanged);
     _coursePriceCtrl.dispose();
     if (_lessonContentControllerInitialized) {
@@ -1515,7 +1488,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     try {
       final status = await ref.read(studioRepositoryProvider).fetchStatus();
       final allowed = status.isTeacher || profile.isTeacher || profile.isAdmin;
-      List<Map<String, dynamic>> myCourses = <Map<String, dynamic>>[];
+      List<CourseStudio> myCourses = <CourseStudio>[];
       if (allowed) {
         myCourses = await _studioRepo.myCourses();
       }
@@ -1524,9 +1497,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final selected =
           (initialId != null &&
               initialId.isNotEmpty &&
-              _itemById(myCourses, initialId) != null)
+              _courseById(initialId, myCourses) != null)
           ? initialId
-          : firstValidId(myCourses);
+          : _firstCourseId(myCourses);
       setState(() {
         _allowed = allowed;
         _courses = myCourses;
@@ -1552,7 +1525,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final requestId = ++_courseMetaRequestId;
     setState(() => _courseMetaLoading = true);
     try {
-      final map = await _studioRepo.fetchCourseMeta(courseId) ?? {};
+      final details = await _studioRepo.fetchCourseMeta(courseId);
+      final course = details.course;
+      final map = details.toJson();
       if (_isStaleRequest(
         requestId: requestId,
         currentId: _courseMetaRequestId,
@@ -1572,22 +1547,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       _courseTitleCtrl.text = safeString(map, 'title') ?? '';
       _courseSlugCtrl.text = safeString(map, 'slug') ?? '';
-      _courseDescCtrl.text = safeString(map, 'description') ?? '';
-      final priceRaw = map['price_amount_cents'] ?? map['price_cents'];
+      final priceRaw = details.priceAmountCents;
       final priceOre = priceRaw == null ? null : int.tryParse('$priceRaw');
       _coursePriceCtrl.text = priceOre == null
           ? ''
           : formatSekInputFromOre(priceOre);
       if (mounted) {
         setState(() {
-          _courseIsFreeIntro = safeBool(map, 'is_free_intro') ?? false;
-          _courseIsPublished = safeBool(map, 'is_published') ?? false;
-          _courseJourneyStep =
-              courseJourneyStepFromApi(safeString(map, 'journey_step')) ??
-              CourseJourneyStep.intro;
+          _courseIsPublished = details.isPublished;
           final resolvedCover = _resolveEditorCourseMapCover(
             map,
-            debugContext: 'StudioCourseMeta:$courseId',
+            debugContext: 'StudioCourseMeta:${course.id}',
           );
           final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
             map,
@@ -1626,10 +1596,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (courseId == null) {
       if (mounted) {
         setState(() {
-          _lessons = <Map<String, dynamic>>[];
+          _lessons = <LessonStudio>[];
           _setSelectedLessonId(null);
-          _lessonIntro = false;
-          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMedia = <StudioLessonMediaItem>[];
           _lessonMediaLessonId = null;
           _lessonsLoadError = null;
           _mediaLoadError = null;
@@ -1666,16 +1635,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final selected =
           preserveSelection &&
               _selectedLessonId != null &&
-              _itemById(lessons, _selectedLessonId) != null
+              _lessonById(_selectedLessonId, lessons) != null
           ? _selectedLessonId
-          : firstValidId(lessons);
-      final selectedLesson = _itemById(lessons, selected);
-      final intro = safeBool(selectedLesson, 'is_intro') ?? false;
+          : _firstLessonId(lessons);
       final selectedChanged = selected != _lessonMediaLessonId;
       setState(() {
         _lessons = lessons;
         _setSelectedLessonId(selected);
-        _lessonIntro = intro;
         _lessonsLoadError = null;
         _mediaLoadError = null;
         _resetLessonEditorBootValues(
@@ -1684,7 +1650,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               : _LessonEditorBootPhase.applyingLessonDocument,
         );
         if (selectedChanged) {
-          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMedia = <StudioLessonMediaItem>[];
           _lessonMediaLessonId = selected;
         }
       });
@@ -1693,7 +1659,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         await _bootSelectedLesson();
       } else if (mounted) {
         setState(() {
-          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMedia = <StudioLessonMediaItem>[];
           _lessonMediaLessonId = null;
           _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
         });
@@ -1737,7 +1703,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _stopLessonMediaPolling();
       if (mounted) {
         setState(() {
-          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMedia = <StudioLessonMediaItem>[];
           _lessonMediaLessonId = null;
           _mediaLoadError = null;
           _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
@@ -1760,7 +1726,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _mediaLoading = true;
         _mediaLoadError = null;
         if (_lessonMediaLessonId != selectedLessonId) {
-          _lessonMedia = <Map<String, dynamic>>[];
+          _lessonMedia = <StudioLessonMediaItem>[];
           _lessonMediaLessonId = selectedLessonId;
         }
       });
@@ -1775,7 +1741,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
-      final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
+      final previousMedia = List<StudioLessonMediaItem>.from(_lessonMedia);
       _syncLessonMediaPreviewCache(
         previousMedia: previousMedia,
         nextMedia: media,
@@ -1829,13 +1795,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  String? _pipelineStateFromDb(Map<String, dynamic> media) {
-    final raw = media['media_state'];
-    if (raw is String) {
-      final trimmed = raw.trim().toLowerCase();
-      return trimmed.isEmpty ? null : trimmed;
-    }
-    return null;
+  String? _pipelineStateFromDb(StudioLessonMediaItem media) {
+    final trimmed = media.state.trim().toLowerCase();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   bool _lessonMediaHasProcessingPipelineItems() {
@@ -1887,48 +1849,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
-      final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
+      final previousMedia = List<StudioLessonMediaItem>.from(_lessonMedia);
       if (!mounted) return;
-
-      List<Map<String, dynamic>> merged = const <Map<String, dynamic>>[];
       setState(() {
-        final existingById = <String, Map<String, dynamic>>{};
-        for (final item in _lessonMedia) {
-          final id = item['id'];
-          if (id is String) {
-            existingById[id] = item;
-          }
-        }
-
-        merged = <Map<String, dynamic>>[];
-        for (final item in media) {
-          final id = item['id'];
-          final existing = id is String ? existingById[id] : null;
-          if (existing != null) {
-            merged.add({...existing, ...item});
-          } else {
-            merged.add(item);
-          }
-        }
-
-        _lessonMedia = merged;
+        _lessonMedia = media;
         _lessonMediaLessonId = lessonId;
         _mediaLoadError = null;
       });
       _syncLessonMediaPreviewCache(
         previousMedia: previousMedia,
-        nextMedia: merged,
+        nextMedia: media,
       );
       _invalidateCurrentLessonEditorMediaHydration(
         lessonId: lessonId,
         previousMedia: previousMedia,
-        nextMedia: merged,
+        nextMedia: media,
       );
       unawaited(
         _refreshLessonMediaAuthoritativeState(
           lessonId: lessonId,
           requestId: requestId,
-          mediaItems: merged,
+          mediaItems: media,
         ),
       );
     } catch (_) {
@@ -1948,9 +1889,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final needsRefresh = _lessonsNeedingRefresh.remove(lessonId);
     setState(() {
       _setSelectedLessonId(lessonId);
-      final match = _lessonById(lessonId);
-      _lessonIntro = match?['is_intro'] == true;
-      _lessonMedia = <Map<String, dynamic>>[];
+      _lessonMedia = <StudioLessonMediaItem>[];
       _lessonMediaLessonId = lessonId;
       _mediaLoadError = null;
       _resetLessonEditorBootValues(
@@ -1965,15 +1904,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Widget _buildLessonListTile(
     BuildContext context,
-    Map<String, dynamic> lesson, {
+    LessonStudio lesson, {
     required int index,
   }) {
     final theme = Theme.of(context);
-    final lessonId = safeString(lesson, 'id');
-    final title = safeString(lesson, 'title') ?? 'Lektion';
-    final isIntro = safeBool(lesson, 'is_intro') ?? false;
-    final position = _positionValue(lesson);
-    final isSelected = lessonId != null && lessonId == _selectedLessonId;
+    final lessonId = lesson.id;
+    final title = lesson.lessonTitle;
+    final position = lesson.position;
+    final isSelected = lessonId == _selectedLessonId;
 
     return Material(
       color: isSelected
@@ -1993,14 +1931,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ),
         ),
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: isIntro ? const Text('Intro') : null,
         trailing: Wrap(
           spacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             IconButton(
               tooltip: 'Ta bort lektion',
-              onPressed: lessonId == null || _lessonActionBusy
+              onPressed: _lessonActionBusy
                   ? null
                   : () => _deleteLesson(lessonId),
               icon: const Icon(Icons.delete_outline),
@@ -2011,17 +1948,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             ),
           ],
         ),
-        onTap: lessonId == null ? null : () => _selectLesson(lessonId),
+        onTap: () => _selectLesson(lessonId),
       ),
     );
   }
 
-  List<Map<String, dynamic>> _reindexLessons(
-    List<Map<String, dynamic>> lessons,
-  ) {
-    return List<Map<String, dynamic>>.generate(lessons.length, (index) {
+  List<LessonStudio> _reindexLessons(List<LessonStudio> lessons) {
+    return List<LessonStudio>.generate(lessons.length, (index) {
       final lesson = lessons[index];
-      return <String, dynamic>{...lesson, 'position': index + 1};
+      return lesson.copyWith(position: index + 1);
     }, growable: false);
   }
 
@@ -2038,8 +1973,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     final updates = <Map<String, dynamic>>[];
     for (var index = 0; index < _lessons.length; index += 1) {
-      final lessonId = safeString(_lessons[index], 'id');
-      if (lessonId == null) {
+      final lessonId = _lessons[index].id;
+      if (lessonId.isEmpty) {
         return;
       }
       updates.add(<String, dynamic>{'id': lessonId, 'position': index + 1});
@@ -2066,18 +2001,36 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _scheduleLessonReorderSave();
   }
 
-  Map<String, dynamic>? _lessonById(String? id) {
-    if (id == null) return null;
-    return _itemById(_lessons, id);
+  LessonStudio? _lessonById(String? id, [List<LessonStudio>? source]) {
+    if (id == null || id.isEmpty) return null;
+    for (final item in source ?? _lessons) {
+      if (item.id == id) return item;
+    }
+    return null;
   }
 
-  Map<String, dynamic>? _itemById(
-    List<Map<String, dynamic>> items,
-    String? id,
-  ) {
+  CourseStudio? _courseById(String? id, [List<CourseStudio>? source]) {
     if (id == null || id.isEmpty) return null;
+    for (final item in source ?? _courses) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  String? _firstCourseId(List<CourseStudio> items) {
     for (final item in items) {
-      if (safeString(item, 'id') == id) return item;
+      if (item.id.isNotEmpty) {
+        return item.id;
+      }
+    }
+    return null;
+  }
+
+  String? _firstLessonId(List<LessonStudio> items) {
+    for (final item in items) {
+      if (item.id.isNotEmpty) {
+        return item.id;
+      }
     }
     return null;
   }
@@ -2085,9 +2038,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   List<DropdownMenuItem<String>> _courseDropdownItems() {
     final items = <DropdownMenuItem<String>>[];
     for (final course in _courses) {
-      final id = safeString(course, 'id');
-      if (id == null) continue;
-      final title = safeString(course, 'title') ?? 'Namnlös kurs';
+      final id = course.id;
+      if (id.isEmpty) continue;
+      final title = course.title;
       items.add(DropdownMenuItem<String>(value: id, child: Text(title)));
     }
     return items;
@@ -2096,43 +2049,43 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _lessonCourseId(String? lessonId) {
     // Lesson is the source of truth for course_id in lesson-scoped media actions.
     final lesson = _lessonById(lessonId);
-    final courseId = lesson?['course_id'];
-    if (courseId is String && courseId.isNotEmpty) return courseId;
+    final courseId = lesson?.courseId;
+    if (courseId != null && courseId.isNotEmpty) return courseId;
     return _selectedCourseId;
   }
 
-  int _positionValue(Map<String, dynamic> item) {
-    final value = item['position'];
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
+  int _positionValue(LessonStudio item) {
+    return item.position;
   }
 
-  List<Map<String, dynamic>> _sortByPosition(List<Map<String, dynamic>> items) {
+  List<LessonStudio> _sortByPosition(List<LessonStudio> items) {
     final sorted = [...items];
     sorted.sort((a, b) => _positionValue(a).compareTo(_positionValue(b)));
     return sorted;
   }
 
-  List<Map<String, dynamic>> _mergeById(
-    List<Map<String, dynamic>> existing,
-    List<Map<String, dynamic>> incoming,
+  List<LessonStudio> _mergeById(
+    List<LessonStudio> existing,
+    List<LessonStudio> incoming,
   ) {
-    final existingById = <String, Map<String, dynamic>>{};
+    final existingById = <String, LessonStudio>{};
     for (final item in existing) {
-      final id = item['id'];
-      if (id is String) {
-        existingById[id] = item;
-      }
+      existingById[item.id] = item;
     }
-    final merged = <Map<String, dynamic>>[];
+    final merged = <LessonStudio>[];
     for (final item in incoming) {
-      final id = item['id'];
-      final existing = id is String ? existingById[id] : null;
-      if (existing != null && id is String) {
-        merged.add({...existing, ...item});
-        existingById.remove(id);
+      final existingItem = existingById[item.id];
+      if (existingItem != null) {
+        merged.add(
+          existingItem.copyWith(
+            courseId: item.courseId,
+            lessonTitle: item.lessonTitle,
+            position: item.position,
+            contentMarkdown: item.contentMarkdown,
+            clearContentMarkdown: item.contentMarkdown == null,
+          ),
+        );
+        existingById.remove(item.id);
       } else {
         merged.add(item);
       }
@@ -2280,9 +2233,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     final labels = <String, String>{};
     for (final media in _lessonMedia) {
-      final mediaId = safeString(media, 'id');
-      if (mediaId == null) continue;
-      labels[mediaId] = _fileNameFromMedia(media);
+      labels[media.lessonMediaId] = _fileNameFromMedia(media);
     }
     return labels;
   }
@@ -2296,54 +2247,48 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_lessonMedia.isEmpty) return const <LessonMediaItem>[];
 
     final items = <LessonMediaItem>[];
-    for (final raw in _lessonMedia) {
-      try {
-        items.add(LessonMediaItem.fromJson(raw));
-      } catch (_) {
-        // Skip malformed media entries.
-      }
+    for (final media in _lessonMedia) {
+      items.add(
+        LessonMediaItem(
+          id: media.lessonMediaId,
+          kind: media.mediaType,
+          storagePath: '',
+          mediaAssetId: media.mediaAssetId,
+          originalName: media.originalName,
+          position: media.position,
+          mediaState: media.state,
+        ),
+      );
     }
     return items;
   }
 
-  bool _requiresAuthoritativeEditorReadiness(Map<String, dynamic> media) {
-    final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
-    if (kind == 'image' || kind == 'video' || kind == 'audio') {
-      return true;
-    }
-    final contentType = ((media['content_type'] as String?) ?? '')
-        .trim()
-        .toLowerCase();
-    return contentType.startsWith('image/') ||
-        contentType.startsWith('video/') ||
-        contentType.startsWith('audio/');
+  bool _requiresAuthoritativeEditorReadiness(StudioLessonMediaItem media) {
+    final mediaType = media.mediaType.trim().toLowerCase();
+    return mediaType == 'image' || mediaType == 'video' || mediaType == 'audio';
   }
 
   LessonMediaPreviewData? _authoritativePreviewForMedia(
-    Map<String, dynamic> media,
+    StudioLessonMediaItem media,
   ) {
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null) return null;
     final preview = ref
         .read(lessonMediaPreviewCacheProvider)
-        .peek(lessonMediaId);
+        .peek(media.lessonMediaId);
     if (preview?.authoritativeEditorReady != true) {
       return null;
     }
     return preview;
   }
 
-  LessonMediaPreviewStatus? _previewStatusForMedia(Map<String, dynamic> media) {
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null || lessonMediaId.trim().isEmpty) {
-      return null;
-    }
+  LessonMediaPreviewStatus? _previewStatusForMedia(
+    StudioLessonMediaItem media,
+  ) {
+    final lessonMediaId = media.lessonMediaId.trim();
+    if (lessonMediaId.isEmpty) return null;
     return ref.read(lessonMediaPreviewCacheProvider).peekStatus(lessonMediaId);
   }
 
-  bool _isAuthoritativelyReadyForEditor(Map<String, dynamic> media) {
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null) return false;
+  bool _isAuthoritativelyReadyForEditor(StudioLessonMediaItem media) {
     if (!_requiresAuthoritativeEditorReadiness(media)) {
       return true;
     }
@@ -2351,9 +2296,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         LessonMediaPreviewState.ready;
   }
 
-  bool _canInsertLessonMedia(Map<String, dynamic> media) {
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null || lessonMediaId.trim().isEmpty) {
+  bool _canInsertLessonMedia(StudioLessonMediaItem media) {
+    if (media.lessonMediaId.trim().isEmpty) {
       return false;
     }
     if (_isWavMedia(media)) {
@@ -2366,13 +2310,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _canPreviewLessonMedia({
-    required Map<String, dynamic> media,
+    required StudioLessonMediaItem media,
     required bool hasInvalidPipelineReference,
     required bool isWavMedia,
     required bool canPipelinePlay,
   }) {
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null || lessonMediaId.trim().isEmpty) {
+    if (media.lessonMediaId.trim().isEmpty) {
       return false;
     }
     if (hasInvalidPipelineReference || isWavMedia) {
@@ -2390,11 +2333,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return false;
       }
     }
-    final normalizedKind = ((media['kind'] as String?) ?? '')
-        .trim()
-        .toLowerCase();
     if (_isPipelineMedia(media) &&
-        normalizedKind == 'audio' &&
+        media.mediaType.trim().toLowerCase() == 'audio' &&
         !canPipelinePlay) {
       return false;
     }
@@ -2402,24 +2342,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Set<String> _lessonMediaIdsFromRows(
-    Iterable<Map<String, dynamic>> mediaItems,
+    Iterable<StudioLessonMediaItem> mediaItems,
   ) {
     return mediaItems
-        .map((media) => safeString(media, 'id'))
-        .whereType<String>()
+        .map((media) => media.lessonMediaId)
         .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
         .toSet();
   }
 
   void _syncLessonMediaPreviewCache({
-    required List<Map<String, dynamic>> previousMedia,
-    required List<Map<String, dynamic>> nextMedia,
+    required List<StudioLessonMediaItem> previousMedia,
+    required List<StudioLessonMediaItem> nextMedia,
   }) {
     final cache = ref.read(lessonMediaPreviewCacheProvider);
     if (_didLessonMediaPreviewStateChange(previousMedia, nextMedia)) {
       cache.invalidate(
-        _lessonMediaIdsFromRows(<Map<String, dynamic>>[
+        _lessonMediaIdsFromRows(<StudioLessonMediaItem>[
           ...previousMedia,
           ...nextMedia,
         ]),
@@ -2431,12 +2370,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<void> _refreshLessonMediaAuthoritativeState({
     required String lessonId,
     required int requestId,
-    required Iterable<Map<String, dynamic>> mediaItems,
+    required Iterable<StudioLessonMediaItem> mediaItems,
   }) async {
     final ids = mediaItems
         .where(_requiresAuthoritativeEditorReadiness)
-        .map((media) => safeString(media, 'id'))
-        .whereType<String>()
+        .map((media) => media.lessonMediaId)
         .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
         .toSet()
@@ -2458,8 +2396,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _didLessonMediaPreviewStateChange(
-    List<Map<String, dynamic>> previousMedia,
-    List<Map<String, dynamic>> nextMedia,
+    List<StudioLessonMediaItem> previousMedia,
+    List<StudioLessonMediaItem> nextMedia,
   ) {
     if (previousMedia.length != nextMedia.length) return true;
     for (var index = 0; index < nextMedia.length; index += 1) {
@@ -2471,21 +2409,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return false;
   }
 
-  String _lessonMediaPreviewStateToken(Map<String, dynamic> media) {
+  String _lessonMediaPreviewStateToken(StudioLessonMediaItem media) {
     return <String>[
-      safeString(media, 'id') ?? '',
-      safeString(media, 'kind') ?? '',
-      safeString(media, 'file_name') ?? '',
-      safeString(media, 'fileName') ?? '',
-      safeString(media, 'original_name') ?? '',
-      safeString(media, 'media_state') ?? '',
+      media.lessonMediaId,
+      media.mediaType,
+      media.originalName ?? '',
+      media.state,
     ].join('|');
   }
 
   void _invalidateCurrentLessonEditorMediaHydration({
     required String lessonId,
-    required List<Map<String, dynamic>> previousMedia,
-    required List<Map<String, dynamic>> nextMedia,
+    required List<StudioLessonMediaItem> previousMedia,
+    required List<StudioLessonMediaItem> nextMedia,
   }) {
     if (_selectedLessonId != lessonId) return;
     if (!_didLessonMediaPreviewStateChange(previousMedia, nextMedia)) return;
@@ -2610,26 +2546,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<String?> _resolveLessonMediaDeliveryUrlForMedia(
-    Map<String, dynamic> media,
+    StudioLessonMediaItem media,
   ) async {
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null) {
-      return null;
-    }
-    return _resolveLessonMediaDeliveryUrl(lessonMediaId);
+    return _resolveLessonMediaDeliveryUrl(media.lessonMediaId);
   }
 
   Future<String?> _resolveLessonMediaPreviewUrlForMedia(
-    Map<String, dynamic> media,
+    StudioLessonMediaItem media,
   ) async {
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null) {
-      return null;
-    }
-
     final preview = await ref
         .read(lessonMediaPreviewCacheProvider)
-        .getSettledOrFetch(lessonMediaId);
+        .getSettledOrFetch(media.lessonMediaId);
     return _normalizeBrowserOpenableMediaUrl(preview?.visualUrl);
   }
 
@@ -2767,8 +2694,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final lesson = _lessonById(lessonId);
-    final storedMarkdown = lesson?['content_markdown'] as String? ?? '';
-    final storedTitle = lesson?['title'] as String? ?? '';
+    final storedMarkdown = lesson?.contentMarkdown ?? '';
+    final storedTitle = lesson?.lessonTitle ?? '';
 
     _lastSavedLessonMarkdown = storedMarkdown;
     _lastSavedLessonTitle = storedTitle;
@@ -2851,7 +2778,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   int _currentLessonPosition() {
     final lesson = _lessonById(_selectedLessonId);
-    return lesson == null ? 0 : (lesson['position'] as int? ?? 0);
+    return lesson?.position ?? 0;
   }
 
   Future<bool> _saveLessonContent({bool showSuccessSnack = true}) async {
@@ -2913,20 +2840,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final updated = await _studioRepo.upsertLesson(
         id: lessonId,
         courseId: courseId,
-        title: title,
+        lessonTitle: title,
         contentMarkdown: markdown,
         position: _currentLessonPosition(),
-        isIntro: _lessonIntro,
       );
 
       if (!mounted || !_isEditorTokenValid(token)) return false;
 
       setState(() {
         _lessons = _lessons
-            .map(
-              (lesson) =>
-                  lesson['id'] == lessonId ? {...lesson, ...updated} : lesson,
-            )
+            .map((lesson) => lesson.id == lessonId ? updated : lesson)
             .toList();
         _lastSavedLessonMarkdown = markdown;
         _lastSavedLessonTitle = title;
@@ -3061,21 +2984,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final controller = _lessonContentController;
 
     final hasVideo = _lessonMedia.any(
-      (media) => (media['kind'] as String?) == 'video',
+      (media) => media.mediaType.trim().toLowerCase() == 'video',
     );
     final hasAudio = _lessonMedia.any(
-      (media) => (media['kind'] as String?) == 'audio',
+      (media) => media.mediaType.trim().toLowerCase() == 'audio',
     );
 
     final badges = <Widget>[];
-    if (_lessonIntro) {
-      badges.add(
-        const Chip(
-          label: Text('Introduktion'),
-          visualDensity: VisualDensity.compact,
-        ),
-      );
-    }
     if (hasVideo || hasAudio) {
       final label = hasVideo && hasAudio
           ? 'Innehåller video & ljud'
@@ -3893,22 +3808,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Widget? _buildLessonVideoPreview(BuildContext context) {
     if (_selectedLessonId == null || _lessonMedia.isEmpty) return null;
-    Map<String, dynamic>? video;
+    StudioLessonMediaItem? video;
     for (final media in _lessonMedia) {
-      final kind = (media['kind'] as String?) ?? '';
-      final contentType = (media['content_type'] as String?) ?? '';
-      final effectiveKind = kind.isNotEmpty
-          ? kind
-          : _kindForContentType(contentType);
-      if (effectiveKind == 'video') {
+      if (media.mediaType.trim().toLowerCase() == 'video') {
         video = media;
         break;
       }
     }
     final media = video;
     if (media == null) return null;
-    final label = safeString(media, 'title') ?? _fileNameFromMedia(media);
-    final isIntro = media['is_intro'] == true || _lessonIntro;
+    final label = _fileNameFromMedia(media);
     final playbackUrl = _normalizeVideoPlaybackUrl(
       _authoritativePreviewForMedia(media)?.visualUrl,
     );
@@ -3931,11 +3840,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              Chip(
-                label: Text(isIntro ? 'Introduktion' : 'Premium'),
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(width: 12),
               Expanded(child: Text(label, overflow: TextOverflow.ellipsis)),
             ],
           ),
@@ -3968,23 +3872,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final nextPos = _lessons.isEmpty
           ? 1
           : _lessons
-                    .map((lesson) => (lesson['position'] as int? ?? 0))
+                    .map((lesson) => lesson.position)
                     .fold<int>(0, (a, b) => a > b ? a : b) +
                 1;
       final lessonId = _uuid.v4();
       final lesson = await _studioRepo.upsertLesson(
         courseId: courseId,
-        title: 'Ny lektion',
+        lessonTitle: 'Ny lektion',
         position: nextPos,
-        isIntro: false,
         createId: lessonId,
       );
       if (!mounted) return;
       setState(() {
         _lessons = _sortByPosition(_mergeById(_lessons, [lesson]));
-        _setSelectedLessonId(safeString(lesson, 'id'));
-        _lessonIntro = safeBool(lesson, 'is_intro') ?? false;
-        _lessonMedia = <Map<String, dynamic>>[];
+        _setSelectedLessonId(lesson.id);
+        _lessonMedia = <StudioLessonMediaItem>[];
         _lessonMediaLessonId = null;
         _mediaLoadError = null;
         _mediaStatus = null;
@@ -4033,7 +3935,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setState(() {
         if (_selectedLessonId == id) {
           _setSelectedLessonId(null);
-          _lessonIntro = false;
         }
       });
       await _loadLessons(preserveSelection: false);
@@ -4044,40 +3945,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _showFriendlyErrorSnack('Kunde inte ta bort lektion', e, stackTrace);
     } finally {
       if (mounted) setState(() => _lessonActionBusy = false);
-    }
-  }
-
-  Future<void> _setLessonIntro(bool value) async {
-    final lessonId = _selectedLessonId;
-    if (lessonId == null || _updatingLessonIntro) return;
-    if (mounted) {
-      setState(() {
-        _lessonIntro = value;
-        _updatingLessonIntro = true;
-      });
-    }
-    try {
-      await _studioRepo.updateLessonIntro(lessonId: lessonId, isIntro: value);
-      if (mounted) {
-        setState(() {
-          _lessons = _lessons
-              .map(
-                (lesson) => lesson['id'] == lessonId
-                    ? {...lesson, 'is_intro': value}
-                    : lesson,
-              )
-              .toList();
-        });
-      }
-    } catch (e, stackTrace) {
-      if (mounted) setState(() => _lessonIntro = !value);
-      _showFriendlyErrorSnack(
-        'Kunde inte uppdatera intro-flagga',
-        e,
-        stackTrace,
-      );
-    } finally {
-      if (mounted) setState(() => _updatingLessonIntro = false);
     }
   }
 
@@ -4185,7 +4052,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             filename: name,
             displayName: displayName,
             contentType: contentType,
-            isIntro: _lessonIntro,
           );
       if (mounted) {
         setState(() => _mediaStatus = 'Köade $name');
@@ -4352,28 +4218,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return error.message ?? 'Nätverksfel';
   }
 
-  bool _isImageMedia(Map<String, dynamic> media) {
-    final kind = (media['kind'] as String?) ?? '';
-    if (kind == 'image') return true;
-    final contentType = (media['content_type'] as String?) ?? '';
-    return contentType.startsWith('image/');
+  bool _isImageMedia(StudioLessonMediaItem media) {
+    return media.mediaType.trim().toLowerCase() == 'image';
   }
 
-  bool _isDocumentMedia(Map<String, dynamic> media) {
-    final kind = ((media['kind'] as String?) ?? '').trim().toLowerCase();
-    if (kind == 'document' || kind == 'pdf') return true;
-    final contentType = ((media['content_type'] as String?) ?? '')
-        .trim()
-        .toLowerCase();
-    return contentType == 'application/pdf';
+  bool _isDocumentMedia(StudioLessonMediaItem media) {
+    return media.mediaType.trim().toLowerCase() == 'document';
   }
 
-  bool _isPipelineMedia(Map<String, dynamic> media) {
-    return media['media_asset_id'] != null;
+  bool _isPipelineMedia(StudioLessonMediaItem media) {
+    return media.mediaAssetId != null;
   }
 
-  String _pipelineState(Map<String, dynamic> media) {
-    return (media['media_state'] as String?) ?? 'uploaded';
+  String _pipelineState(StudioLessonMediaItem media) {
+    return media.state;
   }
 
   String _pipelineLabel(String state) {
@@ -4402,42 +4260,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return uri.toString();
   }
 
-  bool _isWavMedia(Map<String, dynamic> media) {
-    final ingestFormat = (media['ingest_format'] as String?)
-        ?.toLowerCase()
-        .trim();
-    final contentType =
-        (media['content_type'] as String?)?.toLowerCase().trim() ?? '';
-    final originalName = (media['original_name'] as String?)
-        ?.toLowerCase()
-        .trim();
-    final isWavSource =
-        ingestFormat == 'wav' ||
-        contentType == 'audio/wav' ||
-        contentType == 'audio/x-wav' ||
-        (originalName != null && originalName.endsWith('.wav'));
-
+  bool _isWavMedia(StudioLessonMediaItem media) {
+    final originalName = media.originalName?.toLowerCase().trim();
+    final isWavSource = originalName != null && originalName.endsWith('.wav');
     if (_isPipelineMedia(media)) {
       final state = _pipelineState(media);
       if (state == 'ready') return false;
       if (isWavSource) return true;
-      final kind = (media['kind'] as String?) ?? '';
-      if (kind == 'audio' || contentType.startsWith('audio/')) {
-        return true;
-      }
-      return false;
+      return media.mediaType.trim().toLowerCase() == 'audio';
     }
-
     return isWavSource;
   }
 
-  void _patchLessonMedia(String mediaId, Map<String, dynamic> patch) {
-    final index = _lessonMedia.indexWhere((item) => item['id'] == mediaId);
+  void _patchLessonMedia(String mediaId, StudioLessonMediaItem replacement) {
+    final index = _lessonMedia.indexWhere(
+      (item) => item.lessonMediaId == mediaId,
+    );
     if (index < 0) return;
-    final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
-    final updated = {..._lessonMedia[index], ...patch};
+    final previousMedia = List<StudioLessonMediaItem>.from(_lessonMedia);
     final copy = [..._lessonMedia];
-    copy[index] = updated;
+    copy[index] = replacement;
     _syncLessonMediaPreviewCache(previousMedia: previousMedia, nextMedia: copy);
     setState(() => _lessonMedia = copy);
     final lessonId = _selectedLessonId;
@@ -4451,9 +4293,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _uploadImageFromToolbar() async {
-    final courseId = _selectedCourseId;
     final lessonId = _selectedLessonId;
-    if (courseId == null || lessonId == null) {
+    if (lessonId == null) {
       showSnack(context, 'Välj kurs och lektion innan du laddar upp media.');
       return;
     }
@@ -4462,52 +4303,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final selectionBeforePicker = _lastLessonSelection;
     const extensions = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
 
-    Future<Map<String, dynamic>> uploadImageAndResolvePublicUrl(
+    Future<StudioLessonMediaItem> uploadImage(
       Uint8List bytes,
       String filename,
       String contentType,
     ) async {
-      // Image uploads must produce a stable lesson media id so the editor can
-      // render exclusively through backend preview authority.
-      final api = ref.read(apiClientProvider);
-      final form = FormData.fromMap({
-        'lesson_id': lessonId,
-        if (courseId.isNotEmpty) 'course_id': courseId,
-        'file': MultipartFile.fromBytes(
-          bytes,
-          filename: filename,
-          contentType: MediaType.parse(contentType),
-        ),
-      });
-      final payload =
-          await api.postForm<Map<String, dynamic>>(
-            '/api/upload/lesson-image',
-            form,
-          ) ??
-          const <String, dynamic>{};
-
-      final dynamic nestedMedia = payload['media'];
-      final media = nestedMedia is Map
-          ? Map<String, dynamic>.from(nestedMedia)
-          : Map<String, dynamic>.from(payload);
-
-      final lessonMediaId = safeString(media, 'id');
-      if (lessonMediaId == null) {
-        throw StateError('Uppladdningen returnerade inget lesson_media_id.');
-      }
-
-      if ((media['kind'] as String?)?.trim().isEmpty ?? true) {
-        media['kind'] = 'image';
-      }
-      if ((media['original_name'] as String?)?.trim().isEmpty ?? true) {
-        media['original_name'] = filename;
-      }
-      if ((media['content_type'] as String?)?.trim().isEmpty ?? true) {
-        media['content_type'] = contentType;
-      }
-      media['id'] = lessonMediaId;
-
-      return <String, dynamic>{'media': media};
+      return _studioRepo.uploadLessonMedia(
+        lessonId: lessonId,
+        data: bytes,
+        filename: filename,
+        contentType: contentType,
+      );
     }
 
     Future<void> uploadBytes(Uint8List bytes, String filename) async {
@@ -4516,33 +4322,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() => _mediaStatus = 'Laddar upp $filename…');
       }
       try {
-        final uploadResult = await uploadImageAndResolvePublicUrl(
-          bytes,
-          filename,
-          contentType,
-        );
+        final media = await uploadImage(bytes, filename, contentType);
         if (!mounted || !_isEditorTokenValid(token)) return;
-        final media = Map<String, dynamic>.from(
-          uploadResult['media'] as Map<String, dynamic>,
-        );
-        final previousMedia = List<Map<String, dynamic>>.from(_lessonMedia);
-        List<Map<String, dynamic>> nextMedia = const <Map<String, dynamic>>[];
+        final previousMedia = List<StudioLessonMediaItem>.from(_lessonMedia);
+        List<StudioLessonMediaItem> nextMedia = const <StudioLessonMediaItem>[];
         setState(() {
-          final id = media['id'];
-          if (id is String) {
-            final updated = [..._lessonMedia];
-            final index = updated.indexWhere((item) => item['id'] == id);
-            if (index >= 0) {
-              updated[index] = {...updated[index], ...media};
-            } else {
-              updated.add(media);
-            }
-            nextMedia = updated;
-            _lessonMedia = updated;
+          final updated = [..._lessonMedia];
+          final index = updated.indexWhere(
+            (item) => item.lessonMediaId == media.lessonMediaId,
+          );
+          if (index >= 0) {
+            updated[index] = media;
           } else {
-            nextMedia = [..._lessonMedia, media];
-            _lessonMedia = nextMedia;
+            updated.add(media);
           }
+          nextMedia = updated;
+          _lessonMedia = updated;
         });
         _syncLessonMediaPreviewCache(
           previousMedia: previousMedia,
@@ -4554,7 +4349,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           nextMedia: nextMedia,
         );
         final inserted = _insertImageIntoLesson(
-          lessonMediaId: media['id'] as String?,
+          lessonMediaId: media.lessonMediaId,
           targetSelection: selectionBeforePicker,
         );
         if (!inserted) {
@@ -4797,7 +4592,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _insertMediaIntoLesson(
-    Map<String, dynamic> media, {
+    StudioLessonMediaItem media, {
     bool showSaveHint = true,
   }) {
     if (_isWavMedia(media)) {
@@ -4809,8 +4604,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return false;
     }
-    final kind = (media['kind'] as String?) ?? '';
-    final lessonMediaId = (media['id'] as String?)?.trim() ?? '';
+    final kind = media.mediaType;
+    final lessonMediaId = media.lessonMediaId.trim();
     if (lessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Media saknar ID och kan inte bäddas in.');
@@ -5064,7 +4859,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  Future<void> _selectCourseCoverFromMedia(Map<String, dynamic> media) async {
+  Future<void> _selectCourseCoverFromMedia(StudioLessonMediaItem media) async {
     if (!_isImageMedia(media)) {
       if (mounted && context.mounted) {
         showSnack(context, 'Endast bilder kan användas som kursminiatyr.');
@@ -5085,22 +4880,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
-    final mediaLessonId = media['lesson_id'];
-    if (mediaLessonId is String && mediaLessonId != lessonId) {
+    final mediaLessonId = media.lessonId;
+    if (mediaLessonId != lessonId) {
       if (mounted && context.mounted) {
         showSnack(context, 'Bilden tillhör en annan lektion.');
       }
       return;
     }
-    final mediaCourseId = media['course_id'];
-    if (mediaCourseId is String && mediaCourseId != courseId) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Bilden tillhör en annan kurs.');
-      }
-      return;
-    }
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null) {
+    final lessonMediaId = media.lessonMediaId.trim();
+    if (lessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Bilden saknar media-id och kan inte användas.');
       }
@@ -5304,11 +5092,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonsNeedingRefresh.add(job.lessonId);
       return;
     }
-    final authoritativeUpload = job.uploadedMedia == null
-        ? null
-        : Map<String, dynamic>.from(job.uploadedMedia!);
-    final authoritativeUploadId = safeString(authoritativeUpload, 'id');
-    if (authoritativeUpload == null || authoritativeUploadId == null) {
+    final authoritativeUpload = job.uploadedMedia;
+    final authoritativeUploadId = authoritativeUpload?.lessonMediaId.trim();
+    if (authoritativeUpload == null ||
+        authoritativeUploadId == null ||
+        authoritativeUploadId.isEmpty) {
       if (context.mounted) {
         showSnack(
           context,
@@ -5327,12 +5115,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final token = _captureEditorToken();
     await _loadLessonMedia();
     if (!mounted || !_isEditorTokenValid(token)) return;
-    final contentType = job.contentType.toLowerCase();
-
-    Map<String, dynamic>? uploaded;
+    StudioLessonMediaItem? uploaded;
     for (final media in _lessonMedia) {
-      if (safeString(media, 'id') == authoritativeUploadId) {
-        uploaded = {...authoritativeUpload, ...media};
+      if (media.lessonMediaId == authoritativeUploadId) {
+        uploaded = media;
         break;
       }
     }
@@ -5353,10 +5139,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
 
+    final normalizedMediaType = authoritativeUpload.mediaType
+        .trim()
+        .toLowerCase();
     final requiresAuthoritativeReadiness =
-        contentType.startsWith('video/') ||
-        contentType.startsWith('audio/') ||
-        contentType.startsWith('image/');
+        normalizedMediaType == 'video' ||
+        normalizedMediaType == 'audio' ||
+        normalizedMediaType == 'image';
     if (requiresAuthoritativeReadiness) {
       await ref.read(lessonMediaPreviewCacheProvider).prefetch([
         authoritativeUploadId,
@@ -5366,10 +5155,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     var inserted = false;
-    if (contentType.startsWith('video/') ||
-        contentType.startsWith('audio/') ||
-        contentType.startsWith('image/') ||
-        contentType == 'application/pdf') {
+    if (normalizedMediaType == 'video' ||
+        normalizedMediaType == 'audio' ||
+        normalizedMediaType == 'image' ||
+        normalizedMediaType == 'document') {
       inserted = _insertMediaIntoLesson(uploaded, showSaveHint: false);
     }
     final postInsertToken = inserted ? _captureEditorToken() : token;
@@ -5562,7 +5351,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  Future<void> _downloadMedia(Map<String, dynamic> media) async {
+  Future<void> _downloadMedia(StudioLessonMediaItem media) async {
     if (_downloadingMedia) return;
     if (_isWavMedia(media)) {
       return;
@@ -5631,7 +5420,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       final file = fs.XFile.fromData(
         bytes,
-        mimeType: _mimeForKind(media['kind'] as String?),
+        mimeType: _mimeForKind(media.mediaType),
         name: name,
       );
       await file.saveTo(location.path);
@@ -5665,18 +5454,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  String _fileNameFromMedia(Map<String, dynamic> media) {
-    final originalName = media['original_name'] as String?;
+  String _fileNameFromMedia(
+    StudioLessonMediaItem media, [
+    LessonMediaPreviewData? preview,
+  ]) {
+    final originalName = media.originalName;
     if (originalName != null && originalName.isNotEmpty) {
       return originalName;
     }
-    final previewName =
-        safeString(media, 'file_name') ?? safeString(media, 'fileName');
+    final previewName = preview?.fileName;
     if (previewName != null) {
       return previewName;
     }
-    final id = media['id'];
-    return id != null ? 'media_$id' : 'media.bin';
+    return 'media_${media.lessonMediaId}';
   }
 
   String? _extensionFromFileName(String name) {
@@ -5727,7 +5517,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _showVideoPreviewSheet(
-    Map<String, dynamic> media, {
+    StudioLessonMediaItem media, {
     required String? playbackUrl,
   }) async {
     if (!mounted || !context.mounted) return;
@@ -5790,7 +5580,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _showAudioPreviewSheet(
-    Map<String, dynamic> media, {
+    StudioLessonMediaItem media, {
     required String playbackUrl,
   }) async {
     if (!mounted || !context.mounted) return;
@@ -5843,19 +5633,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  Future<void> _previewMedia(Map<String, dynamic> media) async {
-    final kind = media['kind'] as String? ?? 'other';
-    final lessonMediaId = safeString(media, 'id');
-    if (lessonMediaId == null) {
-      logMissingLessonMediaIdRender(
-        surface: 'studio_media_list_preview',
-        mediaType: kind,
-      );
-      if (mounted && context.mounted) {
-        showSnack(context, 'Media saknar lesson_media_id och kan inte visas.');
-      }
-      return;
-    }
+  Future<void> _previewMedia(StudioLessonMediaItem media) async {
+    final kind = media.mediaType;
+    final lessonMediaId = media.lessonMediaId;
     if (_isWavMedia(media)) {
       return;
     }
@@ -5934,8 +5714,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     });
     try {
       final mediaIds = _lessonMedia
-          .map((media) => safeString(media, 'id'))
-          .whereType<String>()
+          .map((media) => media.lessonMediaId)
           .toList();
       if (mediaIds.length != _lessonMedia.length) {
         throw StateError('Ett eller flera media saknar id.');
@@ -5949,8 +5728,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _deleteMedia(String id) async {
+    final lessonId = _selectedLessonId;
+    if (lessonId == null) return;
     try {
-      await _studioRepo.deleteLessonMedia(id);
+      await _studioRepo.deleteLessonMedia(lessonId, id);
       await _loadLessonMedia();
       if (mounted && context.mounted) {
         showSnack(context, 'Media borttagen.');
@@ -5962,10 +5743,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   bool _replaceLessonMediaReferencesInEditor({
     required String fromLessonMediaId,
-    required Map<String, dynamic> replacementMedia,
+    required StudioLessonMediaItem replacementMedia,
   }) {
     final fromId = fromLessonMediaId.trim();
-    final toId = (replacementMedia['id'] as String?)?.trim() ?? '';
+    final toId = replacementMedia.lessonMediaId.trim();
     if (fromId.isEmpty || toId.isEmpty) return false;
 
     var contentChanged = false;
@@ -6004,7 +5785,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return true;
   }
 
-  Future<void> _replaceAudioMedia(Map<String, dynamic> media, int index) async {
+  Future<void> _replaceAudioMedia(
+    StudioLessonMediaItem media,
+    int index,
+  ) async {
     final lessonId = _selectedLessonId;
     final courseId = _lessonCourseId(lessonId);
     if (lessonId == null || courseId == null || courseId.trim().isEmpty) {
@@ -6014,8 +5798,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
 
-    final oldLessonMediaId = (media['id'] as String?)?.trim();
-    if (oldLessonMediaId == null || oldLessonMediaId.isEmpty) {
+    final oldLessonMediaId = media.lessonMediaId.trim();
+    if (oldLessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Media saknar ID och kan inte bytas ut.');
       }
@@ -6044,16 +5828,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       await _loadLessonMedia();
       if (!mounted || !_isEditorTokenValid(token)) return;
 
-      Map<String, dynamic>? newMedia;
-      for (final item in _lessonMedia.cast<Map<String, dynamic>?>()) {
-        if (item?['media_asset_id']?.toString().trim() ==
-            newMediaAssetId.trim()) {
+      StudioLessonMediaItem? newMedia;
+      for (final item in _lessonMedia) {
+        if (item.mediaAssetId?.trim() == newMediaAssetId.trim()) {
           newMedia = item;
           break;
         }
       }
 
-      final newLessonMediaId = (newMedia?['id'] as String?)?.trim();
+      final newLessonMediaId = newMedia?.lessonMediaId.trim();
       if (newLessonMediaId == null || newLessonMediaId.isEmpty) {
         if (mounted && context.mounted) {
           showSnack(context, 'Kunde inte hitta den nya ljudfilen.');
@@ -6094,10 +5877,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         if (!_isEditorTokenValid(token)) return;
       }
 
-      final ids = _lessonMedia
-          .map((item) => item['id'])
-          .whereType<String>()
-          .toList();
+      final ids = _lessonMedia.map((item) => item.lessonMediaId).toList();
       final oldIndex = ids.indexOf(oldLessonMediaId);
       final newIndex = ids.indexOf(newLessonMediaId);
       if (newIndex < 0) {
@@ -6123,7 +5903,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
       await _studioRepo.reorderLessonMedia(lessonId, reordered);
       if (!_isEditorTokenValid(token)) return;
-      await _studioRepo.deleteLessonMedia(oldLessonMediaId);
+      await _studioRepo.deleteLessonMedia(lessonId, oldLessonMediaId);
       if (!_isEditorTokenValid(token)) return;
       await _loadLessonMedia();
       if (!mounted || !_isEditorTokenValid(token)) return;
@@ -6170,9 +5950,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   String? _publishGuardReason({int? priceOverrideOre}) {
     final priceOre = priceOverrideOre ?? _parseCoursePriceOre();
-    final canPublishForPrice =
-        _courseIsFreeIntro || (priceOre != null && priceOre > 0);
-    if (!canPublishForPrice) {
+    if (priceOre == null || priceOre <= 0) {
       return 'Ange ett pris större än 0 kr för att kunna publicera kursen.';
     }
 
@@ -6217,54 +5995,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  Widget _buildJourneyPlacementSelector(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Placering i resan',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Denna inställning avgör var kursen visas på Alla kurser.',
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        RadioGroup<CourseJourneyStep>(
-          groupValue: _courseJourneyStep,
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() => _courseJourneyStep = value);
-          },
-          child: Column(
-            children: [
-              for (final step in CourseJourneyStep.values)
-                RadioListTile<CourseJourneyStep>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: Text(step.label),
-                  value: step,
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Future<void> _saveCourseMeta() async {
     final courseId = _selectedCourseId;
     if (courseId == null || _savingCourseMeta) return;
     final title = _courseTitleCtrl.text.trim();
     final slug = _courseSlugCtrl.text.trim();
-    final desc = _courseDescCtrl.text.trim();
     final priceText = _coursePriceCtrl.text.trim();
-    final priceOre = priceText.isEmpty ? 0 : parseSekInputToOre(priceText);
-    final effectivePriceOre = _courseIsFreeIntro ? 0 : priceOre;
+    final effectivePriceOre = priceText.isEmpty
+        ? 0
+        : parseSekInputToOre(priceText);
 
     if (title.isEmpty) {
       showSnack(context, 'Titel krävs.');
@@ -6287,10 +6026,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     final patch = <String, dynamic>{
       'title': title,
-      'description': desc.isEmpty ? null : desc,
       'price_amount_cents': effectivePriceOre,
-      'is_free_intro': _courseIsFreeIntro,
-      'journey_step': _courseJourneyStep.apiValue,
       'is_published': _courseIsPublished,
     };
     if (slug.isNotEmpty) {
@@ -6313,19 +6049,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
-      _logCourseMetaPatchResponse(courseId: courseId, response: updated);
-      final map = Map<String, dynamic>.from(updated);
+      final updatedJson = updated.toJson();
+      _logCourseMetaPatchResponse(courseId: courseId, response: updatedJson);
       setState(() {
         _courses = _courses
-            .map(
-              (course) =>
-                  course['id'] == courseId ? {...course, ...map} : course,
-            )
+            .map((course) => course.id == courseId ? updated.course : course)
             .toList();
       });
       ref.invalidate(myCoursesProvider);
+      ref.invalidate(studioCoursesProvider);
       ref.invalidate(landing.popularCoursesProvider);
-      ref.invalidate(landing.myStudioCoursesProvider);
       ref.invalidate(coursesProvider);
       await _loadCourseMeta();
       if (!mounted || !context.mounted) return;
@@ -6344,19 +6077,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  String _slugify(String input) {
-    final normalized = input
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9äöå]+'), '-')
-        .replaceAll(RegExp(r'-{2,}'), '-')
-        .replaceAll(RegExp(r'^-|-$'), '')
-        .trim();
-    final base = normalized.isNotEmpty ? normalized : 'kurs';
-    final random = Random().nextInt(1 << 20).toRadixString(36);
-    final ts = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-    return '$base-$random-$ts';
-  }
-
   Future<void> _createCourse() async {
     final profile = ref.read(authControllerProvider).profile;
     if (profile == null) {
@@ -6365,29 +6085,28 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final title = _newCourseTitle.text.trim();
-    final desc = _newCourseDesc.text.trim();
+    final slug = _newCourseSlug.text.trim();
     if (title.isEmpty) {
       showSnack(context, 'Titel krävs.');
       return;
     }
+    if (slug.isEmpty) {
+      showSnack(context, 'Slug krävs.');
+      return;
+    }
     try {
-      final slug = _slugify(title);
-      final inserted = await _studioRepo.createCourse(
-        title: title,
-        slug: slug,
-        description: desc.isEmpty ? null : desc,
-      );
+      final inserted = await _studioRepo.createCourse(title: title, slug: slug);
       if (!mounted) return;
-      final row = Map<String, dynamic>.from(inserted);
-      final createdCourseId = safeString(row, 'id');
+      final row = inserted.toJson();
+      final createdCourseId = inserted.course.id;
       final resolvedCover = _resolveEditorCourseMapCover(
         row,
         debugContext:
-            'StudioCourseCreate:${createdCourseId ?? safeString(row, 'slug') ?? 'unknown'}',
+            'StudioCourseCreate:${createdCourseId.isEmpty ? inserted.course.slug : createdCourseId}',
       );
       setState(() {
         _resetCourseContext(clearLists: true);
-        _courses = <Map<String, dynamic>>[row, ..._courses];
+        _courses = <CourseStudio>[inserted.course, ..._courses];
         _selectedCourseId = createdCourseId;
         final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
           row,
@@ -6397,16 +6116,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _courseCoverPreviewUrl = effectiveCoverUrl;
       });
       ref.invalidate(myCoursesProvider);
+      ref.invalidate(studioCoursesProvider);
       _newCourseTitle.clear();
-      _newCourseDesc.clear();
-      if (createdCourseId != null) {
+      _newCourseSlug.clear();
+      if (createdCourseId.isNotEmpty) {
         await _loadCourseMeta();
         await _loadLessons(preserveSelection: false);
       }
       if (!mounted || !context.mounted) return;
       showSnack(
         context,
-        createdCourseId == null
+        createdCourseId.isEmpty
             ? 'Kurs skapad, men kunde inte väljas automatiskt.'
             : 'Kurs skapad.',
       );
@@ -6652,11 +6372,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           gap12,
                           Expanded(
                             child: TextField(
-                              controller: _newCourseDesc,
+                              controller: _newCourseSlug,
                               decoration: const InputDecoration(
-                                labelText: 'Beskrivning (valfri)',
+                                labelText: 'Slug',
                               ),
-                              maxLines: 2,
                             ),
                           ),
                         ],
@@ -6734,10 +6453,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               ),
                               gap12,
                               TextField(
-                                controller: _courseDescCtrl,
-                                maxLines: 3,
+                                controller: _courseSlugCtrl,
                                 decoration: const InputDecoration(
-                                  labelText: 'Beskrivning',
+                                  labelText: 'Slug',
                                 ),
                               ),
                               gap12,
@@ -6751,27 +6469,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     ),
                                 decoration: const InputDecoration(
                                   labelText: 'Pris (SEK)',
-                                  helperText: 'Ange 0 för introduktionskurs',
                                 ),
                               ),
                               gap8,
-                              SwitchListTile.adaptive(
-                                contentPadding: EdgeInsets.zero,
-                                value: _courseIsFreeIntro,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _courseIsFreeIntro = value;
-                                  });
-                                  _handleCoursePublishFieldsChanged();
-                                },
-                                title: const Text('Introduktionskurs'),
-                                subtitle: const Text(
-                                  'Aktivera för att låsa upp introduktionsinnehåll utan köp.',
-                                ),
-                              ),
                               _buildPublishToggle(context),
-                              gap12,
-                              _buildJourneyPlacementSelector(context),
                               Row(
                                 children: [
                                   GradientButton.icon(
@@ -6859,7 +6560,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                   ),
                                   itemBuilder: (context, index) {
                                     final lesson = _lessons[index];
-                                    final lessonId = safeString(lesson, 'id');
+                                    final lessonId = lesson.id;
                                     return Padding(
                                       key: ValueKey(lessonId),
                                       padding: const EdgeInsets.symmetric(
@@ -6897,22 +6598,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                   ],
                                 )
                               else ...[
-                                SwitchListTile.adaptive(
-                                  contentPadding: EdgeInsets.zero,
-                                  value: _lessonIntro,
-                                  onChanged:
-                                      (_selectedLessonId == null ||
-                                          _updatingLessonIntro)
-                                      ? null
-                                      : (value) => _setLessonIntro(value),
-                                  title: const Text(
-                                    'Lektionen är introduktion',
-                                  ),
-                                  subtitle: const Text(
-                                    'Intro laddas upp till public-media, betalt till course-media.',
-                                  ),
-                                ),
-                                gap12,
                                 Builder(
                                   builder: (context) {
                                     return Padding(
@@ -7004,22 +6689,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                       itemBuilder: (context, index) {
                                         final media = _lessonMedia[index];
                                         final theme = Theme.of(context);
-                                        final intro =
-                                            media['is_intro'] == true ||
-                                            _lessonIntro;
-                                        final kind =
-                                            (media['kind'] as String?) ??
-                                            'other';
-                                        final contentType =
-                                            (media['content_type']
-                                                as String?) ??
-                                            '';
-                                        final isAudio =
-                                            kind == 'audio' ||
-                                            contentType.startsWith('audio/');
-                                        final position =
-                                            media['position'] as int? ??
-                                            index + 1;
+                                        final kind = media.mediaType;
+                                        final isAudio = kind == 'audio';
+                                        final position = media.position;
                                         final isPipeline = _isPipelineMedia(
                                           media,
                                         );
@@ -7027,16 +6699,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final pipelineState = isPipeline
                                             ? _pipelineState(media)
                                             : null;
-                                        final rawPipelineState =
-                                            media['media_state'];
-                                        final pipelineStateFromDb =
-                                            rawPipelineState is String
-                                            ? rawPipelineState.trim()
-                                            : null;
-                                        final hasInvalidPipelineReference =
-                                            isPipeline &&
-                                            (pipelineStateFromDb == null ||
-                                                pipelineStateFromDb.isEmpty);
+                                        const hasInvalidPipelineReference =
+                                            false;
                                         final previewStatus =
                                             _previewStatusForMedia(media);
                                         final usesAuthoritativeStatus =
@@ -7087,7 +6751,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             !hasInvalidPipelineReference &&
                                             pipelineState == 'ready' &&
                                             isAudio;
-                                        final mediaId = safeString(media, 'id');
+                                        final mediaId = media.lessonMediaId;
                                         final canPreview =
                                             _canPreviewLessonMedia(
                                               media: media,
@@ -7201,16 +6865,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                         WrapCrossAlignment
                                                             .center,
                                                     children: [
-                                                      Chip(
-                                                        label: Text(
-                                                          intro
-                                                              ? 'Introduktion'
-                                                              : 'Premium',
-                                                        ),
-                                                        visualDensity:
-                                                            VisualDensity
-                                                                .compact,
-                                                      ),
                                                       Chip(
                                                         label: Text(statusKey),
                                                         visualDensity:
@@ -7327,12 +6981,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                           isDocument
                                                               ? Icons
                                                                     .picture_as_pdf_outlined
-                                                              : kind ==
-                                                                        'video' ||
-                                                                    contentType
-                                                                        .startsWith(
-                                                                          'video/',
-                                                                        )
+                                                              : kind == 'video'
                                                               ? Icons
                                                                     .movie_creation_outlined
                                                               : Icons

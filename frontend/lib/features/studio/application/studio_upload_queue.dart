@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/studio_repository.dart';
+import '../data/studio_models.dart';
 
 enum UploadJobStatus { pending, uploading, success, failed, cancelled }
 
@@ -18,7 +19,6 @@ class UploadJob {
     required this.filename,
     this.displayName,
     required this.contentType,
-    required this.isIntro,
     required this.data,
     required this.createdAt,
     this.status = UploadJobStatus.pending,
@@ -36,7 +36,6 @@ class UploadJob {
   final String filename;
   final String? displayName;
   final String contentType;
-  final bool isIntro;
   final Uint8List data;
   final DateTime createdAt;
   final UploadJobStatus status;
@@ -45,7 +44,7 @@ class UploadJob {
   final int maxAttempts;
   final String? error;
   final DateTime? scheduledAt;
-  final Map<String, dynamic>? uploadedMedia;
+  final StudioLessonMediaItem? uploadedMedia;
 
   bool get hasData => data.isNotEmpty;
 
@@ -58,9 +57,8 @@ class UploadJob {
     bool clearError = false,
     Uint8List? data,
     bool clearData = false,
-    bool? isIntro,
     DateTime? scheduledAt,
-    Map<String, dynamic>? uploadedMedia,
+    StudioLessonMediaItem? uploadedMedia,
     bool clearUploadedMedia = false,
   }) {
     return UploadJob(
@@ -70,7 +68,6 @@ class UploadJob {
       filename: filename,
       displayName: displayName,
       contentType: contentType,
-      isIntro: isIntro ?? this.isIntro,
       data: clearData ? Uint8List(0) : (data ?? this.data),
       createdAt: createdAt,
       status: status ?? this.status,
@@ -103,7 +100,6 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     required String filename,
     String? displayName,
     required String contentType,
-    required bool isIntro,
   }) {
     if (_disposed) {
       throw StateError('Upload queue is not available');
@@ -113,7 +109,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     }
     if (kDebugMode) {
       debugPrint(
-        'enqueueUpload: lesson=$lessonId filename=$filename bytes=${data.length} contentType=$contentType intro=$isIntro',
+        'enqueueUpload: lesson=$lessonId filename=$filename bytes=${data.length} contentType=$contentType',
       );
     }
     final id = _uuid.v4();
@@ -124,7 +120,6 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
       filename: filename,
       displayName: displayName,
       contentType: contentType,
-      isIntro: isIntro,
       data: data,
       createdAt: DateTime.now(),
     );
@@ -238,12 +233,10 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
 
     try {
       final uploadedMedia = await _repo.uploadLessonMedia(
-        courseId: job.courseId,
         lessonId: job.lessonId,
         data: job.data,
         filename: job.filename,
         contentType: job.contentType,
-        isIntro: job.isIntro,
         cancelToken: token,
         onProgress: (progress) {
           final fraction = progress.fraction.clamp(0.0, 1.0);
@@ -258,7 +251,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
           progress: 1,
           clearData: true,
           scheduledAt: null,
-          uploadedMedia: Map<String, dynamic>.from(uploadedMedia),
+          uploadedMedia: uploadedMedia,
         ),
       );
     } on DioException catch (e) {

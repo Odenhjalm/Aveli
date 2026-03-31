@@ -485,7 +485,6 @@ async def upload_course_media(
     course_id: Annotated[str | None, Form()] = None,
     lesson_id: Annotated[str | None, Form()] = None,
     media_type: Annotated[UploadMediaType | None, Form(alias="type")] = None,
-    is_intro: Annotated[bool | None, Form()] = None,
 ) -> dict[str, Any]:
     _raise_legacy_lesson_upload_disabled()
 
@@ -510,7 +509,6 @@ async def upload_course_media(
         type_prefixes = _ALLOWED_MEDIA_PREFIXES.get(media_type)
 
     resolved_course_id = course_id
-    lesson_is_intro: bool | None = None
     if lesson_id:
         _, lesson_course_id = await courses_service.lesson_course_ids(lesson_id)
         if not lesson_course_id or not await models.is_course_owner(
@@ -531,7 +529,6 @@ async def upload_course_media(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found"
             )
-        lesson_is_intro = bool(lesson_row.get("is_intro"))
     elif course_id and not await models.is_course_owner(owner, course_id):
         logger.warning(
             "Permission denied: course media upload user_id=%s course_id=%s",
@@ -541,10 +538,6 @@ async def upload_course_media(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not course owner"
         )
-
-    effective_is_intro = is_intro if is_intro is not None else lesson_is_intro
-    if effective_is_intro is None:
-        effective_is_intro = False
 
     detected_kind = _detect_kind(normalized_content_type)
     if lesson_id and (media_type == UploadMediaType.audio or detected_kind == "audio"):
@@ -559,11 +552,7 @@ async def upload_course_media(
             media_type == UploadMediaType.image
             or normalized_content_type.startswith("image/")
         )
-        storage_bucket = (
-            _PUBLIC_MEDIA_BUCKET
-            if (is_image_upload or effective_is_intro)
-            else _COURSE_MEDIA_BUCKET
-        )
+        storage_bucket = _PUBLIC_MEDIA_BUCKET if is_image_upload else _COURSE_MEDIA_BUCKET
 
     resolved_course_id_str: str | None = (
         str(resolved_course_id) if resolved_course_id else None

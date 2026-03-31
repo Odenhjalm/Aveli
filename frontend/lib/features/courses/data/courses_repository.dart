@@ -5,6 +5,109 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
+Object? _requiredField(Object? payload, String fieldName) {
+  switch (payload) {
+    case final Map<Object?, Object?> data when data.containsKey(fieldName):
+      return data[fieldName];
+    case final Map<Object?, Object?> _:
+      throw StateError('Missing required field: $fieldName');
+    default:
+      throw StateError('Invalid payload for $fieldName');
+  }
+}
+
+String _requireString(Object? value, String fieldName) {
+  switch (value) {
+    case final String text when text.trim().isNotEmpty:
+      return text.trim();
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+String? _optionalString(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final String text:
+      final normalized = text.trim();
+      return normalized.isEmpty ? null : normalized;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+int _requireInt(Object? value, String fieldName) {
+  switch (value) {
+    case final int number:
+      return number;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+int? _optionalInt(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final int number:
+      return number;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+bool _requireBool(Object? value, String fieldName) {
+  switch (value) {
+    case final bool flag:
+      return flag;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+DateTime _requireDateTime(Object? value, String fieldName) {
+  final raw = _requireString(value, fieldName);
+  return DateTime.parse(raw).toUtc();
+}
+
+CourseJourneyStep _requireCourseStep(Object? value, String fieldName) {
+  final raw = _requireString(value, fieldName);
+  final step = courseJourneyStepFromApi(raw);
+  if (step == null) {
+    throw StateError('Invalid field value for $fieldName');
+  }
+  return step;
+}
+
+List<Object?> _requireList(Object? value, String fieldName) {
+  switch (value) {
+    case final List items:
+      return List<Object?>.unmodifiable(items);
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+CourseCoverData _parseCourseCover(Object? payload) {
+  return CourseCoverData(
+    mediaId: _optionalString(_requiredField(payload, 'media_id'), 'media_id'),
+    state: _requireString(_requiredField(payload, 'state'), 'state'),
+    resolvedUrl: _optionalString(
+      _requiredField(payload, 'resolved_url'),
+      'resolved_url',
+    ),
+    source: _requireString(_requiredField(payload, 'source'), 'source'),
+  );
+}
+
+CourseCoverData? _optionalCourseCover(Object? payload) {
+  if (payload == null) {
+    return null;
+  }
+  return _parseCourseCover(payload);
+}
+
 class CoursesRepository {
   CoursesRepository({required ApiClient client}) : _client = client;
 
@@ -14,16 +117,15 @@ class CoursesRepository {
     bool onlyFreeIntro = false,
   }) async {
     try {
-      final params = <String, dynamic>{'published_only': true};
-      final res = await _client.get<Map<String, dynamic>>(
+      final response = await _client.raw.get<Object?>(
         '/courses',
-        queryParameters: params,
+        queryParameters: const <String, Object?>{'published_only': true},
       );
-      final items = (res['items'] as List? ?? const [])
-          .map(
-            (e) => CourseSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
+      final items = switch (response.data) {
+        {'items': final List items} =>
+          items.map(CourseSummary.fromResponse).toList(growable: false),
+        _ => throw StateError('Invalid course list payload'),
+      };
       if (!onlyFreeIntro) {
         return items;
       }
@@ -37,13 +139,12 @@ class CoursesRepository {
 
   Future<List<CourseSummary>> myEnrolledCourses() async {
     try {
-      final res = await _client.get<Map<String, dynamic>>('/courses/me');
-      final items = (res['items'] as List? ?? [])
-          .map(
-            (e) => CourseSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-      return items;
+      final response = await _client.raw.get<Object?>('/courses/me');
+      return switch (response.data) {
+        {'items': final List items} =>
+          items.map(CourseSummary.fromResponse).toList(growable: false),
+        _ => throw StateError('Invalid course list payload'),
+      };
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -51,12 +152,8 @@ class CoursesRepository {
 
   Future<CourseSummary?> getCourseById(String courseId) async {
     try {
-      final res = await _client.get<Map<String, dynamic>>('/courses/$courseId');
-      final course = res['course'];
-      if (course is Map<String, dynamic>) {
-        return CourseSummary.fromJson(course);
-      }
-      return null;
+      final detail = await fetchCourseDetailById(courseId);
+      return detail.course;
     } catch (error, stackTrace) {
       if (error is AppFailure && error.kind == AppFailureKind.notFound) {
         return null;
@@ -68,10 +165,10 @@ class CoursesRepository {
   Future<CourseDetailData> fetchCourseDetailBySlug(String slug) async {
     try {
       final encoded = Uri.encodeComponent(slug);
-      final res = await _client.get<Map<String, dynamic>>(
+      final response = await _client.raw.get<Object?>(
         '/courses/by-slug/$encoded',
       );
-      return _mapCourseDetail(res);
+      return CourseDetailData.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -79,27 +176,11 @@ class CoursesRepository {
 
   Future<CourseDetailData> fetchCourseDetailById(String courseId) async {
     try {
-      final res = await _client.get<Map<String, dynamic>>('/courses/$courseId');
-      return _mapCourseDetail(res);
+      final response = await _client.raw.get<Object?>('/courses/$courseId');
+      return CourseDetailData.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
-  }
-
-  CourseDetailData _mapCourseDetail(Map<String, dynamic> payload) {
-    final course = CourseSummary.fromJson(
-      Map<String, dynamic>.from(payload['course'] as Map),
-    );
-    final lessons = (payload['lessons'] as List? ?? []).toList();
-    final lessonItems =
-        lessons
-            .map(
-              (e) =>
-                  LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-            )
-            .toList(growable: false)
-          ..sort((a, b) => a.position.compareTo(b.position));
-    return CourseDetailData(course: course, lessons: lessonItems);
   }
 
   Future<CourseSummary?> firstFreeIntroCourse() async {
@@ -118,33 +199,10 @@ class CoursesRepository {
 
   Future<LessonDetailData> fetchLessonDetail(String lessonId) async {
     try {
-      final res = await _client.get<Map<String, dynamic>>(
+      final response = await _client.raw.get<Object?>(
         '/courses/lessons/$lessonId',
       );
-      final lesson = LessonDetail.fromJson(
-        Map<String, dynamic>.from(res['lesson'] as Map),
-      );
-      final courseId = (res['course_id'] as String?)?.trim();
-      final lessons =
-          (res['lessons'] as List? ?? [])
-              .map(
-                (e) =>
-                    LessonSummary.fromJson(Map<String, dynamic>.from(e as Map)),
-              )
-              .toList(growable: false)
-            ..sort((a, b) => a.position.compareTo(b.position));
-      final media = (res['media'] as List? ?? [])
-          .map(
-            (e) =>
-                LessonMediaItem.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-      return LessonDetailData(
-        lesson: lesson,
-        courseId: courseId == null || courseId.isEmpty ? null : courseId,
-        lessons: lessons,
-        media: media,
-      );
+      return LessonDetailData.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -152,10 +210,10 @@ class CoursesRepository {
 
   Future<CourseAccessData> enrollCourse(String courseId) async {
     try {
-      final res = await _client.post<Map<String, dynamic>>(
+      final response = await _client.raw.post<Object?>(
         '/courses/$courseId/enroll',
       );
-      return CourseAccessData.fromJson(res);
+      return CourseAccessData.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -163,25 +221,34 @@ class CoursesRepository {
 
   Future<CourseAccessData> fetchCourseState(String courseId) async {
     try {
-      return await _fetchCourseAccess(courseId);
+      final response = await _client.raw.get<Object?>(
+        '/courses/$courseId/access',
+      );
+      return CourseAccessData.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
   }
-
-  Future<CourseAccessData> _fetchCourseAccess(String courseId) async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/courses/$courseId/access',
-    );
-    return CourseAccessData.fromJson(res);
-  }
 }
 
 class CourseDetailData {
-  CourseDetailData({required this.course, required this.lessons});
+  const CourseDetailData({required this.course, required this.lessons});
 
   final CourseSummary course;
   final List<LessonSummary> lessons;
+
+  factory CourseDetailData.fromResponse(Object? payload) {
+    final lessons =
+        _requireList(
+            _requiredField(payload, 'lessons'),
+            'lessons',
+          ).map(LessonSummary.fromResponse).toList(growable: false)
+          ..sort((a, b) => a.position.compareTo(b.position));
+    return CourseDetailData(
+      course: CourseSummary.fromResponse(_requiredField(payload, 'course')),
+      lessons: lessons,
+    );
+  }
 }
 
 class CourseEnrollmentRecord {
@@ -203,19 +270,29 @@ class CourseEnrollmentRecord {
   final DateTime dripStartedAt;
   final int currentUnlockPosition;
 
-  factory CourseEnrollmentRecord.fromJson(Map<String, dynamic> json) =>
-      CourseEnrollmentRecord(
-        id: json['id'] as String,
-        userId: json['user_id'] as String,
-        courseId: json['course_id'] as String,
-        source: (json['source'] as String?) ?? '',
-        grantedAt: DateTime.parse(json['granted_at'] as String).toUtc(),
-        dripStartedAt: DateTime.parse(
-          json['drip_started_at'] as String,
-        ).toUtc(),
-        currentUnlockPosition:
-            CourseSummary._asInt(json['current_unlock_position']) ?? 0,
-      );
+  factory CourseEnrollmentRecord.fromResponse(Object? payload) {
+    return CourseEnrollmentRecord(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      userId: _requireString(_requiredField(payload, 'user_id'), 'user_id'),
+      courseId: _requireString(
+        _requiredField(payload, 'course_id'),
+        'course_id',
+      ),
+      source: _requireString(_requiredField(payload, 'source'), 'source'),
+      grantedAt: _requireDateTime(
+        _requiredField(payload, 'granted_at'),
+        'granted_at',
+      ),
+      dripStartedAt: _requireDateTime(
+        _requiredField(payload, 'drip_started_at'),
+        'drip_started_at',
+      ),
+      currentUnlockPosition: _requireInt(
+        _requiredField(payload, 'current_unlock_position'),
+        'current_unlock_position',
+      ),
+    );
+  }
 }
 
 class CourseAccessData {
@@ -227,26 +304,30 @@ class CourseAccessData {
   });
 
   final String courseId;
-  final CourseJourneyStep? courseStep;
+  final CourseJourneyStep courseStep;
   final String? requiredEnrollmentSource;
   final CourseEnrollmentRecord? enrollment;
 
   bool get hasEnrollment => enrollment != null;
 
-  int get currentUnlockPosition => enrollment?.currentUnlockPosition ?? 0;
-
-  factory CourseAccessData.fromJson(Map<String, dynamic> json) {
-    final enrollmentMap = json['enrollment'];
+  factory CourseAccessData.fromResponse(Object? payload) {
+    final enrollmentPayload = _requiredField(payload, 'enrollment');
     return CourseAccessData(
-      courseId: (json['course_id'] as String?) ?? '',
-      courseStep: courseJourneyStepFromApi(json['course_step']),
-      requiredEnrollmentSource: (json['required_enrollment_source'] as String?)
-          ?.trim(),
-      enrollment: enrollmentMap is Map
-          ? CourseEnrollmentRecord.fromJson(
-              Map<String, dynamic>.from(enrollmentMap),
-            )
-          : null,
+      courseId: _requireString(
+        _requiredField(payload, 'course_id'),
+        'course_id',
+      ),
+      courseStep: _requireCourseStep(
+        _requiredField(payload, 'course_step'),
+        'course_step',
+      ),
+      requiredEnrollmentSource: _optionalString(
+        _requiredField(payload, 'required_enrollment_source'),
+        'required_enrollment_source',
+      ),
+      enrollment: enrollmentPayload == null
+          ? null
+          : CourseEnrollmentRecord.fromResponse(enrollmentPayload),
     );
   }
 }
@@ -254,273 +335,200 @@ class CourseAccessData {
 class LessonDetailData {
   const LessonDetailData({
     required this.lesson,
-    this.courseId,
-    this.lessons = const [],
-    this.media = const [],
+    required this.courseId,
+    required this.lessons,
+    required this.media,
   });
 
   final LessonDetail lesson;
-  final String? courseId;
+  final String courseId;
   final List<LessonSummary> lessons;
   final List<LessonMediaItem> media;
+
+  factory LessonDetailData.fromResponse(Object? payload) {
+    final lessons =
+        _requireList(
+            _requiredField(payload, 'lessons'),
+            'lessons',
+          ).map(LessonSummary.fromResponse).toList(growable: false)
+          ..sort((a, b) => a.position.compareTo(b.position));
+    final media = _requireList(
+      _requiredField(payload, 'media'),
+      'media',
+    ).map(LessonMediaItem.fromResponse).toList(growable: false);
+    return LessonDetailData(
+      lesson: LessonDetail.fromResponse(_requiredField(payload, 'lesson')),
+      courseId: _requireString(
+        _requiredField(payload, 'course_id'),
+        'course_id',
+      ),
+      lessons: lessons,
+      media: media,
+    );
+  }
 }
 
 class CourseSummary {
   const CourseSummary({
     required this.id,
-    this.slug,
+    required this.slug,
     required this.title,
-    this.step,
-    this.courseGroupId,
-    this.description,
-    this.coverMediaId,
-    this.cover,
-    this.videoUrl,
-    this.branch,
-    this.createdBy,
-    this.isPublished = false,
-    this.priceCents,
+    required this.step,
+    required this.courseGroupId,
+    required this.coverMediaId,
+    required this.cover,
+    required this.priceCents,
+    required this.dripEnabled,
+    required this.dripIntervalDays,
   });
 
   final String id;
-  final String? slug;
+  final String slug;
   final String title;
-  final CourseJourneyStep? step;
-  final String? courseGroupId;
-  final String? description;
+  final CourseJourneyStep step;
+  final String courseGroupId;
   final String? coverMediaId;
   final CourseCoverData? cover;
-  final String? videoUrl;
-  final String? branch;
-  final String? createdBy;
-  final bool isPublished;
   final int? priceCents;
+  final bool dripEnabled;
+  final int? dripIntervalDays;
 
   bool get isIntroCourse => step == CourseJourneyStep.intro;
 
-  factory CourseSummary.fromJson(Map<String, dynamic> json) => CourseSummary(
-    id: json['id'] as String,
-    slug: json['slug'] as String?,
-    title: (json['title'] ?? '') as String,
-    step: courseJourneyStepFromApi(json['step']),
-    courseGroupId: json['course_group_id'] as String?,
-    description: json['description'] as String?,
-    coverMediaId: json['cover_media_id'] as String?,
-    cover: json['cover'] is Map
-        ? CourseCoverData.fromJson(
-            Map<String, dynamic>.from(json['cover'] as Map),
-          )
-        : null,
-    videoUrl: json['video_url'] as String?,
-    branch: json['branch'] as String?,
-    createdBy: json['created_by'] as String?,
-    isPublished: json['is_published'] == true,
-    priceCents: _asInt(json['price_amount_cents']),
-  );
-
-  static int? _asInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value);
-    return null;
+  factory CourseSummary.fromResponse(Object? payload) {
+    return CourseSummary(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      slug: _requireString(_requiredField(payload, 'slug'), 'slug'),
+      title: _requireString(_requiredField(payload, 'title'), 'title'),
+      step: _requireCourseStep(_requiredField(payload, 'step'), 'step'),
+      courseGroupId: _requireString(
+        _requiredField(payload, 'course_group_id'),
+        'course_group_id',
+      ),
+      coverMediaId: _optionalString(
+        _requiredField(payload, 'cover_media_id'),
+        'cover_media_id',
+      ),
+      cover: _optionalCourseCover(_requiredField(payload, 'cover')),
+      priceCents: _optionalInt(
+        _requiredField(payload, 'price_amount_cents'),
+        'price_amount_cents',
+      ),
+      dripEnabled: _requireBool(
+        _requiredField(payload, 'drip_enabled'),
+        'drip_enabled',
+      ),
+      dripIntervalDays: _optionalInt(
+        _requiredField(payload, 'drip_interval_days'),
+        'drip_interval_days',
+      ),
+    );
   }
 }
 
 class LessonSummary {
   const LessonSummary({
     required this.id,
-    required this.title,
+    required this.lessonTitle,
     required this.position,
-    this.isIntro = false,
-    this.contentMarkdown,
   });
 
   final String id;
-  final String title;
+  final String lessonTitle;
   final int position;
-  final bool isIntro;
-  final String? contentMarkdown;
 
-  factory LessonSummary.fromJson(Map<String, dynamic> json) => LessonSummary(
-    id: json['id'] as String,
-    title: (json['title'] ?? '') as String,
-    position: CourseSummary._asInt(json['position']) ?? 0,
-    isIntro: json['is_intro'] == true,
-    contentMarkdown: json['content_markdown'] as String?,
-  );
+  factory LessonSummary.fromResponse(Object? payload) {
+    return LessonSummary(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      lessonTitle: _requireString(
+        _requiredField(payload, 'lesson_title'),
+        'lesson_title',
+      ),
+      position: _requireInt(_requiredField(payload, 'position'), 'position'),
+    );
+  }
 }
 
 class LessonDetail {
   const LessonDetail({
     required this.id,
-    required this.title,
-    this.contentMarkdown,
-    this.isIntro = false,
-    this.position = 0,
+    required this.lessonTitle,
+    required this.contentMarkdown,
+    required this.position,
   });
 
   final String id;
-  final String title;
+  final String lessonTitle;
   final String? contentMarkdown;
-  final bool isIntro;
   final int position;
 
-  factory LessonDetail.fromJson(Map<String, dynamic> json) => LessonDetail(
-    id: json['id'] as String,
-    title: (json['title'] ?? '') as String,
-    contentMarkdown: json['content_markdown'] as String?,
-    isIntro: json['is_intro'] == true,
-    position: CourseSummary._asInt(json['position']) ?? 0,
-  );
+  factory LessonDetail.fromResponse(Object? payload) {
+    return LessonDetail(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      lessonTitle: _requireString(
+        _requiredField(payload, 'lesson_title'),
+        'lesson_title',
+      ),
+      contentMarkdown: _optionalString(
+        _requiredField(payload, 'content_markdown'),
+        'content_markdown',
+      ),
+      position: _requireInt(_requiredField(payload, 'position'), 'position'),
+    );
+  }
 }
 
 class LessonMediaItem {
   const LessonMediaItem({
     required this.id,
+    required this.lessonId,
+    required this.mediaAssetId,
+    required this.position,
     required this.kind,
-    required this.storagePath,
-    this.storageBucket,
-    this.preferredUrlValue,
-    this.playbackUrl,
-    this.downloadUrl,
-    this.signedUrl,
-    this.signedUrlExpiresAt,
-    this.mediaId,
-    this.mediaAssetId,
-    this.durationSeconds,
-    this.byteSize,
-    this.contentType,
-    this.originalName,
-    this.position = 0,
-    this.mediaState,
-    this.streamingFormat,
-    this.codec,
-    this.errorMessage,
-    this.robustnessCategory,
-    this.robustnessStatus,
-    this.robustnessRecommendedAction,
-    this.resolvableForEditor,
-    this.resolvableForStudent,
+    required this.state,
+    required this.originalName,
+    required this.playbackReady,
   });
 
   final String id;
-  final String kind;
-  final String storagePath;
-  final String? storageBucket;
-  final String? preferredUrlValue;
-  final String? playbackUrl;
-  final String? downloadUrl;
-  final String? signedUrl;
-  final DateTime? signedUrlExpiresAt;
-  final String? mediaId;
+  final String lessonId;
   final String? mediaAssetId;
-  final int? durationSeconds;
-  final int? byteSize;
-  final String? contentType;
-  final String? originalName;
   final int position;
-  final String? mediaState;
-  final String? streamingFormat;
-  final String? codec;
-  final String? errorMessage;
-  final String? robustnessCategory;
-  final String? robustnessStatus;
-  final String? robustnessRecommendedAction;
-  final bool? resolvableForEditor;
-  final bool? resolvableForStudent;
-
-  factory LessonMediaItem.fromJson(Map<String, dynamic> json) =>
-      LessonMediaItem(
-        id: json['id'] as String,
-        kind: (json['kind'] ?? '') as String,
-        storagePath: (json['storage_path'] ?? '') as String,
-        storageBucket: json['storage_bucket'] as String?,
-        preferredUrlValue:
-            json['preferredUrl'] as String? ?? json['preferred_url'] as String?,
-        playbackUrl: json['playback_url'] as String?,
-        downloadUrl: json['download_url'] as String?,
-        signedUrl: json['signed_url'] as String?,
-        signedUrlExpiresAt: CourseOrderSummary._parseDate(
-          json['signed_url_expires_at'],
-        ),
-        mediaId: json['media_id'] as String?,
-        mediaAssetId: json['media_asset_id'] as String?,
-        durationSeconds: CourseSummary._asInt(json['duration_seconds']),
-        byteSize: CourseSummary._asInt(json['byte_size']),
-        contentType: json['content_type'] as String?,
-        originalName: json['original_name'] as String?,
-        position: CourseSummary._asInt(json['position']) ?? 0,
-        mediaState: json['media_state'] as String?,
-        streamingFormat: json['streaming_format'] as String?,
-        codec: json['codec'] as String?,
-        errorMessage: json['error_message'] as String?,
-        robustnessCategory: json['robustness_category'] as String?,
-        robustnessStatus: json['robustness_status'] as String?,
-        robustnessRecommendedAction:
-            json['robustness_recommended_action'] as String?,
-        resolvableForEditor: json['resolvable_for_editor'] as bool?,
-        resolvableForStudent: json['resolvable_for_student'] as bool?,
-      );
-
-  bool get isPublicBucket => (storageBucket ?? '').startsWith('public');
+  final String kind;
+  final String state;
+  final String? originalName;
+  final bool playbackReady;
 
   String get fileName {
     final normalizedOriginalName = originalName?.trim();
     if (normalizedOriginalName != null && normalizedOriginalName.isNotEmpty) {
       return normalizedOriginalName;
     }
-    return 'media_$id';
+    return id;
   }
 
-  String? get preferredUrl {
-    final explicit = preferredUrlValue?.trim();
-    if (explicit != null && explicit.isNotEmpty) {
-      return explicit;
-    }
-    for (final candidate in <String?>[playbackUrl, downloadUrl, signedUrl]) {
-      final normalized = candidate?.trim();
-      if (normalized == null || normalized.isEmpty) {
-        continue;
-      }
-      final uri = Uri.tryParse(normalized);
-      final scheme = uri?.scheme.toLowerCase();
-      if (uri != null &&
-          uri.hasScheme &&
-          (scheme == 'http' || scheme == 'https') &&
-          uri.host.isNotEmpty) {
-        return normalized;
-      }
-    }
-    return null;
-  }
-}
-
-class CourseOrderSummary {
-  const CourseOrderSummary({
-    required this.id,
-    required this.status,
-    this.amountCents,
-    required this.createdAt,
-  });
-
-  final String id;
-  final String status;
-  final int? amountCents;
-  final DateTime createdAt;
-
-  factory CourseOrderSummary.fromJson(Map<String, dynamic> json) =>
-      CourseOrderSummary(
-        id: json['id'] as String,
-        status: (json['status'] ?? '') as String,
-        amountCents: CourseSummary._asInt(json['amount_cents']),
-        createdAt: _parseDate(json['created_at']),
-      );
-
-  static DateTime _parseDate(dynamic value) {
-    if (value is DateTime) return value;
-    if (value is String) {
-      return DateTime.tryParse(value) ?? DateTime.now();
-    }
-    return DateTime.now();
+  factory LessonMediaItem.fromResponse(Object? payload) {
+    return LessonMediaItem(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      lessonId: _requireString(
+        _requiredField(payload, 'lesson_id'),
+        'lesson_id',
+      ),
+      mediaAssetId: _optionalString(
+        _requiredField(payload, 'media_asset_id'),
+        'media_asset_id',
+      ),
+      position: _requireInt(_requiredField(payload, 'position'), 'position'),
+      kind: _requireString(_requiredField(payload, 'kind'), 'kind'),
+      state: _requireString(_requiredField(payload, 'state'), 'state'),
+      originalName: _optionalString(
+        _requiredField(payload, 'original_name'),
+        'original_name',
+      ),
+      playbackReady: _requireBool(
+        _requiredField(payload, 'playback_ready'),
+        'playback_ready',
+      ),
+    );
   }
 }

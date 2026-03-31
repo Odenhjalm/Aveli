@@ -32,7 +32,7 @@ const _teacherState = TeacherProfileState(
   services: [_baseService],
   meditations: [],
   certificates: [],
-  profileMedia: [],
+  profileMedia: TeacherProfileMediaPayload.empty,
 );
 
 RouteSessionSnapshot _session({required bool isAuthenticated}) =>
@@ -165,7 +165,8 @@ void main() {
       id: 'media-1',
       teacherId: 'teacher-1',
       mediaKind: TeacherProfileMediaKind.lessonMedia,
-      mediaId: 'lesson-media-1',
+      lessonMediaId: 'lesson-media-1',
+      seminarRecordingId: null,
       externalUrl: null,
       title: 'Guided Relaxation',
       description: '10 minuters andningsövning.',
@@ -174,29 +175,26 @@ void main() {
       position: 0,
       isPublished: true,
       enabledForHomePlayer: false,
-      metadata: const {},
       createdAt: DateTime(2025, 1, 1),
       updatedAt: DateTime(2025, 1, 1),
-      source: TeacherProfileMediaSource(
-        lessonMedia: TeacherProfileLessonSource(
-          id: 'lesson-media-1',
-          lessonId: 'lesson-1',
-          lessonTitle: 'Intro till avslappning',
-          courseId: 'course-1',
-          courseTitle: 'Avslappning 101',
-          courseSlug: 'avslappning-101',
-          kind: 'audio',
-          storagePath: 'lesson-media/lesson-1/audio.mp3',
-          storageBucket: 'lesson-media',
-          contentType: 'audio/mpeg',
-          durationSeconds: 600,
-          position: 0,
-          createdAt: DateTime(2025, 1, 1),
-          downloadUrl: 'https://example.com/audio.mp3',
-          signedUrl: 'https://example.com/audio.mp3',
-          signedUrlExpiresAt: null,
-        ),
-      ),
+    );
+    final lessonSource = TeacherProfileLessonSource(
+      id: 'lesson-media-1',
+      lessonId: 'lesson-1',
+      lessonTitle: 'Intro till avslappning',
+      courseId: 'course-1',
+      courseTitle: 'Avslappning 101',
+      courseSlug: 'avslappning-101',
+      kind: 'audio',
+      storagePath: 'lesson-media/lesson-1/audio.mp3',
+      storageBucket: 'lesson-media',
+      contentType: 'audio/mpeg',
+      durationSeconds: 600,
+      position: 0,
+      createdAt: DateTime(2025, 1, 1),
+      downloadUrl: 'https://example.com/audio.mp3',
+      signedUrl: 'https://example.com/audio.mp3',
+      signedUrlExpiresAt: null,
     );
 
     final state = TeacherProfileState(
@@ -207,7 +205,11 @@ void main() {
       services: const [],
       meditations: const [],
       certificates: const [],
-      profileMedia: [mediaItem],
+      profileMedia: TeacherProfileMediaPayload(
+        items: [mediaItem],
+        lessonMediaSources: [lessonSource],
+        seminarRecordingSources: const [],
+      ),
     );
 
     await _pumpPage(

@@ -1,13 +1,13 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:http_parser/http_parser.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
-import 'package:aveli/features/media/data/media_pipeline_repository.dart';
+
+import 'studio_models.dart';
 
 class StudioRepository {
   StudioRepository({required ApiClient client}) : _client = client;
@@ -35,49 +35,34 @@ class StudioRepository {
     return Map<String, dynamic>.from(res);
   }
 
-  Future<List<Map<String, dynamic>>> myCourses() async {
+  Future<List<CourseStudio>> myCourses() async {
     final res = await _client.get<Map<String, dynamic>>('/studio/courses');
     final list = res['items'] as List? ?? const [];
     return list
-        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((e) => CourseStudio.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList(growable: false);
   }
 
-  Future<Map<String, dynamic>> createCourse({
+  Future<StudioCourseDetails> createCourse({
     required String title,
     required String slug,
-    String? description,
-    int? priceCents,
-    bool isFreeIntro = false,
-    bool isPublished = false,
-    String? videoUrl,
-    String? branch,
   }) async {
-    final body = {
-      'title': title,
-      'slug': slug,
-      if (description != null) 'description': description,
-      if (priceCents != null) 'price_amount_cents': priceCents,
-      'is_free_intro': isFreeIntro,
-      'is_published': isPublished,
-      if (videoUrl != null) 'video_url': videoUrl,
-      if (branch != null) 'branch': branch,
-    };
+    final body = {'title': title, 'slug': slug};
     final res = await _client.post<Map<String, dynamic>>(
       '/studio/courses',
       body: body,
     );
-    return Map<String, dynamic>.from(res);
+    return StudioCourseDetails.fromJson(res);
   }
 
-  Future<Map<String, dynamic>?> fetchCourseMeta(String courseId) async {
+  Future<StudioCourseDetails> fetchCourseMeta(String courseId) async {
     final res = await _client.get<Map<String, dynamic>>(
       '/studio/courses/$courseId',
     );
-    return Map<String, dynamic>.from(res);
+    return StudioCourseDetails.fromJson(res);
   }
 
-  Future<Map<String, dynamic>> updateCourse(
+  Future<StudioCourseDetails> updateCourse(
     String courseId,
     Map<String, dynamic> patch,
   ) async {
@@ -85,58 +70,55 @@ class StudioRepository {
       '/studio/courses/$courseId',
       body: patch,
     );
-    return Map<String, dynamic>.from(res!);
+    return StudioCourseDetails.fromJson(res!);
   }
 
   Future<void> deleteCourse(String courseId) async {
     await _client.delete('/studio/courses/$courseId');
   }
 
-  Future<List<Map<String, dynamic>>> listCourseLessons(String courseId) async {
+  Future<List<LessonStudio>> listCourseLessons(String courseId) async {
     final res = await _client.get<Map<String, dynamic>>(
       '/studio/courses/$courseId/lessons',
     );
     final list = res['items'] as List? ?? const [];
     return list
-        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((e) => LessonStudio.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList(growable: false);
   }
 
-  Future<Map<String, dynamic>> upsertLesson({
+  Future<LessonStudio> upsertLesson({
     String? id,
     String? createId,
     required String courseId,
-    required String title,
+    required String lessonTitle,
     String? contentMarkdown,
     int position = 0,
-    bool isIntro = false,
   }) async {
     if (id == null) {
       final body = {
         'course_id': courseId,
-        'title': title,
+        'lesson_title': lessonTitle,
         'content_markdown': contentMarkdown,
         'position': position,
-        'is_intro': isIntro,
         if (createId != null && createId.isNotEmpty) 'id': createId,
       };
       final res = await _client.post<Map<String, dynamic>>(
         '/studio/lessons',
         body: body,
       );
-      return Map<String, dynamic>.from(res);
+      return LessonStudio.fromJson(res);
     } else {
       final body = <String, dynamic>{
-        'title': title,
+        'lesson_title': lessonTitle,
         if (contentMarkdown != null) 'content_markdown': contentMarkdown,
         'position': position,
-        'is_intro': isIntro,
       };
       final res = await _client.patch<Map<String, dynamic>>(
         '/studio/lessons/$id',
         body: body,
       );
-      return Map<String, dynamic>.from(res!);
+      return LessonStudio.fromJson(res!);
     }
   }
 
@@ -144,27 +126,21 @@ class StudioRepository {
     await _client.delete('/studio/lessons/$lessonId');
   }
 
-  Future<void> updateLessonIntro({
-    required String lessonId,
-    required bool isIntro,
-  }) async {
-    await _client.patch(
-      '/studio/lessons/$lessonId/intro',
-      body: {'is_intro': isIntro},
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> listLessonMedia(String lessonId) async {
+  Future<List<StudioLessonMediaItem>> listLessonMedia(String lessonId) async {
     final res = await _client.get<Map<String, dynamic>>(
       '/studio/lessons/$lessonId/media',
     );
     final list = res['items'] as List? ?? const [];
     return list
-        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map(
+          (e) => StudioLessonMediaItem.fromJson(
+            Map<String, dynamic>.from(e as Map),
+          ),
+        )
         .toList(growable: false);
   }
 
-  Future<Map<String, Map<String, dynamic>>> fetchLessonMediaPreviews(
+  Future<Map<String, StudioLessonMediaPreviewItem>> fetchLessonMediaPreviews(
     List<String> lessonMediaIds,
   ) async {
     final normalizedIds = lessonMediaIds
@@ -173,7 +149,7 @@ class StudioRepository {
         .toSet()
         .toList(growable: false);
     if (normalizedIds.isEmpty) {
-      return const <String, Map<String, dynamic>>{};
+      return const <String, StudioLessonMediaPreviewItem>{};
     }
 
     final res = await _client.post<Map<String, dynamic>>(
@@ -181,113 +157,46 @@ class StudioRepository {
       body: {'ids': normalizedIds},
     );
     final rawItems = res['items'] is Map ? res['items'] as Map : res;
-    final items = <String, Map<String, dynamic>>{};
+    final items = <String, StudioLessonMediaPreviewItem>{};
     rawItems.forEach((key, value) {
       if (value is! Map) return;
-      items[key.toString()] = Map<String, dynamic>.from(value);
+      items[key.toString()] = StudioLessonMediaPreviewItem.fromJson(
+        key.toString(),
+        Map<String, dynamic>.from(value),
+      );
     });
     return items;
   }
 
-  Future<Map<String, dynamic>> uploadLessonMedia({
-    required String courseId,
+  Future<StudioLessonMediaItem> uploadLessonMedia({
     required String lessonId,
     required Uint8List data,
     required String filename,
     required String contentType,
-    required bool isIntro,
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    if (_isProcessedLessonAudioUpload(contentType, filename)) {
-      return _uploadLessonAudioViaPipeline(
-        courseId: courseId,
-        lessonId: lessonId,
-        data: data,
-        filename: filename,
-        contentType: _normalizeProcessedAudioMimeType(contentType, filename),
-        onProgress: onProgress,
-        cancelToken: cancelToken,
-      );
-    }
-
     final mediaType = _detectUploadMediaType(contentType);
-    if (mediaType != null) {
-      return _uploadLessonMediaViaDirectPipeline(
-        courseId: courseId,
-        lessonId: lessonId,
-        data: data,
-        filename: filename,
-        contentType: contentType,
-        mediaType: mediaType,
-        onProgress: onProgress,
-        cancelToken: cancelToken,
+    if (mediaType == null) {
+      throw StateError(
+        'Unsupported lesson media content type for canonical edge contract.',
       );
     }
 
-    final fields = <String, dynamic>{
-      'lesson_id': lessonId,
-      'file': MultipartFile.fromBytes(
-        data,
-        filename: filename,
-        contentType: MediaType.parse(contentType),
-      ),
-    };
-    if (courseId.isNotEmpty) {
-      fields['course_id'] = courseId;
-    }
-    if (mediaType != null) {
-      fields['type'] = mediaType;
-    }
-    if (isIntro) {
-      fields['is_intro'] = isIntro;
-    }
-
-    final res = await _client.postForm<Map<String, dynamic>>(
-      '/api/upload/course-media',
-      FormData.fromMap(fields),
-      onSendProgress: onProgress == null
-          ? null
-          : (sent, total) {
-              if (total <= 0) return;
-              onProgress(UploadProgress(sent: sent, total: total));
-            },
-      cancelToken: cancelToken,
-    );
-    final payload = res ?? const {};
-    final media = payload['media'];
-    if (media is Map<String, dynamic>) {
-      return Map<String, dynamic>.from(media);
-    }
-    return Map<String, dynamic>.from(payload);
-  }
-
-  Future<Map<String, dynamic>> _uploadLessonMediaViaDirectPipeline({
-    required String courseId,
-    required String lessonId,
-    required Uint8List data,
-    required String filename,
-    required String contentType,
-    required String mediaType,
-    void Function(UploadProgress progress)? onProgress,
-    CancelToken? cancelToken,
-  }) async {
-    final pipeline = MediaPipelineRepository(client: _client);
-    final upload = await pipeline.requestUploadUrl(
+    final upload = await _requestLessonMediaUploadTarget(
       filename: filename,
       mimeType: contentType,
       sizeBytes: data.length,
       mediaType: mediaType,
-      courseId: courseId.isEmpty ? null : courseId,
       lessonId: lessonId,
     );
-    if (upload.uploadUrl.toString().isEmpty) {
-      throw StateError('Ofullständigt svar från media-pipeline (upload-url).');
+    if (upload.uploadUrl.trim().isEmpty) {
+      throw StateError('Ofullständigt svar från studio media upload-url.');
     }
 
     final dio = Dio();
     await dio.putUri<void>(
-      upload.uploadUrl,
+      Uri.parse(upload.uploadUrl),
       data: data,
       options: Options(headers: upload.headers),
       cancelToken: cancelToken,
@@ -298,82 +207,39 @@ class StudioRepository {
       },
     );
 
-    await pipeline.completeUpload(mediaId: upload.mediaId);
-    final attached = await pipeline.attachUpload(
-      mediaId: upload.mediaId,
-      linkScope: 'lesson',
-      lessonId: lessonId,
+    final res = await _client.post<Map<String, dynamic>>(
+      '/studio/lessons/$lessonId/media/${upload.lessonMediaId}/complete',
+      body: const <String, dynamic>{},
     );
-    final canonicalLessonMedia = attached.lessonMedia;
-    if (canonicalLessonMedia == null || canonicalLessonMedia.isEmpty) {
-      throw StateError(
-        'Media-pipeline attachment saknade canonical lesson_media payload.',
-      );
-    }
-    return Map<String, dynamic>.from(canonicalLessonMedia);
+    return StudioLessonMediaItem.fromJson(res);
   }
 
-  Future<Map<String, dynamic>> _uploadLessonAudioViaPipeline({
-    required String courseId,
-    required String lessonId,
-    required Uint8List data,
+  Future<StudioLessonMediaUploadTarget> _requestLessonMediaUploadTarget({
     required String filename,
-    required String contentType,
-    void Function(UploadProgress progress)? onProgress,
-    CancelToken? cancelToken,
+    required String mimeType,
+    required int sizeBytes,
+    required String mediaType,
+    required String lessonId,
   }) async {
-    final pipeline = MediaPipelineRepository(client: _client);
-    final upload = await pipeline.requestUploadUrl(
-      filename: filename,
-      mimeType: contentType,
-      sizeBytes: data.length,
-      mediaType: 'audio',
-      courseId: courseId.isEmpty ? null : courseId,
-      lessonId: lessonId,
-    );
-
-    if (upload.uploadUrl.toString().isEmpty) {
-      throw StateError('Uppladdningslänk saknas för WAV.');
-    }
-    final uploadHeaders = upload.headers;
-
-    final dio = Dio();
-    await dio.putUri<void>(
-      upload.uploadUrl,
-      data: data,
-      options: Options(headers: uploadHeaders),
-      cancelToken: cancelToken,
-      onSendProgress: (sent, total) {
-        if (onProgress == null) return;
-        final resolvedTotal = total > 0 ? total : data.length;
-        onProgress(UploadProgress(sent: sent, total: resolvedTotal));
+    final res = await _client.post<Map<String, dynamic>>(
+      '/studio/lessons/$lessonId/media/upload-url',
+      body: <String, dynamic>{
+        'filename': filename,
+        'mime_type': mimeType,
+        'size_bytes': sizeBytes,
+        'media_type': mediaType,
       },
     );
-
-    await pipeline.completeUpload(mediaId: upload.mediaId);
-    final attached = await pipeline.attachUpload(
-      mediaId: upload.mediaId,
-      linkScope: 'lesson',
-      lessonId: lessonId,
-    );
-    final canonicalLessonMedia = attached.lessonMedia;
-    if (canonicalLessonMedia == null || canonicalLessonMedia.isEmpty) {
-      throw StateError(
-        'Media-pipeline attachment saknade canonical lesson_media payload.',
-      );
-    }
-    return Map<String, dynamic>.from(canonicalLessonMedia);
+    return StudioLessonMediaUploadTarget.fromJson(res);
   }
 
-  Future<void> deleteLessonMedia(String mediaId) async {
-    await _client.delete('/studio/media/$mediaId');
+  Future<void> deleteLessonMedia(String lessonId, String lessonMediaId) async {
+    await _client.delete('/studio/lessons/$lessonId/media/$lessonMediaId');
   }
 
   Future<TeacherProfileMediaPayload> fetchProfileMedia() async {
-    final res = await _client.get<Map<String, dynamic>>(
-      '/studio/profile/media',
-    );
-    return TeacherProfileMediaPayload.fromJson(res);
+    final response = await _client.raw.get<Object?>('/studio/profile/media');
+    return TeacherProfileMediaPayload.fromResponse(response.data);
   }
 
   Future<HomePlayerLibraryPayload> fetchHomePlayerLibrary() async {
@@ -516,33 +382,36 @@ class StudioRepository {
 
   Future<TeacherProfileMediaItem> createProfileMedia({
     required TeacherProfileMediaKind mediaKind,
-    String? mediaId,
+    String? lessonMediaId,
+    String? seminarRecordingId,
     String? externalUrl,
     String? title,
     String? description,
     String? coverMediaId,
     String? coverImageUrl,
-    int? position,
-    bool? isPublished,
-    Map<String, dynamic>? metadata,
+    required int position,
+    required bool isPublished,
+    required bool enabledForHomePlayer,
   }) async {
     final body = <String, dynamic>{
       'media_kind': mediaKind.apiValue,
-      if (mediaId != null) 'media_id': mediaId,
+      if (lessonMediaId != null) 'lesson_media_id': lessonMediaId,
+      if (seminarRecordingId != null)
+        'seminar_recording_id': seminarRecordingId,
       if (externalUrl != null) 'external_url': externalUrl,
       if (title != null) 'title': title,
       if (description != null) 'description': description,
       if (coverMediaId != null) 'cover_media_id': coverMediaId,
       if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
-      if (position != null) 'position': position,
-      if (isPublished != null) 'is_published': isPublished,
-      if (metadata != null) 'metadata': metadata,
+      'position': position,
+      'is_published': isPublished,
+      'enabled_for_home_player': enabledForHomePlayer,
     };
     final res = await _client.post<Map<String, dynamic>>(
       '/studio/profile/media',
       body: body,
     );
-    return TeacherProfileMediaItem.fromJson(res);
+    return TeacherProfileMediaItem.fromResponse(res);
   }
 
   Future<TeacherProfileMediaItem> updateProfileMedia(
@@ -554,7 +423,6 @@ class StudioRepository {
     int? position,
     bool? isPublished,
     bool? enabledForHomePlayer,
-    Map<String, dynamic>? metadata,
   }) async {
     final body = <String, dynamic>{
       if (title != null) 'title': title,
@@ -565,13 +433,12 @@ class StudioRepository {
       if (isPublished != null) 'is_published': isPublished,
       if (enabledForHomePlayer != null)
         'enabled_for_home_player': enabledForHomePlayer,
-      if (metadata != null) 'metadata': metadata,
     };
     final res = await _client.patch<Map<String, dynamic>>(
       '/studio/profile/media/$itemId',
       body: body,
     );
-    return TeacherProfileMediaItem.fromJson(res!);
+    return TeacherProfileMediaItem.fromResponse(res);
   }
 
   Future<void> deleteProfileMedia(String itemId) async {
@@ -584,7 +451,7 @@ class StudioRepository {
   ) async {
     await _client.patch(
       '/studio/lessons/$lessonId/media/reorder',
-      body: {'media_ids': orderedMediaIds},
+      body: {'lesson_media_ids': orderedMediaIds},
     );
   }
 
@@ -684,60 +551,6 @@ String? _detectUploadMediaType(String contentType) {
   if (lower.startsWith('audio/')) return 'audio';
   if (lower == 'application/pdf') return 'document';
   return null;
-}
-
-String? _lessonAudioIngestFormat(String contentType, String filename) {
-  final lower = contentType.toLowerCase();
-  final lowerFilename = filename.toLowerCase();
-  if (lower == 'audio/mpeg' || lower == 'audio/mp3') {
-    return 'mp3';
-  }
-  if (lowerFilename.endsWith('.mp3')) {
-    return 'mp3';
-  }
-  if (lower == 'audio/wav' ||
-      lower == 'audio/x-wav' ||
-      lower == 'audio/wave' ||
-      lower == 'audio/vnd.wave') {
-    return 'wav';
-  }
-  if (lowerFilename.endsWith('.wav')) {
-    return 'wav';
-  }
-  if (lower == 'audio/m4a' || lower == 'audio/mp4') {
-    return 'm4a';
-  }
-  if (lowerFilename.endsWith('.m4a')) {
-    return 'm4a';
-  }
-  return null;
-}
-
-bool _isProcessedLessonAudioUpload(String contentType, String filename) {
-  return _lessonAudioIngestFormat(contentType, filename) != null;
-}
-
-String _normalizeProcessedAudioMimeType(String contentType, String filename) {
-  final lower = contentType.toLowerCase();
-  switch (_lessonAudioIngestFormat(contentType, filename)) {
-    case 'mp3':
-      if (lower == 'audio/mpeg' || lower == 'audio/mp3') {
-        return lower;
-      }
-      return 'audio/mpeg';
-    case 'wav':
-      if (lower == 'audio/wav' || lower == 'audio/x-wav') {
-        return lower;
-      }
-      return 'audio/wav';
-    case 'm4a':
-      if (lower == 'audio/m4a' || lower == 'audio/mp4') {
-        return lower;
-      }
-      return 'audio/m4a';
-    default:
-      return lower.isEmpty ? 'application/octet-stream' : lower;
-  }
 }
 
 class UploadProgress {

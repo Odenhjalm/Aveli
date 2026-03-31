@@ -43,13 +43,12 @@ class _LandingPageState extends ConsumerState<LandingPage>
 
   // Data for sections
   bool _loading = true;
-  LandingSectionState _teachers = const LandingSectionState(items: []);
-  LandingSectionState _services = const LandingSectionState(items: []);
-  LandingSectionState _introCourses = const LandingSectionState(items: []);
+  List<LandingTeacher> _teachers = const <LandingTeacher>[];
+  List<LandingService> _services = const <LandingService>[];
+  List<LandingCourseCard> _introCourses = const <LandingCourseCard>[];
 
-  List<Map<String, dynamic>> get _teacherItems =>
-      _dedupeTeachers(_teachers.items);
-  List<Map<String, dynamic>> get _serviceItems => _services.items;
+  List<LandingTeacher> get _teacherItems => _teachers;
+  List<LandingService> get _serviceItems => _services;
 
   bool get _isLandingDomain {
     final host = Uri.base.host.toLowerCase();
@@ -106,22 +105,11 @@ class _LandingPageState extends ConsumerState<LandingPage>
       final intros = await introFuture;
       final services = await servicesFuture;
       final teachers = await teachersFuture;
-      final teacherItems = _dedupeTeachers(
-        teachers.items
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList(growable: true),
-      );
-
-      final teachersWithOden = LandingSectionState(
-        items: teacherItems,
-        errorMessage: teachers.errorMessage,
-        devHint: teachers.devHint,
-      );
       if (!mounted) return;
       setState(() {
-        _introCourses = intros;
-        _services = services;
-        _teachers = teachersWithOden;
+        _introCourses = intros.items;
+        _services = services.items;
+        _teachers = teachers.items;
         _loading = false;
       });
     } catch (_) {
@@ -130,35 +118,13 @@ class _LandingPageState extends ConsumerState<LandingPage>
     }
   }
 
-  List<Map<String, dynamic>> _dedupeTeachers(List<Map<String, dynamic>> items) {
-    if (items.isEmpty) return items;
-    final deduped = <Map<String, dynamic>>[];
-    final seen = <String>{};
-    for (final item in items) {
-      final rawProfile = item['profile'];
-      final profile = rawProfile is Map
-          ? rawProfile
-          : const <String, dynamic>{};
-      final rawUserId = profile['user_id'] ?? item['user_id'];
-      final userId = rawUserId?.toString().trim() ?? '';
-      if (userId.isEmpty) {
-        deduped.add(item);
-        continue;
-      }
-      if (seen.add(userId)) {
-        deduped.add(item);
-      }
-    }
-    return deduped;
-  }
-
   void _openIntroModal() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: false,
       backgroundColor: Colors.transparent,
       builder: (_) {
-        final items = _introCourses.items;
+        final items = _introCourses;
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: EffectsBackdropFilter(
@@ -211,19 +177,17 @@ class _LandingPageState extends ConsumerState<LandingPage>
                               const Divider(height: 1),
                           itemBuilder: (context, i) {
                             final c = items[i];
-                            final title =
-                                (c['title'] as String?) ?? 'Introduktion';
                             return ListTile(
                               leading: const Icon(Icons.play_circle_outline),
                               title: Text(
-                                title,
+                                c.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               trailing: const Chip(label: Text('Intro')),
                               onTap: () {
                                 Navigator.of(context).pop();
-                                final slug = (c['slug'] as String?) ?? '';
+                                final slug = c.slug;
                                 if (slug.isNotEmpty) {
                                   context.pushNamed(
                                     AppRoute.course,
@@ -405,6 +369,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
           const CoursesShowcaseSection(
             title: 'Populära kurser',
             desktop: CoursesShowcaseDesktop(columns: 3, rows: 1),
+            useLandingContractsOnly: true,
           ),
 
           // SEKTION – Lärare (carousel)
@@ -454,7 +419,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                   ) ...[
                                     if (index > 0) const SizedBox(width: 12),
                                     _TeacherCardData(
-                                      map: _teacherItems[index],
+                                      teacher: _teacherItems[index],
                                       apiBaseUrl: config.apiBaseUrl,
                                     ),
                                   ],
@@ -818,19 +783,15 @@ class _TeacherCardSkeleton extends StatelessWidget {
 }
 
 class _TeacherCardData extends StatelessWidget {
-  final Map<String, dynamic> map;
+  final LandingTeacher teacher;
   final String apiBaseUrl;
-  const _TeacherCardData({required this.map, required this.apiBaseUrl});
+  const _TeacherCardData({required this.teacher, required this.apiBaseUrl});
   @override
   Widget build(BuildContext context) {
-    final rawProfile = (map['profile'] as Map?)?.cast<String, dynamic>() ?? {};
-    final merged = rawProfile.isNotEmpty
-        ? rawProfile
-        : map.cast<String, dynamic>();
-    final userId = (map['user_id'] ?? merged['user_id'])?.toString() ?? '';
-    final name = (merged['display_name'] as String?) ?? 'Lärare';
-    final avatar = (merged['photo_url'] as String?) ?? '';
-    final bio = (merged['bio'] as String?) ?? '';
+    final userId = teacher.userId;
+    final name = teacher.displayName;
+    final avatar = teacher.photoUrl;
+    final bio = teacher.bio ?? '';
     final resolvedAvatar = _resolveUrl(avatar);
     return SizedBox(
       width: _teacherCardWidth,
@@ -909,14 +870,14 @@ class _TeacherCardData extends StatelessWidget {
 }
 
 class _ServiceTileGlass extends StatelessWidget {
-  final Map<String, dynamic> service;
+  final LandingService service;
   const _ServiceTileGlass({required this.service});
   @override
   Widget build(BuildContext context) {
-    final title = (service['title'] as String?) ?? 'Tjänst';
-    final desc = (service['description'] as String?) ?? '';
-    final area = (service['certified_area'] as String?) ?? '';
-    final cents = (service['price_cents'] as num?)?.toInt();
+    final title = service.title;
+    final desc = service.description ?? '';
+    final area = service.certifiedArea ?? '';
+    final cents = service.priceCents;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Container(

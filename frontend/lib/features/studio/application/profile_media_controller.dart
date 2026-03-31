@@ -21,8 +21,8 @@ class TeacherProfileMediaState extends Equatable {
   ) {
     return TeacherProfileMediaState(
       items: _sortedItems(payload.items),
-      lessonSources: payload.lessonMedia,
-      recordingSources: payload.seminarRecordings,
+      lessonSources: payload.lessonMediaSources,
+      recordingSources: payload.seminarRecordingSources,
     );
   }
 
@@ -96,12 +96,14 @@ class TeacherProfileMediaController
 
   Future<void> createItem({
     required TeacherProfileMediaKind kind,
-    String? mediaId,
+    String? lessonMediaId,
+    String? seminarRecordingId,
     String? externalUrl,
     String? title,
     String? description,
-    bool? isPublished,
-    Map<String, dynamic>? metadata,
+    required int position,
+    required bool isPublished,
+    required bool enabledForHomePlayer,
     String? coverMediaId,
     String? coverImageUrl,
   }) async {
@@ -109,12 +111,14 @@ class TeacherProfileMediaController
     try {
       await _repository.createProfileMedia(
         mediaKind: kind,
-        mediaId: mediaId,
+        lessonMediaId: lessonMediaId,
+        seminarRecordingId: seminarRecordingId,
         externalUrl: externalUrl,
         title: title,
         description: description,
+        position: position,
         isPublished: isPublished,
-        metadata: metadata,
+        enabledForHomePlayer: enabledForHomePlayer,
         coverMediaId: coverMediaId,
         coverImageUrl: coverImageUrl,
       );
@@ -133,7 +137,6 @@ class TeacherProfileMediaController
     bool? isPublished,
     bool? enabledForHomePlayer,
     int? position,
-    Map<String, dynamic>? metadata,
     String? coverMediaId,
     String? coverImageUrl,
   }) async {
@@ -146,7 +149,6 @@ class TeacherProfileMediaController
         isPublished: isPublished,
         enabledForHomePlayer: enabledForHomePlayer,
         position: position,
-        metadata: metadata,
         coverMediaId: coverMediaId,
         coverImageUrl: coverImageUrl,
       );
@@ -180,7 +182,7 @@ class TeacherProfileMediaController
 
   Future<void> setHomePlayerForSource({
     required TeacherProfileMediaKind kind,
-    required String mediaId,
+    required String sourceId,
     required bool enabled,
   }) async {
     final current = state.valueOrNull;
@@ -188,7 +190,7 @@ class TeacherProfileMediaController
 
     TeacherProfileMediaItem? existing;
     for (final item in current.items) {
-      if (item.mediaKind == kind && item.mediaId == mediaId) {
+      if (item.matchesSourceReference(kind, sourceId)) {
         existing = item;
         break;
       }
@@ -206,12 +208,22 @@ class TeacherProfileMediaController
       } else {
         final created = await _repository.createProfileMedia(
           mediaKind: kind,
-          mediaId: mediaId,
+          lessonMediaId: kind == TeacherProfileMediaKind.lessonMedia
+              ? sourceId
+              : null,
+          seminarRecordingId: kind == TeacherProfileMediaKind.seminarRecording
+              ? sourceId
+              : null,
+          externalUrl: kind == TeacherProfileMediaKind.external
+              ? sourceId
+              : null,
+          position: current.sortedItems.length,
           isPublished: false,
+          enabledForHomePlayer: enabled,
         );
         await _repository.updateProfileMedia(
           created.id,
-          enabledForHomePlayer: true,
+          enabledForHomePlayer: enabled,
         );
       }
       final snapshot = await _load();

@@ -60,56 +60,10 @@ class CommunityRepository {
   }
 
   Future<TeacherProfileMediaPayload> teacherProfileMedia(String userId) async {
-    final response = await _client.get<Map<String, dynamic>>(
+    final response = await _client.raw.get<Object?>(
       '/community/teachers/$userId/media',
     );
-    final payload = TeacherProfileMediaPayload.fromJson(response);
-    final base = _client.raw.options.baseUrl;
-
-    String? resolve(String? url) {
-      if (url == null || url.isEmpty) return url;
-      final parsed = Uri.tryParse(url);
-      if (parsed == null) return url;
-      if (parsed.hasScheme) return url;
-      return Uri.parse(base).resolve(url).toString();
-    }
-
-    final updatedItems = payload.items
-        .map((item) {
-          final resolvedExternal = resolve(item.externalUrl);
-          final resolvedCover = resolve(item.coverImageUrl);
-
-          var source = item.source;
-          final lessonSource = source.lessonMedia;
-          if (lessonSource != null) {
-            final updatedLesson = lessonSource.copyWith(
-              downloadUrl: resolve(lessonSource.downloadUrl),
-              signedUrl: resolve(lessonSource.signedUrl),
-            );
-            source = source.copyWith(lessonMedia: updatedLesson);
-          }
-
-          final recordingSource = source.seminarRecording;
-          if (recordingSource != null) {
-            final updatedRecording = recordingSource.copyWith(
-              assetUrl: resolve(recordingSource.assetUrl),
-            );
-            source = source.copyWith(seminarRecording: updatedRecording);
-          }
-
-          return item.copyWith(
-            externalUrl: resolvedExternal,
-            coverImageUrl: resolvedCover,
-            source: source,
-          );
-        })
-        .toList(growable: false);
-
-    return TeacherProfileMediaPayload(
-      items: updatedItems,
-      lessonMedia: payload.lessonMedia,
-      seminarRecordings: payload.seminarRecordings,
-    );
+    return TeacherProfileMediaPayload.fromResponse(response.data);
   }
 
   Future<List<Map<String, dynamic>>> listServices(String userId) async {

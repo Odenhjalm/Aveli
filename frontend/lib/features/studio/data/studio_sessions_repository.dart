@@ -3,20 +3,105 @@ import 'package:aveli/core/errors/app_failure.dart';
 
 enum StudioSessionVisibility { draft, published }
 
-StudioSessionVisibility _visibilityFromString(String? value) {
-  switch (value) {
-    case 'published':
-      return StudioSessionVisibility.published;
+Object? _requiredField(Object? payload, String fieldName) {
+  switch (payload) {
+    case final Map<Object?, Object?> data when data.containsKey(fieldName):
+      return data[fieldName];
+    case final Map<Object?, Object?> _:
+      throw StateError('Missing required field: $fieldName');
     default:
-      return StudioSessionVisibility.draft;
+      throw StateError('Invalid payload for $fieldName');
   }
 }
 
-DateTime? _parseDateTime(dynamic value) {
-  if (value is String && value.isNotEmpty) {
-    return DateTime.tryParse(value)?.toLocal();
+Object? _optionalField(Object? payload, String fieldName) {
+  switch (payload) {
+    case final Map<Object?, Object?> data when data.containsKey(fieldName):
+      return data[fieldName];
+    case final Map<Object?, Object?> _:
+      return null;
+    default:
+      throw StateError('Invalid payload for $fieldName');
   }
-  return null;
+}
+
+List<Object?> _requireList(Object? value, String fieldName) {
+  switch (value) {
+    case final List items:
+      return List<Object?>.unmodifiable(items);
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+StudioSessionVisibility _visibilityFromString(String value) {
+  switch (value) {
+    case 'draft':
+      return StudioSessionVisibility.draft;
+    case 'published':
+      return StudioSessionVisibility.published;
+    default:
+      throw StateError('Invalid field value for visibility');
+  }
+}
+
+DateTime? _parseOptionalDateTime(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final String text when text.trim().isNotEmpty:
+      return DateTime.parse(text);
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+DateTime _parseRequiredDateTime(Object? value, String fieldName) {
+  final parsed = _parseOptionalDateTime(value, fieldName);
+  if (parsed == null) {
+    throw StateError('Missing required field: $fieldName');
+  }
+  return parsed;
+}
+
+int _parseRequiredInt(Object? value, String fieldName) {
+  switch (value) {
+    case final int number:
+      return number;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+int? _parseOptionalInt(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final int number:
+      return number;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+String _parseRequiredString(Object? value, String fieldName) {
+  switch (value) {
+    case final String text when text.trim().isNotEmpty:
+      return text;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+String? _parseOptionalString(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final String text:
+      return text;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
 }
 
 class StudioSession {
@@ -45,25 +130,57 @@ class StudioSession {
   final String currency;
   final StudioSessionVisibility visibility;
   final String? recordingUrl;
-  final String? teacherId;
+  final String teacherId;
   final String? stripePriceId;
 
   bool get isPublished => visibility == StudioSessionVisibility.published;
 
-  factory StudioSession.fromJson(Map<String, dynamic> json) {
+  factory StudioSession.fromResponse(Object? payload) {
     return StudioSession(
-      id: json['id'] as String,
-      title: json['title'] as String? ?? 'Session',
-      description: json['description'] as String?,
-      startAt: _parseDateTime(json['start_at']),
-      endAt: _parseDateTime(json['end_at']),
-      capacity: (json['capacity'] as num?)?.toInt(),
-      priceCents: (json['price_cents'] as num?)?.toInt() ?? 0,
-      currency: (json['currency'] as String? ?? 'sek').toLowerCase(),
-      visibility: _visibilityFromString(json['visibility'] as String?),
-      recordingUrl: json['recording_url'] as String?,
-      teacherId: json['teacher_id'] as String?,
-      stripePriceId: json['stripe_price_id'] as String?,
+      id: _parseRequiredString(_requiredField(payload, 'id'), 'id'),
+      title: _parseRequiredString(_requiredField(payload, 'title'), 'title'),
+      description: _parseOptionalString(
+        _optionalField(payload, 'description'),
+        'description',
+      ),
+      startAt: _parseOptionalDateTime(
+        _optionalField(payload, 'start_at'),
+        'start_at',
+      ),
+      endAt: _parseOptionalDateTime(
+        _optionalField(payload, 'end_at'),
+        'end_at',
+      ),
+      capacity: _parseOptionalInt(
+        _optionalField(payload, 'capacity'),
+        'capacity',
+      ),
+      priceCents: _parseRequiredInt(
+        _requiredField(payload, 'price_cents'),
+        'price_cents',
+      ),
+      currency: _parseRequiredString(
+        _requiredField(payload, 'currency'),
+        'currency',
+      ),
+      visibility: _visibilityFromString(
+        _parseRequiredString(
+          _requiredField(payload, 'visibility'),
+          'visibility',
+        ),
+      ),
+      recordingUrl: _parseOptionalString(
+        _optionalField(payload, 'recording_url'),
+        'recording_url',
+      ),
+      teacherId: _parseRequiredString(
+        _requiredField(payload, 'teacher_id'),
+        'teacher_id',
+      ),
+      stripePriceId: _parseOptionalString(
+        _optionalField(payload, 'stripe_price_id'),
+        'stripe_price_id',
+      ),
     );
   }
 }
@@ -87,16 +204,29 @@ class StudioSessionSlot {
 
   bool get isFull => seatsTotal > 0 && seatsTaken >= seatsTotal;
 
-  factory StudioSessionSlot.fromJson(Map<String, dynamic> json) {
-    final startAt = _parseDateTime(json['start_at']);
-    final endAt = _parseDateTime(json['end_at']);
+  factory StudioSessionSlot.fromResponse(Object? payload) {
     return StudioSessionSlot(
-      id: json['id'] as String,
-      sessionId: json['session_id'] as String,
-      startAt: startAt ?? DateTime.now(),
-      endAt: endAt ?? DateTime.now().add(const Duration(minutes: 45)),
-      seatsTotal: (json['seats_total'] as num?)?.toInt() ?? 0,
-      seatsTaken: (json['seats_taken'] as num?)?.toInt() ?? 0,
+      id: _parseRequiredString(_requiredField(payload, 'id'), 'id'),
+      sessionId: _parseRequiredString(
+        _requiredField(payload, 'session_id'),
+        'session_id',
+      ),
+      startAt: _parseRequiredDateTime(
+        _requiredField(payload, 'start_at'),
+        'start_at',
+      ),
+      endAt: _parseRequiredDateTime(
+        _requiredField(payload, 'end_at'),
+        'end_at',
+      ),
+      seatsTotal: _parseRequiredInt(
+        _requiredField(payload, 'seats_total'),
+        'seats_total',
+      ),
+      seatsTaken: _parseRequiredInt(
+        _requiredField(payload, 'seats_taken'),
+        'seats_taken',
+      ),
     );
   }
 }
@@ -110,19 +240,16 @@ class SessionsRepository {
     StudioSessionVisibility? visibility,
   }) async {
     try {
-      final response = await _client.get<Map<String, dynamic>>(
+      final response = await _client.raw.get<Object?>(
         '/studio/sessions',
         queryParameters: {
           if (visibility != null) 'visibility': visibility.name,
         },
       );
-      final items = (response['items'] as List? ?? const [])
-          .map(
-            (item) =>
-                StudioSession.fromJson(Map<String, dynamic>.from(item as Map)),
-          )
-          .toList(growable: false);
-      return items;
+      return _requireList(
+        _requiredField(response.data, 'items'),
+        'items',
+      ).map(StudioSession.fromResponse).toList(growable: false);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -133,20 +260,17 @@ class SessionsRepository {
     int limit = 30,
   }) async {
     try {
-      final response = await _client.get<Map<String, dynamic>>(
+      final response = await _client.raw.get<Object?>(
         '/sessions',
         queryParameters: {
           if (from != null) 'from_time': from.toUtc().toIso8601String(),
           'limit': limit,
         },
       );
-      final items = (response['items'] as List? ?? const [])
-          .map(
-            (item) =>
-                StudioSession.fromJson(Map<String, dynamic>.from(item as Map)),
-          )
-          .toList(growable: false);
-      return items;
+      return _requireList(
+        _requiredField(response.data, 'items'),
+        'items',
+      ).map(StudioSession.fromResponse).toList(growable: false);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -154,10 +278,8 @@ class SessionsRepository {
 
   Future<StudioSession> fetchPublishedSession(String sessionId) async {
     try {
-      final response = await _client.get<Map<String, dynamic>>(
-        '/sessions/$sessionId',
-      );
-      return StudioSession.fromJson(response);
+      final response = await _client.raw.get<Object?>('/sessions/$sessionId');
+      return StudioSession.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -165,17 +287,13 @@ class SessionsRepository {
 
   Future<List<StudioSessionSlot>> listTeacherSlots(String sessionId) async {
     try {
-      final response = await _client.get<Map<String, dynamic>>(
+      final response = await _client.raw.get<Object?>(
         '/studio/sessions/$sessionId/slots',
       );
-      final items = (response['items'] as List? ?? const [])
-          .map(
-            (item) => StudioSessionSlot.fromJson(
-              Map<String, dynamic>.from(item as Map),
-            ),
-          )
-          .toList(growable: false);
-      return items;
+      return _requireList(
+        _requiredField(response.data, 'items'),
+        'items',
+      ).map(StudioSessionSlot.fromResponse).toList(growable: false);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -183,17 +301,13 @@ class SessionsRepository {
 
   Future<List<StudioSessionSlot>> listPublicSlots(String sessionId) async {
     try {
-      final response = await _client.get<Map<String, dynamic>>(
+      final response = await _client.raw.get<Object?>(
         '/sessions/$sessionId/slots',
       );
-      final items = (response['items'] as List? ?? const [])
-          .map(
-            (item) => StudioSessionSlot.fromJson(
-              Map<String, dynamic>.from(item as Map),
-            ),
-          )
-          .toList(growable: false);
-      return items;
+      return _requireList(
+        _requiredField(response.data, 'items'),
+        'items',
+      ).map(StudioSessionSlot.fromResponse).toList(growable: false);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }

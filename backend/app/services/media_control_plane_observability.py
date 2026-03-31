@@ -1957,9 +1957,8 @@ async def validate_runtime_projection(lesson_id: str) -> dict[str, Any]:
     lesson_normalized = {
         "lesson_id": str(lesson_row["id"]),
         "course_id": _normalize_text(lesson_row.get("course_id")),
-        "title": _normalize_text(lesson_row.get("title")),
+        "lesson_title": _normalize_text(lesson_row.get("lesson_title")),
         "position": _normalize_int(lesson_row.get("position")),
-        "is_intro": bool(lesson_row.get("is_intro")),
         "created_at": _iso(lesson_row.get("created_at")),
         "updated_at": _iso(lesson_row.get("updated_at")),
     }

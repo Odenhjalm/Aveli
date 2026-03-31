@@ -102,10 +102,10 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
                 isAuthenticated: session.isAuthenticated,
                 onRequireLogin: _goToLogin,
               ),
-              if (state.profileMedia.isNotEmpty) ...[
+              if (state.profileMedia.items.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _ProfileMediaCard(
-                  items: state.profileMedia,
+                  payload: state.profileMedia,
                   onOpenCourse: _openCourse,
                   onOpenLink: _openExternalLink,
                   onShowMessage: _showSnack,
@@ -288,13 +288,13 @@ class _ServicesCard extends StatelessWidget {
 
 class _ProfileMediaCard extends StatelessWidget {
   const _ProfileMediaCard({
-    required this.items,
+    required this.payload,
     required this.onOpenCourse,
     required this.onOpenLink,
     required this.onShowMessage,
   });
 
-  final List<TeacherProfileMediaItem> items;
+  final TeacherProfileMediaPayload payload;
   final void Function(String slug) onOpenCourse;
   final Future<void> Function(String url) onOpenLink;
   final void Function(String message) onShowMessage;
@@ -316,11 +316,12 @@ class _ProfileMediaCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            ...items.map(
+            ...payload.items.map(
               (item) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: _ProfileMediaTile(
                   item: item,
+                  payload: payload,
                   onOpenCourse: onOpenCourse,
                   onOpenLink: onOpenLink,
                   onShowMessage: onShowMessage,
@@ -337,12 +338,14 @@ class _ProfileMediaCard extends StatelessWidget {
 class _ProfileMediaTile extends ConsumerWidget {
   const _ProfileMediaTile({
     required this.item,
+    required this.payload,
     required this.onOpenCourse,
     required this.onOpenLink,
     required this.onShowMessage,
   });
 
   final TeacherProfileMediaItem item;
+  final TeacherProfileMediaPayload payload;
   final void Function(String slug) onOpenCourse;
   final Future<void> Function(String url) onOpenLink;
   final void Function(String message) onShowMessage;
@@ -362,15 +365,14 @@ class _ProfileMediaTile extends ConsumerWidget {
         playback.isPlaying &&
         playback.mediaType == playable.mediaType;
     final activeUrl = playback.url?.trim();
-    final resolvedActiveUrl = activeUrl ?? '';
-    final hasUrl = resolvedActiveUrl.isNotEmpty;
+    final hasUrl = activeUrl != null && activeUrl.isNotEmpty;
     final activeVideoPlayback =
         playable != null &&
             playable.mediaType == MediaPlaybackType.video &&
             hasUrl
         ? tryCreateVideoPlaybackState(
             mediaId: item.id,
-            url: resolvedActiveUrl,
+            url: activeUrl,
             title: title,
             controlsMode: InlineVideoControlsMode.custom,
             controlChrome: InlineVideoControlChrome.hidden,
@@ -437,7 +439,7 @@ class _ProfileMediaTile extends ConsumerWidget {
             const SizedBox(height: 10),
             if (playable.mediaType == MediaPlaybackType.audio)
               InlineAudioPlayer(
-                url: resolvedActiveUrl,
+                url: activeUrl,
                 title: title,
                 durationHint: playable.durationHint,
                 autoPlay: true,
@@ -451,13 +453,14 @@ class _ProfileMediaTile extends ConsumerWidget {
   }
 
   Widget _buildLeading() {
-    if ((item.coverImageUrl ?? '').isNotEmpty) {
+    final coverImageUrl = item.coverImageUrl;
+    if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: SizedBox(
           width: 60,
           height: 60,
-          child: AppNetworkImage(url: item.coverImageUrl!, fit: BoxFit.cover),
+          child: AppNetworkImage(url: coverImageUrl, fit: BoxFit.cover),
         ),
       );
     }
@@ -479,7 +482,7 @@ class _ProfileMediaTile extends ConsumerWidget {
   _PlayableMedia? _resolvePlayable() {
     switch (item.mediaKind) {
       case TeacherProfileMediaKind.lessonMedia:
-        final source = item.source.lessonMedia;
+        final source = payload.lessonSourceFor(item);
         if (source == null) return null;
         final kind = source.kind;
         final url = (source.signedUrl ?? source.downloadUrl)?.trim();
@@ -498,8 +501,9 @@ class _ProfileMediaTile extends ConsumerWidget {
               : null,
         );
       case TeacherProfileMediaKind.seminarRecording:
-        final source = item.source.seminarRecording;
-        final url = (source?.assetUrl ?? '').trim();
+        final source = payload.recordingSourceFor(item);
+        if (source == null) return null;
+        final url = source.assetUrl.trim();
         if (url.isEmpty) return null;
         return _PlayableMedia(mediaType: MediaPlaybackType.video, url: url);
       case TeacherProfileMediaKind.external:
@@ -510,11 +514,13 @@ class _ProfileMediaTile extends ConsumerWidget {
   Future<void> Function()? _resolveOpenAction() {
     switch (item.mediaKind) {
       case TeacherProfileMediaKind.lessonMedia:
-        final slug = item.source.lessonMedia?.courseSlug?.trim();
+        final slug = payload.lessonSourceFor(item)?.courseSlug?.trim();
         if (slug == null || slug.isEmpty) return null;
         return () async => onOpenCourse(slug);
       case TeacherProfileMediaKind.seminarRecording:
-        final url = (item.source.seminarRecording?.assetUrl ?? '').trim();
+        final source = payload.recordingSourceFor(item);
+        if (source == null) return null;
+        final url = source.assetUrl.trim();
         if (url.isEmpty) return null;
         return () async => onOpenLink(url);
       case TeacherProfileMediaKind.external:
@@ -535,26 +541,36 @@ class _ProfileMediaTile extends ConsumerWidget {
     }
   }
 
-  static String _titleFor(TeacherProfileMediaItem item) {
-    if ((item.title ?? '').trim().isNotEmpty) return item.title!.trim();
+  String _titleFor(TeacherProfileMediaItem item) {
+    final explicitTitle = item.title?.trim();
+    if (explicitTitle != null && explicitTitle.isNotEmpty) return explicitTitle;
     switch (item.mediaKind) {
       case TeacherProfileMediaKind.lessonMedia:
-        return item.source.lessonMedia?.lessonTitle ?? 'Lektionsmedia';
+        final lessonTitle = payload.lessonSourceFor(item)?.lessonTitle?.trim();
+        if (lessonTitle != null && lessonTitle.isNotEmpty) return lessonTitle;
+        return item.lessonMediaId!;
       case TeacherProfileMediaKind.seminarRecording:
-        return item.source.seminarRecording?.seminarTitle ?? 'Livesändning';
+        final seminarTitle =
+            payload.recordingSourceFor(item)?.seminarTitle?.trim();
+        if (seminarTitle != null && seminarTitle.isNotEmpty) {
+          return seminarTitle;
+        }
+        return item.seminarRecordingId!;
       case TeacherProfileMediaKind.external:
-        return item.externalUrl ?? 'Extern länk';
+        return item.externalUrl!;
     }
   }
 
-  static String? _subtitleFor(TeacherProfileMediaItem item) {
+  String? _subtitleFor(TeacherProfileMediaItem item) {
     switch (item.mediaKind) {
       case TeacherProfileMediaKind.lessonMedia:
-        final course = item.source.lessonMedia?.courseTitle;
+        final course = payload.lessonSourceFor(item)?.courseTitle;
         if (course == null || course.isEmpty) return null;
         return 'Från kursen $course';
       case TeacherProfileMediaKind.seminarRecording:
-        return 'Inspelning · ${item.source.seminarRecording?.status ?? 'okänd status'}';
+        final status = payload.recordingSourceFor(item)?.status;
+        if (status == null || status.isEmpty) return null;
+        return 'Inspelning · $status';
       case TeacherProfileMediaKind.external:
         return item.externalUrl;
     }

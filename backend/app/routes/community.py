@@ -1,13 +1,17 @@
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 
 from .. import models, repositories, schemas
 from ..auth import CurrentUser, OptionalCurrentUser
 from ..config import settings
-from ..utils.profile_media import profile_media_item_from_row
+from ..utils.media_urls import absolutize_media_url_items
+from ..utils.profile_media import (
+    lesson_media_source_from_row,
+    recording_source_from_row,
+)
 
 router = APIRouter(prefix="/community", tags=["community"])
 
@@ -94,10 +98,46 @@ async def community_teacher_detail(user_id: str, current: OptionalCurrentUser = 
     "/teachers/{user_id}/media",
     response_model=schemas.TeacherProfileMediaPublicResponse,
 )
-async def community_teacher_profile_media(user_id: str):
+async def community_teacher_profile_media(request: Request, user_id: str):
     rows = await repositories.list_public_teacher_profile_media(user_id)
-    items = [profile_media_item_from_row(row) for row in rows]
-    return {"items": items}
+    absolutize_media_url_items(rows, base_url=str(request.base_url))
+    items = [schemas.TeacherProfileMediaItem(**row) for row in rows]
+    lesson_ids = {
+        str(item.lesson_media_id)
+        for item in items
+        if item.lesson_media_id is not None
+    }
+    recording_ids = {
+        str(item.seminar_recording_id)
+        for item in items
+        if item.seminar_recording_id is not None
+    }
+    lesson_source_rows = [
+        row
+        for row in await repositories.list_teacher_lesson_media_sources(user_id)
+        if str(row["id"]) in lesson_ids
+    ]
+    absolutize_media_url_items(lesson_source_rows, base_url=str(request.base_url))
+    lesson_sources = [
+        lesson_media_source_from_row(row) for row in lesson_source_rows
+    ]
+    recording_source_rows = [
+        row
+        for row in await repositories.list_teacher_seminar_recording_sources(user_id)
+        if str(row["id"]) in recording_ids
+    ]
+    absolutize_media_url_items(
+        recording_source_rows,
+        base_url=str(request.base_url),
+    )
+    recording_sources = [
+        recording_source_from_row(row) for row in recording_source_rows
+    ]
+    return schemas.TeacherProfileMediaPublicResponse(
+        items=items,
+        lesson_media_sources=lesson_sources,
+        seminar_recording_sources=recording_sources,
+    )
 
 
 @router.get("/teachers/{user_id}/services", response_model=List[schemas.ServiceSummary])

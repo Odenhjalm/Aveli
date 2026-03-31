@@ -39,6 +39,47 @@
 - Feature expansion must happen via new entities such as `live_sessions`, `notifications`, or `marketplace_products`.
 - Mutation of core domain entities to support new features is forbidden.
 
+## Studio Core Boundary
+
+- Studio core means only:
+  - course metadata
+  - lesson metadata
+  - lesson content
+- Studio core explicitly excludes:
+  - lesson-media payloads
+  - profile media
+  - studio sessions
+- Studio core must use canonical course and lesson contracts directly.
+- Studio core must not depend on shared legacy `Course` models, raw maps, or legacy lesson aliases.
+
+## Feature Contract Expansion Rules
+
+- Non-core features must define explicit canonical contracts before they are treated as stable runtime truth.
+- Profile media is a separate feature domain and must use an explicit structured contract.
+- Profile media must not use metadata blobs, map-based identity, or fallback fields as runtime truth.
+- Studio sessions are a separate feature domain and must use a single canonical contract.
+- Studio sessions must not use fallback/default values to hide missing data.
+- Invalid non-core feature input must be rejected explicitly rather than normalized silently.
+- Landing and other external consumers must consume typed contracts.
+- Landing must not consume studio raw data or `Map<String, dynamic>` as runtime truth.
+
+## Transition Layer Philosophy
+
+- A transition layer exists only when canonical backend truth and active consumers still mismatch.
+- A transition layer is allowed only as an explicit, temporary, scoped layer above canonical truth.
+- A transition layer must define:
+  - producer shape
+  - consumer expectation
+  - explicit mapping
+  - removal condition
+- A transition layer must never:
+  - introduce fallback
+  - hide missing data
+  - silently correct invalid input or output
+  - preserve legacy aliases as runtime truth
+  - redefine canonical field names
+- Transition layers are migration mechanisms, not semantic truth.
+
 ## Non-Negotiable Constraints
 
 - Media is an EXPERIENCE, not a file.
@@ -53,6 +94,9 @@
   - If canonical replacement exists, legacy must be removed rather than silently tolerated.
 - Legacy removal requires a clear replacement.
   - No legacy endpoint, authority, or shortcut may be deleted unless a canonical replacement path is explicitly defined.
+- Map-based contracts and metadata blobs must not become semantic truth.
+- Default values must not hide missing required data.
+- Implicit parsing and silent correction are forbidden.
 
 ## System Definition
 
@@ -114,6 +158,7 @@
 - drip behavior is course-level configuration only and must not be inferred from course type or enrollment source
 - lessons are ordered via position
 - `lesson.lesson_title` is the canonical lesson display name
+- lesson runtime alias `title` is forbidden
 - `lessons` stores lesson identity and structure only
 - `lesson_contents` stores lesson body content only
 - `content_markdown` is canonical only on `lesson_contents`
@@ -205,6 +250,16 @@
 - No rule referring to visibility may be interpreted as permission for raw table access.
 - `app.lessons` must remain structure-only and `app.lesson_contents` must remain content-only.
 - `app.lessons` and `app.lesson_contents` must not be collapsed into one raw-table lesson access surface that bypasses canonical surface boundaries.
+
+## Contract Consumption Rules
+
+- Runtime contracts must be typed and explicit.
+- `Map<String, dynamic>` must not be used as runtime truth.
+- Metadata blobs must not act as identity, authority, or compatibility contract surfaces.
+- Landing must consume typed contracts rather than studio raw payloads.
+- Lesson naming law is global:
+  - `lesson_title` is canonical everywhere
+  - `title` is forbidden as a runtime lesson alias
 
 ## Drip Model (Canonical)
 

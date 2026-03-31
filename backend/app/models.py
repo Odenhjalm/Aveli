@@ -524,79 +524,54 @@ async def list_courses(
 
 
 async def list_intro_courses(limit: int = 5) -> Iterable[dict]:
-    return await list_courses(free_intro=True, limit=limit)
+    return await _list_landing_courses(limit=limit, intro_only=True)
 
 
 async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
+    return await _list_landing_courses(limit=limit, intro_only=False)
+
+
+async def _list_landing_courses(
+    *,
+    limit: int,
+    intro_only: bool,
+) -> Iterable[dict]:
+    clauses = []
+    params: list[Any] = []
+
+    if intro_only:
+        clauses.append("lower(c.step::text) = 'intro'")
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    order_sql = (
+        "ORDER BY c.updated_at DESC"
+        if intro_only
+        else "ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC"
+    )
+
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    f"""
-                    SELECT
-                        c.id,
-                        c.slug,
-                        c.title,
-                        c.description,
-                        c.cover_media_id,
-                        c.video_url,
-                        c.branch,
-                        c.is_free_intro,
-                        c.price_amount_cents,
-                        c.currency,
-                        c.is_published,
-                        c.created_by,
-                        c.created_at,
-                        c.updated_at,
-                        COALESCE(pr.priority, 1000) AS teacher_priority
-                    FROM app.courses c
-                    JOIN app.profiles prof
-                      ON prof.user_id = c.created_by
-                    LEFT JOIN app.course_display_priorities pr
-                      ON pr.teacher_id = c.created_by
-                    WHERE c.is_published = true
-                      AND {_test_visibility_clause("c")}
-                      AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
-                      AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
-                    ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC
-                    LIMIT %s
-                    """,
-                    (limit,),
-                )
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                await cur.execute(
-                    f"""
-                    SELECT
-                        c.id,
-                        c.slug,
-                        c.title,
-                        c.description,
-                        NULL::uuid AS cover_media_id,
-                        c.video_url,
-                        c.branch,
-                        c.is_free_intro,
-                        0::int AS price_amount_cents,
-                        'sek'::text AS currency,
-                        c.is_published,
-                        c.created_by,
-                        c.created_at,
-                        c.updated_at,
-                        COALESCE(pr.priority, 1000) AS teacher_priority
-                    FROM app.courses c
-                    JOIN app.profiles prof
-                      ON prof.user_id = c.created_by
-                    LEFT JOIN app.course_display_priorities pr
-                      ON pr.teacher_id = c.created_by
-                    WHERE c.is_published = true
-                      AND {_test_visibility_clause("c")}
-                      AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
-                      AND COALESCE(prof.email, '') NOT ILIKE '%%@example.com'
-                    ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC
-                    LIMIT %s
-                    """,
-                    (limit,),
-                )
+            await cur.execute(
+                f"""
+                SELECT
+                    c.id,
+                    c.slug,
+                    c.title,
+                    c.step::text AS step,
+                    c.price_amount_cents,
+                    cpc.short_description,
+                    NULL::text AS resolved_cover_url
+                FROM app.courses c
+                LEFT JOIN app.course_public_content cpc
+                  ON cpc.course_id = c.id
+                LEFT JOIN app.course_display_priorities pr
+                  ON pr.teacher_id = c.created_by
+                {where_sql}
+                {order_sql}
+                LIMIT %s
+                """,
+                [*params, limit],
+            )
             rows = await cur.fetchall()
             return rows
 

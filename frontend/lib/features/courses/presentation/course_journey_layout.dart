@@ -23,8 +23,8 @@ List<CourseJourneySeriesRow> buildCourseJourneySeriesRows(
 
   for (final course in courses) {
     final step = course.step;
-    final groupId = (course.courseGroupId ?? '').trim();
-    if (step == null || step == CourseJourneyStep.intro || groupId.isEmpty) {
+    final groupId = course.courseGroupId.trim();
+    if (step == CourseJourneyStep.intro || groupId.isEmpty) {
       continue;
     }
 

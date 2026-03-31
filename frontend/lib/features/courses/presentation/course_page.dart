@@ -146,11 +146,16 @@ class _CourseContent extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final courseState = courseStateAsync.valueOrNull;
     final hasEnrollment = courseState?.hasEnrollment == true;
-    final currentUnlockPosition = courseState?.currentUnlockPosition ?? 0;
+    final currentUnlockPosition =
+        courseState?.enrollment?.currentUnlockPosition;
     final isIntroCourse = course.step == CourseJourneyStep.intro;
     final lessons = _visibleCourseLessons(detail.lessons);
     final unlockedLessons = lessons
-        .where((lesson) => lesson.position <= currentUnlockPosition)
+        .where(
+          (lesson) =>
+              currentUnlockPosition != null &&
+              lesson.position <= currentUnlockPosition,
+        )
         .toList(growable: false);
     final isEnrolling = enrollState.isLoading;
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
@@ -217,7 +222,7 @@ class _CourseContent extends StatelessWidget {
                 const SizedBox(height: 12),
                 if (primaryCta != null)
                   SizedBox(width: double.infinity, child: primaryCta),
-                if (hasEnrollment) ...[
+                if (hasEnrollment && currentUnlockPosition != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Upplåsta lektioner: $currentUnlockPosition',
@@ -250,6 +255,7 @@ class _CourseContent extends StatelessWidget {
                     ...lessons.map((lesson) {
                       final isLocked =
                           !hasEnrollment ||
+                          currentUnlockPosition == null ||
                           lesson.position > currentUnlockPosition;
                       return ListTile(
                         leading: Icon(
@@ -257,7 +263,7 @@ class _CourseContent extends StatelessWidget {
                               ? Icons.lock_outline_rounded
                               : Icons.play_circle_outline_rounded,
                         ),
-                        title: Text(lesson.title),
+                        title: Text(lesson.lessonTitle),
                         subtitle: isLocked
                             ? const Text('Låst innehåll')
                             : Text('Lektion ${lesson.position}'),
@@ -317,7 +323,8 @@ List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
   final visible = lessons
       .where(
         (lesson) =>
-            lesson.title.isNotEmpty && !lesson.title.trim().startsWith('_'),
+            lesson.lessonTitle.isNotEmpty &&
+            !lesson.lessonTitle.trim().startsWith('_'),
       )
       .toList(growable: false);
   visible.sort((a, b) => a.position.compareTo(b.position));

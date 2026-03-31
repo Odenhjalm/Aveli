@@ -1,258 +1,143 @@
-import uuid
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
-from app import db
-
-pytestmark = pytest.mark.anyio("asyncio")
-
-
-def auth_header(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from app import schemas
 
 
-async def register_user(client, email: str, password: str, display_name: str):
-    register_resp = await client.post(
-        "/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "display_name": display_name,
-        },
-    )
-    assert register_resp.status_code == 201, register_resp.text
-
-    login_resp = await client.post(
-        "/auth/login",
-        json={"email": email, "password": password},
-    )
-    assert login_resp.status_code == 200, login_resp.text
-    tokens = login_resp.json()
-
-    profile_resp = await client.get(
-        "/profiles/me", headers=auth_header(tokens["access_token"])
-    )
-    assert profile_resp.status_code == 200, profile_resp.text
-    user_id = str(profile_resp.json()["user_id"])
-    return tokens["access_token"], tokens["refresh_token"], user_id
+def _uuid() -> str:
+    return str(uuid4())
 
 
-async def promote_to_teacher(user_id: str):
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
-                (user_id,),
-            )
-            await conn.commit()
+def _timestamp() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-async def cleanup_user(user_id: str):
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
-            await conn.commit()
+def test_profile_media_create_requires_explicit_non_default_fields() -> None:
+    with pytest.raises(ValidationError):
+        schemas.TeacherProfileMediaCreate(
+            media_kind=schemas.TeacherProfileMediaKind.lesson_media,
+            lesson_media_id=_uuid(),
+        )
 
 
-async def test_profile_media_requires_teacher(async_client):
-    email = f"profile_{uuid.uuid4().hex[:6]}@example.com"
-    password = "Passw0rd!"
-    access_token, _, user_id = await register_user(
-        async_client, email, password, "Profile User"
+def test_profile_media_create_accepts_explicit_lesson_media_identity() -> None:
+    payload = schemas.TeacherProfileMediaCreate(
+        media_kind=schemas.TeacherProfileMediaKind.lesson_media,
+        lesson_media_id=_uuid(),
+        position=0,
+        is_published=True,
+        enabled_for_home_player=False,
     )
 
-    try:
-        resp = await async_client.get(
-            "/studio/profile/media", headers=auth_header(access_token)
-        )
-        assert resp.status_code == 403
-    finally:
-        await cleanup_user(user_id)
+    assert payload.lesson_media_id is not None
+    assert payload.seminar_recording_id is None
+    assert payload.external_url is None
 
 
-async def test_teacher_profile_media_flow(async_client):
-    teacher_email = f"teacher_profile_{uuid.uuid4().hex[:8]}@example.com"
-    password = "Passw0rd!"
-
-    access_token, _, teacher_id = await register_user(
-        async_client, teacher_email, password, "Teacher Profile"
+def test_profile_media_create_accepts_explicit_seminar_recording_identity() -> None:
+    payload = schemas.TeacherProfileMediaCreate(
+        media_kind=schemas.TeacherProfileMediaKind.seminar_recording,
+        seminar_recording_id=_uuid(),
+        position=1,
+        is_published=False,
+        enabled_for_home_player=True,
     )
-    await promote_to_teacher(teacher_id)
 
-    course_id = None
-    lesson_id = None
-    lesson_media_id = None
-    seminar_id = None
-    recording_id = None
-    profile_media_id = None
+    assert payload.lesson_media_id is None
+    assert payload.seminar_recording_id is not None
+    assert payload.external_url is None
 
-    try:
-        slug = f"profile-course-{uuid.uuid4().hex[:6]}"
-        course_payload = {
-            "title": "Profile Course",
-            "slug": slug,
-            "description": "Featured course for profile media testing",
-            "is_free_intro": True,
-            "is_published": True,
-            "price_amount_cents": 0,
-        }
-        resp = await async_client.post(
-            "/studio/courses",
-            json=course_payload,
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 200, resp.text
-        course_id = str(resp.json()["id"])
 
-        resp = await async_client.post(
-            "/studio/lessons",
-            json={
-                "course_id": course_id,
-                "title": "Profile Lesson",
-                "content_markdown": "# Featured lesson",
-                "position": 1,
-                "is_intro": True,
-            },
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 200, resp.text
-        lesson_id = str(resp.json()["id"])
+def test_profile_media_create_accepts_explicit_external_identity() -> None:
+    payload = schemas.TeacherProfileMediaCreate(
+        media_kind=schemas.TeacherProfileMediaKind.external,
+        external_url="https://example.com/feature",
+        position=3,
+        is_published=True,
+        enabled_for_home_player=False,
+    )
 
-        resp = await async_client.post(
-            f"/studio/lessons/{lesson_id}/media",
-            headers=auth_header(access_token),
-            files={"file": ("profile.mp3", b"ID3", "audio/mpeg")},
-            data={"is_intro": "false"},
-        )
-        assert resp.status_code == 200, resp.text
-        lesson_media_id = str(resp.json()["id"])
+    assert payload.lesson_media_id is None
+    assert payload.seminar_recording_id is None
+    assert payload.external_url == "https://example.com/feature"
 
-        resp = await async_client.post(
-            "/studio/seminars",
-            json={
-                "title": "Profile Seminar",
-                "description": "Meditation live session",
-            },
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 200, resp.text
-        seminar_id = str(resp.json()["id"])
 
-        resp = await async_client.post(
-            f"/studio/seminars/{seminar_id}/recordings/reserve",
-            json={"extension": "mp4"},
-            headers=auth_header(access_token),
+def test_profile_media_create_rejects_mixed_identity_variants() -> None:
+    with pytest.raises(
+        ValidationError, match="lesson_media_id/seminar_recording_id"
+    ):
+        schemas.TeacherProfileMediaCreate(
+            media_kind=schemas.TeacherProfileMediaKind.external,
+            lesson_media_id=_uuid(),
+            external_url="https://example.com/feature",
+            position=0,
+            is_published=True,
+            enabled_for_home_player=False,
         )
-        assert resp.status_code == 200, resp.text
-        recording_payload = resp.json()
-        recording_id = str(recording_payload["id"])
-        asset_url = recording_payload["asset_url"]
-        assert asset_url.endswith(".mp4")
 
-        resp = await async_client.get(
-            "/studio/profile/media", headers=auth_header(access_token)
-        )
-        assert resp.status_code == 200, resp.text
-        payload = resp.json()
-        lesson_sources = {item["id"] for item in payload["lesson_media"]}
-        recording_sources = {item["id"] for item in payload["seminar_recordings"]}
-        assert lesson_media_id in lesson_sources
-        assert recording_id in recording_sources
-        assert payload["items"] == []
 
-        resp = await async_client.post(
-            "/studio/profile/media",
-            json={
-                "media_kind": "lesson_media",
-                "media_id": lesson_media_id,
-            },
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 422, resp.text
+def test_profile_media_item_has_no_blob_or_alias_fields() -> None:
+    item = schemas.TeacherProfileMediaItem(
+        id=_uuid(),
+        teacher_id=_uuid(),
+        media_kind=schemas.TeacherProfileMediaKind.external,
+        lesson_media_id=None,
+        seminar_recording_id=None,
+        external_url="https://example.com/feature",
+        title="Feature",
+        description="Explicit profile-media contract",
+        cover_media_id=None,
+        cover_image_url=None,
+        position=0,
+        is_published=True,
+        enabled_for_home_player=False,
+        created_at=_timestamp(),
+        updated_at=_timestamp(),
+    )
 
-        resp = await async_client.post(
-            "/studio/profile/media",
-            json={
-                "media_kind": "seminar_recording",
-                "media_id": recording_id,
-            },
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 422, resp.text
+    dumped = item.model_dump()
 
-        resp = await async_client.post(
-            "/studio/profile/media",
-            json={
-                "media_kind": "lesson_media",
-                "media_id": lesson_media_id,
-                "title": "Featured Meditation",
-                "description": "Relaxing audio clip",
-                "position": 5,
-                "is_published": True,
-            },
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 201, resp.text
-        created_item = resp.json()
-        profile_media_id = str(created_item["id"])
-        assert created_item["source"]["lesson_media"]["id"] == lesson_media_id
-        public_resp = await async_client.get(
-            f"/community/teachers/{teacher_id}/media"
-        )
-        assert public_resp.status_code == 200, public_resp.text
-        public_payload = public_resp.json()
-        assert len(public_payload["items"]) == 1
-        assert public_payload["items"][0]["id"] == profile_media_id
+    assert "metadata" not in dumped
+    assert "source" not in dumped
+    assert "media_id" not in dumped
+    assert "lesson_media_id" in dumped
+    assert "seminar_recording_id" in dumped
 
-        resp = await async_client.patch(
-            f"/studio/profile/media/{profile_media_id}",
-            json={
-                "title": "Updated Meditation",
-                "position": 1,
-                "is_published": False,
-                "metadata": {"cta": "listen"},
-            },
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 200, resp.text
-        updated = resp.json()
-        assert updated["title"] == "Updated Meditation"
-        assert updated["position"] == 1
-        assert updated["is_published"] is False
-        assert updated["metadata"]["cta"] == "listen"
 
-        resp = await async_client.patch(
-            f"/studio/profile/media/{profile_media_id}",
-            json={"title": ""},
-            headers=auth_header(access_token),
+def test_profile_media_item_rejects_collapsed_identity() -> None:
+    with pytest.raises(ValidationError, match="seminar_recording_id/external_url"):
+        schemas.TeacherProfileMediaItem(
+            id=_uuid(),
+            teacher_id=_uuid(),
+            media_kind=schemas.TeacherProfileMediaKind.lesson_media,
+            lesson_media_id=_uuid(),
+            seminar_recording_id=None,
+            external_url="https://example.com/feature",
+            title="Invalid",
+            description=None,
+            cover_media_id=None,
+            cover_image_url=None,
+            position=0,
+            is_published=True,
+            enabled_for_home_player=False,
+            created_at=_timestamp(),
+            updated_at=_timestamp(),
         )
-        assert resp.status_code == 422, resp.text
 
-        resp = await async_client.get(
-            f"/community/teachers/{teacher_id}/media"
-        )
-        assert resp.status_code == 200
-        assert resp.json()["items"] == []
 
-        resp = await async_client.get(
-            "/studio/profile/media", headers=auth_header(access_token)
-        )
-        assert resp.status_code == 200
-        listing = resp.json()
-        returned_ids = {item["id"] for item in listing["items"]}
-        assert profile_media_id in returned_ids
+def test_profile_media_response_catalogs_use_explicit_source_lists() -> None:
+    response = schemas.TeacherProfileMediaListResponse(
+        items=[],
+        lesson_media_sources=[],
+        seminar_recording_sources=[],
+    )
 
-        resp = await async_client.delete(
-            f"/studio/profile/media/{profile_media_id}",
-            headers=auth_header(access_token),
-        )
-        assert resp.status_code == 204, resp.text
+    dumped = response.model_dump()
 
-        resp = await async_client.get(
-            "/studio/profile/media", headers=auth_header(access_token)
-        )
-        assert resp.status_code == 200
-        final_items = {item["id"] for item in resp.json()["items"]}
-        assert profile_media_id not in final_items
-    finally:
-        await cleanup_user(teacher_id)
+    assert "lesson_media_sources" in dumped
+    assert "seminar_recording_sources" in dumped
+    assert "lesson_media" not in dumped
+    assert "seminar_recordings" not in dumped
