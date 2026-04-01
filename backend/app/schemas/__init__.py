@@ -1000,22 +1000,6 @@ class ProfileDetailResponse(ProfileDetail):
     pass
 
 
-class CourseCoverResolved(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    media_id: UUID | None = None
-    state: Literal[
-        "ready",
-        "uploaded",
-        "processing",
-        "failed",
-        "missing",
-        "placeholder",
-    ]
-    resolved_url: str | None = None
-    source: Literal["control_plane", "placeholder"]
-
-
 class Course(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1025,7 +1009,6 @@ class Course(BaseModel):
     course_group_id: UUID
     step: str
     cover_media_id: UUID | None = None
-    cover: CourseCoverResolved | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: Optional[int]
@@ -1372,10 +1355,14 @@ class LessonMediaUploadCompleteRequest(BaseModel):
 
 
 class MediaPreviewBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     ids: list[UUID]
 
 
 class MediaPreviewItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     media_type: str
     authoritative_editor_ready: bool = False
     resolved_preview_url: str | None = None
@@ -1385,6 +1372,8 @@ class MediaPreviewItem(BaseModel):
 
 
 class MediaPreviewBatchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: dict[str, MediaPreviewItem]
 
 
@@ -1507,6 +1496,8 @@ class StudioLessonMediaListResponse(BaseModel):
 
 
 class StudioLessonMediaPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lesson_media_id: UUID
     preview_url: str
     expires_at: datetime

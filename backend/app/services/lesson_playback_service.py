@@ -2,22 +2,21 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
 
+from .. import models
+from ..config import settings
 from ..media_control_plane.services.media_resolver_service import (
     LessonMediaPlaybackMode,
     LessonMediaResolution,
     LessonMediaResolutionReason,
     media_resolver_service as canonical_media_resolver,
 )
-from .. import models, repositories
-from ..config import settings
-from ..db import get_conn
-from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
-from ..services import courses_service, media_resolver, storage_service
+from ..services import courses_service, storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,9 @@ def _exact_text(value: Any) -> str | None:
 
 
 def _playback_format(*, media: dict[str, Any]) -> str:
-    explicit = _exact_text(media.get("streaming_format"))
+    explicit = _exact_text(media.get("playback_format")) or _exact_text(
+        media.get("ingest_format")
+    )
     if explicit is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -46,7 +47,7 @@ def _resolution_is_image(resolution: LessonMediaResolution) -> bool:
 
 def _playback_resolution_source(resolution: LessonMediaResolution) -> str:
     if resolution.playback_mode == LessonMediaPlaybackMode.PIPELINE_ASSET:
-        return "control_plane"
+        return "runtime_media_projection"
     return "unknown"
 
 
@@ -69,24 +70,6 @@ def _log_image_playback_resolution(
     )
 
 
-async def _authorize_lesson_playback(user_id: str, row: dict[str, Any]) -> None:
-    lesson_id = _exact_text(row.get("lesson_id"))
-    if lesson_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Canonical lesson identity required",
-        )
-    access = await courses_service.read_canonical_lesson_access(user_id, lesson_id)
-    if access["lesson"] is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lesson not found",
-        )
-    if access["can_access"]:
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-
 async def _authorize_lesson_resolution_playback(
     *,
     user_id: str,
@@ -100,15 +83,9 @@ async def _authorize_lesson_resolution_playback(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Canonical lesson identity required",
         )
-    if exact_course_id and await models.is_course_owner(
-        user_id,
-        exact_course_id,
-    ):
+    if exact_course_id and await models.is_course_owner(user_id, exact_course_id):
         return
-    access = await courses_service.read_canonical_lesson_access(
-        user_id,
-        exact_lesson_id,
-    )
+    access = await courses_service.read_canonical_lesson_access(user_id, exact_lesson_id)
     if access["lesson"] is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -119,74 +96,15 @@ async def _authorize_lesson_resolution_playback(
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
-async def _authorize_home_player_upload_playback(user_id: str, teacher_id: str) -> None:
-    del user_id, teacher_id
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Home player playback is outside canonical learner authority",
-    )
-
-
 async def resolve_pipeline_playback(
     *,
     media_asset_id: str,
     user_id: str,
 ) -> dict[str, Any]:
-    media = await media_assets_repo.get_media_asset_access(str(media_asset_id))
-    if not media:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-    if media.get("state") != "ready":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Media is not ready",
-        )
-
-    purpose = _exact_text(media.get("purpose"))
-    if purpose == "home_player_audio":
-        upload = await repositories.get_active_home_upload_by_media_asset_id(
-            str(media_asset_id)
-        )
-        if not upload:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-        teacher_id = upload.get("teacher_id")
-        if not teacher_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Media missing owner",
-            )
-        await _authorize_home_player_upload_playback(user_id, str(teacher_id))
-    elif media.get("lesson_id"):
-        await _authorize_lesson_playback(user_id, media)
-    else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    storage_path = _exact_text(media.get("streaming_object_path"))
-    if storage_path is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Streaming asset unavailable",
-        )
-    media_type = _exact_text(media.get("media_type"))
-    if (
-        media_type == "audio"
-        and purpose == "lesson_audio"
-        and not media_resolver.is_derived_audio_path(storage_path)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Streaming asset unavailable",
-        )
-
-    streaming_bucket = _exact_text(media.get("streaming_storage_bucket"))
-    if streaming_bucket is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Streaming asset unavailable",
-        )
-    return await _build_pipeline_playback_response(
-        media=media,
-        storage_path=storage_path,
-        storage_bucket=streaming_bucket,
+    del media_asset_id, user_id
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Direct media-asset playback is unavailable in canonical runtime",
     )
 
 
@@ -280,11 +198,6 @@ def _resolution_http_exception(resolution: LessonMediaResolution) -> HTTPExcepti
             else "Media not found"
         )
         return HTTPException(status_code=status_code, detail=detail)
-    if resolution.reference_type == "home_player_upload":
-        return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Playable media not found",
-        )
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Lesson media has no playable source",
@@ -311,42 +224,11 @@ async def _resolve_pipeline_playback_from_resolution(
             detail="Media is not ready",
         )
 
-    if resolution.auth_scope == "home_teacher_library":
-        teacher_id = resolution.teacher_id
-        if not teacher_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Media missing owner",
-            )
-        await _authorize_home_player_upload_playback(user_id, str(teacher_id))
-    elif resolution.auth_scope == "lesson_course":
-        await _authorize_lesson_resolution_playback(
-            user_id=user_id,
-            lesson_id=resolution.lesson_id,
-            course_id=resolution.course_id,
-        )
-    else:
-        purpose = _exact_text(media.get("purpose"))
-        if purpose == "home_player_audio":
-            upload = await repositories.get_active_home_upload_by_media_asset_id(
-                str(media_asset_id)
-            )
-            if not upload:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Media not found",
-                )
-            teacher_id = upload.get("teacher_id")
-            if not teacher_id:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Media missing owner",
-                )
-            await _authorize_home_player_upload_playback(user_id, str(teacher_id))
-        elif media.get("lesson_id"):
-            await _authorize_lesson_playback(user_id, media)
-        else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await _authorize_lesson_resolution_playback(
+        user_id=user_id,
+        lesson_id=resolution.lesson_id,
+        course_id=resolution.course_id,
+    )
 
     return await _build_pipeline_playback_response(
         media=media,

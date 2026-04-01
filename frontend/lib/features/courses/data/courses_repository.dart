@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
 Object? _requiredField(Object? payload, String fieldName) {
@@ -86,25 +85,6 @@ List<Object?> _requireList(Object? value, String fieldName) {
     default:
       throw StateError('Invalid field type for $fieldName');
   }
-}
-
-CourseCoverData _parseCourseCover(Object? payload) {
-  return CourseCoverData(
-    mediaId: _optionalString(_requiredField(payload, 'media_id'), 'media_id'),
-    state: _requireString(_requiredField(payload, 'state'), 'state'),
-    resolvedUrl: _optionalString(
-      _requiredField(payload, 'resolved_url'),
-      'resolved_url',
-    ),
-    source: _requireString(_requiredField(payload, 'source'), 'source'),
-  );
-}
-
-CourseCoverData? _optionalCourseCover(Object? payload) {
-  if (payload == null) {
-    return null;
-  }
-  return _parseCourseCover(payload);
 }
 
 class CoursesRepository {
@@ -375,7 +355,6 @@ class CourseSummary {
     required this.step,
     required this.courseGroupId,
     required this.coverMediaId,
-    required this.cover,
     required this.priceCents,
     required this.dripEnabled,
     required this.dripIntervalDays,
@@ -387,7 +366,6 @@ class CourseSummary {
   final CourseJourneyStep step;
   final String courseGroupId;
   final String? coverMediaId;
-  final CourseCoverData? cover;
   final int? priceCents;
   final bool dripEnabled;
   final int? dripIntervalDays;
@@ -408,7 +386,6 @@ class CourseSummary {
         _requiredField(payload, 'cover_media_id'),
         'cover_media_id',
       ),
-      cover: _optionalCourseCover(_requiredField(payload, 'cover')),
       priceCents: _optionalInt(
         _requiredField(payload, 'price_amount_cents'),
         'price_amount_cents',

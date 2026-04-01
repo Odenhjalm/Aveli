@@ -1,3 +1,4 @@
+from typing import Any, Mapping
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -8,6 +9,32 @@ from ..services import courses_service
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 api_router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+_CANONICAL_COURSE_FIELDS = (
+    "id",
+    "slug",
+    "title",
+    "course_group_id",
+    "step",
+    "cover_media_id",
+    "price_amount_cents",
+    "drip_enabled",
+    "drip_interval_days",
+)
+
+
+def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
+    return {field: course.get(field) for field in _CANONICAL_COURSE_FIELDS}
+
+
+def _course_response(course: Mapping[str, Any]) -> schemas.Course:
+    return schemas.Course(**_canonical_course_payload(course))
+
+
+def _course_list_response(
+    rows: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
+) -> schemas.CourseListResponse:
+    return schemas.CourseListResponse(items=[_course_response(row) for row in rows])
 
 
 async def _assert_can_access_lesson(user: OptionalCurrentUser, lesson_id: str) -> dict:
@@ -38,7 +65,7 @@ def _course_detail_response(
     lessons: list[dict] | tuple[dict, ...],
 ) -> schemas.CourseDetailResponse:
     return schemas.CourseDetailResponse(
-        course=schemas.Course(**course),
+        course=_course_response(course),
         lessons=[schemas.LessonStructureItem(**row) for row in lessons],
     )
 
@@ -78,23 +105,24 @@ async def list_courses(
     limit: int | None = Query(default=None, ge=1, le=100),
 ):
     rows = await courses_service.list_public_courses(search=search, limit=limit)
-    return schemas.CourseListResponse(items=[schemas.Course(**row) for row in rows])
+    return _course_list_response(list(rows))
 
 
 router.add_api_route("/", list_courses, methods=["GET"], include_in_schema=False)
 
+_CANONICAL_COURSE_CURRENCY = "sek"
+
 
 def _course_pricing_response(payload: dict) -> schemas.CoursePricingResponse:
     amount_cents = payload.get("amount_cents")
-    currency = payload.get("currency")
-    if amount_cents is None or currency is None:
+    if amount_cents is None or int(amount_cents) <= 0:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Course pricing is not configured",
         )
     return schemas.CoursePricingResponse(
         amount_cents=amount_cents,
-        currency=currency,
+        currency=_CANONICAL_COURSE_CURRENCY,
     )
 
 
@@ -133,7 +161,7 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
 @router.get("/me", response_model=schemas.CourseListResponse)
 async def my_courses(current: CurrentUser):
     rows = await courses_service.list_my_courses(str(current["id"]))
-    return schemas.CourseListResponse(items=[schemas.Course(**row) for row in rows])
+    return _course_list_response(list(rows))
 
 
 async def _read_course_state_or_404(*, user_id: str, course_id: str) -> dict:

@@ -23,6 +23,10 @@ _COURSE_COLUMNS = """
     c.cover_media_id
 """
 
+_MEDIA_ORIGINAL_NAME_SQL = """
+    nullif(regexp_replace(ma.original_object_path, '^.*/', ''), '') as original_name
+"""
+
 
 def _lesson_columns(include_content: bool) -> str:
     columns = [
@@ -79,8 +83,7 @@ async def get_course_pricing_by_slug(slug: str) -> dict[str, Any] | None:
 
     query = """
         select
-            c.price_amount_cents as amount_cents,
-            c.currency
+            c.price_amount_cents as amount_cents
         from app.courses as c
         where c.slug = %s
         limit 1
@@ -414,7 +417,7 @@ async def get_lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]
 
 
 async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
-    query = """
+    query = f"""
         select
             lm.id,
             lm.lesson_id,
@@ -422,7 +425,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
             lm.position,
             ma.media_type::text as media_type,
             ma.state::text as state,
-            ma.original_filename as original_name,
+            {_MEDIA_ORIGINAL_NAME_SQL},
             rm.lesson_media_id is not null as preview_ready
         from app.lesson_media as lm
         join app.media_assets as ma
@@ -440,7 +443,7 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
 
 
 async def list_lesson_media_for_studio(lesson_id: str) -> Sequence[dict[str, Any]]:
-    query = """
+    query = f"""
         select
             lm.id as lesson_media_id,
             lm.lesson_id,
@@ -448,7 +451,7 @@ async def list_lesson_media_for_studio(lesson_id: str) -> Sequence[dict[str, Any
             lm.position,
             ma.media_type::text as media_type,
             ma.state::text as state,
-            ma.original_filename as original_name,
+            {_MEDIA_ORIGINAL_NAME_SQL},
             (ma.state in ('uploaded', 'ready')) as preview_ready
         from app.lesson_media as lm
         join app.media_assets as ma
@@ -467,7 +470,7 @@ async def get_lesson_media_for_studio(
     lesson_id: str,
     lesson_media_id: str,
 ) -> dict[str, Any] | None:
-    query = """
+    query = f"""
         select
             lm.id as lesson_media_id,
             lm.lesson_id,
@@ -475,7 +478,7 @@ async def get_lesson_media_for_studio(
             lm.position,
             ma.media_type::text as media_type,
             ma.state::text as state,
-            ma.original_filename as original_name,
+            {_MEDIA_ORIGINAL_NAME_SQL},
             (ma.state in ('uploaded', 'ready')) as preview_ready
         from app.lesson_media as lm
         join app.media_assets as ma
@@ -498,7 +501,7 @@ async def list_lesson_media_by_ids_for_studio(
     if not exact_ids:
         return []
 
-    query = """
+    query = f"""
         select
             lm.id as lesson_media_id,
             lm.lesson_id,
@@ -506,7 +509,7 @@ async def list_lesson_media_by_ids_for_studio(
             lm.position,
             ma.media_type::text as media_type,
             ma.state::text as state,
-            ma.original_filename as original_name,
+            {_MEDIA_ORIGINAL_NAME_SQL},
             (ma.state in ('uploaded', 'ready')) as preview_ready
         from app.lesson_media as lm
         join app.media_assets as ma

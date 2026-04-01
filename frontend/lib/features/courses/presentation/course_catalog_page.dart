@@ -12,7 +12,6 @@ import 'package:aveli/features/courses/presentation/course_journey_layout.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -258,7 +257,6 @@ class _ActIntroSection extends StatelessWidget {
                         width: tileWidth,
                         child: _IntroMiniCourseCard(
                           course: courses[index],
-                          assets: assets,
                           mediaRepository: mediaRepository,
                         ),
                       ),
@@ -564,7 +562,6 @@ class _JourneyStepSlot extends StatelessWidget {
         constraints: BoxConstraints(minHeight: minHeight),
         child: _JourneyCourseCard(
           course: course!,
-          assets: assets,
           mediaRepository: mediaRepository,
         ),
       );
@@ -589,12 +586,10 @@ class _JourneyStepSlot extends StatelessWidget {
 class _IntroMiniCourseCard extends StatelessWidget {
   const _IntroMiniCourseCard({
     required this.course,
-    required this.assets,
     required this.mediaRepository,
   });
 
   final CourseSummary course;
-  final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
   @override
@@ -602,14 +597,10 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(16);
     final slug = course.slug.trim();
-    final resolvedCover = resolveCourseSummaryCover(course, mediaRepository);
-    final coverProvider = CourseCoverAssets.resolve(
-      assets: assets,
-      slug: slug,
-      coverUrl: resolvedCover.imageUrl,
+    final coverUrlFuture = resolveCourseSummaryCoverUrl(
+      course,
+      mediaRepository,
     );
-    final imageProvider = coverProvider ?? AppImages.logo;
-    final isFallbackLogo = coverProvider == null;
     final isIntro = course.isIntroCourse;
     final priceLabel = course.priceCents == null
         ? 'Pris saknas'
@@ -664,22 +655,26 @@ class _IntroMiniCourseCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.18),
                         ),
-                        child: Padding(
-                          padding: EdgeInsets.all(isFallbackLogo ? 14 : 0),
-                          child: Image(
-                            image: SafeMedia.resizedProvider(
-                              imageProvider,
+                        child: FutureBuilder<String?>(
+                          future: coverUrlFuture,
+                          builder: (context, snapshot) {
+                            final coverUrl = snapshot.data;
+                            if (coverUrl == null || coverUrl.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            return Image.network(
+                              coverUrl,
+                              fit: BoxFit.cover,
+                              filterQuality: SafeMedia.filterQuality(
+                                full: FilterQuality.high,
+                              ),
                               cacheWidth: cacheWidth,
                               cacheHeight: cacheHeight,
-                            ),
-                            fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
-                            filterQuality: SafeMedia.filterQuality(
-                              full: FilterQuality.high,
-                            ),
-                            gaplessPlayback: true,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const SizedBox.shrink(),
-                          ),
+                              gaplessPlayback: true,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const SizedBox.shrink(),
+                            );
+                          },
                         ),
                       );
                     },
@@ -748,26 +743,20 @@ class _IntroMiniCourseCard extends StatelessWidget {
 class _JourneyCourseCard extends StatelessWidget {
   const _JourneyCourseCard({
     required this.course,
-    required this.assets,
     required this.mediaRepository,
   });
 
   final CourseSummary course;
-  final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final slug = course.slug.trim();
-    final resolvedCover = resolveCourseSummaryCover(course, mediaRepository);
-    final coverProvider = CourseCoverAssets.resolve(
-      assets: assets,
-      slug: slug,
-      coverUrl: resolvedCover.imageUrl,
+    final coverUrlFuture = resolveCourseSummaryCoverUrl(
+      course,
+      mediaRepository,
     );
-    final imageProvider = coverProvider ?? AppImages.logo;
-    final isFallbackLogo = coverProvider == null;
 
     final radius = BorderRadius.circular(18);
     final isIntro = course.isIntroCourse;
@@ -824,22 +813,26 @@ class _JourneyCourseCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.18),
                         ),
-                        child: Padding(
-                          padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
-                          child: Image(
-                            image: SafeMedia.resizedProvider(
-                              imageProvider,
+                        child: FutureBuilder<String?>(
+                          future: coverUrlFuture,
+                          builder: (context, snapshot) {
+                            final coverUrl = snapshot.data;
+                            if (coverUrl == null || coverUrl.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            return Image.network(
+                              coverUrl,
+                              fit: BoxFit.cover,
+                              filterQuality: SafeMedia.filterQuality(
+                                full: FilterQuality.high,
+                              ),
                               cacheWidth: cacheWidth,
                               cacheHeight: cacheHeight,
-                            ),
-                            fit: isFallbackLogo ? BoxFit.contain : BoxFit.cover,
-                            filterQuality: SafeMedia.filterQuality(
-                              full: FilterQuality.high,
-                            ),
-                            gaplessPlayback: true,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const SizedBox.shrink(),
-                          ),
+                              gaplessPlayback: true,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const SizedBox.shrink(),
+                            );
+                          },
                         ),
                       );
                     },

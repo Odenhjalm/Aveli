@@ -32,7 +32,11 @@ from .middleware.request_context import RequestContextMiddleware
 from .routes import (
     playback,
     courses,
+    domain_observability_mcp,
+    logs_mcp,
+    media_control_plane_mcp,
     studio,
+    verification_mcp,
 )
 from .db import get_conn
 
@@ -123,6 +127,10 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(courses.api_router)
     app.include_router(studio.course_lesson_router)
     app.include_router(studio.lesson_media_router)
+    app.include_router(logs_mcp.router)
+    app.include_router(media_control_plane_mcp.router)
+    app.include_router(domain_observability_mcp.router)
+    app.include_router(verification_mcp.router)
 
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)

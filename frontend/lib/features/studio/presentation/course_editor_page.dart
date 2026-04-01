@@ -27,7 +27,6 @@ import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/editor/session/editor_session.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/money.dart';
@@ -965,25 +964,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return _coverActionRequestId;
   }
 
-  String? _resolveStudioCourseCoverUrl(CourseStudio course) {
-    final resolved = resolveCourseCover(
-      mediaRepository: ref.read(mediaRepositoryProvider),
-      cover: course.cover,
-      coverMediaId: course.coverMediaId,
+  Future<String?> _resolveStudioCourseImageUrl(CourseStudio course) {
+    return resolveStudioCourseCoverUrl(
+      course,
+      ref.read(mediaRepositoryProvider),
     );
-    return resolved.imageUrl;
-  }
-
-  String _describeCourseCoverForDebug(CourseCoverData? cover) {
-    if (cover == null) {
-      return 'cover=<absent>';
-    }
-    final mediaId = cover.mediaId ?? '<none>';
-    final state = cover.state;
-    final source = cover.source;
-    final resolvedUrl = cover.resolvedUrl ?? '<none>';
-    return 'cover.media_id=$mediaId cover.state=$state '
-        'cover.source=$source cover.resolved_url=$resolvedUrl';
   }
 
   void _logCourseMetaPatchPayload({
@@ -1005,8 +990,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!kDebugMode) return;
     debugPrint(
       '[COURSE_COVER_META_PATCH_RESPONSE] course_id=$courseId '
-      'cover_media_id=${response.coverMediaId ?? '<absent>'} '
-      '${_describeCourseCoverForDebug(response.cover)}',
+      'cover_media_id=${response.coverMediaId ?? '<absent>'}',
     );
   }
 
@@ -1017,8 +1001,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!kDebugMode) return;
     debugPrint(
       '[COURSE_COVER_META_RELOAD] course_id=$courseId '
-      'cover_media_id=${response.coverMediaId ?? '<absent>'} '
-      '${_describeCourseCoverForDebug(response.cover)}',
+      'cover_media_id=${response.coverMediaId ?? '<absent>'}',
     );
   }
 
@@ -1194,6 +1177,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
+      String? resolvedCoverUrl;
+      String? coverError;
+      if (course.coverMediaId != null && course.coverMediaId!.isNotEmpty) {
+        try {
+          resolvedCoverUrl = await _resolveStudioCourseImageUrl(course);
+        } catch (error, stackTrace) {
+          coverError = AppFailure.from(error, stackTrace).message;
+        }
+      }
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _courseMetaRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
       _logCourseMetaReloadResponse(courseId: courseId, response: course);
       _courseTitleCtrl.text = course.title;
       _courseSlugCtrl.text = course.slug;
@@ -1203,7 +1202,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           : formatSekInputFromOre(priceOre);
       if (mounted) {
         setState(() {
-          _courseCoverPath = _resolveStudioCourseCoverUrl(course);
+          _courseCoverPath = resolvedCoverUrl;
+          if (!_updatingCourseCover) {
+            _coverPipelineError = coverError;
+          }
         });
       }
     } catch (e, stackTrace) {

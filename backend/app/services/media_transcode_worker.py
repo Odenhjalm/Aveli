@@ -169,6 +169,13 @@ async def start_worker() -> None:
     if not enablement["final_state"]:
         logger.info("Media transcode worker disabled", extra=enablement)
         return
+    queue_contract_supported = await media_assets_repo.media_processing_queue_supported()
+    if not queue_contract_supported:
+        logger.info(
+            "Media transcode worker unavailable for current local baseline",
+            extra={**enablement, "queue_contract_supported": False},
+        )
+        return
     if _worker_task is not None:
         return
     released = await media_assets_repo.release_processing_media_assets(
@@ -195,6 +202,7 @@ async def stop_worker() -> None:
 
 async def get_metrics() -> dict[str, Any]:
     enablement = _enablement_state()
+    queue_contract_supported = await media_assets_repo.media_processing_queue_supported()
     summary = await media_assets_repo.get_media_processing_worker_summary(
         stale_after_seconds=settings.media_transcode_stale_lock_seconds
     )
@@ -210,7 +218,8 @@ async def get_metrics() -> dict[str, Any]:
     )
     return {
         "worker_running": _worker_task is not None and not _worker_task.done(),
-        **enablement,
+        **(enablement | {"final_state": bool(enablement["final_state"] and queue_contract_supported)}),
+        "queue_contract_supported": queue_contract_supported,
         "poll_interval_seconds": settings.media_transcode_poll_interval_seconds,
         "batch_size": settings.media_transcode_batch_size,
         "max_attempts": settings.media_transcode_max_attempts,

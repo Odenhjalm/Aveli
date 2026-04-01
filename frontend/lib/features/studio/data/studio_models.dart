@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:aveli/shared/models/request_headers.dart';
-import 'package:aveli/shared/utils/course_cover_contract.dart';
 
 Object? _requireResponseField(Object? payload, String key, String label) {
   switch (payload) {
@@ -91,27 +90,6 @@ DateTime _requiredResponseUtcDateTime(
   return DateTime.parse(value);
 }
 
-CourseCoverData? _nullableResponseCourseCover(
-  Object? payload,
-  String key,
-  String label,
-) {
-  final value = _requireResponseField(payload, key, label);
-  if (value == null) {
-    return null;
-  }
-  return CourseCoverData(
-    mediaId: _nullableResponseString(value, 'media_id', '$label field "$key"'),
-    state: _requiredResponseString(value, 'state', '$label field "$key"'),
-    resolvedUrl: _nullableResponseString(
-      value,
-      'resolved_url',
-      '$label field "$key"',
-    ),
-    source: _requiredResponseString(value, 'source', '$label field "$key"'),
-  );
-}
-
 @immutable
 class CourseCore {
   const CourseCore({
@@ -147,11 +125,9 @@ class CourseStudio extends CourseCore {
     required super.dripIntervalDays,
     required super.coverMediaId,
     required this.priceAmountCents,
-    required this.cover,
   });
 
   final int? priceAmountCents;
-  final CourseCoverData? cover;
 
   factory CourseStudio.fromResponse(
     Object? payload, {
@@ -175,7 +151,6 @@ class CourseStudio extends CourseCore {
         'price_amount_cents',
         label,
       ),
-      cover: _nullableResponseCourseCover(payload, 'cover', label),
     );
   }
 
@@ -189,12 +164,10 @@ class CourseStudio extends CourseCore {
     int? dripIntervalDays,
     String? coverMediaId,
     int? priceAmountCents,
-    CourseCoverData? cover,
     bool clearCourseGroupId = false,
     bool clearDripIntervalDays = false,
     bool clearCoverMediaId = false,
     bool clearPriceAmountCents = false,
-    bool clearCover = false,
   }) {
     return CourseStudio(
       id: id != null ? id : this.id,
@@ -218,7 +191,6 @@ class CourseStudio extends CourseCore {
           : (priceAmountCents != null
                 ? priceAmountCents
                 : this.priceAmountCents),
-      cover: clearCover ? null : (cover != null ? cover : this.cover),
     );
   }
 }

@@ -52,6 +52,17 @@ _LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
     "true",
     "yes",
 }
+_CANONICAL_COURSE_FIELDS = (
+    "id",
+    "slug",
+    "title",
+    "course_group_id",
+    "step",
+    "cover_media_id",
+    "price_amount_cents",
+    "drip_enabled",
+    "drip_interval_days",
+)
 
 
 def _visible_lesson_text(value: str | None, *, limit: int = 1200) -> str:
@@ -264,6 +275,18 @@ async def _apply_course_read_contract(
     await courses_service.attach_course_cover_read_contract(courses)
 
 
+def _canonical_course_payload(course: Dict[str, Any]) -> Dict[str, Any]:
+    return {field: course.get(field) for field in _CANONICAL_COURSE_FIELDS}
+
+
+def _course_response(course: Dict[str, Any]) -> schemas.Course:
+    return schemas.Course(**_canonical_course_payload(course))
+
+
+def _course_list_response(rows: list[dict[str, Any]]) -> schemas.CourseListResponse:
+    return schemas.CourseListResponse(items=[_course_response(row) for row in rows])
+
+
 async def _require_studio_lesson(lesson_id: str) -> dict[str, Any]:
     lesson = await courses_service.fetch_studio_lesson(lesson_id)
     if not lesson:
@@ -338,7 +361,7 @@ async def _preview_item_from_row(
 async def studio_courses(current: TeacherUser):
     rows = list(await courses_service.list_courses(teacher_id=str(current["id"])))
     await _apply_course_read_contract(rows)
-    return {"items": rows}
+    return _course_list_response(rows)
 
 
 @router.get("/status")
@@ -405,7 +428,7 @@ async def create_course(payload: schemas.StudioCourseCreate, current: StudioActo
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create course")
-    return row
+    return _course_response(row)
 
 
 @lesson_media_router.post(
@@ -628,11 +651,6 @@ async def studio_request_lesson_media_previews(
     for lesson_media_id in requested_ids:
         row = rows_by_id.get(lesson_media_id)
         if row is None:
-            preview_items[lesson_media_id] = _preview_failure_item(
-                media_type="",
-                row={},
-                failure_reason="not_found",
-            )
             continue
 
         lesson_id_value = str(row.get("lesson_id") or "").strip()
@@ -1792,7 +1810,7 @@ async def studio_reserve_recording(
 async def studio_courses(current: StudioActor):
     del current
     rows = list(await courses_service.list_courses())
-    return schemas.CourseListResponse(items=[schemas.Course(**row) for row in rows])
+    return _course_list_response(rows)
 
 
 @course_lesson_router.get("/courses/{course_id}", response_model=schemas.Course)
@@ -1801,7 +1819,7 @@ async def course_meta(course_id: str, current: StudioActor):
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    return schemas.Course(**row)
+    return _course_response(row)
 
 
 @course_lesson_router.post(
@@ -1840,7 +1858,7 @@ async def update_course(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    return schemas.Course(**row)
+    return _course_response(row)
 
 
 @course_lesson_router.delete("/courses/{course_id}")

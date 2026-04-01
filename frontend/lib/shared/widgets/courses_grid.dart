@@ -6,7 +6,6 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
@@ -44,17 +43,14 @@ class CoursesGrid extends StatelessWidget {
           ),
           itemBuilder: (_, i) {
             final c = courses[i];
-            final resolvedCover = resolveCourseSummaryCover(c, mediaRepository);
-            final cover = resolvedCover.imageUrl ?? '';
+            final coverUrlFuture = resolveCourseSummaryCoverUrl(
+              c,
+              mediaRepository,
+            );
             final title = c.title;
             final id = c.id;
             final pct = (progress?[id] ?? 0.0).clamp(0.0, 1.0);
-            final slug = c.slug ?? '';
-            final coverProvider = CourseCoverAssets.resolve(
-              assets: assets,
-              slug: slug,
-              coverUrl: cover,
-            );
+            final slug = c.slug;
             return LayoutBuilder(
               builder: (context, tileConstraints) {
                 if (SafeMedia.enabled) {
@@ -84,65 +80,15 @@ class CoursesGrid extends StatelessWidget {
                   ),
                 );
 
-                Widget buildCover() {
+                Widget buildCover(String? coverUrl) {
                   final placeholder = gradientFallback();
-                  if (coverProvider != null) {
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        placeholder,
-                        Image(
-                          image: SafeMedia.resizedProvider(
-                            coverProvider,
-                            cacheWidth: cacheWidth,
-                            cacheHeight: cacheHeight,
-                          ),
-                          fit: BoxFit.cover,
-                          filterQuality: SafeMedia.filterQuality(
-                            full: FilterQuality.high,
-                          ),
-                          gaplessPlayback: true,
-                          errorBuilder: (_, err, stack) {
-                            ImageErrorLogger.log(
-                              source: 'CoursesGrid/CoverProvider',
-                              url: cover.isNotEmpty ? cover : slug,
-                              error: err,
-                              stackTrace: stack,
-                            );
-                            if (cover.isNotEmpty) {
-                              return Image.network(
-                                cover,
-                                fit: BoxFit.cover,
-                                filterQuality: SafeMedia.filterQuality(
-                                  full: FilterQuality.high,
-                                ),
-                                cacheWidth: cacheWidth,
-                                cacheHeight: cacheHeight,
-                                gaplessPlayback: true,
-                                errorBuilder: (_, err2, stack2) {
-                                  ImageErrorLogger.log(
-                                    source: 'CoursesGrid/CoverURL',
-                                    url: cover,
-                                    error: err2,
-                                    stackTrace: stack2,
-                                  );
-                                  return const SizedBox.shrink();
-                                },
-                              );
-                            }
-                            return const SizedBox.shrink();
-                          },
-                        ),
-                      ],
-                    );
-                  }
-                  if (cover.isNotEmpty) {
+                  if (coverUrl != null && coverUrl.isNotEmpty) {
                     return Stack(
                       fit: StackFit.expand,
                       children: [
                         placeholder,
                         Image.network(
-                          cover,
+                          coverUrl,
                           fit: BoxFit.cover,
                           filterQuality: SafeMedia.filterQuality(
                             full: FilterQuality.high,
@@ -153,7 +99,7 @@ class CoursesGrid extends StatelessWidget {
                           errorBuilder: (_, err, stack) {
                             ImageErrorLogger.log(
                               source: 'CoursesGrid/CoverURL',
-                              url: cover,
+                              url: coverUrl,
                               error: err,
                               stackTrace: stack,
                             );
@@ -168,82 +114,91 @@ class CoursesGrid extends StatelessWidget {
 
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(18),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      buildCover(),
-                      Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.78),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.45),
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                child: Text(
-                                  title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: t.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w800,
+                  child: FutureBuilder<String?>(
+                    future: coverUrlFuture,
+                    builder: (context, snapshot) {
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          buildCover(snapshot.data),
+                          Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.78),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.45,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    child: Text(
+                                      title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: t.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            if (pct > 0)
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: LinearProgressIndicator(
-                                  value: pct,
-                                  backgroundColor: Colors.black.withValues(
-                                    alpha: 0.12,
+                                const SizedBox(height: 6),
+                                if (pct > 0)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: LinearProgressIndicator(
+                                      value: pct,
+                                      backgroundColor: Colors.black.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                      color: Colors.black,
+                                      minHeight: 6,
+                                    ),
                                   ),
-                                  color: Colors.black,
-                                  minHeight: 6,
+                                const Spacer(),
+                                Align(
+                                  alignment: Alignment.bottomRight,
+                                  child: GradientButton(
+                                    onPressed: () {
+                                      if (!isValidSlug(slug)) {
+                                        debugPrint(
+                                          '[GRID_BLOCKED] Invalid slug: $slug',
+                                        );
+                                        return;
+                                      }
+                                      context.pushNamed(
+                                        AppRoute.course,
+                                        pathParameters: {'slug': slug},
+                                      );
+                                    },
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: const Text(
+                                      'Öppna',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            const Spacer(),
-                            Align(
-                              alignment: Alignment.bottomRight,
-                              child: GradientButton(
-                                onPressed: () {
-                                  if (!isValidSlug(slug)) {
-                                    debugPrint(
-                                      '[GRID_BLOCKED] Invalid slug: $slug',
-                                    );
-                                    return;
-                                  }
-                                  context.pushNamed(
-                                    AppRoute.course,
-                                    pathParameters: {'slug': slug},
-                                  );
-                                },
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                child: const Text(
-                                  'Öppna',
-                                  style: TextStyle(fontWeight: FontWeight.w800),
-                                ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 );
               },

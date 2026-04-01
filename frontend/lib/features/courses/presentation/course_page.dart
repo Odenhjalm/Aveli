@@ -39,7 +39,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         body: Center(child: Text(_friendlyError(error))),
       ),
       data: (detail) {
-        final cover = resolveCourseSummaryCover(
+        final coverUrlFuture = resolveCourseSummaryCoverUrl(
           detail.course,
           ref.read(mediaRepositoryProvider),
         );
@@ -49,7 +49,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         return _CourseContent(
           detail: detail,
           courseStateAsync: courseStateAsync,
-          coverUrl: cover.imageUrl,
+          coverUrlFuture: coverUrlFuture,
           onEnroll: () => _handleEnroll(detail),
           onOpenLesson: _openLesson,
           enrollState: ref.watch(enrollProvider(detail.course.id)),
@@ -124,7 +124,7 @@ class _CourseContent extends StatelessWidget {
   const _CourseContent({
     required this.detail,
     required this.courseStateAsync,
-    required this.coverUrl,
+    required this.coverUrlFuture,
     required this.onEnroll,
     required this.onOpenLesson,
     required this.enrollState,
@@ -133,7 +133,7 @@ class _CourseContent extends StatelessWidget {
 
   final CourseDetailData detail;
   final AsyncValue<CourseAccessData?> courseStateAsync;
-  final String? coverUrl;
+  final Future<String?> coverUrlFuture;
   final VoidCallback onEnroll;
   final ValueChanged<String> onOpenLesson;
   final AsyncValue<CourseAccessData?> enrollState;
@@ -194,17 +194,29 @@ class _CourseContent extends StatelessWidget {
       title: course.title,
       body: ListView(
         children: [
-          if (coverUrl != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: Image.network(coverUrl!, fit: BoxFit.contain),
-                ),
-              ),
-            ),
-          if (coverUrl != null) const SizedBox(height: 16),
+          FutureBuilder<String?>(
+            future: coverUrlFuture,
+            builder: (context, snapshot) {
+              final coverUrl = snapshot.data;
+              if (coverUrl == null || coverUrl.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 720),
+                        child: Image.network(coverUrl, fit: BoxFit.contain),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              );
+            },
+          ),
           GlassCard(
             padding: const EdgeInsets.all(20),
             opacity: 0.18,

@@ -51,6 +51,7 @@ class LandingCourseCard {
     required this.slug,
     required this.title,
     required this.step,
+    required this.coverMediaId,
     required this.priceAmountCents,
     required this.shortDescription,
     required this.resolvedCoverUrl,
@@ -60,6 +61,7 @@ class LandingCourseCard {
   final String slug;
   final String title;
   final String step;
+  final String? coverMediaId;
   final int? priceAmountCents;
   final String? shortDescription;
   final String? resolvedCoverUrl;
@@ -70,6 +72,10 @@ class LandingCourseCard {
       slug: _requireString(_field(payload, 'slug'), 'slug'),
       title: _requireString(_field(payload, 'title'), 'title'),
       step: _requireString(_field(payload, 'step'), 'step'),
+      coverMediaId: _optionalString(switch (payload) {
+        final Map<Object?, Object?> data => data['cover_media_id'],
+        _ => null,
+      }, 'cover_media_id'),
       priceAmountCents: _optionalInt(
         _field(payload, 'price_amount_cents'),
         'price_amount_cents',

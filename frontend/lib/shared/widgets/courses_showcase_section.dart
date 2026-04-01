@@ -12,9 +12,6 @@ import 'package:aveli/features/landing/application/landing_providers.dart'
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
-import 'package:aveli/shared/utils/app_images.dart';
-import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/utils/course_cover_assets.dart';
 import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
@@ -109,7 +106,6 @@ class CoursesShowcaseSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final t = theme.textTheme;
-    final assets = ref.watch(backendAssetResolverProvider);
     final mediaRepository = ref.watch(mediaRepositoryProvider);
 
     final popularAsync = ref.watch(landing.popularCoursesProvider);
@@ -134,7 +130,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
     final items = useLandingContractsOnly
         ? popular
         : hasAllCoursesValue
-        ? _mapCourseSummaries(allCourses, mediaRepository)
+        ? _mapCourseSummaries(allCourses)
         : popular;
     final visible = _sortCoursesForDisplay(items);
 
@@ -243,7 +239,6 @@ class CoursesShowcaseSection extends ConsumerWidget {
               : _buildLayout(
                   context,
                   visible,
-                  assets,
                   mediaRepository: mediaRepository,
                   layout: layout,
                   desktop: desktop,
@@ -286,22 +281,18 @@ class CoursesShowcaseSection extends ConsumerWidget {
 
   static List<landing.LandingCourseCard> _mapCourseSummaries(
     List<CourseSummary> courses,
-    MediaRepository mediaRepository,
   ) {
     return courses
         .map((course) {
-          final resolvedCover = resolveCourseSummaryCover(
-            course,
-            mediaRepository,
-          );
           return landing.LandingCourseCard(
             id: course.id,
             title: course.title,
             slug: course.slug,
             step: course.step.name,
+            coverMediaId: course.coverMediaId,
             priceAmountCents: course.priceCents,
             shortDescription: null,
-            resolvedCoverUrl: resolvedCover.imageUrl,
+            resolvedCoverUrl: null,
           );
         })
         .toList(growable: false);
@@ -309,8 +300,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
 
   static Widget _buildLayout(
     BuildContext context,
-    List<landing.LandingCourseCard> items,
-    BackendAssetResolver assets, {
+    List<landing.LandingCourseCard> items, {
     required MediaRepository mediaRepository,
     required CoursesShowcaseLayout layout,
     CoursesShowcaseDesktop? desktop,
@@ -359,7 +349,6 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 items: items,
                 pageSize: pageSize,
                 gridDelegate: gridDelegate,
-                assets: assets,
                 mediaRepository: mediaRepository,
                 ctaGradient: ctaGradient,
                 textColor: tileTextColor,
@@ -374,7 +363,6 @@ class CoursesShowcaseSection extends ConsumerWidget {
                 itemBuilder: (_, i) => _CourseTileGlass(
                   course: items[i],
                   index: i,
-                  assets: assets,
                   mediaRepository: mediaRepository,
                   ctaGradient: ctaGradient,
                   textColor: tileTextColor,
@@ -399,7 +387,6 @@ class _HorizontalPagedCourseGrid extends StatefulWidget {
     required this.items,
     required this.pageSize,
     required this.gridDelegate,
-    required this.assets,
     required this.mediaRepository,
     this.ctaGradient,
     this.textColor,
@@ -409,7 +396,6 @@ class _HorizontalPagedCourseGrid extends StatefulWidget {
   final List<landing.LandingCourseCard> items;
   final int pageSize;
   final SliverGridDelegateWithFixedCrossAxisCount gridDelegate;
-  final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
   final Gradient? ctaGradient;
   final Color? textColor;
@@ -543,7 +529,6 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
         itemBuilder: (_, i) => _CourseTileGlass(
           course: items[i],
           index: i,
-          assets: widget.assets,
           mediaRepository: widget.mediaRepository,
           ctaGradient: widget.ctaGradient,
           textColor: widget.textColor,
@@ -606,7 +591,6 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
                             return _CourseTileGlass(
                               course: course,
                               index: globalIndex,
-                              assets: widget.assets,
                               mediaRepository: widget.mediaRepository,
                               ctaGradient: widget.ctaGradient,
                               textColor: widget.textColor,
@@ -689,7 +673,6 @@ class _RightPeekClipper extends CustomClipper<Rect> {
 class _CourseTileGlass extends StatelessWidget {
   final landing.LandingCourseCard course;
   final int index;
-  final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
   final Gradient? ctaGradient;
   final Color? textColor;
@@ -697,7 +680,6 @@ class _CourseTileGlass extends StatelessWidget {
   const _CourseTileGlass({
     required this.course,
     required this.index,
-    required this.assets,
     required this.mediaRepository,
     this.ctaGradient,
     this.textColor,
@@ -711,7 +693,13 @@ class _CourseTileGlass extends StatelessWidget {
     final slug = course.slug;
     final isIntro = course.step == 'intro';
     final priceCents = course.priceAmountCents;
-    final cover = course.resolvedCoverUrl ?? '';
+    final coverUrlFuture =
+        course.resolvedCoverUrl != null && course.resolvedCoverUrl!.isNotEmpty
+        ? Future<String?>.value(course.resolvedCoverUrl)
+        : resolveCourseCoverUrl(
+            mediaRepository: mediaRepository,
+            coverMediaId: course.coverMediaId,
+          );
     final priceLabel = priceCents == null
         ? 'Pris saknas'
         : formatCoursePriceFromOre(
@@ -720,13 +708,6 @@ class _CourseTileGlass extends StatelessWidget {
                 ? 'CoursesShowcaseSection'
                 : 'slug=$slug',
           );
-    final coverProvider = CourseCoverAssets.resolve(
-      assets: assets,
-      slug: cover.isEmpty ? slug : null,
-      coverUrl: cover,
-    );
-    final isFallbackLogo = coverProvider == null;
-    final imageProvider = coverProvider ?? AppImages.logo;
 
     final theme = Theme.of(context);
     final baseColor = theme.brightness == Brightness.dark
@@ -784,7 +765,7 @@ class _CourseTileGlass extends StatelessWidget {
                         color: Colors.white.withValues(alpha: 0.18),
                       ),
                       child: Padding(
-                        padding: EdgeInsets.all(isFallbackLogo ? 18 : 0),
+                        padding: EdgeInsets.zero,
                         child: LayoutBuilder(
                           builder: (context, constraints) {
                             if (SafeMedia.enabled) {
@@ -801,45 +782,33 @@ class _CourseTileGlass extends StatelessWidget {
                               max: 900,
                             );
 
-                            Widget fallbackLogo() => Container(
-                              color: Colors.white.withValues(alpha: 0.32),
-                              alignment: Alignment.center,
-                              child: Padding(
-                                padding: const EdgeInsets.all(18),
-                                child: Image(
-                                  image: SafeMedia.resizedProvider(
-                                    AppImages.logo,
-                                    cacheWidth: cacheWidth,
-                                    cacheHeight: cacheHeight,
-                                  ),
-                                  fit: BoxFit.contain,
-                                  filterQuality: SafeMedia.filterQuality(
-                                    full: FilterQuality.high,
-                                  ),
-                                  gaplessPlayback: true,
-                                ),
-                              ),
-                            );
-
                             return Stack(
                               fit: StackFit.expand,
                               children: [
-                                fallbackLogo(),
-                                Image(
-                                  image: SafeMedia.resizedProvider(
-                                    imageProvider,
-                                    cacheWidth: cacheWidth,
-                                    cacheHeight: cacheHeight,
-                                  ),
-                                  fit: isFallbackLogo
-                                      ? BoxFit.contain
-                                      : BoxFit.cover,
-                                  filterQuality: SafeMedia.filterQuality(
-                                    full: FilterQuality.high,
-                                  ),
-                                  gaplessPlayback: true,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const SizedBox.shrink(),
+                                Container(
+                                  color: Colors.white.withValues(alpha: 0.32),
+                                ),
+                                FutureBuilder<String?>(
+                                  future: coverUrlFuture,
+                                  builder: (context, snapshot) {
+                                    final coverUrl = snapshot.data;
+                                    if (coverUrl == null || coverUrl.isEmpty) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Image.network(
+                                      coverUrl,
+                                      fit: BoxFit.cover,
+                                      filterQuality: SafeMedia.filterQuality(
+                                        full: FilterQuality.high,
+                                      ),
+                                      cacheWidth: cacheWidth,
+                                      cacheHeight: cacheHeight,
+                                      gaplessPlayback: true,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              const SizedBox.shrink(),
+                                    );
+                                  },
                                 ),
                               ],
                             );

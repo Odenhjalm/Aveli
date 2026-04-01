@@ -985,7 +985,7 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
     purpose = _normalize_text(asset_row.get("purpose"))
     state = _normalize_text(asset_row.get("state"))
     active_home_upload = None
-    if purpose == "home_player_audio":
+    if purpose == "home_player_audio" and await media_assets_repo.home_player_uploads_supported():
         active_home_upload = await home_player_library_repo.get_active_home_upload_by_media_asset_id(
             normalized_asset_id
         )
