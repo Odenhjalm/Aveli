@@ -17,9 +17,9 @@ class CourseCoverData {
   factory CourseCoverData.fromJson(Map<String, dynamic> json) {
     return CourseCoverData(
       mediaId: json['media_id'] as String?,
-      state: (json['state'] as String? ?? 'placeholder').trim(),
+      state: json['state'] as String,
       resolvedUrl: json['resolved_url'] as String?,
-      source: (json['source'] as String? ?? 'placeholder').trim(),
+      source: json['source'] as String,
     );
   }
 

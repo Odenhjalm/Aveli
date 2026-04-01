@@ -20,12 +20,7 @@ class CoverUploadCard extends ConsumerStatefulWidget {
   });
 
   final String? courseId;
-  final void Function(
-    String courseId,
-    String mediaId,
-    CoverUploadPreview preview,
-  )?
-  onCoverQueued;
+  final void Function(String courseId, String mediaId)? onCoverQueued;
   final void Function(String courseId, String message)? onUploadError;
   final Future<CoverUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
@@ -71,7 +66,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
       return;
     }
 
-    final resolvedMime = _resolveMimeType(picked);
+    final resolvedMime = picked.mimeType;
     if (resolvedMime == null || !_allowedMimeTypes.contains(resolvedMime)) {
       final message = 'Endast JPG, PNG eller WebP tillats.';
       if (!mounted) return;
@@ -94,13 +89,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
       _uploading = true;
     });
 
-    CoverUploadPreview? preview;
     try {
-      preview = await picked.buildPreview();
-      if (!mounted) {
-        preview.dispose();
-        return;
-      }
       final repo = ref.read(mediaPipelineRepositoryProvider);
       final upload = await repo.requestCoverUploadUrl(
         filename: picked.name,
@@ -109,10 +98,7 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
         courseId: courseId,
       );
 
-      if (!mounted) {
-        preview.dispose();
-        return;
-      }
+      if (!mounted) return;
       setState(() => _status = 'Laddar upp kursbild...');
 
       final uploader = widget.uploadFileOverride ?? uploadCoverFile;
@@ -126,29 +112,20 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
           setState(() => _progress = fraction.clamp(0.0, 1.0));
         },
       );
-      if (!mounted) {
-        preview.dispose();
-        return;
-      }
+      if (!mounted) return;
       setState(() => _status = 'Verifierar uppladdning...');
 
       await repo.completeUpload(mediaId: upload.mediaId);
 
-      if (!mounted) {
-        preview.dispose();
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _uploading = false;
         _status = 'Uppladdad. Bearbetas...';
       });
-      if (widget.onCoverQueued == null) {
-        preview.dispose();
-      } else {
-        widget.onCoverQueued!(courseId, upload.mediaId, preview);
+      if (widget.onCoverQueued != null) {
+        widget.onCoverQueued!(courseId, upload.mediaId);
       }
     } catch (error, stackTrace) {
-      preview?.dispose();
       final failure = AppFailure.from(error, stackTrace);
       if (!mounted) return;
       setState(() {
@@ -159,16 +136,6 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
       showSnack(context, failure.message);
       widget.onUploadError?.call(courseId, failure.message);
     }
-  }
-
-  String? _resolveMimeType(CoverUploadFile file) {
-    final candidate = (file.mimeType ?? '').trim().toLowerCase();
-    if (candidate.isNotEmpty) return candidate;
-    final name = file.name.toLowerCase();
-    if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
-    if (name.endsWith('.png')) return 'image/png';
-    if (name.endsWith('.webp')) return 'image/webp';
-    return null;
   }
 
   @override

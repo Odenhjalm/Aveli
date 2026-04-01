@@ -179,6 +179,9 @@ class StudioRepository {
     List<String> lessonMediaIds,
   ) => _lessonMedia.fetchLessonMediaPreviews(lessonMediaIds);
 
+  Future<String> fetchLessonMediaPlaybackUrl(String lessonMediaId) =>
+      _lessonMedia.fetchLessonMediaPlaybackUrl(lessonMediaId);
+
   Future<StudioLessonMediaItem> uploadLessonMedia({
     required String lessonId,
     required Uint8List data,

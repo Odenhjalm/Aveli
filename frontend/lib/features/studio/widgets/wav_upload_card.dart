@@ -1,17 +1,16 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/shared/models/request_headers.dart';
-import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/shared/utils/snack.dart';
+import 'package:aveli/shared/widgets/glass_card.dart';
 
 import 'wav_upload_source.dart';
-import 'wav_upload_types.dart';
 
 class WavUploadCard extends ConsumerStatefulWidget {
   const WavUploadCard({
@@ -21,7 +20,6 @@ class WavUploadCard extends ConsumerStatefulWidget {
     this.replacementLessonMediaId,
     this.onMediaUpdated,
     this.pickFileOverride,
-    this.uploadFileOverride,
     this.pollInterval = const Duration(seconds: 5),
     this.actionLabel = 'Ladda upp ljud',
     this.onPipelineFinalState,
@@ -31,28 +29,9 @@ class WavUploadCard extends ConsumerStatefulWidget {
   final String? lessonId;
   final String? replacementLessonMediaId;
   final Future<void> Function()? onMediaUpdated;
-  final void Function(String mediaAssetId, String finalState)?
+  final void Function(String lessonMediaId, String finalState)?
   onPipelineFinalState;
   final Future<WavUploadFile?> Function()? pickFileOverride;
-  final Future<void> Function({
-    required String mediaId,
-    required String courseId,
-    required String lessonId,
-    required Uri uploadUrl,
-    required String objectPath,
-    required RequestHeaders headers,
-    required WavUploadFile file,
-    required String contentType,
-    required void Function(int sent, int total) onProgress,
-    WavUploadCancelToken? cancelToken,
-    void Function(bool resumed)? onResume,
-    Future<bool> Function()? ensureAuth,
-    Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-    refreshSigning,
-    void Function()? onSigningRefresh,
-    WavResumableSession? resumableSession,
-  })?
-  uploadFileOverride;
   final Duration pollInterval;
   final String actionLabel;
 
@@ -63,16 +42,23 @@ class WavUploadCard extends ConsumerStatefulWidget {
 class _WavUploadCardState extends ConsumerState<WavUploadCard> {
   static const _lessonRequiredText =
       'Spara lektionen för att kunna ladda upp ljud.';
+  static const Set<String> _allowedMimeTypes = <String>{
+    'audio/m4a',
+    'audio/mp3',
+    'audio/mp4',
+    'audio/mpeg',
+    'audio/wav',
+    'audio/x-wav',
+  };
 
   WavUploadFile? _selectedFile;
   double _progress = 0.0;
   String? _status;
   String? _error;
-  String? _mediaId;
   String? _mediaState;
   Timer? _pollTimer;
   bool _uploading = false;
-  WavUploadCancelToken? _cancelToken;
+  CancelToken? _cancelToken;
 
   String? _missingContextMessage({
     required bool hasLessonId,
@@ -97,102 +83,29 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     showSnack(context, message);
   }
 
-  String _normalizeWavMimeType(String? mimeType, String filename) {
-    final lower = (mimeType ?? '').trim().toLowerCase();
-    if (lower == 'audio/mpeg' || lower == 'audio/mp3') {
-      return 'audio/mpeg';
-    }
-    if (lower == 'audio/wav' || lower == 'audio/x-wav') {
-      return lower;
-    }
-    if (lower == 'audio/wave' || lower == 'audio/vnd.wave') {
-      return 'audio/wav';
-    }
-    if (lower == 'audio/m4a' || lower == 'audio/mp4') {
-      return lower;
-    }
-    if (lower == 'audio/x-m4a') {
-      return 'audio/m4a';
-    }
-    if (filename.toLowerCase().endsWith('.wav')) {
-      return 'audio/wav';
-    }
-    if (filename.toLowerCase().endsWith('.m4a')) {
-      return 'audio/m4a';
-    }
-    if (filename.toLowerCase().endsWith('.mp3')) {
-      return 'audio/mpeg';
-    }
-    return lower.isEmpty ? 'audio/wav' : lower;
-  }
-
   String? _validationMessageForSelectedFile(WavUploadFile file) {
-    final lowerName = file.name.trim().toLowerCase();
-    final normalizedMime = _normalizeWavMimeType(file.mimeType, file.name);
-    final isSupported =
-        lowerName.endsWith('.mp3') ||
-        lowerName.endsWith('.wav') ||
-        lowerName.endsWith('.m4a') ||
-        normalizedMime == 'audio/mpeg' ||
-        normalizedMime == 'audio/wav' ||
-        normalizedMime == 'audio/x-wav' ||
-        normalizedMime == 'audio/m4a' ||
-        normalizedMime == 'audio/mp4';
-    if (isSupported) {
-      return null;
+    final mimeType = file.mimeType;
+    if (mimeType == null || !_allowedMimeTypes.contains(mimeType)) {
+      return 'Endast MP3, WAV eller M4A med kanonisk MIME-typ stöds.';
     }
-    return 'Only MP3, WAV, or M4A files are supported.';
-  }
-
-  String _suggestMediaDisplayName(String filename) {
-    final trimmed = filename.trim();
-    if (trimmed.isEmpty) return '';
-    final withoutQuery = trimmed.split('?').first;
-    final segments = withoutQuery.split('/');
-    final last = segments.isNotEmpty ? segments.last : withoutQuery;
-    final parts = last.split('.');
-    final stem = parts.length > 1
-        ? parts.sublist(0, parts.length - 1).join('.')
-        : last;
-    return stem.replaceAll(RegExp(r'[_-]+'), ' ').trim();
-  }
-
-  Future<String?> _promptRequiredMediaDisplayName(String suggested) async {
-    final result = await showDialog<String?>(
-      context: context,
-      builder: (dialogContext) =>
-          _RequiredMediaDisplayNameDialog(suggested: suggested),
-    );
-    return result?.trim();
-  }
-
-  String _friendlyUploadFailure(WavUploadFailureKind kind) {
-    switch (kind) {
-      case WavUploadFailureKind.cancelled:
-        return 'Uppladdningen avbröts.';
-      case WavUploadFailureKind.expired:
-        return 'Kunde inte återautentisera uppladdningen. Försök igen.';
-      case WavUploadFailureKind.failed:
-        return 'Uppladdningen misslyckades. Försök igen.';
-    }
+    return null;
   }
 
   void _cancelUpload() {
-    _cancelToken?.cancel();
+    _cancelToken?.cancel('cancelled-by-user');
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
-    _cancelToken?.cancel();
+    _cancelToken?.cancel('disposed');
     super.dispose();
   }
 
   Future<void> _pickAndUpload() async {
-    final courseId = widget.courseId;
     final lessonId = widget.lessonId;
     final hasLessonId = lessonId != null && lessonId.isNotEmpty;
-    final hasCourseId = courseId != null && courseId.isNotEmpty;
+    final hasCourseId = widget.courseId != null && widget.courseId!.isNotEmpty;
     if (!hasLessonId || !hasCourseId) {
       final message = _missingContextMessage(
         hasLessonId: hasLessonId,
@@ -224,206 +137,61 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
       return;
     }
 
-    final displayName = await _promptRequiredMediaDisplayName(
-      _suggestMediaDisplayName(picked.name),
-    );
-    if (!mounted) return;
-    if (displayName == null) {
-      setState(() => _status = 'Uppladdning avbröts.');
-      return;
-    }
-    if (displayName.trim().isEmpty) {
-      setState(() => _status = 'Namn krävs för ljud och video.');
-      showSnack(context, 'Namn krävs för ljud och video.');
-      return;
-    }
-
-    final normalizedMime = _normalizeWavMimeType(picked.mimeType, picked.name);
-
-    final resumeSession = await findResumableSession(
-      courseId: courseId,
-      lessonId: lessonId,
-      file: picked,
-    );
+    final bytes = await picked.readAsBytes();
     if (!mounted) return;
 
-    WavResumableSession? resumableSession = resumeSession;
-    if (resumableSession != null) {
-      String? dbState;
-      try {
-        final repo = ref.read(mediaPipelineRepositoryProvider);
-        final status = await repo.fetchStatus(resumableSession.mediaId);
-        dbState = status.state;
-      } catch (_) {
-        dbState = null;
-      }
-
-      final dbAllowsResume =
-          dbState == 'pending_upload' ||
-          dbState == 'uploaded' ||
-          dbState == 'processing';
-      if (!dbAllowsResume) {
-        if (dbState == 'failed') {
-          clearResumableSession(resumableSession);
-          if (!mounted) return;
-          setState(() {
-            _selectedFile = null;
-            _progress = 0.0;
-            _status = _statusLabel('failed');
-            _error = null;
-            _mediaId = null;
-            _mediaState = 'failed';
-            _uploading = false;
-            _cancelToken = null;
-          });
-          return;
-        }
-        resumableSession = null;
-      }
-    }
-
-    if (!mounted) return;
+    final cancelToken = CancelToken();
+    _cancelToken = cancelToken;
 
     setState(() {
       _selectedFile = picked;
       _progress = 0.0;
-      _status = resumableSession != null
-          ? 'Återupptar uppladdning…'
-          : 'Förbereder uppladdning…';
+      _status = 'Laddar upp studiomaster…';
       _error = null;
-      _mediaId = null;
       _mediaState = null;
       _uploading = true;
     });
 
-    Uri uploadUrl;
-    String objectPath;
-    RequestHeaders uploadHeaders;
-    String mediaId;
+    try {
+      final repo = ref.read(studioRepositoryProvider);
+      final uploaded = await repo.uploadLessonMedia(
+        lessonId: lessonId,
+        data: bytes,
+        filename: picked.name,
+        contentType: picked.mimeType!,
+        mediaType: 'audio',
+        cancelToken: cancelToken,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _progress = progress.fraction.clamp(0.0, 1.0));
+        },
+      );
 
-    if (resumableSession != null) {
-      mediaId = resumableSession.mediaId;
-      uploadUrl = resumableSession.sessionUrl;
-      objectPath = resumableSession.objectPath;
-      uploadHeaders = resumableSession.resumableHeaders();
-    } else {
-      try {
-        final repo = ref.read(mediaPipelineRepositoryProvider);
-        final upload = await repo.requestUploadUrl(
-          filename: picked.name,
-          mimeType: normalizedMime,
-          sizeBytes: picked.size,
-          mediaType: 'audio',
-          courseId: courseId,
-          lessonId: lessonId,
+      if (!mounted) return;
+      setState(() {
+        _uploading = false;
+        _mediaState = uploaded.state;
+        _status = _statusLabel(uploaded.state);
+        _cancelToken = null;
+      });
+
+      await widget.onMediaUpdated?.call();
+      if (!mounted) return;
+
+      if (uploaded.state == 'ready' || uploaded.state == 'failed') {
+        widget.onPipelineFinalState?.call(
+          uploaded.lessonMediaId,
+          uploaded.state,
         );
-        mediaId = upload.mediaId;
-        uploadUrl = upload.uploadUrl;
-        objectPath = upload.objectPath;
-        uploadHeaders = upload.headers;
-        if (mounted) {
-          setState(() => _status = 'Laddar upp studiomaster…');
-        }
-      } catch (error, stackTrace) {
-        final failure = AppFailure.from(error, stackTrace);
-        var message = 'Kunde inte starta uppladdningen. Försök igen.';
-        if (failure is ValidationFailure) {
-          final detail = failure.message.trim();
-          if (detail.isNotEmpty) {
-            final localized = detail.startsWith('File too large')
-                ? detail.replaceFirst('File too large', 'Filen är för stor')
-                : detail;
-            message = localized;
-          }
-        }
-        if (!mounted) return;
-        setState(() {
-          _uploading = false;
-          _error = message;
-          _status = message;
-        });
-        showSnack(context, message);
         return;
       }
-    }
 
-    _cancelToken = WavUploadCancelToken();
-    _mediaId = mediaId;
-
-    try {
-      final repo = ref.read(mediaPipelineRepositoryProvider);
-      final uploader = widget.uploadFileOverride ?? uploadWavFile;
-      await uploader(
-        mediaId: mediaId,
-        courseId: courseId,
-        lessonId: lessonId,
-        uploadUrl: uploadUrl,
-        objectPath: objectPath,
-        headers: uploadHeaders,
-        file: picked,
-        contentType: normalizedMime,
-        onProgress: (sent, total) {
-          if (!mounted) return;
-          final fraction = total <= 0 ? 0.0 : sent / total;
-          setState(() => _progress = fraction.clamp(0.0, 1.0));
-        },
-        cancelToken: _cancelToken,
-        onResume: (resumed) {
-          if (!mounted) return;
-          if (resumed) {
-            setState(() => _status = 'Återupptar uppladdning…');
-          }
-        },
-        ensureAuth: () async {
-          final client = ref.read(apiClientProvider);
-          return client.ensureAuth(
-            onRefresh: () {
-              if (!mounted) return;
-              setState(() => _status = 'Återautentiserar session…');
-            },
-          );
-        },
-        refreshSigning: (session) async {
-          final repo = ref.read(mediaPipelineRepositoryProvider);
-          final refreshed = await repo.refreshUploadUrl(
-            mediaId: session.mediaId,
-          );
-          return WavUploadSigningRefresh(
-            uploadUrl: refreshed.uploadUrl,
-            objectPath: refreshed.objectPath,
-            headers: refreshed.headers,
-            expiresAt: refreshed.expiresAt,
-          );
-        },
-        onSigningRefresh: () {
-          if (!mounted) return;
-          setState(() => _status = 'Återautentiserar uppladdning…');
-        },
-        resumableSession: resumableSession,
-      );
-      await repo.completeUpload(mediaId: mediaId);
-      final attached = await repo.attachUpload(
-        mediaId: mediaId,
-        linkScope: 'lesson',
-        lessonId: lessonId,
-        lessonMediaId: widget.replacementLessonMediaId,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _status = _statusLabel(attached.state);
-        _mediaState = attached.state;
-        _cancelToken = null;
-      });
-      await widget.onMediaUpdated?.call();
-      if (attached.state == 'ready' || attached.state == 'failed') {
-        widget.onPipelineFinalState?.call(mediaId, attached.state);
-      } else {
-        _startPolling();
-      }
-    } on WavUploadFailure catch (failure) {
-      final message = _friendlyUploadFailure(failure.kind);
+      _startPolling(uploaded.lessonMediaId);
+    } on DioException catch (error, stackTrace) {
+      final cancelled = CancelToken.isCancel(error) || cancelToken.isCancelled;
+      final message = cancelled
+          ? 'Uppladdningen avbröts.'
+          : AppFailure.from(error, stackTrace).message;
       if (!mounted) return;
       setState(() {
         _uploading = false;
@@ -432,8 +200,8 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
         _cancelToken = null;
       });
       showSnack(context, message);
-    } catch (error) {
-      final message = 'Uppladdningen misslyckades. Försök igen.';
+    } catch (error, stackTrace) {
+      final message = AppFailure.from(error, stackTrace).message;
       if (!mounted) return;
       setState(() {
         _uploading = false;
@@ -445,33 +213,51 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     }
   }
 
-  void _startPolling() {
-    final mediaId = _mediaId;
-    if (mediaId == null) return;
+  void _startPolling(String lessonMediaId) {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(widget.pollInterval, (_) {
-      _pollStatus(mediaId);
+      _pollStatus(lessonMediaId);
     });
-    _pollStatus(mediaId);
+    _pollStatus(lessonMediaId);
   }
 
-  Future<void> _pollStatus(String mediaId) async {
+  Future<void> _pollStatus(String lessonMediaId) async {
+    final lessonId = widget.lessonId;
+    if (lessonId == null || lessonId.isEmpty) {
+      return;
+    }
+
     try {
-      final repo = ref.read(mediaPipelineRepositoryProvider);
-      final status = await repo.fetchStatus(mediaId);
+      final repo = ref.read(studioRepositoryProvider);
+      final items = await repo.listLessonMedia(lessonId);
+
+      StudioLessonMediaItem? current;
+      for (final item in items) {
+        if (item.lessonMediaId == lessonMediaId) {
+          current = item;
+          break;
+        }
+      }
+      if (current == null) {
+        return;
+      }
+      final resolvedCurrent = current;
+
       if (!mounted) return;
       setState(() {
-        _mediaState = status.state;
-        _error = status.errorMessage?.isNotEmpty == true
+        _mediaState = resolvedCurrent.state;
+        _error = resolvedCurrent.state == 'failed'
             ? 'Bearbetningen misslyckades.'
             : null;
-        _status = _statusLabel(status.state);
+        _status = _statusLabel(resolvedCurrent.state);
       });
-      if (status.state == 'ready' || status.state == 'failed') {
+
+      if (resolvedCurrent.state == 'ready' ||
+          resolvedCurrent.state == 'failed') {
         _pollTimer?.cancel();
         _pollTimer = null;
         await widget.onMediaUpdated?.call();
-        widget.onPipelineFinalState?.call(mediaId, status.state);
+        widget.onPipelineFinalState?.call(lessonMediaId, resolvedCurrent.state);
       }
     } catch (_) {
       if (!mounted) return;
@@ -485,7 +271,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
     switch (state) {
       case 'pending_upload':
       case 'uploaded':
-        return 'Uppladdning klar – bearbetas till MP3';
       case 'processing':
         return 'Uppladdning klar – bearbetas till MP3';
       case 'ready':
@@ -499,10 +284,8 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
 
   @override
   Widget build(BuildContext context) {
-    final hasLessonId =
-        widget.lessonId != null && widget.lessonId!.trim().isNotEmpty;
-    final hasCourseId =
-        widget.courseId != null && widget.courseId!.trim().isNotEmpty;
+    final hasLessonId = widget.lessonId != null && widget.lessonId!.isNotEmpty;
+    final hasCourseId = widget.courseId != null && widget.courseId!.isNotEmpty;
     final canUpload = hasLessonId && hasCourseId;
     final theme = Theme.of(context);
     final titleStyle = theme.textTheme.titleMedium;
@@ -599,65 +382,6 @@ class _WavUploadCardState extends ConsumerState<WavUploadCard> {
           ],
         ],
       ),
-    );
-  }
-}
-
-class _RequiredMediaDisplayNameDialog extends StatefulWidget {
-  const _RequiredMediaDisplayNameDialog({required this.suggested});
-
-  final String suggested;
-
-  @override
-  State<_RequiredMediaDisplayNameDialog> createState() =>
-      _RequiredMediaDisplayNameDialogState();
-}
-
-class _RequiredMediaDisplayNameDialogState
-    extends State<_RequiredMediaDisplayNameDialog> {
-  late final TextEditingController _controller;
-  String _current = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.suggested);
-    _current = _controller.text.trim();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Ge ljudet/videon ett namn'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        decoration: const InputDecoration(
-          labelText: 'Namn',
-          hintText: 'Till exempel: Introduktion',
-        ),
-        onChanged: (_) => setState(() {
-          _current = _controller.text.trim();
-        }),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Avbryt'),
-        ),
-        ElevatedButton(
-          onPressed: _current.isEmpty
-              ? null
-              : () => Navigator.of(context).pop(_current),
-          child: const Text('Fortsätt'),
-        ),
-      ],
     );
   }
 }

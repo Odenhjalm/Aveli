@@ -25,10 +25,10 @@ class WavReplaceDialog extends StatefulWidget {
 class _WavReplaceDialogState extends State<WavReplaceDialog> {
   String? _lastFinalState;
 
-  void _handleFinalState(String mediaAssetId, String finalState) {
+  void _handleFinalState(String lessonMediaId, String finalState) {
     setState(() => _lastFinalState = finalState);
     if (finalState == 'ready' && mounted) {
-      Navigator.of(context).pop(mediaAssetId);
+      Navigator.of(context).pop(lessonMediaId);
     }
   }
 

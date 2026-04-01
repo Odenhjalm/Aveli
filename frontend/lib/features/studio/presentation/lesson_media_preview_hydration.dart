@@ -37,9 +37,8 @@ class LessonMediaPreviewHydrationSnapshot {
   }
 
   bool isHydratingId(String lessonMediaId) {
-    final normalized = lessonMediaId.trim();
-    if (normalized.isEmpty) return false;
-    return hydratingEmbedIds.contains(normalized);
+    if (lessonMediaId.isEmpty) return false;
+    return hydratingEmbedIds.contains(lessonMediaId);
   }
 }
 
@@ -80,17 +79,17 @@ class LessonMediaPreviewHydrationController
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
 
-    final normalizedInitial = _normalizeIds(initialHydrationIds);
-    final normalizedHydrating = _normalizeIds(hydratingEmbedIds);
+    final initialIds = _collectHydrationIds(initialHydrationIds);
+    final hydratingIds = _collectHydrationIds(hydratingEmbedIds);
     final nextRunId = value.runId + 1;
 
-    if (normalizedHydrating.isEmpty) {
+    if (hydratingIds.isEmpty) {
       _publish(
         LessonMediaPreviewHydrationSnapshot(
           lessonId: null,
           requestId: null,
           runId: nextRunId,
-          initialHydrationIds: normalizedInitial,
+          initialHydrationIds: initialIds,
           hydratingEmbedIds: const <String>{},
           revision: value.revision,
         ),
@@ -103,8 +102,8 @@ class LessonMediaPreviewHydrationController
         lessonId: lessonId,
         requestId: requestId,
         runId: nextRunId,
-        initialHydrationIds: normalizedInitial,
-        hydratingEmbedIds: normalizedHydrating,
+        initialHydrationIds: initialIds,
+        hydratingEmbedIds: hydratingIds,
         revision: value.revision,
       ),
     );
@@ -168,13 +167,12 @@ class LessonMediaPreviewHydrationController
     value = nextValue;
   }
 
-  static Set<String> _normalizeIds(Iterable<String> ids) {
-    final normalized = <String>{};
+  static Set<String> _collectHydrationIds(Iterable<String> ids) {
+    final collected = <String>{};
     for (final id in ids) {
-      final trimmed = id.trim();
-      if (trimmed.isEmpty) continue;
-      normalized.add(trimmed);
+      if (id.isEmpty) continue;
+      collected.add(id);
     }
-    return Set<String>.unmodifiable(normalized);
+    return Set<String>.unmodifiable(collected);
   }
 }

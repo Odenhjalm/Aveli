@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart' as fs;
 
@@ -14,6 +15,8 @@ class WavUploadFile {
   final int size;
 
   String get name => file.name;
+
+  Future<Uint8List> readAsBytes() => file.readAsBytes();
 }
 
 String _mimeTypeForAudioSource(String filename) {

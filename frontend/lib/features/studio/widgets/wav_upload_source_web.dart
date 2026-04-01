@@ -29,6 +29,30 @@ class WavUploadFile {
   String? get mimeType => file.type.isEmpty ? null : file.type;
   int? get lastModified => file.lastModified;
 
+  Future<Uint8List> readAsBytes() async {
+    final reader = FileReader();
+    final completer = Completer<Uint8List>();
+
+    reader.onLoad.listen((_) {
+      final result = reader.result;
+      if (result is ByteBuffer) {
+        completer.complete(Uint8List.view(result));
+        return;
+      }
+      if (result is Uint8List) {
+        completer.complete(result);
+        return;
+      }
+      completer.completeError(StateError('Unsupported upload buffer'));
+    });
+    reader.onError.listen((_) {
+      completer.completeError(StateError('Failed to read upload bytes'));
+    });
+    reader.readAsArrayBuffer(file);
+
+    return completer.future;
+  }
+
   Future<String> contentFingerprint() async {
     if (_contentFingerprint != null) return _contentFingerprint!;
     final slice = file.slice(0, math.min(size, _fingerprintMaxBytes));

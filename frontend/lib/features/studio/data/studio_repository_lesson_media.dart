@@ -5,6 +5,22 @@ class _StudioLessonMediaScope {
 
   final ApiClient _client;
 
+  String _requiredResponseStringField(
+    Object? payload,
+    String field,
+    String label,
+  ) {
+    final value = StudioRepository._requiredResponseField(
+      payload,
+      field,
+      label,
+    );
+    if (value is String && value.isNotEmpty) {
+      return value;
+    }
+    throw StateError('$label field "$field" must be a non-empty string');
+  }
+
   Future<List<StudioLessonMediaItem>> listLessonMedia(String lessonId) async {
     final response = await _client.raw.get<Object?>(
       '/api/lesson-media/$lessonId',
@@ -55,6 +71,21 @@ class _StudioLessonMediaScope {
       );
     }
     return StudioLessonMediaPreviewBatch(items: items);
+  }
+
+  Future<String> fetchLessonMediaPlaybackUrl(String lessonMediaId) async {
+    if (lessonMediaId.isEmpty) {
+      throw StateError('Lesson media playback requires lesson_media_id.');
+    }
+    final response = await _client.raw.post<Object?>(
+      ApiPaths.mediaLessonPlaybackUrl,
+      data: {'lesson_media_id': lessonMediaId},
+    );
+    return _requiredResponseStringField(
+      response.data,
+      'playback_url',
+      'Lesson media playback',
+    );
   }
 
   Future<StudioLessonMediaItem> uploadLessonMedia({

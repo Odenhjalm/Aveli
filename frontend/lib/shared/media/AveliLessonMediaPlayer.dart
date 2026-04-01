@@ -9,13 +9,13 @@ import 'package:video_player/video_player.dart';
 class AveliLessonMediaPlayer extends StatefulWidget {
   const AveliLessonMediaPlayer({
     super.key,
-    required this.playbackUrl,
+    required this.mediaUrl,
     required this.title,
     required this.kind,
     this.preferLessonLayout = false,
   });
 
-  final String playbackUrl;
+  final String mediaUrl;
   final String title;
   final String kind;
   final bool preferLessonLayout;
@@ -30,13 +30,13 @@ class _AveliLessonMediaPlayerState extends State<AveliLessonMediaPlayer> {
     switch (widget.kind) {
       case 'video':
         return _VideoRenderer(
-          playbackUrl: widget.playbackUrl,
+          mediaUrl: widget.mediaUrl,
           title: widget.title,
           preferLessonLayout: widget.preferLessonLayout,
         );
       case 'audio':
         return _AudioRenderer(
-          playbackUrl: widget.playbackUrl,
+          mediaUrl: widget.mediaUrl,
           title: widget.title,
           preferLessonLayout: widget.preferLessonLayout,
         );
@@ -51,12 +51,12 @@ class _AveliLessonMediaPlayerState extends State<AveliLessonMediaPlayer> {
 
 class _VideoRenderer extends StatefulWidget {
   const _VideoRenderer({
-    required this.playbackUrl,
+    required this.mediaUrl,
     required this.title,
     required this.preferLessonLayout,
   });
 
-  final String playbackUrl;
+  final String mediaUrl;
   final String title;
   final bool preferLessonLayout;
 
@@ -82,7 +82,7 @@ class _VideoRendererState extends State<_VideoRenderer> {
   @override
   void didUpdateWidget(covariant _VideoRenderer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.playbackUrl == widget.playbackUrl &&
+    if (oldWidget.mediaUrl == widget.mediaUrl &&
         oldWidget.preferLessonLayout == widget.preferLessonLayout) {
       return;
     }
@@ -103,7 +103,7 @@ class _VideoRendererState extends State<_VideoRenderer> {
     });
 
     final controller = VideoPlayerController.networkUrl(
-      Uri.parse(widget.playbackUrl),
+      Uri.parse(widget.mediaUrl),
     );
     _controller = controller;
     unawaited(
@@ -271,12 +271,12 @@ class _VideoRendererState extends State<_VideoRenderer> {
 
 class _AudioRenderer extends StatefulWidget {
   const _AudioRenderer({
-    required this.playbackUrl,
+    required this.mediaUrl,
     required this.title,
     required this.preferLessonLayout,
   });
 
-  final String playbackUrl;
+  final String mediaUrl;
   final String title;
   final bool preferLessonLayout;
 
@@ -311,7 +311,7 @@ class _AudioRendererState extends State<_AudioRenderer> {
   @override
   void didUpdateWidget(covariant _AudioRenderer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.playbackUrl == widget.playbackUrl &&
+    if (oldWidget.mediaUrl == widget.mediaUrl &&
         oldWidget.preferLessonLayout == widget.preferLessonLayout) {
       return;
     }
@@ -359,7 +359,7 @@ class _AudioRendererState extends State<_AudioRenderer> {
 
     try {
       await _player.stop();
-      await _player.setUrl(widget.playbackUrl);
+      await _player.setUrl(widget.mediaUrl);
       if (!mounted) return;
       setState(() {
         _initializing = false;

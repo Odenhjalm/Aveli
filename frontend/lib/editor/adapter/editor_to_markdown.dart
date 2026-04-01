@@ -27,22 +27,6 @@ String _restoreSupportedInlineHtml(String markdown) {
   });
 }
 
-String rewriteMarkdownUrls({
-  required String markdown,
-  required Map<String, String> urlToReplacement,
-}) {
-  if (markdown.isEmpty || urlToReplacement.isEmpty) return markdown;
-
-  final entries = urlToReplacement.entries.toList(growable: false)
-    ..sort((left, right) => right.key.length.compareTo(left.key.length));
-
-  var rewritten = markdown;
-  for (final entry in entries) {
-    rewritten = rewritten.replaceAll(entry.key, entry.value);
-  }
-  return rewritten;
-}
-
 Map<String, dynamic>? _sanitizeAttributes(
   Map<String, dynamic>? attributes, {
   required bool isLineBreak,
@@ -171,8 +155,6 @@ quill_delta.Delta _expandUnderlineAttributesForMarkdown(
 
 String editorDeltaToCanonicalMarkdown({
   required quill_delta.Delta delta,
-  Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
-  Map<String, String> lessonMediaUrlToStudioMediaUrl = const <String, String>{},
   bool enforceStorageContract = true,
 }) {
   final sanitized = sanitizeEditorDeltaForCanonicalMarkdown(delta);
@@ -181,22 +163,6 @@ String editorDeltaToCanonicalMarkdown({
     markdownReady,
   );
   markdown = _restoreSupportedInlineHtml(markdown);
-
-  if (lesson_pipeline.apiFilesUrlPattern.hasMatch(markdown) &&
-      apiFilesPathToStudioMediaUrl.isNotEmpty) {
-    markdown = lesson_pipeline.rewriteLessonMarkdownApiFilesUrls(
-      markdown: markdown,
-      apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
-    );
-  }
-
-  if (lessonMediaUrlToStudioMediaUrl.isNotEmpty) {
-    markdown = rewriteMarkdownUrls(
-      markdown: markdown,
-      urlToReplacement: lessonMediaUrlToStudioMediaUrl,
-    );
-  }
-
   markdown = canonicalizeSupportedMarkdown(markdown);
   if (enforceStorageContract) {
     final markdownWithContract = lesson_pipeline
@@ -206,15 +172,9 @@ String editorDeltaToCanonicalMarkdown({
   return _stripTerminalDocumentNewline(markdown);
 }
 
-String editorDeltaToPassivePreviewMarkdown({
-  required quill_delta.Delta delta,
-  Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
-  Map<String, String> lessonMediaUrlToStudioMediaUrl = const <String, String>{},
-}) {
+String editorDeltaToPassivePreviewMarkdown({required quill_delta.Delta delta}) {
   return editorDeltaToCanonicalMarkdown(
     delta: delta,
-    apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
-    lessonMediaUrlToStudioMediaUrl: lessonMediaUrlToStudioMediaUrl,
     enforceStorageContract: false,
   );
 }

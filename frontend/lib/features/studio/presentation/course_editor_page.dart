@@ -53,7 +53,6 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
-import 'package:aveli/features/studio/widgets/cover_upload_source.dart';
 import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart'
@@ -76,14 +75,10 @@ String selectCourseCoverRenderSource({
   required String? resolvedUrl,
   required Uint8List? localPreviewBytes,
 }) {
-  final normalizedResolvedUrl = resolvedUrl?.trim();
-  if (normalizedResolvedUrl != null && normalizedResolvedUrl.isNotEmpty) {
+  if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
     return 'resolved_url';
   }
-  if (localPreviewBytes != null && localPreviewBytes.isNotEmpty) {
-    return 'local_bytes';
-  }
-  return 'placeholder';
+  return 'empty';
 }
 
 String? safeString(Map<dynamic, dynamic>? source, Object key) {
@@ -96,57 +91,6 @@ String? safeString(Map<dynamic, dynamic>? source, Object key) {
   if (value == null) return null;
   final normalized = value.toString().trim();
   return normalized.isEmpty ? null : normalized;
-}
-
-bool _studioCourseHasCanonicalCoverIdentity(CourseStudio course) {
-  final coverMediaId = course.coverMediaId?.trim();
-  if (coverMediaId != null && coverMediaId.isNotEmpty) {
-    return true;
-  }
-  final cover = course.cover;
-  final coverIdentity = cover?.mediaId?.trim();
-  final source = cover?.source.trim();
-  return coverIdentity != null &&
-      coverIdentity.isNotEmpty &&
-      source != 'editor_override';
-}
-
-@visibleForTesting
-bool shouldClearStudioLocalCoverOverride(CourseStudio course) {
-  return _studioCourseHasCanonicalCoverIdentity(course);
-}
-
-@visibleForTesting
-String? selectStudioCourseCoverUrl({
-  required String? backendResolvedUrl,
-  required String? backendSource,
-  required bool backendHasCanonicalIdentity,
-  required String? localOverrideResolvedUrl,
-}) {
-  final normalizedBackendUrl = backendResolvedUrl?.trim();
-  final normalizedLocalOverrideUrl = localOverrideResolvedUrl?.trim();
-  final hasBackendUrl =
-      normalizedBackendUrl != null && normalizedBackendUrl.isNotEmpty;
-  final hasLocalOverrideUrl =
-      normalizedLocalOverrideUrl != null &&
-      normalizedLocalOverrideUrl.isNotEmpty;
-
-  if (backendHasCanonicalIdentity && hasBackendUrl) {
-    return normalizedBackendUrl;
-  }
-  if (backendHasCanonicalIdentity) {
-    return null;
-  }
-  if (backendSource == 'control_plane' && hasBackendUrl) {
-    return normalizedBackendUrl;
-  }
-  if (hasLocalOverrideUrl) {
-    return normalizedLocalOverrideUrl;
-  }
-  if (hasBackendUrl) {
-    return normalizedBackendUrl;
-  }
-  return null;
 }
 
 bool? safeBool(Map<dynamic, dynamic>? source, Object key) {
@@ -309,7 +253,7 @@ Widget _invalidLessonMediaReferenceWidget(String mediaType) {
 }
 
 bool _isVideoMedia(StudioLessonMediaItem media) {
-  return media.mediaType.trim().toLowerCase() == 'video';
+  return media.mediaType == 'video';
 }
 
 enum _UploadKind { image, video, audio, pdf }
@@ -408,11 +352,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
   String? _courseCoverPath;
-  String? _courseCoverPreviewUrl;
   bool _updatingCourseCover = false;
   String? _coverPipelineMediaId;
-  CourseCoverData? _localCoverOverride;
-  CoverUploadPreview? _localCoverPreview;
   String? _coverPipelineState;
   String? _coverPipelineError;
   int _coverPollAttempts = 0;
@@ -1007,12 +948,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _coverActionCourseId = null;
     _updatingCourseCover = false;
     _coverPipelineMediaId = null;
-    _clearLocalCoverOverride();
     _coverPipelineState = null;
     _coverPipelineError = null;
     if (clearPreview) {
       _courseCoverPath = null;
-      _courseCoverPreviewUrl = null;
     }
   }
 
@@ -1026,113 +965,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return _coverActionRequestId;
   }
 
-  String? _normalizedCoverPreviewUrl(String? value) {
-    final normalized = value?.trim();
-    return normalized == null || normalized.isEmpty ? null : normalized;
-  }
-
-  String? _localCoverResolvedUrl([CourseCoverData? cover]) {
-    final activeCover = cover ?? _localCoverOverride;
-    return _normalizedCoverPreviewUrl(activeCover?.resolvedUrl);
-  }
-
-  String? _localCoverMediaId([CourseCoverData? cover]) {
-    final activeCover = cover ?? _localCoverOverride;
-    final mediaId = activeCover?.mediaId?.trim();
-    if (mediaId == null || mediaId.isEmpty) {
-      return null;
-    }
-    return mediaId;
-  }
-
-  void _disposeCoverPreview(CoverUploadPreview? preview) {
-    preview?.dispose();
-  }
-
-  CoverUploadPreview? _detachLocalCoverPreview() {
-    final preview = _localCoverPreview;
-    _localCoverPreview = null;
-    return preview;
-  }
-
-  void _replaceLocalCoverPreview(CoverUploadPreview? preview) {
-    if (identical(_localCoverPreview, preview)) return;
-    final previous = _detachLocalCoverPreview();
-    _localCoverPreview = preview;
-    _disposeCoverPreview(previous);
-  }
-
-  void _clearLocalCoverOverride() {
-    if (kDebugMode && _localCoverOverride != null) {
-      debugPrint(
-        '[COURSE_COVER_EDITOR_OVERRIDE_STATE] '
-        'action=clear '
-        'local.media_id=${_localCoverMediaId(_localCoverOverride) ?? '<none>'} '
-        'local.source=${_localCoverOverride?.source ?? '<none>'}',
-      );
-    }
-    _localCoverOverride = null;
-    _replaceLocalCoverPreview(null);
-  }
-
-  CourseCoverData _buildLocalCoverOverride({
-    required String mediaId,
-    required String resolvedUrl,
-    required String state,
-  }) {
-    return CourseCoverData(
-      mediaId: mediaId,
-      state: state,
-      resolvedUrl: resolvedUrl,
-      source: 'editor_override',
-    );
-  }
-
-  CourseCoverData? _coverForEditorPreview(
-    CourseStudio course, {
-    CourseCoverData? localCoverOverride,
-  }) {
-    final override = localCoverOverride ?? _localCoverOverride;
-    if (override == null || shouldClearStudioLocalCoverOverride(course)) {
-      return course.cover;
-    }
-    return override;
-  }
-
-  ResolvedCourseCover _resolveEditorCourseCover(
-    CourseStudio course, {
-    required String debugContext,
-    CourseCoverData? localCoverOverride,
-  }) {
-    final activeCover = _coverForEditorPreview(
-      course,
-      localCoverOverride: localCoverOverride,
-    );
-    final activeCoverMediaId = shouldClearStudioLocalCoverOverride(course)
-        ? course.coverMediaId
-        : _localCoverMediaId(localCoverOverride);
-    return resolveCourseCover(
+  String? _resolveStudioCourseCoverUrl(CourseStudio course) {
+    final resolved = resolveCourseCover(
       mediaRepository: ref.read(mediaRepositoryProvider),
-      cover: activeCover,
-      coverMediaId: activeCoverMediaId,
-      allowEditorOverride: true,
-      debugContext: debugContext,
+      cover: course.cover,
+      coverMediaId: course.coverMediaId,
     );
-  }
-
-  String? _effectiveEditorCourseCoverUrl(
-    CourseStudio course,
-    ResolvedCourseCover resolved, {
-    CourseCoverData? localCoverOverride,
-  }) {
-    return selectStudioCourseCoverUrl(
-      backendResolvedUrl: resolved.imageUrl,
-      backendSource: resolved.backendSource,
-      backendHasCanonicalIdentity: _studioCourseHasCanonicalCoverIdentity(
-        course,
-      ),
-      localOverrideResolvedUrl: _localCoverResolvedUrl(localCoverOverride),
-    );
+    return resolved.imageUrl;
   }
 
   String _describeCourseCoverForDebug(CourseCoverData? cover) {
@@ -1183,92 +1022,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  void _logCourseCoverOverrideDecision({
-    required String courseId,
-    required CourseStudio response,
-    required bool willClearLocalOverride,
-  }) {
+  void _logCourseCoverRender({required String source, String? resolvedUrl}) {
     if (!kDebugMode) return;
-    final localOverride = _localCoverOverride;
-    final responseCover = response.cover;
-    if (localOverride == null) {
-      debugPrint(
-        '[COURSE_COVER_EDITOR_OVERRIDE_STATE] course_id=$courseId '
-        'action=retain_check result=no_local_override '
-        '${_describeCourseCoverForDebug(responseCover)}',
-      );
-      return;
-    }
-    if (willClearLocalOverride) {
-      debugPrint(
-        '[COURSE_COVER_EDITOR_OVERRIDE_STATE] course_id=$courseId '
-        'action=retain_check result=clear_local_override '
-        'local.media_id=${_localCoverMediaId(localOverride) ?? '<none>'} '
-        'local.source=${localOverride.source} '
-        '${_describeCourseCoverForDebug(responseCover)}',
-      );
-      return;
-    }
-    debugPrint(
-      '[COURSE_COVER_EDITOR_OVERRIDE_STATE] course_id=$courseId '
-      'action=retain_check result=retained_local_override '
-      'local.media_id=${_localCoverMediaId(localOverride) ?? '<none>'} '
-      'local.source=${localOverride.source} '
-      '${_describeCourseCoverForDebug(responseCover)}',
-    );
-  }
-
-  void _logEditorCoverOverride({
-    required String mediaId,
-    required bool active,
-  }) {
-    if (!kDebugMode) return;
-    debugPrint(
-      '[COURSE_COVER_EDITOR_OVERRIDE] media_id=$mediaId active=$active',
-    );
-  }
-
-  void _logCourseCoverRender({
-    required String source,
-    String? resolvedUrl,
-    required bool hasLocalPreview,
-  }) {
-    if (!kDebugMode) return;
-    final signature =
-        '$source|${resolvedUrl ?? '<none>'}|${hasLocalPreview ? '1' : '0'}';
+    final signature = '$source|${resolvedUrl ?? '<none>'}';
     if (_lastCourseCoverRenderSignature == signature) {
       return;
     }
     _lastCourseCoverRenderSignature = signature;
     debugPrint('[COURSE_COVER_RENDER] using=$source');
-  }
-
-  Future<String?> _bestAvailableLessonMediaCoverPreviewUrl(
-    String lessonMediaId,
-    StudioLessonMediaItem media,
-  ) async {
-    final cache = ref.read(lessonMediaPreviewCacheProvider);
-    final cachedPreview = cache.peek(lessonMediaId);
-    final cachedPreviewUrl = _normalizedCoverPreviewUrl(
-      cachedPreview?.authoritativeEditorReady == true
-          ? cachedPreview?.visualUrl
-          : null,
-    );
-    if (cachedPreviewUrl != null) {
-      return cachedPreviewUrl;
-    }
-    try {
-      final preview = await cache.getSettledOrFetch(lessonMediaId);
-      final previewUrl = _normalizedCoverPreviewUrl(
-        preview?.authoritativeEditorReady == true ? preview?.visualUrl : null,
-      );
-      if (previewUrl != null) {
-        return previewUrl;
-      }
-    } catch (_) {
-      // The lesson-media cover action can still continue without cache hydration.
-    }
-    return null;
   }
 
   void _resetCourseContext({bool clearLists = false}) {
@@ -1340,7 +1101,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   @override
   void dispose() {
-    _disposeCoverPreview(_detachLocalCoverPreview());
     _uploadSubscription?.close();
     _qPrompt.dispose();
     _qOptions.dispose();
@@ -1434,18 +1194,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
-      final shouldClearLocalOverride = shouldClearStudioLocalCoverOverride(
-        course,
-      );
       _logCourseMetaReloadResponse(courseId: courseId, response: course);
-      _logCourseCoverOverrideDecision(
-        courseId: courseId,
-        response: course,
-        willClearLocalOverride: shouldClearLocalOverride,
-      );
-      if (shouldClearLocalOverride) {
-        _clearLocalCoverOverride();
-      }
       _courseTitleCtrl.text = course.title;
       _courseSlugCtrl.text = course.slug;
       final priceOre = course.priceAmountCents;
@@ -1454,16 +1203,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           : formatSekInputFromOre(priceOre);
       if (mounted) {
         setState(() {
-          final resolvedCover = _resolveEditorCourseCover(
-            course,
-            debugContext: 'StudioCourseMeta:${course.id}',
-          );
-          final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
-            course,
-            resolvedCover,
-          );
-          _courseCoverPath = effectiveCoverUrl;
-          _courseCoverPreviewUrl = effectiveCoverUrl;
+          _courseCoverPath = _resolveStudioCourseCoverUrl(course);
         });
       }
     } catch (e, stackTrace) {
@@ -2149,7 +1889,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _requiresAuthoritativeEditorReadiness(StudioLessonMediaItem media) {
-    final mediaType = media.mediaType.trim().toLowerCase();
+    final mediaType = media.mediaType;
     return mediaType == 'image' || mediaType == 'video' || mediaType == 'audio';
   }
 
@@ -2168,7 +1908,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   LessonMediaPreviewStatus? _previewStatusForMedia(
     StudioLessonMediaItem media,
   ) {
-    final lessonMediaId = media.lessonMediaId.trim();
+    final lessonMediaId = media.lessonMediaId;
     if (lessonMediaId.isEmpty) return null;
     return ref.read(lessonMediaPreviewCacheProvider).peekStatus(lessonMediaId);
   }
@@ -2182,7 +1922,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _canInsertLessonMedia(StudioLessonMediaItem media) {
-    if (media.lessonMediaId.trim().isEmpty) {
+    if (media.lessonMediaId.isEmpty) {
       return false;
     }
     if (_isWavMedia(media)) {
@@ -2196,14 +1936,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   bool _canPreviewLessonMedia({
     required StudioLessonMediaItem media,
-    required bool hasInvalidPipelineReference,
     required bool isWavMedia,
-    required bool canPipelinePlay,
   }) {
-    if (media.lessonMediaId.trim().isEmpty) {
+    if (media.lessonMediaId.isEmpty) {
       return false;
     }
-    if (hasInvalidPipelineReference || isWavMedia) {
+    if (isWavMedia) {
       return false;
     }
     final previewStatus = _previewStatusForMedia(media);
@@ -2218,11 +1956,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return false;
       }
     }
-    if (_isPipelineMedia(media) &&
-        media.mediaType.trim().toLowerCase() == 'audio' &&
-        !canPipelinePlay) {
-      return false;
-    }
     return true;
   }
 
@@ -2231,7 +1964,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   ) {
     return mediaItems
         .map((media) => media.lessonMediaId)
-        .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
         .toSet();
   }
@@ -2260,7 +1992,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final ids = mediaItems
         .where(_requiresAuthoritativeEditorReadiness)
         .map((media) => media.lessonMediaId)
-        .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
         .toSet()
         .toList(growable: false);
@@ -2318,8 +2049,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   ) {
     return editor_to_markdown.editorDeltaToCanonicalMarkdown(
       delta: controller.document.toDelta(),
-      apiFilesPathToStudioMediaUrl: const <String, String>{},
-      lessonMediaUrlToStudioMediaUrl: const <String, String>{},
     );
   }
 
@@ -2328,8 +2057,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   ) {
     return editor_to_markdown.editorDeltaToPassivePreviewMarkdown(
       delta: controller.document.toDelta(),
-      apiFilesPathToStudioMediaUrl: const <String, String>{},
-      lessonMediaUrlToStudioMediaUrl: const <String, String>{},
     );
   }
 
@@ -2381,50 +2108,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _lessonAlreadyContainsMediaId(String lessonMediaId) {
-    if (lessonMediaId.trim().isEmpty) return false;
-    return _currentLessonEmbeddedMediaIds().contains(lessonMediaId.trim());
+    if (lessonMediaId.isEmpty) return false;
+    return _currentLessonEmbeddedMediaIds().contains(lessonMediaId);
   }
 
   Future<void> _launchLessonPreviewUrl(String url) async {
     await _launchLessonEditorUrl(url);
   }
 
-  bool _isEditorAuthProtectedMediaPath(String path) {
-    final trimmed = path.trim();
-    if (trimmed.isEmpty) return false;
-    final uri = Uri.tryParse(trimmed);
-    final normalized = (uri?.path ?? trimmed).trim().toLowerCase();
-    if (normalized.isEmpty) return false;
-    return normalized.startsWith('/studio/media/') ||
-        normalized.startsWith('/api/media/') ||
-        normalized.startsWith('/media/sign') ||
-        normalized.startsWith('/media/stream/');
-  }
-
-  String? _normalizeBrowserOpenableMediaUrl(String? rawUrl) {
-    final trimmed = rawUrl?.trim();
-    if (trimmed == null || trimmed.isEmpty) return null;
-
-    final resolved = _resolveMediaUrl(trimmed) ?? trimmed;
-    final uri = Uri.tryParse(resolved);
-    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
-    final scheme = uri.scheme.toLowerCase();
-    if (scheme != 'http' && scheme != 'https') return null;
-    if (_isEditorAuthProtectedMediaPath(uri.path)) return null;
-    return uri.toString();
-  }
-
   Future<String?> _resolveLessonMediaDeliveryUrl(String lessonMediaId) async {
-    final normalizedLessonMediaId = lessonMediaId.trim();
-    if (normalizedLessonMediaId.isEmpty) {
+    if (lessonMediaId.isEmpty) {
       return null;
     }
 
     try {
-      final playbackUrl = await ref
-          .read(mediaPipelineRepositoryProvider)
-          .fetchLessonPlaybackUrl(normalizedLessonMediaId);
-      return _normalizeBrowserOpenableMediaUrl(playbackUrl);
+      return await ref
+          .read(studioRepositoryProvider)
+          .fetchLessonMediaPlaybackUrl(lessonMediaId);
     } catch (_) {
       return null;
     }
@@ -2442,48 +2142,41 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final preview = await ref
         .read(lessonMediaPreviewCacheProvider)
         .getSettledOrFetch(media.lessonMediaId);
-    return _normalizeBrowserOpenableMediaUrl(preview?.visualUrl);
+    return preview?.visualUrl;
   }
 
   Future<String?> _resolveLessonEditorLaunchUrl(String rawUrl) async {
-    final direct = _normalizeBrowserOpenableMediaUrl(rawUrl);
-    if (direct != null) {
-      return direct;
-    }
-
-    final lessonMediaId = lesson_pipeline
-        .lessonMediaIdFromDocumentLinkUrl(rawUrl)
-        ?.trim();
+    final lessonMediaId = lesson_pipeline.lessonMediaIdFromDocumentLinkUrl(
+      rawUrl,
+    );
     if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      return null;
+      final uri = Uri.tryParse(rawUrl);
+      if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+        return null;
+      }
+      if (uri.scheme != 'http' && uri.scheme != 'https') {
+        return null;
+      }
+      return uri.toString();
     }
 
     return _resolveLessonMediaDeliveryUrl(lessonMediaId);
   }
 
   Future<void> _launchLessonEditorUrl(String url) async {
-    final rawUrl = url.trim();
+    final rawUrl = url;
     if (rawUrl.isEmpty) return;
 
-    final rawUri = Uri.tryParse(rawUrl);
-    final rawPath = rawUri?.path ?? rawUrl;
     final resolved = await _resolveLessonEditorLaunchUrl(rawUrl);
-    if (resolved == null && _isEditorAuthProtectedMediaPath(rawPath)) {
-      logLegacyMediaBlocked(
-        surface: 'studio_editor_link',
-        mediaType: 'document',
-        rawSource: rawUrl,
-        reason: 'legacy_path',
-      );
+    if (resolved == null) {
       if (mounted && context.mounted) {
-        showSnack(context, 'Kunde inte öppna medielänken.');
+        showSnack(context, 'Kunde inte öppna länken.');
       }
       return;
     }
 
-    final target = resolved ?? rawUrl;
     final opened = await launchUrlString(
-      target,
+      resolved,
       mode: LaunchMode.externalApplication,
     );
     if (!opened && mounted && context.mounted) {
@@ -2868,12 +2561,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }) {
     final controller = _lessonContentController;
 
-    final hasVideo = _lessonMedia.any(
-      (media) => media.mediaType.trim().toLowerCase() == 'video',
-    );
-    final hasAudio = _lessonMedia.any(
-      (media) => media.mediaType.trim().toLowerCase() == 'audio',
-    );
+    final hasVideo = _lessonMedia.any((media) => media.mediaType == 'video');
+    final hasAudio = _lessonMedia.any((media) => media.mediaType == 'audio');
 
     final badges = <Widget>[];
     if (hasVideo || hasAudio) {
@@ -3477,21 +3166,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       fontWeight: FontWeight.w700,
     );
     final bodyStyle = theme.textTheme.bodySmall;
-    final localCoverPreviewBytes = _localCoverPreview?.bytes;
-    final hasLocalPreview =
-        localCoverPreviewBytes != null && localCoverPreviewBytes.isNotEmpty;
-    final resolvedCoverUrl =
-        _localCoverResolvedUrl() ??
-        _normalizedCoverPreviewUrl(_courseCoverPreviewUrl) ??
-        _normalizedCoverPreviewUrl(_courseCoverPath);
+    final resolvedCoverUrl = _courseCoverPath;
     final renderSource = selectCourseCoverRenderSource(
       resolvedUrl: resolvedCoverUrl,
-      localPreviewBytes: localCoverPreviewBytes,
+      localPreviewBytes: null,
     );
-    final hasCover = renderSource != 'placeholder';
+    final hasCover = renderSource != 'empty';
     final status = _coverPipelineState;
     final statusText = status == null ? null : _coverStatusLabel(status);
-    final coverPipelineError = _coverPipelineError?.trim();
+    final coverPipelineError = _coverPipelineError;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3514,34 +3197,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       if (SafeMedia.enabled) {
                         SafeMedia.markThumbnails();
                       }
-                      const placeholder = Center(
+                      const emptyState = Center(
                         child: Icon(Icons.image_outlined, size: 28),
                       );
                       _logCourseCoverRender(
                         source: renderSource,
                         resolvedUrl: resolvedCoverUrl,
-                        hasLocalPreview: hasLocalPreview,
                       );
-                      if (renderSource == 'placeholder') {
-                        return placeholder;
-                      }
-                      if (renderSource == 'local_bytes') {
-                        return Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            placeholder,
-                            Image.memory(
-                              localCoverPreviewBytes!,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              filterQuality: SafeMedia.filterQuality(
-                                full: FilterQuality.high,
-                              ),
-                              errorBuilder: (context, error, stackTrace) =>
-                                  placeholder,
-                            ),
-                          ],
-                        );
+                      if (renderSource == 'empty') {
+                        return emptyState;
                       }
 
                       final cacheWidth = SafeMedia.cacheDimension(
@@ -3565,7 +3229,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         cacheHeight: cacheHeight,
                         gaplessPlayback: true,
                         errorBuilder: (context, error, stackTrace) =>
-                            const SizedBox.shrink(),
+                            emptyState,
                       );
                     },
                   ),
@@ -3639,8 +3303,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           const SizedBox(height: 12),
           CoverUploadCard(
             courseId: _selectedCourseId,
-            onCoverQueued: (courseId, mediaId, preview) {
-              _queueCoverUpload(courseId, mediaId, preview);
+            onCoverQueued: (courseId, mediaId) {
+              _queueCoverUpload(courseId, mediaId);
             },
             onUploadError: (courseId, message) {
               if (!mounted || _selectedCourseId != courseId) return;
@@ -3690,7 +3354,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_selectedLessonId == null || _lessonMedia.isEmpty) return null;
     StudioLessonMediaItem? video;
     for (final media in _lessonMedia) {
-      if (media.mediaType.trim().toLowerCase() == 'video') {
+      if (media.mediaType == 'video') {
         video = media;
         break;
       }
@@ -3698,7 +3362,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final media = video;
     if (media == null) return null;
     final label = _fileNameFromMedia(media);
-    final playbackUrl = _authoritativePreviewForMedia(media)?.visualUrl;
+    final mediaUrl = _authoritativePreviewForMedia(media)?.visualUrl;
 
     return _SectionCard(
       title: 'Lektionsvideo',
@@ -3707,10 +3371,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         children: [
           ClipRRect(
             borderRadius: br16,
-            child: playbackUrl == null
+            child: mediaUrl == null
                 ? _buildInvalidVideoPlaceholder(context)
                 : AveliLessonMediaPlayer(
-                    playbackUrl: playbackUrl,
+                    mediaUrl: mediaUrl,
                     title: label,
                     kind: 'video',
                   ),
@@ -4101,19 +3765,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _isImageMedia(StudioLessonMediaItem media) {
-    return media.mediaType.trim().toLowerCase() == 'image';
+    return media.mediaType == 'image';
   }
 
   bool _isDocumentMedia(StudioLessonMediaItem media) {
-    return media.mediaType.trim().toLowerCase() == 'document';
+    return media.mediaType == 'document';
   }
 
   bool _isPipelineMedia(StudioLessonMediaItem media) {
     return media.mediaAssetId != null;
-  }
-
-  String _pipelineState(StudioLessonMediaItem media) {
-    return media.state;
   }
 
   String _pipelineLabel(String state) {
@@ -4132,15 +3792,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _isWavMedia(StudioLessonMediaItem media) {
-    final originalName = media.originalName?.toLowerCase().trim();
+    final originalName = media.originalName;
     final isWavSource = originalName != null && originalName.endsWith('.wav');
-    if (_isPipelineMedia(media)) {
-      final state = _pipelineState(media);
-      if (state == 'ready') return false;
-      if (isWavSource) return true;
-      return media.mediaType.trim().toLowerCase() == 'audio';
+    if (media.state == 'ready') {
+      return false;
     }
-    return isWavSource;
+    if (isWavSource) {
+      return true;
+    }
+    return media.mediaType == 'audio';
   }
 
   Future<void> _uploadImageFromToolbar() async {
@@ -4286,14 +3946,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     String? lessonMediaId,
     TextSelection? targetSelection,
   }) {
-    final normalizedMediaId = lessonMediaId?.trim();
-    if (normalizedMediaId == null || normalizedMediaId.isEmpty) {
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Bild saknar media-ID och kan inte bäddas in.');
       }
       return false;
     }
-    if (_lessonAlreadyContainsMediaId(normalizedMediaId)) {
+    if (_lessonAlreadyContainsMediaId(lessonMediaId)) {
       if (mounted && context.mounted) {
         showSnack(context, 'Media finns redan i lektionen.');
       }
@@ -4304,7 +3963,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         controller: controller,
         embed: quill.BlockEmbed.image(
           lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
-            lessonMediaId: normalizedMediaId,
+            lessonMediaId: lessonMediaId,
           ),
         ),
         selection: targetSelection ?? controller.selection,
@@ -4397,7 +4056,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final controller = _lessonContentController;
 
     final label = '📄 $fileName';
-    final selection = normalizeQuillInsertionSelection(
+    final selection = resolveQuillInsertionSelection(
       controller,
       targetSelection ?? controller.selection,
     );
@@ -4457,7 +4116,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return false;
     }
     final kind = media.mediaType;
-    final lessonMediaId = media.lessonMediaId.trim();
+    final lessonMediaId = media.lessonMediaId;
     if (lessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Media saknar ID och kan inte bäddas in.');
@@ -4566,17 +4225,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _queueCoverUpload(
-    String courseId,
-    String mediaId,
-    CoverUploadPreview preview,
-  ) {
+  void _queueCoverUpload(String courseId, String mediaId) {
     if (!mounted) {
-      preview.dispose();
       return;
     }
     if (courseId.isEmpty) {
-      preview.dispose();
       if (context.mounted) {
         showSnack(
           context,
@@ -4586,49 +4239,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     if (_selectedCourseId != courseId) {
-      preview.dispose();
       return;
     }
-    final course = _courseById(courseId);
-    if (course == null) {
-      preview.dispose();
-      return;
-    }
-    final resolvedPreviewUrl =
-        _normalizedCoverPreviewUrl(preview.resolvedUrl) ??
-        _normalizedCoverPreviewUrl(_courseCoverPreviewUrl) ??
-        _normalizedCoverPreviewUrl(_courseCoverPath);
-    final localCoverOverride = resolvedPreviewUrl == null
-        ? null
-        : _buildLocalCoverOverride(
-            mediaId: mediaId,
-            resolvedUrl: resolvedPreviewUrl,
-            state: 'uploaded',
-          );
-    final resolvedCover = _resolveEditorCourseCover(
-      course,
-      debugContext: 'StudioCourseCoverUploadQueued:$courseId',
-      localCoverOverride: localCoverOverride,
-    );
-    final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
-      course,
-      resolvedCover,
-      localCoverOverride: localCoverOverride,
-    );
     final requestId = _beginCoverAction(courseId: courseId);
     setState(() {
       _coverPipelineMediaId = mediaId;
-      _localCoverOverride = localCoverOverride;
-      _replaceLocalCoverPreview(preview);
-      _courseCoverPath = effectiveCoverUrl;
-      _courseCoverPreviewUrl = effectiveCoverUrl;
       _coverPipelineState = 'uploaded';
       _coverPipelineError = null;
       _updatingCourseCover = true;
     });
-    if (localCoverOverride != null) {
-      _logEditorCoverOverride(mediaId: mediaId, active: true);
-    }
     _startCoverPolling(mediaId, requestId: requestId);
   }
 
@@ -4699,7 +4318,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         if (!mounted) return;
         if (!context.mounted) return;
         if (status.state == 'failed') {
-          final detail = status.errorMessage?.trim();
+          final detail = status.errorMessage;
           showSnack(
             context,
             detail == null || detail.isEmpty
@@ -4744,28 +4363,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
-    final lessonMediaId = media.lessonMediaId.trim();
+    final lessonMediaId = media.lessonMediaId;
     if (lessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Bilden saknar media-id och kan inte användas.');
       }
       return;
     }
-    final previewUrl = await _bestAvailableLessonMediaCoverPreviewUrl(
-      lessonMediaId,
-      media,
-    );
-    if (!mounted) return;
 
     final requestId = _beginCoverAction(courseId: courseId);
-    final previousPath = _courseCoverPath;
-    final previousPreview = _courseCoverPreviewUrl;
     final previousPipelineId = _coverPipelineMediaId;
     final previousPipelineState = _coverPipelineState;
-    final course = _courseById(courseId);
-    if (course == null) {
-      return;
-    }
 
     if (mounted) {
       setState(() {
@@ -4786,34 +4394,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _selectedCourseId != courseId) {
         return;
       }
-      final localCoverOverride = previewUrl == null
-          ? null
-          : _buildLocalCoverOverride(
-              mediaId: response.mediaId,
-              resolvedUrl: previewUrl,
-              state: response.state,
-            );
-      final resolvedCover = _resolveEditorCourseCover(
-        course,
-        debugContext: 'StudioCourseCoverFromLessonMedia:$courseId',
-        localCoverOverride: localCoverOverride,
-      );
-      final effectiveCoverUrl = _effectiveEditorCourseCoverUrl(
-        course,
-        resolvedCover,
-        localCoverOverride: localCoverOverride,
-      );
       setState(() {
         _coverPipelineMediaId = response.mediaId;
-        _localCoverOverride = localCoverOverride;
-        _replaceLocalCoverPreview(null);
-        _courseCoverPath = effectiveCoverUrl;
-        _courseCoverPreviewUrl = effectiveCoverUrl;
         _coverPipelineState = response.state;
       });
-      if (localCoverOverride != null) {
-        _logEditorCoverOverride(mediaId: response.mediaId, active: true);
-      }
       _startCoverPolling(response.mediaId, requestId: requestId);
       if (context.mounted) {
         showSnack(context, 'Kursbilden bearbetas…');
@@ -4829,8 +4413,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _coverPipelineMediaId = previousPipelineId;
         _coverPipelineState = previousPipelineState;
         _coverPipelineError = failure.message;
-        _courseCoverPath = previousPath;
-        _courseCoverPreviewUrl = previousPreview;
       });
       _showFriendlyErrorSnack('Kunde inte välja kursbild', e, stackTrace);
     }
@@ -4841,13 +4423,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final courseId = _selectedCourseId;
     if (courseId == null) return;
     var resumePolling = false;
-    var restoreLocalPreview = false;
-
-    final previousPath = _courseCoverPath;
-    final previousPreview = _courseCoverPreviewUrl;
     final previousMediaId = _coverPipelineMediaId;
-    final previousLocalCoverOverride = _localCoverOverride;
-    final previousLocalPreview = _detachLocalCoverPreview();
     final previousState = _coverPipelineState;
     final previousError = _coverPipelineError;
 
@@ -4857,11 +4433,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (mounted) {
       setState(() {
         _updatingCourseCover = true;
-        _courseCoverPath = null;
-        _courseCoverPreviewUrl = null;
         _coverPipelineMediaId = null;
-        _localCoverOverride = null;
-        _localCoverPreview = null;
         _coverPipelineState = null;
         _coverPipelineError = null;
       });
@@ -4877,15 +4449,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     } catch (e, stackTrace) {
       if (!mounted) return;
       setState(() {
-        _courseCoverPath = previousPath;
-        _courseCoverPreviewUrl = previousPreview;
         _coverPipelineMediaId = previousMediaId;
-        _localCoverOverride = previousLocalCoverOverride;
-        _localCoverPreview = previousLocalPreview;
         _coverPipelineState = previousState;
         _coverPipelineError = previousError;
       });
-      restoreLocalPreview = true;
       if (previousMediaId != null &&
           previousState != null &&
           previousState != 'ready' &&
@@ -4897,9 +4464,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       _showFriendlyErrorSnack('Kunde inte uppdatera kursbild', e, stackTrace);
     } finally {
-      if (!restoreLocalPreview) {
-        _disposeCoverPreview(previousLocalPreview);
-      }
       if (mounted && !resumePolling) {
         setState(() => _updatingCourseCover = false);
       }
@@ -4952,7 +4516,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final authoritativeUpload = job.uploadedMedia;
-    final authoritativeUploadId = authoritativeUpload?.lessonMediaId.trim();
+    final authoritativeUploadId = authoritativeUpload?.lessonMediaId;
     if (authoritativeUpload == null ||
         authoritativeUploadId == null ||
         authoritativeUploadId.isEmpty) {
@@ -4998,13 +4562,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
 
-    final normalizedMediaType = authoritativeUpload.mediaType
-        .trim()
-        .toLowerCase();
+    final mediaType = authoritativeUpload.mediaType;
     final requiresAuthoritativeReadiness =
-        normalizedMediaType == 'video' ||
-        normalizedMediaType == 'audio' ||
-        normalizedMediaType == 'image';
+        mediaType == 'video' || mediaType == 'audio' || mediaType == 'image';
     if (requiresAuthoritativeReadiness) {
       await ref.read(lessonMediaPreviewCacheProvider).prefetch([
         authoritativeUploadId,
@@ -5014,10 +4574,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     var inserted = false;
-    if (normalizedMediaType == 'video' ||
-        normalizedMediaType == 'audio' ||
-        normalizedMediaType == 'image' ||
-        normalizedMediaType == 'document') {
+    if (mediaType == 'video' ||
+        mediaType == 'audio' ||
+        mediaType == 'image' ||
+        mediaType == 'document') {
       inserted = _insertMediaIntoLesson(uploaded, showSaveHint: false);
     }
     final postInsertToken = inserted ? _captureEditorToken() : token;
@@ -5216,15 +4776,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final name = _fileNameFromMedia(media);
-    if (_isPipelineMedia(media) && !_isImageMedia(media)) {
-      final state = _pipelineState(media);
-      if (state != 'ready') {
-        if (mounted && context.mounted) {
-          showSnack(context, 'Mediet bearbetas fortfarande.');
-        }
-        return;
-      }
-    }
 
     final resolved = await _resolveLessonMediaDeliveryUrlForMedia(media);
     if (resolved == null || resolved.isEmpty) {
@@ -5304,15 +4855,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  String? _resolveMediaUrl(String? path) {
-    if (path == null || path.isEmpty) return null;
-    try {
-      return ref.read(mediaRepositoryProvider).resolveDownloadUrl(path);
-    } catch (_) {
-      return null;
-    }
-  }
-
   String _fileNameFromMedia(
     StudioLessonMediaItem media, [
     LessonMediaPreviewData? preview,
@@ -5370,7 +4912,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _showVideoPreviewSheet(
     StudioLessonMediaItem media, {
-    required String? playbackUrl,
+    required String? mediaUrl,
   }) async {
     if (!mounted || !context.mounted) return;
     final fileName = _fileNameFromMedia(media);
@@ -5392,11 +4934,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (playbackUrl == null)
+                if (mediaUrl == null)
                   _buildInvalidVideoPlaceholder(sheetContext)
                 else
                   AveliLessonMediaPlayer(
-                    playbackUrl: playbackUrl,
+                    mediaUrl: mediaUrl,
                     title: fileName,
                     kind: 'video',
                   ),
@@ -5433,7 +4975,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _showAudioPreviewSheet(
     StudioLessonMediaItem media, {
-    required String playbackUrl,
+    required String mediaUrl,
   }) async {
     if (!mounted || !context.mounted) return;
     final fileName = _fileNameFromMedia(media);
@@ -5456,7 +4998,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AveliLessonMediaPlayer(
-                  playbackUrl: playbackUrl,
+                  mediaUrl: mediaUrl,
                   title: fileName,
                   kind: 'audio',
                 ),
@@ -5491,15 +5033,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_isWavMedia(media)) {
       return;
     }
-    if (_isPipelineMedia(media)) {
-      final state = _pipelineState(media);
-      if (state != 'ready') {
-        if (mounted && context.mounted) {
-          showSnack(context, 'Mediet bearbetas fortfarande.');
-        }
-        return;
-      }
-    }
 
     String? url;
     if (kind == 'image' || kind == 'video') {
@@ -5523,9 +5056,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
       );
     } else if (url != null && kind == 'audio') {
-      await _showAudioPreviewSheet(media, playbackUrl: url);
+      await _showAudioPreviewSheet(media, mediaUrl: url);
     } else if (url != null && kind == 'video') {
-      await _showVideoPreviewSheet(media, playbackUrl: url);
+      await _showVideoPreviewSheet(media, mediaUrl: url);
     } else {
       final shouldLogUnresolved =
           previewStatus?.state == LessonMediaPreviewState.failed &&
@@ -5586,8 +5119,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required String fromLessonMediaId,
     required StudioLessonMediaItem replacementMedia,
   }) {
-    final fromId = fromLessonMediaId.trim();
-    final toId = replacementMedia.lessonMediaId.trim();
+    final fromId = fromLessonMediaId;
+    final toId = replacementMedia.lessonMediaId;
     if (fromId.isEmpty || toId.isEmpty) return false;
 
     var contentChanged = false;
@@ -5632,14 +5165,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   ) async {
     final lessonId = _selectedLessonId;
     final courseId = _lessonCourseId(lessonId);
-    if (lessonId == null || courseId == null || courseId.trim().isEmpty) {
+    if (lessonId == null || courseId == null || courseId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Spara lektionen för att kunna byta ljud.');
       }
       return;
     }
 
-    final oldLessonMediaId = media.lessonMediaId.trim();
+    final oldLessonMediaId = media.lessonMediaId;
     if (oldLessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Media saknar ID och kan inte bytas ut.');
@@ -5650,7 +5183,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final fileName = _fileNameFromMedia(media);
     var token = _captureEditorToken();
 
-    final newMediaAssetId = await showDialog<String?>(
+    final newLessonMediaId = await showDialog<String?>(
       context: context,
       builder: (context) => WavReplaceDialog(
         courseId: courseId,
@@ -5661,7 +5194,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       ),
     );
     if (!mounted || !_isEditorTokenValid(token)) return;
-    if (newMediaAssetId == null || newMediaAssetId.trim().isEmpty) return;
+    if (newLessonMediaId == null || newLessonMediaId.isEmpty) return;
 
     setState(() => _mediaStatus = 'Ersätter ljud…');
 
@@ -5671,14 +5204,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
       StudioLessonMediaItem? newMedia;
       for (final item in _lessonMedia) {
-        if (item.mediaAssetId?.trim() == newMediaAssetId.trim()) {
+        if (item.lessonMediaId == newLessonMediaId) {
           newMedia = item;
           break;
         }
       }
 
-      final newLessonMediaId = newMedia?.lessonMediaId.trim();
-      if (newLessonMediaId == null || newLessonMediaId.isEmpty) {
+      if (newMedia == null) {
         if (mounted && context.mounted) {
           showSnack(context, 'Kunde inte hitta den nya ljudfilen.');
         }
@@ -5686,7 +5218,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return;
       }
 
-      if (newLessonMediaId == oldLessonMediaId) {
+      if (newMedia.lessonMediaId == oldLessonMediaId) {
         await _loadLessonMedia();
         if (!mounted || !_isEditorTokenValid(token)) return;
         if (mounted && context.mounted) {
@@ -5700,7 +5232,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
       final contentChanged = _replaceLessonMediaReferencesInEditor(
         fromLessonMediaId: oldLessonMediaId,
-        replacementMedia: newMedia!,
+        replacementMedia: newMedia,
       );
       if (contentChanged) {
         token = _captureEditorToken();
@@ -5796,10 +5328,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     };
     if (slug.isNotEmpty) {
       patch['slug'] = slug;
-    }
-    final localCoverMediaId = _localCoverMediaId();
-    if (localCoverMediaId != null) {
-      patch['cover_media_id'] = localCoverMediaId;
     }
     _logCourseMetaPatchPayload(courseId: courseId, patch: patch);
 
@@ -6354,15 +5882,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final media = _lessonMedia[index];
                                         final theme = Theme.of(context);
                                         final kind = media.mediaType;
-                                        final isAudio = kind == 'audio';
                                         final position = media.position;
-                                        final isPipeline = _isPipelineMedia(
-                                          media,
-                                        );
                                         final isWavMedia = _isWavMedia(media);
-                                        final pipelineState = isPipeline
-                                            ? _pipelineState(media)
-                                            : null;
+                                        final mediaState = media.state;
                                         final previewStatus =
                                             _previewStatusForMedia(media);
                                         final usesAuthoritativeStatus =
@@ -6381,40 +5903,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   'failed',
                                                 LessonMediaPreviewState
                                                     .loading =>
-                                                  isPipeline &&
-                                                          pipelineState !=
-                                                              null &&
-                                                          pipelineState !=
-                                                              'ready' &&
-                                                          pipelineState !=
-                                                              'failed'
+                                                  mediaState != 'ready' &&
+                                                          mediaState != 'failed'
                                                       ? 'processing'
                                                       : 'checking',
                                               }
-                                            : isPipeline
-                                            ? pipelineState == 'ready'
-                                                  ? 'ready'
-                                                  : pipelineState == 'failed'
-                                                  ? 'failed'
-                                                  : 'processing'
-                                            : 'ready';
+                                            : mediaState == 'ready'
+                                            ? 'ready'
+                                            : mediaState == 'failed'
+                                            ? 'failed'
+                                            : 'processing';
                                         final statusColor = statusKey == 'ready'
                                             ? theme.colorScheme.primary
                                             : statusKey == 'failed'
                                             ? theme.colorScheme.error
                                             : theme.colorScheme.secondary;
-                                        final canPipelinePlay =
-                                            isPipeline &&
-                                            pipelineState == 'ready' &&
-                                            isAudio;
                                         final mediaId = media.lessonMediaId;
                                         final canPreview =
                                             _canPreviewLessonMedia(
                                               media: media,
-                                              hasInvalidPipelineReference:
-                                                  false,
                                               isWavMedia: isWavMedia,
-                                              canPipelinePlay: canPipelinePlay,
                                             );
                                         final fileName = _fileNameFromMedia(
                                           media,
@@ -6425,9 +5933,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final isDocument = _isDocumentMedia(
                                           media,
                                         );
-                                        final canDownload =
-                                            !isWavMedia &&
-                                            (!isPipeline || canPipelinePlay);
+                                        final canDownload = !isWavMedia;
 
                                         Widget leading;
                                         leading = GestureDetector(
@@ -6545,15 +6051,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                       context,
                                                     ).textTheme.labelSmall,
                                                   ),
-                                                  if (pipelineState != null)
-                                                    Text(
-                                                      _pipelineLabel(
-                                                        pipelineState,
-                                                      ),
-                                                      style: Theme.of(
-                                                        context,
-                                                      ).textTheme.labelSmall,
-                                                    ),
+                                                  Text(
+                                                    _pipelineLabel(mediaState),
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.labelSmall,
+                                                  ),
                                                 ],
                                               ),
                                               trailing: TooltipVisibility(
@@ -6622,7 +6125,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                             : null,
                                                       ),
                                                     ],
-                                                    if (isAudio)
+                                                    if (kind == 'audio')
                                                       IconButton(
                                                         tooltip: 'Byt ljud',
                                                         icon: const Icon(

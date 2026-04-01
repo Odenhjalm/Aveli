@@ -20,8 +20,8 @@ TextSelection clampQuillSelection(
   );
 }
 
-/// Normalizes a saved selection so inserts happen inside the editable range.
-TextSelection normalizeQuillInsertionSelection(
+/// Resolves a saved selection so inserts happen inside the editable range.
+TextSelection resolveQuillInsertionSelection(
   quill.QuillController controller,
   TextSelection? selection,
 ) {
@@ -41,14 +41,17 @@ TextSelection replaceSelectionWithBlockEmbed({
   TextSelection? selection,
   bool ensureTrailingNewline = true,
 }) {
-  final normalized = normalizeQuillInsertionSelection(controller, selection);
-  final start = min(normalized.start, normalized.end);
-  final end = max(normalized.start, normalized.end);
+  final resolvedSelection = resolveQuillInsertionSelection(
+    controller,
+    selection,
+  );
+  final start = min(resolvedSelection.start, resolvedSelection.end);
+  final end = max(resolvedSelection.start, resolvedSelection.end);
 
   final previousToggledStyle = controller.toggledStyle;
   controller.toggledStyle = const quill.Style();
 
-  final collapsed = normalized.copyWith(
+  final collapsed = resolvedSelection.copyWith(
     baseOffset: start + (ensureTrailingNewline ? 2 : 1),
     extentOffset: start + (ensureTrailingNewline ? 2 : 1),
   );
@@ -111,10 +114,7 @@ bool replaceLessonMediaEmbedsInPlace({
   TextSelection? selection,
   LessonMediaEmbedReplacementBuilder? replacementBuilder,
 }) {
-  final normalizedFromLessonMediaId = fromLessonMediaId.trim();
-  final normalizedToLessonMediaId = toLessonMediaId.trim();
-  if (normalizedFromLessonMediaId.isEmpty ||
-      normalizedToLessonMediaId.isEmpty) {
+  if (fromLessonMediaId.isEmpty || toLessonMediaId.isEmpty) {
     return false;
   }
 
@@ -144,13 +144,10 @@ bool replaceLessonMediaEmbedsInPlace({
       final currentLessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(
         currentValue,
       );
-      if (currentLessonMediaId == normalizedFromLessonMediaId) {
+      if (currentLessonMediaId == fromLessonMediaId) {
         final replacement =
             replacementBuilder?.call(node, currentValue) ??
-            _defaultLessonMediaEmbedReplacement(
-              node,
-              normalizedToLessonMediaId,
-            );
+            _defaultLessonMediaEmbedReplacement(node, toLessonMediaId);
         if (replacement != null) {
           replacements.add((offset: nodeOffset, embed: replacement));
         }

@@ -776,7 +776,7 @@ class _LessonResolvedAudioPlayer extends StatelessWidget {
       lessonMediaId: lessonMediaId,
       mediaType: 'audio',
       builder: (context, resolvedUrl) => AveliLessonMediaPlayer(
-        playbackUrl: resolvedUrl,
+        mediaUrl: resolvedUrl,
         title: '',
         kind: 'audio',
         preferLessonLayout: true,
@@ -799,7 +799,7 @@ class _LessonResolvedVideoPlayer extends StatelessWidget {
           lessonMediaId: lessonMediaId,
           mediaType: 'video',
           builder: (context, resolvedUrl) => AveliLessonMediaPlayer(
-            playbackUrl: resolvedUrl,
+            mediaUrl: resolvedUrl,
             title: '',
             kind: 'video',
             preferLessonLayout: true,
@@ -923,7 +923,7 @@ class _MediaItem extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: 12),
               child: _LessonGlassMediaWrapper(
                 child: AveliLessonMediaPlayer(
-                  playbackUrl: snapshot.data!,
+                  mediaUrl: snapshot.data!,
                   title: _fileName,
                   kind: mediaType.name,
                 ),
@@ -955,7 +955,7 @@ class _MediaItem extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: 12),
               child: _LessonGlassMediaWrapper(
                 child: AveliLessonMediaPlayer(
-                  playbackUrl: snapshot.data!,
+                  mediaUrl: snapshot.data!,
                   title: _fileName,
                   kind: mediaType.name,
                 ),
