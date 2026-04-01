@@ -27,48 +27,26 @@ class AveliLessonMediaPlayer extends StatefulWidget {
 class _AveliLessonMediaPlayerState extends State<AveliLessonMediaPlayer> {
   @override
   Widget build(BuildContext context) {
-    final kind = widget.kind.trim().toLowerCase();
-    final url = widget.playbackUrl.trim();
-    final title = widget.title.trim();
-
-    if (!_isValidPlaybackUrl(url)) {
-      return _MediaPlaceholder(
-        kind: kind,
-        message: 'Media saknas eller stöds inte längre',
-        showRetry: false,
-      );
+    switch (widget.kind) {
+      case 'video':
+        return _VideoRenderer(
+          playbackUrl: widget.playbackUrl,
+          title: widget.title,
+          preferLessonLayout: widget.preferLessonLayout,
+        );
+      case 'audio':
+        return _AudioRenderer(
+          playbackUrl: widget.playbackUrl,
+          title: widget.title,
+          preferLessonLayout: widget.preferLessonLayout,
+        );
+      default:
+        return _MediaErrorState(
+          kind: widget.kind,
+          message: 'Ogiltig mediatyp: ${widget.kind}',
+        );
     }
-
-    if (kind == 'video') {
-      return _VideoRenderer(
-        playbackUrl: url,
-        title: title,
-        preferLessonLayout: widget.preferLessonLayout,
-      );
-    }
-    if (kind == 'audio') {
-      return _AudioRenderer(
-        playbackUrl: url,
-        title: title,
-        preferLessonLayout: widget.preferLessonLayout,
-      );
-    }
-
-    return _MediaPlaceholder(
-      kind: kind,
-      message: 'Mediaformat stöds inte',
-      showRetry: false,
-    );
   }
-}
-
-bool _isValidPlaybackUrl(String url) {
-  if (url.isEmpty) return false;
-  final uri = Uri.tryParse(url);
-  if (uri == null) return false;
-  final scheme = uri.scheme.toLowerCase();
-  if (scheme != 'http' && scheme != 'https') return false;
-  return uri.host.isNotEmpty;
 }
 
 class _VideoRenderer extends StatefulWidget {
@@ -93,7 +71,7 @@ class _VideoRendererState extends State<_VideoRenderer> {
 
   VideoPlayerController? _controller;
   bool _initializing = true;
-  bool _hasError = false;
+  String? _error;
 
   @override
   void initState() {
@@ -121,18 +99,12 @@ class _VideoRendererState extends State<_VideoRenderer> {
   void _configureController() {
     setState(() {
       _initializing = true;
-      _hasError = false;
+      _error = null;
     });
-    final uri = Uri.tryParse(widget.playbackUrl);
-    if (uri == null) {
-      setState(() {
-        _initializing = false;
-        _hasError = true;
-      });
-      return;
-    }
 
-    final controller = VideoPlayerController.networkUrl(uri);
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.playbackUrl),
+    );
     _controller = controller;
     unawaited(
       controller
@@ -141,22 +113,17 @@ class _VideoRendererState extends State<_VideoRenderer> {
             if (!mounted || !identical(controller, _controller)) return;
             setState(() {
               _initializing = false;
-              _hasError = false;
+              _error = null;
             });
           })
-          .catchError((Object _, StackTrace _) {
+          .catchError((Object error, StackTrace stackTrace) {
             if (!mounted || !identical(controller, _controller)) return;
             setState(() {
               _initializing = false;
-              _hasError = true;
+              _error = 'Videon kunde inte laddas.';
             });
           }),
     );
-  }
-
-  void _retry() {
-    _disposeController();
-    _configureController();
   }
 
   void _disposeController() {
@@ -178,21 +145,17 @@ class _VideoRendererState extends State<_VideoRenderer> {
       }
       if (!mounted || !identical(controller, _controller)) return;
       setState(() {});
-    } catch (_) {
+    } catch (error) {
       if (!mounted || !identical(controller, _controller)) return;
-      setState(() => _hasError = true);
+      setState(() => _error = 'Videouppspelningen misslyckades.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    if (_hasError) {
-      return _MediaPlaceholder(
-        kind: 'video',
-        message: 'Media saknas eller stöds inte längre',
-        onRetry: _retry,
-      );
+    if (_error != null) {
+      return _MediaErrorState(kind: 'video', message: _error!);
     }
     if (_initializing ||
         controller == null ||
@@ -200,15 +163,12 @@ class _VideoRendererState extends State<_VideoRenderer> {
       return _loading(context, aspectRatio: 16 / 9, label: 'Laddar video...');
     }
 
-    final aspectRatio = controller.value.aspectRatio > 0
-        ? controller.value.aspectRatio
-        : 16 / 9;
     final semanticTitle = widget.title.isEmpty ? 'Video' : widget.title;
 
     return ClipRRect(
       borderRadius: _borderRadius,
       child: AspectRatio(
-        aspectRatio: aspectRatio,
+        aspectRatio: controller.value.aspectRatio,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -337,7 +297,7 @@ class _AudioRendererState extends State<_AudioRenderer> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   bool _initializing = true;
-  bool _hasError = false;
+  String? _error;
   bool _isPlaying = false;
 
   @override
@@ -369,8 +329,8 @@ class _AudioRendererState extends State<_AudioRenderer> {
 
   void _bindStreams() {
     _durationSub = _player.durationStream.listen((duration) {
-      if (!mounted) return;
-      setState(() => _duration = duration ?? Duration.zero);
+      if (!mounted || duration == null) return;
+      setState(() => _duration = duration);
     });
     _positionSub = _player.positionStream.listen((position) {
       if (!mounted) return;
@@ -391,7 +351,7 @@ class _AudioRendererState extends State<_AudioRenderer> {
   Future<void> _loadSource() async {
     setState(() {
       _initializing = true;
-      _hasError = false;
+      _error = null;
       _isPlaying = false;
       _position = Duration.zero;
       _duration = Duration.zero;
@@ -403,43 +363,35 @@ class _AudioRendererState extends State<_AudioRenderer> {
       if (!mounted) return;
       setState(() {
         _initializing = false;
-        _hasError = false;
+        _error = null;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _initializing = false;
-        _hasError = true;
+        _error = 'Ljudet kunde inte laddas.';
       });
     }
   }
 
   Future<void> _togglePlayback() async {
-    if (_initializing || _hasError) return;
+    if (_initializing || _error != null) return;
     try {
       if (_isPlaying) {
         await _player.pause();
       } else {
         await _player.play();
       }
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() => _hasError = true);
+      setState(() => _error = 'Ljuduppspelningen misslyckades.');
     }
-  }
-
-  void _retry() {
-    unawaited(_loadSource());
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_hasError) {
-      return _MediaPlaceholder(
-        kind: 'audio',
-        message: 'Media saknas eller stöds inte längre',
-        onRetry: _retry,
-      );
+    if (_error != null) {
+      return _MediaErrorState(kind: 'audio', message: _error!);
     }
     if (_initializing) {
       return _loading(context, label: 'Laddar ljud...');
@@ -449,19 +401,16 @@ class _AudioRendererState extends State<_AudioRenderer> {
         ? _duration.inMilliseconds
         : 1;
     final sliderValue = _position.inMilliseconds.clamp(0, safeDurationMillis);
-    final title = widget.title.isEmpty ? 'Ljud' : widget.title;
     final isLessonView = _isLessonViewContext(context);
-    final hideTitle =
-        isLessonView && (widget.title.isEmpty || widget.title == 'Ljud');
     final content = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!hideTitle)
+          if (widget.title.isNotEmpty)
             Text(
-              title,
+              widget.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
@@ -540,49 +489,31 @@ class _AudioRendererState extends State<_AudioRenderer> {
   }
 }
 
-class _MediaPlaceholder extends StatelessWidget {
-  const _MediaPlaceholder({
-    required this.kind,
-    required this.message,
-    this.onRetry,
-    this.showRetry = true,
-  });
+class _MediaErrorState extends StatelessWidget {
+  const _MediaErrorState({required this.kind, required this.message});
 
   final String kind;
   final String message;
-  final VoidCallback? onRetry;
-  final bool showRetry;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isVideo = kind == 'video';
-    final icon = isVideo
-        ? Icons.ondemand_video_outlined
-        : Icons.audiotrack_outlined;
     final content = Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: theme.colorScheme.onSurfaceVariant),
+            Icon(Icons.error_outline, color: theme.colorScheme.error),
             const SizedBox(height: 8),
             Text(
               message,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: theme.colorScheme.error,
               ),
             ),
-            if (showRetry && onRetry != null) ...[
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Försök igen'),
-              ),
-            ],
           ],
         ),
       ),

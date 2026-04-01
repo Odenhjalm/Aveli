@@ -18,7 +18,7 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
   );
   VideoPlayerController? _controller;
   bool _initializing = false;
-  bool _hasError = false;
+  String? _error;
 
   @override
   void initState() {
@@ -29,7 +29,7 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
   @override
   void didUpdateWidget(covariant AveliVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.playbackUrl.trim() == oldWidget.playbackUrl.trim()) return;
+    if (widget.playbackUrl == oldWidget.playbackUrl) return;
     _disposeController();
     _configureController();
   }
@@ -41,21 +41,18 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
   }
 
   void _configureController() {
-    final normalizedUrl = widget.playbackUrl.trim();
-    _hasError = false;
-    if (normalizedUrl.isEmpty) {
+    final uri = Uri.tryParse(widget.playbackUrl);
+    final scheme = uri?.scheme;
+    if (uri == null ||
+        widget.playbackUrl.isEmpty ||
+        uri.host.isEmpty ||
+        (scheme != 'http' && scheme != 'https')) {
       _initializing = false;
-      return;
-    }
-    Uri uri;
-    try {
-      uri = Uri.parse(normalizedUrl);
-    } catch (_) {
-      _initializing = false;
-      _hasError = true;
+      _error = 'Videon kunde inte laddas.';
       return;
     }
     _initializing = true;
+    _error = null;
     final controller = VideoPlayerController.networkUrl(uri);
     _controller = controller;
     unawaited(
@@ -65,14 +62,14 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
             if (!mounted || !identical(controller, _controller)) return;
             setState(() {
               _initializing = false;
-              _hasError = false;
+              _error = null;
             });
           })
           .catchError((Object error, StackTrace stackTrace) {
             if (!mounted || !identical(controller, _controller)) return;
             setState(() {
               _initializing = false;
-              _hasError = true;
+              _error = 'Videon kunde inte laddas.';
             });
           }),
     );
@@ -97,28 +94,16 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
       }
       if (!mounted || !identical(controller, _controller)) return;
       setState(() {});
-    } catch (_) {
+    } catch (error) {
       if (!mounted || !identical(controller, _controller)) return;
-      setState(() => _hasError = true);
+      setState(() => _error = 'Videouppspelningen misslyckades.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final playbackUrl = widget.playbackUrl.trim();
-    if (playbackUrl.isEmpty) {
-      return _placeholder(
-        context,
-        icon: Icons.ondemand_video_outlined,
-        message: 'Video saknas',
-      );
-    }
-    if (_hasError) {
-      return _placeholder(
-        context,
-        icon: Icons.error_outline,
-        message: 'Kunde inte spela upp video',
-      );
+    if (_error != null) {
+      return _errorState(context, _error!);
     }
     final controller = _controller;
     if (_initializing ||
@@ -127,9 +112,6 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
       return _loading(context);
     }
     final isPlaying = controller.value.isPlaying;
-    final aspectRatio = controller.value.aspectRatio > 0
-        ? controller.value.aspectRatio
-        : 16 / 9;
 
     return ClipRRect(
       borderRadius: _borderRadius,
@@ -144,7 +126,7 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
           fit: StackFit.expand,
           children: [
             AspectRatio(
-              aspectRatio: aspectRatio,
+              aspectRatio: controller.value.aspectRatio,
               child: VideoPlayer(controller),
             ),
             Positioned.fill(
@@ -194,11 +176,7 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
     );
   }
 
-  Widget _placeholder(
-    BuildContext context, {
-    required IconData icon,
-    required String message,
-  }) {
+  Widget _errorState(BuildContext context, String message) {
     final theme = Theme.of(context);
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -209,13 +187,15 @@ class _AveliVideoPlayerState extends State<AveliVideoPlayer> {
           border: Border.all(color: theme.colorScheme.outlineVariant),
         ),
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-              const SizedBox(height: 8),
-              Text(message, style: theme.textTheme.bodyMedium),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+              textAlign: TextAlign.center,
+            ),
           ),
         ),
       ),

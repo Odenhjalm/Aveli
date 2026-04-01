@@ -114,7 +114,12 @@ async def course_pricing_api(slug: str):
 @router.get("/lessons/{lesson_id}", response_model=schemas.LessonContentResponse)
 async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
     lesson = await _assert_can_access_lesson(current, lesson_id)
-    course_id = str(lesson.get("course_id") or "").strip()
+    course_id = lesson.get("course_id")
+    if not isinstance(course_id, str) or course_id == "":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Lesson course_id is required",
+        )
     lessons = await courses_service.list_course_lessons(course_id)
     media_rows = await courses_service.list_lesson_media(lesson_id, mode="student_render")
     return _lesson_content_response(

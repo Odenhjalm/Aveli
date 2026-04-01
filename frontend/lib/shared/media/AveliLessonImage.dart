@@ -1,85 +1,37 @@
 import 'package:flutter/material.dart';
 
-class AveliLessonImage extends StatefulWidget {
+class AveliLessonImage extends StatelessWidget {
   const AveliLessonImage({super.key, required this.src, this.alt});
 
   final String src;
   final String? alt;
 
   @override
-  State<AveliLessonImage> createState() => _AveliLessonImageState();
-}
-
-class _AveliLessonImageState extends State<AveliLessonImage> {
-  int _attempt = 0;
-
-  @override
-  void didUpdateWidget(covariant AveliLessonImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.src.trim() == widget.src.trim()) return;
-    _attempt = 0;
-  }
-
-  bool _isSupportedHttpUrl(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null) return false;
-    if (!uri.isAbsolute || uri.host.isEmpty) return false;
-    final scheme = uri.scheme.toLowerCase();
-    return scheme == 'http' || scheme == 'https';
-  }
-
-  void _retry() {
-    setState(() => _attempt += 1);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final normalizedSrc = widget.src.trim();
-    final normalizedAlt = widget.alt?.trim();
-    final semanticLabel = normalizedAlt == null || normalizedAlt.isEmpty
-        ? null
-        : normalizedAlt;
-
-    if (!_isSupportedHttpUrl(normalizedSrc)) {
-      return const _LessonImageStateCard(
-        message: 'Bilden kunde inte laddas.',
-        showRetry: false,
-      );
-    }
-
     return Image.network(
-      key: ValueKey<String>('$normalizedSrc::$_attempt'),
-      normalizedSrc,
+      src,
       width: double.infinity,
       fit: BoxFit.contain,
-      semanticLabel: semanticLabel,
+      semanticLabel: alt,
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;
         return const _LessonImageStateCard(
-          loading: true,
           message: 'Laddar bild...',
+          loading: true,
         );
       },
-      errorBuilder: (_, _, _) => _LessonImageStateCard(
-        message: 'Bilden kunde inte laddas.',
-        onRetry: _retry,
-      ),
+      errorBuilder: (context, error, stackTrace) {
+        return const _LessonImageStateCard(message: 'Bilden kunde inte visas.');
+      },
     );
   }
 }
 
 class _LessonImageStateCard extends StatelessWidget {
-  const _LessonImageStateCard({
-    this.loading = false,
-    required this.message,
-    this.onRetry,
-    this.showRetry = true,
-  });
+  const _LessonImageStateCard({required this.message, this.loading = false});
 
-  final bool loading;
   final String message;
-  final VoidCallback? onRetry;
-  final bool showRetry;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -104,10 +56,7 @@ class _LessonImageStateCard extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2.6),
                 )
               else
-                Icon(
-                  Icons.broken_image_outlined,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                Icon(Icons.error_outline, color: theme.colorScheme.error),
               const SizedBox(height: 12),
               Text(
                 message,
@@ -115,17 +64,9 @@ class _LessonImageStateCard extends StatelessWidget {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: loading
                       ? theme.colorScheme.onSurface
-                      : theme.colorScheme.onSurfaceVariant,
+                      : theme.colorScheme.error,
                 ),
               ),
-              if (!loading && showRetry && onRetry != null) ...[
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Försök igen'),
-                ),
-              ],
             ],
           ),
         ),

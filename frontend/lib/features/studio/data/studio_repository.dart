@@ -184,6 +184,7 @@ class StudioRepository {
     required Uint8List data,
     required String filename,
     required String contentType,
+    required String mediaType,
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) => _lessonMedia.uploadLessonMedia(
@@ -191,6 +192,7 @@ class StudioRepository {
     data: data,
     filename: filename,
     contentType: contentType,
+    mediaType: mediaType,
     onProgress: onProgress,
     cancelToken: cancelToken,
   );

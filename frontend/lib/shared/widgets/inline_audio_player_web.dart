@@ -46,8 +46,6 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
 }
 
 class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
-  static const Duration _sourceRefreshLeeway = Duration(seconds: 30);
-
   late AudioElement _audio;
   late String _activeUrl;
   Duration _position = Duration.zero;
@@ -57,9 +55,6 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   String? _error;
   double _volume = 1.0;
   double _lastVolume = 1.0;
-  DateTime? _sourceExpiresAt;
-  Timer? _sourceRefreshTimer;
-  bool _refreshingSource = false;
   StreamSubscription<Event>? _timeUpdateSub;
   StreamSubscription<Event>? _loadedMetadataSub;
   StreamSubscription<Event>? _playSub;
@@ -71,29 +66,22 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   @override
   void initState() {
     super.initState();
-    _activeUrl = widget.url.trim();
-    _sourceExpiresAt = widget.sourceExpiresAt?.toUtc();
+    _activeUrl = widget.url;
     _audio = AudioElement()
       ..preload = 'auto'
       ..controls = false
       ..loop = false
       ..volume = 1.0;
     _restoreVolumeState(widget.initialVolumeState, notify: false);
-    _duration = widget.durationHint ?? Duration.zero;
     _attachListeners();
-    _setSource(_activeUrl, expiresAt: _sourceExpiresAt);
+    _setSource(_activeUrl);
   }
 
   @override
   void didUpdateWidget(covariant InlineAudioPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url) {
-      _setSource(widget.url.trim(), expiresAt: widget.sourceExpiresAt?.toUtc());
-      return;
-    }
-    if (oldWidget.sourceExpiresAt != widget.sourceExpiresAt) {
-      _sourceExpiresAt = widget.sourceExpiresAt?.toUtc();
-      _scheduleSourceRefresh();
+      _setSource(widget.url);
     }
     if (oldWidget.initialVolumeState != widget.initialVolumeState) {
       _restoreVolumeState(widget.initialVolumeState, notify: false);
@@ -136,41 +124,32 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     });
     _endedSub = _audio.onEnded.listen((event) {
       if (!mounted) return;
-      _sourceRefreshTimer?.cancel();
       setState(() {
         _isPlaying = false;
         _position = Duration.zero;
       });
       widget.onEnded?.call();
     });
-    _errorSub = _audio.onError.listen((event) async {
+    _errorSub = _audio.onError.listen((event) {
       if (!mounted) return;
-      final message = _currentErrorMessage();
-      if (await _refreshPlaybackSource(retryAfterError: true)) {
-        return;
-      }
-      _reportPlaybackError(message);
+      _reportPlaybackError(_currentErrorMessage());
     });
   }
 
-  void _setSource(String url, {DateTime? expiresAt}) {
-    _sourceRefreshTimer?.cancel();
-    final normalizedUrl = url.trim();
-    _activeUrl = normalizedUrl;
-    _sourceExpiresAt = expiresAt?.toUtc();
+  void _setSource(String url) {
+    _activeUrl = url;
     setState(() {
       _initializing = true;
       _error = null;
       _isPlaying = false;
       _position = Duration.zero;
-      _duration = widget.durationHint ?? Duration.zero;
+      _duration = Duration.zero;
     });
     _audio.pause();
-    _audio.src = normalizedUrl;
+    _audio.src = url;
     _audio.volume = _volume;
     _audio.load();
     _didAutoPlay = false;
-    _scheduleSourceRefresh();
     if (widget.autoPlay) {
       unawaited(_attemptAutoPlay());
     }
@@ -184,7 +163,6 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     _pauseSub?.cancel();
     _endedSub?.cancel();
     _errorSub?.cancel();
-    _sourceRefreshTimer?.cancel();
     _audio.pause();
     _audio.src = '';
     _audio.load();
@@ -220,7 +198,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     final rawDuration = _audio.duration;
     final resolvedDuration = rawDuration.isFinite && rawDuration > 0
         ? Duration(milliseconds: (rawDuration * 1000).round()).abs()
-        : _duration;
+        : Duration.zero;
     setState(() {
       _duration = resolvedDuration;
       if (markInitialized) {
@@ -234,16 +212,17 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     InlineAudioPlayerVolumeState? state, {
     required bool notify,
   }) {
-    final restored = state ?? const InlineAudioPlayerVolumeState();
-    final nextVolume = restored.volume.clamp(0.0, 1.0).toDouble();
-    final nextLastVolume = restored.lastVolume.clamp(0.0, 1.0).toDouble();
-    final normalizedLastVolume = nextLastVolume > 0
+    if (state == null) {
+      return;
+    }
+    final nextVolume = state.volume.clamp(0.0, 1.0).toDouble();
+    final nextLastVolume = state.lastVolume.clamp(0.0, 1.0).toDouble();
+    final effectiveLastVolume = nextLastVolume > 0
         ? nextLastVolume
         : (nextVolume > 0 ? nextVolume : 1.0);
-    final changed =
-        _volume != nextVolume || _lastVolume != normalizedLastVolume;
+    final changed = _volume != nextVolume || _lastVolume != effectiveLastVolume;
     _volume = nextVolume;
-    _lastVolume = normalizedLastVolume;
+    _lastVolume = effectiveLastVolume;
     _audio.volume = _volume;
     if (!changed) return;
     if (mounted) {
@@ -256,83 +235,6 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
 
   InlineAudioPlayerVolumeState get _currentVolumeState =>
       InlineAudioPlayerVolumeState(volume: _volume, lastVolume: _lastVolume);
-
-  void _scheduleSourceRefresh() {
-    _sourceRefreshTimer?.cancel();
-    final loader = widget.sourceLoader;
-    final expiresAt = _sourceExpiresAt;
-    if (loader == null || expiresAt == null) return;
-    final delay = expiresAt
-        .subtract(_sourceRefreshLeeway)
-        .difference(DateTime.now().toUtc());
-    if (delay <= Duration.zero) {
-      unawaited(_refreshPlaybackSource());
-      return;
-    }
-    _sourceRefreshTimer = Timer(delay, () {
-      unawaited(_refreshPlaybackSource());
-    });
-  }
-
-  Future<bool> _refreshPlaybackSource({bool retryAfterError = false}) async {
-    final loader = widget.sourceLoader;
-    if (loader == null || _refreshingSource) return false;
-    _refreshingSource = true;
-    final resumePosition = _position;
-    final shouldResume = _isPlaying;
-    try {
-      final nextSource = await loader();
-      if (!mounted) return false;
-      final nextUrl = nextSource.url.trim();
-      if (nextUrl.isEmpty) {
-        throw StateError('Empty playback URL');
-      }
-      final nextExpiry = nextSource.expiresAt?.toUtc();
-      final shouldReload = retryAfterError || nextUrl != _activeUrl;
-      _sourceExpiresAt = nextExpiry;
-      if (!shouldReload) {
-        _scheduleSourceRefresh();
-        return true;
-      }
-      _audio.pause();
-      _audio.src = nextUrl;
-      _audio.volume = _volume;
-      _audio.load();
-      await Future.any(<Future<Object?>>[
-        _audio.onLoadedMetadata.first,
-        _audio.onCanPlay.first,
-      ]).timeout(const Duration(seconds: 8), onTimeout: () => null);
-      if (!mounted) return false;
-      _activeUrl = nextUrl;
-      _scheduleSourceRefresh();
-      if (resumePosition > Duration.zero) {
-        _audio.currentTime = resumePosition.inMilliseconds / 1000;
-      }
-      if (mounted) {
-        setState(() {
-          _position = resumePosition;
-          _initializing = false;
-          _error = null;
-          _isPlaying = shouldResume;
-        });
-      }
-      if (shouldResume) {
-        await _audio.play();
-      }
-      return true;
-    } catch (_) {
-      if (!mounted) return false;
-      if (!retryAfterError) {
-        _sourceRefreshTimer?.cancel();
-        _sourceRefreshTimer = Timer(const Duration(seconds: 5), () {
-          unawaited(_refreshPlaybackSource());
-        });
-      }
-      return false;
-    } finally {
-      _refreshingSource = false;
-    }
-  }
 
   String _currentErrorMessage() {
     final mediaError = _audio.error;
@@ -348,7 +250,6 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
 
   void _reportPlaybackError(String message) {
     if (!mounted) return;
-    _sourceRefreshTimer?.cancel();
     setState(() {
       _initializing = false;
       _error = message;
@@ -379,10 +280,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   }
 
   Duration get _effectiveDuration {
-    if (_duration.inMilliseconds > 0) {
-      return _duration;
-    }
-    return widget.durationHint ?? Duration.zero;
+    return _duration;
   }
 
   @override
@@ -447,7 +345,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!minimalUi && (widget.title ?? '').isNotEmpty) ...[
+        if (!minimalUi && widget.title != null && widget.title!.isNotEmpty) ...[
           Text(widget.title!, style: titleStyle),
           SizedBox(height: compact ? 8 : 12),
         ],
@@ -455,7 +353,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
           const Center(child: CircularProgressIndicator())
         else if (_error != null)
           Text(
-            'Media saknas eller stöds inte längre',
+            'Ljudet kunde inte spelas upp.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),

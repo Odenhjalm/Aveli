@@ -264,9 +264,13 @@ String _renderedPreviewText(WidgetTester tester) {
 LessonMediaItem _lessonMediaItem(String id, String kind) {
   return LessonMediaItem(
     id: id,
-    kind: kind,
-    storagePath: '$id.$kind',
+    lessonId: 'lesson-1',
+    mediaAssetId: 'asset-$id',
+    position: 1,
+    mediaType: kind,
+    state: 'ready',
     originalName: '$id.$kind',
+    previewReady: true,
   );
 }
 
@@ -442,7 +446,7 @@ void main() {
     );
   });
 
-  testWidgets('broken preview media shows retry without breaking valid media', (
+  testWidgets('broken preview media shows explicit error without retry UI', (
     tester,
   ) async {
     final mediaRepository = _MockMediaRepository();
@@ -477,13 +481,13 @@ void main() {
       _networkImageFinder('https://cdn.test/valid-image.webp'),
       findsOneWidget,
     );
-    expect(find.text('Media saknas eller kunde inte lösas'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Försök igen'), findsWidgets);
+    expect(find.text('Lektionsmedia kunde inte laddas.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Försök igen'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-    'unresolved lesson media settles into a stable placeholder without refetching on rebuild',
+    'unresolved lesson media stays in explicit error state without refetching on rebuild',
     (tester) async {
       final mediaRepository = _MockMediaRepository();
       final pipelineRepository = _FakeMediaPipelineRepository({
@@ -508,7 +512,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
 
-      expect(find.text('Media saknas eller kunde inte lösas'), findsOneWidget);
+      expect(find.text('Lektionsmedia kunde inte laddas.'), findsOneWidget);
       expect(pipelineRepository.lessonPlaybackCalls, 1);
 
       final harnessState = tester.state<_PreviewHarnessState>(
@@ -518,7 +522,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('Media saknas eller kunde inte lösas'), findsOneWidget);
+      expect(find.text('Lektionsmedia kunde inte laddas.'), findsOneWidget);
       expect(pipelineRepository.lessonPlaybackCalls, 1);
       expect(tester.takeException(), isNull);
     },

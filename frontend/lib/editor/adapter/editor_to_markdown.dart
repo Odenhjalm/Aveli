@@ -199,10 +199,9 @@ String editorDeltaToCanonicalMarkdown({
 
   markdown = canonicalizeSupportedMarkdown(markdown);
   if (enforceStorageContract) {
-    final normalized = lesson_pipeline.normalizeLessonMarkdownForStorage(
-      markdown,
-    );
-    return _stripTerminalDocumentNewline(normalized);
+    final markdownWithContract = lesson_pipeline
+        .enforceLessonMarkdownStorageContract(markdown);
+    return _stripTerminalDocumentNewline(markdownWithContract);
   }
   return _stripTerminalDocumentNewline(markdown);
 }

@@ -1,95 +1,74 @@
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
-import 'package:aveli/features/media/data/media_repository.dart';
 
-bool isLessonMediaPdf(LessonMediaItem item) {
-  final mediaType = item.mediaType.trim().toLowerCase();
-  if (mediaType == 'document' || mediaType == 'pdf') {
-    return true;
-  }
-  final fileName = item.originalName?.trim().toLowerCase();
-  return fileName != null && fileName.endsWith('.pdf');
-}
+enum CanonicalLessonMediaType { audio, image, video, document }
 
-bool canAttemptLessonMediaPlayback(LessonMediaItem item) {
-  if (isLessonMediaPdf(item)) {
-    return false;
-  }
-  if (item.id.trim().isEmpty) {
-    return false;
-  }
-  return item.previewReady;
-}
-
-String? _resolveBrowserPlayableUrl(
-  MediaRepository mediaRepository,
-  String? value,
-) {
-  final raw = value?.trim();
-  if (raw == null || raw.isEmpty) {
-    return null;
-  }
-
-  try {
-    final resolved = mediaRepository.resolvePlaybackUrl(raw);
-    final uri = Uri.tryParse(resolved);
-    final scheme = uri?.scheme.toLowerCase();
-    final isHttpUrl =
-        uri != null &&
-        uri.hasScheme &&
-        (scheme == 'http' || scheme == 'https') &&
-        uri.host.isNotEmpty;
-    if (!isHttpUrl) {
-      return null;
-    }
-    return resolved;
-  } catch (_) {
-    return null;
+CanonicalLessonMediaType lessonMediaTypeOf(LessonMediaItem item) {
+  switch (item.mediaType) {
+    case 'audio':
+      return CanonicalLessonMediaType.audio;
+    case 'image':
+      return CanonicalLessonMediaType.image;
+    case 'video':
+      return CanonicalLessonMediaType.video;
+    case 'document':
+      return CanonicalLessonMediaType.document;
+    default:
+      throw StateError(
+        'Ogiltig lesson media_type "${item.mediaType}" för lektionsmedia ${item.id}.',
+      );
   }
 }
 
-Future<String?> resolveLessonMediaSignedPlaybackUrl({
+bool isLessonMediaDocument(LessonMediaItem item) {
+  return lessonMediaTypeOf(item) == CanonicalLessonMediaType.document;
+}
+
+Future<String> resolveLessonMediaSignedPlaybackUrl({
   required String lessonMediaId,
-  required MediaRepository mediaRepository,
   required MediaPipelineRepository pipelineRepository,
 }) async {
-  final mediaId = lessonMediaId.trim();
-  if (mediaId.isEmpty) {
-    return null;
+  if (lessonMediaId.isEmpty) {
+    throw StateError('Lektionsmedia saknar ID.');
   }
-  final playbackUrl = await pipelineRepository.fetchLessonPlaybackUrl(mediaId);
-  return _resolveBrowserPlayableUrl(mediaRepository, playbackUrl);
+  return pipelineRepository.fetchLessonPlaybackUrl(lessonMediaId);
 }
 
-Future<String?> resolveLessonMediaDocumentUrl({
+Future<String> resolveLessonMediaDocumentUrl({
   required LessonMediaItem item,
-  required MediaRepository mediaRepository,
   required MediaPipelineRepository pipelineRepository,
 }) async {
-  if (!isLessonMediaPdf(item)) {
-    return null;
+  if (!isLessonMediaDocument(item)) {
+    throw StateError('Lektionsmedia är inte ett dokument: ${item.id}.');
   }
   if (!item.previewReady) {
-    return null;
+    throw StateError('Dokumentet är inte klart för visning: ${item.id}.');
   }
   return resolveLessonMediaSignedPlaybackUrl(
     lessonMediaId: item.id,
-    mediaRepository: mediaRepository,
     pipelineRepository: pipelineRepository,
   );
 }
 
-Future<String?> resolveLessonMediaPlaybackUrl({
+Future<String> resolveLessonMediaPlaybackUrl({
   required LessonMediaItem item,
-  required MediaRepository mediaRepository,
   required MediaPipelineRepository pipelineRepository,
 }) async {
-  if (!canAttemptLessonMediaPlayback(item)) {
-    return null;
+  if (isLessonMediaDocument(item)) {
+    throw StateError(
+      'Dokument får inte behandlas som uppspelningsmedia: ${item.id}.',
+    );
+  }
+  if (item.id.isEmpty) {
+    throw StateError('Lektionsmedia saknar ID.');
+  }
+  if (!item.previewReady) {
+    throw StateError(
+      'Lektionsmedia är inte klart för uppspelning: ${item.id}.',
+    );
   }
   return resolveLessonMediaSignedPlaybackUrl(
     lessonMediaId: item.id,
-    mediaRepository: mediaRepository,
     pipelineRepository: pipelineRepository,
   );
 }

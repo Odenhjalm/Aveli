@@ -364,13 +364,13 @@ class _ProfileMediaTile extends ConsumerWidget {
         playback.currentMediaId == item.id &&
         playback.isPlaying &&
         playback.mediaType == playable.mediaType;
-    final activeUrl = playback.url?.trim();
+    final activeUrl = playback.url;
     final hasUrl = activeUrl != null && activeUrl.isNotEmpty;
     final activeVideoPlayback =
         playable != null &&
             playable.mediaType == MediaPlaybackType.video &&
             hasUrl
-        ? tryCreateVideoPlaybackState(
+        ? createVideoPlaybackState(
             mediaId: item.id,
             url: activeUrl,
             title: title,
@@ -550,8 +550,10 @@ class _ProfileMediaTile extends ConsumerWidget {
         if (lessonTitle != null && lessonTitle.isNotEmpty) return lessonTitle;
         return item.lessonMediaId!;
       case TeacherProfileMediaKind.seminarRecording:
-        final seminarTitle =
-            payload.recordingSourceFor(item)?.seminarTitle?.trim();
+        final seminarTitle = payload
+            .recordingSourceFor(item)
+            ?.seminarTitle
+            ?.trim();
         if (seminarTitle != null && seminarTitle.isNotEmpty) {
           return seminarTitle;
         }

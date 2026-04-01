@@ -36,13 +36,11 @@ class LessonVideoBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final normalizedTitle = title?.trim();
-    final normalizedUrl = _normalizeVideoPlaybackUrl(url);
     final label =
         semanticLabel ??
-        (normalizedTitle == null || normalizedTitle.isEmpty
+        (title == null || title!.isEmpty
             ? 'Lektionsvideo'
-            : 'Lektionsvideo: $normalizedTitle');
+            : 'Lektionsvideo: ${title!}');
     const fallbackHint =
         'Aktivera spelknappen med Enter eller mellanslag för att starta videon.';
     final hint =
@@ -50,9 +48,6 @@ class LessonVideoBlock extends StatelessWidget {
         (autoPlay
             ? '$fallbackHint Videon startar automatiskt om miljön tillåter det.'
             : fallbackHint);
-    final placeholderStyle = minimalUi
-        ? theme.textTheme.bodySmall
-        : theme.textTheme.bodyMedium;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -89,23 +84,10 @@ class LessonVideoBlock extends StatelessWidget {
                   ),
                   child: Padding(
                     padding: p8,
-                    child: normalizedUrl == null
-                        ? AspectRatio(
-                            aspectRatio: 16 / 9,
-                            child: Center(
-                              child: Text(
-                                'Video saknas eller stöds inte längre',
-                                style: placeholderStyle,
-                              ),
-                            ),
-                          )
-                        : AspectRatio(
-                            aspectRatio: 16 / 9,
-                            child: AveliVideoPlayer(
-                              key: playerKey,
-                              playbackUrl: normalizedUrl,
-                            ),
-                          ),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: AveliVideoPlayer(key: playerKey, playbackUrl: url),
+                    ),
                   ),
                 ),
               ),
@@ -115,15 +97,4 @@ class LessonVideoBlock extends StatelessWidget {
       ),
     );
   }
-}
-
-String? _normalizeVideoPlaybackUrl(String? raw) {
-  final trimmed = raw?.trim();
-  if (trimmed == null || trimmed.isEmpty) return null;
-  final uri = Uri.tryParse(trimmed);
-  if (uri == null) return null;
-  final scheme = uri.scheme.toLowerCase();
-  if (scheme != 'http' && scheme != 'https') return null;
-  if (uri.host.isEmpty) return null;
-  return uri.toString();
 }

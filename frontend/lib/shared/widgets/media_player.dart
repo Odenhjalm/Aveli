@@ -156,14 +156,14 @@ class VideoPlaybackState {
     required this.controlsMode,
     required this.controlChrome,
     required this.minimalUi,
-  }) : mediaId = mediaId.trim(),
-       url = url.trim(),
-       title = title.trim() {
+  }) : mediaId = mediaId,
+       url = url,
+       title = title {
     if (this.mediaId.isEmpty) {
-      throw ArgumentError.value(mediaId, 'mediaId', 'must not be empty');
+      throw ArgumentError.value(mediaId, 'mediaId', 'får inte vara tomt');
     }
     if (this.url.isEmpty) {
-      throw ArgumentError.value(url, 'url', 'must not be empty');
+      throw ArgumentError.value(url, 'url', 'får inte vara tom');
     }
   }
 
@@ -175,7 +175,7 @@ class VideoPlaybackState {
   final bool minimalUi;
 }
 
-VideoPlaybackState? tryCreateVideoPlaybackState({
+VideoPlaybackState createVideoPlaybackState({
   required String mediaId,
   required String url,
   required String title,
@@ -183,12 +183,9 @@ VideoPlaybackState? tryCreateVideoPlaybackState({
   required InlineVideoControlChrome controlChrome,
   required bool minimalUi,
 }) {
-  final normalizedMediaId = mediaId.trim();
-  final normalizedUrl = url.trim();
-  if (normalizedMediaId.isEmpty || normalizedUrl.isEmpty) return null;
   return VideoPlaybackState(
-    mediaId: normalizedMediaId,
-    url: normalizedUrl,
+    mediaId: mediaId,
+    url: url,
     title: title,
     controlsMode: controlsMode,
     controlChrome: controlChrome,
@@ -274,7 +271,7 @@ Future<void> showMediaPlayerSheet(
                 )
               : Builder(
                   builder: (context) {
-                    final playback = tryCreateVideoPlaybackState(
+                    final playback = createVideoPlaybackState(
                       mediaId: 'sheet-video-${url.hashCode}',
                       url: url,
                       title: title ?? '',
@@ -282,11 +279,6 @@ Future<void> showMediaPlayerSheet(
                       controlChrome: InlineVideoControlChrome.hidden,
                       minimalUi: false,
                     );
-                    if (playback == null) {
-                      return const Center(
-                        child: Text('Media saknas eller stöds inte längre'),
-                      );
-                    }
                     return InlineVideoPlayer(
                       playback: playback,
                       onDownload: downloadAction,
@@ -407,15 +399,14 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     if (hasRecoverableError) {
       _resetControllers();
     }
-    final parsedUrl = Uri.tryParse(widget.playback.url);
-    final scheme = parsedUrl?.scheme.toLowerCase();
-    final hasSupportedScheme = scheme == 'http' || scheme == 'https';
-    final hasHost = (parsedUrl?.host ?? '').isNotEmpty;
-    if (parsedUrl == null || !hasSupportedScheme || !hasHost) {
+    final Uri parsedUrl;
+    try {
+      parsedUrl = Uri.parse(widget.playback.url);
+    } catch (error) {
       setState(() {
         _activated = true;
         _initializing = false;
-        _error = 'Media saknas eller stöds inte längre';
+        _error = 'Videons URL är ogiltig.';
         _timedOut = false;
         _mediaAspectRatio = null;
         _mediaKitPlaying = false;
@@ -502,7 +493,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _clearActivationTimeout();
       setState(() {
         _initializing = false;
-        _error = error.toString();
+        _error = 'Videon kunde inte laddas.';
         _timedOut = false;
       });
     }
@@ -527,7 +518,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       if (!mounted) return;
       _clearActivationTimeout();
       setState(() {
-        _error = error.toString();
+        _error = 'Videon kunde inte startas.';
         _initializing = false;
         _timedOut = false;
       });
@@ -555,7 +546,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       if (!mounted) return;
       _clearActivationTimeout();
       setState(() {
-        _error = error.toString();
+        _error = 'Videon kunde inte startas.';
         _initializing = false;
         _timedOut = false;
       });
@@ -597,7 +588,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   }
 
   String _surfaceLabel() {
-    final title = widget.playback.title.trim();
+    final title = widget.playback.title;
     if (title.isEmpty) return 'Videospelare';
     return 'Videospelare: $title';
   }
@@ -684,9 +675,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
           _error = null;
         });
         _emitPlaybackState(playing);
-      } catch (_) {
+      } catch (error) {
         if (!mounted) return;
-        setState(() => _error = 'Kunde inte växla uppspelning.');
+        setState(() => _error = 'Videouppspelningen misslyckades.');
       }
       return;
     }
@@ -699,9 +690,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _emitPlaybackState(controller.value.isPlaying);
       if (!mounted || !identical(controller, _videoController)) return;
       setState(() => _error = null);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() => _error = 'Kunde inte växla uppspelning.');
+      setState(() => _error = 'Videouppspelningen misslyckades.');
     }
   }
 
@@ -718,9 +709,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
           _error = null;
         });
         _emitPlaybackState(false);
-      } catch (_) {
+      } catch (error) {
         if (!mounted) return;
-        setState(() => _error = 'Kunde inte stoppa videon.');
+        setState(() => _error = 'Videon kunde inte stoppas.');
       }
       return;
     }
@@ -733,9 +724,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       _emitPlaybackState(false);
       if (!mounted || !identical(controller, _videoController)) return;
       setState(() => _error = null);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() => _error = 'Kunde inte stoppa videon.');
+      setState(() => _error = 'Videon kunde inte stoppas.');
     }
   }
 
@@ -875,12 +866,6 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _handleRetry,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Försök igen'),
-                  ),
                   if (canPop) ...[
                     const SizedBox(height: 4),
                     TextButton(
@@ -910,17 +895,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Media saknas eller stöds inte längre',
+                    _error!,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.error,
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _handleRetry,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Försök igen'),
                   ),
                   if (canPop) ...[
                     const SizedBox(height: 4),
@@ -950,7 +929,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         aspectRatio: 16 / 9,
         child: Center(
           child: Text(
-            'Media saknas eller stöds inte längre',
+            'Videokontroller saknas.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),

@@ -499,10 +499,11 @@ class LessonMediaItem {
   final bool previewReady;
 
   String get fileName {
-    if (originalName != null && originalName!.isNotEmpty) {
-      return originalName!;
+    final name = originalName;
+    if (name == null || name.isEmpty) {
+      throw StateError('Lektionsmedia saknar originalnamn: $id');
     }
-    return id;
+    return name;
   }
 
   factory LessonMediaItem.fromResponse(Object? payload) {

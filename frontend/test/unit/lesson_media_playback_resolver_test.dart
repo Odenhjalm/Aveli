@@ -2,10 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/token_storage.dart';
-import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
-import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/lesson_media_playback_resolver.dart';
 
 class _FakeTokenStorage implements TokenStorage {
@@ -47,54 +45,39 @@ class _FakeMediaPipelineRepository extends MediaPipelineRepository {
   }
 }
 
-MediaRepository _buildMediaRepository() {
-  final client = ApiClient(
-    baseUrl: 'https://api.example.com',
-    tokenStorage: _FakeTokenStorage(),
-  );
-  return MediaRepository(
-    client: client,
-    config: const AppConfig(
-      apiBaseUrl: 'https://api.example.com',
-      stripePublishableKey: 'pk_test_123',
-      stripeMerchantDisplayName: 'Aveli',
-      subscriptionsEnabled: true,
-      supabaseUrl: 'https://project.supabase.co',
-    ),
+LessonMediaItem _lessonMediaItem({
+  required String id,
+  required String mediaType,
+  required String state,
+  required bool previewReady,
+  String? originalName,
+}) {
+  return LessonMediaItem(
+    id: id,
+    lessonId: 'lesson-1',
+    mediaAssetId: 'asset-1',
+    position: 1,
+    mediaType: mediaType,
+    state: state,
+    originalName: originalName ?? '$id.$mediaType',
+    previewReady: previewReady,
   );
 }
 
-const _lessonMediaItem = LessonMediaItem(
-  id: 'lesson-media-1',
-  kind: 'audio',
-  storagePath: 'unused',
-);
-
-const _blockedLessonMediaItem = LessonMediaItem(
-  id: 'lesson-media-2',
-  kind: 'video',
-  storagePath: 'unused',
-  resolvableForStudent: false,
-);
-
-const _pdfLessonMediaItem = LessonMediaItem(
-  id: 'lesson-media-3',
-  kind: 'document',
-  storagePath: 'unused',
-  contentType: 'application/pdf',
-  signedUrl: '/media/stream/pdf-token',
-  originalName: 'guide.pdf',
-);
-
 void main() {
   group('Lesson media playback resolver', () {
-    test('returns a valid https playback URL', () async {
+    test('returns the backend-authored playback URL for ready audio', () async {
       final pipelineRepository = _FakeMediaPipelineRepository(
         'https://cdn.example.com/audio.mp3',
       );
+
       final resolved = await resolveLessonMediaPlaybackUrl(
-        item: _lessonMediaItem,
-        mediaRepository: _buildMediaRepository(),
+        item: _lessonMediaItem(
+          id: 'lesson-media-audio',
+          mediaType: 'audio',
+          state: 'ready',
+          previewReady: true,
+        ),
         pipelineRepository: pipelineRepository,
       );
 
@@ -102,44 +85,81 @@ void main() {
       expect(pipelineRepository.lessonPlaybackCalls, 1);
     });
 
-    test('rejects non-http playback URLs', () async {
+    test('fails before playback lookup when media is not ready', () async {
       final pipelineRepository = _FakeMediaPipelineRepository(
-        'javascript:alert(1)',
-      );
-      final resolved = await resolveLessonMediaPlaybackUrl(
-        item: _lessonMediaItem,
-        mediaRepository: _buildMediaRepository(),
-        pipelineRepository: pipelineRepository,
+        'https://cdn.example.com/audio.mp3',
       );
 
-      expect(resolved, isNull);
-      expect(pipelineRepository.lessonPlaybackCalls, 1);
+      await expectLater(
+        () => resolveLessonMediaPlaybackUrl(
+          item: _lessonMediaItem(
+            id: 'lesson-media-audio',
+            mediaType: 'audio',
+            state: 'processing',
+            previewReady: false,
+          ),
+          pipelineRepository: pipelineRepository,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'Lektionsmedia är inte klart för uppspelning: lesson-media-audio.',
+          ),
+        ),
+      );
+      expect(pipelineRepository.lessonPlaybackCalls, 0);
+    });
+
+    test('fails when a document is sent through the playback path', () async {
+      final pipelineRepository = _FakeMediaPipelineRepository(
+        'https://cdn.example.com/guide.pdf',
+      );
+
+      await expectLater(
+        () => resolveLessonMediaPlaybackUrl(
+          item: _lessonMediaItem(
+            id: 'lesson-media-document',
+            mediaType: 'document',
+            state: 'ready',
+            previewReady: true,
+            originalName: 'guide.pdf',
+          ),
+          pipelineRepository: pipelineRepository,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'Dokument får inte behandlas som uppspelningsmedia: '
+                'lesson-media-document.',
+          ),
+        ),
+      );
+      expect(pipelineRepository.lessonPlaybackCalls, 0);
     });
 
     test(
-      'skips lesson playback when payload marks media unavailable',
+      'documents resolve through the signed lesson-media contract',
       () async {
         final pipelineRepository = _FakeMediaPipelineRepository(
-          'https://cdn.example.com/video.mp4',
+          'https://cdn.example.com/guide.pdf',
         );
-        final resolved = await resolveLessonMediaPlaybackUrl(
-          item: _blockedLessonMediaItem,
-          mediaRepository: _buildMediaRepository(),
+
+        final resolved = await resolveLessonMediaDocumentUrl(
+          item: _lessonMediaItem(
+            id: 'lesson-media-document',
+            mediaType: 'document',
+            state: 'ready',
+            previewReady: true,
+            originalName: 'guide.pdf',
+          ),
           pipelineRepository: pipelineRepository,
         );
 
-        expect(resolved, isNull);
-        expect(pipelineRepository.lessonPlaybackCalls, 0);
+        expect(resolved, 'https://cdn.example.com/guide.pdf');
+        expect(pipelineRepository.lessonPlaybackCalls, 1);
       },
     );
-
-    test('resolves PDFs from direct document URLs without playback', () {
-      final resolved = resolveLessonMediaDocumentUrl(
-        item: _pdfLessonMediaItem,
-        mediaRepository: _buildMediaRepository(),
-      );
-
-      expect(resolved, 'https://api.example.com/media/stream/pdf-token');
-    });
   });
 }

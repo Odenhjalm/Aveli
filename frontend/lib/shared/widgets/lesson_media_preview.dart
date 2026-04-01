@@ -11,7 +11,7 @@ import 'media_player.dart'
         InlineVideoControlChrome,
         InlineVideoControlsMode,
         InlineVideoPlayer,
-        tryCreateVideoPlaybackState;
+        createVideoPlaybackState;
 
 /// Controller-less media preview for course editor.
 ///
@@ -126,7 +126,7 @@ class _LessonMediaPreviewState extends State<LessonMediaPreview> {
   Widget build(BuildContext context) {
     if (!_useMediaKit) {
       if (_isVideo) {
-        final playback = tryCreateVideoPlaybackState(
+        final playback = createVideoPlaybackState(
           mediaId: 'preview-video-${widget.source.hashCode}',
           url: widget.source,
           title: widget.caption ?? '',
@@ -136,14 +136,10 @@ class _LessonMediaPreviewState extends State<LessonMediaPreview> {
         );
         return _PreviewContainer(
           aspectRatio: widget.aspectRatio,
-          child: playback == null
-              ? const _ErrorOverlay(
-                  message: 'Media saknas eller stöds inte längre',
-                )
-              : InlineVideoPlayer(
-                  playback: playback,
-                  autoPlay: widget.autoplay,
-                ),
+          child: InlineVideoPlayer(
+            playback: playback,
+            autoPlay: widget.autoplay,
+          ),
         );
       }
       return _PreviewContainer(

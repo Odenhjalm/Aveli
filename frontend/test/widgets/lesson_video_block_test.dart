@@ -246,7 +246,7 @@ void main() {
     }
   });
 
-  testWidgets('invalid URL renders placeholder without mounting player', (
+  testWidgets('invalid URL surfaces explicit player error state', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -264,10 +264,10 @@ void main() {
 
     await tester.pump();
 
-    expect(find.byType(AveliVideoPlayer), findsNothing);
+    expect(find.byType(AveliVideoPlayer), findsOneWidget);
     expect(_legacyInlineVideoPlayerFinder(), findsNothing);
     expect(find.byType(ControllerVideoBlock), findsNothing);
-    expect(find.text('Video saknas eller stöds inte längre'), findsOneWidget);
+    expect(find.text('Videon kunde inte laddas.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

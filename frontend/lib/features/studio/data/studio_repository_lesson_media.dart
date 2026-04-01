@@ -22,25 +22,15 @@ class _StudioLessonMediaScope {
   Future<StudioLessonMediaPreviewBatch> fetchLessonMediaPreviews(
     List<String> lessonMediaIds,
   ) async {
-    final requestedIds = <String>[];
-    final seenIds = <String>{};
-    for (final lessonMediaId in lessonMediaIds) {
-      if (lessonMediaId.isEmpty) {
-        continue;
-      }
-      if (seenIds.add(lessonMediaId)) {
-        requestedIds.add(lessonMediaId);
-      }
-    }
-    if (requestedIds.isEmpty) {
-      return StudioLessonMediaPreviewBatch(
-        items: const <StudioLessonMediaPreviewItem>[],
+    if (lessonMediaIds case []) {
+      throw StateError(
+        'Lesson media preview batch requires at least one lesson media id.',
       );
     }
 
     final response = await _client.raw.post<Object?>(
       ApiPaths.mediaPreviews,
-      data: {'ids': requestedIds},
+      data: {'ids': lessonMediaIds},
     );
     final rawItems = StudioRepository._requiredResponseField(
       response.data,
@@ -72,16 +62,10 @@ class _StudioLessonMediaScope {
     required Uint8List data,
     required String filename,
     required String contentType,
+    required String mediaType,
     void Function(UploadProgress progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final mediaType = _detectUploadMediaType(contentType);
-    if (mediaType == null) {
-      throw StateError(
-        'Unsupported lesson media content type for canonical edge contract.',
-      );
-    }
-
     final upload = await _requestLessonMediaUploadTarget(
       filename: filename,
       mimeType: contentType,
@@ -101,8 +85,10 @@ class _StudioLessonMediaScope {
       cancelToken: cancelToken,
       onSendProgress: (sent, total) {
         if (onProgress == null) return;
-        final resolvedTotal = total > 0 ? total : data.length;
-        onProgress(UploadProgress(sent: sent, total: resolvedTotal));
+        if (total <= 0) {
+          throw StateError('Upload progress saknar total bytes.');
+        }
+        onProgress(UploadProgress(sent: sent, total: total));
       },
     );
 
@@ -145,16 +131,6 @@ class _StudioLessonMediaScope {
     );
     return StudioLessonMediaUploadTarget.fromResponse(response.data);
   }
-}
-
-String? _detectUploadMediaType(String contentType) {
-  if (contentType.isEmpty) return null;
-  final lower = contentType.toLowerCase();
-  if (lower.startsWith('image/')) return 'image';
-  if (lower.startsWith('video/')) return 'video';
-  if (lower.startsWith('audio/')) return 'audio';
-  if (lower == 'application/pdf') return 'document';
-  return null;
 }
 
 class UploadProgress {

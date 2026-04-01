@@ -120,14 +120,16 @@ void main() {
     VideoPlayerPlatform.instance = originalPlatform;
   });
 
-  testWidgets('shows placeholder for empty playback url', (tester) async {
+  testWidgets('shows explicit error for empty playback url', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: AveliVideoPlayer(playbackUrl: '')),
       ),
     );
 
-    expect(find.text('Video saknas'), findsOneWidget);
+    await tester.pump();
+
+    expect(find.text('Videon kunde inte laddas.'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 

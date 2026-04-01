@@ -1,14 +1,9 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:math';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'package:aveli/features/media/application/media_providers.dart';
 
 import 'inline_audio_player_contract.dart';
 
@@ -49,8 +44,6 @@ class InlineAudioPlayer extends ConsumerStatefulWidget {
 }
 
 class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
-  static const Duration _sourceRefreshLeeway = Duration(seconds: 30);
-
   late final AudioPlayer _player;
   late String _activeUrl;
   Duration _position = Duration.zero;
@@ -58,20 +51,14 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   PlayerState _state = PlayerState.stopped;
   bool _initializing = true;
   String? _error;
-  bool _usingBytes = false;
-  Uint8List? _cachedBytes;
   double _volume = 1.0;
   double _lastVolume = 1.0;
-  DateTime? _sourceExpiresAt;
-  Timer? _sourceRefreshTimer;
-  bool _refreshingSource = false;
   bool _didAutoPlay = false;
 
   @override
   void initState() {
     super.initState();
-    _activeUrl = widget.url.trim();
-    _sourceExpiresAt = widget.sourceExpiresAt?.toUtc();
+    _activeUrl = widget.url;
     _player = AudioPlayer();
     _player.setReleaseMode(ReleaseMode.stop);
     _restoreVolumeState(widget.initialVolumeState, notify: false);
@@ -96,7 +83,6 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     });
     _player.onPlayerComplete.listen((event) {
       if (!mounted) return;
-      _sourceRefreshTimer?.cancel();
       setState(() {
         _position = Duration.zero;
         _state = PlayerState.completed;
@@ -111,14 +97,9 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   void didUpdateWidget(covariant InlineAudioPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url) {
-      _activeUrl = widget.url.trim();
-      _sourceExpiresAt = widget.sourceExpiresAt?.toUtc();
+      _activeUrl = widget.url;
       unawaited(_prepare());
       return;
-    }
-    if (oldWidget.sourceExpiresAt != widget.sourceExpiresAt) {
-      _sourceExpiresAt = widget.sourceExpiresAt?.toUtc();
-      _scheduleSourceRefresh();
     }
     if (oldWidget.initialVolumeState != widget.initialVolumeState) {
       _restoreVolumeState(widget.initialVolumeState, notify: false);
@@ -126,14 +107,13 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   }
 
   Future<void> _prepare() async {
-    _sourceRefreshTimer?.cancel();
     _didAutoPlay = false;
     if (mounted) {
       setState(() {
         _initializing = true;
         _error = null;
         _position = Duration.zero;
-        _duration = widget.durationHint ?? Duration.zero;
+        _duration = Duration.zero;
       });
     }
     try {
@@ -143,13 +123,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       setState(() {
         _initializing = false;
         _error = null;
-        if (widget.durationHint != null &&
-            widget.durationHint!.inMilliseconds > 0 &&
-            _duration == Duration.zero) {
-          _duration = widget.durationHint!;
-        }
       });
-      _scheduleSourceRefresh();
       unawaited(_maybeAutoPlay());
     } catch (error) {
       if (!mounted) return;
@@ -158,37 +132,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   }
 
   Future<void> _loadSourceForUrl(String url) async {
-    try {
-      if (!kIsWeb && Platform.isLinux) {
-        await _loadSourceFromBytes(url, originalError: null);
-        return;
-      }
-      await _player.setSourceUrl(url);
-      _usingBytes = false;
-      _cachedBytes = null;
-    } on PlatformException catch (error) {
-      await _loadSourceFromBytes(url, originalError: error);
-    }
-  }
-
-  Future<void> _loadSourceFromBytes(
-    String url, {
-    required Object? originalError,
-  }) async {
-    final repo = ref.read(mediaRepositoryProvider);
-    final bytes = await repo.cacheMediaBytes(
-      cacheKey: url,
-      downloadPath: url,
-      fileExtension: _extensionFromUrl(url),
-    );
-    await _player.setSource(BytesSource(bytes));
-    _usingBytes = true;
-    _cachedBytes = bytes;
-    if (originalError == null) return;
-    if (!mounted) return;
-    setState(() {
-      _error = null;
-    });
+    await _player.setSourceUrl(url);
   }
 
   Future<void> _maybeAutoPlay() async {
@@ -197,90 +141,11 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     if (_didAutoPlay) return;
     if (_error != null) return;
     _didAutoPlay = true;
-    try {
-      await _toggle();
-    } catch (_) {
-      // Ignore auto-play failures (e.g. platform restrictions).
-    }
-  }
-
-  void _scheduleSourceRefresh() {
-    _sourceRefreshTimer?.cancel();
-    final loader = widget.sourceLoader;
-    final expiresAt = _sourceExpiresAt;
-    if (loader == null || expiresAt == null) return;
-    final delay = expiresAt
-        .subtract(_sourceRefreshLeeway)
-        .difference(DateTime.now().toUtc());
-    if (delay <= Duration.zero) {
-      unawaited(_refreshPlaybackSource());
-      return;
-    }
-    _sourceRefreshTimer = Timer(delay, () {
-      unawaited(_refreshPlaybackSource());
-    });
-  }
-
-  Future<bool> _refreshPlaybackSource() async {
-    final loader = widget.sourceLoader;
-    if (loader == null || _refreshingSource) return false;
-    _refreshingSource = true;
-    final resumePosition = _position;
-    final shouldResume = _state == PlayerState.playing;
-    try {
-      final nextSource = await loader();
-      if (!mounted) return false;
-      final nextUrl = nextSource.url.trim();
-      if (nextUrl.isEmpty) {
-        throw StateError('Empty playback URL');
-      }
-      _sourceExpiresAt = nextSource.expiresAt?.toUtc();
-      if (nextUrl == _activeUrl) {
-        _scheduleSourceRefresh();
-        return true;
-      }
-      await _player.stop();
-      await _loadSourceForUrl(nextUrl);
-      _activeUrl = nextUrl;
-      await _player.setVolume(_volume);
-      if (resumePosition > Duration.zero) {
-        await _player.seek(resumePosition);
-      }
-      if (shouldResume) {
-        await _player.resume();
-      }
-      if (!mounted) return false;
-      setState(() {
-        _position = resumePosition;
-        _error = null;
-        _initializing = false;
-      });
-      _scheduleSourceRefresh();
-      return true;
-    } catch (_) {
-      if (!mounted) return false;
-      _sourceRefreshTimer?.cancel();
-      _sourceRefreshTimer = Timer(const Duration(seconds: 5), () {
-        unawaited(_refreshPlaybackSource());
-      });
-      return false;
-    } finally {
-      _refreshingSource = false;
-    }
-  }
-
-  String? _extensionFromUrl(String url) {
-    final uri = Uri.tryParse(url);
-    final path = uri?.path ?? url;
-    final index = path.lastIndexOf('.');
-    if (index <= 0 || index == path.length - 1) return null;
-    final ext = path.substring(index + 1).toLowerCase();
-    return ext.isEmpty ? null : ext;
+    await _toggle();
   }
 
   @override
   void dispose() {
-    _sourceRefreshTimer?.cancel();
     _player.dispose();
     super.dispose();
   }
@@ -293,11 +158,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       } else if (_state == PlayerState.paused && _position > Duration.zero) {
         await _player.resume();
       } else {
-        if (_usingBytes && _cachedBytes != null) {
-          await _player.play(BytesSource(_cachedBytes!));
-        } else {
-          await _player.play(UrlSource(_activeUrl));
-        }
+        await _player.play(UrlSource(_activeUrl));
       }
     } catch (error) {
       _reportPlaybackError(error.toString());
@@ -323,16 +184,17 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
     InlineAudioPlayerVolumeState? state, {
     required bool notify,
   }) {
-    final restored = state ?? const InlineAudioPlayerVolumeState();
-    final nextVolume = restored.volume.clamp(0.0, 1.0).toDouble();
-    final nextLastVolume = restored.lastVolume.clamp(0.0, 1.0).toDouble();
-    final normalizedLastVolume = nextLastVolume > 0
+    if (state == null) {
+      return;
+    }
+    final nextVolume = state.volume.clamp(0.0, 1.0).toDouble();
+    final nextLastVolume = state.lastVolume.clamp(0.0, 1.0).toDouble();
+    final effectiveLastVolume = nextLastVolume > 0
         ? nextLastVolume
         : (nextVolume > 0 ? nextVolume : 1.0);
-    final changed =
-        _volume != nextVolume || _lastVolume != normalizedLastVolume;
+    final changed = _volume != nextVolume || _lastVolume != effectiveLastVolume;
     _volume = nextVolume;
-    _lastVolume = normalizedLastVolume;
+    _lastVolume = effectiveLastVolume;
     unawaited(_player.setVolume(_volume));
     if (!changed) return;
     if (mounted) {
@@ -348,7 +210,6 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
 
   void _reportPlaybackError(String message) {
     if (!mounted) return;
-    _sourceRefreshTimer?.cancel();
     setState(() {
       _error = message;
       _initializing = false;
@@ -357,10 +218,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
   }
 
   Duration get _effectiveDuration {
-    if (_duration.inMilliseconds > 0) {
-      return _duration;
-    }
-    return widget.durationHint ?? Duration.zero;
+    return _duration;
   }
 
   @override
@@ -425,7 +283,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!minimalUi && (widget.title ?? '').isNotEmpty) ...[
+        if (!minimalUi && widget.title != null && widget.title!.isNotEmpty) ...[
           Text(widget.title!, style: titleStyle),
           SizedBox(height: compact ? 8 : 12),
         ],
@@ -433,7 +291,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
           const Center(child: CircularProgressIndicator())
         else if (_error != null)
           Text(
-            'Media saknas eller stöds inte längre',
+            'Ljudet kunde inte spelas upp.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),

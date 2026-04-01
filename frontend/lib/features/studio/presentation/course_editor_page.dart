@@ -71,10 +71,6 @@ import 'package:aveli/features/studio/presentation/lesson_media_preview_hydratio
 import 'package:aveli/features/studio/presentation/lesson_editor_test_id_dom.dart'
     as lesson_editor_test_id_dom;
 
-String? _normalizeVideoPlaybackUrl(String? raw) {
-  return lesson_pipeline.normalizeVideoPlaybackUrl(raw);
-}
-
 @visibleForTesting
 String selectCourseCoverRenderSource({
   required String? resolvedUrl,
@@ -3702,9 +3698,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final media = video;
     if (media == null) return null;
     final label = _fileNameFromMedia(media);
-    final playbackUrl = _normalizeVideoPlaybackUrl(
-      _authoritativePreviewForMedia(media)?.visualUrl,
-    );
+    final playbackUrl = _authoritativePreviewForMedia(media)?.visualUrl;
 
     return _SectionCard(
       title: 'Lektionsvideo',
@@ -3892,6 +3886,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<void> _pickAndUploadWith(
     List<String> extensions, {
     String? acceptHint,
+    required String mediaType,
   }) async {
     final courseId = _selectedCourseId;
     final lessonId = _selectedLessonId;
@@ -3937,6 +3932,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             filename: name,
             displayName: displayName,
             contentType: contentType,
+            mediaType: mediaType,
           );
       if (mounted) {
         setState(() => _mediaStatus = 'Köade $name');
@@ -4012,24 +4008,25 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         await _uploadImageFromToolbar();
         break;
       case _UploadKind.video:
-        await _pickAndUploadWith(const [
-          'mp4',
-          'mov',
-          'm4v',
-          'webm',
-          'mkv',
-        ], acceptHint: 'video/*');
+        await _pickAndUploadWith(
+          const ['mp4', 'mov', 'm4v', 'webm', 'mkv'],
+          acceptHint: 'video/*',
+          mediaType: 'video',
+        );
         break;
       case _UploadKind.audio:
-        await _pickAndUploadWith(const [
-          'mp3',
-          'm4a',
-          'aac',
-          'ogg',
-        ], acceptHint: 'audio/mpeg,audio/mp4,audio/aac,audio/ogg');
+        await _pickAndUploadWith(
+          const ['mp3', 'm4a', 'aac', 'ogg'],
+          acceptHint: 'audio/mpeg,audio/mp4,audio/aac,audio/ogg',
+          mediaType: 'audio',
+        );
         break;
       case _UploadKind.pdf:
-        await _pickAndUploadWith(const ['pdf'], acceptHint: 'application/pdf');
+        await _pickAndUploadWith(
+          const ['pdf'],
+          acceptHint: 'application/pdf',
+          mediaType: 'document',
+        );
         break;
     }
   }
@@ -4167,6 +4164,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         data: bytes,
         filename: filename,
         contentType: contentType,
+        mediaType: 'image',
       );
     }
 
@@ -5527,23 +5525,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     } else if (url != null && kind == 'audio') {
       await _showAudioPreviewSheet(media, playbackUrl: url);
     } else if (url != null && kind == 'video') {
-      await _showVideoPreviewSheet(
-        media,
-        playbackUrl: _normalizeVideoPlaybackUrl(url),
-      );
+      await _showVideoPreviewSheet(media, playbackUrl: url);
     } else {
-      final failedTransitionVersion = previewStatus?.failedTransitionVersion;
       final shouldLogUnresolved =
           previewStatus?.state == LessonMediaPreviewState.failed &&
           previewStatus?.failureKind ==
-              LessonMediaPreviewFailureKind.unresolved &&
-          failedTransitionVersion != null &&
-          ref
-              .read(lessonMediaPreviewCacheProvider)
-              .consumeFailedTransitionLog(
-                lessonMediaId,
-                failedTransitionVersion,
-              );
+              LessonMediaPreviewFailureKind.unresolved;
       if (shouldLogUnresolved) {
         logUnresolvedLessonMediaRender(
           event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
@@ -6394,16 +6381,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   'failed',
                                                 LessonMediaPreviewState
                                                     .loading =>
-                                                  previewStatus?.isRetrying ==
-                                                          true
-                                                      ? 'processing'
-                                                      : isPipeline &&
-                                                            pipelineState !=
-                                                                null &&
-                                                            pipelineState !=
-                                                                'ready' &&
-                                                            pipelineState !=
-                                                                'failed'
+                                                  isPipeline &&
+                                                          pipelineState !=
+                                                              null &&
+                                                          pipelineState !=
+                                                              'ready' &&
+                                                          pipelineState !=
+                                                              'failed'
                                                       ? 'processing'
                                                       : 'checking',
                                               }

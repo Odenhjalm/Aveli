@@ -68,15 +68,13 @@ async def get_course(
 
 
 async def get_course_by_slug(slug: str) -> CourseRow | None:
-    normalized = str(slug or "").strip().lower()
-    if not normalized:
+    if slug == "":
         return None
-    return await get_course(slug=normalized)
+    return await get_course(slug=slug)
 
 
 async def get_course_pricing_by_slug(slug: str) -> dict[str, Any] | None:
-    normalized = str(slug or "").strip().lower()
-    if not normalized:
+    if slug == "":
         return None
 
     query = """
@@ -90,7 +88,7 @@ async def get_course_pricing_by_slug(slug: str) -> dict[str, Any] | None:
 
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (normalized,))
+            await cur.execute(query, (slug,))
             row = await cur.fetchone()
     return dict(row) if row else None
 
@@ -103,8 +101,8 @@ async def list_courses(
     clauses: list[str] = []
     params: list[Any] = []
     if search:
-        pattern = f"%{str(search).strip().lower()}%"
-        clauses.append("(lower(c.title) like %s or lower(c.slug) like %s)")
+        pattern = f"%{search}%"
+        clauses.append("(c.title ilike %s or c.slug ilike %s)")
         params.extend([pattern, pattern])
 
     where_sql = f"where {' and '.join(clauses)}" if clauses else ""
@@ -496,8 +494,8 @@ async def get_lesson_media_for_studio(
 async def list_lesson_media_by_ids_for_studio(
     lesson_media_ids: Sequence[str],
 ) -> Sequence[dict[str, Any]]:
-    normalized_ids = [str(item).strip() for item in lesson_media_ids if str(item).strip()]
-    if not normalized_ids:
+    exact_ids = list(lesson_media_ids)
+    if not exact_ids:
         return []
 
     query = """
@@ -518,7 +516,7 @@ async def list_lesson_media_by_ids_for_studio(
     """
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (normalized_ids,))
+            await cur.execute(query, (exact_ids,))
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
 

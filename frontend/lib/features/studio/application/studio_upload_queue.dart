@@ -19,6 +19,7 @@ class UploadJob {
     required this.filename,
     this.displayName,
     required this.contentType,
+    required this.mediaType,
     required this.data,
     required this.createdAt,
     this.status = UploadJobStatus.pending,
@@ -36,6 +37,7 @@ class UploadJob {
   final String filename;
   final String? displayName;
   final String contentType;
+  final String mediaType;
   final Uint8List data;
   final DateTime createdAt;
   final UploadJobStatus status;
@@ -68,6 +70,7 @@ class UploadJob {
       filename: filename,
       displayName: displayName,
       contentType: contentType,
+      mediaType: mediaType,
       data: clearData ? Uint8List(0) : (data ?? this.data),
       createdAt: createdAt,
       status: status ?? this.status,
@@ -100,6 +103,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
     required String filename,
     String? displayName,
     required String contentType,
+    required String mediaType,
   }) {
     if (_disposed) {
       throw StateError('Upload queue is not available');
@@ -120,6 +124,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
       filename: filename,
       displayName: displayName,
       contentType: contentType,
+      mediaType: mediaType,
       data: data,
       createdAt: DateTime.now(),
     );
@@ -237,6 +242,7 @@ class UploadQueueNotifier extends StateNotifier<List<UploadJob>> {
         data: job.data,
         filename: job.filename,
         contentType: job.contentType,
+        mediaType: job.mediaType,
         cancelToken: token,
         onProgress: (progress) {
           final fraction = progress.fraction.clamp(0.0, 1.0);

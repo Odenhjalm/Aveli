@@ -208,10 +208,10 @@ class ControllerVideoBlock extends ConsumerWidget {
     if (playback.currentMediaId != normalizedMediaId) return null;
     if (playback.mediaType != MediaPlaybackType.video) return null;
     if (!playback.isPlaying || playback.isLoading) return null;
-    final activeUrl = (playback.url ?? '').trim();
-    if (activeUrl.isEmpty) return null;
-    final resolvedTitle = (playback.title ?? title ?? '').trim();
-    return tryCreateVideoPlaybackState(
+    final activeUrl = playback.url;
+    if (activeUrl == null || activeUrl.isEmpty) return null;
+    final resolvedTitle = playback.title ?? title ?? '';
+    return createVideoPlaybackState(
       mediaId: normalizedMediaId,
       url: activeUrl,
       title: resolvedTitle,

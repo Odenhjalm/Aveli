@@ -45,16 +45,6 @@ String? lessonMediaIdFromEmbedValue(dynamic value) =>
 
 String? lessonMediaAltFromEmbedValue(Object? value) => null;
 
-String? normalizeVideoPlaybackUrl(String? rawValue) {
-  if (rawValue == null || rawValue.isEmpty) return null;
-  final uri = Uri.tryParse(rawValue);
-  if (uri == null) return null;
-  final scheme = uri.scheme;
-  if (scheme != 'http' && scheme != 'https') return null;
-  if (uri.host.isEmpty) return null;
-  return rawValue;
-}
-
 String _lessonMediaToken({
   required String kind,
   required String lessonMediaId,
@@ -64,17 +54,6 @@ const String _lessonMediaDocumentLinkScheme = 'aveli-document';
 
 String lessonMediaDocumentLinkUrl(String lessonMediaId) =>
     '$_lessonMediaDocumentLinkScheme://$lessonMediaId';
-
-bool _isInternalLessonMediaDocumentLinkUrl(String? rawUrl) {
-  if (rawUrl == null || rawUrl.isEmpty) {
-    return false;
-  }
-  final uri = Uri.tryParse(rawUrl);
-  if (uri == null) {
-    return false;
-  }
-  return uri.scheme == _lessonMediaDocumentLinkScheme;
-}
 
 String? lessonMediaIdFromDocumentLinkUrl(String? rawUrl) {
   if (rawUrl == null || rawUrl.isEmpty) {
@@ -92,20 +71,10 @@ String? lessonMediaIdFromDocumentLinkUrl(String? rawUrl) {
   return null;
 }
 
-String _documentLinkLabel({String? rawLabel, String? fileName}) {
-  final resolved = rawLabel != null && rawLabel.isNotEmpty
-      ? rawLabel
-      : (fileName != null && fileName.isNotEmpty ? fileName : 'Dokument');
-  if (resolved.startsWith('📄 ')) {
-    return resolved;
-  }
-  return '📄 $resolved';
-}
-
 Never _throwCanonicalMediaWriteViolation(String raw) {
   throw StateError(
     'Canonical text contract violation: media refs must use typed '
-    'lesson_media ids. Could not normalize $raw.',
+    'lesson_media ids. Could not accept $raw.',
   );
 }
 
@@ -187,68 +156,6 @@ final RegExp _markdownLinkPattern = RegExp(
   caseSensitive: false,
 );
 
-// This sentinel preserves empty paragraphs during Markdown → Quill Delta
-// round-trip.
-//
-// Do NOT remove unless replacing the editor or markdown conversion pipeline.
-// Removing this will reintroduce the “paragraphs not saved” bug.
-const String _blankLineSentinel = '\u200B';
-final RegExp _multiNewlinePattern = RegExp(r'\n{4,}');
-
-String _preserveExtraBlankLinesForDelta(String markdown) {
-  if (markdown.isEmpty || !markdown.contains('\n\n\n')) return markdown;
-  return markdown.replaceAllMapped(_multiNewlinePattern, (match) {
-    final run = match.group(0) ?? '';
-    if (run.length < 4) return run;
-
-    final pairs = run.length ~/ 2;
-    final extraPairs = pairs - 1;
-
-    final out = StringBuffer()..write('\n\n');
-    for (var i = 0; i < extraPairs; i++) {
-      out.write(_blankLineSentinel);
-      out.write('\n\n');
-    }
-    if (run.length.isOdd) {
-      out.write('\n');
-    }
-    return out.toString();
-  });
-}
-
-String _stripBlankLineSentinelForDisplay(String markdown) {
-  if (markdown.isEmpty || !markdown.contains(_blankLineSentinel)) {
-    return markdown;
-  }
-  // Defensive: never allow the internal blank-line sentinel to reach any
-  // user-visible output (rendering/copy/export).
-  return markdown.replaceAll(_blankLineSentinel, '');
-}
-
-quill_delta.Delta _stripBlankLineSentinel(quill_delta.Delta source) {
-  final result = quill_delta.Delta();
-  for (final operation in source.toList()) {
-    if (!operation.isInsert) {
-      result.push(operation);
-      continue;
-    }
-    final value = operation.value;
-    if (value is! String) {
-      result.push(operation);
-      continue;
-    }
-    if (!value.contains(_blankLineSentinel)) {
-      result.insert(value, operation.attributes);
-      continue;
-    }
-    final stripped = value.replaceAll(_blankLineSentinel, '');
-    if (stripped.isNotEmpty) {
-      result.insert(stripped, operation.attributes);
-    }
-  }
-  return result;
-}
-
 void assertNoHtmlMedia(String markdown) {
   if (markdown.isEmpty) return;
   if (_forbiddenHtmlMediaPattern.hasMatch(markdown)) {
@@ -297,64 +204,7 @@ String rewriteLessonMarkdownDocumentLinksForEditor({
   required String markdown,
   Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
 }) {
-  if (markdown.isEmpty) return markdown;
-
-  final normalizedLabels = <String, String>{
-    for (final entry in lessonMediaDocumentLabelsById.entries)
-      if (entry.key.isNotEmpty) entry.key: entry.value,
-  };
-
-  String buildInternalDocumentLink({
-    required String lessonMediaId,
-    String? rawLabel,
-  }) {
-    final label = _documentLinkLabel(
-      rawLabel: rawLabel,
-      fileName: normalizedLabels[lessonMediaId],
-    ).replaceAll('[', '(').replaceAll(']', ')');
-    return '[$label](${lessonMediaDocumentLinkUrl(lessonMediaId)})';
-  }
-
-  var rewritten = markdown.replaceAllMapped(_lessonDocumentTokenPattern, (
-    match,
-  ) {
-    final lessonMediaId = match.group(1);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      return match.group(0) ?? '';
-    }
-    return buildInternalDocumentLink(lessonMediaId: lessonMediaId);
-  });
-
-  rewritten = rewritten.replaceAllMapped(_markdownLinkPattern, (match) {
-    final raw = match.group(0) ?? '';
-    final lessonMediaId = lessonMediaIdFromDocumentLinkUrl(match.group(2));
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      return raw;
-    }
-    return buildInternalDocumentLink(
-      lessonMediaId: lessonMediaId,
-      rawLabel: match.group(1),
-    );
-  });
-
-  return rewritten;
-}
-
-String normalizeDocumentMarkdownLinksToTokens(String markdown) {
-  if (markdown.isEmpty) return markdown;
-
-  return markdown.replaceAllMapped(_markdownLinkPattern, (match) {
-    final raw = match.group(0) ?? '';
-    final rawUrl = match.group(2);
-    if (!_isInternalLessonMediaDocumentLinkUrl(rawUrl)) {
-      return raw;
-    }
-    final lessonMediaId = lessonMediaIdFromDocumentLinkUrl(rawUrl);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      _throwCanonicalMediaWriteViolation(raw);
-    }
-    return _lessonMediaToken(kind: 'document', lessonMediaId: lessonMediaId);
-  });
+  return markdown;
 }
 
 quill_delta.Delta _replaceTokenWithEmbed(
@@ -391,13 +241,9 @@ quill_delta.Delta _replaceTokenWithEmbed(
 
       final lessonMediaId = match.group(1);
       if (lessonMediaId == null || lessonMediaId.isEmpty) {
-        final raw = match.group(0) ?? '';
-        if (raw.isNotEmpty) {
-          result.insert(raw, operation.attributes);
-        }
-      } else {
-        result.insert(embedFactory(lessonMediaId), operation.attributes);
+        _throwCanonicalMediaWriteViolation(match.group(0)!);
       }
+      result.insert(embedFactory(lessonMediaId), operation.attributes);
       cursor = match.end;
     }
 
@@ -415,8 +261,7 @@ quill_delta.Delta convertLessonMarkdownToDelta(
   MarkdownToDelta converter,
   String markdown,
 ) {
-  final prepared = _preserveExtraBlankLinesForDelta(markdown);
-  final converted = _stripBlankLineSentinel(converter.convert(prepared));
+  final converted = converter.convert(markdown);
   final withAudioTokens = _replaceTokenWithEmbed(
     converted,
     _lessonAudioTokenPattern,
@@ -480,12 +325,6 @@ Set<String> extractLessonEmbeddedMediaIds(String markdown) {
       ids.add(id);
     }
   }
-  for (final match in _markdownLinkPattern.allMatches(markdown)) {
-    final id = lessonMediaIdFromDocumentLinkUrl(match.group(2));
-    if (id != null && id.isNotEmpty) {
-      ids.add(id);
-    }
-  }
   return ids;
 }
 
@@ -512,24 +351,13 @@ Future<String> prepareLessonMarkdownForRendering(
   Iterable<LessonMediaItem> lessonMedia = const <LessonMediaItem>[],
   Object? pipelineRepository,
 }) async {
-  markdown = _stripBlankLineSentinelForDisplay(markdown);
-  if (markdown.isEmpty) return markdown;
-  final documentLabelsById = <String, String>{
-    for (final item in lessonMedia)
-      if (item.id.isNotEmpty) item.id: item.fileName,
-  };
-  return rewriteLessonMarkdownDocumentLinksForEditor(
-    markdown: markdown,
-    lessonMediaDocumentLabelsById: documentLabelsById,
-  );
+  return markdown;
 }
 
-String normalizeLessonMarkdownForStorage(String markdown) {
+String enforceLessonMarkdownStorageContract(String markdown) {
   if (markdown.isEmpty) return markdown;
 
-  var normalized = normalizeDocumentMarkdownLinksToTokens(markdown);
-  normalized = normalized.replaceAll(_blankLineSentinel, '');
-  assertNoHtmlMedia(normalized);
-  assertNoRawMarkdownMediaRefs(normalized);
-  return normalized;
+  assertNoHtmlMedia(markdown);
+  assertNoRawMarkdownMediaRefs(markdown);
+  return markdown;
 }
