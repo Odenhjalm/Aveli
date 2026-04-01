@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Semantic MCP server with E5 embeddings (CPU optimized, stable)."""
+"""Semantic MCP server with E5 embeddings."""
 
 from __future__ import annotations
 
@@ -13,15 +13,24 @@ from typing import List, Dict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SEARCH_PYTHON = REPO_ROOT / ".repo_index" / ".search_venv" / "bin" / "python"
+INDEX_TOOLS_DIR = REPO_ROOT / "tools" / "index"
 
 if Path(sys.executable).resolve() != SEARCH_PYTHON.resolve():
     if not SEARCH_PYTHON.exists():
-        raise SystemExit(f"Missing semantic-search interpreter: {SEARCH_PYTHON}")
+        raise SystemExit(f"FEL: Python-tolk for semantisk sokning saknas vid {SEARCH_PYTHON}")
     os.execv(str(SEARCH_PYTHON), [str(SEARCH_PYTHON), __file__, *sys.argv[1:]])
+
+if str(INDEX_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(INDEX_TOOLS_DIR))
 
 from sentence_transformers import SentenceTransformer
 import torch
 import numpy as np
+
+try:
+    from device_utils import resolve_index_device
+except ModuleNotFoundError:
+    from tools.index.device_utils import resolve_index_device
 
 # ----------------------------------------
 # CONFIG
@@ -31,9 +40,9 @@ SEARCH_SCRIPT_PATH = REPO_ROOT / "tools" / "index" / "search_code.py"
 
 TOP_K = 10
 
-# CPU optimization
+# Runtime configuration
 torch.set_num_threads(8)
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # disable GPU cleanly
+DEVICE, DEVICE_SOURCE = resolve_index_device()
 
 # ----------------------------------------
 # MODEL (LOAD ONCE)
@@ -44,7 +53,7 @@ _MODEL = None
 def get_model():
     global _MODEL
     if _MODEL is None:
-        _MODEL = SentenceTransformer("intfloat/e5-large-v2")
+        _MODEL = SentenceTransformer("intfloat/e5-large-v2", device=DEVICE)
     return _MODEL
 
 # ----------------------------------------

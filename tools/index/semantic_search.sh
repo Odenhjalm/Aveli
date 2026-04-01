@@ -8,7 +8,7 @@ SEARCH_PYTHON="${REPO_ROOT}/.repo_index/.search_venv/bin/python"
 SEARCH_SCRIPT="${REPO_ROOT}/tools/index/search_code.py"
 
 if [[ ! -x "${SEARCH_PYTHON}" ]]; then
-  echo "ERROR: missing semantic-search interpreter at ${SEARCH_PYTHON}" >&2
+  echo "FEL: Python-tolk for semantisk sokning saknas vid ${SEARCH_PYTHON}" >&2
   exit 1
 fi
 

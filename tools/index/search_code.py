@@ -11,18 +11,17 @@ SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "bin" / "python"
 approved_pythons = {path.resolve() for path in (REPO_PYTHON, SEARCH_PYTHON) if path.exists()}
 if Path(sys.executable).resolve() not in approved_pythons:
     if not REPO_PYTHON.exists():
-        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
+        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
     os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
-
-index_device = (os.getenv("AVELI_INDEX_DEVICE") or "cpu").strip().lower() or "cpu"
-if index_device != "cuda":
-    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
 from sentence_transformers import SentenceTransformer
 from chromadb import PersistentClient
-import torch
 
 from ast_extract import extract_functions  # 🔥 NY
+try:
+    from device_utils import resolve_index_device
+except ModuleNotFoundError:
+    from tools.index.device_utils import resolve_index_device
 
 # ---------------------------------------------------------
 # CONFIG
@@ -36,15 +35,15 @@ TOP_K = 16
 EXPANSION = 100
 MAX_CONTEXT_CHARS = 2500
 
-DEVICE = "cuda" if index_device == "cuda" and torch.cuda.is_available() else "cpu"
-print(f"[INFO] Using device: {DEVICE}")
+DEVICE, DEVICE_SOURCE = resolve_index_device()
+print(f"[INFO] Enhet: {DEVICE} ({DEVICE_SOURCE})")
 
 model = SentenceTransformer(EMBED_MODEL, device=DEVICE)
 
 raw_query = " ".join(sys.argv[1:]).strip()
 
 if not raw_query:
-    print("ERROR: No query provided")
+    print("FEL: Ingen fråga angavs")
     sys.exit(1)
 
 query = "query: " + raw_query
@@ -235,7 +234,7 @@ if not has_route:
 # OUTPUT
 # ---------------------------------------------------------
 
-print("\n================ RESULTS ================\n")
+print("\n================ RESULTAT ================\n")
 
 seen = set()
 printed = False
@@ -267,9 +266,9 @@ for final_score, doc, meta, dist in scored:
         if context.strip():
             print(context[:MAX_CONTEXT_CHARS])
         else:
-            print("⚠️ NO CONTEXT FOUND")
+            print("[VARNING] Ingen kontext hittades")
 
     print("\n")
 
 if not printed:
-    print("NO SEARCH RESULTS")
+    print("INGA SOKRESULTAT")

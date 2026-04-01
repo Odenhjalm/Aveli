@@ -13,17 +13,17 @@ SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "bin" / "python"
 approved_pythons = {path.resolve() for path in (REPO_PYTHON, SEARCH_PYTHON) if path.exists()}
 if Path(sys.executable).resolve() not in approved_pythons:
     if not REPO_PYTHON.exists():
-        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
+        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
     os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
-
-index_device = (os.getenv("AVELI_INDEX_DEVICE") or "cpu").strip().lower() or "cpu"
-if index_device != "cuda":
-    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
 from sentence_transformers import SentenceTransformer
 import chromadb
 from tqdm import tqdm
-import torch
+
+try:
+    from device_utils import resolve_index_device
+except ModuleNotFoundError:
+    from tools.index.device_utils import resolve_index_device
 
 # ---------------------------------------------------------
 # Paths
@@ -53,11 +53,11 @@ EMBED_MODEL = "intfloat/e5-large-v2"
 REBUILD = True   # True = wipe index, False = reuse
 
 # ---------------------------------------------------------
-# Device selection (smart + safe)
+# Device selection (canonical)
 # ---------------------------------------------------------
 
-DEVICE = "cuda" if index_device == "cuda" and torch.cuda.is_available() else "cpu"
-print(f"[INFO] Using device: {DEVICE}")
+DEVICE, DEVICE_SOURCE = resolve_index_device()
+print(f"[INFO] Enhet: {DEVICE} ({DEVICE_SOURCE})")
 
 SEARCHABLE_SUFFIXES = {
     ".css",
@@ -153,10 +153,10 @@ def main():
 
     if not file_list_path.exists():
         raise RuntimeError(
-            f"{FILES_LIST} missing. Run repo index first."
+            f"{FILES_LIST} saknas. Bygg repoindex först."
         )
 
-    print("\n[STEP] Loading file list...")
+    print("\n[STEG] Läser fillista...")
 
     files = [
         line.strip()
@@ -164,7 +164,7 @@ def main():
         if line.strip()
     ]
 
-    print(f"[INFO] {len(files)} files discovered")
+    print(f"[INFO] {len(files)} filer hittades")
 
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -173,7 +173,7 @@ def main():
     # ---------------------------------------------------------
 
     if REBUILD and VECTOR_DB_DIR.exists():
-        print("[INFO] Removing existing vector DB...")
+        print("[INFO] Tar bort befintlig vektor-DB...")
         shutil.rmtree(VECTOR_DB_DIR)
 
     VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
@@ -182,7 +182,7 @@ def main():
     # Chroma
     # ---------------------------------------------------------
 
-    print("[STEP] Opening Chroma DB...")
+    print("[STEG] Öppnar Chroma DB...")
 
     client = chromadb.PersistentClient(
         path=str(VECTOR_DB_DIR)
@@ -196,7 +196,7 @@ def main():
     # Model load
     # ---------------------------------------------------------
 
-    print("[STEP] Loading embedding model...")
+    print("[STEG] Laddar embedding-modell...")
 
     model = SentenceTransformer(
         EMBED_MODEL,
@@ -211,7 +211,7 @@ def main():
     metadatas = []
     ids = []
 
-    print("[STEP] Indexing files...")
+    print("[STEG] Indexerar filer...")
 
     counter = 0
 
@@ -258,17 +258,17 @@ def main():
             counter += 1
             chunk_index += 1
 
-    print(f"[INFO] {len(documents)} chunks generated")
+    print(f"[INFO] {len(documents)} textblock skapades")
 
     # ---------------------------------------------------------
     # Embedding (GPU optimized)
     # ---------------------------------------------------------
 
-    print("[STEP] Generating embeddings...")
+    print("[STEG] Genererar embeddings...")
 
     batch_size = BATCH_SIZE_GPU if DEVICE == "cuda" else BATCH_SIZE_CPU
 
-    print(f"[INFO] Batch size: {batch_size}")
+    print(f"[INFO] Batchstorlek: {batch_size}")
 
     try:
         embeddings = model.encode(
@@ -280,7 +280,7 @@ def main():
         )
 
     except RuntimeError as e:
-        print("\n[WARNING] GPU failed, falling back to CPU...")
+        print("\n[VARNING] GPU misslyckades, faller tillbaka till CPU...")
         print(e)
 
         model = SentenceTransformer(
@@ -300,7 +300,7 @@ def main():
     # Store
     # ---------------------------------------------------------
 
-    print("[STEP] Writing to vector DB...")
+    print("[STEG] Skriver till vektor-DB...")
 
     for i in tqdm(range(0, len(documents), 4000)):
 
@@ -313,9 +313,9 @@ def main():
             ids=ids[i:j]
         )
 
-    print("\n[SUCCESS] Vector index built.")
-    print(f"[INFO] Location: {VECTOR_DB_DIR}")
-    print(f"[INFO] Chunks indexed: {len(documents)}")
+    print("\n[KLAR] Vektorindex byggt.")
+    print(f"[INFO] Plats: {VECTOR_DB_DIR}")
+    print(f"[INFO] Indexerade textblock: {len(documents)}")
 
 # ---------------------------------------------------------
 
