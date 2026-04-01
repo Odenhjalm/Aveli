@@ -74,6 +74,6 @@ def extract_functions(file_path: str, snippet: str) -> str:
             for n in ast.walk(tree)
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
         ]
-        return "\n\n".join(all_funcs[:2])
+        return "\n\n".join(all_funcs[:5])
 
-    return "\n\n".join(unique[:3])
+    return "\n\n".join(unique[:5])

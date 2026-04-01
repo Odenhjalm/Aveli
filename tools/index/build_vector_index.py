@@ -42,12 +42,12 @@ COLLECTION_NAME = "aveli_repo"
 
 # Coarser chunks keep rebuild times practical while search_code.py
 # still resolves precise local context from the matched file afterward.
-CHUNK_SIZE = 8000
+CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 200
-BATCH_SIZE_GPU = 128
+BATCH_SIZE_GPU = 64
 BATCH_SIZE_CPU = 32
 
-EMBED_MODEL = "intfloat/e5-large-v2"
+EMBED_MODEL = "BAAI/bge-m3"
 
 # 🔥 IMPORTANT: set manually when needed
 REBUILD = True   # True = wipe index, False = reuse
@@ -117,6 +117,25 @@ def is_searchable_file(path: Path, relative_file: str) -> bool:
     if b"\x00" in head:
         return False
     return True
+
+
+def classify(path: str) -> str:
+    p = path.lower()
+
+    if "routes" in p:
+        return "ROUTE"
+    if "services" in p:
+        return "SERVICE"
+    if ".sql" in p:
+        return "DB"
+    if "models" in p:
+        return "MODEL"
+    if "schema" in p:
+        return "SCHEMA"
+    if "policy" in p:
+        return "POLICY"
+
+    return "OTHER"
 
 # ---------------------------------------------------------
 # Chunking
@@ -250,7 +269,9 @@ def main():
 
             metadatas.append({
                 "file": file,
-                "chunk_index": chunk_index
+                "chunk_index": chunk_index,
+                "type": file.split('.')[-1],
+                "layer": classify(file),
             })
 
             ids.append(f"{file}_{counter}")

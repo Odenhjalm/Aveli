@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -14,10 +15,11 @@ if Path(sys.executable).resolve() not in approved_pythons:
         raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
     os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
 
-from sentence_transformers import SentenceTransformer
 from chromadb import PersistentClient
+from rank_bm25 import BM25Okapi
+from sentence_transformers import CrossEncoder, SentenceTransformer
 
-from ast_extract import extract_functions  # 🔥 NY
+from ast_extract import extract_functions
 try:
     from device_utils import resolve_index_device
 except ModuleNotFoundError:
@@ -29,50 +31,102 @@ except ModuleNotFoundError:
 
 DB_PATH = str(ROOT / ".repo_index" / "chroma_db")
 COLLECTION_NAME = "aveli_repo"
-EMBED_MODEL = "intfloat/e5-large-v2"
+EMBED_MODEL = "BAAI/bge-m3"
+RERANK_MODEL = "BAAI/bge-reranker-large"
 
 TOP_K = 16
+VECTOR_CANDIDATE_K = 30
+BM25_CANDIDATE_K = 30
 EXPANSION = 100
 MAX_CONTEXT_CHARS = 2500
+RERANK_BATCH_SIZE_GPU = 8
+RERANK_BATCH_SIZE_CPU = 2
+RERANK_MAX_CHARS = 1600
+RERANK_CONTEXT_LINES_BEFORE = 30
+RERANK_CONTEXT_LINES_AFTER = 70
 
-DEVICE, DEVICE_SOURCE = resolve_index_device()
-print(f"[INFO] Enhet: {DEVICE} ({DEVICE_SOURCE})")
+CACHE_FILE = ROOT / ".repo_index" / "query_cache.json"
+MEMORY_FILE = ROOT / ".repo_index" / "query_memory.json"
 
-model = SentenceTransformer(EMBED_MODEL, device=DEVICE)
+SEARCHABLE_SUFFIXES = {
+    ".css",
+    ".csv",
+    ".dart",
+    ".env",
+    ".go",
+    ".graphql",
+    ".html",
+    ".ini",
+    ".js",
+    ".json",
+    ".jsx",
+    ".kt",
+    ".md",
+    ".mjs",
+    ".py",
+    ".rb",
+    ".scss",
+    ".sh",
+    ".sql",
+    ".svg",
+    ".swift",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
 
-raw_query = " ".join(sys.argv[1:]).strip()
+SEARCHABLE_FILENAMES = {
+    ".env.example",
+    ".env.example.backend",
+    ".env.example.flutter",
+    ".env.docker.example",
+    ".gitignore",
+    "dockerfile",
+    "makefile",
+    "procfile",
+}
 
-if not raw_query:
-    print("FEL: Ingen fråga angavs")
-    sys.exit(1)
 
-query = "query: " + raw_query
+def load_json_object(path: Path) -> dict:
+    if not path.exists():
+        return {}
 
-# ---------------------------------------------------------
-# DB
-# ---------------------------------------------------------
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SystemExit(f"FEL: JSON-objekt forvantas i {path}")
+    return data
 
-client = PersistentClient(path=DB_PATH)
-collection = client.get_collection(COLLECTION_NAME)
 
-embedding = model.encode(
-    [query],
-    normalize_embeddings=True,
-    convert_to_numpy=True,
-).tolist()
+def save_json_object(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-results = collection.query(
-    query_embeddings=embedding,
-    n_results=TOP_K,
-)
 
-documents = results["documents"][0]
-metadatas = results["metadatas"][0]
-distances = results["distances"][0]
+def update_query_memory(raw_query: str) -> None:
+    memory = load_json_object(MEMORY_FILE)
+    memory[raw_query] = int(memory.get(raw_query, 0)) + 1
+    save_json_object(MEMORY_FILE, memory)
 
-# ---------------------------------------------------------
-# HELPERS
-# ---------------------------------------------------------
+
+def normalize_document_text(text: str) -> str:
+    return text.removeprefix("passage: ").strip()
+
+
+def tokenize_for_bm25(text: str) -> list[str]:
+    return normalize_document_text(text).lower().split()
+
+
+def is_non_searchable_path(file_path: str) -> bool:
+    path = Path(file_path)
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+    if name in SEARCHABLE_FILENAMES or name.startswith(".env"):
+        return False
+    return suffix not in SEARCHABLE_SUFFIXES
+
 
 def find_context(file_path: str, snippet: str) -> str:
     path = ROOT / file_path
@@ -120,9 +174,58 @@ def find_context(file_path: str, snippet: str) -> str:
     return context
 
 
-def score_result(file_path: str, dist: float) -> float:
-    similarity = 1.0 - float(dist)
+def build_rerank_document(file_path: str, fallback_doc: str, query_text: str) -> str:
+    path = ROOT / file_path
+    query_terms = [term.lower() for term in query_text.split() if len(term) > 2]
+
+    try:
+        lines = path.read_text(errors="ignore").splitlines()
+    except Exception:
+        cleaned = normalize_document_text(fallback_doc)
+        return f"{file_path}\n{cleaned[:RERANK_MAX_CHARS]}"
+
+    best_index = None
+
+    for i, line in enumerate(lines):
+        lowered = line.lower()
+        if any(term in lowered for term in query_terms):
+            best_index = i
+            break
+
+    if best_index is None:
+        cleaned = normalize_document_text(fallback_doc)
+        return f"{file_path}\n{cleaned[:RERANK_MAX_CHARS]}"
+
+    start = max(0, best_index - RERANK_CONTEXT_LINES_BEFORE)
+    end = min(len(lines), best_index + RERANK_CONTEXT_LINES_AFTER)
+    excerpt = "\n".join(lines[start:end]).strip()
+
+    return f"{file_path}\n{excerpt[:RERANK_MAX_CHARS]}"
+
+
+def classify(path: str) -> str:
+    lowered = path.lower()
+
+    if "routes" in lowered:
+        return "ROUTE"
+    if "services" in lowered:
+        return "SERVICE"
+    if ".sql" in lowered:
+        return "DB"
+    if "models" in lowered:
+        return "MODEL"
+    if "schema" in lowered:
+        return "SCHEMA"
+    if "policy" in lowered:
+        return "POLICY"
+
+    return "OTHER"
+
+
+def score_result(file_path: str, dist: float | None) -> float:
+    similarity = 0.0 if dist is None else 1.0 - float(dist)
     lowered = file_path.lower()
+    layer = classify(file_path)
 
     if "aveli_system_decisions.md" in lowered:
         similarity += 0.15
@@ -148,127 +251,243 @@ def score_result(file_path: str, dist: float) -> float:
     if "enrolled_read" in lowered or "enrollments" in lowered:
         similarity += 0.18
 
+    if "models" in lowered or layer == "MODEL":
+        similarity += 0.10
+
+    if "schema" in lowered or layer == "SCHEMA":
+        similarity += 0.15
+
+    if "policy" in lowered or layer == "POLICY":
+        similarity += 0.20
+
+    if "db" in lowered or layer == "DB":
+        similarity += 0.12
+
+    if "route" in lowered or layer == "ROUTE":
+        similarity += 0.10
+
+    if layer == "SERVICE":
+        similarity += 0.10
+
     return similarity
 
 
-SEARCHABLE_SUFFIXES = {
-    ".css",
-    ".csv",
-    ".dart",
-    ".env",
-    ".go",
-    ".graphql",
-    ".html",
-    ".ini",
-    ".js",
-    ".json",
-    ".jsx",
-    ".kt",
-    ".md",
-    ".mjs",
-    ".py",
-    ".rb",
-    ".scss",
-    ".sh",
-    ".sql",
-    ".svg",
-    ".swift",
-    ".toml",
-    ".ts",
-    ".tsx",
-    ".txt",
-    ".yaml",
-    ".yml",
-}
+def build_result_content(file_path: str, doc: str) -> str:
+    functions = extract_functions(file_path, doc)
+    if functions.strip():
+        return functions[:MAX_CONTEXT_CHARS]
 
-SEARCHABLE_FILENAMES = {
-    ".env.example",
-    ".env.example.backend",
-    ".env.example.flutter",
-    ".env.docker.example",
-    ".gitignore",
-    "dockerfile",
-    "makefile",
-    "procfile",
-}
+    context = find_context(file_path, doc)
+    if context.strip():
+        return context[:MAX_CONTEXT_CHARS]
+
+    return "[VARNING] Ingen kontext hittades"
 
 
-def is_non_searchable_path(file_path: str) -> bool:
-    path = Path(file_path)
-    name = path.name.lower()
-    suffix = path.suffix.lower()
-    if name in SEARCHABLE_FILENAMES or name.startswith(".env"):
-        return False
-    return suffix not in SEARCHABLE_SUFFIXES
+def build_output_entry(file_path: str, doc: str, dist: float | None, final_score: float) -> dict:
+    similarity = 0.0 if dist is None else 1.0 - float(dist)
+    return {
+        "file": file_path,
+        "similarity": similarity,
+        "final_score": float(final_score),
+        "content": build_result_content(file_path, doc),
+    }
 
 
-# ---------------------------------------------------------
-# BUILD SCORED RESULTS
-# ---------------------------------------------------------
+def render_results(entries: list[dict]) -> None:
+    print("\n================ RESULTAT ================\n")
 
-scored = []
+    seen = set()
+    printed = False
 
-for doc, meta, dist in zip(documents, metadatas, distances):
-    file_path = meta.get("file", "UNKNOWN")
-    if is_non_searchable_path(file_path):
-        continue
-    final_score = score_result(file_path, dist)
-    scored.append((final_score, doc, meta, dist))
+    for entry in entries:
+        file_path = entry.get("file", "UNKNOWN")
+        if file_path in seen:
+            continue
 
-scored.sort(key=lambda x: x[0], reverse=True)
+        seen.add(file_path)
+        printed = True
 
-# ---------------------------------------------------------
-# FORCE AT LEAST ONE ROUTE
-# ---------------------------------------------------------
+        similarity = float(entry.get("similarity", 0.0))
+        final_score = float(entry.get("final_score", 0.0))
+        content = str(entry.get("content", ""))
 
-has_route = any("routes" in item[2].get("file", "").lower() for item in scored)
+        print(f"[SIMILARITY: {similarity:.4f} | FINAL: {final_score:.4f}]")
+        print(f"FILE: {file_path}")
+        print("-" * 60)
+        print(content)
+        print("\n")
 
-if not has_route:
-    for doc, meta, dist in zip(documents, metadatas, distances):
-        file_path = meta.get("file", "")
-        if "routes" in file_path.lower():
-            scored.insert(0, (999.0, doc, meta, dist))
+        if len(seen) >= TOP_K:
             break
 
-# ---------------------------------------------------------
-# OUTPUT
-# ---------------------------------------------------------
+    if not printed:
+        print("INGA SOKRESULTAT")
 
-print("\n================ RESULTAT ================\n")
 
-seen = set()
-printed = False
+def main() -> None:
+    raw_query = " ".join(sys.argv[1:]).strip()
+    if not raw_query:
+        print("FEL: Ingen fråga angavs")
+        sys.exit(1)
 
-for final_score, doc, meta, dist in scored:
-    file_path = meta.get("file", "UNKNOWN")
+    update_query_memory(raw_query)
 
-    if file_path in seen:
-        continue
+    query_cache = load_json_object(CACHE_FILE)
+    cached_entries = query_cache.get(raw_query)
+    if isinstance(cached_entries, list):
+        print("[CACHE TRAFF]", file=sys.stderr)
+        render_results(cached_entries)
+        return
 
-    seen.add(file_path)
+    DEVICE, DEVICE_SOURCE = resolve_index_device()
+    print(f"[INFO] Enhet: {DEVICE} ({DEVICE_SOURCE})")
 
-    similarity = 1.0 - float(dist)
-    printed = True
+    model = SentenceTransformer(EMBED_MODEL, device=DEVICE)
+    reranker = CrossEncoder(RERANK_MODEL, device=DEVICE)
+    query = "query: " + raw_query
 
-    print(f"[SIMILARITY: {similarity:.4f} | FINAL: {final_score:.4f}]")
-    print(f"FILE: {file_path}")
-    print("-" * 60)
+    client = PersistentClient(path=DB_PATH)
+    collection = client.get_collection(COLLECTION_NAME)
 
-    # 🔥 1. AST extraction
-    functions = extract_functions(file_path, doc)
+    corpus = collection.get(include=["documents", "metadatas"])
+    corpus_ids = corpus.get("ids") or []
+    corpus_documents = corpus.get("documents") or []
+    corpus_metadatas = corpus.get("metadatas") or []
 
-    if functions.strip():
-        print(functions[:MAX_CONTEXT_CHARS])
-    else:
-        # 🔥 2. fallback till fungerande context
-        context = find_context(file_path, doc)
+    if not corpus_ids or not corpus_documents or not corpus_metadatas:
+        render_results([])
+        query_cache[raw_query] = []
+        save_json_object(CACHE_FILE, query_cache)
+        return
 
-        if context.strip():
-            print(context[:MAX_CONTEXT_CHARS])
-        else:
-            print("[VARNING] Ingen kontext hittades")
+    corpus_entries = []
+    id_to_corpus_index = {}
 
-    print("\n")
+    for doc_id, doc, meta in zip(corpus_ids, corpus_documents, corpus_metadatas):
+        if not meta:
+            continue
 
-if not printed:
-    print("INGA SOKRESULTAT")
+        file_path = meta.get("file", "UNKNOWN")
+        if is_non_searchable_path(file_path):
+            continue
+
+        corpus_index = len(corpus_entries)
+        corpus_entries.append({
+            "id": doc_id,
+            "doc": doc,
+            "meta": meta,
+        })
+        id_to_corpus_index[doc_id] = corpus_index
+
+    if not corpus_entries:
+        render_results([])
+        query_cache[raw_query] = []
+        save_json_object(CACHE_FILE, query_cache)
+        return
+
+    tokenized_corpus = [tokenize_for_bm25(entry["doc"]) for entry in corpus_entries]
+    bm25 = BM25Okapi(tokenized_corpus)
+    query_tokens = raw_query.lower().split()
+    bm25_scores = bm25.get_scores(query_tokens)
+    top_bm25_idx = sorted(
+        range(len(bm25_scores)),
+        key=lambda i: (-float(bm25_scores[i]), i),
+    )[:BM25_CANDIDATE_K]
+
+    embedding = model.encode(
+        [query],
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    ).tolist()
+
+    vector_results = collection.query(
+        query_embeddings=embedding,
+        n_results=VECTOR_CANDIDATE_K,
+    )
+
+    if "ids" not in vector_results:
+        raise RuntimeError("FEL: Chroma-query saknar dokument-id:n for hybrid fusion.")
+
+    vector_ids = vector_results["ids"][0]
+    vector_distances = vector_results["distances"][0]
+
+    vector_distance_by_index = {}
+    top_vector_idx = []
+
+    for doc_id, dist in zip(vector_ids, vector_distances):
+        corpus_index = id_to_corpus_index.get(doc_id)
+        if corpus_index is None:
+            continue
+        top_vector_idx.append(corpus_index)
+        vector_distance_by_index[corpus_index] = float(dist)
+
+    combined_indices = list(dict.fromkeys(top_bm25_idx + top_vector_idx))
+    if not combined_indices:
+        render_results([])
+        query_cache[raw_query] = []
+        save_json_object(CACHE_FILE, query_cache)
+        return
+
+    rerank_batch_size = RERANK_BATCH_SIZE_GPU if DEVICE == "cuda" else RERANK_BATCH_SIZE_CPU
+    pairs = [
+        (
+            raw_query,
+            build_rerank_document(
+                corpus_entries[index]["meta"].get("file", "UNKNOWN"),
+                corpus_entries[index]["doc"],
+                raw_query,
+            ),
+        )
+        for index in combined_indices
+    ]
+    reranker_scores = reranker.predict(
+        pairs,
+        batch_size=rerank_batch_size,
+        show_progress_bar=False,
+    )
+
+    reranked = []
+
+    for reranker_score, index in zip(reranker_scores, combined_indices):
+        entry = corpus_entries[index]
+        file_path = entry["meta"].get("file", "UNKNOWN")
+        dist = vector_distance_by_index.get(index)
+        final_score = float(reranker_score) + score_result(file_path, dist)
+        reranked.append((final_score, float(reranker_score), index))
+
+    reranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
+
+    has_route = any(
+        "routes" in corpus_entries[index]["meta"].get("file", "").lower()
+        for _, _, index in reranked
+    )
+    if not has_route:
+        for index in top_vector_idx:
+            file_path = corpus_entries[index]["meta"].get("file", "")
+            if "routes" in file_path.lower():
+                reranked.insert(0, (999.0, 999.0, index))
+                break
+
+    output_entries = []
+
+    for final_score, _, index in reranked:
+        entry = corpus_entries[index]
+        file_path = entry["meta"].get("file", "UNKNOWN")
+        dist = vector_distance_by_index.get(index)
+        output_entries.append(
+            build_output_entry(
+                file_path=file_path,
+                doc=entry["doc"],
+                dist=dist,
+                final_score=final_score,
+            )
+        )
+
+    query_cache[raw_query] = output_entries
+    save_json_object(CACHE_FILE, query_cache)
+    render_results(output_entries)
+
+
+if __name__ == "__main__":
+    main()
