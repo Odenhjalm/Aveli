@@ -22,10 +22,8 @@ def resolve_index_device() -> tuple[str, str]:
         )
 
     if override == "cuda" and auto_device != "cuda":
-        print(
-            f"[VARNING] {DEVICE_ENV_VAR}=cuda är satt men CUDA är inte tillgängligt. "
-            "CPU används i stället."
+        raise SystemExit(
+            f"FEL: {DEVICE_ENV_VAR}=cuda är satt men CUDA är inte tillgängligt"
         )
-        return "cpu", "override-fallback"
 
     return override, "override"

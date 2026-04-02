@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
+import hashlib
+import json
 import os
 import shutil
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Iterable
 
@@ -30,8 +33,12 @@ except ModuleNotFoundError:
 # ---------------------------------------------------------
 
 INDEX_DIR = ROOT / ".repo_index"
-FILES_LIST = INDEX_DIR / "searchable_files.txt"
-FALLBACK_FILES_LIST = INDEX_DIR / "files.txt"
+SEARCH_MANIFEST = INDEX_DIR / "search_manifest.txt"
+INDEX_MANIFEST = INDEX_DIR / "index_manifest.json"
+CHUNK_MANIFEST = INDEX_DIR / "chunk_manifest.jsonl"
+LEXICAL_INDEX_DIR = INDEX_DIR / "lexical_index"
+LEXICAL_INDEX_MANIFEST = LEXICAL_INDEX_DIR / "manifest.json"
+LEXICAL_INDEX_DOCUMENTS = LEXICAL_INDEX_DIR / "documents.jsonl"
 VECTOR_DB_DIR = INDEX_DIR / "chroma_db"
 
 # ---------------------------------------------------------
@@ -40,14 +47,22 @@ VECTOR_DB_DIR = INDEX_DIR / "chroma_db"
 
 COLLECTION_NAME = "aveli_repo"
 
-# Coarser chunks keep rebuild times practical while search_code.py
-# still resolves precise local context from the matched file afterward.
-CHUNK_SIZE = 2000
-CHUNK_OVERLAP = 200
-BATCH_SIZE_GPU = 64
+BATCH_SIZE_GPU = 16
 BATCH_SIZE_CPU = 32
-
-EMBED_MODEL = "BAAI/bge-m3"
+INDEX_MANIFEST_REQUIRED_FIELDS = {
+    "contract_version",
+    "corpus_manifest_hash",
+    "chunk_manifest_hash",
+    "chunk_size",
+    "chunk_overlap",
+    "embedding_model",
+    "rerank_model",
+    "top_k",
+    "vector_candidate_k",
+    "lexical_candidate_k",
+    "ranking_policy",
+    "classification_rules",
+}
 
 # 🔥 IMPORTANT: set manually when needed
 REBUILD = True   # True = wipe index, False = reuse
@@ -63,7 +78,6 @@ SEARCHABLE_SUFFIXES = {
     ".css",
     ".csv",
     ".dart",
-    ".env",
     ".go",
     ".graphql",
     ".html",
@@ -90,10 +104,6 @@ SEARCHABLE_SUFFIXES = {
 }
 
 SEARCHABLE_FILENAMES = {
-    ".env.example",
-    ".env.example.backend",
-    ".env.example.flutter",
-    ".env.docker.example",
     ".gitignore",
     "dockerfile",
     "makefile",
@@ -101,12 +111,42 @@ SEARCHABLE_FILENAMES = {
 }
 
 
+EXCLUDED_DIRECTORIES = {
+    ".repo_index",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "target",
+}
+
+
+def is_excluded_path(relative_file: str) -> bool:
+    path = Path(relative_file)
+
+    lowered_parts = [part.lower() for part in path.parts]
+    if any(part in EXCLUDED_DIRECTORIES for part in lowered_parts):
+        return True
+
+    name = path.name.lower()
+    if name.startswith(".env"):
+        return True
+    if name.endswith(".log"):
+        return True
+
+    return False
+
+
 def is_searchable_file(path: Path, relative_file: str) -> bool:
-    if "node_modules" in relative_file or "archive" in relative_file:
+    if is_excluded_path(relative_file):
+        return False
+    if "archive" in relative_file:
         return False
     name = path.name.lower()
     suffix = path.suffix.lower()
-    if not (name in SEARCHABLE_FILENAMES or name.startswith(".env") or suffix in SEARCHABLE_SUFFIXES):
+    if not (name in SEARCHABLE_FILENAMES or suffix in SEARCHABLE_SUFFIXES):
         return False
     try:
         head = path.read_bytes()[:8192]
@@ -119,31 +159,191 @@ def is_searchable_file(path: Path, relative_file: str) -> bool:
     return True
 
 
-def classify(path: str) -> str:
-    p = path.lower()
+def normalize_repo_relative_path(file_path: str) -> str:
+    path = Path(file_path)
 
-    if "routes" in p:
-        return "ROUTE"
-    if "services" in p:
-        return "SERVICE"
-    if ".sql" in p:
-        return "DB"
-    if "models" in p:
-        return "MODEL"
-    if "schema" in p:
-        return "SCHEMA"
-    if "policy" in p:
-        return "POLICY"
+    if path.is_absolute():
+        try:
+            path = path.resolve().relative_to(ROOT)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"FEL: filen ligger utanför repo-root: {file_path}"
+            ) from exc
 
-    return "OTHER"
+    normalized = Path(path.as_posix())
+    if normalized.is_absolute() or ".." in normalized.parts:
+        raise RuntimeError(f"FEL: ogiltig repo-relativ filidentitet: {file_path}")
+
+    return normalized.as_posix().lstrip("./")
+
+
+def classify(path: str, manifest: dict) -> str:
+    lowered = path.lower()
+    classification_rules = manifest.get("classification_rules", {})
+
+    for rule in classification_rules.get("precedence", []):
+        rule_type = rule.get("type")
+        value = str(rule.get("value", "")).lower()
+        layer = str(rule.get("layer", "")).upper()
+
+        if rule_type == "path_substring" and value in lowered:
+            return layer
+        if rule_type == "path_suffix" and lowered.endswith(value):
+            return layer
+
+    return str(classification_rules.get("default_layer", "OTHER")).upper()
+
+
+def normalize_ingested_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFC", text)
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized.replace("\t", "    ")
+    return "\n".join(line.rstrip() for line in normalized.split("\n"))
+
+
+def normalize_document_text(text: str) -> str:
+    return text.removeprefix("passage: ").strip()
+
+
+def tokenize_for_lexical(text: str) -> list[str]:
+    return normalize_document_text(text).lower().split()
+
+
+def compute_sha256_bytes(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def compute_sha256_text(content: str) -> str:
+    return compute_sha256_bytes(content.encode("utf-8"))
+
+
+def load_json_object(path: Path) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError(f"FEL: JSON-objekt forvantas i {path}")
+    return data
+
+
+def save_json_object(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def serialize_chunk_record(record: dict) -> str:
+    return json.dumps(record, ensure_ascii=False, sort_keys=True)
+
+
+def build_canonical_doc_id(file_path: str, chunk_index: int, content_hash: str) -> str:
+    normalized_file = normalize_repo_relative_path(file_path)
+    identity = f"{normalized_file}\n{int(chunk_index)}\n{content_hash}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def order_chunk_records(records: list[dict]) -> list[dict]:
+    return sorted(
+        records,
+        key=lambda record: (
+            str(record["file"]),
+            int(record["chunk_index"]),
+            str(record["doc_id"]),
+        ),
+    )
+
+
+def render_chunk_manifest(records: list[dict]) -> str:
+    ordered_records = order_chunk_records(records)
+    return "\n".join(serialize_chunk_record(record) for record in ordered_records)
+
+
+def compute_chunk_manifest_hash(records: list[dict]) -> str:
+    serialized = render_chunk_manifest(records)
+    return compute_sha256_text(serialized)
+
+
+def write_chunk_manifest(records: list[dict], contract_version: str) -> None:
+    versioned_records = bind_contract_version(records, contract_version)
+    CHUNK_MANIFEST.write_text(render_chunk_manifest(versioned_records), encoding="utf-8")
+
+
+def bind_contract_version(records: list[dict], contract_version: str) -> list[dict]:
+    versioned_records = []
+    for record in records:
+        versioned_record = dict(record)
+        versioned_record["contract_version"] = contract_version
+        versioned_records.append(versioned_record)
+    return versioned_records
+
+
+def write_lexical_index(documents: list[str], ids: list[str], manifest: dict) -> None:
+    lexical_records = []
+    document_frequency: dict[str, int] = {}
+    total_length = 0
+
+    for doc_id, document in zip(ids, documents):
+        tokens = tokenize_for_lexical(document)
+        total_length += len(tokens)
+
+        term_freqs: dict[str, int] = {}
+        for token in tokens:
+            term_freqs[token] = term_freqs.get(token, 0) + 1
+
+        for token in term_freqs:
+            document_frequency[token] = document_frequency.get(token, 0) + 1
+
+        lexical_records.append({
+            "doc_id": doc_id,
+            "text": normalize_document_text(document),
+            "term_freqs": term_freqs,
+            "length": len(tokens),
+        })
+
+    LEXICAL_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    LEXICAL_INDEX_DOCUMENTS.write_text(
+        "\n".join(
+            json.dumps(record, ensure_ascii=False, sort_keys=True)
+            for record in lexical_records
+        ),
+        encoding="utf-8",
+    )
+
+    lexical_manifest = {
+        "contract_version": manifest["contract_version"],
+        "corpus_manifest_hash": manifest["corpus_manifest_hash"],
+        "chunk_manifest_hash": manifest["chunk_manifest_hash"],
+        "doc_count": len(lexical_records),
+        "avg_doc_length": (total_length / len(lexical_records)) if lexical_records else 0.0,
+        "document_frequency": document_frequency,
+        "doc_ids": [record["doc_id"] for record in lexical_records],
+    }
+    save_json_object(LEXICAL_INDEX_MANIFEST, lexical_manifest)
+
+
+def resolve_index_manifest(corpus_manifest_hash: str, chunk_manifest_hash: str) -> dict:
+    if not INDEX_MANIFEST.exists():
+        raise RuntimeError(f"FEL: index_manifest.json saknas vid {INDEX_MANIFEST}")
+
+    manifest = load_json_object(INDEX_MANIFEST)
+
+    manifest["corpus_manifest_hash"] = corpus_manifest_hash
+    manifest["chunk_manifest_hash"] = chunk_manifest_hash
+
+    missing = sorted(INDEX_MANIFEST_REQUIRED_FIELDS - set(manifest))
+    if missing:
+        raise RuntimeError(
+            "FEL: index_manifest.json saknar falt: " + ", ".join(missing)
+        )
+
+    save_json_object(INDEX_MANIFEST, manifest)
+    return manifest
 
 # ---------------------------------------------------------
 # Chunking
 # ---------------------------------------------------------
 
-def chunk_text(text: str,
-               chunk_size: int = CHUNK_SIZE,
-               overlap: int = CHUNK_OVERLAP) -> Iterable[str]:
+def chunk_text(text: str, chunk_size: int, overlap: int) -> Iterable[str]:
 
     if not text:
         return
@@ -168,22 +368,29 @@ def chunk_text(text: str,
 
 def main():
 
-    file_list_path = FILES_LIST if FILES_LIST.exists() else FALLBACK_FILES_LIST
-
-    if not file_list_path.exists():
+    if not SEARCH_MANIFEST.exists():
         raise RuntimeError(
-            f"{FILES_LIST} saknas. Bygg repoindex först."
+            f"{SEARCH_MANIFEST} saknas. Bygg repoindex först."
         )
 
     print("\n[STEG] Läser fillista...")
 
     files = [
         line.strip()
-        for line in file_list_path.read_text().splitlines()
+        for line in SEARCH_MANIFEST.read_text().splitlines()
         if line.strip()
     ]
 
+    excluded_paths = [file for file in files if is_excluded_path(file)]
+    if excluded_paths:
+        raise RuntimeError(
+            "search_manifest.txt innehaller exkluderade paths: "
+            + ", ".join(excluded_paths[:5])
+        )
+
     print(f"[INFO] {len(files)} filer hittades")
+
+    corpus_manifest_hash = compute_sha256_bytes(SEARCH_MANIFEST.read_bytes())
 
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -207,20 +414,11 @@ def main():
         path=str(VECTOR_DB_DIR)
     )
 
-    collection = client.get_or_create_collection(
-        name=COLLECTION_NAME
-    )
+    collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
     # ---------------------------------------------------------
     # Model load
     # ---------------------------------------------------------
-
-    print("[STEG] Laddar embedding-modell...")
-
-    model = SentenceTransformer(
-        EMBED_MODEL,
-        device=DEVICE
-    )
 
     # ---------------------------------------------------------
     # Build documents
@@ -229,10 +427,23 @@ def main():
     documents = []
     metadatas = []
     ids = []
+    chunk_records = []
+
+    if not INDEX_MANIFEST.exists():
+        raise RuntimeError(f"FEL: index_manifest.json saknas vid {INDEX_MANIFEST}")
+
+    manifest = load_json_object(INDEX_MANIFEST)
+    missing = sorted(INDEX_MANIFEST_REQUIRED_FIELDS - set(manifest))
+    if missing:
+        raise RuntimeError(
+            "FEL: index_manifest.json saknar falt: " + ", ".join(missing)
+        )
+
+    chunk_size = int(manifest["chunk_size"])
+    chunk_overlap = int(manifest["chunk_overlap"])
+    embedding_model = str(manifest["embedding_model"])
 
     print("[STEG] Indexerar filer...")
-
-    counter = 0
 
     for file in tqdm(files):
 
@@ -242,19 +453,18 @@ def main():
             continue
 
         try:
-            content = path.read_text(
-                encoding="utf-8",
-                errors="ignore"
-            )
-        except Exception:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
             continue
+
+        content = normalize_ingested_text(content)
 
         if not content.strip():
             continue
 
         chunk_index = 0
 
-        for chunk in chunk_text(content):
+        for chunk in chunk_text(content, chunk_size=chunk_size, overlap=chunk_overlap):
 
             if not chunk.strip():
                 continue
@@ -262,24 +472,66 @@ def main():
             if not is_searchable_file(path, file):
                 continue
 
-            # 🔥 E5 FORMAT
-            chunk = "passage: " + chunk
+            document = chunk
+            content_hash = compute_sha256_text("passage: " + chunk)
+            doc_id = build_canonical_doc_id(file, chunk_index, content_hash)
 
-            documents.append(chunk)
+            documents.append(document)
 
-            metadatas.append({
+            metadata = {
                 "file": file,
                 "chunk_index": chunk_index,
                 "type": file.split('.')[-1],
-                "layer": classify(file),
+                "layer": classify(file, manifest),
+                "source_type": "chunk",
+            }
+            metadatas.append(metadata)
+            ids.append(doc_id)
+            chunk_records.append({
+                "doc_id": doc_id,
+                "file": file,
+                "chunk_index": chunk_index,
+                "layer": metadata["layer"],
+                "source_type": "chunk",
+                "content_hash": content_hash,
             })
 
-            ids.append(f"{file}_{counter}")
-
-            counter += 1
             chunk_index += 1
 
     print(f"[INFO] {len(documents)} textblock skapades")
+
+    contract_version = str(manifest["contract_version"])
+    versioned_chunk_records = bind_contract_version(chunk_records, contract_version)
+    chunk_manifest_hash = compute_chunk_manifest_hash(versioned_chunk_records)
+    manifest = resolve_index_manifest(
+        corpus_manifest_hash=corpus_manifest_hash,
+        chunk_manifest_hash=chunk_manifest_hash,
+    )
+    embedding_model = str(manifest["embedding_model"])
+    write_chunk_manifest(chunk_records, contract_version=str(manifest["contract_version"]))
+    write_lexical_index(documents, ids, manifest)
+    collection.modify(
+        metadata={
+            "contract_version": str(manifest["contract_version"]),
+            "chunk_manifest_hash": str(manifest["chunk_manifest_hash"]),
+        }
+    )
+
+    # ---------------------------------------------------------
+    # Model load
+    # ---------------------------------------------------------
+
+    print("[STEG] Laddar embedding-modell...")
+
+    try:
+        model = SentenceTransformer(
+            embedding_model,
+            device=DEVICE
+        )
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"FEL: embedding-modellen kunde inte laddas på enhet {DEVICE}"
+        ) from e
 
     # ---------------------------------------------------------
     # Embedding (GPU optimized)
@@ -301,21 +553,9 @@ def main():
         )
 
     except RuntimeError as e:
-        print("\n[VARNING] GPU misslyckades, faller tillbaka till CPU...")
-        print(e)
-
-        model = SentenceTransformer(
-            EMBED_MODEL,
-            device="cpu"
-        )
-
-        embeddings = model.encode(
-            documents,
-            show_progress_bar=True,
-            batch_size=BATCH_SIZE_CPU,
-            normalize_embeddings=True,
-            convert_to_numpy=True
-        )
+        raise RuntimeError(
+            f"FEL: embedding-generering misslyckades på enhet {DEVICE}"
+        ) from e
 
     # ---------------------------------------------------------
     # Store

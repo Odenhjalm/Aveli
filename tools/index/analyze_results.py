@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import sys
 from collections import defaultdict
@@ -7,11 +8,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
+INDEX_MANIFEST = ROOT / ".repo_index" / "index_manifest.json"
 
 if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
     if not REPO_PYTHON.exists():
         raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
     os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
+
+if not INDEX_MANIFEST.exists():
+    raise SystemExit(f"FEL: indexmanifest saknas vid {INDEX_MANIFEST}")
+
+index_manifest = json.loads(INDEX_MANIFEST.read_text(encoding="utf-8"))
 
 lines = sys.stdin.read().splitlines()
 
@@ -42,20 +49,20 @@ if "file" in current:
 # ---------------------------------------------------------
 
 def classify(path):
-    p = path.lower()
+    lowered = path.lower()
+    classification_rules = index_manifest.get("classification_rules", {})
 
-    if "decisions" in p:
-        return "LAW"
-    if "routes" in p:
-        return "ROUTE"
-    if "services" in p:
-        return "SERVICE"
-    if ".sql" in p:
-        return "DB"
-    if "repositories" in p:
-        return "REPO"
+    for rule in classification_rules.get("precedence", []):
+        rule_type = rule.get("type")
+        value = str(rule.get("value", "")).lower()
+        layer = str(rule.get("layer", "")).upper()
 
-    return "OTHER"
+        if rule_type == "path_substring" and value in lowered:
+            return layer
+        if rule_type == "path_suffix" and lowered.endswith(value):
+            return layer
+
+    return str(classification_rules.get("default_layer", "OTHER")).upper()
 
 grouped = defaultdict(list)
 
@@ -71,21 +78,7 @@ for r in results:
 # ---------------------------------------------------------
 
 def clean_block(text):
-    lines = text.split("\n")
-
-    cleaned = []
-    for l in lines:
-        l = l.strip()
-
-        if not l:
-            continue
-
-        if l.startswith("import "):
-            continue
-
-        cleaned.append(l)
-
-    return "\n".join(cleaned[:40])  # 🔥 max 40 rader per block
+    return text.rstrip()
 
 # ---------------------------------------------------------
 # OUTPUT

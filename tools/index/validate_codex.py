@@ -9,7 +9,7 @@ REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
 
 if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
     if not REPO_PYTHON.exists():
-        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
+        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
     os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
 
 text = sys.stdin.read().lower()
@@ -36,15 +36,15 @@ for section in required_sections:
 # VALIDATION
 # ---------------------------------------------------------
 
-print("Validation report:\n")
+print("Valideringsrapport:\n")
 
 if missing:
-    print("FAIL")
-    print("\nMissing sections:")
+    print("UNDERKÄND")
+    print("\nSaknade sektioner:")
     for m in missing:
         print("-", m)
 else:
-    print("PASS")
+    print("GODKÄND")
 
 # ---------------------------------------------------------
 # STRUCTURE CHECK
@@ -52,4 +52,4 @@ else:
 
 if "execution flow" in text:
     if "→" not in text and "->" not in text:
-        print("\nWARNING: No explicit execution chain detected")
+        print("\nVARNING: Ingen explicit exekveringskedja upptäcktes")

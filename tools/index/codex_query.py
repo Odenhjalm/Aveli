@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import subprocess
 import sys
@@ -8,17 +9,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
 SEARCH_SCRIPT = ROOT / "tools" / "index" / "search_code.py"
-ANALYZE_SCRIPT = ROOT / "tools" / "index" / "analyze_results.py"
 
 if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
     if not REPO_PYTHON.exists():
-        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
+        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
     os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
 
 QUERY = " ".join(sys.argv[1:]).strip()
 
 if not QUERY:
-    print("ERROR: No query provided")
+    print("FEL: Ingen fråga angavs")
     sys.exit(1)
 
 # ---------------------------------------------------------
@@ -26,7 +26,7 @@ if not QUERY:
 # ---------------------------------------------------------
 
 search = subprocess.run(
-    [str(REPO_PYTHON), str(SEARCH_SCRIPT), QUERY],
+    [str(REPO_PYTHON), str(SEARCH_SCRIPT), "--json", QUERY],
     capture_output=True,
     text=True,
     cwd=str(ROOT),
@@ -36,58 +36,30 @@ if search.returncode != 0:
     sys.stderr.write(search.stderr or search.stdout)
     sys.exit(search.returncode or 1)
 
-# ---------------------------------------------------------
-# STEP 2: ANALYSIS
-# ---------------------------------------------------------
+evidence = json.loads(search.stdout)
+if not isinstance(evidence, list):
+    raise SystemExit("FEL: kanonisk evidence-lista forvantades fran search_code.py")
 
-analysis = subprocess.run(
-    [str(REPO_PYTHON), str(ANALYZE_SCRIPT)],
-    input=search.stdout,
-    capture_output=True,
-    text=True,
-    cwd=str(ROOT),
-)
+evidence_blocks = []
+for index, entry in enumerate(evidence, start=1):
+    evidence_blocks.append(
+        "\n".join(
+            [
+                f"EVIDENCE {index}",
+                f"FILE: {entry['file']}",
+                f"LAYER: {entry['layer']}",
+                f"SOURCE_TYPE: {entry['source_type']}",
+                f"SCORE: {entry['score']}",
+                "SNIPPET:",
+                str(entry["snippet"]),
+            ]
+        )
+    )
 
-if analysis.returncode != 0:
-    sys.stderr.write(analysis.stderr or analysis.stdout)
-    sys.exit(analysis.returncode or 1)
-
-raw_analysis = analysis.stdout.splitlines()
-
-# ---------------------------------------------------------
-# STEP 3: CLEAN CONTEXT
-# ---------------------------------------------------------
-
-clean_lines = []
-skip_section = False
-
-for line in raw_analysis:
-
-    # ta bort OTHER helt
-    if line.strip().startswith("--- OTHER ---"):
-        skip_section = True
-        continue
-
-    if skip_section:
-        if line.strip().startswith("---"):
-            skip_section = False
-        else:
-            continue
-
-    # ta bort "passage:"
-    if "passage:" in line:
-        line = line.replace("passage:", "").strip()
-
-    # trimma SQL brus
-    if "create policy" in line.lower():
-        line = line[:120] + "..."
-
-    clean_lines.append(line)
-
-clean_context = "\n".join(clean_lines)
+clean_context = "\n\n".join(evidence_blocks)
 
 # ---------------------------------------------------------
-# STEP 4: BUILD PROMPT
+# STEP 2: BUILD PROMPT
 # ---------------------------------------------------------
 
 prompt = f"""
@@ -116,7 +88,7 @@ This is a SYSTEM EXECUTION explanation.
 
 ---
 
-CONTEXT (verified retrieval + analysis):
+CONTEXT (canonical evidence objects):
 
 {clean_context}
 
@@ -164,5 +136,4 @@ VERIFICATION:
 - Must describe actual control flow
 """
 
-print("\n================ CODEX PROMPT ================\n")
-print(prompt)
+print(prompt.strip() + "\n")

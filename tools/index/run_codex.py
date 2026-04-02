@@ -12,13 +12,13 @@ VALIDATE_SCRIPT = ROOT / "tools" / "index" / "validate_codex.py"
 
 if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
     if not REPO_PYTHON.exists():
-        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
+        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
     os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
 
 QUERY = " ".join(sys.argv[1:]).strip()
 
 if not QUERY:
-    print("ERROR: No query provided")
+    print("FEL: Ingen fråga angavs")
     sys.exit(1)
 
 # ---------------------------------------------------------
@@ -38,20 +38,20 @@ if prompt_proc.returncode != 0:
 
 prompt = prompt_proc.stdout
 
-print("\n================ PROMPT GENERATED ================\n")
+print("\n================ PROMPT GENERERAD ================\n")
 print(prompt)
 
 # ---------------------------------------------------------
 # STEP 2: WAIT FOR CODEX RESPONSE
 # ---------------------------------------------------------
 
-print("\n================ PASTE CODEX RESPONSE ================\n")
-print("(Finish with CTRL+D)\n")
+print("\n================ KLISTRA IN CODEX-SVAR ================\n")
+print("(Avsluta med CTRL+D)\n")
 
 response = sys.stdin.read()
 
 if not response.strip():
-    print("ERROR: No response provided")
+    print("FEL: Inget svar angavs")
     sys.exit(1)
 
 # ---------------------------------------------------------
@@ -70,10 +70,10 @@ if validation.returncode != 0:
     sys.stderr.write(validation.stderr or validation.stdout)
     sys.exit(validation.returncode or 1)
 
-print("\n================ VALIDATION ================\n")
+print("\n================ VALIDERING ================\n")
 print(validation.stdout)
 
-if "FAIL" in validation.stdout:
-    print("\n❌ RESPONSE FAILED VALIDATION")
+if "UNDERKÄND" in validation.stdout:
+    print("\nSVAR UNDERKÄNDES I VALIDERING")
 else:
-    print("\n✅ RESPONSE PASSED")
+    print("\nSVAR GODKÄNDES")

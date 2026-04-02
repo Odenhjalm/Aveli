@@ -31,63 +31,126 @@ Codex MUST NOT:
 - infer environment without evidence
 - improvise execution commands
 - treat repo code as runtime truth
-- mix audit mode with mutation mode
+- mix generate, execute, and confirm modes
 - use UI-first debugging
 
 ---
 
-## Operating Modes
+## Task Input Model
 
-Codex MUST determine which mode applies before starting work.
+Every execution MUST start with a task.
 
-### 1. Inspection Mode
+Task defines:
 
-Use for:
+- scope
+- retrieval queries
+- evaluation criteria
 
-- audits
-- snapshots
-- `actual_truth/`
-- comparison against laws
-- drift mapping
-- domain analysis
-- mismatch / violation / unknown reporting
-- building evidence for future tasks
+No system operation may run without an explicit task context.
 
-Inspection Mode is READ-ONLY.
+Every run MUST begin with:
 
-Inspection Mode MUST NOT:
-
-- bootstrap databases unless explicitly required
-- mutate data
-- apply migrations
-- start frontend unless explicitly required
-- require E2E auth unless explicitly required
-- STOP on ambiguity unless core access is blocked
-
-If ambiguity exists in Inspection Mode:
-
-- classify as `UNKNOWN`, `PARTIAL`, `BLOCKED`, or `DRIFT`
-- continue
+`input(task, mode)`
 
 ---
 
-### 2. Execution Mode
+## Canonical Task-Driven Pipeline
+
+Canonical pipeline:
+
+`input(task, mode) -> ingestion -> index -> retrieval -> evidence -> contract -> verification`
+
+Stage responsibilities:
+
+- `input(task, mode)` binds explicit task context and explicit mode
+- `ingestion` loads only the authoritative inputs required by the task
+- `index` binds retrieval to the active canonical index under vector index policy
+- `retrieval` executes task-scoped retrieval only
+- `evidence` produces canonical, traceable evidence from retrieval output
+- `contract` diffs canonical evidence against canonical truth
+- `verification` is the mode-driven final stage
+
+Rules:
+
+- retrieval MUST be task-scoped
+- evidence MUST remain canonical
+- contract MUST always precede verification
+- no phase may duplicate another phase's responsibility
+- no legacy or alternative flow is allowed
+
+---
+
+## Execution Modes
+
+Codex MUST determine which mode applies before starting work.
+
+### MODE: generate
 
 Use for:
 
-- implementing code
-- replaying baselines
-- bootstrapping local DB
-- running local backend for task execution
-- performing mutations
+- contract diff review
+- task derivation
+- evidence-backed task generation
+- building task-scoped retrieval inputs
+
+Generate mode is READ-ONLY.
+
+Purpose:
+
+- produce tasks from contract diff
+
+Output:
+
+- deterministic task set
+
+Generate mode MUST:
+
+- not assume implementation
+- not mutate system state
+- classify ambiguity as `UNKNOWN`, `PARTIAL`, `BLOCKED`, or `DRIFT`
+- continue unless core access is blocked
+
+GENERATE MODE OUTPUT LAW:
+
+- Generated tasks MUST be written to:
+  actual_truth/DETERMINED_TASKS/
+
+- Tasks MUST follow:
+  - TYPE
+  - DEPENDS_ON
+  - deterministic structure
+
+- Generated tasks become the next valid input(task) for execution
+
+- If tasks are not materialized:
+  → STOP
+
+---
+
+### MODE: execute
+
+Use for:
+
+- task-scoped implementation validation
+- contract-bound runtime checks
+- scoped mutation when task execution requires it
 - running scoped tests
-- re-verification after mutation
 - cleanup
 
-Execution Mode is MUTATION-CAPABLE.
+Execute mode is MUTATION-CAPABLE.
 
-Execution Mode MUST:
+Purpose:
 
+- validate implementation against contract
+
+Output:
+
+- pass/fail per task
+
+Execute mode MUST:
+
+- use canonical evidence
+- not reinterpret contracts
 - validate environment before execution
 - STOP on ambiguity
 - use local-only execution unless explicitly overridden
@@ -97,9 +160,48 @@ Execution Mode MUST:
 
 ---
 
+### MODE: confirm
+
+Use for:
+
+- final truth assertion
+- canonical state confirmation
+- task-complete system confirmation
+
+Confirm mode is READ-ONLY unless a later rule explicitly requires runtime startup for verification.
+
+Purpose:
+
+- assert system matches canonical truth
+
+Output:
+
+- PASS or FAIL
+
+Confirm mode MUST:
+
+- fail on any deviation
+- not produce new tasks
+- not mutate system state
+- use canonical evidence
+- not reinterpret contracts
+- STOP on ambiguity
+
+Confirm mode inherits execute-mode environment, authority, and verification constraints unless a later rule is explicitly mutation-only.
+
+---
+
+## Mode Enforcement
+
+- Mode MUST be explicit for every run
+- Mode MUST NOT change during execution
+- Mixing modes in one run is forbidden
+
+---
+
 DEPENDENCY LAW:
 
-Before a task is created, modified, or executed:
+Before a task is generated, modified, executed, or confirmed:
 
 1. A DEPENDENCY AUDIT MUST be performed.
 
@@ -259,12 +361,12 @@ STOP: INDEX REBUILD NOT APPROVED
 
 Codex MUST follow `codex/AVELI_EXECUTION_WORKFLOW.md` for all non-trivial work.
 
-If the task affects audit, tasks, implementation, launch readiness, or verification, Codex MUST:
+If the task affects ingestion, index, retrieval, evidence, contract, or verification, Codex MUST:
 
-1. follow the workflow phases in order
-2. refuse to skip phases
-3. refuse implementation before `verified_tasks/` exists
-4. refuse launch-readiness claims before Phase 6 passes
+1. require explicit `input(task, mode)`
+2. follow the canonical pipeline in exact order
+3. refuse contract-bypassing verification
+4. refuse legacy or alternative flow
 
 If the current prompt conflicts with the workflow:
 
@@ -531,28 +633,28 @@ Default local runtime:
 Rules:
 
 - no dynamic port guessing
-- no mixed environments in Execution Mode
-- if mismatch in Execution Mode → STOP
-- if mismatch in Inspection Mode → classify and continue if possible
+- no mixed environments in execute or confirm mode
+- if mismatch in execute or confirm mode → STOP
+- if mismatch in generate mode → classify and continue if possible
 
 ---
 
-## Domain Analysis Order (Inspection Mode)
+## Task-Scoped Analysis Order (Generate Mode)
 
-For each domain, Codex MUST work in this order:
+For each task, Codex MUST work in this order:
 
-1. Read SYSTEM_LAWS
-2. Fetch CURRENT_TRUTH from Supabase
-3. Map EMERGENT_TRUTH from repo/local implementation
-4. Use semantic search to connect flows and hidden dependencies
+1. Read SYSTEM_LAWS and the active contract relevant to the task
+2. Fetch CURRENT_TRUTH required by the task
+3. Map EMERGENT_TRUTH only within task scope
+4. Use semantic search to connect task-specific flows and hidden dependencies
 5. Use MCP only to validate contradictions or inspect targeted runtime boundaries
-6. Write artifacts
-7. Move to next domain
+6. Write task-scoped artifacts
+7. Move to next task
 
 Codex MUST NOT:
 
-- interleave unfinished domains
-- repeatedly re-analyze completed domains without cause
+- interleave unfinished task scopes
+- repeatedly re-analyze completed task scopes without cause
 - start from UI
 - start from logs
 
@@ -569,7 +671,7 @@ Every important claim MUST be backed by one or more of:
 - MCP validation result
 - backend API response
 
-Each domain artifact SHOULD classify findings as:
+Each task artifact SHOULD classify findings as:
 
 - `aligned`
 - `mismatch`
@@ -582,7 +684,7 @@ Each domain artifact SHOULD classify findings as:
 
 ## Ambiguity Rule
 
-### Inspection Mode
+### Generate Mode
 
 If ambiguity exists:
 
@@ -595,7 +697,7 @@ STOP only if:
 - CURRENT_TRUTH unavailable
 - repo structure unavailable
 
-### Execution Mode
+### Execute Mode / Confirm Mode
 
 If ambiguity exists:
 
@@ -610,7 +712,7 @@ Examples:
 
 ---
 
-## Canonical Backend Execution Protocol (Execution Mode Only)
+## Canonical Backend Execution Protocol (Execute / Confirm Modes Only)
 
 Codex MUST follow this exact protocol when starting backend.
 
@@ -637,7 +739,7 @@ If cloud env detected:
 Codex MUST:
 
 - use LOCAL database only
-- NEVER use remote DB in Execution Mode unless explicitly instructed
+- NEVER use remote DB in execute or confirm mode unless explicitly instructed
 
 If `DATABASE_URL` is missing or ambiguous:
 
@@ -689,9 +791,9 @@ If any fail:
 
 ---
 
-## Bootstrap Order (Execution Mode Only)
+## Bootstrap Order (Execute / Confirm Modes Only)
 
-Codex MUST fully bootstrap before mutation work.
+Codex MUST fully bootstrap before execution work.
 
 1. Load env
    - `ops/env_load.sh`
@@ -718,7 +820,7 @@ If any required step fails:
 
 ---
 
-## Auth Model (Execution / E2E Only)
+## Auth Model (Execute / Confirm / E2E Only)
 
 Codex MUST use E2E credentials from `backend/.env` when auth is required for execution.
 
@@ -744,34 +846,33 @@ If auth fails in required execution path:
 
 ## Verification Order
 
-### Inspection Mode
+The canonical order is:
 
-1. Laws
-2. Current truth
-3. Emergent truth
-4. Semantic connections
-5. Targeted MCP validation
-6. Artifact write
+1. `input(task, mode)`
+2. `ingestion`
+3. `index`
+4. `retrieval`
+5. `evidence`
+6. `contract`
+7. `verification`
 
-### Execution Mode
+verification = mode-driven final stage
 
-1. Contract
-2. Domain state
-3. MCP baseline
-4. Mutation
-5. Re-verify
-6. API verify
-7. Playwright verify if required
-8. Cleanup verify
+- generate -> task generation
+- execute -> task validation
+- confirm -> system truth assertion
 
 Rules:
 
+- contract MUST complete before verification
+- verification MUST match task scope
+- no phase may duplicate another phase's responsibility
 - verify exact invariant
 - UI observation is never sufficient verification
 
 ---
 
-## Mutation Rules (Execution Mode Only)
+## Mutation Rules (Execute Mode Only)
 
 - always pre-read
 - one mutation plane at a time
@@ -782,7 +883,7 @@ Rules:
 
 ---
 
-## Logging (Execution Mode Only)
+## Logging (Execute Mode Only)
 
 Every mutation MUST be logged.
 
@@ -799,7 +900,7 @@ Each log MUST include:
 
 ## Ledger Consistency Rule
 
-In Execution Mode, Codex MUST maintain a session ledger.
+In Execute Mode, Codex MUST maintain a session ledger.
 
 If entity lineage cannot be reconstructed:
 
@@ -807,7 +908,7 @@ If entity lineage cannot be reconstructed:
 
 ---
 
-## Cleanup Rules (Execution Mode Only)
+## Cleanup Rules (Execute Mode Only)
 
 Codex MUST:
 
@@ -836,11 +937,11 @@ Do not improvise Python executors.
 
 Frontend is NEVER a primary truth source.
 
-### Inspection Mode
+### Generate Mode
 
 - do not start frontend unless task explicitly requires frontend evidence
 
-### Execution Mode
+### Execute Mode / Confirm Mode
 
 - static build only unless task explicitly overrides
 - port 3000
@@ -860,7 +961,7 @@ No UI-first diagnosis.
 
 ---
 
-## Process Control (Execution Mode Only)
+## Process Control (Execute / Confirm Modes Only)
 
 Codex MUST track all started processes and cleanly terminate them when task scope ends.
 
@@ -880,7 +981,7 @@ Do not confuse absence of evidence with healthy state.
 
 ## Fallback Order
 
-### Inspection Mode
+### Generate Mode
 
 1. SYSTEM_LAWS
 2. Supabase
@@ -891,7 +992,7 @@ Do not confuse absence of evidence with healthy state.
 7. Logs
 8. UI
 
-### Execution Mode
+### Execute Mode / Confirm Mode
 
 1. MCP
 2. Repo
@@ -913,7 +1014,7 @@ If one layer is blocked:
 
 ---
 
-## Local Execution Mode (Execution Mode Only)
+## Local Execution Context (Execute Mode Only)
 
 Purpose:
 Ensure Codex runs against a safe, local, reproducible candidate database.
@@ -1019,14 +1120,14 @@ Baseline must be:
 
 ## MCP Continuity Rule
 
-### Inspection Mode
+### Generate Mode
 
 If generic registry is broken but canonical MCP access path works:
 
 - classify registry as `misconfigured`
 - continue
 
-### Execution Mode
+### Execute Mode / Confirm Mode
 
 Required MCP endpoints must verify cleanly.
 If unavailable:
@@ -1049,7 +1150,7 @@ Do not escalate into full-system verification unless explicitly required.
 
 ---
 
-## Pre-Supabase Push Preparation (Execution Mode Only)
+## Pre-Supabase Push Preparation (Execute Mode Only)
 
 Before any push candidate is considered valid, Codex MUST ensure:
 
@@ -1064,7 +1165,7 @@ Before any push candidate is considered valid, Codex MUST ensure:
 
 Codex MUST NOT:
 
-- use production DB in Execution Mode
+- use production DB in execute or confirm mode
 - guess schema
 - bypass DB errors
 - disable workers to fake green startup
@@ -1089,18 +1190,18 @@ Codex MUST:
 
 If storage is missing and required:
 
-- STOP in Execution Mode
-- mark `BLOCKED` in Inspection Mode
+- STOP in execute or confirm mode
+- mark `BLOCKED` in generate mode
 
 ---
 
 ## Final Guarantee
 
-### Inspection Mode
+### Generate Mode
 
 Codex guarantees evidence-based reporting, not mutation safety.
 
-### Execution Mode
+### Execute Mode
 
 All execution MUST occur in:
 
@@ -1112,6 +1213,14 @@ If any required execution layer diverges:
 
 - STOP
 
-```
+### Confirm Mode
 
-```
+All confirmation MUST:
+
+- use canonical evidence
+- remain read-only
+- return PASS or FAIL
+
+If any required confirmation layer diverges or any deviation is detected:
+
+- FAIL

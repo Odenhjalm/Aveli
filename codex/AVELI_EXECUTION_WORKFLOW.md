@@ -3,432 +3,274 @@
 This file is mandatory for all Codex work inside Aveli.
 
 Codex MUST follow this workflow exactly.
-Codex MUST NOT skip phases.
-Codex MUST NOT implement before verified tasks exist.
+Codex MUST NOT skip, reorder, merge, or duplicate stages.
+Codex MUST NOT use any legacy or alternative flow.
 
 ---
 
-## Purpose
-
-This workflow exists to prevent:
-
-- premature implementation
-- missing audit steps
-- stale truth models
-- dependency mistakes
-- false launch readiness
-
-Codex MUST behave as a deterministic system operator.
-
----
-
-## Phase Order
-
-### Phase 0 — Preconditions
+## Preconditions
 
 Before work starts, Codex MUST confirm:
 
 - repository is available
 - `codex/AVELI_OPERATING_SYSTEM.md` is loaded
 - this workflow file is available
-- repo search tools are available
-- current truth source is available
-- local verification paths are available if needed
+- task input is explicit
+- mode input is explicit
 
-If required inputs are missing:
+If OS confirmation is missing:
+
+- STOP
+
+If any required input is missing:
 
 - STOP
 
 ---
 
-### Phase 1 — Rebuild `actual_truth/`
+## Task Input Model
 
-Goal:
-Produce a fresh, evidence-backed snapshot of the system.
+Every execution MUST start with a task.
 
-Codex MUST:
+Task defines:
 
-1. recreate `actual_truth/`
-2. inspect each domain in order
-3. write evidence files only
-4. NOT generate implementation changes
-5. NOT generate verified tasks yet
+- scope
+- retrieval queries
+- evaluation criteria
 
-Required domains:
+No system operation may run without an explicit task context.
 
-- auth
-- courses
-- api_layer
-- playback
-- media_control_plane
-- media_upload_pipeline
-- homeplayer
-- editor
-- observability
+Every run MUST begin with:
 
-For each domain, Codex MUST write:
-
-- `comparison.md`
-- `relevant_files.md`
-- `metadata.json`
-- `tasks.md`
-
-Per domain method:
-
-1. read SYSTEM_LAWS
-2. fetch CURRENT_TRUTH from Supabase
-3. map EMERGENT_TRUTH from repo and local runtime
-4. use semantic search to connect logic
-5. use MCP only to validate contradictions
-6. classify findings:
-   - aligned
-   - mismatch
-   - drift
-   - violation
-   - unknown
-   - blocked
-
-Codex MUST NOT implement anything in this phase.
-
-Exit criteria:
-
-- all domains written
-- no missing required files
-- evidence is traceable
+`input(task, mode)`
 
 ---
 
-### Phase 2 — Create `actual_truth/DETERMINED_TASKS/`
+## Canonical Pipeline
 
-Goal:
-Derive raw task candidates from audited truth.
+The canonical pipeline is:
 
-Codex MUST:
+`input(task, mode) -> ingestion -> index -> retrieval -> evidence -> contract -> verification`
 
-1. create `actual_truth/DETERMINED_TASKS/`
-2. derive tasks only from evidence in `actual_truth/`
-3. create one task file per task
+Codex MUST execute this pipeline in the exact order shown above.
 
-Each determined task MUST include:
+Rules:
 
-- task_id
-- title
-- domain
-- problem_type
-  - mismatch
-  - drift
-  - violation
-  - blocked
-- problem_statement
-- evidence_sources
-- impacted_files
-- current_truth
-- emergent_truth
-- target_state
-- verification_method
-- dependencies
-- launch_impact
-
-Codex MUST NOT implement in this phase.
-
-Exit criteria:
-
-- all task candidates exist
-- every task is traceable to actual_truth evidence
+- task is the primary input driver for the entire retrieval pipeline
+- retrieval MUST remain task-scoped
+- evidence MUST remain canonical
+- contract MUST always be applied before verification
+- no phase may duplicate another phase's responsibility
+- no fallback flow exists
 
 ---
 
-DEPENDENCY AUDIT ENFORCEMENT:
+## Stage Definitions
 
-Before entering WORKFLOW:
+### `input(task, mode)`
 
-Codex MUST:
+Purpose:
 
-1. perform dependency audit on the full task series
-2. classify all tasks (OWNER / GATE / AGGREGATE)
-3. build dependency graph
-4. verify graph validity
+- bind explicit task context
+- bind explicit execution mode
 
-If dependency audit is missing:
-→ STOP
+MUST:
 
-If dependency graph is invalid:
-→ STOP
-
-Only after this:
-→ WORKFLOW may begin
+- reject missing task context
+- reject missing mode
+- reject mode changes after start
 
 ---
 
-### Phase 3 — Create `verified_tasks/`
+### `ingestion`
 
-Goal:
-Convert raw task candidates into execution-grade tasks with enforced dependency graph.
+Purpose:
 
-Codex MUST:
+- load the authoritative inputs required by the task
 
-1. create or replace `verified_tasks/`
-2. read all `actual_truth/DETERMINED_TASKS/`
+MUST:
 
----
+- ingest only task-relevant authoritative sources
+- preserve task scope exactly
+- avoid contract interpretation
 
-MANDATORY DEPENDENCY AUDIT (BLOCKING):
+MUST NOT:
 
-Before ANY task is accepted into verified_tasks:
-
-Codex MUST:
-
-1. classify each task:
-
-   TYPE:
-   - OWNER (creates truth)
-   - GATE (validates truth)
-   - AGGREGATE (system-wide validation)
-
-2. define explicit dependencies:
-
-   DEPENDS_ON:
-   - exact list of task_ids
-
-3. validate task:
-
-   A task is INVALID if:
-   - TYPE missing
-   - DEPENDS_ON missing
-   - dependency is implicit
-   - dependency points to undefined task
-
-If ANY invalid task exists:
-→ STOP
-→ do not continue Phase 3
+- verify
+- generate fallback scope
 
 ---
 
-DEPENDENCY GRAPH:
+### `index`
 
-Codex MUST:
+Purpose:
 
-1. build dependency graph
-2. verify:
-   - no cycles
-   - no orphan dependencies
-   - no missing owners
+- bind the task to the active canonical retrieval index
 
-If graph invalid:
-→ STOP
+MUST:
 
----
+- use the active authoritative index
+- follow the OS vector index policy exactly
 
-ORDERING:
+MUST NOT:
 
-Execution order MUST be derived by:
-
-- topological sort of dependency graph
-
-FORBIDDEN:
-
-- domain grouping
-- manual ordering
-- "logical" ordering
+- rebuild index unless the OS allows it
+- broaden task scope
 
 ---
 
-TASK FINALIZATION:
+### `retrieval`
 
-Each verified task MUST include:
+Purpose:
 
-- TYPE
-- DEPENDS_ON
-- prerequisite_tasks (derived from graph)
+- execute task-scoped retrieval
 
----
+MUST:
 
-Exit criteria:
+- use only the task-defined scope
+- use only the task-defined retrieval queries
+- return only retrieval output relevant to the task
 
-- all tasks have TYPE and DEPENDS_ON
-- graph is valid
-- execution order is derived (not assumed)
-- no ambiguity remains
+MUST NOT:
 
----
-
-### Phase 4 — Build `implementation_plan.md`
-
-Goal:
-Create execution batches from verified tasks.
-
-Codex MUST:
-
-1. read all `verified_tasks/`
-2. build dependency-safe batches
-3. write `implementation_plan.md`
-
-The plan MUST include:
-
-- batch order
-- task membership
-- dependency justification
-- pre-verification required
-- post-verification required
-- rollback notes
-
-Codex MUST NOT implement tasks not present in `verified_tasks/`.
-
-Exit criteria:
-
-- all launch-blocking work is covered
-- no batch violates dependency order
+- perform broad exploratory search outside task scope
+- substitute a different task
 
 ---
 
-### Phase 5 — Implement Batch by Batch
+### `evidence`
 
-Goal:
-Apply changes safely and verify after each batch.
+Purpose:
 
-Codex MUST for each batch:
+- convert retrieval output into canonical evidence
 
-1. verify preconditions
-2. implement only tasks in the current batch
-3. run targeted verification
-4. update task statuses
-5. stop if verification fails
+MUST:
 
-Codex MUST NOT:
+- keep evidence traceable
+- keep evidence canonical
+- keep evidence task-scoped
 
-- skip to later batches
-- mix unrelated tasks
-- silently continue after failed verification
+MUST NOT:
 
-Exit criteria:
-
-- batch passes verification
-- task statuses updated
+- reinterpret contract
+- validate implementation
 
 ---
 
-### Phase 6 — Full Verification
+### `contract`
 
-Goal:
-Prove the launch scope works end-to-end.
+Purpose:
 
-Codex MUST run:
+- diff canonical evidence against canonical truth
 
-- local backend verification
-- DB verification
-- MCP verification
-- targeted API verification
-- Playwright verification for critical user journeys
+MUST:
 
-Required Playwright scope:
+- produce deterministic contract diff
+- define what verification must evaluate
 
-- login / authenticated entry if in scope
-- course access happy path
-- denied access path
-- playback happy path
-- any launch-critical checkout/access path in scope
+MUST NOT:
 
-Codex MUST use Playwright only in this phase unless a task is explicitly UI-only.
-
-Exit criteria:
-
-- all critical verification passes
-- no launch blockers remain unresolved
+- verify before diff exists
+- produce alternate truth models
 
 ---
 
-### Phase 7 — Launch Readiness
+### `verification`
 
-Goal:
-Declare whether the system is ready.
+verification = mode-driven final stage
 
-Codex MAY write `launch_readiness_report.md`.
+- generate -> task generation
+- execute -> task validation
+- confirm -> system truth assertion
 
-A launch-ready verdict is allowed only if:
+MUST:
 
-- no launch blockers remain
-- all launch-critical verified tasks are done
-- Playwright critical paths pass
-- backend/runtime verification passes
-- DB and service logic are aligned in launch scope
+- consume contract output only after contract stage completes
+- stay within task scope
+- fail if required evidence or contract inputs are missing
 
-If not true:
+MUST NOT:
 
-- report NOT READY
-
----
-
-## Tool Usage Rules
-
-### Repo tools
-
-Codex MUST use:
-
-- `build_repo_index.sh`
-- `build_vector_index.py` only when required
-- `search_code.py`
-- `analyze_results.py`
-
-### Supabase
-
-Supabase is CURRENT_TRUTH.
-
-Use it for:
-
-- schema truth
-- row truth
-- enforcement truth
-- existence truth
-
-### MCP
-
-Use MCP for targeted validation only.
-
-Preferred order:
-
-1. verification
-2. media control plane
-3. logs
-4. domain observability
-
-### Playwright
-
-Use only in Phase 6 unless task is explicitly UI-only.
+- run before contract
+- duplicate ingestion, retrieval, evidence, or contract responsibilities
 
 ---
 
-## Rebuild Rules
+## Execution Modes
 
-Codex MUST rebuild vector index only if:
+### MODE: generate
 
-- index missing
-- embeddings invalid
-- repo changed enough to invalidate search
-- explicit rebuild requested
+purpose:
 
-Codex MUST NOT casually rebuild expensive indexes.
+- produce tasks from contract diff
 
----
+output:
 
-## No-Skip Rules
+- deterministic task set
 
-Codex MUST NOT:
+MUST:
 
-- implement before Phase 3 is complete
-- create verified tasks before actual_truth exists
-- call the system ready before Phase 6 passes
-- use docs as stronger truth than runtime enforcement
-- replace phases with intuition
+- not assume implementation
+- not mutate system state
 
 ---
 
-## Success Definition
+### MODE: execute
 
-The system is successful only when:
+purpose:
 
-- actual_truth is fresh
-- determined tasks are derived from evidence
-- verified tasks are dependency-ordered
-- implementation follows verified tasks
-- Playwright confirms critical paths
-- launch readiness is explicit and justified
+- validate implementation against contract
+
+output:
+
+- pass/fail per task
+
+MUST:
+
+- use canonical evidence
+- not reinterpret contracts
+
+---
+
+### MODE: confirm
+
+purpose:
+
+- assert system matches canonical truth
+
+output:
+
+- PASS or FAIL
+
+MUST:
+
+- fail on any deviation
+- not produce new tasks
+
+---
+
+## Enforcement Rules
+
+- Mode MUST be explicit for every run
+- Mode MUST NOT change during execution
+- Mixing modes in one run is forbidden
+- Contract MUST always be applied before verification
+- No legacy phase chain, verified-task gate, batch flow, or alternate workflow remains
+- Any conflict with `codex/AVELI_OPERATING_SYSTEM.md` is a blocking error
+
+---
+
+## Consistency Target
+
+The workflow is valid only when all are true:
+
+- pipeline uses task as input
+- retrieval is task-scoped
+- evidence remains canonical
+- contract is applied before verification
+- no phase overlaps responsibility
+- no fallback flow exists
+
+If any check fails:
+
+- STOP
