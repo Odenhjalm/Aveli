@@ -87,12 +87,9 @@ def _derived_content_type(
     *,
     media_type: str | None,
     playback_format: str | None,
-    ingest_format: str | None,
 ) -> str | None:
     exact_media_type = _exact_text(media_type)
-    format_hint = (
-        _exact_text(playback_format) or _exact_text(ingest_format) or ""
-    ).strip().lower()
+    format_hint = (_exact_text(playback_format) or "").strip().lower()
     if exact_media_type == "audio" and format_hint == "mp3":
         return "audio/mpeg"
     if exact_media_type == "image":
@@ -215,15 +212,12 @@ class MediaResolverService:
                   rm.course_id,
                   rm.lesson_id,
                   rm.media_asset_id,
-                  ma.media_type::text as media_type,
-                  ma.state::text as media_state,
-                  ma.original_object_path,
-                  ma.ingest_format,
-                  ma.playback_format,
+                  rm.media_type::text as media_type,
+                  'ready'::text as media_state,
+                  rm.playback_object_path,
+                  rm.playback_format,
                   %s::text as storage_bucket
                 from app.runtime_media as rm
-                join app.media_assets as ma
-                  on ma.id = rm.media_asset_id
                 where rm.lesson_media_id = %s::uuid
                 limit 1
                 """,
@@ -240,13 +234,11 @@ class MediaResolverService:
         media_type = _exact_text(row.get("media_type"))
         media_state = _exact_text(row.get("media_state"))
         storage_bucket = _exact_text(row.get("storage_bucket"))
-        storage_path = _exact_text(row.get("original_object_path"))
+        storage_path = _exact_text(row.get("playback_object_path"))
         playback_format = _exact_text(row.get("playback_format"))
-        ingest_format = _exact_text(row.get("ingest_format"))
         content_type = _derived_content_type(
             media_type=media_type,
             playback_format=playback_format,
-            ingest_format=ingest_format,
         )
 
         if media_type is None:
@@ -281,6 +273,24 @@ class MediaResolverService:
                 playback_mode=RuntimeMediaPlaybackMode.NONE,
                 failure_reason=RuntimeMediaResolutionReason.MISSING_ASSET_LINK,
                 failure_detail="runtime_media row has no media_asset link",
+                runtime_media_id=runtime_media_id,
+                course_id=course_id,
+            )
+
+        if content_type is None:
+            return RuntimeMediaResolution(
+                lesson_media_id=lesson_media_id,
+                lesson_id=lesson_id,
+                media_asset_id=media_asset_id,
+                media_type=media_type,
+                content_type=None,
+                media_state=media_state,
+                storage_bucket=None,
+                storage_path=None,
+                is_playable=False,
+                playback_mode=RuntimeMediaPlaybackMode.NONE,
+                failure_reason=RuntimeMediaResolutionReason.INVALID_CONTENT_TYPE,
+                failure_detail="runtime_media playback_format is invalid or missing",
                 runtime_media_id=runtime_media_id,
                 course_id=course_id,
             )
@@ -334,7 +344,7 @@ class MediaResolverService:
                 is_playable=False,
                 playback_mode=RuntimeMediaPlaybackMode.NONE,
                 failure_reason=RuntimeMediaResolutionReason.MISSING_STORAGE_OBJECT,
-                failure_detail="media_asset original_object_path is missing",
+                failure_detail="runtime_media playback_object_path is missing",
                 runtime_media_id=runtime_media_id,
                 course_id=course_id,
             )

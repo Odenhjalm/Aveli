@@ -28,6 +28,7 @@ _OBSERVABILITY_DEFAULTS: dict[str, Any] = {
     "original_content_type": None,
     "original_size_bytes": None,
     "original_filename": None,
+    "playback_object_path": None,
     "codec": None,
     "duration_seconds": None,
     "error_message": None,
@@ -90,7 +91,11 @@ async def get_media_asset(media_asset_id: str) -> dict[str, Any] | None:
             media_type::text as media_type,
             purpose::text as purpose,
             original_object_path,
+            streaming_storage_bucket,
+            streaming_object_path,
+            streaming_format,
             ingest_format,
+            playback_object_path,
             playback_format,
             state::text as state
         from app.media_assets
@@ -115,7 +120,11 @@ async def get_media_assets(media_asset_ids: Sequence[str]) -> dict[str, dict[str
             media_type::text as media_type,
             purpose::text as purpose,
             original_object_path,
+            streaming_storage_bucket,
+            streaming_object_path,
+            streaming_format,
             ingest_format,
+            playback_object_path,
             playback_format,
             state::text as state
         from app.media_assets
@@ -139,6 +148,7 @@ async def create_media_asset(
     original_object_path: str,
     ingest_format: str,
     state: str,
+    playback_object_path: str | None = None,
     playback_format: str | None = None,
 ) -> dict[str, Any]:
     query = """
@@ -148,6 +158,7 @@ async def create_media_asset(
             purpose,
             original_object_path,
             ingest_format,
+            playback_object_path,
             playback_format,
             state
         )
@@ -155,6 +166,7 @@ async def create_media_asset(
             %s::uuid,
             %s::app.media_type,
             %s::app.media_purpose,
+            %s,
             %s,
             %s,
             %s,
@@ -166,6 +178,7 @@ async def create_media_asset(
             purpose::text as purpose,
             original_object_path,
             ingest_format,
+            playback_object_path,
             playback_format,
             state::text as state
     """
@@ -179,6 +192,7 @@ async def create_media_asset(
                     purpose,
                     original_object_path,
                     ingest_format,
+                    playback_object_path,
                     playback_format,
                     state,
                 ),
@@ -194,12 +208,14 @@ async def update_media_asset_state(
     media_asset_id: str,
     *,
     state: str,
+    playback_object_path: str | None = None,
     playback_format: str | None = None,
 ) -> dict[str, Any] | None:
     query = """
         update app.media_assets
         set
             state = %s::app.media_state,
+            playback_object_path = coalesce(%s, playback_object_path),
             playback_format = %s
         where id = %s::uuid
         returning
@@ -208,12 +224,16 @@ async def update_media_asset_state(
             purpose::text as purpose,
             original_object_path,
             ingest_format,
+            playback_object_path,
             playback_format,
             state::text as state
     """
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (state, playback_format, media_asset_id))
+            await cur.execute(
+                query,
+                (state, playback_object_path, playback_format, media_asset_id),
+            )
             row = await cur.fetchone()
             await conn.commit()
     return _decorate_media_asset_row(dict(row) if row else None)
@@ -273,6 +293,7 @@ async def list_media_failures(
             purpose::text as purpose,
             original_object_path,
             ingest_format,
+            playback_object_path,
             playback_format,
             state::text as state
         from app.media_assets
@@ -336,6 +357,7 @@ async def list_orphaned_control_plane_assets(
             ma.purpose::text as purpose,
             ma.original_object_path,
             ma.ingest_format,
+            ma.playback_object_path,
             ma.playback_format,
             ma.state::text as state,
             coalesce(lml.lesson_media_count, 0) as lesson_media_count,

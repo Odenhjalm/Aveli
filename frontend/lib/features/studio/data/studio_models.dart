@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:aveli/shared/models/request_headers.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 
 Object? _requireResponseField(Object? payload, String key, String label) {
   switch (payload) {
@@ -101,6 +102,7 @@ class CourseCore {
     required this.dripEnabled,
     required this.dripIntervalDays,
     required this.coverMediaId,
+    required this.cover,
   });
 
   final String id;
@@ -111,6 +113,7 @@ class CourseCore {
   final bool dripEnabled;
   final int? dripIntervalDays;
   final String? coverMediaId;
+  final CourseCoverData? cover;
 }
 
 @immutable
@@ -124,6 +127,7 @@ class CourseStudio extends CourseCore {
     required super.dripEnabled,
     required super.dripIntervalDays,
     required super.coverMediaId,
+    required super.cover,
     required this.priceAmountCents,
   });
 
@@ -146,6 +150,15 @@ class CourseStudio extends CourseCore {
         label,
       ),
       coverMediaId: _nullableResponseString(payload, 'cover_media_id', label),
+      cover: switch (_requireResponseField(payload, 'cover', label)) {
+        null => null,
+        final Map<String, dynamic> data => CourseCoverData.fromJson(data),
+        final Map data => CourseCoverData.fromJson(
+            Map<String, dynamic>.from(data),
+          ),
+        final Object _ =>
+          throw StateError('$label field "cover" must be an object or null'),
+      },
       priceAmountCents: _nullableResponseInt(
         payload,
         'price_amount_cents',
@@ -163,10 +176,12 @@ class CourseStudio extends CourseCore {
     bool? dripEnabled,
     int? dripIntervalDays,
     String? coverMediaId,
+    CourseCoverData? cover,
     int? priceAmountCents,
     bool clearCourseGroupId = false,
     bool clearDripIntervalDays = false,
     bool clearCoverMediaId = false,
+    bool clearCover = false,
     bool clearPriceAmountCents = false,
   }) {
     return CourseStudio(
@@ -186,6 +201,7 @@ class CourseStudio extends CourseCore {
       coverMediaId: clearCoverMediaId
           ? null
           : (coverMediaId != null ? coverMediaId : this.coverMediaId),
+      cover: clearCover ? null : (cover != null ? cover : this.cover),
       priceAmountCents: clearPriceAmountCents
           ? null
           : (priceAmountCents != null

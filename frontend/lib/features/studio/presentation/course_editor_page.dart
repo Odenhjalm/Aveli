@@ -27,7 +27,6 @@ import 'package:aveli/editor/session/editor_operation_controller.dart';
 import 'package:aveli/editor/session/editor_session.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -965,10 +964,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<String?> _resolveStudioCourseImageUrl(CourseStudio course) {
-    return resolveStudioCourseCoverUrl(
-      course,
-      ref.read(mediaRepositoryProvider),
-    );
+    return Future<String?>.value(course.cover?.resolvedUrl);
   }
 
   void _logCourseMetaPatchPayload({
@@ -1179,12 +1175,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       String? resolvedCoverUrl;
       String? coverError;
-      if (course.coverMediaId != null && course.coverMediaId!.isNotEmpty) {
-        try {
-          resolvedCoverUrl = await _resolveStudioCourseImageUrl(course);
-        } catch (error, stackTrace) {
-          coverError = AppFailure.from(error, stackTrace).message;
-        }
+      try {
+        resolvedCoverUrl = await _resolveStudioCourseImageUrl(course);
+      } catch (error, stackTrace) {
+        coverError = AppFailure.from(error, stackTrace).message;
       }
       if (_isStaleRequest(
         requestId: requestId,

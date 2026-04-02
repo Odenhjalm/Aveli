@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
 Object? _requiredField(Object? payload, String fieldName) {
@@ -59,6 +60,19 @@ bool _requireBool(Object? value, String fieldName) {
   switch (value) {
     case final bool flag:
       return flag;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+CourseCoverData? _optionalCourseCover(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final Map<String, dynamic> data:
+      return CourseCoverData.fromJson(data);
+    case final Map data:
+      return CourseCoverData.fromJson(Map<String, dynamic>.from(data));
     default:
       throw StateError('Invalid field type for $fieldName');
   }
@@ -355,6 +369,7 @@ class CourseSummary {
     required this.step,
     required this.courseGroupId,
     required this.coverMediaId,
+    required this.cover,
     required this.priceCents,
     required this.dripEnabled,
     required this.dripIntervalDays,
@@ -366,6 +381,7 @@ class CourseSummary {
   final CourseJourneyStep step;
   final String courseGroupId;
   final String? coverMediaId;
+  final CourseCoverData? cover;
   final int? priceCents;
   final bool dripEnabled;
   final int? dripIntervalDays;
@@ -386,6 +402,7 @@ class CourseSummary {
         _requiredField(payload, 'cover_media_id'),
         'cover_media_id',
       ),
+      cover: _optionalCourseCover(_requiredField(payload, 'cover'), 'cover'),
       priceCents: _optionalInt(
         _requiredField(payload, 'price_amount_cents'),
         'price_amount_cents',

@@ -8,7 +8,8 @@
 -- runtime_media source.
 -- It does not define lesson access.
 -- lesson_media remains part of lesson_content_surface only.
--- No independent media surface exists.
+-- No independent lesson-media surface exists for learner/public surfaces.
+-- Studio has a separate lesson-media edge for authoring and pipeline interaction.
 -- Only playback-eligible lesson media may project here.
 -- No fallback columns, storage shortcuts, or write paths belong in this view.
 
@@ -20,7 +21,9 @@ select
   l.id as lesson_id,
   l.course_id,
   ma.id as media_asset_id,
-  ma.media_type
+  ma.media_type,
+  ma.playback_object_path,
+  ma.playback_format
 from app.lesson_media as lm
 join app.lessons as l
   on l.id = lm.lesson_id

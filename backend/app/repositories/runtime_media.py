@@ -11,7 +11,9 @@ _RUNTIME_MEDIA_COLUMNS = """
     rm.lesson_id,
     rm.course_id,
     rm.media_asset_id,
-    rm.media_type::text as media_type
+    rm.media_type::text as media_type,
+    rm.playback_object_path,
+    rm.playback_format
 """
 
 

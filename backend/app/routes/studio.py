@@ -59,6 +59,7 @@ _CANONICAL_COURSE_FIELDS = (
     "course_group_id",
     "step",
     "cover_media_id",
+    "cover",
     "price_amount_cents",
     "drip_enabled",
     "drip_interval_days",
@@ -428,6 +429,7 @@ async def create_course(payload: schemas.StudioCourseCreate, current: StudioActo
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=400, detail="Failed to create course")
+    await _apply_course_read_contract(row)
     return _course_response(row)
 
 
@@ -1810,6 +1812,7 @@ async def studio_reserve_recording(
 async def studio_courses(current: StudioActor):
     del current
     rows = list(await courses_service.list_courses())
+    await _apply_course_read_contract(rows)
     return _course_list_response(rows)
 
 
@@ -1819,6 +1822,7 @@ async def course_meta(course_id: str, current: StudioActor):
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
+    await _apply_course_read_contract(row)
     return _course_response(row)
 
 
@@ -1858,6 +1862,7 @@ async def update_course(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
+    await _apply_course_read_contract(row)
     return _course_response(row)
 
 

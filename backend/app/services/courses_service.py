@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
+from ..repositories import media_assets as media_assets_repo
 from ..repositories import courses as courses_repo
+from . import storage_service
 
 
 def _is_admin_profile(profile: Mapping[str, Any] | None) -> bool:
@@ -138,10 +140,93 @@ async def list_studio_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
     return list(await courses_repo.list_lesson_media_for_studio(lesson_id))
 
 
+def _normalize_cover_media_id(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
+def _course_cover_payload(
+    *,
+    media_id: str,
+    asset: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if asset is None:
+        return {
+            "media_id": media_id,
+            "state": "missing",
+            "resolved_url": None,
+        }
+
+    state = str(asset.get("state") or "").strip() or "missing"
+    purpose = str(asset.get("purpose") or "").strip().lower()
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    bucket = str(asset.get("streaming_storage_bucket") or "").strip()
+    path = str(asset.get("streaming_object_path") or "").strip()
+
+    resolved_url: str | None = None
+    if (
+        state == "ready"
+        and purpose == "course_cover"
+        and media_type == "image"
+        and bucket
+        and path
+    ):
+        try:
+            resolved_url = storage_service.get_storage_service(bucket).public_url(path)
+        except storage_service.StorageServiceError:
+            resolved_url = None
+
+    return {
+        "media_id": media_id,
+        "state": state,
+        "resolved_url": resolved_url,
+    }
+
+
+async def resolve_course_cover(
+    *,
+    course_id: str | None = None,
+    cover_media_id: str | None,
+) -> dict[str, Any] | None:
+    del course_id
+
+    media_id = _normalize_cover_media_id(cover_media_id)
+    if media_id is None:
+        return None
+
+    asset = await media_assets_repo.get_media_asset(media_id)
+    return _course_cover_payload(media_id=media_id, asset=asset)
+
+
 async def attach_course_cover_read_contract(
     courses: dict[str, Any] | list[dict[str, Any]] | None,
 ) -> None:
-    del courses
+    if courses is None:
+        return
+
+    rows = [courses] if isinstance(courses, dict) else list(courses)
+    if not rows:
+        return
+
+    media_ids = [
+        media_id
+        for media_id in (
+            _normalize_cover_media_id(row.get("cover_media_id")) for row in rows
+        )
+        if media_id is not None
+    ]
+    assets_by_id = await media_assets_repo.get_media_assets(media_ids)
+
+    for row in rows:
+        media_id = _normalize_cover_media_id(row.get("cover_media_id"))
+        row["cover"] = (
+            None
+            if media_id is None
+            else _course_cover_payload(
+                media_id=media_id,
+                asset=assets_by_id.get(media_id),
+            )
+        )
 
 
 async def create_course(payload: dict[str, Any]) -> dict[str, Any]:

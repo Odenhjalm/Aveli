@@ -8,9 +8,7 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
-import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -39,9 +37,8 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         body: Center(child: Text(_friendlyError(error))),
       ),
       data: (detail) {
-        final coverUrlFuture = resolveCourseSummaryCoverUrl(
-          detail.course,
-          ref.read(mediaRepositoryProvider),
+        final coverUrlFuture = Future<String?>.value(
+          detail.course.cover?.resolvedUrl,
         );
         final courseStateAsync = ref.watch(
           courseStateProvider(detail.course.id),

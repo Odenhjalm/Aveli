@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from .. import schemas
 from ..auth import CurrentUser, OptionalCurrentUser
-from ..services import courses_service
+from ..services import courses_read_service, courses_service
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 api_router = APIRouter(prefix="/api/courses", tags=["courses"])
@@ -17,6 +17,7 @@ _CANONICAL_COURSE_FIELDS = (
     "course_group_id",
     "step",
     "cover_media_id",
+    "cover",
     "price_amount_cents",
     "drip_enabled",
     "drip_interval_days",
@@ -60,16 +61,6 @@ async def _assert_can_access_lesson(user: OptionalCurrentUser, lesson_id: str) -
     )
 
 
-def _course_detail_response(
-    course: dict,
-    lessons: list[dict] | tuple[dict, ...],
-) -> schemas.CourseDetailResponse:
-    return schemas.CourseDetailResponse(
-        course=_course_response(course),
-        lessons=[schemas.LessonStructureItem(**row) for row in lessons],
-    )
-
-
 def _course_access_response(payload: dict) -> schemas.CourseAccessStateResponse:
     enrollment = payload.get("enrollment")
     return schemas.CourseAccessStateResponse(
@@ -105,7 +96,9 @@ async def list_courses(
     limit: int | None = Query(default=None, ge=1, le=100),
 ):
     rows = await courses_service.list_public_courses(search=search, limit=limit)
-    return _course_list_response(list(rows))
+    normalized_rows = list(rows)
+    await courses_service.attach_course_cover_read_contract(normalized_rows)
+    return _course_list_response(normalized_rows)
 
 
 router.add_api_route("/", list_courses, methods=["GET"], include_in_schema=False)
@@ -161,7 +154,9 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
 @router.get("/me", response_model=schemas.CourseListResponse)
 async def my_courses(current: CurrentUser):
     rows = await courses_service.list_my_courses(str(current["id"]))
-    return _course_list_response(list(rows))
+    normalized_rows = list(rows)
+    await courses_service.attach_course_cover_read_contract(normalized_rows)
+    return _course_list_response(normalized_rows)
 
 
 async def _read_course_state_or_404(*, user_id: str, course_id: str) -> dict:
@@ -213,12 +208,10 @@ async def enroll_course(course_id: UUID, current: CurrentUser):
 @router.get("/by-slug/{slug}", response_model=schemas.CourseDetailResponse)
 async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     del current
-    row = await courses_service.fetch_course(slug=slug)
-    if not row:
+    detail = await courses_read_service.read_course_detail(slug=slug)
+    if not detail:
         raise HTTPException(status_code=404, detail="Course not found")
-    course_id = str(row["id"])
-    lessons = await courses_service.list_course_lessons(course_id)
-    return _course_detail_response(row, list(lessons))
+    return detail
 
 
 @router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)
@@ -235,9 +228,7 @@ async def course_public_content(course_id: UUID):
 @router.get("/{course_id}", response_model=schemas.CourseDetailResponse)
 async def course_detail(course_id: UUID, current: OptionalCurrentUser = None):
     del current
-    normalized_course_id = str(course_id)
-    row = await courses_service.fetch_course(course_id=normalized_course_id)
-    if not row:
+    detail = await courses_read_service.read_course_detail(course_id=str(course_id))
+    if not detail:
         raise HTTPException(status_code=404, detail="Course not found")
-    lessons = await courses_service.list_course_lessons(normalized_course_id)
-    return _course_detail_response(row, list(lessons))
+    return detail

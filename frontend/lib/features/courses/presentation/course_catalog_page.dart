@@ -12,7 +12,6 @@ import 'package:aveli/features/courses/presentation/course_journey_layout.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
@@ -597,10 +596,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(16);
     final slug = course.slug.trim();
-    final coverUrlFuture = resolveCourseSummaryCoverUrl(
-      course,
-      mediaRepository,
-    );
+    final coverUrlFuture = Future<String?>.value(course.cover?.resolvedUrl);
     final isIntro = course.isIntroCourse;
     final priceLabel = course.priceCents == null
         ? 'Pris saknas'
@@ -753,10 +749,7 @@ class _JourneyCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final slug = course.slug.trim();
-    final coverUrlFuture = resolveCourseSummaryCoverUrl(
-      course,
-      mediaRepository,
-    );
+    final coverUrlFuture = Future<String?>.value(course.cover?.resolvedUrl);
 
     final radius = BorderRadius.circular(18);
     final isIntro = course.isIntroCourse;

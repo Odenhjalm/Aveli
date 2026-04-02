@@ -12,7 +12,6 @@ import 'package:aveli/features/landing/application/landing_providers.dart'
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
-import 'package:aveli/shared/utils/course_cover_resolver.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
@@ -292,7 +291,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
             coverMediaId: course.coverMediaId,
             priceAmountCents: course.priceCents,
             shortDescription: null,
-            resolvedCoverUrl: null,
+            resolvedCoverUrl: course.cover?.resolvedUrl,
           );
         })
         .toList(growable: false);
@@ -693,13 +692,7 @@ class _CourseTileGlass extends StatelessWidget {
     final slug = course.slug;
     final isIntro = course.step == 'intro';
     final priceCents = course.priceAmountCents;
-    final coverUrlFuture =
-        course.resolvedCoverUrl != null && course.resolvedCoverUrl!.isNotEmpty
-        ? Future<String?>.value(course.resolvedCoverUrl)
-        : resolveCourseCoverUrl(
-            mediaRepository: mediaRepository,
-            coverMediaId: course.coverMediaId,
-          );
+    final coverUrlFuture = Future<String?>.value(course.resolvedCoverUrl);
     final priceLabel = priceCents == null
         ? 'Pris saknas'
         : formatCoursePriceFromOre(

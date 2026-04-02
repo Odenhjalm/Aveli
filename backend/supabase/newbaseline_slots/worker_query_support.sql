@@ -7,8 +7,9 @@
 -- The canonical worker function is the only allowed mutation boundary for
 -- transitions that move app.media_assets into worker-owned processing states
 -- and into playback-ready state.
--- Minimal audio readiness verification is stored on app.media_assets as
--- playback_format, assigned by the canonical worker function.
+-- Canonical playback identity and audio readiness verification are stored on
+-- app.media_assets as playback_object_path and playback_format, assigned by
+-- the canonical worker function.
 
 create or replace function app.enforce_media_assets_pipeline()
 returns trigger
@@ -23,6 +24,11 @@ begin
     if new.state = 'ready'::app.media_state then
       raise exception
         'canonical media pipeline forbids inserting media_assets directly into ready state';
+    end if;
+
+    if new.playback_object_path is not null then
+      raise exception
+        'playback_object_path is assigned only by the canonical worker function';
     end if;
 
     if new.playback_format is not null then
@@ -51,6 +57,18 @@ begin
       'canonical media pipeline does not allow mutation of media_assets identity or source fields';
   end if;
 
+  if old.playback_object_path is not null
+     and new.playback_object_path is distinct from old.playback_object_path then
+    raise exception
+      'playback_object_path is immutable once assigned';
+  end if;
+
+  if new.playback_object_path is distinct from old.playback_object_path
+     and not in_worker_context then
+    raise exception
+      'playback_object_path may be assigned only through the canonical worker function';
+  end if;
+
   if new.playback_format is distinct from old.playback_format
      and not in_worker_context then
     raise exception
@@ -58,6 +76,7 @@ begin
   end if;
 
   if new.state is not distinct from old.state
+     and new.playback_object_path is not distinct from old.playback_object_path
      and new.playback_format is not distinct from old.playback_format then
     return new;
   end if;
@@ -93,6 +112,12 @@ begin
         'processing -> ready/failed may occur only through the canonical worker function';
     end if;
 
+    if new.state = 'ready'::app.media_state
+       and new.playback_object_path is null then
+      raise exception
+        'ready media_assets require playback_object_path';
+    end if;
+
     if old.media_type = 'audio'::app.media_type
        and new.state = 'ready'::app.media_state
        and new.playback_format is distinct from 'mp3' then
@@ -112,7 +137,8 @@ $$;
 
 create or replace function app.canonical_worker_transition_media_asset_state(
   p_media_asset_id uuid,
-  p_target_state app.media_state
+  p_target_state app.media_state,
+  p_playback_object_path text default null
 )
 returns app.media_assets
 language plpgsql
@@ -151,6 +177,11 @@ begin
   begin
     update app.media_assets
     set state = p_target_state,
+        playback_object_path = case
+          when p_playback_object_path is not null
+            then p_playback_object_path
+          else playback_object_path
+        end,
         playback_format = case
           when media_type = 'audio'::app.media_type
                and p_target_state = 'processing'::app.media_state
@@ -181,7 +212,8 @@ $$;
 
 revoke all on function app.canonical_worker_transition_media_asset_state(
   uuid,
-  app.media_state
+  app.media_state,
+  text
 ) from public;
 
 drop trigger if exists media_assets_pipeline_enforcement on app.media_assets;

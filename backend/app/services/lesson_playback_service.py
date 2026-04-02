@@ -15,7 +15,6 @@ from ..media_control_plane.services.media_resolver_service import (
     LessonMediaResolutionReason,
     media_resolver_service as canonical_media_resolver,
 )
-from ..repositories import media_assets as media_assets_repo
 from ..services import courses_service, storage_service
 
 logger = logging.getLogger(__name__)
@@ -29,16 +28,23 @@ def _exact_text(value: Any) -> str | None:
     return str(value)
 
 
-def _playback_format(*, media: dict[str, Any]) -> str:
-    explicit = _exact_text(media.get("playback_format")) or _exact_text(
-        media.get("ingest_format")
+def _playback_format(*, resolution: LessonMediaResolution) -> str:
+    media_type = _exact_text(resolution.media_type)
+    content_type = _exact_text(resolution.content_type)
+    if media_type == "audio" and content_type == "audio/mpeg":
+        return "mp3"
+    if media_type == "image" and content_type == "image/jpeg":
+        return "jpg"
+    if media_type == "image" and content_type == "image/png":
+        return "png"
+    if media_type == "video" and content_type == "video/mp4":
+        return "mp4"
+    if media_type == "document" and content_type == "application/pdf":
+        return "pdf"
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Streaming format unavailable",
     )
-    if explicit is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Streaming format unavailable",
-        )
-    return explicit
 
 
 def _resolution_is_image(resolution: LessonMediaResolution) -> bool:
@@ -135,10 +141,13 @@ async def resolve_object_media_playback(
 
 async def _build_pipeline_playback_response(
     *,
-    media: dict[str, Any],
-    storage_path: str,
-    storage_bucket: str,
+    resolution: LessonMediaResolution,
 ) -> dict[str, Any]:
+    storage_path = resolution.storage_path
+    storage_bucket = resolution.storage_bucket
+    if storage_path is None or storage_bucket is None:
+        raise _resolution_http_exception(resolution)
+
     storage_client = storage_service.get_storage_service(storage_bucket)
 
     try:
@@ -158,7 +167,7 @@ async def _build_pipeline_playback_response(
     return {
         "playback_url": presigned.url,
         "expires_at": expires_at,
-        "format": _playback_format(media=media),
+        "format": _playback_format(resolution=resolution),
     }
 
 
@@ -209,20 +218,8 @@ async def _resolve_pipeline_playback_from_resolution(
     resolution: LessonMediaResolution,
     user_id: str,
 ) -> dict[str, Any]:
-    media_asset_id = resolution.media_asset_id
-    storage_path = resolution.storage_path
-    storage_bucket = resolution.storage_bucket
-    if media_asset_id is None or storage_path is None or storage_bucket is None:
+    if resolution.media_asset_id is None:
         raise _resolution_http_exception(resolution)
-
-    media = await media_assets_repo.get_media_asset_access(str(media_asset_id))
-    if not media:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
-    if media.get("state") != "ready":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Media is not ready",
-        )
 
     await _authorize_lesson_resolution_playback(
         user_id=user_id,
@@ -230,11 +227,7 @@ async def _resolve_pipeline_playback_from_resolution(
         course_id=resolution.course_id,
     )
 
-    return await _build_pipeline_playback_response(
-        media=media,
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
-    )
+    return await _build_pipeline_playback_response(resolution=resolution)
 
 
 async def _resolve_playback_from_resolution(

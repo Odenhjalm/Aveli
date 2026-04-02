@@ -1000,6 +1000,14 @@ class ProfileDetailResponse(ProfileDetail):
     pass
 
 
+class CourseCoverResolved(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_id: UUID
+    state: str
+    resolved_url: str | None = None
+
+
 class Course(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1009,6 +1017,7 @@ class Course(BaseModel):
     course_group_id: UUID
     step: str
     cover_media_id: UUID | None = None
+    cover: CourseCoverResolved | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: Optional[int]
@@ -1078,6 +1087,7 @@ class CourseDetailResponse(BaseModel):
 
     course: Course
     lessons: List[LessonStructureItem]
+    short_description: str | None = None
 
 
 class LessonContentItem(BaseModel):
