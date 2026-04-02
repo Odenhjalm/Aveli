@@ -9,19 +9,23 @@ Development rules:
 Workflow standard:
 
 Phase A Plan
+
 - Inspect Figma
 - Inspect DB schema
 - Fetch library docs
 
 Phase B Implement
+
 - Implement code
 - Generate tests
 
 Phase C Integrate
+
 - Connect the feature to the existing app flow
 - Reconcile dependencies, routing, and data contracts
 
 Phase D Verify
+
 - Run Playwright tests after UI work
 - Run the best practical local verification before handoff
 

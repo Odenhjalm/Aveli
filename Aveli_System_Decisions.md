@@ -134,8 +134,8 @@
 - `course_discovery_surface` is the canonical term for a surface that allows only `course_identity`, `course_display`, `course_grouping`, and `course_pricing`.
 - `lesson_structure_surface` is the canonical term for a surface that allows only `lesson_identity` and `lesson_structure`.
 - `lesson_content_surface` is the canonical term for a surface that allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`, and requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
-- `lesson_media` exists only inside `lesson_content_surface`.
-- No independent lesson-media surface exists.
+- For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
+- No independent lesson-media surface exists for learner/public surfaces. Studio has a separate lesson-media edge for authoring and pipeline interaction.
 - `media_assets` never defines access.
 - No rule referring to visibility may be interpreted as permission for raw table access.
 - `subscription` is NOT a canonical Aveli runtime term.
@@ -174,11 +174,44 @@
 - Media authority model = `split_intent_and_playback`
 - App-access authority = `memberships`
 - Canonical course-content access authority = `course_enrollments`
+- Execution authority = `worker`
 - `course_discovery_surface` exposure is not governed by `course_enrollments`
 - `lesson_structure_surface` exposure is not governed by `course_enrollments`
 - `lesson_content_surface` access must not be derived from membership alone
 - Playback authority = `runtime_media`
 - Media intent authority = `control_plane`
+- Media lifecycle observability authority = `control_plane`
+- Shape authority = `database`
+
+## Media Control Plane Authority
+
+- `control_plane` is the only authority for:
+  - media intent
+  - pipeline expectations
+  - lifecycle interpretation
+- `control_plane` lifecycle observability classifications are:
+  - `valid` when `state = ready`, `playback_object_path` exists, and the file exists
+  - `broken` when `state = ready` but playback is missing
+  - `stuck` when `state = processing` with no progress
+  - `invalid` when canonical format or identity rules are violated
+- Lifecycle classification must be derived from existing canonical state only.
+- Lifecycle classification must not introduce additional state fields.
+- Lifecycle classification must not depend on runtime or frontend logic.
+- `control_plane` does NOT:
+  - execute media processing
+  - mutate media state
+  - perform playback validation
+  - perform playback
+  - enforce DB constraints
+- Worker is the only execution authority.
+- Worker owns media transformations and canonical state transitions only through the canonical worker function.
+- Worker does NOT define media intent or playback rules.
+- `runtime_media` is the only playback authority.
+- Runtime owns playback only and may reject invalid playback state.
+- Runtime does NOT infer media behavior, validate pipeline rules, access ingest identity, or perform transformation.
+- Database is the only shape authority.
+- Database enforces schema shape and invariants only.
+- Database does NOT define behavior or infer meaning.
 
 ## Access Model (Canonical)
 
@@ -211,7 +244,7 @@
 - `current_unlock_position` is stored on `course_enrollments`.
 - `lesson_content_surface` allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`.
 - `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
-- `lesson_media` exists only inside `lesson_content_surface`.
+- For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
 - Intro courses require `course_enrollments` rows with `source = intro_enrollment`, and `lesson_content_surface` still requires `lesson.position <= current_unlock_position`.
 - No lesson content or lesson media access exists outside `course_enrollments` AND `lesson.position <= current_unlock_position`.
 - `media_assets` never defines access.
@@ -385,7 +418,7 @@
   - client
 - `runtime_media` is the only playback authority.
 - `storage.objects` is an external physical-storage dependency and is never a valid playback source.
-- `control_plane` defines media intent, not playback.
+- `control_plane` defines media intent and lifecycle interpretation, not execution or playback.
 - No layer may bypass `runtime_media`.
 - All lesson/content media references must use `lesson_media_id` only.
 - Fallback is forbidden.
@@ -411,11 +444,11 @@
   - docs/media_architecture.md
 - Classification:
   - Scope intent: `planned_preserved`
-  - Canonical role: `media_intent_authority`
+  - Canonical roles: `media_intent_authority`, `media_lifecycle_observability_authority`
 - Canonical decision:
   - control plane is preserved and not open to semantic redefinition
   - control plane must not be removed or semantically redefined
-  - control plane does not own playback
+  - control plane does not own execution or playback
 
 ### 3) Auth flow definition
 - Chosen source of truth:

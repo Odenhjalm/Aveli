@@ -28,8 +28,8 @@ It exists to keep DB shape deterministic while preventing the database from inve
 - `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
 - `lesson_content_surface` requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
 - `course_enrollments` is the only authority for `canonical_protected_course_content_access`.
-- `lesson_media` exists only inside `lesson_content_surface`.
-- No independent lesson-media surface exists.
+- For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
+- No independent lesson-media surface exists for learner/public surfaces. Studio has a separate lesson-media edge for authoring and pipeline interaction.
 - `media_assets` never defines access.
 - No rule referring to visibility may be interpreted as permission for raw table access.
 - The database enforces field shape, nullability contracts, and local row invariants.
@@ -113,14 +113,25 @@ The canonical `media_assets` table must allow these media-processing fields:
 | `purpose` | enum | required | Canonical media purpose |
 | `original_object_path` | text | required | Canonical source object path |
 | `ingest_format` | text | required | Canonical source format |
+| `playback_object_path` | text | nullable | Canonical playback object path |
 | `playback_format` | text | nullable | Canonical worker-assigned playback format |
 | `state` | enum | required | Canonical processing state |
 
 Canonical media rules:
 
 - `ingest_format` stores the canonical source format.
+- `playback_object_path` stores the canonical playback object path assigned during processing.
+- `playback_object_path` lifecycle is `NULL` -> set during processing -> immutable.
 - `playback_format` stores the canonical playback format assigned by worker processing.
 - Audio rows may become `ready` only when `playback_format = mp3`.
+
+### `runtime_media` projection
+
+The canonical `runtime_media` projection must:
+
+- include `playback_object_path`
+- include `playback_format`
+- resolve playback without joining `media_assets`
 
 ## 3. DB Enforcement Rules
 
@@ -180,4 +191,5 @@ The database baseline must explicitly forbid:
 - No default drip behavior is hardcoded in the DB baseline.
 - No non-core feature contract is smuggled into core baseline tables.
 - No metadata blob, map-style contract, or compatibility default is used as baseline truth.
+- `runtime_media` contains `playback_object_path` and `playback_format`, and runtime resolves playback without joining `media_assets`.
 - UI, backend, and DB can share the same course-configured drip model without fallback logic.

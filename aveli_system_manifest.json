@@ -39,7 +39,23 @@
             "state": "planned_preserved",
             "preserved_from_modification": true,
             "mutation_policy": "no_modification_or_redefinition",
-            "role": "media_intent_authority"
+            "role": [
+                "intent_authority",
+                "observability_authority"
+            ],
+            "owns": [
+                "media_intent",
+                "pipeline_expectations",
+                "lifecycle_interpretation"
+            ],
+            "must_not": [
+                "mutate_state",
+                "execute_media_processing",
+                "perform_playback",
+                "replace_worker_logic",
+                "replace_runtime_logic",
+                "enforce_database_constraints"
+            ]
         },
         "media_pipeline": {
             "state": "runtime_active",
@@ -180,7 +196,10 @@
             },
             "lesson_content_surface_access_rule": "requires course_enrollments AND lesson.position <= current_unlock_position",
             "lesson_media_only_inside_lesson_content_surface": true,
+            "lesson_media_surface_scope": "learner_public",
             "independent_lesson_media_surface": false,
+            "independent_lesson_media_surface_scope": "learner_public",
+            "studio_lesson_media_edge": "separate_for_authoring_and_pipeline_interaction",
             "media_assets_never_defines_access": true,
             "intro_lesson_content_surface_access_rule": "requires source = intro_enrollment AND course_enrollments AND lesson.position <= current_unlock_position",
             "purchase_lesson_content_surface_access_rule": "requires source = purchase AND course_enrollments AND lesson.position <= current_unlock_position",
@@ -242,8 +261,11 @@
         "media_authority_model": "split_intent_and_playback",
         "app_access_authority": "memberships",
         "canonical_protected_course_content_access_authority": "course_enrollments",
+        "execution_authority": "worker",
         "playback_authority": "runtime_media",
-        "media_intent_authority": "control_plane"
+        "media_intent_authority": "control_plane",
+        "media_lifecycle_observability_authority": "control_plane",
+        "database_shape_authority": "database"
     },
     "external_dependencies": [
         "auth.users",
@@ -300,6 +322,8 @@
             "runtime_media_only_playback_authority": true,
             "storage_objects_never_valid_playback_source": true,
             "control_plane_intent_not_playback": true,
+            "control_plane_lifecycle_interpretation_authority": true,
+            "control_plane_not_execution_authority": true,
             "runtime_media_bypass_forbidden": true,
             "lesson_content_media_references_use_lesson_media_id_only": true,
             "fallback_forbidden": true
@@ -372,7 +396,8 @@
                 "lesson.position <= current_unlock_position"
             ]
         },
-        "lesson_media_rule": "lesson_media_exists_only_inside_lesson_content_surface",
+        "lesson_media_rule": "lesson_media_exists_only_inside_lesson_content_surface_for_learner_public_surfaces",
+        "studio_lesson_media_edge_rule": "separate_for_authoring_and_pipeline_interaction",
         "media_assets_rule": "media_assets_never_defines_access",
         "LessonSummary": "canonical_lesson_structure_surface_shape",
         "LessonContent": "canonical_lesson_content_surface_shape",
@@ -534,7 +559,10 @@
             "lesson_media"
         ],
         "lesson_media_only_inside_lesson_content_surface": true,
+        "lesson_media_surface_scope": "learner_public",
         "independent_lesson_media_surface": false,
+        "independent_lesson_media_surface_scope": "learner_public",
+        "studio_lesson_media_edge": "separate_for_authoring_and_pipeline_interaction",
         "media_assets_never_defines_access": true,
         "intro_lesson_content_surface_access_rule": "requires source = intro_enrollment AND course_enrollments AND lesson.position <= current_unlock_position",
         "paid_lesson_content_surface_access_rule": "requires source = purchase AND course_enrollments AND lesson.position <= current_unlock_position",
@@ -577,11 +605,19 @@
         "drip_never_decrease_current_unlock_position": true,
         "playback_authority": "runtime_media",
         "media_intent_authority": "control_plane",
+        "media_lifecycle_observability_authority": "control_plane",
+        "execution_authority": "worker",
+        "database_shape_authority": "database",
         "media_authority_enforcement": "all_playback_must_resolve_through_runtime_media",
         "all_audio_must_pass_worker_pipeline": true,
         "media_readiness_mutation_authority": "canonical_worker_function",
         "canonical_worker_function_boundary": "single_security_definer_function",
         "media_readiness_mutation_path": "canonical_worker_function_only",
+        "control_plane_defines_pipeline_expectations": true,
+        "control_plane_interprets_media_lifecycle": true,
+        "control_plane_does_not_mutate_state": true,
+        "control_plane_does_not_execute_processing": true,
+        "control_plane_does_not_perform_playback": true,
         "wav_must_become_mp3_before_ready": true,
         "audio_ready_requires_playback_format": true,
         "audio_ready_playback_format_value": "mp3",
@@ -669,6 +705,7 @@
         "no_deletion_of_planned_features": true,
         "no_modification_of_control_plane": true,
         "control_plane_redefinition_forbidden": true,
+        "authority_overlap_forbidden": true,
         "auth_no_structural_change": true,
         "no_assumption_rule": true,
         "flat_course_hierarchy_enforced": true,

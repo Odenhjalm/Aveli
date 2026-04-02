@@ -204,8 +204,8 @@ Canonical meaning:
 - `lesson_content_surface` allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`.
 - `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
 - `lesson_content_surface` is accessible only when `course_enrollments` AND `lesson.position <= current_unlock_position`.
-- `lesson_media` exists only inside `lesson_content_surface`.
-- No independent lesson-media surface exists.
+- For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
+- No independent lesson-media surface exists for learner/public surfaces. Studio has a separate lesson-media edge for authoring and pipeline interaction.
 - `media_assets` never defines access.
 - `course_enrollments` is the only authority for `canonical_protected_course_content_access`.
 - `course_enrollments` must not be used to hide `course_discovery_surface` or `lesson_structure_surface`.
@@ -232,7 +232,7 @@ Canonical meaning:
 - `LessonContent` is sourced from canonical `lessons` + `lesson_contents` + `lesson_media`.
 - `LessonContent` requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
 - Course-detail endpoints composed of `course_discovery_surface` and `lesson_structure_surface` may return lessons only as `LessonSummary[]`.
-- `lesson_media` exists only inside `lesson_content_surface`.
+- For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
 - `app.lessons` must remain structure-only and `app.lesson_contents` must remain content-only.
 - `app.lessons` and `app.lesson_contents` must not be collapsed into one raw-table lesson access surface that bypasses canonical surface boundaries.
 - No rule referring to visibility may be interpreted as permission for raw table access.
@@ -248,6 +248,7 @@ The new `media_assets` table is defined only by canonical laws:
 | `purpose` | `media_purpose` | not null |
 | `original_object_path` | text | not null |
 | `ingest_format` | text | not null |
+| `playback_object_path` | text | null |
 | `playback_format` | text | null |
 | `state` | `media_state` | not null |
 
@@ -261,7 +262,9 @@ Required constraints:
 Canonical meaning:
 
 - This table stores canonical media identity and processing truth.
-- `ingest_format` stores source format and `playback_format` stores worker-assigned playback format.
+- `ingest_format` stores source format and `playback_object_path` + `playback_format` store worker-assigned playback truth.
+- `playback_object_path` lifecycle is `NULL` -> set during processing -> immutable.
+- `control_plane` defines playback identity rules, processing expectations, and lifecycle interpretation.
 - It does not store lesson ordering.
 - It does not store legacy storage fallback fields.
 - It does not encode `canonical_protected_course_content_access`.
@@ -285,6 +288,9 @@ Required constraints:
 Canonical meaning:
 
 - This table is the only lesson-to-media linkage.
+- `media_asset_id` remains `NOT NULL` in the canonical baseline.
+- `NULL` is allowed only during transition/upload phase above the baseline.
+- Canonical persisted `lesson_media` rows MUST have `media_asset_id`.
 - Ordering is explicit and persistent.
 - No hybrid link to media objects, storage paths, or legacy kinds may exist.
 
@@ -298,6 +304,9 @@ Projection laws:
 - `runtime_media` is derived only from canonical `lessons`, `lesson_media`, and `media_assets`.
 - `runtime_media` must expose only playback-eligible rows.
 - A row is playback-eligible only when the source `media_assets.state = ready`.
+- `runtime_media` MUST include `playback_object_path` and `playback_format`.
+- `runtime_media` is the projection of control-plane-approved + worker-executed state.
+- Runtime must resolve playback from `runtime_media` without joining `media_assets`.
 - No direct application write path may target `runtime_media`.
 - No legacy fallback fields may exist in `runtime_media`.
 - No slug/title/access inference may exist in `runtime_media`.
@@ -604,7 +613,7 @@ These ideas remain valid in principle, but must be reimplemented clean-room:
 - unique lesson-media position per lesson
 - `cover_media_id` as FK from course to canonical media asset
 - `runtime_media` as playback projection
-- worker-driven media readiness lifecycle
+- worker-executed media readiness transitions
 
 No old DDL, trigger body, or field list may be copied forward as design truth.
 

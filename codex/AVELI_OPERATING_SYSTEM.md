@@ -1,4 +1,3 @@
-
 # AVELI Operating System v2
 
 Use `aveli_system_manifest.json` together with this file as the operating contract.
@@ -42,6 +41,7 @@ Codex MUST NOT:
 Codex MUST determine which mode applies before starting work.
 
 ### 1. Inspection Mode
+
 Use for:
 
 - audits
@@ -65,12 +65,14 @@ Inspection Mode MUST NOT:
 - STOP on ambiguity unless core access is blocked
 
 If ambiguity exists in Inspection Mode:
+
 - classify as `UNKNOWN`, `PARTIAL`, `BLOCKED`, or `DRIFT`
 - continue
 
 ---
 
 ### 2. Execution Mode
+
 Use for:
 
 - implementing code
@@ -85,12 +87,90 @@ Use for:
 Execution Mode is MUTATION-CAPABLE.
 
 Execution Mode MUST:
+
 - validate environment before execution
 - STOP on ambiguity
 - use local-only execution unless explicitly overridden
 - log mutations
 - verify before and after mutation
 - cleanup created entities where applicable
+
+---
+
+DEPENDENCY LAW:
+
+Before a task is created, modified, or executed:
+
+1. A DEPENDENCY AUDIT MUST be performed.
+
+2. Each task MUST declare:
+
+   TYPE:
+   - OWNER (creates truth)
+   - GATE (validates truth)
+   - AGGREGATE (system-wide validation)
+
+   DEPENDS_ON:
+   - explicit list of task IDs
+
+3. A task is VALID only if:
+   - all DEPENDS_ON tasks produce the required truth
+   - no dependency is implicit
+   - no dependency points to a later undefined task
+
+4. TASK CREATION IS FORBIDDEN WITHOUT:
+   - TYPE classification
+   - explicit DEPENDS_ON mapping
+
+If missing:
+→ TASK IS INVALID
+→ STOP
+
+---
+
+EXECUTION LAW:
+
+Execution order MUST be derived from dependency graph:
+
+- perform dependency audit
+- build DAG
+- perform topological sort
+
+FORBIDDEN:
+
+- manual ordering
+- domain-based ordering
+- “logical grouping”
+
+---
+
+GATE TASK RULE:
+
+If a task requires truth not yet produced:
+
+IF:
+
+- truth is owned by a later task
+  → task MUST be marked DEFERRED
+
+IF:
+
+- current task is the owner of the missing truth
+  → STOP
+
+---
+
+REPLAY LAW:
+
+Deferred tasks MUST be re-executed only after their dependencies are satisfied.
+
+---
+
+VIOLATION:
+
+If Codex creates or executes a task without dependency audit:
+→ STOP
+→ invalidate execution
 
 ---
 
@@ -174,6 +254,7 @@ If Codex attempts to rebuild index without explicit permission:
 STOP: INDEX REBUILD NOT APPROVED
 
 ---
+
 ## Mandatory Workflow Enforcement
 
 Codex MUST follow `codex/AVELI_EXECUTION_WORKFLOW.md` for all non-trivial work.
@@ -186,29 +267,37 @@ If the task affects audit, tasks, implementation, launch readiness, or verificat
 4. refuse launch-readiness claims before Phase 6 passes
 
 If the current prompt conflicts with the workflow:
+
 - STOP
 - report the conflict
 
 ---
+
 ## System Truth Model
 
 Codex MUST interpret truth using the following model:
 
 ### SYSTEM_LAWS
+
 Non-negotiable constraints:
+
 - `Aveli_System_Decisions.md`
 - `aveli_system_manifest.json`
 - explicit later user decisions
 
 ### CURRENT_TRUTH
+
 Authoritative runtime reality:
+
 - Supabase project schema
 - Supabase project data
 - verified production-like runtime facts
 - verified active storage/runtime relationships
 
 ### EMERGENT_TRUTH
+
 Local implementation candidate:
+
 - local backend
 - local database
 - repo code
@@ -330,6 +419,7 @@ Rules:
 - repo files are not automatically truth
 
 If anchor verification fails:
+
 - use canonical MCP / runtime / script path if available
 - otherwise mark `BLOCKED`
 
@@ -342,26 +432,30 @@ Codex MUST use MCP intentionally, not theatrically.
 ### Primary roles
 
 #### CURRENT_TRUTH / DATA
+
 - `supabase`
   - authoritative data and schema source
 
 #### STRUCTURE
+
 - `repo_index`
   - system structure
   - file inventory
   - path map
 
 #### SEMANTIC
-- `semantic_search`
- - PRIMARY tool for:
-  - relationship discovery
-  - cross-domain connections
-  - hidden dependency discovery
-SEMANTIC SEARCH RULE:
 
-  Codex MUST use semantic_search before attempting manual repo traversal
+- `semantic_search`
+- PRIMARY tool for:
+- relationship discovery
+- cross-domain connections
+- hidden dependency discovery
+  SEMANTIC SEARCH RULE:
+
+Codex MUST use semantic_search before attempting manual repo traversal
 
 #### VALIDATION / RUNTIME
+
 - `aveli-verification`
   - targeted truth checks
 - `aveli-media-control-plane`
@@ -372,6 +466,7 @@ SEMANTIC SEARCH RULE:
   - fallback domain inspection
 
 #### OPTIONAL
+
 - `context7`
   - external documentation only
 - `playwright`
@@ -414,10 +509,12 @@ Codex MUST NOT:
 - use generic MCP registry discovery as a required precursor to work
 
 If generic MCP registry is incomplete or misconfigured:
+
 - mark registry as `misconfigured`
 - continue using canonical repo-defined access paths
 
 If an MCP path fails:
+
 - mark that MCP as `PARTIAL`, `BLOCKED`, or `UNAVAILABLE`
 - continue if higher-priority truth sources remain available
 
@@ -486,20 +583,26 @@ Each domain artifact SHOULD classify findings as:
 ## Ambiguity Rule
 
 ### Inspection Mode
+
 If ambiguity exists:
+
 - mark `UNKNOWN`, `PARTIAL`, or `BLOCKED`
 - continue
 
 STOP only if:
+
 - SYSTEM_LAWS unavailable
 - CURRENT_TRUTH unavailable
 - repo structure unavailable
 
 ### Execution Mode
+
 If ambiguity exists:
+
 - STOP
 
 Examples:
+
 - ambiguous DB target
 - ambiguous cloud/local env
 - missing required schema
@@ -526,6 +629,7 @@ Codex MUST check:
 - `K_SERVICE` is NOT set
 
 If cloud env detected:
+
 - override safely or STOP
 
 ### Database Rule
@@ -536,6 +640,7 @@ Codex MUST:
 - NEVER use remote DB in Execution Mode unless explicitly instructed
 
 If `DATABASE_URL` is missing or ambiguous:
+
 - STOP
 
 ### Startup Command
@@ -543,7 +648,7 @@ If `DATABASE_URL` is missing or ambiguous:
 ```bash
 cd backend
 poetry run uvicorn app.main:app --host 127.0.0.1 --port 8080
-````
+```
 
 Codex MUST NOT modify this command unless explicitly instructed.
 
@@ -551,36 +656,36 @@ Codex MUST NOT modify this command unless explicitly instructed.
 
 Before starting backend:
 
-* `DATABASE_URL` exists
-* `DATABASE_URL` is local
-* `MCP_MODE=local`
-* no cloud env active
+- `DATABASE_URL` exists
+- `DATABASE_URL` is local
+- `MCP_MODE=local`
+- no cloud env active
 
 If any fail:
 
-* STOP
+- STOP
 
 ### Post-Start Verification
 
 Codex MUST verify:
 
-* `GET /healthz` → `200`
-* `GET /readyz` → `200`
+- `GET /healthz` → `200`
+- `GET /readyz` → `200`
 
 MCP endpoints:
 
-* `/mcp/verification`
-* `/mcp/logs`
-* `/mcp/media-control-plane`
-* `/mcp/domain-observability`
+- `/mcp/verification`
+- `/mcp/logs`
+- `/mcp/media-control-plane`
+- `/mcp/domain-observability`
 
 Worker health:
 
-* `get_worker_health` → all `ok`
+- `get_worker_health` → all `ok`
 
 If any fail:
 
-* STOP
+- STOP
 
 ---
 
@@ -589,12 +694,10 @@ If any fail:
 Codex MUST fully bootstrap before mutation work.
 
 1. Load env
-
-   * `ops/env_load.sh`
+   - `ops/env_load.sh`
 
 2. Validate env
-
-   * `ops/env_validate.sh`
+   - `ops/env_validate.sh`
 
 3. Run pre-flight validation
 
@@ -610,8 +713,8 @@ Codex MUST fully bootstrap before mutation work.
 
 If any required step fails:
 
-* STOP
-* no mutation allowed
+- STOP
+- no mutation allowed
 
 ---
 
@@ -629,13 +732,13 @@ Flow:
 
 Forbidden:
 
-* guessing credentials
-* UI login if API login is enough
-* alternative auth flows
+- guessing credentials
+- UI login if API login is enough
+- alternative auth flows
 
 If auth fails in required execution path:
 
-* STOP
+- STOP
 
 ---
 
@@ -663,19 +766,19 @@ If auth fails in required execution path:
 
 Rules:
 
-* verify exact invariant
-* UI observation is never sufficient verification
+- verify exact invariant
+- UI observation is never sufficient verification
 
 ---
 
 ## Mutation Rules (Execution Mode Only)
 
-* always pre-read
-* one mutation plane at a time
-* MCP → API → SQL
-* SQL last resort
-* no blind mutation
-* capture before/after evidence
+- always pre-read
+- one mutation plane at a time
+- MCP → API → SQL
+- SQL last resort
+- no blind mutation
+- capture before/after evidence
 
 ---
 
@@ -685,12 +788,12 @@ Every mutation MUST be logged.
 
 Each log MUST include:
 
-* action
-* entity_id
-* timestamp
-* expected_state
-* actual_state
-* result
+- action
+- entity_id
+- timestamp
+- expected_state
+- actual_state
+- result
 
 ---
 
@@ -700,7 +803,7 @@ In Execution Mode, Codex MUST maintain a session ledger.
 
 If entity lineage cannot be reconstructed:
 
-* STOP
+- STOP
 
 ---
 
@@ -708,8 +811,8 @@ If entity lineage cannot be reconstructed:
 
 Codex MUST:
 
-* delete all created entities unless task explicitly preserves them
-* verify deletion
+- delete all created entities unless task explicitly preserves them
+- verify deletion
 
 ---
 
@@ -735,13 +838,13 @@ Frontend is NEVER a primary truth source.
 
 ### Inspection Mode
 
-* do not start frontend unless task explicitly requires frontend evidence
+- do not start frontend unless task explicitly requires frontend evidence
 
 ### Execution Mode
 
-* static build only unless task explicitly overrides
-* port 3000
-* correct backend target required
+- static build only unless task explicitly overrides
+- port 3000
+- correct backend target required
 
 ---
 
@@ -749,8 +852,8 @@ Frontend is NEVER a primary truth source.
 
 Use Playwright only when:
 
-* UI verification is explicitly required
-* no higher-authority layer can verify the invariant
+- UI verification is explicitly required
+- no higher-authority layer can verify the invariant
 
 No hacks.
 No UI-first diagnosis.
@@ -805,8 +908,8 @@ Codex MUST NOT stall.
 
 If one layer is blocked:
 
-* classify blockage
-* continue with remaining valid layers if mode allows
+- classify blockage
+- continue with remaining valid layers if mode allows
 
 ---
 
@@ -823,16 +926,16 @@ Codex MUST prefer local database:
 
 Codex MUST verify required schemas:
 
-* `app.*`
-* `auth.*`
-* `runtime_media`
-* `media_assets`
-* `home_player_uploads`
-* `livekit_webhook_jobs`
+- `app.*`
+- `auth.*`
+- `runtime_media`
+- `media_assets`
+- `home_player_uploads`
+- `livekit_webhook_jobs`
 
 If missing:
 
-* bootstrap baseline
+- bootstrap baseline
 
 ### Local DB Bootstrap
 
@@ -846,12 +949,12 @@ Codex MUST start backend using local DB.
 
 Worker errors:
 
-* allowed only if non-blocking
-* blocking = missing runtime-required tables
+- allowed only if non-blocking
+- blocking = missing runtime-required tables
 
 If blocking:
 
-* extend baseline, not runtime code
+- extend baseline, not runtime code
 
 ---
 
@@ -862,20 +965,17 @@ A baseline replay is the only valid proof of baseline correctness.
 A valid replay MUST include:
 
 1. minimal auth substrate
-
-   * schema `auth`
-   * table `auth.users` with required identity surface
+   - schema `auth`
+   - table `auth.users` with required identity surface
 
 2. baseline slots
-
-   * `0001` through latest accepted slot
-   * strict order
+   - `0001` through latest accepted slot
+   - strict order
 
 3. minimal storage substrate if runtime depends on it
-
-   * schema `storage`
-   * `storage.objects`
-   * `storage.buckets`
+   - schema `storage`
+   - `storage.objects`
+   - `storage.buckets`
 
 ---
 
@@ -883,37 +983,37 @@ A valid replay MUST include:
 
 A replay is NOT valid unless all are true:
 
-* schema applies cleanly
-* backend boots successfully
-* `/healthz` returns `200`
-* `/readyz` returns `200`
-* MCP endpoints return `200`
+- schema applies cleanly
+- backend boots successfully
+- `/healthz` returns `200`
+- `/readyz` returns `200`
+- MCP endpoints return `200`
+  - `/mcp/logs`
+  - `/mcp/verification`
+  - `/mcp/media-control-plane`
+  - `/mcp/domain-observability`
 
-  * `/mcp/logs`
-  * `/mcp/verification`
-  * `/mcp/media-control-plane`
-  * `/mcp/domain-observability`
-* worker health reports all `ok`
+- worker health reports all `ok`
 
 If any fail:
 
-* baseline is INVALID
-* STOP
+- baseline is INVALID
+- STOP
 
 Baseline must be:
 
-* deterministic
-* reproducible from scratch
-* aligned with runtime behavior
+- deterministic
+- reproducible from scratch
+- aligned with runtime behavior
 
 ---
 
 ## Constraints
 
-* replay must not rely on pre-existing DB state
-* replay must not depend on production services
-* replay must not modify accepted baseline slots
-* all fixes must be append-only
+- replay must not rely on pre-existing DB state
+- replay must not depend on production services
+- replay must not modify accepted baseline slots
+- all fixes must be append-only
 
 ---
 
@@ -923,15 +1023,15 @@ Baseline must be:
 
 If generic registry is broken but canonical MCP access path works:
 
-* classify registry as `misconfigured`
-* continue
+- classify registry as `misconfigured`
+- continue
 
 ### Execution Mode
 
 Required MCP endpoints must verify cleanly.
 If unavailable:
 
-* STOP
+- STOP
 
 ---
 
@@ -953,10 +1053,10 @@ Do not escalate into full-system verification unless explicitly required.
 
 Before any push candidate is considered valid, Codex MUST ensure:
 
-* baseline == runtime
-* tests pass
-* no schema gaps
-* no unresolved blocking drift in target scope
+- baseline == runtime
+- tests pass
+- no schema gaps
+- no unresolved blocking drift in target scope
 
 ---
 
@@ -964,12 +1064,12 @@ Before any push candidate is considered valid, Codex MUST ensure:
 
 Codex MUST NOT:
 
-* use production DB in Execution Mode
-* guess schema
-* bypass DB errors
-* disable workers to fake green startup
-* redefine authorities through convenience code
-* silently accept legacy fallbacks as canonical
+- use production DB in Execution Mode
+- guess schema
+- bypass DB errors
+- disable workers to fake green startup
+- redefine authorities through convenience code
+- silently accept legacy fallbacks as canonical
 
 ---
 
@@ -977,8 +1077,8 @@ Codex MUST NOT:
 
 If system depends on external storage (`storage.objects`, `storage.buckets`):
 
-* baseline MUST NOT define them as business truth
-* local verification MUST provision minimal compatible substrate if runtime depends on them
+- baseline MUST NOT define them as business truth
+- local verification MUST provision minimal compatible substrate if runtime depends on them
 
 Codex MUST:
 
@@ -989,8 +1089,8 @@ Codex MUST:
 
 If storage is missing and required:
 
-* STOP in Execution Mode
-* mark `BLOCKED` in Inspection Mode
+- STOP in Execution Mode
+- mark `BLOCKED` in Inspection Mode
 
 ---
 
@@ -1004,12 +1104,14 @@ Codex guarantees evidence-based reporting, not mutation safety.
 
 All execution MUST occur in:
 
-* local app
-* local DB
-* local MCP
+- local app
+- local DB
+- local MCP
 
 If any required execution layer diverges:
 
-* STOP
+- STOP
+
+```
 
 ```
