@@ -1,5 +1,7 @@
 # NEW BASELINE DESIGN PLAN
 
+STATUS: DEPRECATED (LEGACY MODEL)
+
 This document defines a clean-room baseline design for Aveli.
 
 It is based only on:
@@ -296,17 +298,19 @@ Canonical meaning:
 
 ### 2.7 `runtime_media` Projection Boundary
 
-`runtime_media` remains a playback authority, but only as a projection.
+`runtime_media` is the runtime truth layer.
 
 Projection laws:
 
 - `runtime_media` is not source-of-truth storage.
 - `runtime_media` is derived only from canonical `lessons`, `lesson_media`, and `media_assets`.
-- `runtime_media` must expose only playback-eligible rows.
-- A row is playback-eligible only when the source `media_assets.state = ready`.
+- `runtime_media` must expose canonical runtime-truth rows.
+- A row is valid only when canonical source state authorizes runtime truth for state and resolution eligibility.
 - `runtime_media` MUST include `playback_object_path` and `playback_format`.
 - `runtime_media` is the projection of control-plane-approved + worker-executed state.
-- Runtime must resolve playback from `runtime_media` without joining `media_assets`.
+- `runtime_media` feeds backend read composition.
+- The backend read composition layer is the sole authority for frontend-facing media representation.
+- Frontend must render only and must not resolve or construct media.
 - No direct application write path may target `runtime_media`.
 - No legacy fallback fields may exist in `runtime_media`.
 - No slug/title/access inference may exist in `runtime_media`.
@@ -612,7 +616,7 @@ These ideas remain valid in principle, but must be reimplemented clean-room:
 - unique lesson position per course
 - unique lesson-media position per lesson
 - `cover_media_id` as FK from course to canonical media asset
-- `runtime_media` as playback projection
+- `runtime_media` as runtime truth layer feeding backend read composition
 - worker-executed media readiness transitions
 
 No old DDL, trigger body, or field list may be copied forward as design truth.

@@ -117,6 +117,11 @@
 - API audit artifacts describe observed runtime reality and are used for verification and mismatch tracking.
 - Observed runtime reality does NOT automatically become canonical truth.
 
+## Baseline Truth Rule
+
+- `backend/supabase/baseline_slots` is the canonical baseline source of truth.
+- Historical baseline slots and legacy DB state are reference-only inputs and MUST NOT redefine canonical media authority.
+
 ## Canonical Language Rules
 
 - `membership` is the canonical term for app-access authority.
@@ -135,7 +140,8 @@
 - `lesson_structure_surface` is the canonical term for a surface that allows only `lesson_identity` and `lesson_structure`.
 - `lesson_content_surface` is the canonical term for a surface that allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`, and requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
 - For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
-- No independent lesson-media surface exists for learner/public surfaces. Studio has a separate lesson-media edge for authoring and pipeline interaction.
+- No independent lesson-media surface exists for learner/public surfaces.
+- Studio authoring may manage `lesson_media` as authored placement, but it must not introduce a second media-resolution or frontend-representation authority.
 - `media_assets` never defines access.
 - No rule referring to visibility may be interpreted as permission for raw table access.
 - `subscription` is NOT a canonical Aveli runtime term.
@@ -171,17 +177,32 @@
 
 ## Operational Authorities
 
-- Media authority model = `split_intent_and_playback`
+- Media authority model = `identity_runtime_truth_and_backend_representation`
 - App-access authority = `memberships`
 - Canonical course-content access authority = `course_enrollments`
 - Execution authority = `worker`
 - `course_discovery_surface` exposure is not governed by `course_enrollments`
 - `lesson_structure_surface` exposure is not governed by `course_enrollments`
 - `lesson_content_surface` access must not be derived from membership alone
-- Playback authority = `runtime_media`
+- Media identity authority = `app.media_assets`
+- Media authored-placement authority = `app.lesson_media`
+- Runtime truth authority = `runtime_media`
+- Frontend representation authority = `backend_read_composition`
 - Media intent authority = `control_plane`
 - Media lifecycle observability authority = `control_plane`
 - Shape authority = `database`
+
+## Canonical Media Model
+
+- `app.media_assets` is media identity.
+- `app.lesson_media` is authored placement.
+- `app.runtime_media` is the runtime truth layer for media state and resolution eligibility.
+- `runtime_media` is NOT the final frontend representation.
+- The backend read composition layer constructs the frontend-facing media object only as `media = { media_id, state, resolved_url } | null`.
+
+runtime_media provides canonical runtime truth.
+The backend read composition layer is the sole authority for media representation to frontend.
+Frontend must render only and must not resolve or construct media.
 
 ## Media Control Plane Authority
 
@@ -190,8 +211,8 @@
   - pipeline expectations
   - lifecycle interpretation
 - `control_plane` lifecycle observability classifications are:
-  - `valid` when `state = ready`, `playback_object_path` exists, and the file exists
-  - `broken` when `state = ready` but playback is missing
+  - `valid` when canonical media state can produce deterministic `runtime_media` truth and the read layer can emit the canonical media object without fallback
+  - `broken` when canonical media state should resolve but runtime truth cannot produce the canonical media object
   - `stuck` when `state = processing` with no progress
   - `invalid` when canonical format or identity rules are violated
 - Lifecycle classification must be derived from existing canonical state only.
@@ -200,15 +221,16 @@
 - `control_plane` does NOT:
   - execute media processing
   - mutate media state
-  - perform playback validation
-  - perform playback
+  - perform runtime-media resolution
+  - construct frontend media representation
+  - perform media delivery
   - enforce DB constraints
 - Worker is the only execution authority.
 - Worker owns media transformations and canonical state transitions only through the canonical worker function.
-- Worker does NOT define media intent or playback rules.
-- `runtime_media` is the only playback authority.
-- Runtime owns playback only and may reject invalid playback state.
-- Runtime does NOT infer media behavior, validate pipeline rules, access ingest identity, or perform transformation.
+- Worker does NOT define media intent, runtime truth, or frontend representation rules.
+- `runtime_media` is the only runtime truth layer for governed media surfaces.
+- Runtime owns media state and resolution eligibility only and may reject invalid runtime state.
+- Runtime does NOT define frontend representation, validate pipeline rules outside canonical state, access ingest identity as public truth, or perform transformation.
 - Database is the only shape authority.
 - Database enforces schema shape and invariants only.
 - Database does NOT define behavior or infer meaning.
@@ -363,9 +385,9 @@
   - its own frontend management surface
   - teacher-controlled active/inactive curation
 - Home player curation is controlled by `control_plane`.
-- Home-player playback is still owned by `runtime_media`.
-- Home player does not create a separate playback authority, alternate playback law, or separate media domain.
-- Home player must not introduce special playback shortcuts, direct storage playback, or bypass paths around `runtime_media`.
+- Home-player runtime truth is still owned by `runtime_media`.
+- Home player does not create a separate media authority, alternate resolver, or separate media domain.
+- Home player must not introduce special-case frontend representation, direct storage delivery, or bypass paths around `runtime_media` and backend read composition.
 
 ## External Dependencies
 
@@ -404,22 +426,29 @@
 - onboarding
 - membership-gated app entry
 - canonical_protected_course_content_access
-- home-player curation and playback compliance
+- home-player curation and unified media-authority compliance
 
 ## Canonical Media Resolution Path
 
 - Resolution chain:
-  - `lesson_contents.content_markdown (lesson_media_id)`
-  - `lesson_media`
+  - canonical media identity and attachment pointers
   - `control_plane`
-  - `storage.objects`
   - `runtime_media`
-  - playback API
-  - client
-- `runtime_media` is the only playback authority.
-- `storage.objects` is an external physical-storage dependency and is never a valid playback source.
-- `control_plane` defines media intent and lifecycle interpretation, not execution or playback.
+  - backend read composition layer
+  - API response
+  - frontend render
+- `app.media_assets` defines media identity.
+- `app.lesson_media` defines authored placement.
+- `app.runtime_media` defines runtime truth for state and resolution eligibility.
+- `runtime_media` is not the final frontend representation.
+
+runtime_media provides canonical runtime truth.
+The backend read composition layer is the sole authority for media representation to frontend.
+Frontend must render only and must not resolve or construct media.
+- `storage.objects` is an external physical-storage dependency and is never a valid media authority or delivery source.
+- `control_plane` defines media intent and lifecycle interpretation, not execution, runtime truth, or frontend representation.
 - No layer may bypass `runtime_media`.
+- No layer may bypass backend read composition when constructing frontend-facing media.
 - All lesson/content media references must use `lesson_media_id` only.
 - Fallback is forbidden.
   - If canonical media resolution fails, the system must fail explicitly rather than route through legacy or storage shortcuts.
@@ -448,7 +477,7 @@
 - Canonical decision:
   - control plane is preserved and not open to semantic redefinition
   - control plane must not be removed or semantically redefined
-  - control plane does not own execution or playback
+  - control plane does not own execution, runtime truth, or frontend representation
 
 ### 3) Auth flow definition
 - Chosen source of truth:
@@ -465,7 +494,8 @@
 
 - API definitions: observed via audit, verified separately from legitimacy
 - Media control plane: planned, preserved, intent-authoritative
-- Playback delivery: runtime-active via `runtime_media`
+- Media runtime truth: runtime-active via `runtime_media`
+- Media representation to frontend: runtime-active via backend read composition
 - Auth flow: planned constraints + runtime-audited behavior
 - Home player ingest/curation: runtime-active within the same media domain
 - Membership app access: runtime/canonical authority
@@ -498,8 +528,11 @@
 - implicit unlock strategies
 - inferred drip behavior from course type
 - implicit `lesson_content_surface` access by inferred tags or hidden rules
-- direct playback from `storage.objects`
-- alternate playback authorities outside `runtime_media`
+- direct media delivery from `storage.objects`
+- alternate media authorities outside `runtime_media`
+- alternate frontend-representation authorities outside backend read composition
+- cover-specific resolver ownership
+- frontend media construction or resolution
 - fallback to legacy paths when canonical resolution fails
 - any endpoint or function that presents storage as business truth instead of dependency detail
 

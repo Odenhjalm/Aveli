@@ -61,14 +61,16 @@
             "state": "runtime_active",
             "role": "implementation_layer",
             "mutation_policy": "alignment_only",
-            "playback_authority": "runtime_media",
+            "runtime_truth_authority": "runtime_media",
+            "frontend_representation_authority": "backend_read_composition",
             "home_player_runtime_model": {
                 "same_media_domain": true,
                 "has_separate_upload_pipeline": true,
                 "has_separate_frontend_management_surface": true,
                 "teacher_curated_active_state": true,
                 "curation_authority": "control_plane",
-                "playback_projection": "runtime_media_only",
+                "runtime_truth_layer": "runtime_media",
+                "frontend_representation_authority": "backend_read_composition",
                 "alternative_playback_paths": "forbidden",
                 "direct_storage_playback": "forbidden"
             }
@@ -258,11 +260,12 @@
         }
     },
     "authorities": {
-        "media_authority_model": "split_intent_and_playback",
+        "media_authority_model": "identity_runtime_truth_and_backend_representation",
         "app_access_authority": "memberships",
         "canonical_protected_course_content_access_authority": "course_enrollments",
         "execution_authority": "worker",
-        "playback_authority": "runtime_media",
+        "runtime_truth_authority": "runtime_media",
+        "frontend_representation_authority": "backend_read_composition",
         "media_intent_authority": "control_plane",
         "media_lifecycle_observability_authority": "control_plane",
         "database_shape_authority": "database"
@@ -300,7 +303,7 @@
         "onboarding",
         "membership_gated_app_entry",
         "canonical_protected_course_content_access",
-        "home_player_curation_and_playback_compliance"
+        "home_player_curation_and_unified_media_authority_compliance"
     ],
     "future_facing_surfaces": [
         "activities",
@@ -310,21 +313,22 @@
     ],
     "canonical_media_resolution_path": {
         "reference_chain": [
-            "lesson_contents.content_markdown:lesson_media_id",
-            "lesson_media",
+            "media_id",
             "control_plane",
-            "storage.objects",
             "runtime_media",
-            "playback_api",
-            "client"
+            "backend_read_composition",
+            "API",
+            "frontend"
         ],
         "laws": {
-            "runtime_media_only_playback_authority": true,
-            "storage_objects_never_valid_playback_source": true,
-            "control_plane_intent_not_playback": true,
+            "runtime_media_is_runtime_truth_layer": true,
+            "backend_read_composition_is_frontend_representation_authority": true,
+            "storage_objects_never_valid_resolution_layer": true,
+            "control_plane_intent_not_frontend_representation": true,
             "control_plane_lifecycle_interpretation_authority": true,
             "control_plane_not_execution_authority": true,
             "runtime_media_bypass_forbidden": true,
+            "backend_read_composition_bypass_forbidden": true,
             "lesson_content_media_references_use_lesson_media_id_only": true,
             "fallback_forbidden": true
         },
@@ -333,7 +337,8 @@
             "separate_upload_pipeline_allowed": true,
             "separate_frontend_management_surface_allowed": true,
             "curation_controlled_by": "control_plane",
-            "playback_must_resolve_through_runtime_media": true,
+            "runtime_truth_must_flow_through_runtime_media": true,
+            "frontend_representation_must_flow_through_backend_read_composition": true,
             "alternative_playback_paths_forbidden": true,
             "direct_storage_playback_forbidden": true
         }
@@ -489,7 +494,7 @@
     },
     "rules": {
         "api_truth": "audit_is_observation_not_automatic_legitimacy",
-        "media_authority_model": "split_intent_and_playback",
+        "media_authority_model": "identity_runtime_truth_and_backend_representation",
         "app_access_authority": "memberships",
         "studio_core_boundary": {
             "includes": [
@@ -603,12 +608,13 @@
         "drip_same_cron_window_same_result": true,
         "drip_update_only_when_computed_gt_stored": true,
         "drip_never_decrease_current_unlock_position": true,
-        "playback_authority": "runtime_media",
+        "runtime_truth_authority": "runtime_media",
+        "frontend_representation_authority": "backend_read_composition",
         "media_intent_authority": "control_plane",
         "media_lifecycle_observability_authority": "control_plane",
         "execution_authority": "worker",
         "database_shape_authority": "database",
-        "media_authority_enforcement": "all_playback_must_resolve_through_runtime_media",
+        "media_authority_enforcement": "runtime_media_feeds_backend_read_composition_for_all_frontend_media_representation",
         "all_audio_must_pass_worker_pipeline": true,
         "media_readiness_mutation_authority": "canonical_worker_function",
         "canonical_worker_function_boundary": "single_security_definer_function",
@@ -625,8 +631,9 @@
         "direct_audio_ready_writes": "forbidden",
         "direct_media_assets_ready_update": "forbidden",
         "alternate_media_readiness_mutation_paths": "forbidden",
-        "storage_objects_playback_source": "forbidden",
+        "storage_objects_resolution_layer": "forbidden",
         "runtime_media_bypass": "forbidden",
+        "backend_read_composition_bypass": "forbidden",
         "lesson_content_media_reference": "lesson_media_id_only",
         "content_format": "canonical_markdown",
         "auth_behavior": "trust_boundary",
@@ -685,13 +692,13 @@
         ],
         "media_patterns": [
             "direct_storage_playback",
-            "alternate_playback_authority",
+            "alternate_media_authority",
             "runtime_media_bypass",
             "legacy_playback_fallback"
         ],
         "api_patterns": [
-            "returns_storage_path_as_canonical_playback_identity",
-            "returns_object_url_as_canonical_playback_identity",
+            "returns_storage_path_as_canonical_media_identity",
+            "returns_object_url_as_canonical_media_identity",
             "duplicates_membership_logic",
             "duplicates_enrollment_logic",
             "map_based_runtime_contract",

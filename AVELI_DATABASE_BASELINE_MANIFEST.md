@@ -127,11 +127,16 @@ Canonical media rules:
 
 ### `runtime_media` projection
 
+The canonical `runtime_media` projection is the runtime truth layer.
+
+runtime_media is not the final frontend representation.
+The backend read composition layer constructs the frontend-facing media object.
+
 The canonical `runtime_media` projection must:
 
 - include `playback_object_path`
 - include `playback_format`
-- resolve playback without joining `media_assets`
+- express runtime truth without joining `media_assets` for frontend representation
 
 ## 3. DB Enforcement Rules
 
@@ -191,5 +196,5 @@ The database baseline must explicitly forbid:
 - No default drip behavior is hardcoded in the DB baseline.
 - No non-core feature contract is smuggled into core baseline tables.
 - No metadata blob, map-style contract, or compatibility default is used as baseline truth.
-- `runtime_media` contains `playback_object_path` and `playback_format`, and runtime resolves playback without joining `media_assets`.
+- `runtime_media` contains `playback_object_path` and `playback_format`, and acts as the runtime truth layer rather than the frontend representation layer.
 - UI, backend, and DB can share the same course-configured drip model without fallback logic.
