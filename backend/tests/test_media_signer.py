@@ -10,10 +10,8 @@ def reset_settings(monkeypatch):
     """Ensure settings mutations do not leak between tests."""
     original_secret = media_signer.settings.media_signing_secret
     original_ttl = media_signer.settings.media_signing_ttl_seconds
-    original_legacy = media_signer.settings.media_allow_legacy_media
     original_supabase_url = media_signer.settings.supabase_url
     original_service_role = media_signer.settings.supabase_service_role_key
-    # Avoid env leakage: Supabase signing fallback uses service role when Supabase is configured.
     monkeypatch.setattr(media_signer.settings, "supabase_url", None, raising=False)
     monkeypatch.setattr(
         media_signer.settings, "supabase_service_role_key", None, raising=False
@@ -21,37 +19,39 @@ def reset_settings(monkeypatch):
     yield
     media_signer.settings.media_signing_secret = original_secret
     media_signer.settings.media_signing_ttl_seconds = original_ttl
-    media_signer.settings.media_allow_legacy_media = original_legacy
     media_signer.settings.supabase_url = original_supabase_url
     media_signer.settings.supabase_service_role_key = original_service_role
 
 
-def test_attach_media_links_when_legacy_enabled(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
+def test_attach_media_links_without_public_or_signer_emits_no_urls(monkeypatch):
     monkeypatch.setattr(media_signer.settings, "media_signing_secret", None, raising=False)
 
     item = {"id": "abc123"}
     media_signer.attach_media_links(item)
 
-    assert item["download_url"] == "/studio/media/abc123"
+    assert "download_url" not in item
+    assert "playback_url" not in item
     assert "signed_url" not in item
     assert "signed_url_expires_at" not in item
 
 
-def test_attach_media_links_when_legacy_disabled_but_no_signer(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", False, raising=False)
+def test_attach_media_links_strips_noncanonical_legacy_rows(monkeypatch):
     monkeypatch.setattr(media_signer.settings, "media_signing_secret", None, raising=False)
 
-    item = {"id": "xyz789"}
+    item = {
+        "id": "xyz789",
+        "media_id": "legacy-object-1",
+        "storage_bucket": "course-media",
+        "storage_path": "media/source/audio/legacy.wav",
+    }
     media_signer.attach_media_links(item)
 
-    # Fallback should still provide a legacy download URL for local dev.
-    assert item["download_url"] == "/studio/media/xyz789"
+    assert "download_url" not in item
+    assert "playback_url" not in item
     assert "signed_url" not in item
 
 
 def test_attach_media_links_with_signing_secret(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", False, raising=False)
     monkeypatch.setattr(
         media_signer.settings, "media_signing_secret", "dev-secret", raising=False
     )
@@ -59,21 +59,17 @@ def test_attach_media_links_with_signing_secret(monkeypatch):
         media_signer.settings, "media_signing_ttl_seconds", 60, raising=False
     )
 
-    item = {"id": "media42"}
+    item = {"id": "media42", "media_asset_id": "asset-42", "media_state": "ready"}
     media_signer.attach_media_links(item)
 
     assert "signed_url" in item
     assert item["signed_url"].startswith("/media/stream/")
-    # ensure expiry is ISO formatted
     expires = datetime.fromisoformat(item["signed_url_expires_at"])
     assert isinstance(expires, datetime)
-    # No legacy URL when signer works.
     assert "download_url" not in item
 
 
 def test_attach_media_links_uses_supabase_public_url_when_configured(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
-
     class _FakeUrl:
         def __init__(self, value: str) -> None:
             self._value = value
@@ -90,6 +86,8 @@ def test_attach_media_links_uses_supabase_public_url_when_configured(monkeypatch
 
     item = {
         "id": "media42",
+        "media_asset_id": "asset-42",
+        "media_state": "ready",
         "storage_path": "public-media/courses/lesson-1/sample.png",
         "storage_bucket": "public-media",
     }
@@ -100,10 +98,11 @@ def test_attach_media_links_uses_supabase_public_url_when_configured(monkeypatch
 
 
 def test_attach_media_links_falls_back_to_api_files_without_supabase(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
     monkeypatch.setattr(media_signer.settings, "supabase_url", None, raising=False)
     item = {
         "id": "media42",
+        "media_asset_id": "asset-42",
+        "media_state": "ready",
         "storage_path": "public-media/courses/lesson-1/sample.png",
     }
     media_signer.attach_media_links(item)
@@ -111,10 +110,11 @@ def test_attach_media_links_falls_back_to_api_files_without_supabase(monkeypatch
 
 
 def test_attach_media_links_builds_api_files_for_bucket_relative_public_path(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
     monkeypatch.setattr(media_signer.settings, "supabase_url", None, raising=False)
     item = {
         "id": "media43",
+        "media_asset_id": "asset-43",
+        "media_state": "ready",
         "storage_path": "lessons/lesson-1/images/sample.webp",
         "storage_bucket": "public-media",
         "kind": "image",
@@ -125,7 +125,6 @@ def test_attach_media_links_builds_api_files_for_bucket_relative_public_path(mon
 
 
 def test_attach_media_links_does_not_sign_images(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", False, raising=False)
     monkeypatch.setattr(
         media_signer.settings, "media_signing_secret", "dev-secret", raising=False
     )
@@ -136,6 +135,8 @@ def test_attach_media_links_does_not_sign_images(monkeypatch):
 
     item = {
         "id": "media44",
+        "media_asset_id": "asset-44",
+        "media_state": "ready",
         "kind": "image",
         "storage_bucket": "public-media",
         "storage_path": "public-media/lessons/lesson-1/images/sample.png",
@@ -147,13 +148,17 @@ def test_attach_media_links_does_not_sign_images(monkeypatch):
 
 
 def test_attach_media_links_excludes_private_bucket(monkeypatch):
-    monkeypatch.setattr(media_signer.settings, "media_allow_legacy_media", True, raising=False)
+    monkeypatch.setattr(media_signer.settings, "media_signing_secret", None, raising=False)
     item = {
         "id": "media84",
+        "media_asset_id": "asset-84",
+        "media_state": "ready",
         "storage_path": "course-media/course-1/lesson-1/private.mp4",
     }
     media_signer.attach_media_links(item)
-    assert item["download_url"] == "/studio/media/media84"
+    assert "download_url" not in item
+    assert "playback_url" not in item
+    assert "signed_url" not in item
 
 
 def test_attach_cover_links_strips_legacy_signed_fields_only():

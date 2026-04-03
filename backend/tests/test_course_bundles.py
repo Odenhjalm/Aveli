@@ -7,7 +7,7 @@ from psycopg import errors
 
 from app import db
 from app.config import settings
-from app.repositories import course_entitlements
+from app.repositories import courses as courses_repo
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -69,7 +69,7 @@ async def _cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
-            await cur.execute("DELETE FROM app.course_entitlements WHERE user_id = %s", (user_id,))
+            await cur.execute("DELETE FROM app.course_enrollments WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.stripe_customers WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
             await conn.commit()
@@ -246,9 +246,8 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         )
         assert webhook_resp.status_code == 200, webhook_resp.text
 
-        entitlements = await course_entitlements.list_entitlements_for_user(student_id)
-        assert slug_one in entitlements
-        assert slug_two in entitlements
+        assert await courses_repo.is_enrolled(student_id, course_one) is True
+        assert await courses_repo.is_enrolled(student_id, course_two) is True
     finally:
         if bundle_id:
             await _cleanup_bundle(bundle_id)

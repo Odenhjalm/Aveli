@@ -136,14 +136,12 @@ class PaymentsRepository {
   }
 
   Future<bool> claimPurchase(String token) async {
-    try {
-      final response = await _client.post<Map<String, dynamic>>(
-        ApiPaths.meClaimPurchase,
-        body: {'token': token},
-      );
-      return response['ok'] == true;
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
+    if (token.trim().isEmpty) {
+      throw UnexpectedFailure(message: 'Köptoken saknas.');
     }
+    throw UnexpectedFailure(
+      message:
+          'Köp-claim stöds inte längre via den borttagna legacy-/api/me-ytan.',
+    );
   }
 }

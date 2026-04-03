@@ -1,12 +1,38 @@
 import json
+import uuid
 
 import pytest
 
 from app import db, repositories
 from app.config import settings
-from app.repositories import course_entitlements
+from app.repositories import courses as courses_repo
 
 from .utils import register_user
+
+
+async def _create_course(slug: str, price_amount_cents: int) -> str:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.courses (
+                    slug,
+                    title,
+                    course_group_id,
+                    step,
+                    price_amount_cents,
+                    drip_enabled,
+                    drip_interval_days,
+                    is_published
+                )
+                VALUES (%s, %s, gen_random_uuid(), 'step1', %s, false, null, true)
+                RETURNING id
+                """,
+                (slug, f"Course {slug}", price_amount_cents),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    return str(row[0])
 
 
 @pytest.mark.anyio("asyncio")
@@ -21,7 +47,7 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
     settings.stripe_test_membership_price_monthly = "price_month_test"
     settings.stripe_test_membership_price_id_yearly = "price_year_test"
 
-    headers, user_id, _ = await register_user(async_client)
+    _, user_id, _ = await register_user(async_client)
 
     created_event = {
         "id": "evt_sub_create",
@@ -99,11 +125,6 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
     assert membership["status"] == "active"
     assert membership["stripe_subscription_id"] == "sub_123"
 
-    me_membership = await async_client.get("/api/me/membership", headers=headers)
-    assert me_membership.status_code == 200
-    body = me_membership.json()
-    assert body["membership"]["status"] == "active"
-
 
 @pytest.mark.anyio("asyncio")
 async def test_unified_webhook_processes_subscription_and_checkout(async_client, monkeypatch):
@@ -114,8 +135,9 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
     settings.stripe_test_secret_key = "sk_test_value"
     settings.stripe_test_webhook_secret = "whsec_test"
 
-    headers, user_id, _ = await register_user(async_client)
-    course_slug = "integration-webhook-course"
+    _, user_id, _ = await register_user(async_client)
+    course_slug = f"integration-webhook-course-{uuid.uuid4().hex[:8]}"
+    course_id = await _create_course(course_slug, 1500)
 
     events = [
         {
@@ -188,8 +210,7 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
     assert membership["status"] == "active"
     assert membership["stripe_subscription_id"] == "sub_canonical"
 
-    entitlements = await course_entitlements.list_entitlements_for_user(str(user_id))
-    assert course_slug in entitlements
+    assert await courses_repo.is_enrolled(str(user_id), course_id) is True
 
 
 @pytest.mark.anyio("asyncio")

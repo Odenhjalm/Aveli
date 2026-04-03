@@ -114,31 +114,6 @@ async def resolve_pipeline_playback(
     )
 
 
-async def _authorize_legacy_media_playback(
-    *,
-    storage_path: str,
-    storage_bucket: str,
-    user_id: str,
-) -> None:
-    del storage_path, storage_bucket, user_id
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Legacy playback is unavailable in canonical runtime",
-    )
-
-
-async def resolve_object_media_playback(
-    *,
-    lesson_media_id: str,
-    user_id: str,
-) -> dict[str, Any]:
-    del lesson_media_id, user_id
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Legacy playback is unavailable in canonical runtime",
-    )
-
-
 async def _build_pipeline_playback_response(
     *,
     resolution: LessonMediaResolution,
@@ -281,17 +256,4 @@ async def resolve_lesson_media_playback(
     return await resolve_runtime_media_playback(
         runtime_media_id=runtime_media_id,
         user_id=user_id,
-    )
-
-
-async def resolve_legacy_playback(
-    *,
-    lesson_media_id: str,
-    user_id: str,
-    mode: str | None = None,
-) -> dict[str, Any]:
-    del lesson_media_id, user_id, mode
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Legacy playback is unavailable in canonical runtime",
     )

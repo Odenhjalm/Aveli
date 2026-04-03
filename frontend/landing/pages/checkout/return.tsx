@@ -4,16 +4,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import styles from '../../styles/CheckoutStatus.module.css';
 
-type MembershipRecord = {
-  status?: string | null;
-  plan_interval?: string | null;
-  stripe_subscription_id?: string | null;
-};
-
-type MembershipResponse = {
-  membership: MembershipRecord | null;
-};
-
 type SessionStatusResponse = {
   ok: boolean;
   session_id: string;
@@ -78,25 +68,9 @@ export default function CheckoutReturn() {
     let cancelled = false;
     const startedAt = Date.now();
     const apiBase = resolveApiBase();
-    const membershipUrl = apiBase ? `${apiBase}/api/me/membership` : '/api/me/membership';
     const sessionStatusUrl = apiBase
       ? `${apiBase}/api/billing/session-status?session_id=${encodeURIComponent(id)}`
       : `/api/billing/session-status?session_id=${encodeURIComponent(id)}`;
-
-    const fetchMembershipStatus = async () => {
-      const response = await fetch(membershipUrl, { credentials: 'include' });
-      if (response.status === 401 || response.status === 403) {
-        setPhase('unauthorized');
-        setMessage('Logga in för att slutföra betalningen.');
-        setDetail('Öppna Aveli-appen eller webbklienten, logga in och försök igen.');
-        return null;
-      }
-      if (!response.ok) {
-        throw new Error(`Membership fetch failed: ${response.status}`);
-      }
-      const payload = (await response.json()) as MembershipResponse;
-      return payload?.membership?.status ?? null;
-    };
 
     const poll = async () => {
       if (cancelled) return;
@@ -141,21 +115,6 @@ export default function CheckoutReturn() {
             setDetail('Ditt medlemskap är aktivt. Du kan stänga denna flik och fortsätta i appen.');
             return;
           }
-
-          if (!status && payload.payment_status === 'paid') {
-            try {
-              status = await fetchMembershipStatus();
-              if (status) {
-                setMembershipStatus(status);
-              }
-            } catch {
-              // ignore transient membership errors
-            }
-          }
-        } else {
-          status = await fetchMembershipStatus();
-          lastStatusRef.current = status;
-          setMembershipStatus(status);
         }
 
         if (isActive(status)) {

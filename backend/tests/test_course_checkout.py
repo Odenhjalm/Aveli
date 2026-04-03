@@ -8,7 +8,6 @@ from psycopg import errors
 
 from app import db, repositories
 from app.config import settings
-from app.repositories import course_entitlements
 from app.repositories import courses as courses_repo
 from app.services import subscription_service
 
@@ -96,18 +95,18 @@ async def _cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
-            await cur.execute("DELETE FROM app.course_entitlements WHERE user_id = %s", (user_id,))
+            await cur.execute("DELETE FROM app.course_enrollments WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.stripe_customers WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
             await conn.commit()
 
 
-async def _clear_entitlement(user_id: str, slug: str):
+async def _clear_enrollment(user_id: str, course_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                "DELETE FROM app.course_entitlements WHERE user_id = %s AND course_slug = %s",
-                (user_id, slug),
+                "DELETE FROM app.course_enrollments WHERE user_id = %s AND course_id = %s",
+                (user_id, course_id),
             )
             await conn.commit()
 
@@ -268,6 +267,7 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
     _set_stripe_test_env(monkeypatch)
     monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
     slug = f"web-{uuid.uuid4().hex[:6]}"
+    course_id = await _create_course(slug, price_amount_cents=1500)
     headers, user_id, _ = await register_user(async_client)
 
     def fake_construct_event(payload, sig_header, secret):
@@ -296,17 +296,17 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
             headers={"stripe-signature": "sig_test"},
         )
         assert resp.status_code == 200, resp.text
-        entitlements = await course_entitlements.list_entitlements_for_user(str(user_id))
-        assert slug in entitlements
+        assert await courses_repo.is_enrolled(str(user_id), course_id) is True
     finally:
-        await _clear_entitlement(str(user_id), slug)
         await _cleanup_user(str(user_id))
+        await _cleanup_course(course_id)
 
 
 async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
     monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
     slug = f"intent-{uuid.uuid4().hex[:6]}"
+    course_id = await _create_course(slug, price_amount_cents=1500)
     headers, user_id, _ = await register_user(async_client)
 
     def fake_construct_event(payload, sig_header, secret):
@@ -331,14 +331,13 @@ async def test_webhook_payment_intent_grants_entitlement(async_client, monkeypat
             headers={"stripe-signature": "sig_test"},
         )
         assert resp.status_code == 200, resp.text
-        entitlements = await course_entitlements.list_entitlements_for_user(str(user_id))
-        assert slug in entitlements
+        assert await courses_repo.is_enrolled(str(user_id), course_id) is True
     finally:
-        await _clear_entitlement(str(user_id), slug)
         await _cleanup_user(str(user_id))
+        await _cleanup_course(course_id)
 
 
-async def test_refunded_step1_order_revokes_entitlement_and_enrollment(async_client, monkeypatch):
+async def test_refunded_step1_order_revokes_enrollment(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
     monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
     slug = f"refund-step1-{uuid.uuid4().hex[:6]}"
@@ -369,13 +368,11 @@ async def test_refunded_step1_order_revokes_entitlement_and_enrollment(async_cli
         payment_intent="pi_refund_step1",
         checkout_id="cs_refund_step1",
     )
-    await course_entitlements.grant_course_entitlement(
+    await courses_repo.create_course_enrollment(
         user_id=str(user_id),
-        course_slug=slug,
-        stripe_customer_id="cus_refund_step1",
-        payment_intent_id="pi_refund_step1",
+        course_id=course_id,
+        source="purchase",
     )
-    await courses_repo.ensure_course_enrollment(str(user_id), course_id, source="purchase")
 
     def fake_construct_event(payload, sig_header, secret):
         assert secret == "whsec_test"
@@ -398,9 +395,6 @@ async def test_refunded_step1_order_revokes_entitlement_and_enrollment(async_cli
         updated_order = await repositories.get_order(order["id"])
         assert updated_order is not None
         assert updated_order["status"] == "refunded"
-
-        entitlements = await course_entitlements.list_entitlements_for_user(str(user_id))
-        assert slug not in entitlements
 
         assert await courses_repo.is_enrolled(str(user_id), course_id) is False
 

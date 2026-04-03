@@ -7,7 +7,7 @@ import pytest
 
 from app import schemas
 from app.repositories import auth as auth_repo
-from app.routes import api_auth, api_me
+from app.routes import api_auth
 from app.services import email_verification, onboarding_state, subscription_service
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -469,21 +469,6 @@ async def test_auth_me_response_includes_computed_teacher_access(monkeypatch):
     response = await api_auth._profile_response("teacher-user")
     assert response.is_teacher is True
     assert response.membership_active is False
-
-
-async def test_welcome_completion_sets_terminal_state(monkeypatch):
-    async def fake_set_onboarding_state(user_id: str, state: str):
-        assert user_id == "welcome-user"
-        assert state == "welcomed"
-        return {"user_id": user_id, "onboarding_state": state}
-
-    monkeypatch.setattr(
-        "app.routes.api_me.repositories.set_onboarding_state",
-        fake_set_onboarding_state,
-    )
-
-    response = await api_me.complete_welcome(current={"id": "welcome-user"})
-    assert response.onboarding_state == "welcomed"
 
 
 async def test_subscription_webhook_syncs_state_and_skips_duplicates(monkeypatch):

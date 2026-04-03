@@ -2747,52 +2747,28 @@ async def test_lesson_playback_legacy_non_intro_audio_is_rejected(
         await cleanup_user(user_id)
 
 
-async def test_debug_media_returns_storage_path_and_signed_url(
-    async_client, monkeypatch
-):
+async def test_debug_media_rejects_noncanonical_legacy_row(async_client, monkeypatch):
     headers, user_id = await register_teacher(async_client)
     try:
         lesson_media_id = str(uuid.uuid4())
-        storage_path = "media/derived/audio/courses/demo/lessons/demo/legacy.mp3"
 
         async def fake_get_media(media_id: str):
             assert media_id == lesson_media_id
             return {
                 "id": lesson_media_id,
                 "media_asset_id": None,
-                "storage_path": storage_path,
+                "storage_path": "media/derived/audio/courses/demo/lessons/demo/legacy.mp3",
                 "storage_bucket": "course-media",
             }
 
-        async def fake_resolve_object_media_playback(
-            *, lesson_media_id: str, user_id: str
-        ):
-            assert lesson_media_id
-            assert user_id
-            return {
-                "media_id": lesson_media_id,
-                "url": f"https://stream.local/course-media/{storage_path}",
-                "playback_url": f"https://stream.local/course-media/{storage_path}",
-                "storage_path": storage_path,
-            }
-
         monkeypatch.setattr(models, "get_media", fake_get_media, raising=True)
-        monkeypatch.setattr(
-            lesson_playback_service,
-            "resolve_object_media_playback",
-            fake_resolve_object_media_playback,
-            raising=True,
-        )
 
         resp = await async_client.get(
             f"/debug/media/{lesson_media_id}",
             headers=headers,
         )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["lesson_media_id"] == lesson_media_id
-        assert body["storage_path"] == storage_path
-        assert body["signed_url"] == f"https://stream.local/course-media/{storage_path}"
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["detail"] == "Lesson media has no playable source"
     finally:
         await cleanup_user(user_id)
 

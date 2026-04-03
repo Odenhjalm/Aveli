@@ -7,7 +7,6 @@ from psycopg import errors
 
 from ...repositories import (
     auth as auth_repo,
-    course_entitlements as course_entitlements_repo,
     courses as courses_repo,
     memberships as memberships_repo,
     profiles as profiles_repo,
@@ -32,7 +31,6 @@ _SCHEMA_GUARDED_SOURCES = {
     "memberships.get_membership": "warning",
     "courses.list_courses": "warning",
     "courses.list_my_courses": "warning",
-    "course_entitlements.list_entitlements_for_user": "warning",
 }
 
 
@@ -75,7 +73,6 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
         (membership_row, membership_issue),
         (authored_courses_raw, authored_courses_issue),
         (enrolled_courses_raw, enrolled_courses_issue),
-        (entitlement_slugs_raw, entitlements_issue),
     ) = await asyncio.gather(
         _guard_schema("auth.get_user_by_id", auth_repo.get_user_by_id(normalized_user_id)),
         _guard_schema("profiles.get_profile", profiles_repo.get_profile(normalized_user_id)),
@@ -85,14 +82,9 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             courses_repo.list_courses(teacher_id=normalized_user_id, limit=_COURSE_LIMIT),
         ),
         _guard_schema("courses.list_my_courses", courses_repo.list_my_courses(normalized_user_id)),
-        _guard_schema(
-            "course_entitlements.list_entitlements_for_user",
-            course_entitlements_repo.list_entitlements_for_user(normalized_user_id),
-        ),
     )
     authored_courses_raw = authored_courses_raw or []
     enrolled_courses_raw = enrolled_courses_raw or []
-    entitlement_slugs_raw = entitlement_slugs_raw or []
 
     derived_onboarding_state: str | None = None
     if profile_row is not None:
@@ -109,7 +101,6 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
     enrolled_course_ids = unique_sorted_strings(
         row.get("id") for row in list(enrolled_courses_raw)[:_COURSE_LIMIT]
     )
-    entitlement_slugs = unique_sorted_strings(list(entitlement_slugs_raw)[:_COURSE_LIMIT])
 
     violations: list[dict[str, Any]] = []
     inconsistencies: list[dict[str, Any]] = []
@@ -120,7 +111,6 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
         membership_issue,
         authored_courses_issue,
         enrolled_courses_issue,
-        entitlements_issue,
     ):
         if source_issue is None:
             continue
@@ -257,7 +247,6 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             ),
             "authored_course_count": len(authored_course_ids),
             "enrolled_course_count": len(enrolled_course_ids),
-            "entitlement_count": len(entitlement_slugs),
         },
         "truth_sources": {
             "auth": {
@@ -278,9 +267,6 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
                 "authored_course_ids": authored_course_ids,
                 "enrolled_course_ids": enrolled_course_ids,
             },
-            "entitlements": {
-                "course_slugs": entitlement_slugs,
-            },
         },
         "sources_consulted": [
             "auth.get_user_by_id",
@@ -289,6 +275,5 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             "onboarding_state.derive_onboarding_state",
             "courses.list_courses",
             "courses.list_my_courses",
-            "course_entitlements.list_entitlements_for_user",
         ],
     }

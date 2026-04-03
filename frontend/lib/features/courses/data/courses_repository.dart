@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
 Object? _requiredField(Object? payload, String fieldName) {
@@ -479,8 +480,7 @@ class LessonMediaItem {
     required this.position,
     required this.mediaType,
     required this.state,
-    required this.originalName,
-    required this.previewReady,
+    required this.media,
   });
 
   final String id;
@@ -489,16 +489,7 @@ class LessonMediaItem {
   final int position;
   final String mediaType;
   final String state;
-  final String? originalName;
-  final bool previewReady;
-
-  String get fileName {
-    final name = originalName;
-    if (name == null || name.isEmpty) {
-      throw StateError('Lektionsmedia saknar originalnamn: $id');
-    }
-    return name;
-  }
+  final ResolvedMediaData? media;
 
   factory LessonMediaItem.fromResponse(Object? payload) {
     return LessonMediaItem(
@@ -517,14 +508,23 @@ class LessonMediaItem {
         'media_type',
       ),
       state: _requireString(_requiredField(payload, 'state'), 'state'),
-      originalName: _optionalString(
-        _requiredField(payload, 'original_name'),
-        'original_name',
-      ),
-      previewReady: _requireBool(
-        _requiredField(payload, 'preview_ready'),
-        'preview_ready',
+      media: _optionalResolvedMedia(
+        _requiredField(payload, 'media'),
+        'media',
       ),
     );
+  }
+}
+
+ResolvedMediaData? _optionalResolvedMedia(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final Map<String, dynamic> data:
+      return ResolvedMediaData.fromJson(data);
+    case final Map data:
+      return ResolvedMediaData.fromJson(Map<String, dynamic>.from(data));
+    default:
+      throw StateError('Invalid field type for $fieldName');
   }
 }

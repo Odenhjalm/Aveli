@@ -10,7 +10,6 @@ from .. import stripe_mode
 from ..config import settings
 from ..repositories import course_bundles as bundle_repo
 from ..repositories import courses as courses_repo
-from ..repositories import course_entitlements
 from ..schemas.checkout import CheckoutCreateResponse
 from ..schemas.course_bundles import (
     CourseBundleCourse,
@@ -217,22 +216,12 @@ async def grant_bundle_entitlements(
     if not courses:
         return
     for course in courses:
-        slug = course.get("slug")
         course_id = course.get("course_id")
         if course_id:
-            # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-            await courses_repo.ensure_course_enrollment(
-                user_id,
-                str(course_id),
-                source="purchase",
-            )
-        if slug:
-            # LEGACY ACCESS PATH — DO NOT EXTEND.
-            await course_entitlements.grant_course_entitlement(
+            await courses_repo.create_course_enrollment(
                 user_id=user_id,
-                course_slug=str(slug),
-                stripe_customer_id=stripe_customer_id,
-                payment_intent_id=payment_intent_id,
+                course_id=str(course_id),
+                source="purchase",
             )
 
 

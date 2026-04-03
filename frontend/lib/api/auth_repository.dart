@@ -7,6 +7,7 @@ import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/data/models/profile.dart';
 
 class AuthRepository {
@@ -158,7 +159,10 @@ class AuthRepository {
   }
 
   Future<void> completeWelcome() async {
-    await _client.post<Map<String, dynamic>>(ApiPaths.meWelcomeComplete);
+    throw UnexpectedFailure(
+      message:
+          'Välkomststeget stöds inte längre via den borttagna legacy-/api/me-ytan.',
+    );
   }
 
   Future<void> logout() => _tokens.clear();

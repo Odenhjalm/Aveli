@@ -1000,7 +1000,7 @@ class ProfileDetailResponse(ProfileDetail):
     pass
 
 
-class CourseCoverResolved(BaseModel):
+class ResolvedMedia(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     media_id: UUID
@@ -1017,7 +1017,7 @@ class Course(BaseModel):
     course_group_id: UUID
     step: str
     cover_media_id: UUID | None = None
-    cover: CourseCoverResolved | None = None
+    cover: ResolvedMedia | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: Optional[int]
@@ -1109,8 +1109,7 @@ class LearnerLessonMediaItem(BaseModel):
     position: int
     media_type: Literal["audio", "image", "video", "document"]
     state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
-    original_name: str | None = None
-    preview_ready: bool
+    media: ResolvedMedia | None = None
 
 
 class LessonContentResponse(BaseModel):

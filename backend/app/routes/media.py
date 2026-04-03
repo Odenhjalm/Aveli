@@ -15,7 +15,7 @@ from ..auth import CurrentUser
 from ..config import settings
 from ..repositories import media_resolution_failures
 from ..repositories import storage_objects
-from ..services import lesson_playback_service, storage_service
+from ..services import storage_service
 from ..utils.http_headers import build_content_disposition
 from ..utils import media_robustness
 from ..utils.media_signer import (
@@ -611,21 +611,10 @@ async def _build_streaming_response(
 
 @router.post("/sign", response_model=schemas.MediaSignResponse)
 async def sign_media(payload: schemas.MediaSignRequest, current: CurrentUser):
-    logger.info(
-        "LEGACY_MEDIA_SIGN_HIT media_id=%s user_id=%s mode=%s",
-        payload.media_id,
-        current["id"],
-        payload.mode,
-    )
-    resolved = await lesson_playback_service.resolve_legacy_playback(
-        lesson_media_id=payload.media_id,
-        user_id=str(current["id"]),
-        mode=payload.mode,
-    )
-    return schemas.MediaSignResponse(
-        media_id=resolved["media_id"],
-        signed_url=resolved["url"],
-        expires_at=resolved["expires_at"],
+    del payload, current
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy media signing endpoint removed from canonical runtime",
     )
 
 
@@ -651,20 +640,17 @@ async def stream_signed_media(token: str, request: Request):
     )
 
     row = await models.get_media(media_id)
-    lesson_media_id: str | None = None
     if not row:
-        # Attempt fallback to direct media object references (e.g. avatars)
-        media_object = await models.get_media_object(media_id)
-        if not media_object:
-            raise HTTPException(status_code=404, detail="Media not found")
-        row = {
-            "id": media_object["id"],
-            "storage_path": media_object.get("storage_path"),
-            "storage_bucket": media_object.get("storage_bucket"),
-            "content_type": media_object.get("content_type"),
-        }
-    else:
-        lesson_media_id = str(row.get("id") or "")
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    lesson_media_id = str(row.get("id") or "")
+    media_asset_id = str(row.get("media_asset_id") or "").strip()
+    media_state = str(row.get("media_state") or "").strip().lower()
+    if not media_asset_id or media_state != "ready":
+        raise HTTPException(
+            status_code=404,
+            detail="Legacy playback is unavailable in canonical runtime",
+        )
 
     return await _build_streaming_response(
         row,

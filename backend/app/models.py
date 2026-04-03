@@ -1015,47 +1015,47 @@ async def add_lesson_media_entry(
                   i.kind,
                   CASE
                     WHEN ma.id IS NOT NULL AND ma.state = 'ready'
-                      THEN coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, i.storage_path)
-                    WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
-                      THEN coalesce(mo.storage_path, i.storage_path)
-                    ELSE coalesce(mo.storage_path, i.storage_path, ma.original_object_path)
+                      THEN ma.playback_object_path
+                    ELSE i.storage_path
                   END AS storage_path,
                   CASE
                     WHEN ma.id IS NOT NULL AND ma.state = 'ready'
-                      THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, i.storage_bucket, 'lesson-media')
-                    WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
-                      THEN coalesce(mo.storage_bucket, i.storage_bucket, 'lesson-media')
-                    ELSE coalesce(mo.storage_bucket, i.storage_bucket, ma.storage_bucket, 'lesson-media')
+                      THEN %s
+                    ELSE coalesce(i.storage_bucket, 'lesson-media')
                   END AS storage_bucket,
                   i.media_id,
                   i.media_asset_id,
                   i.position,
                   coalesce(ma.duration_seconds, i.duration_seconds) AS duration_seconds,
-                  coalesce(
-                    mo.content_type,
-                    CASE
-                      WHEN ma.state = 'ready' AND lower(coalesce(ma.media_type, '')) = 'audio'
-                        THEN 'audio/mpeg'
-                      ELSE ma.original_content_type
-                    END
-                  ) AS content_type,
-                  coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
-                  coalesce(mo.original_name, ma.original_filename) AS original_name,
-                  coalesce(
-                    ma.state,
-                    CASE
-                      WHEN lower(coalesce(i.kind, '')) IN ('document', 'pdf')
-                        THEN 'ready'
-                      ELSE NULL
-                    END
-                  ) AS media_state,
+                  CASE
+                    WHEN ma.state = 'ready' AND lower(coalesce(ma.media_type, '')) = 'audio'
+                      THEN 'audio/mpeg'
+                    WHEN ma.id IS NOT NULL
+                      THEN ma.original_content_type
+                    WHEN lower(coalesce(i.kind, '')) IN ('document', 'pdf')
+                      THEN 'application/pdf'
+                    ELSE NULL
+                  END AS content_type,
+                  CASE
+                    WHEN ma.id IS NOT NULL THEN ma.original_size_bytes
+                    ELSE NULL
+                  END AS byte_size,
+                  CASE
+                    WHEN ma.id IS NOT NULL THEN ma.original_filename
+                    ELSE NULL
+                  END AS original_name,
+                  CASE
+                    WHEN ma.id IS NOT NULL THEN ma.state
+                    WHEN lower(coalesce(i.kind, '')) IN ('document', 'pdf')
+                      THEN 'ready'
+                    ELSE NULL
+                  END AS media_state,
                   ma.ingest_format,
                   ma.streaming_format,
                   ma.codec,
                   ma.error_message,
                   i.created_at
                 FROM inserted i
-                LEFT JOIN app.media_objects mo ON mo.id = i.media_id
                 LEFT JOIN app.media_assets ma ON ma.id = i.media_asset_id
                 """,
                 (
@@ -1067,6 +1067,7 @@ async def add_lesson_media_entry(
                     normalized_media_asset_id,
                     position,
                     duration_seconds,
+                    settings.media_source_bucket,
                 ),
             )
             row = await _fetchone(cur)
@@ -1195,42 +1196,48 @@ async def get_media(media_id: str) -> dict | None:
               lm.kind,
               CASE
                 WHEN ma.id IS NOT NULL AND ma.state = 'ready'
-                  THEN coalesce(ma.streaming_object_path, ma.original_object_path, mo.storage_path, lm.storage_path)
-                WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
-                  THEN coalesce(mo.storage_path, lm.storage_path)
-                ELSE coalesce(mo.storage_path, lm.storage_path, ma.original_object_path)
+                  THEN ma.playback_object_path
+                ELSE lm.storage_path
               END AS storage_path,
               CASE
                 WHEN ma.id IS NOT NULL AND ma.state = 'ready'
-                  THEN coalesce(ma.streaming_storage_bucket, ma.storage_bucket, mo.storage_bucket, lm.storage_bucket, 'lesson-media')
-                WHEN ma.id IS NOT NULL AND lower(coalesce(ma.media_type, '')) = 'audio'
-                  THEN coalesce(mo.storage_bucket, lm.storage_bucket, 'lesson-media')
-                ELSE coalesce(mo.storage_bucket, lm.storage_bucket, ma.storage_bucket, 'lesson-media')
+                  THEN %s
+                ELSE coalesce(lm.storage_bucket, 'lesson-media')
               END AS storage_bucket,
               lm.media_id,
               lm.media_asset_id,
-              coalesce(
-                mo.content_type,
-                CASE
-                  WHEN ma.state = 'ready' AND lower(coalesce(ma.media_type, '')) = 'audio'
-                    THEN 'audio/mpeg'
-                  ELSE ma.original_content_type
-                END
-              ) AS content_type,
-              coalesce(mo.byte_size, ma.original_size_bytes) AS byte_size,
-              coalesce(mo.original_name, ma.original_filename) AS original_name,
-              coalesce(ma.state, CASE WHEN lower(coalesce(lm.kind, '')) IN ('document', 'pdf') THEN 'ready' ELSE NULL END) AS media_state,
+              CASE
+                WHEN ma.state = 'ready' AND lower(coalesce(ma.media_type, '')) = 'audio'
+                  THEN 'audio/mpeg'
+                WHEN ma.id IS NOT NULL
+                  THEN ma.original_content_type
+                WHEN lower(coalesce(lm.kind, '')) IN ('document', 'pdf')
+                  THEN 'application/pdf'
+                ELSE NULL
+              END AS content_type,
+              CASE
+                WHEN ma.id IS NOT NULL THEN ma.original_size_bytes
+                ELSE NULL
+              END AS byte_size,
+              CASE
+                WHEN ma.id IS NOT NULL THEN ma.original_filename
+                ELSE NULL
+              END AS original_name,
+              CASE
+                WHEN ma.id IS NOT NULL THEN ma.state
+                WHEN lower(coalesce(lm.kind, '')) IN ('document', 'pdf') THEN 'ready'
+                ELSE NULL
+              END AS media_state,
               ma.ingest_format,
               ma.streaming_format,
               ma.codec,
               ma.error_message
             FROM app.lesson_media lm
-            LEFT JOIN app.media_objects mo ON mo.id = lm.media_id
             LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
             WHERE lm.id = %s
               AND app.is_test_row_visible(lm.is_test, lm.test_session_id)
             """,
-            (media_id,),
+            (settings.media_source_bucket, media_id),
         )
         return await _fetchone(cur)
 

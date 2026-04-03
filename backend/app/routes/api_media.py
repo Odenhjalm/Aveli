@@ -2436,12 +2436,6 @@ async def debug_media(
             )
             if media_asset:
                 storage_path = media_asset.get("streaming_object_path")
-    elif storage_path:
-        playback = await lesson_playback_service.resolve_object_media_playback(
-            lesson_media_id=lesson_media_id_str,
-            user_id=str(current["id"]),
-        )
-        signed_url = playback["url"]
 
     if not storage_path or not signed_url:
         raise HTTPException(

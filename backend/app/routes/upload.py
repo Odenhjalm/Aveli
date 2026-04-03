@@ -488,12 +488,6 @@ async def upload_course_media(
 ) -> dict[str, Any]:
     _raise_legacy_lesson_upload_disabled()
 
-    if not settings.media_allow_legacy_media:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Legacy upload endpoint disabled",
-        )
-
     owner = current["id"]
     owner_id = str(owner)
     if not course_id and not lesson_id:
@@ -801,12 +795,6 @@ async def upload_public_media(
     current: TeacherUser,
 ) -> dict[str, Any]:
     _raise_legacy_lesson_upload_disabled()
-
-    if not settings.media_allow_legacy_media:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Legacy upload endpoint disabled",
-        )
 
     user_id = str(current["id"])
     relative_dir = Path("public-media") / user_id

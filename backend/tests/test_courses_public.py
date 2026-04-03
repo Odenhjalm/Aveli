@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app import db, repositories
-from app.repositories import course_entitlements
+from app.repositories import courses as courses_repo
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -51,6 +51,7 @@ async def promote_to_teacher(user_id: str):
 async def cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute("DELETE FROM app.course_enrollments WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
             await conn.commit()
 
@@ -445,12 +446,11 @@ async def test_step1_ownership_does_not_bypass_intro_membership_rules(async_clie
             headers=auth_header(teacher_token),
         )
         assert step1_resp.status_code == 200, step1_resp.text
-
-        await course_entitlements.grant_course_entitlement(
+        step1_id = str(step1_resp.json()["id"])
+        await courses_repo.create_course_enrollment(
             user_id=str(student_id),
-            course_slug=step1_slug,
-            stripe_customer_id="cus_step1_owner",
-            payment_intent_id="pi_step1_owner",
+            course_id=step1_id,
+            source="purchase",
         )
 
         intro_one_resp = await async_client.post(

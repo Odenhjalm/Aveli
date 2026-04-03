@@ -190,12 +190,10 @@ async def main():
                 sub_resp.raise_for_status()
                 session_payload = sub_resp.json()
                 print("[billing] subscription session", session_payload.get("checkout_url"))
-                membership_resp = await client.get(
-                    "/api/me/membership",
-                    headers={"Authorization": f"Bearer {token}"},
+                print(
+                    "[billing] session confirmation now lives on /api/billing/session-status; "
+                    "legacy /api/me membership read was removed"
                 )
-                membership_resp.raise_for_status()
-                print("[billing] membership state", membership_resp.json())
             except httpx.HTTPStatusError as exc:
                 body = exc.response.text if exc.response is not None else str(exc)
                 print(

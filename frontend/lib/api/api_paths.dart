@@ -15,9 +15,6 @@ class ApiPaths {
   static const billingSessionStatus = '/api/billing/session-status';
   static const billingCancelSubscription = '/api/billing/cancel-subscription';
 
-  static const meClaimPurchase = '/api/me/claim-purchase';
-  static const meWelcomeComplete = '/api/me/onboarding/welcome-complete';
-
   static const orders = '/orders';
   static String order(String orderId) => '/orders/$orderId';
 

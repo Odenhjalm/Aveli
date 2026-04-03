@@ -49,9 +49,6 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
     async def _fake_list_my_courses(_: str):
         return [{"id": "course-z"}]
 
-    async def _fake_list_entitlements(_: str):
-        return ["foundations-step1"]
-
     async def _fake_derive_onboarding_state(_: str):
         return "access_active_profile_complete"
 
@@ -83,12 +80,6 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
         user_inspection.courses_repo,
         "list_my_courses",
         _fake_list_my_courses,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        user_inspection.course_entitlements_repo,
-        "list_entitlements_for_user",
-        _fake_list_entitlements,
         raising=True,
     )
     monkeypatch.setattr(
@@ -160,6 +151,11 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
         "course-a",
         "course-b",
     ]
+    assert "entitlements" not in result["data"]["truth_sources"]
+    assert (
+        "course_entitlements.list_entitlements_for_user"
+        not in result["data"]["sources_consulted"]
+    )
 
 
 async def test_domain_observability_mcp_inspect_media_asset(async_client, monkeypatch):

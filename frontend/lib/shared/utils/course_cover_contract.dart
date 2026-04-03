@@ -1,16 +1,11 @@
-import 'package:flutter/foundation.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
-@immutable
-class CourseCoverData {
+class CourseCoverData extends ResolvedMediaData {
   const CourseCoverData({
-    this.mediaId,
-    required this.state,
-    this.resolvedUrl,
+    super.mediaId,
+    required super.state,
+    super.resolvedUrl,
   });
-
-  final String? mediaId;
-  final String state;
-  final String? resolvedUrl;
 
   factory CourseCoverData.fromJson(Map<String, dynamic> json) {
     return CourseCoverData(
@@ -19,10 +14,4 @@ class CourseCoverData {
       resolvedUrl: json['resolved_url'] as String?,
     );
   }
-
-  Map<String, dynamic> toJson() => <String, dynamic>{
-    'media_id': mediaId,
-    'state': state,
-    'resolved_url': resolvedUrl,
-  };
 }

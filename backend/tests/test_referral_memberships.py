@@ -9,6 +9,7 @@ from app import db, repositories
 from app.repositories import referrals as referrals_repo
 from app.services import membership_expiry_warnings
 from app.services.email_service import EmailDeliveryResult
+from app.utils.membership_status import is_membership_row_active
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -174,12 +175,9 @@ async def test_membership_expiry_logic_requires_future_end_date(async_client):
             end_date=datetime.now(timezone.utc) - timedelta(minutes=1),
         )
 
-        expired_resp = await async_client.get(
-            "/api/me/entitlements",
-            headers=auth_header(token),
-        )
-        assert expired_resp.status_code == 200, expired_resp.text
-        assert expired_resp.json()["membership"]["is_active"] is False
+        expired_membership = await repositories.get_membership(user_id)
+        assert expired_membership is not None
+        assert is_membership_row_active(expired_membership) is False
 
         await repositories.upsert_membership_record(
             user_id,
@@ -190,13 +188,10 @@ async def test_membership_expiry_logic_requires_future_end_date(async_client):
             end_date=datetime.now(timezone.utc) + timedelta(days=2),
         )
 
-        active_resp = await async_client.get(
-            "/api/me/entitlements",
-            headers=auth_header(token),
-        )
-        assert active_resp.status_code == 200, active_resp.text
-        assert active_resp.json()["membership"]["is_active"] is True
-        assert active_resp.json()["membership"]["status"] == "trialing"
+        active_membership = await repositories.get_membership(user_id)
+        assert active_membership is not None
+        assert is_membership_row_active(active_membership) is True
+        assert active_membership["status"] == "trialing"
     finally:
         if user_id:
             await cleanup_user(user_id)

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-from ..repositories import media_assets as media_assets_repo
+from ..config import settings
 from ..repositories import courses as courses_repo
+from ..repositories import runtime_media as runtime_media_repo
+from . import lesson_playback_service
 from . import storage_service
 
 
@@ -131,9 +133,61 @@ async def list_lesson_media(
     lesson_id: str,
     *,
     mode: str | None = None,
+    user_id: str | None = None,
 ) -> Sequence[dict[str, Any]]:
-    del mode
-    return list(await courses_repo.list_lesson_media(lesson_id))
+    rows = [dict(row) for row in await courses_repo.list_lesson_media(lesson_id)]
+    if mode != "student_render":
+        return rows
+
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_user_id:
+        raise ValueError("user_id is required for student_render lesson media")
+
+    runtime_rows = await runtime_media_repo.list_runtime_media_for_lesson(lesson_id)
+    runtime_by_lesson_media_id = {
+        str(row["lesson_media_id"]): dict(row)
+        for row in runtime_rows
+        if row.get("lesson_media_id") is not None
+    }
+
+    learner_rows: list[dict[str, Any]] = []
+    for row in rows:
+        item = {
+            "id": row["id"],
+            "lesson_id": row["lesson_id"],
+            "media_asset_id": row.get("media_asset_id"),
+            "position": row["position"],
+            "media_type": row["media_type"],
+            "state": row["state"],
+            "media": None,
+        }
+
+        runtime_row = runtime_by_lesson_media_id.get(str(row["id"]))
+        if runtime_row is None:
+            learner_rows.append(item)
+            continue
+
+        try:
+            playback = await lesson_playback_service.resolve_lesson_media_playback(
+                lesson_media_id=str(row["id"]),
+                user_id=normalized_user_id,
+            )
+        except Exception:
+            learner_rows.append(item)
+            continue
+
+        resolved_url = str(playback.get("playback_url") or "").strip() or None
+        media_id = str(runtime_row.get("media_asset_id") or "").strip()
+        if media_id and resolved_url:
+            item["media"] = {
+                "media_id": media_id,
+                "state": row["state"],
+                "resolved_url": resolved_url,
+            }
+
+        learner_rows.append(item)
+
+    return learner_rows
 
 
 async def list_studio_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
@@ -148,37 +202,26 @@ def _normalize_cover_media_id(value: Any) -> str | None:
 def _course_cover_payload(
     *,
     media_id: str,
-    asset: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    if asset is None:
-        return {
-            "media_id": media_id,
-            "state": "missing",
-            "resolved_url": None,
-        }
+    runtime_row: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if runtime_row is None:
+        return None
 
-    state = str(asset.get("state") or "").strip() or "missing"
-    purpose = str(asset.get("purpose") or "").strip().lower()
-    media_type = str(asset.get("media_type") or "").strip().lower()
-    bucket = str(asset.get("streaming_storage_bucket") or "").strip()
-    path = str(asset.get("streaming_object_path") or "").strip()
+    media_type = str(runtime_row.get("media_type") or "").strip().lower()
+    playback_object_path = str(runtime_row.get("playback_object_path") or "").strip()
+    if media_type != "image" or not playback_object_path:
+        return None
 
-    resolved_url: str | None = None
-    if (
-        state == "ready"
-        and purpose == "course_cover"
-        and media_type == "image"
-        and bucket
-        and path
-    ):
-        try:
-            resolved_url = storage_service.get_storage_service(bucket).public_url(path)
-        except storage_service.StorageServiceError:
-            resolved_url = None
+    try:
+        resolved_url = storage_service.get_storage_service(
+            settings.media_source_bucket
+        ).public_url(playback_object_path)
+    except storage_service.StorageServiceError:
+        return None
 
     return {
         "media_id": media_id,
-        "state": state,
+        "state": "ready",
         "resolved_url": resolved_url,
     }
 
@@ -194,8 +237,9 @@ async def resolve_course_cover(
     if media_id is None:
         return None
 
-    asset = await media_assets_repo.get_media_asset(media_id)
-    return _course_cover_payload(media_id=media_id, asset=asset)
+    runtime_rows = await runtime_media_repo.list_runtime_media_for_asset(media_id, limit=1)
+    runtime_row = dict(runtime_rows[0]) if runtime_rows else None
+    return _course_cover_payload(media_id=media_id, runtime_row=runtime_row)
 
 
 async def attach_course_cover_read_contract(
@@ -215,7 +259,14 @@ async def attach_course_cover_read_contract(
         )
         if media_id is not None
     ]
-    assets_by_id = await media_assets_repo.get_media_assets(media_ids)
+    runtime_rows_by_media_id: dict[str, Mapping[str, Any]] = {}
+    for media_id in dict.fromkeys(media_ids):
+        runtime_rows = await runtime_media_repo.list_runtime_media_for_asset(
+            media_id,
+            limit=1,
+        )
+        if runtime_rows:
+            runtime_rows_by_media_id[media_id] = dict(runtime_rows[0])
 
     for row in rows:
         media_id = _normalize_cover_media_id(row.get("cover_media_id"))
@@ -224,7 +275,7 @@ async def attach_course_cover_read_contract(
             if media_id is None
             else _course_cover_payload(
                 media_id=media_id,
-                asset=assets_by_id.get(media_id),
+                runtime_row=runtime_rows_by_media_id.get(media_id),
             )
         )
 

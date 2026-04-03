@@ -2218,48 +2218,11 @@ async def media_file(
     request: Request,
     current: CurrentUser,
 ):
-    if not settings.media_allow_legacy_media:
-        raise HTTPException(status_code=410, detail="Legacy media endpoint disabled")
-    row = await models.get_media(media_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Media not found")
-
-    storage_path = row.get("storage_path")
-    storage_bucket = row.get("storage_bucket")
-    if not storage_path or not storage_bucket:
-        raise HTTPException(status_code=404, detail="Media not found")
-
-    access_row = await courses_repo.get_lesson_media_access_by_path(
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
+    del media_id, request, current
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy media endpoint removed from canonical runtime",
     )
-    if not access_row:
-        raise HTTPException(status_code=404, detail="Media not found")
-
-    user_id = str(current["id"])
-    course_id = access_row.get("course_id")
-    teacher_access = (
-        await courses_service.is_course_teacher_or_instructor(user_id, str(course_id))
-        if course_id
-        else False
-    )
-    if not teacher_access:
-        if not access_row.get("is_published"):
-            raise HTTPException(status_code=403, detail="Course not published")
-        if not course_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        access = await courses_service.read_canonical_course_access(
-            user_id,
-            str(course_id),
-        )
-        if access.get("can_access") is not True:
-            raise HTTPException(status_code=403, detail="Access denied")
-    logger.info(
-        "LEGACY_MEDIA_ROUTE_HIT route=/studio/media/%s user_id=%s",
-        media_id,
-        user_id,
-    )
-    return await _build_streaming_response(row, request)
 
 
 @router.post("/courses/{course_id}/quiz")

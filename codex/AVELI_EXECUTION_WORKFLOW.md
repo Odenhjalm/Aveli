@@ -166,6 +166,7 @@ Purpose:
 MUST:
 
 - produce deterministic contract diff
+- Contract stage MUST include CONTRACTS + DECISIONS as canonical truth layers.
 - define what verification must evaluate
 
 MUST NOT:

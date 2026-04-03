@@ -212,16 +212,19 @@ def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
         return
     media_state = (item.get("media_state") or "").strip().lower()
     has_media_asset = item.get("media_asset_id") is not None
-    has_legacy_media = item.get("media_id") is not None
-    if has_media_asset and media_state and media_state != "ready" and not has_legacy_media:
+    if not has_media_asset:
+        item.pop("download_url", None)
+        item.pop("playback_url", None)
+        item.pop("signed_url", None)
+        item.pop("signed_url_expires_at", None)
+        return
+    if media_state and media_state != "ready":
         item.pop("download_url", None)
         item.pop("playback_url", None)
         item.pop("signed_url", None)
         item.pop("signed_url_expires_at", None)
         return
 
-    legacy_url = f"/studio/media/{media_id}"
-    legacy_enabled = settings.media_allow_legacy_media
     public_url = _public_download_path(
         item.get("storage_path"),
         storage_bucket=item.get("storage_bucket"),
@@ -234,9 +237,6 @@ def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
         if public_url:
             item["download_url"] = public_url
             item["playback_url"] = public_url
-        elif legacy_enabled:
-            item["download_url"] = legacy_url
-            item["playback_url"] = legacy_url
         else:
             item.pop("download_url", None)
             item.pop("playback_url", None)
@@ -247,10 +247,9 @@ def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
     if public_url:
         item["download_url"] = public_url
         item["playback_url"] = public_url
-    elif legacy_enabled:
-        item["download_url"] = legacy_url
     else:
         item.pop("download_url", None)
+        item.pop("playback_url", None)
 
     normalized_purpose = (purpose or "").strip().lower()
     if normalized_purpose not in {"editor_insert", "editor_preview", "student_render"}:
@@ -262,11 +261,6 @@ def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
         item["signed_url_expires_at"] = expires_at.isoformat()
         if "playback_url" not in item:
             item["playback_url"] = signed_url
-    elif not legacy_enabled and "download_url" not in item:
-        # No signer configured but legacy URLs disabled – fall back to the legacy path
-        # so the frontend can still resolve media during local development.
-        item["download_url"] = legacy_url
-        item["playback_url"] = legacy_url
 
 
 def strip_renderable_media_links(

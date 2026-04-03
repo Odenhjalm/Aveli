@@ -9,8 +9,10 @@ from fastapi import APIRouter, HTTPException, Request, status
 from starlette.concurrency import run_in_threadpool
 
 from .. import repositories
-from ..repositories import course_entitlements
 from ..repositories import courses as courses_repo
+from ..repositories import orders as orders_repo
+from ..repositories import payments as payments_repo
+from ..repositories import teachers as teachers_repo
 from ..services import checkout_service, subscription_service, course_bundles_service
 from .. import stripe_mode
 
@@ -135,23 +137,11 @@ async def stripe_payment_element_webhook(request: Request):
                 if user_id and course_slug:
                     course_row = await courses_repo.get_course_by_slug(str(course_slug))
                     if course_row and course_row.get("id"):
-                        # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-                        await courses_repo.ensure_course_enrollment(
-                            str(user_id),
-                            str(course_row["id"]),
+                        await courses_repo.create_course_enrollment(
+                            user_id=str(user_id),
+                            course_id=str(course_row["id"]),
                             source="purchase",
                         )
-                    # LEGACY ACCESS PATH — DO NOT EXTEND.
-                    await course_entitlements.grant_course_entitlement(
-                        user_id=str(user_id),
-                        course_slug=str(course_slug),
-                        stripe_customer_id=str(data_object.get("customer"))
-                        if data_object.get("customer")
-                        else None,
-                        payment_intent_id=str(data_object.get("id"))
-                        if data_object.get("id")
-                        else None,
-                    )
         elif event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
             await _handle_checkout_session(data_object, event_type)
         elif event_type and (
@@ -201,15 +191,15 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
 
     order = None
     if order_id:
-        order = await repositories.get_order(order_id)
-        await repositories.mark_order_paid(
+        order = await orders_repo.get_order(order_id)
+        await payments_repo.mark_order_paid(
             order_id,
             payment_intent=str(payment_intent) if payment_intent else None,
             checkout_id=checkout_id if isinstance(checkout_id, str) else None,
         )
 
     if order_id:
-        await repositories.record_payment(
+        await payments_repo.record_payment(
             order_id=order_id,
             provider="stripe",
             provider_reference=str(payment_intent) if payment_intent else None,
@@ -225,19 +215,11 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
     if user_id and course_slug:
         course_row = await courses_repo.get_course_by_slug(course_slug)
         if course_row and course_row.get("id"):
-            # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-            await courses_repo.ensure_course_enrollment(
-                str(user_id),
-                str(course_row["id"]),
+            await courses_repo.create_course_enrollment(
+                user_id=str(user_id),
+                course_id=str(course_row["id"]),
                 source="purchase",
             )
-        # LEGACY ACCESS PATH — DO NOT EXTEND.
-        await course_entitlements.grant_course_entitlement(
-            user_id=str(user_id),
-            course_slug=str(course_slug),
-            stripe_customer_id=stripe_customer_id,
-            payment_intent_id=str(payment_intent) if payment_intent else None,
-        )
 
     bundle_id = metadata.get("bundle_id")
     if user_id and bundle_id:
@@ -267,7 +249,7 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
             session_id=None,
             session_slot_id=None,
         )
-        await repositories.mark_order_paid(
+        await payments_repo.mark_order_paid(
             created_order["id"],
             payment_intent=str(payment_intent) if payment_intent else None,
             checkout_id=checkout_id if isinstance(checkout_id, str) else None,
@@ -289,19 +271,19 @@ async def _handle_refund_event(event_type: str, payload: dict[str, object]) -> N
         logger.info("Refund event missing payment intent id: event=%s", event_type)
         return
 
-    order = await repositories.get_order_by_payment_intent(payment_intent_id)
+    order = await orders_repo.get_order_by_payment_intent(payment_intent_id)
     if not order:
         logger.info("Refund event could not match order by payment intent: %s", payment_intent_id)
         return
 
-    refunded_order = await repositories.mark_order_refunded(
+    refunded_order = await orders_repo.mark_order_refunded(
         order["id"],
         payment_intent=payment_intent_id,
     )
     if not refunded_order:
         return
 
-    await repositories.record_payment(
+    await payments_repo.record_payment(
         order_id=refunded_order["id"],
         provider="stripe",
         provider_reference=payment_intent_id,
@@ -324,11 +306,7 @@ async def _handle_refund_event(event_type: str, payload: dict[str, object]) -> N
         return
 
     course_slug = course.get("slug")
-    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
     await courses_repo.revoke_course_enrollment(user_id_value, course_id_value)
-    if course_slug:
-        # LEGACY ACCESS PATH — DO NOT EXTEND.
-        await course_entitlements.revoke_course_entitlement(user_id_value, str(course_slug))
 
     previous_status = str(refunded_order.get("previous_status") or "").lower()
     if previous_status == "refunded":
@@ -359,7 +337,7 @@ async def _handle_connect_event(
         logger.info("Stripe account event without account id: %s", event_type)
         return
 
-    teacher = await repositories.get_teacher_by_account(account_id)
+    teacher = await teachers_repo.get_teacher_by_account(account_id)
     if not teacher:
         logger.info("No teacher row for account %s", account_id)
         return
@@ -385,7 +363,7 @@ async def _handle_connect_event(
     if charges_enabled and payouts_enabled and not onboarded_at:
         onboarded_at = datetime.now(timezone.utc)
 
-    await repositories.update_teacher_status(
+    await teachers_repo.update_teacher_status(
         teacher["profile_id"],
         charges_enabled=charges_enabled,
         payouts_enabled=payouts_enabled,

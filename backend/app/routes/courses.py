@@ -142,7 +142,11 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
             detail="Lesson course_id is required",
         )
     lessons = await courses_service.list_course_lessons(course_id)
-    media_rows = await courses_service.list_lesson_media(lesson_id, mode="student_render")
+    media_rows = await courses_service.list_lesson_media(
+        lesson_id,
+        mode="student_render",
+        user_id=str((current or {}).get("id") or ""),
+    )
     return _lesson_content_response(
         lesson=lesson,
         course_id=course_id,

@@ -349,11 +349,72 @@ If index missing:
 
 ---
 
+### Rule 7 - INDEX ENVIRONMENT LAW
+
+All index-related tasks MUST:
+
+- use .repo_index/.search_venv/bin/python
+- ensure tools/index/ENVIRONMENT_SETUP.sh has been executed
+
+Codex MUST NOT:
+
+- use system python
+- use .venv
+- install dependencies ad hoc
+- attempt environment discovery
+
+If environment is missing or inconsistent:
+→ STOP
+
+PYTHON EXECUTION LOCK
+
+For index pipeline:
+
+- ONLY allowed interpreter:
+  .repo_index/.search_venv/bin/python
+
+Violation:
+
+- any use of "python" without explicit path
+- any use of wrong venv
+
+---
+
 ### Enforcement
 
 If Codex attempts to rebuild index without explicit permission:
 
 STOP: INDEX REBUILD NOT APPROVED
+
+---
+
+VIEW CONTRACT ENFORCEMENT
+
+If a task targets a specific view:
+
+- retrieval MUST be constrained by that view contract
+- forbidden sources MUST be excluded at retrieval stage
+- evidence outside view scope MUST be discarded
+
+Violation:
+
+- evidence contains fields outside view contract
+
+---
+
+TASK MATERIALIZATION ENFORCEMENT
+
+After generate mode:
+
+- generated tasks MUST be:
+  1. written to actual_truth/DETERMINED_TASKS/
+  2. immediately eligible as next input(task)
+
+Execution MUST NOT proceed without materialized tasks
+
+Violation:
+
+- tasks exist only in output, not in repo
 
 ---
 
@@ -1224,3 +1285,71 @@ All confirmation MUST:
 If any required confirmation layer diverges or any deviation is detected:
 
 - FAIL
+
+---
+
+CONTRACT AUTHORITY RULE
+
+The ONLY authoritative contract set is:
+
+actual_truth/contracts/
+
+All other contract-like files in:
+
+- docs/
+- legacy docs
+- implementation plans
+
+are classified as:
+
+- reference
+- historical
+- non-authoritative
+
+Codex MUST:
+
+- extract rules ONLY from actual_truth/contracts/
+- ignore all other contract sources unless explicitly required by task
+
+Violation:
+
+- mixing contract sources
+- extracting rules from non-authoritative contract files
+
+---
+
+DECISIONS AUTHORITY RULE
+
+- Aveli_System_Decisions.md is the canonical semantic truth layer.
+- It MUST be treated as a separate rule category: DECISIONS.
+
+Codex MUST:
+
+- extract rules from Aveli_System_Decisions.md as DECISIONS
+- NOT merge these rules into:
+  - OS
+  - WORKFLOW
+  - CONTRACTS
+  - MANIFEST
+
+Violation:
+
+- merging DECISIONS into other rule layers
+- omitting DECISIONS from rule extraction
+
+---
+
+RULE INVENTORY CATEGORY MODEL
+
+Rule categories:
+
+- OS
+- WORKFLOW
+- CONTRACT
+- MANIFEST
+- DECISIONS
+
+Classification rule:
+
+- All rules from Aveli_System_Decisions.md MUST be classified as DECISIONS
+- They MUST NOT be reclassified
