@@ -1,116 +1,80 @@
 {
   "manifest_version": 1,
   "protected_min_slot": 1,
-  "protected_max_slot": 18,
+  "protected_max_slot": 12,
   "baseline_dir": "backend/supabase/baseline_slots",
   "slots": [
     {
       "slot": 1,
-      "filename": "0001_foundation_auth_profiles.sql",
-      "path": "backend/supabase/baseline_slots/0001_foundation_auth_profiles.sql",
-      "sha256": "77cb48e6d103c8dfb98a7ccc32917a28c63a9fc3537a177586caf410317907bb"
+      "filename": "0001_canonical_foundation.sql",
+      "path": "backend/supabase/baseline_slots/0001_canonical_foundation.sql",
+      "sha256": "16b781cc6ff7c3865883f09cfbdd834a46285e614d9d2a3cff5b33fcc9708ec8"
     },
     {
       "slot": 2,
-      "filename": "0002_access_teacher_roles.sql",
-      "path": "backend/supabase/baseline_slots/0002_access_teacher_roles.sql",
-      "sha256": "6e02da19cdfb1cff47b27d3298c27289b0f826d333deebe1c307806b964354b5"
+      "filename": "0002_courses_core.sql",
+      "path": "backend/supabase/baseline_slots/0002_courses_core.sql",
+      "sha256": "7f19472c0d2b43d66f058f3df20481d905ce768d622f35485902a9c08063a491"
     },
     {
       "slot": 3,
-      "filename": "0003_courses_core.sql",
-      "path": "backend/supabase/baseline_slots/0003_courses_core.sql",
-      "sha256": "c51900a6c442c72de5117071af82fe38880e339dc2ceaf9a3b17e393ab5848c0"
+      "filename": "0003_course_enrollments_core.sql",
+      "path": "backend/supabase/baseline_slots/0003_course_enrollments_core.sql",
+      "sha256": "ec25ebf1aba9ff3f443362325405343614dd90c5d1f39337e27ecc4095c6cee0"
     },
     {
       "slot": 4,
-      "filename": "0004_enrollments_core.sql",
-      "path": "backend/supabase/baseline_slots/0004_enrollments_core.sql",
-      "sha256": "f61997b776af67b7063965e1d7c0a8a6f4a0b56715d8111273c6b6dd8e415c28"
+      "filename": "0004_lessons_core.sql",
+      "path": "backend/supabase/baseline_slots/0004_lessons_core.sql",
+      "sha256": "588e261186ec64d8f083b96776ace13a5deeaab7456593d6f085d77794a1779c"
     },
     {
       "slot": 5,
-      "filename": "0005_lessons_core.sql",
-      "path": "backend/supabase/baseline_slots/0005_lessons_core.sql",
-      "sha256": "bf098b828226af8f7b1b8416178fccf103c53367cbdb0cc1523f58020b361906"
+      "filename": "0005_lesson_contents_core.sql",
+      "path": "backend/supabase/baseline_slots/0005_lesson_contents_core.sql",
+      "sha256": "297a61302234e5763432407e34e02c1f857fb20111cca6060104036c3de6e6c2"
     },
     {
       "slot": 6,
-      "filename": "0006_access_grants_core.sql",
-      "path": "backend/supabase/baseline_slots/0006_access_grants_core.sql",
-      "sha256": "6bb260af2e21ee199df7321bdf76b5e72075a36acf04beb1de0888d3619ace54"
+      "filename": "0006_lesson_media_core.sql",
+      "path": "backend/supabase/baseline_slots/0006_lesson_media_core.sql",
+      "sha256": "6ae5eb19aa42d4010790ef016a958419f6099551636be1e92a136c340ac66048"
     },
     {
       "slot": 7,
-      "filename": "0007_media_objects_core.sql",
-      "path": "backend/supabase/baseline_slots/0007_media_objects_core.sql",
-      "sha256": "e5a346bcf0f533a6c1fda58154d1570bf1b82ccc82893bde3442c5c60cb82281"
+      "filename": "0007_media_assets_core.sql",
+      "path": "backend/supabase/baseline_slots/0007_media_assets_core.sql",
+      "sha256": "8f992e793d95d01707b7022372159bfb7f8f72a3827734ba7bbfe9ffb63620e3"
     },
     {
       "slot": 8,
-      "filename": "0008_lesson_media_core.sql",
-      "path": "backend/supabase/baseline_slots/0008_lesson_media_core.sql",
-      "sha256": "d5c448ca45e29d630757595a6199ac01867edf199bae31ad6cc8b130e1aa9138"
+      "filename": "0008_runtime_media_projection_core.sql",
+      "path": "backend/supabase/baseline_slots/0008_runtime_media_projection_core.sql",
+      "sha256": "5e3480f5d0bfa1bc04c20215c9549a711784fa966a708a9d13dce862da34e597"
     },
     {
       "slot": 9,
-      "filename": "0009_courses_enrolled_read_alignment.sql",
-      "path": "backend/supabase/baseline_slots/0009_courses_enrolled_read_alignment.sql",
-      "sha256": "2acdbf45c470798401b823ab6b1ea89f344adfdb10f66adcb32397b12b9eec05"
+      "filename": "0009_runtime_media_projection_sync.sql",
+      "path": "backend/supabase/baseline_slots/0009_runtime_media_projection_sync.sql",
+      "sha256": "5a2009e00edf345fddd738584fddf1c291313b0baa6bacf57f78f18dde44e06a"
     },
     {
       "slot": 10,
-      "filename": "0010_media_assets_core.sql",
-      "path": "backend/supabase/baseline_slots/0010_media_assets_core.sql",
-      "sha256": "52645dc2b1f5c4e6ee6d96b8c5a665c1982aaa62db488c859709732990bd1cab"
+      "filename": "0010_worker_query_support.sql",
+      "path": "backend/supabase/baseline_slots/0010_worker_query_support.sql",
+      "sha256": "6381a234e6f4fa73ddf37cc34b598f1babfdeeb2066e828b73263bef732105a0"
     },
     {
       "slot": 11,
-      "filename": "0011_lesson_media_asset_bridge.sql",
-      "path": "backend/supabase/baseline_slots/0011_lesson_media_asset_bridge.sql",
-      "sha256": "3dcbcf132f0f15fcfb753bf9ddc4a5d764391862a924f8ee0d38377b6c96e413"
+      "filename": "0011_course_public_content_core.sql",
+      "path": "backend/supabase/baseline_slots/0011_course_public_content_core.sql",
+      "sha256": "2ea6bd0209d8fa1c2e9514c2d2d3bf2f0ec9803ce855a03b5e04c0eabba4eedf"
     },
     {
       "slot": 12,
-      "filename": "0012_runtime_media_lesson_projection_core.sql",
-      "path": "backend/supabase/baseline_slots/0012_runtime_media_lesson_projection_core.sql",
-      "sha256": "f884ca8e5efd864d79922a550672476be500c192caf505b401118293218a0d6c"
-    },
-    {
-      "slot": 13,
-      "filename": "0013_runtime_media_lesson_sync_core.sql",
-      "path": "backend/supabase/baseline_slots/0013_runtime_media_lesson_sync_core.sql",
-      "sha256": "f2b4b4303e8f6fa80cc19c2049cb9ceb5340b57edabcb4bbabb8ba4a2696be9c"
-    },
-    {
-      "slot": 14,
-      "filename": "0014_runtime_media_context_sync_core.sql",
-      "path": "backend/supabase/baseline_slots/0014_runtime_media_context_sync_core.sql",
-      "sha256": "ebd9fa56fda9f4a7890c3155fc927bb30c8e70758c31c15a9effa3f85ff99f48"
-    },
-    {
-      "slot": 15,
-      "filename": "0015_runtime_media_lesson_backfill_core.sql",
-      "path": "backend/supabase/baseline_slots/0015_runtime_media_lesson_backfill_core.sql",
-      "sha256": "762427fa626b3d172b000ca02a6f2d19a26306da23c20511876ee2a558059206"
-    },
-    {
-      "slot": 16,
-      "filename": "0016_live_schema_media_home_player_alignment.sql",
-      "path": "backend/supabase/baseline_slots/0016_live_schema_media_home_player_alignment.sql",
-      "sha256": "e8730d6be2bfa56ba8d57650aa23886bf8de9e60b2a1f7998e0124d7723ef6ed"
-    },
-    {
-      "slot": 17,
-      "filename": "0017_auth_commerce_runtime_blockers.sql",
-      "path": "backend/supabase/baseline_slots/0017_auth_commerce_runtime_blockers.sql",
-      "sha256": "0eeaccca761bb9a70f96e9316e9687a7cda6d9b193d82e12203aa941880c51d6"
-    },
-    {
-      "slot": 18,
-      "filename": "0018_external_fk_cleanup.sql",
-      "path": "backend/supabase/baseline_slots/0018_external_fk_cleanup.sql",
-      "sha256": "7d4b022214f63e7eb8989370bbb3bf708e69df0dee408a890a5cae4eb19cfffe"
+      "filename": "0012_canonical_access_policies.sql",
+      "path": "backend/supabase/baseline_slots/0012_canonical_access_policies.sql",
+      "sha256": "dcac615cd15190c543ec26c7ffd1bae1cd73c4d1b0e68410adfa8e5e58e91494"
     }
   ]
 }

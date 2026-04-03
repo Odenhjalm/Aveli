@@ -1,0 +1,9 @@
+-- Phase 3: runtime_media projection sync
+-- No sync mechanism is required in the clean-room new baseline.
+-- app.runtime_media is implemented as a live view over canonical tables, so:
+-- - no projection table exists
+-- - no projection triggers exist
+-- - no projection write path exists
+-- - no application sync job may target runtime_media
+-- - playback_object_path and playback_format remain projection fields, not sync-owned state
+-- - app.lesson_contents remains outside the playback projection boundary
