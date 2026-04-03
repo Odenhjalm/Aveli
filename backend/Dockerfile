@@ -18,10 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY backend/pyproject.toml backend/poetry.lock ./
+COPY pyproject.toml poetry.lock ./
 RUN pip install "poetry==${POETRY_VERSION}" && poetry install --only main --no-root
 
-COPY backend/ /app
+COPY . /app
 
 # ---- Runtime Stage ----
 FROM python:3.12-slim AS runtime

@@ -45,7 +45,16 @@ _OBSERVABILITY_DEFAULTS: dict[str, Any] = {
     "home_player_upload_active": None,
 }
 _media_processing_queue_supported_cache: bool | None = None
-_home_player_uploads_supported_cache: bool | None = None
+_MEDIA_ASSET_RETURNING_SQL = """
+    id,
+    media_type::text as media_type,
+    purpose::text as purpose,
+    original_object_path,
+    ingest_format,
+    playback_object_path,
+    playback_format,
+    state::text as state
+"""
 
 
 def _decorate_media_asset_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -239,6 +248,143 @@ async def update_media_asset_state(
     return _decorate_media_asset_row(dict(row) if row else None)
 
 
+async def _call_canonical_worker_transition(
+    media_asset_id: str,
+    *,
+    target_state: str,
+    playback_object_path: str | None = None,
+) -> dict[str, Any] | None:
+    query = f"""
+        select
+            (result).id as id,
+            ((result).media_type)::text as media_type,
+            ((result).purpose)::text as purpose,
+            (result).original_object_path as original_object_path,
+            (result).ingest_format as ingest_format,
+            (result).playback_object_path as playback_object_path,
+            (result).playback_format as playback_format,
+            ((result).state)::text as state
+        from (
+            select app.canonical_worker_transition_media_asset_state(
+                %s::uuid,
+                %s::app.media_state,
+                %s
+            ) as result
+        ) as transition
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                query,
+                (media_asset_id, target_state, playback_object_path),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    return _decorate_media_asset_row(dict(row) if row else None)
+
+
+async def mark_media_asset_uploaded(*, media_id: str) -> dict[str, Any] | None:
+    media_asset = await get_media_asset(media_id)
+    if media_asset is None:
+        return None
+    current_state = str(media_asset.get("state") or "").strip().lower()
+    if current_state == "uploaded":
+        return media_asset
+    if current_state != "pending_upload":
+        return None
+
+    query = f"""
+        update app.media_assets
+        set state = 'uploaded'::app.media_state
+        where id = %s::uuid
+          and state = 'pending_upload'::app.media_state
+        returning
+            {_MEDIA_ASSET_RETURNING_SQL}
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (media_id,))
+            row = await cur.fetchone()
+            await conn.commit()
+    return _decorate_media_asset_row(dict(row) if row else None)
+
+
+async def mark_media_asset_ready_passthrough(
+    *,
+    media_id: str,
+    streaming_object_path: str,
+    storage_bucket: str,
+    streaming_format: str,
+    original_content_type: str | None = None,
+    original_size_bytes: int | None = None,
+) -> dict[str, Any] | None:
+    del (
+        media_id,
+        streaming_object_path,
+        storage_bucket,
+        streaming_format,
+        original_content_type,
+        original_size_bytes,
+    )
+    raise RuntimeError("mark_media_asset_ready_passthrough is removed from canonical runtime")
+
+
+async def mark_media_asset_ready_from_worker(
+    *,
+    media_id: str,
+    streaming_object_path: str,
+    streaming_format: str | None = None,
+    duration_seconds: int | None = None,
+    codec: str | None = None,
+    streaming_storage_bucket: str | None = None,
+) -> dict[str, Any] | None:
+    del streaming_format, duration_seconds, codec, streaming_storage_bucket
+    media_asset = await get_media_asset(media_id)
+    if media_asset is None:
+        return None
+
+    current_state = str(media_asset.get("state") or "").strip().lower()
+    if current_state == "ready":
+        return media_asset
+    if current_state == "uploaded":
+        media_asset = await _call_canonical_worker_transition(
+            media_id,
+            target_state="processing",
+        )
+        current_state = str((media_asset or {}).get("state") or "").strip().lower()
+    if current_state != "processing":
+        raise RuntimeError(
+            "canonical worker ready transition requires uploaded or processing state"
+        )
+    return await _call_canonical_worker_transition(
+        media_id,
+        target_state="ready",
+        playback_object_path=streaming_object_path,
+    )
+
+
+async def mark_course_cover_ready_from_worker(
+    *,
+    media_id: str,
+    streaming_object_path: str,
+    streaming_storage_bucket: str | None = None,
+    streaming_format: str | None = None,
+    codec: str | None = None,
+) -> dict[str, Any]:
+    del streaming_storage_bucket, streaming_format, codec
+    updated = await mark_media_asset_ready_from_worker(
+        media_id=media_id,
+        streaming_object_path=streaming_object_path,
+    )
+    return {
+        "updated": updated is not None,
+        "cover_applied": False,
+        "course_id": None,
+        "previous_cover_media_id": None,
+        "latest_cover_media_id": None,
+    }
+
+
 async def delete_media_asset(media_asset_id: str) -> bool:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -265,13 +411,6 @@ async def media_processing_queue_supported() -> bool:
         columns = await _table_columns("app", "media_assets")
         _media_processing_queue_supported_cache = _QUEUE_SUPPORT_REQUIRED_COLUMNS.issubset(columns)
     return _media_processing_queue_supported_cache
-
-
-async def home_player_uploads_supported() -> bool:
-    global _home_player_uploads_supported_cache
-    if _home_player_uploads_supported_cache is None:
-        _home_player_uploads_supported_cache = await _relation_exists("app.home_player_uploads")
-    return _home_player_uploads_supported_cache
 
 
 async def list_media_failures(
@@ -350,6 +489,12 @@ async def list_orphaned_control_plane_assets(
             from app.runtime_media
             where media_asset_id is not null
             group by media_asset_id
+        ),
+        home_player_upload_links as (
+            select media_asset_id, count(*)::int as home_player_upload_count
+            from app.home_player_uploads
+            where media_asset_id is not null
+            group by media_asset_id
         )
         select
             ma.id,
@@ -362,13 +507,23 @@ async def list_orphaned_control_plane_assets(
             ma.state::text as state,
             coalesce(lml.lesson_media_count, 0) as lesson_media_count,
             coalesce(rml.runtime_media_count, 0) as runtime_media_count,
-            0::int as home_player_upload_count
+            coalesce(hpul.home_player_upload_count, 0) as home_player_upload_count
         from app.media_assets as ma
         left join lesson_media_links as lml on lml.media_asset_id = ma.id
         left join runtime_media_links as rml on rml.media_asset_id = ma.id
+        left join home_player_upload_links as hpul on hpul.media_asset_id = ma.id
         where ma.purpose::text = any(%s::text[])
-          and coalesce(lml.lesson_media_count, 0) = 0
-          and coalesce(rml.runtime_media_count, 0) = 0
+          and (
+            (
+              ma.purpose::text in ('lesson_audio', 'lesson_media')
+              and coalesce(lml.lesson_media_count, 0) = 0
+              and coalesce(rml.runtime_media_count, 0) = 0
+            )
+            or (
+              ma.purpose::text = 'home_player_audio'
+              and coalesce(hpul.home_player_upload_count, 0) = 0
+            )
+          )
         order by ma.id asc
         limit %s
     """
@@ -429,10 +584,56 @@ async def mark_media_asset_failed(
     error_message: str,
     next_retry_at: Any | None = None,
 ) -> None:
-    del media_id, error_message, next_retry_at
-    raise RuntimeError("media processing queue contract is unsupported in the current local baseline")
+    media_asset = await get_media_asset(media_id)
+    if media_asset is None:
+        return
+
+    current_state = str(media_asset.get("state") or "").strip().lower()
+    if current_state == "uploaded":
+        media_asset = await _call_canonical_worker_transition(
+            media_id,
+            target_state="processing",
+        )
+        current_state = str((media_asset or {}).get("state") or "").strip().lower()
+    if current_state == "processing":
+        await _call_canonical_worker_transition(
+            media_id,
+            target_state="failed",
+        )
+    elif current_state != "failed":
+        raise RuntimeError(
+            "canonical worker failed transition requires uploaded or processing state"
+        )
+
+    if not await media_processing_queue_supported():
+        return
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                update app.media_assets
+                set
+                    error_message = %s,
+                    next_retry_at = %s
+                where id = %s::uuid
+                """,
+                (error_message, next_retry_at, media_id),
+            )
+            await conn.commit()
 
 
 async def increment_processing_attempts(*, media_id: str) -> None:
-    del media_id
-    raise RuntimeError("media processing queue contract is unsupported in the current local baseline")
+    if not await media_processing_queue_supported():
+        return
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                update app.media_assets
+                set processing_attempts = coalesce(processing_attempts, 0) + 1
+                where id = %s::uuid
+                """,
+                (media_id,),
+            )
+            await conn.commit()

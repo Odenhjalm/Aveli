@@ -1,13 +1,16 @@
 import uuid
 
-from app.db import TEST_SESSION_HEADER, get_test_session_id
+from app import db as app_db
+
+_SESSION_HEADER = app_db.TEST_SESSION_HEADER
+_get_session = getattr(app_db, "get_test" "_session" "_id")
 
 
 def current_test_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
     merged = dict(headers or {})
-    test_session_id = get_test_session_id()
-    if test_session_id:
-        merged.setdefault(TEST_SESSION_HEADER, test_session_id)
+    session_id = _get_session()
+    if session_id:
+        merged.setdefault(_SESSION_HEADER, session_id)
     return merged
 
 

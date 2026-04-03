@@ -21,7 +21,7 @@ from ..media_control_plane.services.media_resolver_service import (
 )
 from ..permissions import TeacherUser
 from ..repositories import courses as courses_repo
-from ..repositories import home_player_library as home_player_library_repo
+from ..repositories import home_audio_sources as home_audio_sources_repo
 from ..repositories import media_assets as media_assets_repo
 from ..repositories import storage_objects
 from ..services import courses_service, lesson_playback_service, media_cleanup
@@ -98,16 +98,6 @@ class DebugMediaResponse(BaseModel):
     lesson_media_id: UUID
     storage_path: str
     signed_url: str
-
-
-@router.post("/sign", response_model=schemas.MediaSignResponse)
-async def sign_media_adapter(
-    payload: schemas.MediaSignRequest,
-    current: CurrentUser,
-) -> schemas.MediaSignResponse:
-    from . import media as legacy_media_routes
-
-    return await legacy_media_routes.sign_media(payload, current)
 
 
 def _normalized_preview_string(value: object | None) -> str | None:
@@ -1131,7 +1121,7 @@ async def _finalize_media_asset_upload(
 
     current_state = str(media_asset.get("state") or "").strip().lower()
     if media_type == "audio":
-        if current_state in {"pending_upload", "failed"}:
+        if current_state == "pending_upload":
             updated = await media_assets_repo.mark_media_asset_uploaded(
                 media_id=media_asset_id
             )
@@ -1163,38 +1153,9 @@ async def _finalize_media_asset_upload(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=_lesson_passthrough_supported_detail(media_type),
             )
-        size_bytes = (
-            storage_detail.get("size_bytes")
-            if storage_detail is not None
-            else media_asset.get("original_size_bytes")
-        )
-        streaming_format = str(media_asset.get("ingest_format") or "").strip()
-        if not streaming_format:
-            if media_type == "image":
-                streaming_format = _LESSON_IMAGE_DEFAULT_EXTENSION_BY_CONTENT_TYPE.get(
-                    content_type,
-                    "image",
-                )
-            else:
-                streaming_format = _lesson_passthrough_ingest_format(
-                    media_type=media_type,
-                    filename=str(
-                        media_asset.get("original_filename")
-                        or media_asset.get("original_object_path")
-                        or object_path
-                    ),
-                    mime_type=content_type,
-                )
-        if current_state != "ready":
-            updated = await media_assets_repo.mark_media_asset_ready_passthrough(
+        if current_state == "pending_upload":
+            updated = await media_assets_repo.mark_media_asset_uploaded(
                 media_id=media_asset_id,
-                streaming_object_path=object_path,
-                storage_bucket=storage_bucket,
-                streaming_format=streaming_format,
-                original_content_type=content_type,
-                original_size_bytes=(
-                    int(size_bytes) if size_bytes is not None else None
-                ),
             )
             if not updated:
                 raise HTTPException(
@@ -1224,7 +1185,7 @@ async def _finalize_media_asset_upload(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="Unsupported cover image type",
             )
-        if current_state in {"pending_upload", "failed"}:
+        if current_state == "pending_upload":
             updated = await media_assets_repo.mark_media_asset_uploaded(
                 media_id=media_asset_id
             )
@@ -1273,26 +1234,6 @@ def _lesson_media_storage_kind(kind: str) -> str:
     if normalized_kind == "document":
         return "pdf"
     return normalized_kind
-
-
-async def _lookup_runtime_media_id_for_home_upload(upload_id: str) -> str | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT id
-            FROM app.runtime_media
-            WHERE home_player_upload_id = %s
-              AND active = true
-              AND app.is_test_row_visible(is_test, test_session_id)
-            ORDER BY updated_at DESC, created_at DESC
-            LIMIT 1
-            """,
-            (upload_id,),
-        )
-        row = await cur.fetchone()
-    if not row:
-        return None
-    return str(row["id"])
 
 
 async def _ensure_lesson_media_runtime_id(lesson_media_id: str) -> str:
@@ -1465,7 +1406,8 @@ async def _attach_lesson_media_asset(
         state=str(media_asset.get("state") or "uploaded"),
         error_message=media_asset.get("error_message"),
         ingest_format=media_asset.get("ingest_format"),
-        streaming_format=media_asset.get("streaming_format"),
+        streaming_format=media_asset.get("playback_format")
+        or media_asset.get("streaming_format"),
         duration_seconds=media_asset.get("duration_seconds"),
         codec=media_asset.get("codec"),
         lesson_media_id=UUID(str(lesson_media["id"])),
@@ -1496,7 +1438,7 @@ async def _attach_home_upload_media_asset(
         )
 
     existing_upload = (
-        await home_player_library_repo.get_home_player_upload_by_media_asset_id(
+        await home_audio_sources_repo.get_home_player_upload_by_media_asset_id(
             media_asset_id=media_asset_id,
             teacher_id=user_id,
         )
@@ -1504,12 +1446,10 @@ async def _attach_home_upload_media_asset(
     if existing_upload is None:
         original_name = str(media_asset.get("original_filename") or "").strip()
         title = Path(original_name or "Home upload").stem.strip() or "Home upload"
-        created_upload = await home_player_library_repo.create_home_player_upload(
+        created_upload = await home_audio_sources_repo.create_home_player_upload(
             teacher_id=user_id,
-            media_id=None,
             media_asset_id=media_asset_id,
             title=title,
-            kind="audio",
             active=True,
         )
         if created_upload is None:
@@ -1521,7 +1461,7 @@ async def _attach_home_upload_media_asset(
     else:
         upload_id = str(existing_upload["id"])
         if existing_upload.get("active") is not True:
-            updated_upload = await home_player_library_repo.update_home_player_upload(
+            updated_upload = await home_audio_sources_repo.update_home_player_upload(
                 upload_id=upload_id,
                 teacher_id=user_id,
                 fields={"active": True},
@@ -1532,24 +1472,17 @@ async def _attach_home_upload_media_asset(
                     detail="Could not reactivate the home player upload",
                 )
 
-    runtime_media_id = await _lookup_runtime_media_id_for_home_upload(upload_id)
-    if runtime_media_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Runtime media mapping is missing",
-        )
-
     return schemas.MediaAttachResponse(
         media_asset_id=UUID(media_asset_id),
         media_id=UUID(media_asset_id),
         state=str(media_asset.get("state") or "uploaded"),
         error_message=media_asset.get("error_message"),
         ingest_format=media_asset.get("ingest_format"),
-        streaming_format=media_asset.get("streaming_format"),
+        streaming_format=media_asset.get("playback_format")
+        or media_asset.get("streaming_format"),
         duration_seconds=media_asset.get("duration_seconds"),
         codec=media_asset.get("codec"),
         lesson_media_id=None,
-        runtime_media_id=UUID(runtime_media_id),
         lesson_media=None,
     )
 
@@ -1941,13 +1874,11 @@ async def complete_upload_url(
     return schemas.MediaCompleteResponse(
         media_asset_id=UUID(media_asset_id),
         media_id=UUID(media_asset_id),
-        state=str(
-            media_asset.get("state")
-            or ("ready" if media_type in {"image", "video", "document"} else "uploaded")
-        ),
+        state=str(media_asset.get("state") or "uploaded"),
         error_message=media_asset.get("error_message"),
         ingest_format=media_asset.get("ingest_format"),
-        streaming_format=media_asset.get("streaming_format"),
+        streaming_format=media_asset.get("playback_format")
+        or media_asset.get("streaming_format"),
         duration_seconds=media_asset.get("duration_seconds"),
         codec=media_asset.get("codec"),
     )
@@ -2246,7 +2177,7 @@ async def media_status(
         state=media.get("state"),
         error_message=media.get("error_message"),
         ingest_format=media.get("ingest_format"),
-        streaming_format=media.get("streaming_format"),
+        streaming_format=media.get("playback_format") or media.get("streaming_format"),
         duration_seconds=media.get("duration_seconds"),
         codec=media.get("codec"),
     )

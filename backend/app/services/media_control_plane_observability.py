@@ -11,7 +11,7 @@ from ..media_control_plane.services.media_resolver_service import (
 from ..observability import log_buffer
 from ..repositories import (
     courses as courses_repo,
-    home_player_library as home_player_library_repo,
+    home_audio_sources as home_audio_sources_repo,
     media_assets as media_assets_repo,
     media_resolution_failures as media_resolution_failures_repo,
     runtime_media as runtime_media_repo,
@@ -900,11 +900,21 @@ def _asset_snapshot_classification(
     inconsistencies: list[dict[str, Any]],
     lesson_media_rows: list[dict[str, Any]],
     runtime_rows: list[dict[str, Any]],
+    has_home_audio_source: bool,
 ) -> str:
     if purpose not in _CONTROL_PLANE_ASSET_PURPOSES:
         return "out_of_scope"
     if inconsistencies:
         return "inconsistent"
+    if purpose == "home_player_audio" and has_home_audio_source:
+        state = _normalize_text(asset_row.get("state"))
+        if state == "failed":
+            return "asset_failed"
+        if state in {"pending_upload", "uploaded", "processing"}:
+            return "asset_in_progress"
+        if state == "ready":
+            return "projected_ready"
+        return "observed"
     if not lesson_media_rows and not runtime_rows:
         return _unlinked_asset_state_classification(asset_row, runtime_gap=False)
     state = _normalize_text(asset_row.get("state"))
@@ -961,9 +971,14 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
             limit=_ASSET_REFERENCE_LIMIT + 1,
         )
     )
-    runtime_rows_raw = await runtime_media_repo.list_runtime_media_for_asset(
-        normalized_asset_id,
-        limit=_ASSET_REFERENCE_LIMIT + 1,
+    purpose = _normalize_text(asset_row.get("purpose"))
+    runtime_rows_raw = (
+        []
+        if purpose == "home_player_audio"
+        else await runtime_media_repo.list_runtime_media_for_asset(
+            normalized_asset_id,
+            limit=_ASSET_REFERENCE_LIMIT + 1,
+        )
     )
 
     lesson_media_truncated = len(lesson_media_rows_raw) > _ASSET_REFERENCE_LIMIT
@@ -982,13 +997,14 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
 
     inconsistencies: list[dict[str, Any]] = []
     normalized_asset = _normalize_asset_row(asset_row)
-    purpose = _normalize_text(asset_row.get("purpose"))
     state = _normalize_text(asset_row.get("state"))
-    active_home_upload = None
-    if purpose == "home_player_audio" and await media_assets_repo.home_player_uploads_supported():
-        active_home_upload = await home_player_library_repo.get_active_home_upload_by_media_asset_id(
+    active_home_upload = (
+        await home_audio_sources_repo.get_active_home_upload_by_media_asset_id(
             normalized_asset_id
         )
+        if purpose == "home_player_audio"
+        else None
+    )
 
     if normalized_asset is None:
         raise RuntimeError("asset normalization failed")
@@ -1021,18 +1037,6 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
                 _inconsistency(
                     "runtime_missing_lesson_media_link",
                     "Lesson-bound asset has a runtime row without lesson_media_id",
-                    severity="error",
-                    asset_id=normalized_asset["asset_id"],
-                    lesson_id=_normalize_text(row.get("lesson_id")),
-                    runtime_media_id=str(row["id"]),
-                )
-            )
-
-        if purpose == "home_player_audio" and not _normalize_text(row.get("home_player_upload_id")):
-            inconsistencies.append(
-                _inconsistency(
-                    "runtime_missing_home_upload_link",
-                    "Home upload asset has a runtime row without home_player_upload_id",
                     severity="error",
                     asset_id=normalized_asset["asset_id"],
                     lesson_id=_normalize_text(row.get("lesson_id")),
@@ -1173,21 +1177,6 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
             )
         )
 
-    if (
-        purpose == "home_player_audio"
-        and state in {"ready", "failed"}
-        and not runtime_rows
-        and active_home_upload is not None
-    ):
-        inconsistencies.append(
-            _inconsistency(
-                "home_runtime_projection_missing",
-                "Home upload asset has no runtime_media projection",
-                severity="error",
-                asset_id=normalized_asset["asset_id"],
-            )
-        )
-
     if lesson_media_truncated:
         inconsistencies.append(
             _inconsistency(
@@ -1225,6 +1214,7 @@ async def _collect_asset_snapshot(asset_id: str) -> dict[str, Any]:
             inconsistencies=sorted_inconsistencies,
             lesson_media_rows=lesson_media_rows,
             runtime_rows=runtime_rows,
+            has_home_audio_source=active_home_upload is not None,
         ),
         "detected_inconsistencies": sorted_inconsistencies,
         "truncation": {
@@ -1395,21 +1385,11 @@ async def list_orphaned_assets() -> dict[str, Any]:
         if normalized_asset is None:
             continue
         age_seconds = _asset_unlinked_age_seconds(row)
-        runtime_gap = int(row.get("home_player_upload_count") or 0) > 0
         item_classification = _unlinked_asset_state_classification(
             row,
-            runtime_gap=runtime_gap,
+            runtime_gap=False,
         )
         item_inconsistencies: list[dict[str, Any]] = []
-        if runtime_gap:
-            item_inconsistencies.append(
-                _inconsistency(
-                    "home_upload_without_runtime_projection",
-                    "Home upload references exist but runtime_media projection is missing",
-                    severity="error",
-                    asset_id=normalized_asset["asset_id"],
-                )
-            )
         if normalized_asset.get("state") == "failed" and not normalized_asset.get("error_message"):
             item_inconsistencies.append(
                 _inconsistency(

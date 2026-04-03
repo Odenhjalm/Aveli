@@ -3,6 +3,7 @@ from collections import defaultdict, deque
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from jose import JWTError
 
 from ..auth import (
@@ -13,6 +14,12 @@ from ..auth import (
     verify_password,
 )
 from .. import models, schemas
+from ..services.email_verification import (
+    InvalidInviteTokenError,
+    InvalidPasswordResetTokenError,
+    reset_password_with_token,
+    validate_invite_token,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -59,6 +66,29 @@ def _reset_login_rate_limit(request: Request, email: str | None) -> None:
         _login_attempts[key].clear()
 
 
+def _normalized_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _require_valid_invite_token(email: str, invite_token: str | None) -> None:
+    if not invite_token:
+        return
+
+    try:
+        invited_email = validate_invite_token(invite_token)
+    except InvalidInviteTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_or_expired_token",
+        ) from exc
+
+    if invited_email != _normalized_email(email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_or_expired_token",
+        )
+
+
 async def _record_auth_event(
     *,
     user_id: str | None,
@@ -98,6 +128,8 @@ async def _token_claims(user_id: str) -> dict[str, Any]:
     "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
 )
 async def register(payload: schemas.AuthRegisterRequest, request: Request):
+    _require_valid_invite_token(payload.email, payload.invite_token)
+
     if not _enforce_login_rate_limit(request, payload.email):
         await _record_auth_event(
             user_id=None,
@@ -203,11 +235,14 @@ async def forgot_password(payload: schemas.AuthForgotPasswordRequest):
 
 @router.post("/reset-password")
 async def reset_password(payload: schemas.AuthResetPasswordRequest):
-    user = await models.get_user_by_email(payload.email)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    await models.update_user_password(user["id"], payload.new_password)
-    return {"status": "ok"}
+    try:
+        result = await reset_password_with_token(payload.token, payload.new_password)
+    except InvalidPasswordResetTokenError:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "invalid_or_expired_token"},
+        )
+    return {"status": result["status"]}
 
 
 @router.post("/refresh", response_model=schemas.Token)

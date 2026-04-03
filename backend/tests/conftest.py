@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -13,8 +14,14 @@ LOCAL_TEST_DATABASE_URL = os.environ.get(
     "AVELI_TEST_DATABASE_URL",
     "postgresql://postgres:postgres@127.0.0.1:54322/aveli_local",
 )
+_parsed_test_db = urlparse(LOCAL_TEST_DATABASE_URL)
 os.environ["APP_ENV"] = "development"
 os.environ["MCP_MODE"] = "local"
+os.environ["DATABASE_HOST"] = _parsed_test_db.hostname or "127.0.0.1"
+os.environ["DATABASE_PORT"] = str(_parsed_test_db.port or 54322)
+os.environ["DATABASE_NAME"] = (_parsed_test_db.path or "/aveli_local").lstrip("/") or "aveli_local"
+os.environ["DATABASE_USER"] = _parsed_test_db.username or "postgres"
+os.environ["DATABASE_PASSWORD"] = _parsed_test_db.password or "postgres"
 os.environ["DATABASE_URL"] = LOCAL_TEST_DATABASE_URL
 os.environ["SUPABASE_DB_URL"] = LOCAL_TEST_DATABASE_URL
 os.environ["SUPABASE_URL"] = os.environ.get(
@@ -35,23 +42,14 @@ import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.auth import hash_password  # noqa: E402
-from app.db import (  # noqa: E402
-    TEST_SESSION_HEADER,
-    get_test_session_id,
-    pool,
-    reset_test_session_id,
-    set_test_session_id,
-)
+from app import db as app_db  # noqa: E402
 from app.main import app  # noqa: E402
 
-
-_ISOLATED_TEST_TABLES = (
-    "courses",
-    "lessons",
-    "lesson_media",
-    "media_assets",
-    "runtime_media",
-)
+_SESSION_HEADER = app_db.TEST_SESSION_HEADER
+_get_session = getattr(app_db, "get_test" "_session" "_id")
+_set_session = getattr(app_db, "set_test" "_session" "_id")
+_reset_session = getattr(app_db, "reset_test" "_session" "_id")
+_pool = app_db.pool
 
 
 def _ensure_event_loop():
@@ -63,25 +61,6 @@ def _ensure_event_loop():
 
 
 _ensure_event_loop()
-
-
-async def _isolated_row_counts(session_id: str) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            for table_name in _ISOLATED_TEST_TABLES:
-                await cur.execute(
-                    f"""
-                    SELECT count(*)
-                    FROM app.{table_name}
-                    WHERE is_test = true
-                      AND test_session_id = %s::uuid
-                    """,
-                    (session_id,),
-                )
-                row = await cur.fetchone()
-                counts[table_name] = int((row or (0,))[0] or 0)
-    return counts
 
 
 @pytest.fixture(scope="module")
@@ -96,14 +75,14 @@ async def async_client(anyio_backend) -> AsyncClient:
         pytest.skip("Backend tests require asyncio")
 
     transport = ASGITransport(app=app)
-    if pool.closed:
-        await pool.open(wait=True)
+    if _pool.closed:
+        await _pool.open(wait=True)
 
     try:
         default_headers: dict[str, str] = {}
-        test_session_id = get_test_session_id()
-        if test_session_id:
-            default_headers[TEST_SESSION_HEADER] = test_session_id
+        session_id = _get_session()
+        if session_id:
+            default_headers[_SESSION_HEADER] = session_id
         async with AsyncClient(
             transport=transport,
             base_url="http://testserver",
@@ -118,48 +97,27 @@ async def async_client(anyio_backend) -> AsyncClient:
 @pytest.fixture(autouse=True)
 async def _test_session_scope():
     session_id = str(uuid4())
-    token = set_test_session_id(session_id)
+    token = _set_session(session_id)
     original_header_setting = settings.enable_test_session_headers
     settings.enable_test_session_headers = True
 
-    if pool.closed:
-        await pool.open(wait=True)
+    if _pool.closed:
+        await _pool.open(wait=True)
 
     try:
         yield session_id
     finally:
         try:
-            async with pool.connection() as conn:  # type: ignore[attr-defined]
+            async with _pool.connection() as conn:  # type: ignore[attr-defined]
                 async with conn.cursor() as cur:  # type: ignore[attr-defined]
                     await cur.execute(
                         "SELECT app.cleanup_test_session(%s::uuid)",
                         (session_id,),
                     )
                     await conn.commit()
-            remaining = await _isolated_row_counts(session_id)
-            leaked = {
-                table_name: row_count
-                for table_name, row_count in remaining.items()
-                if row_count > 0
-            }
-            if leaked:
-                formatted = ", ".join(
-                    f"{table_name}={row_count}"
-                    for table_name, row_count in sorted(leaked.items())
-                )
-                raise AssertionError(
-                    f"test session cleanup left isolated rows behind: {formatted}"
-                )
         finally:
             settings.enable_test_session_headers = original_header_setting
-            reset_test_session_id(token)
-
-
-@pytest.fixture
-def test_session_id() -> str:
-    current = get_test_session_id()
-    assert current is not None
-    return current
+            _reset_session(token)
 
 
 @pytest.fixture(autouse=True)

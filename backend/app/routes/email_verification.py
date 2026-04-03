@@ -10,7 +10,9 @@ from fastapi.responses import JSONResponse
 from .. import repositories, schemas
 from ..services.email_verification import (
     InvalidEmailVerificationTokenError,
+    InvalidInviteTokenError,
     send_verification_email,
+    validate_invite_token,
     verify_email_token_and_mark_user,
 )
 
@@ -67,3 +69,16 @@ async def verify_email(token: str = Query(..., min_length=1)):
         )
 
     return {"status": result["status"]}
+
+
+@router.get("/validate-invite")
+async def validate_invite(token: str = Query(..., min_length=1)):
+    try:
+        email = validate_invite_token(token)
+    except InvalidInviteTokenError:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "invalid_or_expired_token"},
+        )
+
+    return {"status": "valid", "email": email}

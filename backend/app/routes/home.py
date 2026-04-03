@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query
 
 from .. import schemas
 from ..auth import CurrentUser
-from ..services import courses_service
+from ..services import home_audio_service
 
 router = APIRouter(prefix="/home", tags=["home"])
 
@@ -10,13 +10,12 @@ router = APIRouter(prefix="/home", tags=["home"])
 @router.get(
     "/audio",
     response_model=schemas.HomeAudioFeedResponse,
-    response_model_exclude_none=True,
 )
 async def home_audio_feed(
     current: CurrentUser,
     limit: int = Query(default=12, ge=1, le=50),
 ):
-    items = await courses_service.list_home_audio_media(
+    items = await home_audio_service.list_home_audio_media(
         str(current["id"]),
         limit=limit,
     )

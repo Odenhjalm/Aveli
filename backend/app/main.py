@@ -30,11 +30,15 @@ from .db import pool
 from .logging_utils import setup_logging
 from .middleware.request_context import RequestContextMiddleware
 from .routes import (
+    auth,
     playback,
     courses,
     domain_observability_mcp,
+    email_verification,
+    home,
     logs_mcp,
     media_control_plane_mcp,
+    profiles,
     studio,
     verification_mcp,
 )
@@ -122,9 +126,14 @@ def _configure_middleware(app: FastAPI) -> None:
 
 
 def _include_routers(app: FastAPI) -> None:
+    app.include_router(auth.router)
+    app.include_router(email_verification.router)
+    app.include_router(profiles.router)
+    app.include_router(home.router)
     app.include_router(playback.router)
     app.include_router(courses.router)
     app.include_router(courses.api_router)
+    app.include_router(studio.router)
     app.include_router(studio.course_lesson_router)
     app.include_router(studio.lesson_media_router)
     app.include_router(logs_mcp.router)

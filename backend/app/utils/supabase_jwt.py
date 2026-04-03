@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Sequence
 
 import httpx
 from jose import JWTError, jwk, jwt
@@ -57,11 +57,40 @@ def _get_cached_keys(url: str, *, force_refresh: bool = False) -> dict[str, dict
     return keys
 
 
+def _verify_hs256_access_token(
+    token: str,
+    *,
+    issuer: str | None = None,
+    jwt_secrets: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    secrets = [str(secret).strip() for secret in (jwt_secrets or ()) if str(secret).strip()]
+    if not secrets:
+        raise SupabaseJwtError("SUPABASE_JWT_SECRET is required for HS256 token verification")
+
+    options = {
+        "verify_aud": False,
+        "verify_iss": bool(issuer),
+    }
+    for secret in secrets:
+        try:
+            return jwt.decode(
+                token,
+                secret,
+                algorithms=["HS256"],
+                issuer=issuer,
+                options=options,
+            )
+        except JWTError:
+            continue
+    raise SupabaseJwtError("JWT verification failed")
+
+
 def verify_supabase_access_token(
     token: str,
     *,
-    jwks_url: str,
+    jwks_url: str | None = None,
     issuer: str | None = None,
+    jwt_secrets: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     try:
         header = jwt.get_unverified_header(token)
@@ -69,8 +98,16 @@ def verify_supabase_access_token(
         raise SupabaseJwtError("Invalid token header") from exc
 
     alg = header.get("alg")
+    if alg == "HS256":
+        return _verify_hs256_access_token(
+            token,
+            issuer=issuer,
+            jwt_secrets=jwt_secrets,
+        )
     if alg not in ("RS256", "ES256"):
         raise SupabaseJwtError(f"Unsupported JWT alg: {alg}")
+    if not jwks_url:
+        raise SupabaseJwtError("SUPABASE_JWKS_URL is required for asymmetric JWT verification")
     kid = header.get("kid")
     if not kid:
         raise SupabaseJwtError("JWT header missing kid")
@@ -84,7 +121,10 @@ def verify_supabase_access_token(
         raise SupabaseJwtError("JWT kid not found in JWKS")
 
     key = jwk.construct(key_data, alg)
-    options = {"verify_aud": False}
+    options = {
+        "verify_aud": False,
+        "verify_iss": bool(issuer),
+    }
     try:
         return jwt.decode(
             token,

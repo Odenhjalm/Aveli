@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
+from fastapi import HTTPException, status
+
 from ..config import settings
 from ..repositories import courses as courses_repo
 from ..repositories import runtime_media as runtime_media_repo
@@ -136,8 +138,29 @@ async def list_lesson_media(
     user_id: str | None = None,
 ) -> Sequence[dict[str, Any]]:
     rows = [dict(row) for row in await courses_repo.list_lesson_media(lesson_id)]
+    normalized_rows: list[dict[str, Any]] = []
+    for row in rows:
+        media_type = str(
+            row.get("media_type") or row.get("kind") or ""
+        ).strip().lower()
+        item = {
+            "id": row["id"],
+            "lesson_id": row["lesson_id"],
+            "media_asset_id": row.get("media_asset_id"),
+            "position": row["position"],
+            "media_type": media_type,
+            "kind": media_type,
+            "state": row["state"],
+            "media": None,
+        }
+        if "preview_ready" in row:
+            item["preview_ready"] = bool(row.get("preview_ready"))
+        if "original_name" in row:
+            item["original_name"] = row.get("original_name")
+        normalized_rows.append(item)
+
     if mode != "student_render":
-        return rows
+        return normalized_rows
 
     normalized_user_id = str(user_id or "").strip()
     if not normalized_user_id:
@@ -151,39 +174,30 @@ async def list_lesson_media(
     }
 
     learner_rows: list[dict[str, Any]] = []
-    for row in rows:
-        item = {
-            "id": row["id"],
-            "lesson_id": row["lesson_id"],
-            "media_asset_id": row.get("media_asset_id"),
-            "position": row["position"],
-            "media_type": row["media_type"],
-            "state": row["state"],
-            "media": None,
-        }
-
-        runtime_row = runtime_by_lesson_media_id.get(str(row["id"]))
+    for item in normalized_rows:
+        runtime_row = runtime_by_lesson_media_id.get(str(item["id"]))
         if runtime_row is None:
             learner_rows.append(item)
             continue
 
-        try:
-            playback = await lesson_playback_service.resolve_lesson_media_playback(
-                lesson_media_id=str(row["id"]),
-                user_id=normalized_user_id,
-            )
-        except Exception:
-            learner_rows.append(item)
-            continue
-
-        resolved_url = str(playback.get("playback_url") or "").strip() or None
+        playback = await lesson_playback_service.resolve_lesson_media_playback(
+            lesson_media_id=str(item["id"]),
+            user_id=normalized_user_id,
+        )
+        resolved_url = str(
+            playback.get("url") or playback.get("playback_url") or ""
+        ).strip()
         media_id = str(runtime_row.get("media_asset_id") or "").strip()
-        if media_id and resolved_url:
-            item["media"] = {
-                "media_id": media_id,
-                "state": row["state"],
-                "resolved_url": resolved_url,
-            }
+        if not media_id or not resolved_url:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Canonical media composition is unavailable",
+            )
+        item["media"] = {
+            "media_id": media_id,
+            "state": item["state"],
+            "resolved_url": resolved_url,
+        }
 
         learner_rows.append(item)
 
@@ -191,7 +205,20 @@ async def list_lesson_media(
 
 
 async def list_studio_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
-    return list(await courses_repo.list_lesson_media_for_studio(lesson_id))
+    rows = [dict(row) for row in await courses_repo.list_lesson_media_for_studio(lesson_id)]
+    return [
+        {
+            "lesson_media_id": row["lesson_media_id"],
+            "lesson_id": row["lesson_id"],
+            "media_asset_id": row.get("media_asset_id"),
+            "position": row["position"],
+            "media_type": row["media_type"],
+            "state": row["state"],
+            "preview_ready": bool(row.get("preview_ready")),
+            "original_name": row.get("original_name"),
+        }
+        for row in rows
+    ]
 
 
 def _normalize_cover_media_id(value: Any) -> str | None:
@@ -209,15 +236,20 @@ def _course_cover_payload(
 
     media_type = str(runtime_row.get("media_type") or "").strip().lower()
     playback_object_path = str(runtime_row.get("playback_object_path") or "").strip()
-    if media_type != "image" or not playback_object_path:
-        return None
+    if media_type != "image":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Course cover runtime media is invalid",
+        )
+    if not playback_object_path:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Course cover playback path is missing",
+        )
 
-    try:
-        resolved_url = storage_service.get_storage_service(
-            settings.media_source_bucket
-        ).public_url(playback_object_path)
-    except storage_service.StorageServiceError:
-        return None
+    resolved_url = storage_service.get_storage_service(
+        settings.media_source_bucket
+    ).public_url(playback_object_path)
 
     return {
         "media_id": media_id,

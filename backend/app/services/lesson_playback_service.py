@@ -15,6 +15,7 @@ from ..media_control_plane.services.media_resolver_service import (
     LessonMediaResolutionReason,
     media_resolver_service as canonical_media_resolver,
 )
+from ..repositories import media_assets as media_assets_repo
 from ..services import courses_service, storage_service
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,151 @@ async def resolve_pipeline_playback(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Direct media-asset playback is unavailable in canonical runtime",
     )
+
+
+def _media_asset_audio_resolution(
+    *,
+    media_asset_id: str,
+    media_asset: dict[str, Any] | None,
+) -> LessonMediaResolution:
+    if media_asset is None:
+        return LessonMediaResolution(
+            lesson_media_id=None,
+            lesson_id=None,
+            media_asset_id=None,
+            media_type=None,
+            content_type=None,
+            media_state=None,
+            duration_seconds=None,
+            storage_bucket=None,
+            storage_path=None,
+            is_playable=False,
+            playback_mode=LessonMediaPlaybackMode.NONE,
+            failure_reason=LessonMediaResolutionReason.LESSON_MEDIA_NOT_FOUND,
+            failure_detail="media_asset missing",
+            runtime_media_id="",
+            course_id=None,
+        )
+
+    resolved_media_asset_id = _exact_text(media_asset.get("id")) or media_asset_id
+    media_type = _exact_text(media_asset.get("media_type"))
+    media_state = _exact_text(media_asset.get("state"))
+    playback_format = _exact_text(
+        media_asset.get("playback_format") or media_asset.get("streaming_format")
+    )
+    storage_path = _exact_text(
+        media_asset.get("playback_object_path") or media_asset.get("streaming_object_path")
+    )
+    storage_bucket = _exact_text(
+        media_asset.get("storage_bucket") or media_asset.get("streaming_storage_bucket")
+    )
+    lesson_id = _exact_text(media_asset.get("lesson_id"))
+    course_id = _exact_text(media_asset.get("course_id"))
+
+    if media_type != "audio":
+        return LessonMediaResolution(
+            lesson_media_id=None,
+            lesson_id=lesson_id,
+            media_asset_id=resolved_media_asset_id,
+            media_type=media_type,
+            content_type=None,
+            media_state=media_state,
+            duration_seconds=None,
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            is_playable=False,
+            playback_mode=LessonMediaPlaybackMode.NONE,
+            failure_reason=LessonMediaResolutionReason.INVALID_KIND,
+            failure_detail="media_asset must be audio",
+            runtime_media_id="",
+            course_id=course_id,
+        )
+
+    if media_state != "ready":
+        return LessonMediaResolution(
+            lesson_media_id=None,
+            lesson_id=lesson_id,
+            media_asset_id=resolved_media_asset_id,
+            media_type=media_type,
+            content_type=None,
+            media_state=media_state,
+            duration_seconds=None,
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            is_playable=False,
+            playback_mode=LessonMediaPlaybackMode.NONE,
+            failure_reason=LessonMediaResolutionReason.ASSET_NOT_READY,
+            failure_detail="media_asset is not ready",
+            runtime_media_id="",
+            course_id=course_id,
+        )
+
+    if playback_format != "mp3":
+        return LessonMediaResolution(
+            lesson_media_id=None,
+            lesson_id=lesson_id,
+            media_asset_id=resolved_media_asset_id,
+            media_type=media_type,
+            content_type=None,
+            media_state=media_state,
+            duration_seconds=None,
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            is_playable=False,
+            playback_mode=LessonMediaPlaybackMode.NONE,
+            failure_reason=LessonMediaResolutionReason.INVALID_CONTENT_TYPE,
+            failure_detail="audio playback_format must be mp3",
+            runtime_media_id="",
+            course_id=course_id,
+        )
+
+    if storage_path is None or storage_bucket is None:
+        return LessonMediaResolution(
+            lesson_media_id=None,
+            lesson_id=lesson_id,
+            media_asset_id=resolved_media_asset_id,
+            media_type=media_type,
+            content_type="audio/mpeg",
+            media_state=media_state,
+            duration_seconds=None,
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            is_playable=False,
+            playback_mode=LessonMediaPlaybackMode.NONE,
+            failure_reason=LessonMediaResolutionReason.MISSING_STORAGE_IDENTITY,
+            failure_detail="ready media_asset requires playback storage identity",
+            runtime_media_id="",
+            course_id=course_id,
+        )
+
+    return LessonMediaResolution(
+        lesson_media_id=None,
+        lesson_id=lesson_id,
+        media_asset_id=resolved_media_asset_id,
+        media_type=media_type,
+        content_type="audio/mpeg",
+        media_state=media_state,
+        duration_seconds=None,
+        storage_bucket=storage_bucket,
+        storage_path=storage_path,
+        is_playable=True,
+        playback_mode=LessonMediaPlaybackMode.PIPELINE_ASSET,
+        failure_reason=LessonMediaResolutionReason.OK_READY_ASSET,
+        failure_detail=None,
+        runtime_media_id="",
+        course_id=course_id,
+    )
+
+
+async def resolve_media_asset_playback(*, media_asset_id: str) -> dict[str, Any]:
+    media_asset = await media_assets_repo.get_media_asset_access(media_asset_id)
+    resolution = _media_asset_audio_resolution(
+        media_asset_id=media_asset_id,
+        media_asset=media_asset,
+    )
+    if not resolution.is_playable:
+        raise _resolution_http_exception(resolution)
+    return await _build_pipeline_playback_response(resolution=resolution)
 
 
 async def _build_pipeline_playback_response(

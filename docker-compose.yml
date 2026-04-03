@@ -1,36 +1,36 @@
-version: "3.9"
-
 services:
+  db:
+    image: postgres:15
+    container_name: aveli-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aveli_local
+    ports:
+      - "54322:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env.local
     environment:
       APP_ENV: ${APP_ENV:-development}
       PORT: ${PORT:-8080}
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
-      SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL}
-      SUPABASE_SECRET_API_KEY: ${SUPABASE_SECRET_API_KEY:?set SUPABASE_SECRET_API_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      SUPABASE_PUBLISHABLE_API_KEY: ${SUPABASE_PUBLISHABLE_API_KEY:-}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
-      LIVEKIT_WS_URL: ${LIVEKIT_WS_URL:-}
-      LIVEKIT_API_URL: ${LIVEKIT_API_URL:-}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?set STRIPE_SECRET_KEY}
-      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      STRIPE_BILLING_WEBHOOK_SECRET: ${STRIPE_BILLING_WEBHOOK_SECRET:-}
-      STRIPE_CHECKOUT_UI_MODE: ${STRIPE_CHECKOUT_UI_MODE:-custom}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
-      STRIPE_RETURN_URL: ${STRIPE_RETURN_URL:-http://localhost:3000/checkout/return?session_id={CHECKOUT_SESSION_ID}}
-      CHECKOUT_SUCCESS_URL: ${CHECKOUT_SUCCESS_URL:-http://localhost:3000/checkout/return?session_id={CHECKOUT_SESSION_ID}}
-      CHECKOUT_CANCEL_URL: ${CHECKOUT_CANCEL_URL:-http://localhost:3000/checkout/cancel}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
-      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?set MEDIA_SIGNING_SECRET}
-      MEDIA_SIGNING_TTL_SECONDS: ${MEDIA_SIGNING_TTL_SECONDS:-600}
-      LESSON_MEDIA_MAX_BYTES: ${LESSON_MEDIA_MAX_BYTES:-2147483648}
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DATABASE_NAME:-aveli_local}
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_API_KEY: ${SUPABASE_SECRET_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:-dev-media-signing-secret}
+    depends_on:
+      - db
     volumes:
       - ./backend/assets:/app/assets:ro
       - ./backend/media:/app/media
@@ -42,11 +42,14 @@ services:
       context: ./frontend/landing
       dockerfile: Dockerfile
     environment:
-      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_PUBLISHABLE_API_KEY:?set SUPABASE_PUBLISHABLE_API_KEY}
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_PUBLISHABLE_API_KEY:-}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080}
       PORT: 3000
     ports:
       - "3000:3000"
     depends_on:
       - backend
+
+volumes:
+  postgres_data:

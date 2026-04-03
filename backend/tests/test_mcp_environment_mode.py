@@ -8,8 +8,17 @@ import pytest
 from app.config import Settings
 
 
+def _set_local_db_env(monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_HOST", "localhost")
+    monkeypatch.setenv("DATABASE_PORT", "5432")
+    monkeypatch.setenv("DATABASE_NAME", "aveli_local")
+    monkeypatch.setenv("DATABASE_USER", "postgres")
+    monkeypatch.setenv("DATABASE_PASSWORD", "pw")
+
+
 def test_settings_use_explicit_production_database_for_mcp_mode(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@localhost:5432/aveli_local")
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@db:5432/ignored_by_settings")
     monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
     monkeypatch.setenv("MCP_MODE", "production")
     monkeypatch.setenv(
@@ -34,7 +43,8 @@ def test_settings_use_explicit_production_database_for_mcp_mode(monkeypatch):
 
 
 def test_settings_require_explicit_production_database_for_mcp_mode(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@localhost:5432/aveli_local")
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@db:5432/ignored_by_settings")
     monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
     monkeypatch.setenv("MCP_MODE", "production")
     monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
@@ -42,6 +52,22 @@ def test_settings_require_explicit_production_database_for_mcp_mode(monkeypatch)
 
     with pytest.raises(ValueError, match="MCP_MODE=production requires"):
         Settings()
+
+
+def test_settings_derive_local_database_url_from_components(monkeypatch):
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@aveli-db:5432/ignored_by_settings")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PRODUCTION_SUPABASE_DB_URL", raising=False)
+
+    settings = Settings()
+
+    assert settings.database_url is not None
+    assert (
+        settings.database_url.unicode_string()
+        == "postgresql://postgres:pw@localhost:5432/aveli_local"
+    )
 
 
 @pytest.mark.anyio("asyncio")

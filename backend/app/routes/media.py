@@ -18,11 +18,6 @@ from ..repositories import storage_objects
 from ..services import storage_service
 from ..utils.http_headers import build_content_disposition
 from ..utils import media_robustness
-from ..utils.media_signer import (
-    MediaTokenError,
-    is_signing_enabled,
-    verify_media_token,
-)
 from . import upload as upload_routes
 
 logger = logging.getLogger(__name__)
@@ -606,55 +601,4 @@ async def _build_streaming_response(
         file_iterator(),
         media_type=content_type,
         headers=headers,
-    )
-
-
-@router.post("/sign", response_model=schemas.MediaSignResponse)
-async def sign_media(payload: schemas.MediaSignRequest, current: CurrentUser):
-    del payload, current
-    raise HTTPException(
-        status_code=410,
-        detail="Legacy media signing endpoint removed from canonical runtime",
-    )
-
-
-@router.get("/stream/{token}")
-async def stream_signed_media(token: str, request: Request):
-    if not is_signing_enabled():
-        raise HTTPException(status_code=503, detail="Media signing disabled")
-
-    try:
-        payload = verify_media_token(token)
-    except MediaTokenError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
-
-    media_id = payload.get("sub")
-    if not media_id:
-        raise HTTPException(status_code=400, detail="Malformed media token")
-
-    normalized_mode = media_resolution_failures.normalize_mode(payload.get("purpose"))
-    logger.info(
-        "LEGACY_MEDIA_STREAM_HIT media_id=%s mode=%s",
-        media_id,
-        normalized_mode,
-    )
-
-    row = await models.get_media(media_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Media not found")
-
-    lesson_media_id = str(row.get("id") or "")
-    media_asset_id = str(row.get("media_asset_id") or "").strip()
-    media_state = str(row.get("media_state") or "").strip().lower()
-    if not media_asset_id or media_state != "ready":
-        raise HTTPException(
-            status_code=404,
-            detail="Legacy playback is unavailable in canonical runtime",
-        )
-
-    return await _build_streaming_response(
-        row,
-        request,
-        lesson_media_id=lesson_media_id,
-        mode=normalized_mode,
     )

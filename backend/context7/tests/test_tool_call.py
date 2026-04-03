@@ -236,41 +236,6 @@ def test_supabase_readonly_sets_read_only_options(monkeypatch):
 
 
 @requires_supabase_db
-async def test_tool_call_list_intro_courses_wrapper(async_client):
-    token, user_id = await create_teacher(async_client)
-    course_id = None
-    try:
-        course_id = await create_course(async_client, token)
-        patch = await async_client.patch(
-            f"/studio/courses/{course_id}",
-            headers=auth_header(token),
-            json={"is_free_intro": True, "is_published": True},
-        )
-        assert patch.status_code == 200, patch.text
-
-        resp = await async_client.post(
-            "/api/ai/tool-call",
-            headers=auth_header(token),
-            json={
-                "input": "list intro",
-                "course_id": course_id,
-                "tool": "supabase_readonly",
-                "action": "list_intro_courses",
-                "args": {"limit": 10},
-            },
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()["result"]
-        assert body["stub"] is False
-        assert isinstance(body["rows"], list)
-        assert body["row_count"] >= 1
-    finally:
-        if course_id:
-            await cleanup_course(course_id)
-        await cleanup_user(user_id)
-
-
-@requires_supabase_db
 async def test_tool_call_get_course_by_id_wrapper(async_client):
     token, user_id = await create_teacher(async_client)
     course_id = None

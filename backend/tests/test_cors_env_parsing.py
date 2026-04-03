@@ -2,7 +2,14 @@ from app.config import Settings
 
 
 def _settings(**overrides) -> Settings:
-    return Settings(database_url="postgresql://localhost:5432/aveli_test", **overrides)
+    return Settings(
+        database_host="localhost",
+        database_port=5432,
+        database_name="aveli_test",
+        database_user="postgres",
+        database_password="postgres",
+        **overrides,
+    )
 
 
 def test_cors_defaults_include_explicit_prod_and_dev_origins():

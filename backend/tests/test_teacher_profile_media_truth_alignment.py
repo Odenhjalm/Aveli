@@ -2,11 +2,11 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app import schemas
 from app.utils.profile_media import (
     lesson_media_source_from_row,
-    profile_media_item_from_row,
     recording_source_from_row,
 )
 
@@ -20,7 +20,8 @@ def test_profile_media_item_uses_lesson_media_identity_only() -> None:
         "id": str(uuid4()),
         "teacher_id": str(uuid4()),
         "media_kind": "lesson_media",
-        "media_id": str(uuid4()),
+        "lesson_media_id": str(uuid4()),
+        "seminar_recording_id": None,
         "external_url": None,
         "title": "Lesson feature",
         "description": "Breathing lesson",
@@ -33,7 +34,7 @@ def test_profile_media_item_uses_lesson_media_identity_only() -> None:
         "updated_at": _timestamp(),
     }
 
-    item = profile_media_item_from_row(row)
+    item = schemas.TeacherProfileMediaItem(**row)
 
     assert item.media_kind == schemas.TeacherProfileMediaKind.lesson_media
     assert item.lesson_media_id is not None
@@ -46,7 +47,8 @@ def test_profile_media_item_uses_seminar_recording_identity_only() -> None:
         "id": str(uuid4()),
         "teacher_id": str(uuid4()),
         "media_kind": "seminar_recording",
-        "media_id": str(uuid4()),
+        "lesson_media_id": None,
+        "seminar_recording_id": str(uuid4()),
         "external_url": None,
         "title": "Recording feature",
         "description": None,
@@ -59,7 +61,7 @@ def test_profile_media_item_uses_seminar_recording_identity_only() -> None:
         "updated_at": _timestamp(),
     }
 
-    item = profile_media_item_from_row(row)
+    item = schemas.TeacherProfileMediaItem(**row)
 
     assert item.media_kind == schemas.TeacherProfileMediaKind.seminar_recording
     assert item.lesson_media_id is None
@@ -72,7 +74,8 @@ def test_profile_media_item_preserves_external_identity_without_collapse() -> No
         "id": str(uuid4()),
         "teacher_id": str(uuid4()),
         "media_kind": "external",
-        "media_id": None,
+        "lesson_media_id": None,
+        "seminar_recording_id": None,
         "external_url": "https://example.com/profile-media",
         "title": None,
         "description": None,
@@ -85,7 +88,7 @@ def test_profile_media_item_preserves_external_identity_without_collapse() -> No
         "updated_at": _timestamp(),
     }
 
-    item = profile_media_item_from_row(row)
+    item = schemas.TeacherProfileMediaItem(**row)
 
     assert item.media_kind == schemas.TeacherProfileMediaKind.external
     assert item.lesson_media_id is None
@@ -98,7 +101,8 @@ def test_profile_media_item_rejects_missing_explicit_fields() -> None:
         "id": str(uuid4()),
         "teacher_id": str(uuid4()),
         "media_kind": "external",
-        "media_id": None,
+        "lesson_media_id": None,
+        "seminar_recording_id": None,
         "external_url": "https://example.com/profile-media",
         "title": None,
         "description": None,
@@ -111,8 +115,8 @@ def test_profile_media_item_rejects_missing_explicit_fields() -> None:
         "updated_at": _timestamp(),
     }
 
-    with pytest.raises(ValueError, match="profile_media.position"):
-        profile_media_item_from_row(row)
+    with pytest.raises(ValidationError):
+        schemas.TeacherProfileMediaItem(**row)
 
 
 def test_lesson_source_preserves_explicit_optional_storage_fields() -> None:

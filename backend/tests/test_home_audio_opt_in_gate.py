@@ -1,9 +1,11 @@
+from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
 
-from app import db, models
-from app.repositories import courses as courses_repo
+from app import db
+from app.routes import studio as studio_routes
+from app.services import home_audio_service
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -12,7 +14,16 @@ def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def register_user(client, email: str, password: str, display_name: str) -> tuple[str, str]:
+def _source_timestamp(*, minutes_ago: int = 0) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+
+
+async def register_user(
+    client,
+    email: str,
+    password: str,
+    display_name: str,
+) -> tuple[str, str]:
     register_resp = await client.post(
         "/auth/register",
         json={
@@ -25,7 +36,7 @@ async def register_user(client, email: str, password: str, display_name: str) ->
     tokens = register_resp.json()
     token = tokens["access_token"]
 
-    me_resp = await client.get("/auth/me", headers=auth_header(token))
+    me_resp = await client.get("/profiles/me", headers=auth_header(token))
     assert me_resp.status_code == 200, me_resp.text
     user_id = me_resp.json()["user_id"]
     return token, user_id
@@ -41,7 +52,21 @@ async def promote_to_teacher(user_id: str) -> None:
             await conn.commit()
 
 
-async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_client):
+def _find_item_by_media_id(items: list[dict], media_asset_id: str) -> dict | None:
+    return next(
+        (
+            item
+            for item in items
+            if str((item.get("media") or {}).get("media_id") or "") == media_asset_id
+        ),
+        None,
+    )
+
+
+async def test_home_audio_requires_teacher_opt_in_before_entitlements(
+    async_client,
+    monkeypatch,
+):
     password = "Passw0rd!"
     teacher_token, teacher_id = await register_user(
         async_client,
@@ -58,58 +83,122 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
         "Student",
     )
 
-    slug = f"home-gate-{uuid.uuid4().hex[:8]}"
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.courses (
-                  slug,
-                  title,
-                  is_free_intro,
-                  price_amount_cents,
-                  currency,
-                  is_published,
-                  created_by
-                )
-                VALUES (%s, %s, false, 1000, 'sek', true, %s)
-                RETURNING id
-                """,
-                (slug, f"Course {slug}", teacher_id),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
-    course_id = str(row[0])
+    course_id = str(uuid.uuid4())
+    lesson_id = str(uuid.uuid4())
+    lesson_media_id = str(uuid.uuid4())
+    media_asset_id = str(uuid.uuid4())
+    link_rows: dict[str, dict] = {}
+    allowed_users = {teacher_id}
 
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.lessons (course_id, title, position, is_intro)
-                VALUES (%s, %s, 0, false)
-                RETURNING id
-                """,
-                (course_id, "Lesson"),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
-    lesson_id = str(row[0])
+    async def fake_resolve_owner(candidate_lesson_media_id: str):
+        assert candidate_lesson_media_id == lesson_media_id
+        return {
+            "teacher_id": teacher_id,
+            "course_title": "Course home-gate",
+            "course_is_published": True,
+            "media_type": "audio",
+        }
 
-    lesson_media = await models.add_lesson_media_entry(
-        lesson_id=lesson_id,
-        kind="audio",
-        storage_path=f"{uuid.uuid4().hex}.mp3",
-        storage_bucket="lesson-media",
-        position=1,
-        media_id=None,
+    async def fake_upsert_link(
+        *,
+        teacher_id: str,
+        lesson_media_id: str,
+        title: str,
+        course_title_snapshot: str,
+        enabled: bool,
+    ):
+        row = {
+            "id": str(uuid.uuid4()),
+            "teacher_id": teacher_id,
+            "lesson_media_id": lesson_media_id,
+            "title": title,
+            "course_title": course_title_snapshot,
+            "enabled": enabled,
+            "status": "active",
+            "kind": "audio",
+            "created_at": _source_timestamp(minutes_ago=2),
+            "updated_at": _source_timestamp(minutes_ago=2),
+        }
+        link_rows[row["id"]] = row
+        return row
+
+    async def fake_update_link(*, link_id: str, teacher_id: str, fields: dict):
+        row = link_rows.get(link_id)
+        if row is None or row["teacher_id"] != teacher_id:
+            return None
+        row.update(fields)
+        row["updated_at"] = _source_timestamp()
+        return row
+
+    async def fake_list_direct_uploads(*, limit: int = 100):
+        return []
+
+    async def fake_list_course_links(*, limit: int = 100):
+        if not link_rows:
+            return []
+        row = next(iter(link_rows.values()))
+        if not row.get("enabled"):
+            return []
+        return [
+            {
+                "teacher_id": teacher_id,
+                "title": row["title"],
+                "created_at": row["created_at"],
+                "teacher_name": "Teacher",
+                "lesson_id": lesson_id,
+                "course_id": course_id,
+                "lesson_title": "Lesson",
+                "course_title": row["course_title"],
+                "course_slug": "home-gate-course",
+                "media_asset_id": media_asset_id,
+                "media_state": "uploaded",
+            }
+        ]
+
+    async def fake_read_access(user_id: str, candidate_lesson_id: str):
+        assert candidate_lesson_id == lesson_id
+        return {"lesson": {"id": lesson_id}, "can_access": user_id in allowed_users}
+
+    monkeypatch.setattr(
+        studio_routes.home_audio_sources_repo,
+        "resolve_lesson_media_course_owner",
+        fake_resolve_owner,
+        raising=True,
     )
-    assert lesson_media
-    lesson_media_id = str(lesson_media["id"])
+    monkeypatch.setattr(
+        studio_routes.home_audio_sources_repo,
+        "upsert_home_player_course_link",
+        fake_upsert_link,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio_routes.home_audio_sources_repo,
+        "update_home_player_course_link",
+        fake_update_link,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        home_audio_service.home_audio_runtime_repo,
+        "list_home_audio_direct_upload_sources",
+        fake_list_direct_uploads,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        home_audio_service.home_audio_runtime_repo,
+        "list_home_audio_course_link_sources",
+        fake_list_course_links,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        home_audio_service.courses_service,
+        "read_canonical_lesson_access",
+        fake_read_access,
+        raising=True,
+    )
 
-    # Not opted-in => excluded even for the owner.
     resp_off = await async_client.get("/home/audio", headers=auth_header(teacher_token))
     assert resp_off.status_code == 200, resp_off.text
-    assert lesson_media_id not in {it.get("id") for it in resp_off.json().get("items") or []}
+    assert _find_item_by_media_id(resp_off.json().get("items") or [], media_asset_id) is None
 
     create_link = await async_client.post(
         "/studio/home-player/course-links",
@@ -123,29 +212,31 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
     assert create_link.status_code == 201, create_link.text
     link_id = str(create_link.json()["id"])
 
-    # Opted-in => owner sees it.
     resp_on = await async_client.get("/home/audio", headers=auth_header(teacher_token))
     assert resp_on.status_code == 200, resp_on.text
-    assert lesson_media_id in {it.get("id") for it in resp_on.json().get("items") or []}
+    teacher_item = _find_item_by_media_id(resp_on.json().get("items") or [], media_asset_id)
+    assert teacher_item
+    assert teacher_item["source_type"] == "course_link"
+    assert teacher_item["media"]["media_id"] == media_asset_id
+    assert teacher_item["media"]["state"] == "uploaded"
 
-    # Student still needs existing rights (enrollment) even when opted-in.
     resp_student = await async_client.get("/home/audio", headers=auth_header(student_token))
     assert resp_student.status_code == 200, resp_student.text
-    assert lesson_media_id not in {
-        it.get("id") for it in resp_student.json().get("items") or []
-    }
+    assert _find_item_by_media_id(resp_student.json().get("items") or [], media_asset_id) is None
 
-    await courses_repo.ensure_course_enrollment(student_id, course_id)
+    allowed_users.add(student_id)
     resp_student_enrolled = await async_client.get(
         "/home/audio",
         headers=auth_header(student_token),
     )
     assert resp_student_enrolled.status_code == 200, resp_student_enrolled.text
-    assert lesson_media_id in {
-        it.get("id") for it in resp_student_enrolled.json().get("items") or []
-    }
+    student_item = _find_item_by_media_id(
+        resp_student_enrolled.json().get("items") or [],
+        media_asset_id,
+    )
+    assert student_item
+    assert student_item["media"]["media_id"] == media_asset_id
 
-    # Disable link => hidden.
     patch_resp = await async_client.patch(
         f"/studio/home-player/course-links/{link_id}",
         headers=auth_header(teacher_token),
@@ -156,94 +247,48 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(async_clie
 
     resp_disabled = await async_client.get("/home/audio", headers=auth_header(teacher_token))
     assert resp_disabled.status_code == 200, resp_disabled.text
-    assert lesson_media_id not in {it.get("id") for it in resp_disabled.json().get("items") or []}
+    assert _find_item_by_media_id(resp_disabled.json().get("items") or [], media_asset_id) is None
 
 
-async def test_home_audio_falls_back_to_extension_mime_for_generic_audio_types(
+async def test_home_audio_course_links_reject_non_audio_lesson_media(
     async_client,
+    monkeypatch,
 ):
     password = "Passw0rd!"
     teacher_token, teacher_id = await register_user(
         async_client,
-        f"home_mime_teacher_{uuid.uuid4().hex[:6]}@example.org",
+        f"home_video_teacher_{uuid.uuid4().hex[:6]}@example.org",
         password,
         "Teacher",
     )
     await promote_to_teacher(teacher_id)
 
-    slug = f"home-mime-{uuid.uuid4().hex[:8]}"
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.courses (
-                  slug,
-                  title,
-                  is_free_intro,
-                  price_amount_cents,
-                  currency,
-                  is_published,
-                  created_by
-                )
-                VALUES (%s, %s, false, 1000, 'sek', true, %s)
-                RETURNING id
-                """,
-                (slug, f"Course {slug}", teacher_id),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
-    course_id = str(row[0])
+    lesson_media_id = str(uuid.uuid4())
 
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.lessons (course_id, title, position, is_intro)
-                VALUES (%s, %s, 0, false)
-                RETURNING id
-                """,
-                (course_id, "Lesson"),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
-    lesson_id = str(row[0])
+    async def fake_resolve_owner(candidate_lesson_media_id: str):
+        assert candidate_lesson_media_id == lesson_media_id
+        return {
+            "teacher_id": teacher_id,
+            "course_title": "Course",
+            "course_is_published": True,
+            "media_type": "video",
+        }
 
-    media_object = await models.create_media_object(
-        owner_id=teacher_id,
-        storage_path=f"{uuid.uuid4().hex}.mp3",
-        storage_bucket="lesson-media",
-        content_type="application/octet-stream",
-        byte_size=3,
-        checksum=None,
-        original_name="legacy.mp3",
+    monkeypatch.setattr(
+        studio_routes.home_audio_sources_repo,
+        "resolve_lesson_media_course_owner",
+        fake_resolve_owner,
+        raising=True,
     )
-    assert media_object
-
-    lesson_media = await models.add_lesson_media_entry(
-        lesson_id=lesson_id,
-        kind="audio",
-        storage_path=media_object["storage_path"],
-        storage_bucket=media_object["storage_bucket"],
-        media_id=str(media_object["id"]),
-        position=1,
-    )
-    assert lesson_media
-    lesson_media_id = str(lesson_media["id"])
 
     create_link = await async_client.post(
         "/studio/home-player/course-links",
         headers=auth_header(teacher_token),
         json={
             "lesson_media_id": lesson_media_id,
-            "title": "Home track",
+            "title": "Home video",
             "enabled": True,
         },
     )
-    assert create_link.status_code == 201, create_link.text
-
-    resp = await async_client.get("/home/audio", headers=auth_header(teacher_token))
-    assert resp.status_code == 200, resp.text
-    items = resp.json().get("items") or []
-    item = next((entry for entry in items if entry.get("id") == lesson_media_id), None)
-    assert item, resp.json()
-    assert item.get("content_type") == "audio/mpeg"
+    assert create_link.status_code == 422, create_link.text
+    assert create_link.json()["detail"] == "Only audio can be linked"

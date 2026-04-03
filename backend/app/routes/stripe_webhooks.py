@@ -312,7 +312,8 @@ async def _handle_refund_event(event_type: str, payload: dict[str, object]) -> N
     if previous_status == "refunded":
         return
 
-    if bool(course.get("is_free_intro")):
+    course_step = str(course.get("step") or "").strip().lower()
+    if course_step == "intro":
         created_at = refunded_order.get("created_at")
         usage_time = created_at if isinstance(created_at, datetime) else datetime.now(timezone.utc)
         await courses_repo.decrement_intro_usage(

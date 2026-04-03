@@ -552,56 +552,6 @@ async def test_courses_list_response_omits_cover_when_absent(async_client, monke
     assert "cover" not in body["items"][0]
 
 
-async def test_intro_first_response_omits_cover_url(async_client, monkeypatch):
-    now = datetime.now(timezone.utc)
-
-    async def fake_list_public_courses(**kwargs):
-        assert kwargs == {
-            "published_only": True,
-            "free_intro": True,
-            "limit": 1,
-        }
-        return [
-            {
-                "id": MEDIA_ID,
-                "slug": "course-1",
-                "title": "Course 1",
-                "description": "Example",
-                "cover_media_id": MEDIA_ID,
-                "cover": {
-                    "media_id": MEDIA_ID,
-                    "state": "ready",
-                    "resolved_url": "https://storage.local/public-media/media/derived/cover/courses/course-1/cover.jpg",
-                    "source": "control_plane",
-                },
-                "video_url": None,
-                "is_free_intro": True,
-                "journey_step": None,
-                "price_amount_cents": 0,
-                "currency": "sek",
-                "stripe_product_id": None,
-                "stripe_price_id": None,
-                "is_published": True,
-                "created_by": MEDIA_ID,
-                "created_at": now,
-                "updated_at": now,
-            }
-        ]
-
-    monkeypatch.setattr(
-        courses_service,
-        "list_public_courses",
-        fake_list_public_courses,
-        raising=True,
-    )
-
-    response = await async_client.get("/courses/intro-first")
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert "cover_url" not in body["course"]
-    assert body["course"]["cover"]["source"] == "control_plane"
-
-
 async def test_studio_courses_list_response_includes_cover_when_present(
     async_client, monkeypatch
 ):

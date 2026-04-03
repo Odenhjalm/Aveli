@@ -71,12 +71,18 @@ def _decode_access_token(token: str) -> tuple[dict[str, Any], str]:
         return decode_jwt(token), "local"
     except JWTError as exc:
         jwks_url = _supabase_jwks_url()
-        if not jwks_url:
+        jwt_secrets = settings.supabase_jwt_secrets
+        if not jwks_url and not jwt_secrets:
             raise exc
+        if not jwks_url:
+            jwks_url = None
         issuer = _supabase_jwt_issuer()
         try:
             payload = verify_supabase_access_token(
-                token, jwks_url=jwks_url, issuer=issuer
+                token,
+                jwks_url=jwks_url,
+                issuer=issuer,
+                jwt_secrets=jwt_secrets,
             )
         except SupabaseJwtError as sup_exc:
             raise JWTError("Supabase JWT verification failed") from sup_exc

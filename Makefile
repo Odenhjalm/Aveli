@@ -1,10 +1,16 @@
-.PHONY: backend.setup backend.dev backend.test backend.lint supabase.migrate qa.teacher docker.up docker.down flutter.get flutter.test guardrails.install task.branch
+.PHONY: dev dev-reset backend.setup backend.dev backend.test backend.lint supabase.migrate qa.teacher docker.up docker.down flutter.get flutter.test guardrails.install task.branch
+
+dev:
+	./scripts/dev.sh
+
+dev-reset:
+	./scripts/dev_bootstrap.sh
 
 backend.setup:
 	cd backend && poetry env use 3.11 && poetry install --sync
 
 backend.dev:
-	cd backend && PORT=$${PORT:-8080} ./.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port $${PORT:-8080} --reload
+	./scripts/dev.sh
 
 backend.test:
 	cd backend && ./.venv/bin/python -m pytest --maxfail=1 --disable-warnings

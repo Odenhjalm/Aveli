@@ -528,10 +528,9 @@ class TeacherProfileMediaPublicResponse(BaseModel):
 class HomePlayerUploadItem(BaseModel):
     id: UUID
     teacher_id: UUID
-    media_id: Optional[UUID] = None
-    media_asset_id: Optional[UUID] = None
+    media_asset_id: UUID
     title: str
-    kind: str
+    kind: Literal["audio"]
     active: bool
     created_at: datetime
     updated_at: datetime
@@ -539,36 +538,12 @@ class HomePlayerUploadItem(BaseModel):
     byte_size: Optional[int] = None
     original_name: Optional[str] = None
     media_state: Optional[Literal["uploaded", "processing", "ready", "failed"]] = None
-    media_error_message: Optional[str] = None
-
-
-class HomePlayerUploadUrlRequest(BaseModel):
-    filename: str
-    mime_type: str
-    size_bytes: int = Field(ge=1)
-
-
-class HomePlayerUploadUrlRefreshRequest(BaseModel):
-    object_path: str
-    mime_type: str
-
-
-class HomePlayerUploadUrlResponse(BaseModel):
-    upload_url: str
-    object_path: str
-    headers: dict[str, str]
-    expires_at: datetime
 
 
 class HomePlayerUploadCreate(BaseModel):
     title: str
     active: bool = True
-    media_asset_id: UUID | None = None
-    storage_bucket: str | None = None
-    storage_path: str | None = None
-    content_type: str | None = None
-    byte_size: int | None = None
-    original_name: str | None = None
+    media_asset_id: UUID
 
 
 class HomePlayerCourseLinkStatus(str, Enum):
@@ -588,12 +563,6 @@ class HomePlayerCourseLinkItem(BaseModel):
     kind: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-
-
-class HomePlayerLibraryResponse(BaseModel):
-    uploads: List[HomePlayerUploadItem] = Field(default_factory=list)
-    course_links: List[HomePlayerCourseLinkItem] = Field(default_factory=list)
-    course_media: List[TeacherProfileLessonSource] = Field(default_factory=list)
 
 
 class HomePlayerUploadUpdate(BaseModel):
@@ -671,40 +640,32 @@ class MeditationListResponse(BaseModel):
     items: List[MeditationSummary]
 
 
+class ResolvedMedia(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_id: UUID
+    state: str
+    resolved_url: str | None = None
+
+
 class HomeAudioItem(BaseModel):
-    id: UUID
-    lesson_id: Optional[UUID] = None
-    lesson_title: str
+    model_config = ConfigDict(extra="forbid")
+
+    source_type: Literal["course_link", "direct_upload"]
+    title: str
+    lesson_title: Optional[str] = None
     course_id: Optional[UUID] = None
     course_title: Optional[str] = None
     course_slug: Optional[str] = None
-    teacher_id: Optional[UUID] = None
+    teacher_id: UUID
     teacher_name: Optional[str] = None
-    source_type: Literal["course_link", "direct_upload"]
-    kind: str
-    storage_path: Optional[str] = None
-    storage_bucket: Optional[str] = None
-    media_id: Optional[UUID] = None
-    media_asset_id: Optional[UUID] = None
-    duration_seconds: Optional[int] = None
     created_at: datetime
-    content_type: Optional[str] = None
-    byte_size: Optional[int] = None
-    original_name: Optional[str] = None
-    download_url: Optional[str] = None
-    signed_url: Optional[str] = None
-    signed_url_expires_at: Optional[str] = None
-    is_free_intro: Optional[bool] = None
-    media_state: Optional[str] = None
-    streaming_format: Optional[str] = None
-    codec: Optional[str] = None
-    runtime_media_id: Optional[UUID] = None
-    is_playable: Optional[bool] = None
-    playback_state: Optional[str] = None
-    failure_reason: Optional[str] = None
+    media: ResolvedMedia
 
 
 class HomeAudioFeedResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: List[HomeAudioItem]
 
 
@@ -998,14 +959,6 @@ class ProfileDetail(BaseModel):
 
 class ProfileDetailResponse(ProfileDetail):
     pass
-
-
-class ResolvedMedia(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    media_id: UUID
-    state: str
-    resolved_url: str | None = None
 
 
 class Course(BaseModel):

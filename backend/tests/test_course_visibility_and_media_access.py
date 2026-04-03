@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import uuid
 
 import pytest
@@ -8,7 +9,7 @@ from app.config import settings
 from app import db, models, repositories
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
-from app.services import courses_service
+from app.services import courses_service, home_audio_service
 pytestmark = pytest.mark.anyio("asyncio")
 
 
@@ -27,7 +28,7 @@ async def register_user(client, email: str, password: str, display_name: str) ->
     )
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
-    me_resp = await client.get("/auth/me", headers=auth_header(tokens["access_token"]))
+    me_resp = await client.get("/profiles/me", headers=auth_header(tokens["access_token"]))
     assert me_resp.status_code == 200, me_resp.text
     return tokens["access_token"], me_resp.json()["user_id"]
 
@@ -76,21 +77,93 @@ async def insert_course(
                     INSERT INTO app.courses (
                       slug,
                       title,
-                      is_free_intro,
-                      price_cents,
+                      price_amount_cents,
                       currency,
                       is_published,
                       created_by
                     )
-                    VALUES (%s, %s, %s, 1000, 'sek', %s, %s)
+                    VALUES (%s, %s, 1000, 'sek', %s, %s)
                     RETURNING id
                     """,
-                    (slug, title, is_free_intro, is_published, owner_id),
+                    (slug, title, is_published, owner_id),
                 )
             row = await cur.fetchone()
             await conn.commit()
     assert row
     return str(row[0])
+
+
+async def insert_media_asset(
+    *,
+    owner_id: str,
+    course_id: str,
+    lesson_id: str,
+    media_type: str,
+    purpose: str,
+    state: str,
+    original_object_path: str,
+    ingest_format: str,
+    original_content_type: str,
+    original_filename: str,
+    original_size_bytes: int,
+    storage_bucket: str,
+) -> dict:
+    media_asset_id = str(uuid.uuid4())
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.media_assets (
+                  id,
+                  owner_id,
+                  course_id,
+                  lesson_id,
+                  media_type,
+                  ingest_format,
+                  original_object_path,
+                  original_content_type,
+                  original_filename,
+                  original_size_bytes,
+                  storage_bucket,
+                  state,
+                  purpose
+                )
+                VALUES (
+                  %s::uuid,
+                  %s::uuid,
+                  %s::uuid,
+                  %s::uuid,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s
+                )
+                """,
+                (
+                    media_asset_id,
+                    owner_id,
+                    course_id,
+                    lesson_id,
+                    media_type,
+                    ingest_format,
+                    original_object_path,
+                    original_content_type,
+                    original_filename,
+                    original_size_bytes,
+                    storage_bucket,
+                    state,
+                    purpose,
+                ),
+            )
+            await conn.commit()
+    asset = await media_assets_repo.get_media_asset_access(media_asset_id)
+    assert asset is not None
+    return asset
 
 
 async def upsert_membership(user_id: str, status: str) -> None:
@@ -168,19 +241,19 @@ async def test_published_course_visible_even_with_processing_media(async_client)
     )
     assert lesson
 
-    media_asset = await media_assets_repo.create_media_asset(
+    media_asset = await insert_media_asset(
         owner_id=owner_id,
         course_id=course_id,
         lesson_id=str(lesson["id"]),
         media_type="audio",
         purpose="lesson_audio",
-        ingest_format="wav",
+        state="processing",
         original_object_path=f"media/source/audio/courses/{course_id}/lessons/{lesson['id']}/test.wav",
+        ingest_format="wav",
         original_content_type="audio/wav",
         original_filename="test.wav",
         original_size_bytes=123,
         storage_bucket="course-media",
-        state="processing",
     )
     assert media_asset
     lesson_media = await models.add_lesson_media_entry(
@@ -201,7 +274,18 @@ async def test_published_course_visible_even_with_processing_media(async_client)
     assert course_id in ids
 
 
-async def test_home_audio_and_media_sign_require_enrollment(async_client):
+def _find_home_audio_item(items: list[dict], media_asset_id: str) -> dict | None:
+    return next(
+        (
+            item
+            for item in items
+            if str((item.get("media") or {}).get("media_id") or "") == media_asset_id
+        ),
+        None,
+    )
+
+
+async def test_home_audio_requires_enrollment_for_course_links(async_client, monkeypatch):
     password = "Passw0rd!"
     owner_token, owner_id = await register_user(
         async_client,
@@ -217,141 +301,91 @@ async def test_home_audio_and_media_sign_require_enrollment(async_client):
         "Student",
     )
 
-    course_id = await insert_course(
-        slug=f"premium-{uuid.uuid4().hex[:8]}",
-        title="Premium Course",
-        owner_id=owner_id,
-        is_published=True,
-        is_free_intro=False,
-    )
-    lesson = await courses_repo.create_lesson(
-        course_id,
-        title="Premium Lesson",
-        position=0,
-        is_intro=False,
-    )
-    assert lesson
+    course_id = str(uuid.uuid4())
+    lesson_id = str(uuid.uuid4())
+    media_asset_id = str(uuid.uuid4())
+    expected_media_asset_id = media_asset_id
+    allowed_users = {owner_id}
 
-    # Create pipeline (WAV->MP3) audio and mark it ready.
-    media_asset = await media_assets_repo.create_media_asset(
-        owner_id=owner_id,
-        course_id=course_id,
-        lesson_id=str(lesson["id"]),
-        media_type="audio",
-        purpose="lesson_audio",
-        ingest_format="wav",
-        original_object_path=f"media/source/audio/courses/{course_id}/lessons/{lesson['id']}/demo.wav",
-        original_content_type="audio/wav",
-        original_filename="demo.wav",
-        original_size_bytes=123,
-        storage_bucket="course-media",
-        state="uploaded",
-        allow_uploaded_state=True,
+    async def fake_list_direct_uploads(*, limit: int = 100):
+        return []
+
+    async def fake_list_course_links(*, limit: int = 100):
+        return [
+            {
+                "teacher_id": owner_id,
+                "title": "Home audio",
+                "created_at": datetime.now(timezone.utc),
+                "teacher_name": "Owner",
+                "lesson_id": lesson_id,
+                "course_id": course_id,
+                "lesson_title": "Premium Lesson",
+                "course_title": "Premium Course",
+                "course_slug": f"premium-{uuid.uuid4().hex[:8]}",
+                "media_asset_id": media_asset_id,
+                "media_state": "ready",
+            }
+        ]
+
+    async def fake_read_access(user_id: str, candidate_lesson_id: str):
+        assert candidate_lesson_id == lesson_id
+        return {"lesson": {"id": lesson_id}, "can_access": user_id in allowed_users}
+
+    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
+        assert media_asset_id == expected_media_asset_id
+        return {"playback_url": "https://stream.local/premium.mp3"}
+
+    monkeypatch.setattr(
+        home_audio_service.home_audio_runtime_repo,
+        "list_home_audio_direct_upload_sources",
+        fake_list_direct_uploads,
+        raising=True,
     )
-    assert media_asset
-    await media_assets_repo.mark_media_asset_ready_from_worker(
-        media_id=str(media_asset["id"]),
-        streaming_object_path=f"media/derived/audio/courses/{course_id}/lessons/{lesson['id']}/demo.mp3",
-        streaming_format="mp3",
-        duration_seconds=12,
-        codec="mp3",
-        streaming_storage_bucket="course-media",
+    monkeypatch.setattr(
+        home_audio_service.home_audio_runtime_repo,
+        "list_home_audio_course_link_sources",
+        fake_list_course_links,
+        raising=True,
     )
-    lesson_media = await models.add_lesson_media_entry(
-        lesson_id=str(lesson["id"]),
-        kind="audio",
-        storage_path=None,
-        storage_bucket="course-media",
-        media_id=None,
-        media_asset_id=str(media_asset["id"]),
-        position=1,
-        duration_seconds=None,
+    monkeypatch.setattr(
+        home_audio_service.courses_service,
+        "read_canonical_lesson_access",
+        fake_read_access,
+        raising=True,
     )
-    assert lesson_media
-    lesson_media_id = str(lesson_media["id"])
-    async with db.get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT id
-            FROM app.runtime_media
-            WHERE lesson_media_id = %s
-              AND active = true
-            LIMIT 1
-            """,
-            (lesson_media_id,),
-        )
-        runtime_row = await cur.fetchone()
-    assert runtime_row
-    runtime_media_id = str(runtime_row["id"])
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.home_player_course_links (
-                  teacher_id,
-                  lesson_media_id,
-                  title,
-                  course_title_snapshot,
-                  enabled
-                )
-                VALUES (%s, %s, %s, %s, true)
-                ON CONFLICT (teacher_id, lesson_media_id) DO UPDATE
-                  SET enabled = EXCLUDED.enabled
-                """,
-                (owner_id, lesson_media_id, "Home audio", "Premium Course"),
-            )
-            await conn.commit()
+    monkeypatch.setattr(
+        home_audio_service.lesson_playback_service,
+        "resolve_media_asset_playback",
+        fake_resolve_media_asset_playback,
+        raising=True,
+    )
 
     # Not enrolled => not visible in home audio feed.
     resp = await async_client.get("/home/audio", headers=auth_header(student_token))
     assert resp.status_code == 200, resp.text
-    assert runtime_media_id not in {it.get("id") for it in resp.json().get("items") or []}
+    assert _find_home_audio_item(resp.json().get("items") or [], media_asset_id) is None
 
     # Owner can always see their own media in published courses.
     resp_owner = await async_client.get("/home/audio", headers=auth_header(owner_token))
     assert resp_owner.status_code == 200, resp_owner.text
-    assert runtime_media_id in {it.get("id") for it in resp_owner.json().get("items") or []}
-
-    # Enroll => visible in home audio feed.
-    # Legacy media signing must also enforce access (403 before enrollment, 200 after).
-    media_object = await models.create_media_object(
-        owner_id=owner_id,
-        storage_path=f"{uuid.uuid4().hex}.mp3",
-        storage_bucket="lesson-media",
-        content_type="audio/mpeg",
-        byte_size=3,
-        checksum=None,
-        original_name="legacy.mp3",
+    owner_item = _find_home_audio_item(
+        resp_owner.json().get("items") or [],
+        media_asset_id,
     )
-    assert media_object
-    legacy_media = await models.add_lesson_media_entry(
-        lesson_id=str(lesson["id"]),
-        kind="audio",
-        storage_path=media_object["storage_path"],
-        storage_bucket=media_object["storage_bucket"],
-        media_id=str(media_object["id"]),
-        position=2,
-    )
-    assert legacy_media
+    assert owner_item
+    assert owner_item["source_type"] == "course_link"
+    assert owner_item["media"]["media_id"] == media_asset_id
+    assert owner_item["media"]["state"] == "ready"
 
-    sign_denied = await async_client.post(
-        "/media/sign",
-        json={"media_id": str(legacy_media["id"])},
-        headers=auth_header(student_token),
-    )
-    assert sign_denied.status_code == 403, sign_denied.text
-
-    await courses_repo.ensure_course_enrollment(student_id, course_id)
+    allowed_users.add(student_id)
     resp_enrolled = await async_client.get("/home/audio", headers=auth_header(student_token))
     assert resp_enrolled.status_code == 200, resp_enrolled.text
-    assert runtime_media_id in {it.get("id") for it in resp_enrolled.json().get("items") or []}
-
-    sign_ok = await async_client.post(
-        "/media/sign",
-        json={"media_id": str(legacy_media["id"])},
-        headers=auth_header(student_token),
+    enrolled_item = _find_home_audio_item(
+        resp_enrolled.json().get("items") or [],
+        media_asset_id,
     )
-    assert sign_ok.status_code == 200, sign_ok.text
+    assert enrolled_item
+    assert enrolled_item["media"]["media_id"] == media_asset_id
 
 
 async def test_trialing_membership_does_not_grant_non_intro_course_access(async_client):

@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "protected_min_slot": 1,
-  "protected_max_slot": 12,
+  "protected_max_slot": 15,
   "baseline_dir": "backend/supabase/baseline_slots",
   "slots": [
     {
@@ -36,15 +36,15 @@
     },
     {
       "slot": 6,
-      "filename": "0006_lesson_media_core.sql",
-      "path": "backend/supabase/baseline_slots/0006_lesson_media_core.sql",
-      "sha256": "6ae5eb19aa42d4010790ef016a958419f6099551636be1e92a136c340ac66048"
+      "filename": "0006_media_assets_core.sql",
+      "path": "backend/supabase/baseline_slots/0006_media_assets_core.sql",
+      "sha256": "8f992e793d95d01707b7022372159bfb7f8f72a3827734ba7bbfe9ffb63620e3"
     },
     {
       "slot": 7,
-      "filename": "0007_media_assets_core.sql",
-      "path": "backend/supabase/baseline_slots/0007_media_assets_core.sql",
-      "sha256": "8f992e793d95d01707b7022372159bfb7f8f72a3827734ba7bbfe9ffb63620e3"
+      "filename": "0007_lesson_media_core.sql",
+      "path": "backend/supabase/baseline_slots/0007_lesson_media_core.sql",
+      "sha256": "6ae5eb19aa42d4010790ef016a958419f6099551636be1e92a136c340ac66048"
     },
     {
       "slot": 8,
@@ -75,6 +75,24 @@
       "filename": "0012_canonical_access_policies.sql",
       "path": "backend/supabase/baseline_slots/0012_canonical_access_policies.sql",
       "sha256": "dcac615cd15190c543ec26c7ffd1bae1cd73c4d1b0e68410adfa8e5e58e91494"
+    },
+    {
+      "slot": 13,
+      "filename": "0013_profiles_core.sql",
+      "path": "backend/supabase/baseline_slots/0013_profiles_core.sql",
+      "sha256": "a1c7ea759ff76ed031a2c7e6ff92ac8b2a8fd280769ce2c0769c99f38fa43fdb"
+    },
+    {
+      "slot": 14,
+      "filename": "0014_home_player_uploads_core.sql",
+      "path": "backend/supabase/baseline_slots/0014_home_player_uploads_core.sql",
+      "sha256": "a1e92a0ddb3deef3cd57e391c5a039a12417a12fca1605e7a6612d698ff48541"
+    },
+    {
+      "slot": 15,
+      "filename": "0015_home_player_course_links_core.sql",
+      "path": "backend/supabase/baseline_slots/0015_home_player_course_links_core.sql",
+      "sha256": "2ce94161d7c8a26b3ea5a46dc1dc10e0b29df58b3ea3f198bd5c3e01e65b7225"
     }
   ]
 }

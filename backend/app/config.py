@@ -1,15 +1,22 @@
 import json
 import os
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
-from pydantic import AliasChoices, AnyUrl, Field, field_validator, model_validator
+from pydantic import AliasChoices, AnyUrl, Field, TypeAdapter, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 _PRODUCTION_ENVS = {"prod", "production", "live"}
-_LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db"}
+_LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db", "host.docker.internal"}
 _ALLOWED_MCP_MODES = {"local", "production"}
+_BACKEND_DIR = Path(__file__).resolve().parents[1]
+_SETTINGS_ENV_FILES = (
+    str(_BACKEND_DIR / ".env"),
+    str(_BACKEND_DIR / ".env.local"),
+)
+_ANY_URL_ADAPTER = TypeAdapter(AnyUrl)
 
 
 def _truthy_env(key: str) -> bool:
@@ -66,9 +73,37 @@ def _normalize_cors_origin(value: str | None) -> str | None:
     return f"{scheme}://{hostname}"
 
 
+def _normalize_db_component(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _format_db_host(host: str) -> str:
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _build_database_url(
+    *,
+    host: str,
+    port: int,
+    name: str,
+    user: str,
+    password: str,
+) -> str:
+    return (
+        f"postgresql://{quote(user, safe='')}:{quote(password, safe='')}"
+        f"@{_format_db_host(host)}:{port}/{quote(name, safe='')}"
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env", "../.env.local", ".env.local"),
+        env_file=_SETTINGS_ENV_FILES,
+        env_ignore_empty=True,
         extra="ignore",
     )
 
@@ -94,8 +129,19 @@ class Settings(BaseSettings):
     supabase_jwt_issuer: str | None = Field(
         default=None, validation_alias=AliasChoices("SUPABASE_JWT_ISSUER")
     )
+    supabase_jwt_secret: str | None = Field(
+        default=None, validation_alias=AliasChoices("SUPABASE_JWT_SECRET")
+    )
+    supabase_jwt_secret_legacy: str | None = Field(
+        default=None, validation_alias=AliasChoices("SUPABASE_JWT_SECRET_LEGACY")
+    )
     supabase_db_url: AnyUrl | None = None
     database_url: AnyUrl | None = None
+    database_host: str | None = Field(default=None, validation_alias="DATABASE_HOST")
+    database_port: int | None = Field(default=None, validation_alias="DATABASE_PORT")
+    database_name: str | None = Field(default=None, validation_alias="DATABASE_NAME")
+    database_user: str | None = Field(default=None, validation_alias="DATABASE_USER")
+    database_password: str | None = Field(default=None, validation_alias="DATABASE_PASSWORD")
     mcp_mode: str = Field(default="local", validation_alias="MCP_MODE")
     mcp_production_database_url: AnyUrl | None = Field(
         default=None,
@@ -262,6 +308,18 @@ class Settings(BaseSettings):
         return not self.mcp_production_mode
 
     @property
+    def supabase_jwt_secrets(self) -> tuple[str, ...]:
+        secrets: list[str] = []
+        seen: set[str] = set()
+        for value in (self.supabase_jwt_secret, self.supabase_jwt_secret_legacy):
+            normalized = _normalize_db_component(value)
+            if normalized is None or normalized in seen:
+                continue
+            seen.add(normalized)
+            secrets.append(normalized)
+        return tuple(secrets)
+
+    @property
     def mcp_environment(self) -> dict[str, Any]:
         return {
             "mcp_mode": self.mcp_mode,
@@ -278,10 +336,28 @@ class Settings(BaseSettings):
                     "MCP_PRODUCTION_DATABASE_URL or MCP_PRODUCTION_SUPABASE_DB_URL"
                 )
             self.database_url = self.mcp_production_database_url
-        elif self.database_url is None:
-            if self.supabase_db_url is None:
-                raise ValueError("DATABASE_URL or SUPABASE_DB_URL is required")
-            self.database_url = self.supabase_db_url
+        else:
+            db_fields = {
+                "DATABASE_HOST": _normalize_db_component(self.database_host),
+                "DATABASE_PORT": self.database_port,
+                "DATABASE_NAME": _normalize_db_component(self.database_name),
+                "DATABASE_USER": _normalize_db_component(self.database_user),
+                "DATABASE_PASSWORD": _normalize_db_component(self.database_password),
+            }
+            missing = [key for key, value in db_fields.items() if value in (None, "")]
+            if missing:
+                raise ValueError(
+                    "Local database configuration requires explicit "
+                    + ", ".join(missing)
+                )
+            derived_url = _build_database_url(
+                host=str(db_fields["DATABASE_HOST"]),
+                port=int(db_fields["DATABASE_PORT"]),
+                name=str(db_fields["DATABASE_NAME"]),
+                user=str(db_fields["DATABASE_USER"]),
+                password=str(db_fields["DATABASE_PASSWORD"]),
+            )
+            self.database_url = _ANY_URL_ADAPTER.validate_python(derived_url)
 
         db_url = self.database_url.unicode_string()
         parsed = urlparse(db_url)
@@ -296,7 +372,9 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Refusing to start with remote Supabase database outside of production runtime "
                     f"(APP_ENV={app_env or 'unset'}, target={target}). "
-                    "Point DATABASE_URL to your local Postgres clone, or set AVELI_ALLOW_REMOTE_DB=1 to override."
+                    "Point DATABASE_HOST/DATABASE_PORT/DATABASE_NAME/DATABASE_USER/"
+                    "DATABASE_PASSWORD to your local Postgres clone, or set "
+                    "AVELI_ALLOW_REMOTE_DB=1 to override."
                 )
 
         return self
