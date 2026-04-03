@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from copy import deepcopy
 import hashlib
 import json
 import os
@@ -62,6 +63,44 @@ INDEX_MANIFEST_REQUIRED_FIELDS = {
     "lexical_candidate_k",
     "ranking_policy",
     "classification_rules",
+}
+
+CANONICAL_CONTRACT_VERSION = "retrieval-v1"
+CANONICAL_CHUNK_SIZE = 2000
+CANONICAL_CHUNK_OVERLAP = 200
+CANONICAL_EMBEDDING_MODEL = "BAAI/bge-m3"
+CANONICAL_RERANK_MODEL = "BAAI/bge-reranker-large"
+CANONICAL_TOP_K = 16
+CANONICAL_VECTOR_CANDIDATE_K = 30
+CANONICAL_LEXICAL_CANDIDATE_K = 30
+CANONICAL_RANKING_FORMULA = "final_score(doc_id) = rerank_score(doc_id) + boost_score(doc_id)"
+CANONICAL_LAYERS = {"LAW", "ROUTE", "SERVICE", "DB", "POLICY", "SCHEMA", "MODEL", "OTHER"}
+CANONICAL_CLASSIFICATION_RULES = {
+    "default_layer": "OTHER",
+    "precedence": [
+        {"layer": "LAW", "type": "path_substring", "value": "actual_truth"},
+        {"layer": "LAW", "type": "path_substring", "value": "aveli_system_decisions"},
+        {"layer": "LAW", "type": "path_substring", "value": "manifest"},
+        {"layer": "LAW", "type": "path_substring", "value": "contract"},
+        {"layer": "ROUTE", "type": "path_substring", "value": "routes"},
+        {"layer": "SERVICE", "type": "path_substring", "value": "services"},
+        {"layer": "DB", "type": "path_substring", "value": "supabase"},
+        {"layer": "DB", "type": "path_substring", "value": "migrations"},
+        {"layer": "POLICY", "type": "path_substring", "value": "policy"},
+        {"layer": "SCHEMA", "type": "path_substring", "value": "schemas"},
+        {"layer": "MODEL", "type": "path_substring", "value": "models"},
+    ],
+}
+CANONICAL_RANKING_POLICY = {
+    "formula": CANONICAL_RANKING_FORMULA,
+    "layer_boosts": {},
+    "path_substring_boosts": {},
+    "path_suffix_boosts": {},
+    "route_override": {
+        "enabled": False,
+        "score": 0.0,
+    },
+    "use_rerank": True,
 }
 
 # 🔥 IMPORTANT: set manually when needed
@@ -150,8 +189,8 @@ def is_searchable_file(path: Path, relative_file: str) -> bool:
         return False
     try:
         head = path.read_bytes()[:8192]
-    except OSError:
-        return False
+    except OSError as exc:
+        raise RuntimeError(f"FEL: kunde inte läsa filhuvud för {relative_file}") from exc
     if not head:
         return False
     if b"\x00" in head:
@@ -232,6 +271,15 @@ def save_json_object(path: Path, data: dict) -> None:
     )
 
 
+def try_load_optional_json_object(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        return load_json_object(path)
+    except (OSError, RuntimeError, json.JSONDecodeError):
+        return None
+
+
 def serialize_chunk_record(record: dict) -> str:
     return json.dumps(record, ensure_ascii=False, sort_keys=True)
 
@@ -256,6 +304,142 @@ def order_chunk_records(records: list[dict]) -> list[dict]:
 def render_chunk_manifest(records: list[dict]) -> str:
     ordered_records = order_chunk_records(records)
     return "\n".join(serialize_chunk_record(record) for record in ordered_records)
+
+
+def build_canonical_index_manifest(corpus_manifest_hash: str, chunk_manifest_hash: str = "") -> dict:
+    return {
+        "chunk_manifest_hash": str(chunk_manifest_hash),
+        "chunk_overlap": CANONICAL_CHUNK_OVERLAP,
+        "chunk_size": CANONICAL_CHUNK_SIZE,
+        "classification_rules": deepcopy(CANONICAL_CLASSIFICATION_RULES),
+        "contract_version": CANONICAL_CONTRACT_VERSION,
+        "corpus_manifest_hash": corpus_manifest_hash,
+        "embedding_model": CANONICAL_EMBEDDING_MODEL,
+        "lexical_candidate_k": CANONICAL_LEXICAL_CANDIDATE_K,
+        "ranking_policy": deepcopy(CANONICAL_RANKING_POLICY),
+        "rerank_model": CANONICAL_RERANK_MODEL,
+        "top_k": CANONICAL_TOP_K,
+        "vector_candidate_k": CANONICAL_VECTOR_CANDIDATE_K,
+    }
+
+
+def validate_classification_rules(classification_rules: object) -> None:
+    if not isinstance(classification_rules, dict):
+        raise RuntimeError("FEL: classification_rules måste vara ett JSON-objekt")
+    if classification_rules != CANONICAL_CLASSIFICATION_RULES:
+        raise RuntimeError("FEL: classification_rules matchar inte kanonisk klassificering")
+
+    default_layer = classification_rules.get("default_layer")
+    if default_layer not in CANONICAL_LAYERS:
+        raise RuntimeError("FEL: classification_rules.default_layer är ogiltig")
+
+    precedence = classification_rules.get("precedence")
+    if not isinstance(precedence, list) or not precedence:
+        raise RuntimeError("FEL: classification_rules.precedence saknas eller är tom")
+
+    for rule in precedence:
+        if not isinstance(rule, dict):
+            raise RuntimeError("FEL: classification_rules.precedence innehåller ogiltig regel")
+        if str(rule.get("type", "")) not in {"path_substring", "path_suffix"}:
+            raise RuntimeError("FEL: classification_rules innehåller ogiltig regeltyp")
+        if not str(rule.get("value", "")).strip():
+            raise RuntimeError("FEL: classification_rules innehåller tomt regelvärde")
+        if str(rule.get("layer", "")).upper() not in CANONICAL_LAYERS:
+            raise RuntimeError("FEL: classification_rules innehåller ogiltigt lager")
+
+
+def validate_ranking_policy(ranking_policy: object) -> None:
+    if not isinstance(ranking_policy, dict):
+        raise RuntimeError("FEL: ranking_policy måste vara ett JSON-objekt")
+    if ranking_policy != CANONICAL_RANKING_POLICY:
+        raise RuntimeError("FEL: ranking_policy matchar inte kanonisk rankingpolicy")
+    if str(ranking_policy.get("formula", "")) != CANONICAL_RANKING_FORMULA:
+        raise RuntimeError("FEL: ranking_policy.formula matchar inte kanonisk formel")
+
+
+def validate_index_manifest(
+    manifest: dict,
+    corpus_manifest_hash: str,
+    *,
+    require_chunk_manifest_hash: bool,
+) -> None:
+    missing = sorted(INDEX_MANIFEST_REQUIRED_FIELDS - set(manifest))
+    if missing:
+        raise RuntimeError(
+            "FEL: index_manifest.json saknar fält: " + ", ".join(missing)
+        )
+
+    if str(manifest["contract_version"]) != CANONICAL_CONTRACT_VERSION:
+        raise RuntimeError("FEL: contract_version matchar inte kanoniskt värde")
+    if str(manifest["corpus_manifest_hash"]) != corpus_manifest_hash:
+        raise RuntimeError("FEL: corpus_manifest_hash matchar inte search_manifest.txt")
+    if int(manifest["chunk_size"]) != CANONICAL_CHUNK_SIZE:
+        raise RuntimeError("FEL: chunk_size matchar inte kanoniskt värde")
+    if int(manifest["chunk_overlap"]) != CANONICAL_CHUNK_OVERLAP:
+        raise RuntimeError("FEL: chunk_overlap matchar inte kanoniskt värde")
+    if str(manifest["embedding_model"]) != CANONICAL_EMBEDDING_MODEL:
+        raise RuntimeError("FEL: embedding_model matchar inte kanoniskt värde")
+    if str(manifest["rerank_model"]) != CANONICAL_RERANK_MODEL:
+        raise RuntimeError("FEL: rerank_model matchar inte kanoniskt värde")
+    if int(manifest["top_k"]) != CANONICAL_TOP_K:
+        raise RuntimeError("FEL: top_k matchar inte kanoniskt värde")
+    if int(manifest["vector_candidate_k"]) != CANONICAL_VECTOR_CANDIDATE_K:
+        raise RuntimeError("FEL: vector_candidate_k matchar inte kanoniskt värde")
+    if int(manifest["lexical_candidate_k"]) != CANONICAL_LEXICAL_CANDIDATE_K:
+        raise RuntimeError("FEL: lexical_candidate_k matchar inte kanoniskt värde")
+
+    chunk_manifest_hash = manifest.get("chunk_manifest_hash")
+    if not isinstance(chunk_manifest_hash, str):
+        raise RuntimeError("FEL: chunk_manifest_hash måste vara en sträng")
+    if require_chunk_manifest_hash and not chunk_manifest_hash.strip():
+        raise RuntimeError("FEL: chunk_manifest_hash saknas i index_manifest.json")
+
+    validate_classification_rules(manifest.get("classification_rules"))
+    validate_ranking_policy(manifest.get("ranking_policy"))
+
+
+def bootstrap_index_manifest(corpus_manifest_hash: str, path: Path = INDEX_MANIFEST) -> dict:
+    existing_manifest = try_load_optional_json_object(path)
+    preserved_chunk_manifest_hash = ""
+
+    if existing_manifest is not None:
+        existing_chunk_manifest_hash = existing_manifest.get("chunk_manifest_hash", "")
+        if isinstance(existing_chunk_manifest_hash, str):
+            preserved_chunk_manifest_hash = existing_chunk_manifest_hash
+
+    manifest = build_canonical_index_manifest(
+        corpus_manifest_hash=corpus_manifest_hash,
+        chunk_manifest_hash=preserved_chunk_manifest_hash,
+    )
+    if existing_manifest != manifest:
+        save_json_object(path, manifest)
+
+    materialized_manifest = load_json_object(path)
+    validate_index_manifest(
+        materialized_manifest,
+        corpus_manifest_hash,
+        require_chunk_manifest_hash=False,
+    )
+    return materialized_manifest
+
+
+def finalize_index_manifest(
+    corpus_manifest_hash: str,
+    chunk_manifest_hash: str,
+    path: Path = INDEX_MANIFEST,
+) -> dict:
+    manifest = build_canonical_index_manifest(
+        corpus_manifest_hash=corpus_manifest_hash,
+        chunk_manifest_hash=chunk_manifest_hash,
+    )
+    save_json_object(path, manifest)
+    materialized_manifest = load_json_object(path)
+    validate_index_manifest(
+        materialized_manifest,
+        corpus_manifest_hash,
+        require_chunk_manifest_hash=True,
+    )
+    return materialized_manifest
 
 
 def compute_chunk_manifest_hash(records: list[dict]) -> str:
@@ -320,24 +504,69 @@ def write_lexical_index(documents: list[str], ids: list[str], manifest: dict) ->
     }
     save_json_object(LEXICAL_INDEX_MANIFEST, lexical_manifest)
 
+def build_chunk_artifacts(files: list[str], manifest: dict) -> tuple[list[str], list[dict], list[str], list[dict]]:
+    documents = []
+    metadatas = []
+    ids = []
+    chunk_records = []
 
-def resolve_index_manifest(corpus_manifest_hash: str, chunk_manifest_hash: str) -> dict:
-    if not INDEX_MANIFEST.exists():
-        raise RuntimeError(f"FEL: index_manifest.json saknas vid {INDEX_MANIFEST}")
+    chunk_size = int(manifest["chunk_size"])
+    chunk_overlap = int(manifest["chunk_overlap"])
 
-    manifest = load_json_object(INDEX_MANIFEST)
+    print("[STEG] Indexerar filer...")
 
-    manifest["corpus_manifest_hash"] = corpus_manifest_hash
-    manifest["chunk_manifest_hash"] = chunk_manifest_hash
+    for file in tqdm(files):
+        path = ROOT / file
 
-    missing = sorted(INDEX_MANIFEST_REQUIRED_FIELDS - set(manifest))
-    if missing:
-        raise RuntimeError(
-            "FEL: index_manifest.json saknar falt: " + ", ".join(missing)
-        )
+        if not path.exists():
+            raise RuntimeError(f"FEL: fil i search_manifest.txt saknas: {file}")
 
-    save_json_object(INDEX_MANIFEST, manifest)
-    return manifest
+        if not is_searchable_file(path, file):
+            continue
+
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise RuntimeError(f"FEL: kunde inte läsa textinnehåll för {file}") from exc
+
+        content = normalize_ingested_text(content)
+
+        if not content.strip():
+            continue
+
+        chunk_index = 0
+
+        for chunk in chunk_text(content, chunk_size=chunk_size, overlap=chunk_overlap):
+            if not chunk.strip():
+                continue
+
+            document = chunk
+            content_hash = compute_sha256_text("passage: " + chunk)
+            doc_id = build_canonical_doc_id(file, chunk_index, content_hash)
+
+            documents.append(document)
+
+            metadata = {
+                "file": file,
+                "chunk_index": chunk_index,
+                "type": file.split('.')[-1],
+                "layer": classify(file, manifest),
+                "source_type": "chunk",
+            }
+            metadatas.append(metadata)
+            ids.append(doc_id)
+            chunk_records.append({
+                "doc_id": doc_id,
+                "file": file,
+                "chunk_index": chunk_index,
+                "layer": metadata["layer"],
+                "source_type": "chunk",
+                "content_hash": content_hash,
+            })
+
+            chunk_index += 1
+
+    return documents, metadatas, ids, chunk_records
 
 # ---------------------------------------------------------
 # Chunking
@@ -394,6 +623,24 @@ def main():
 
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
+    print("\n[STEG] Bootstrappar indexmanifest...")
+    manifest = bootstrap_index_manifest(corpus_manifest_hash)
+
+    documents, metadatas, ids, chunk_records = build_chunk_artifacts(files, manifest)
+
+    print(f"[INFO] {len(documents)} textblock skapades")
+
+    contract_version = str(manifest["contract_version"])
+    versioned_chunk_records = bind_contract_version(chunk_records, contract_version)
+    chunk_manifest_hash = compute_chunk_manifest_hash(versioned_chunk_records)
+    manifest = finalize_index_manifest(
+        corpus_manifest_hash=corpus_manifest_hash,
+        chunk_manifest_hash=chunk_manifest_hash,
+    )
+    embedding_model = str(manifest["embedding_model"])
+    write_chunk_manifest(chunk_records, contract_version=str(manifest["contract_version"]))
+    write_lexical_index(documents, ids, manifest)
+
     # ---------------------------------------------------------
     # Optional rebuild
     # ---------------------------------------------------------
@@ -415,101 +662,6 @@ def main():
     )
 
     collection = client.get_or_create_collection(name=COLLECTION_NAME)
-
-    # ---------------------------------------------------------
-    # Model load
-    # ---------------------------------------------------------
-
-    # ---------------------------------------------------------
-    # Build documents
-    # ---------------------------------------------------------
-
-    documents = []
-    metadatas = []
-    ids = []
-    chunk_records = []
-
-    if not INDEX_MANIFEST.exists():
-        raise RuntimeError(f"FEL: index_manifest.json saknas vid {INDEX_MANIFEST}")
-
-    manifest = load_json_object(INDEX_MANIFEST)
-    missing = sorted(INDEX_MANIFEST_REQUIRED_FIELDS - set(manifest))
-    if missing:
-        raise RuntimeError(
-            "FEL: index_manifest.json saknar falt: " + ", ".join(missing)
-        )
-
-    chunk_size = int(manifest["chunk_size"])
-    chunk_overlap = int(manifest["chunk_overlap"])
-    embedding_model = str(manifest["embedding_model"])
-
-    print("[STEG] Indexerar filer...")
-
-    for file in tqdm(files):
-
-        path = ROOT / file
-
-        if not path.exists():
-            continue
-
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-
-        content = normalize_ingested_text(content)
-
-        if not content.strip():
-            continue
-
-        chunk_index = 0
-
-        for chunk in chunk_text(content, chunk_size=chunk_size, overlap=chunk_overlap):
-
-            if not chunk.strip():
-                continue
-
-            if not is_searchable_file(path, file):
-                continue
-
-            document = chunk
-            content_hash = compute_sha256_text("passage: " + chunk)
-            doc_id = build_canonical_doc_id(file, chunk_index, content_hash)
-
-            documents.append(document)
-
-            metadata = {
-                "file": file,
-                "chunk_index": chunk_index,
-                "type": file.split('.')[-1],
-                "layer": classify(file, manifest),
-                "source_type": "chunk",
-            }
-            metadatas.append(metadata)
-            ids.append(doc_id)
-            chunk_records.append({
-                "doc_id": doc_id,
-                "file": file,
-                "chunk_index": chunk_index,
-                "layer": metadata["layer"],
-                "source_type": "chunk",
-                "content_hash": content_hash,
-            })
-
-            chunk_index += 1
-
-    print(f"[INFO] {len(documents)} textblock skapades")
-
-    contract_version = str(manifest["contract_version"])
-    versioned_chunk_records = bind_contract_version(chunk_records, contract_version)
-    chunk_manifest_hash = compute_chunk_manifest_hash(versioned_chunk_records)
-    manifest = resolve_index_manifest(
-        corpus_manifest_hash=corpus_manifest_hash,
-        chunk_manifest_hash=chunk_manifest_hash,
-    )
-    embedding_model = str(manifest["embedding_model"])
-    write_chunk_manifest(chunk_records, contract_version=str(manifest["contract_version"]))
-    write_lexical_index(documents, ids, manifest)
     collection.modify(
         metadata={
             "contract_version": str(manifest["contract_version"]),
