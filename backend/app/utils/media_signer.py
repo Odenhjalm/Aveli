@@ -1,12 +1,9 @@
-"""Helpers for issuing and validating signed media URLs."""
+"""Helpers for public media links and preview-only metadata."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
-
-from jose import JWTError, jwt
 
 from ..config import settings
 
@@ -17,89 +14,6 @@ _PUBLIC_DOWNLOAD_PREFIXES = (
     "hero/",
     "logos/",
 )
-
-
-class MediaTokenError(Exception):
-    """Raised when a signed media token is invalid or expired."""
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _effective_signing_secret() -> str | None:
-    """Return the secret used to sign media stream tokens.
-
-    Prefer the explicit `media_signing_secret`. When unset, fall back to the
-    Supabase service role key *only when Supabase is configured*, ensuring legacy
-    lesson media can still be signed in production without requiring a second
-    secret.
-    """
-
-    explicit = (settings.media_signing_secret or "").strip()
-    if explicit:
-        return explicit
-    if settings.supabase_url is None:
-        return None
-    fallback = (settings.supabase_service_role_key or "").strip()
-    return fallback or None
-
-
-def is_signing_enabled() -> bool:
-    """Return True if signed media URLs are enabled."""
-
-    return bool(_effective_signing_secret()) and settings.media_signing_ttl_seconds > 0
-
-
-def issue_signed_url(
-    media_id: str, *, purpose: str = "media"
-) -> tuple[str, datetime] | None:
-    """Create a signed URL for the given media id.
-
-    Returns a tuple `(url, expires_at)` or ``None`` when signing is disabled.
-    """
-
-    if not is_signing_enabled():
-        return None
-
-    media_id = str(media_id)
-    expires_at = _now() + timedelta(seconds=settings.media_signing_ttl_seconds)
-    now = _now()
-    payload: dict[str, Any] = {
-        "sub": media_id,
-        "purpose": purpose,
-        "exp": int(expires_at.timestamp()),
-        "iat": int(now.timestamp()),
-    }
-    secret = _effective_signing_secret()
-    if not secret:
-        return None
-    token = jwt.encode(payload, secret, algorithm="HS256")
-    return f"/media/stream/{token}", expires_at
-
-
-def verify_media_token(token: str) -> dict[str, Any]:
-    """Decode and validate a media token, returning the payload."""
-
-    if not is_signing_enabled():
-        raise MediaTokenError("Media signing is disabled")
-
-    secret = _effective_signing_secret()
-    if not secret:
-        raise MediaTokenError("Media signing is disabled")
-
-    try:
-        payload = jwt.decode(
-            token,
-            secret,
-            algorithms=["HS256"],
-        )
-    except JWTError as exc:
-        raise MediaTokenError("Invalid or expired media token") from exc
-
-    if "sub" not in payload:
-        raise MediaTokenError("Malformed media token")
-    return payload
 
 
 def extract_media_id_from_url(url: str | None) -> str | None:
@@ -205,24 +119,23 @@ def public_download_url(storage_path: str | None) -> str | None:
 
 
 def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
-    """Mutate a lesson media dict with download and signed URLs."""
+    """Mutate a lesson media dict with preview-only public-link metadata."""
 
+    del purpose
     media_id = item.get("id")
     if not media_id:
         return
     media_state = (item.get("media_state") or "").strip().lower()
     has_media_asset = item.get("media_asset_id") is not None
     if not has_media_asset:
-        item.pop("download_url", None)
-        item.pop("playback_url", None)
-        item.pop("signed_url", None)
-        item.pop("signed_url_expires_at", None)
+        item.pop("preferredUrl", None)
+        item.pop("preferred_url", None)
+        item.pop("url", None)
         return
     if media_state and media_state != "ready":
-        item.pop("download_url", None)
-        item.pop("playback_url", None)
-        item.pop("signed_url", None)
-        item.pop("signed_url_expires_at", None)
+        item.pop("preferredUrl", None)
+        item.pop("preferred_url", None)
+        item.pop("url", None)
         return
 
     public_url = _public_download_path(
@@ -233,34 +146,14 @@ def attach_media_links(item: dict, *, purpose: str | None = None) -> None:
     content_type = str(item.get("content_type") or "").strip().lower()
     is_image = kind == "image" or content_type.startswith("image/")
 
-    if is_image:
-        if public_url:
-            item["download_url"] = public_url
-            item["playback_url"] = public_url
-        else:
-            item.pop("download_url", None)
-            item.pop("playback_url", None)
-        item.pop("signed_url", None)
-        item.pop("signed_url_expires_at", None)
+    if is_image and public_url:
+        item["preferredUrl"] = public_url
+        item["url"] = public_url
         return
 
-    if public_url:
-        item["download_url"] = public_url
-        item["playback_url"] = public_url
-    else:
-        item.pop("download_url", None)
-        item.pop("playback_url", None)
-
-    normalized_purpose = (purpose or "").strip().lower()
-    if normalized_purpose not in {"editor_insert", "editor_preview", "student_render"}:
-        normalized_purpose = "student_render"
-    issued = issue_signed_url(media_id, purpose=normalized_purpose)
-    if issued:
-        signed_url, expires_at = issued
-        item["signed_url"] = signed_url
-        item["signed_url_expires_at"] = expires_at.isoformat()
-        if "playback_url" not in item:
-            item["playback_url"] = signed_url
+    item.pop("preferredUrl", None)
+    item.pop("preferred_url", None)
+    item.pop("url", None)
 
 
 def strip_renderable_media_links(
@@ -275,14 +168,6 @@ def strip_renderable_media_links(
     """
 
     for field in (
-        "download_url",
-        "downloadUrl",
-        "playback_url",
-        "playbackUrl",
-        "signed_url",
-        "signedUrl",
-        "signed_url_expires_at",
-        "signedUrlExpiresAt",
         "url",
     ):
         item.pop(field, None)

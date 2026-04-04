@@ -2112,24 +2112,32 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     await _launchLessonEditorUrl(url);
   }
 
+  String? _canonicalLessonMediaUrl(StudioLessonMediaItem media) {
+    final resolvedUrl = media.media?.resolvedUrl?.trim();
+    if (resolvedUrl == null || resolvedUrl.isEmpty) {
+      return null;
+    }
+    return resolvedUrl;
+  }
+
   Future<String?> _resolveLessonMediaDeliveryUrl(String lessonMediaId) async {
     if (lessonMediaId.isEmpty) {
       return null;
     }
 
-    try {
-      return await ref
-          .read(studioRepositoryProvider)
-          .fetchLessonMediaPlaybackUrl(lessonMediaId);
-    } catch (_) {
-      return null;
+    for (final media in _lessonMedia) {
+      if (media.lessonMediaId != lessonMediaId) {
+        continue;
+      }
+      return _canonicalLessonMediaUrl(media);
     }
+    return null;
   }
 
   Future<String?> _resolveLessonMediaDeliveryUrlForMedia(
     StudioLessonMediaItem media,
   ) async {
-    return _resolveLessonMediaDeliveryUrl(media.lessonMediaId);
+    return _canonicalLessonMediaUrl(media);
   }
 
   Future<String?> _resolveLessonMediaPreviewUrlForMedia(

@@ -184,9 +184,7 @@ async def list_lesson_media(
             lesson_media_id=str(item["id"]),
             user_id=normalized_user_id,
         )
-        resolved_url = str(
-            playback.get("url") or playback.get("playback_url") or ""
-        ).strip()
+        resolved_url = str(playback.get("resolved_url") or "").strip()
         media_id = str(runtime_row.get("media_asset_id") or "").strip()
         if not media_id or not resolved_url:
             raise HTTPException(

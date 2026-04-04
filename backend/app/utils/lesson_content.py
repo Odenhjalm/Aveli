@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import html
 import json
 import re
@@ -30,10 +29,6 @@ _HTML_ATTRIBUTE_PATTERN = re.compile(
 )
 _STUDIO_MEDIA_URL_PATTERN = re.compile(
     rf"""(?:https?:\/\/[^\s"'()]+)?\/studio\/media\/({_LESSON_MEDIA_ID_FRAGMENT})\b""",
-    re.IGNORECASE,
-)
-_MEDIA_STREAM_URL_PATTERN = re.compile(
-    r"""(?:https?:\/\/[^\s"'()]+)?\/media\/stream\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)""",
     re.IGNORECASE,
 )
 _MARKDOWN_IMAGE_PATTERN = re.compile(
@@ -193,7 +188,7 @@ def _resolve_media_url(value: Any) -> str | None:
         trimmed = value.strip()
         return trimmed or None
     if isinstance(value, dict):
-        for key in ("source", "src", "url", "download_url"):
+        for key in ("source", "src", "url"):
             candidate = value.get(key)
             if isinstance(candidate, str):
                 trimmed = candidate.strip()
@@ -568,25 +563,6 @@ def _normalize_alias_candidate(candidate: str | None) -> str | None:
     return re.sub(r"/{2,}", "/", path)
 
 
-def _extract_media_id_from_stream_token(token: str) -> str | None:
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    payload = parts[1]
-    payload += "=" * (-len(payload) % 4)
-    try:
-        decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
-        parsed = json.loads(decoded.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    subject = parsed.get("sub")
-    if isinstance(subject, str) and subject.strip():
-        return subject.strip()
-    return None
-
-
 def _resolve_lesson_media_id_from_source(
     *,
     source: str,
@@ -597,12 +573,6 @@ def _resolve_lesson_media_id_from_source(
         candidate = studio_match.group(1)
         if candidate:
             return candidate.strip()
-
-    stream_match = _MEDIA_STREAM_URL_PATTERN.search(source)
-    if stream_match:
-        candidate = _extract_media_id_from_stream_token(stream_match.group(1) or "")
-        if candidate:
-            return candidate
 
     normalized = _normalize_alias_candidate(source)
     if normalized:
@@ -629,11 +599,11 @@ def _is_candidate_markdown_media_link(source: str) -> bool:
     lowered = normalized.lower()
     if _STUDIO_MEDIA_URL_PATTERN.search(normalized):
         return True
-    if _MEDIA_STREAM_URL_PATTERN.search(normalized):
+    normalized_alias = _normalize_alias_candidate(normalized)
+    if normalized_alias and normalized_alias.startswith("/media/"):
         return True
     if lowered.startswith("/api/files/") or "/api/files/" in lowered:
         return True
-    normalized_alias = _normalize_alias_candidate(normalized)
     if normalized_alias and _STORAGE_OBJECT_URL_PATH_PATTERN.search(normalized_alias):
         return True
     if _looks_like_storage_path(normalized):

@@ -5,7 +5,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
@@ -71,33 +70,6 @@ _LESSON_VIDEO_SUPPORTED_DETAIL = (
 )
 _LESSON_DOCUMENT_MIME_TYPES = {"application/pdf"}
 _LESSON_DOCUMENT_SUPPORTED_DETAIL = "Only PDF lesson documents are supported"
-
-
-class LessonPlaybackRequest(BaseModel):
-    lesson_media_id: UUID
-
-
-class LessonPlaybackResponse(BaseModel):
-    playback_url: str
-    url: str
-
-
-class RuntimePlaybackRequest(BaseModel):
-    runtime_media_id: UUID
-
-
-class RuntimePlaybackResponse(BaseModel):
-    runtime_media_id: UUID
-    playback_url: str
-    kind: str | None = None
-    content_type: str | None = None
-    duration_seconds: int | None = None
-
-
-class DebugMediaResponse(BaseModel):
-    lesson_media_id: UUID
-    storage_path: str
-    signed_url: str
 
 
 def _normalized_preview_string(value: object | None) -> str | None:
@@ -166,173 +138,6 @@ def _preview_file_name(item: dict[str, object]) -> str | None:
     return None
 
 
-def _is_auth_protected_preview_path(value: str | None) -> bool:
-    normalized = str(value or "").strip()
-    if not normalized:
-        return False
-    parsed = urlparse(normalized)
-    path = (parsed.path or normalized).strip().lower()
-    if not path:
-        return False
-    return (
-        path.startswith("/studio/media/")
-        or path.startswith("/api/media/")
-        or path.startswith("/media/sign")
-        or path.startswith("/media/stream/")
-    )
-
-
-def _normalize_preview_url_candidate(
-    value: object | None,
-    *,
-    base_url: str | None,
-) -> str | None:
-    normalized = _normalized_preview_string(value)
-    if normalized is None:
-        return None
-    if normalized.startswith("/") and base_url:
-        normalized = urljoin(base_url, normalized)
-    parsed = urlparse(normalized)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return None
-    if _is_auth_protected_preview_path(normalized):
-        return None
-    return normalized
-
-
-def _preview_resolution_source(item: dict[str, object]) -> str:
-    if _normalized_preview_string(item.get("media_asset_id")) is not None:
-        return "control_plane"
-    if _normalized_preview_string(item.get("media_id")) is not None:
-        return "legacy"
-    return "unknown"
-
-
-def _format_storage_candidates_for_log(
-    pairs: list[tuple[str, str]],
-) -> str:
-    if not pairs:
-        return "<none>"
-    return ",".join(f"{bucket}:{key}" for bucket, key in pairs)
-
-
-async def _resolve_image_public_fallback_url(
-    *,
-    lesson_media_id: str,
-    item: dict[str, object],
-    base_url: str | None,
-) -> str | None:
-    kind = (_normalized_preview_string(item.get("kind")) or "").lower()
-    if kind != "image":
-        return None
-
-    source = _preview_resolution_source(item)
-    storage_bucket = _normalized_preview_string(item.get("storage_bucket"))
-    storage_path = _normalized_preview_string(item.get("storage_path"))
-
-    for field in (
-        "preferredUrl",
-        "preferred_url",
-        "resolved_preview_url",
-        "resolvedPreviewUrl",
-        "download_url",
-        "downloadUrl",
-        "playback_url",
-        "playbackUrl",
-    ):
-        candidate = _normalize_preview_url_candidate(
-            item.get(field),
-            base_url=base_url,
-        )
-        if candidate is not None:
-            logger.info(
-                "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
-                lesson_media_id,
-                storage_bucket or "<missing>",
-                storage_path or "<missing>",
-                candidate,
-                f"{source}_row_url",
-                f"trusted_field={field}",
-            )
-            return candidate
-
-    if storage_path is None:
-        logger.info(
-            "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
-            lesson_media_id,
-            storage_bucket or "<missing>",
-            "<missing>",
-            "<none>",
-            f"{source}_storage_lookup",
-            "missing_storage_path",
-        )
-        return None
-
-    candidate_pairs = courses_service._storage_candidates(
-        storage_bucket=storage_bucket,
-        storage_path=storage_path,
-    )
-    (
-        existence,
-        storage_table_available,
-    ) = await storage_objects.fetch_storage_object_existence(candidate_pairs)
-    resolved_bucket, resolved_key, _, bytes_exist = (
-        courses_service._best_storage_candidate(
-            storage_bucket=storage_bucket,
-            storage_path=storage_path,
-            existence=existence,
-            storage_table_available=storage_table_available,
-        )
-    )
-    if (
-        bytes_exist is not True
-        or not resolved_bucket
-        or not resolved_key
-        or resolved_bucket != settings.media_public_bucket
-    ):
-        logger.info(
-            "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
-            lesson_media_id,
-            storage_bucket or "<missing>",
-            storage_path,
-            "<none>",
-            f"{source}_storage_lookup",
-            (
-                f"candidate_pairs={_format_storage_candidates_for_log(candidate_pairs)} "
-                f"resolved_bucket={resolved_bucket or '<none>'} "
-                f"resolved_key={resolved_key or '<none>'} "
-                f"bytes_exist={'true' if bytes_exist is True else ('false' if bytes_exist is False else 'unknown')}"
-            ),
-        )
-        return None
-
-    try:
-        public_url = storage_service.get_storage_service(resolved_bucket).public_url(
-            resolved_key
-        )
-    except storage_service.StorageServiceError:
-        return None
-
-    normalized_public_url = _normalize_preview_url_candidate(
-        public_url, base_url=base_url
-    )
-    logger.info(
-        "LESSON_IMAGE_PREVIEW_FALLBACK lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s normalization_steps=%s",
-        lesson_media_id,
-        storage_bucket or "<missing>",
-        storage_path,
-        normalized_public_url or "<none>",
-        f"{source}_storage_lookup",
-        (
-            f"candidate_pairs={_format_storage_candidates_for_log(candidate_pairs)} "
-            f"resolved_bucket={resolved_bucket} "
-            f"resolved_key={resolved_key} "
-            f"bytes_exist=true"
-        ),
-    )
-    return normalized_public_url
-
-
 async def _resolve_preview_url(
     *,
     lesson_media_id: str,
@@ -355,9 +160,7 @@ async def _resolve_preview_url(
         )
         return None, "unresolvable"
 
-    resolved_url = _normalized_preview_string(
-        resolved.get("playback_url") or resolved.get("url")
-    )
+    resolved_url = _normalized_preview_string(resolved.get("resolved_url"))
     if resolved_url is None:
         logger.warning(
             "LESSON_MEDIA_PREVIEW_UNRESOLVED lesson_media_id=%s kind=%s status_code=200",
@@ -403,7 +206,6 @@ async def _build_preview_item(
     lesson_media_id: str,
     item: dict[str, object],
     user_id: str,
-    base_url: str | None,
 ) -> schemas.MediaPreviewItem:
     kind = (_normalized_preview_string(item.get("kind")) or "").lower()
     duration_seconds = _preview_duration_seconds(item)
@@ -417,20 +219,6 @@ async def _build_preview_item(
     authoritative_editor_ready = failure_reason is None and (
         kind not in {"image", "video"} or resolved_preview_url is not None
     )
-
-    if resolved_preview_url is None and kind == "image":
-        fallback_preview_url = await _resolve_image_public_fallback_url(
-            lesson_media_id=lesson_media_id,
-            item=item,
-            base_url=base_url,
-        )
-        if fallback_preview_url is not None:
-            logger.info(
-                "LESSON_MEDIA_PREVIEW_PUBLIC_FALLBACK lesson_media_id=%s kind=%s authoritative=false",
-                lesson_media_id,
-                kind,
-            )
-            resolved_preview_url = fallback_preview_url
 
     return schemas.MediaPreviewItem(
         media_type=kind,
@@ -2183,24 +1971,6 @@ async def media_status(
     )
 
 
-@router.post("/playback-url", response_model=schemas.MediaPlaybackUrlResponse)
-async def request_playback_url(
-    payload: schemas.MediaPlaybackUrlRequest,
-    current: CurrentUser,
-):
-    user_id = str(current["id"])
-    resolved = await lesson_playback_service.resolve_pipeline_playback(
-        media_asset_id=str(payload.media_id),
-        user_id=user_id,
-    )
-    logger.info("Issued media playback URL user_id=%s", user_id)
-    return schemas.MediaPlaybackUrlResponse(
-        playback_url=resolved["url"],
-        expires_at=resolved["expires_at"],
-        format=resolved["format"],
-    )
-
-
 @router.post("/previews", response_model=schemas.MediaPreviewBatchResponse)
 async def request_media_previews(
     request: Request,
@@ -2293,7 +2063,6 @@ async def request_media_previews(
                 lesson_media_id=lesson_media_id,
                 item=dict(item),
                 user_id=str(current["id"]),
-                base_url=str(request.base_url) if request is not None else None,
             )
 
     ordered_items = {
@@ -2302,80 +2071,3 @@ async def request_media_previews(
         if lesson_media_id in preview_items
     }
     return schemas.MediaPreviewBatchResponse(items=ordered_items)
-
-
-@router.post("/playback", response_model=RuntimePlaybackResponse)
-async def request_runtime_playback(
-    payload: RuntimePlaybackRequest,
-    current: CurrentUser,
-):
-    playback = await lesson_playback_service.resolve_runtime_media_playback(
-        runtime_media_id=str(payload.runtime_media_id),
-        user_id=str(current["id"]),
-    )
-    return RuntimePlaybackResponse(
-        runtime_media_id=UUID(str(playback["runtime_media_id"])),
-        playback_url=playback["playback_url"],
-        kind=playback.get("kind"),
-        content_type=playback.get("content_type"),
-        duration_seconds=playback.get("duration_seconds"),
-    )
-
-
-@router.post("/lesson-playback", response_model=LessonPlaybackResponse)
-async def request_lesson_playback(
-    payload: LessonPlaybackRequest,
-    current: CurrentUser,
-):
-    lesson_media_id = str(payload.lesson_media_id)
-    playback = await lesson_playback_service.resolve_lesson_media_playback(
-        lesson_media_id=lesson_media_id,
-        user_id=str(current["id"]),
-    )
-    return LessonPlaybackResponse(
-        playback_url=playback["url"],
-        url=playback["url"],
-    )
-
-
-@debug_router.get("/media/{lesson_media_id}", response_model=DebugMediaResponse)
-async def debug_media(
-    lesson_media_id: UUID,
-    current: CurrentUser,
-):
-    lesson_media_id_str = str(lesson_media_id)
-    row = await models.get_media(lesson_media_id_str)
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lesson media not found",
-        )
-
-    storage_path = row.get("storage_path")
-    signed_url: str | None = None
-
-    media_asset_id = row.get("media_asset_id")
-    if media_asset_id:
-        playback = await lesson_playback_service.resolve_lesson_media_playback(
-            lesson_media_id=lesson_media_id_str,
-            user_id=str(current["id"]),
-        )
-        signed_url = playback["url"]
-        if not storage_path:
-            media_asset = await media_assets_repo.get_media_asset_access(
-                str(media_asset_id)
-            )
-            if media_asset:
-                storage_path = media_asset.get("streaming_object_path")
-
-    if not storage_path or not signed_url:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lesson media has no playable source",
-        )
-
-    return DebugMediaResponse(
-        lesson_media_id=lesson_media_id,
-        storage_path=str(storage_path),
-        signed_url=signed_url,
-    )

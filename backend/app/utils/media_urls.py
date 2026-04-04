@@ -6,7 +6,6 @@ from urllib.parse import urljoin
 
 _RELATIVE_MEDIA_URL_FIELDS = (
     "download_url",
-    "playback_url",
     "signed_url",
     "url",
     "external_url",

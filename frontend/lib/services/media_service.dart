@@ -3,9 +3,6 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aveli/api/api_client.dart';
-import 'package:aveli/api/api_paths.dart';
-import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 
 class PresignedMedia {
@@ -37,44 +34,15 @@ class PresignedUploadTarget {
 }
 
 class MediaService {
-  MediaService({
-    required ApiClient apiClient,
-    Dio? httpClient,
-  })  : _client = apiClient,
-        _http = httpClient ?? Dio();
+  MediaService({Dio? httpClient}) : _http = httpClient ?? Dio();
 
-final ApiClient _client;
-final Dio _http;
+  final Dio _http;
 
-  Future<PresignedMedia> fetchPresignedUrl({
-    required String mediaId,
-  }) async {
-    try {
-      final response = await _client.post<Map<String, dynamic>>(
-        ApiPaths.mediaSign,
-        body: {'media_id': mediaId},
-      );
-
-      final rawUrl =
-          response['signed_url'] as String? ?? response['url'] as String?;
-      if (rawUrl == null || rawUrl.isEmpty) {
-        throw UnexpectedFailure(message: 'Signerad media-URL saknas.');
-      }
-      final url = _resolveSignedUrl(rawUrl);
-      final expiresAtRaw = response['expires_at'] as String?;
-
-      final expiresAt = expiresAtRaw != null
-          ? DateTime.parse(expiresAtRaw).toUtc()
-          : DateTime.now().toUtc();
-
-      return PresignedMedia(
-        url: url,
-        headers: const {},
-        expiresAt: expiresAt,
-      );
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+  Future<PresignedMedia> fetchPresignedUrl({required String mediaId}) async {
+    throw UnexpectedFailure(
+      message:
+          'Legacy media signing is removed. Render backend-authored media URLs instead of requesting removed frontend signing routes.',
+    );
   }
 
   Future<Uint8List> loadMedia(PresignedMedia presigned) async {
@@ -88,9 +56,7 @@ final Dio _http;
       );
       final data = response.data;
       if (data == null) {
-        throw UnexpectedFailure(
-          message: 'Tomt svar från media-endpoint.',
-        );
+        throw UnexpectedFailure(message: 'Tomt svar från media-endpoint.');
       }
       if (data is Uint8List) {
         return data;
@@ -101,13 +67,12 @@ final Dio _http;
       if (data is Iterable<int>) {
         return Uint8List.fromList(List<int>.from(data));
       }
-      throw UnexpectedFailure(
-        message: 'Kunde inte tolka mediat i svaret.',
-      );
+      throw UnexpectedFailure(message: 'Kunde inte tolka mediat i svaret.');
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
   }
+
   Future<PresignedUploadTarget> presignUpload({
     required String storagePath,
     required String contentType,
@@ -140,10 +105,7 @@ final Dio _http;
       await _http.requestUri<void>(
         target.url,
         data: bytes,
-        options: Options(
-          method: target.method,
-          headers: target.headers,
-        ),
+        options: Options(method: target.method, headers: target.headers),
         cancelToken: cancelToken,
         onSendProgress: onSendProgress,
       );
@@ -172,18 +134,6 @@ final Dio _http;
       onSendProgress: onSendProgress,
     );
   }
-
-  Uri _resolveSignedUrl(String value) {
-    final uri = Uri.parse(value);
-    if (uri.hasScheme) {
-      return uri;
-    }
-    final base = Uri.parse(_client.baseUrl);
-    return base.resolve(value);
-  }
 }
 
-final mediaServiceProvider = Provider<MediaService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return MediaService(apiClient: client);
-});
+final mediaServiceProvider = Provider<MediaService>((ref) => MediaService());

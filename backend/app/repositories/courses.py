@@ -442,6 +442,43 @@ async def list_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+async def list_lesson_media_for_asset(
+    media_asset_id: str,
+    *,
+    limit: int = 25,
+) -> Sequence[dict[str, Any]]:
+    capped_limit = max(1, min(int(limit or 25), 100))
+    query = """
+        select
+            lm.id,
+            lm.lesson_id,
+            null::text as kind,
+            lm.position,
+            lm.media_asset_id,
+            ma.state::text as media_state,
+            null::text as content_type,
+            null::integer as duration_seconds,
+            null::text as error_message,
+            null::text as issue_reason,
+            null::jsonb as issue_details,
+            null::timestamptz as issue_updated_at,
+            null::timestamptz as created_at,
+            null::text as storage_bucket,
+            null::text as storage_path
+        from app.lesson_media as lm
+        join app.media_assets as ma
+          on ma.id = lm.media_asset_id
+        where lm.media_asset_id = %s::uuid
+        order by lm.position asc, lm.id asc
+        limit %s
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (media_asset_id, capped_limit))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def list_lesson_media_for_studio(lesson_id: str) -> Sequence[dict[str, Any]]:
     query = f"""
         select

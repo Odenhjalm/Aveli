@@ -60,9 +60,7 @@ def lesson_media_source_from_row(
         duration_seconds=data.get("duration_seconds"),
         position=data.get("position"),
         created_at=data.get("created_at"),
-        download_url=_optional_str(data.get("download_url")),
-        signed_url=_optional_str(data.get("signed_url")),
-        signed_url_expires_at=_optional_str(data.get("signed_url_expires_at")),
+        media=data.get("media"),
     )
 
 

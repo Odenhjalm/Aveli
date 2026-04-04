@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from fastapi import HTTPException
+
 from ..db import get_conn
-from ..utils import media_signer
+from ..services import lesson_playback_service
+
+_PROFILE_MEDIA_STATES = frozenset(
+    {"pending_upload", "uploaded", "processing", "ready", "failed"}
+)
 
 _ITEM_SELECT = """
     select
@@ -220,7 +226,9 @@ async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, A
         rows = await cur.fetchall()
     items: list[dict[str, Any]] = []
     for row in rows:
-        items.append(_attach_lesson_links(dict(row)))
+        items.append(
+            await _attach_canonical_lesson_media(dict(row), teacher_id=teacher_id)
+        )
     return items
 
 
@@ -239,35 +247,46 @@ async def list_public_teacher_profile_media(teacher_id: str) -> list[dict[str, A
     return [dict(row) for row in rows]
 
 
-def _attach_lesson_links(data: dict[str, Any]) -> dict[str, Any]:
-    if data.get("media_asset_id"):
+def _normalized_profile_media_state(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized not in _PROFILE_MEDIA_STATES:
+        return None
+    return normalized
+
+
+async def _attach_canonical_lesson_media(
+    data: dict[str, Any],
+    *,
+    teacher_id: str,
+) -> dict[str, Any]:
+    media_asset_id = str(data.get("media_asset_id") or "").strip() or None
+    if media_asset_id is None:
+        data["media"] = None
         return data
-    storage_bucket = data.get("storage_bucket")
-    storage_path = data.get("storage_path")
-    if not storage_bucket or not storage_path:
+
+    normalized_state = _normalized_profile_media_state(data.get("media_state"))
+    if normalized_state is None:
+        data["media"] = None
         return data
-    lesson = {
-        "id": data.get("id"),
-        "storage_bucket": storage_bucket,
-        "storage_path": storage_path,
-        "media_asset_id": data.get("media_asset_id"),
-        "media_state": data.get("media_state"),
+
+    resolved_url: str | None = None
+    lesson_media_id = str(data.get("id") or "").strip()
+    if normalized_state == "ready" and lesson_media_id:
+        try:
+            playback = await lesson_playback_service.resolve_lesson_media_playback(
+                lesson_media_id=lesson_media_id,
+                user_id=teacher_id,
+            )
+        except HTTPException:
+            resolved_url = None
+        else:
+            resolved_url = str(playback.get("resolved_url") or "").strip() or None
+
+    data["media"] = {
+        "media_id": media_asset_id,
+        "state": normalized_state,
+        "resolved_url": resolved_url,
     }
-    media_signer.attach_media_links(lesson, purpose="editor_preview")
-    if (
-        lesson.get("media_asset_id") is None
-        or str(lesson.get("media_state") or "").strip().lower() != "ready"
-    ):
-        media_signer.strip_renderable_media_links(lesson)
-    download_url = lesson.get("download_url")
-    signed_url = lesson.get("signed_url")
-    signed_expires = lesson.get("signed_url_expires_at")
-    if download_url:
-        data["download_url"] = download_url
-    if signed_url:
-        data["signed_url"] = signed_url
-    if signed_expires:
-        data["signed_url_expires_at"] = signed_expires
     return data
 
 

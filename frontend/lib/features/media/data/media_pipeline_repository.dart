@@ -100,30 +100,6 @@ class MediaUploadTarget {
   );
 }
 
-class MediaPlaybackUrl {
-  const MediaPlaybackUrl({
-    required this.playbackUrl,
-    required this.expiresAt,
-    required this.format,
-  });
-
-  final Uri playbackUrl;
-  final DateTime expiresAt;
-  final String format;
-
-  factory MediaPlaybackUrl.fromResponse(Object? payload) => MediaPlaybackUrl(
-    playbackUrl: Uri.parse(
-      _requiredResponseString(payload, 'playback_url', 'MediaPlaybackUrl'),
-    ),
-    expiresAt: _requiredResponseUtcDateTime(
-      payload,
-      'expires_at',
-      'MediaPlaybackUrl',
-    ),
-    format: _requiredResponseString(payload, 'format', 'MediaPlaybackUrl'),
-  );
-}
-
 class MediaStatus {
   const MediaStatus({
     required this.mediaId,
@@ -211,13 +187,6 @@ class MediaPipelineRepository {
     'lesson_media',
     _homePlayerPurpose,
   };
-
-  static String _extractPlaybackUrl(
-    Object? payload, {
-    required String endpointLabel,
-  }) {
-    return _requiredResponseString(payload, 'playback_url', endpointLabel);
-  }
 
   static Map<String, dynamic> _buildUploadUrlPayload({
     required String filename,
@@ -454,30 +423,4 @@ class MediaPipelineRepository {
     return MediaStatus.fromResponse(response);
   }
 
-  Future<MediaPlaybackUrl> fetchPlaybackUrl(String mediaId) async {
-    final response = await _client.post<Object?>(
-      ApiPaths.mediaPlaybackUrl,
-      body: {'media_id': mediaId},
-    );
-    return MediaPlaybackUrl.fromResponse(response);
-  }
-
-  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
-    final response = await _client.raw.post<Object?>(
-      ApiPaths.mediaLessonPlaybackUrl,
-      data: {'lesson_media_id': lessonMediaId},
-    );
-    return _extractPlaybackUrl(response.data, endpointLabel: 'Lesson playback');
-  }
-
-  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) async {
-    final response = await _client.raw.post<Object?>(
-      ApiPaths.mediaRuntimePlayback,
-      data: {'runtime_media_id': runtimeMediaId},
-    );
-    return _extractPlaybackUrl(
-      response.data,
-      endpointLabel: 'Runtime playback',
-    );
-  }
 }

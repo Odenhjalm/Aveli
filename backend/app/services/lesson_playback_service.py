@@ -65,7 +65,7 @@ def _log_image_playback_resolution(
 ) -> None:
     if not _resolution_is_image(resolution):
         return
-    resolved_url = _exact_text(playback.get("playback_url"))
+    resolved_url = _exact_text(playback.get("resolved_url"))
     logger.info(
         "LESSON_IMAGE_PLAYBACK_READ lesson_media_id=%s bucket=%s storage_path=%s resolved_url=%s source=%s playback_mode=%s",
         resolution.lesson_media_id or resolution.runtime_media_id or "<missing>",
@@ -286,7 +286,7 @@ async def _build_pipeline_playback_response(
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=presigned.expires_in)
     return {
-        "playback_url": presigned.url,
+        "resolved_url": presigned.url,
         "expires_at": expires_at,
         "format": _playback_format(resolution=resolution),
     }

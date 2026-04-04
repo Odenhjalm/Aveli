@@ -420,9 +420,7 @@ class TeacherProfileLessonSource(BaseModel):
     duration_seconds: Optional[int] = None
     position: Optional[int] = None
     created_at: Optional[datetime] = None
-    download_url: Optional[str] = None
-    signed_url: Optional[str] = None
-    signed_url_expires_at: Optional[str] = None
+    media: Optional["ResolvedMedia"] = None
 
 
 class TeacherProfileRecordingSource(BaseModel):
@@ -1114,17 +1112,6 @@ class StudioCoursePublicContentUpsert(BaseModel):
     short_description: str
 
 
-class MediaSignRequest(BaseModel):
-    media_id: str
-    mode: Literal["editor_insert", "editor_preview", "student_render"] | None = None
-
-
-class MediaSignResponse(BaseModel):
-    media_id: str
-    signed_url: str
-    expires_at: datetime
-
-
 class MediaUploadUrlRequest(BaseModel):
     filename: str
     mime_type: str
@@ -1226,16 +1213,6 @@ class CoverClearResponse(BaseModel):
     storage_cleanup: CoverClearStorageCleanup = Field(
         default_factory=CoverClearStorageCleanup
     )
-
-
-class MediaPlaybackUrlRequest(BaseModel):
-    media_id: UUID
-
-
-class MediaPlaybackUrlResponse(BaseModel):
-    playback_url: str
-    expires_at: datetime
-    format: Literal["mp3"]
 
 
 class MediaStatusResponse(BaseModel):
@@ -1449,6 +1426,7 @@ class StudioLessonMediaItem(BaseModel):
     position: int
     media_type: Literal["audio", "image", "video", "document"]
     state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+    media: ResolvedMedia | None = None
     preview_ready: bool
     original_name: str | None = None
 

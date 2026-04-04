@@ -269,9 +269,7 @@ class TeacherProfileLessonSource(BaseModel):
     duration_seconds: Optional[int] = None
     position: Optional[int] = None
     created_at: Optional[datetime] = None
-    download_url: Optional[str] = None
-    signed_url: Optional[str] = None
-    signed_url_expires_at: Optional[str] = None
+    media: Optional["ResolvedMedia"] = None
 
 
 class TeacherProfileRecordingSource(BaseModel):
@@ -431,6 +429,14 @@ class ReviewCreate(BaseModel):
 
 class MeditationListResponse(BaseModel):
     items: List[MeditationSummary]
+
+
+class ResolvedMedia(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_id: UUID
+    state: str
+    resolved_url: str | None = None
 
 
 class MessageRecord(BaseModel):
@@ -716,17 +722,6 @@ class StudioCoursePublicContentUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     short_description: str
-
-
-class MediaSignRequest(BaseModel):
-    media_id: str
-    mode: Literal["editor_insert", "editor_preview", "student_render"] | None = None
-
-
-class MediaSignResponse(BaseModel):
-    media_id: str
-    signed_url: str
-    expires_at: datetime
 
 
 class MediaPreviewBatchRequest(BaseModel):

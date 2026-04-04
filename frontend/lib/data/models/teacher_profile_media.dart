@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 Object? _requiredField(Object? payload, String fieldName) {
   switch (payload) {
@@ -83,6 +84,19 @@ List<Object?> _requireList(Object? value, String fieldName) {
   }
 }
 
+ResolvedMediaData? _optionalResolvedMedia(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final Map<String, dynamic> data:
+      return ResolvedMediaData.fromJson(data);
+    case final Map data:
+      return ResolvedMediaData.fromJson(Map<String, dynamic>.from(data));
+    default:
+      throw FormatException('Invalid field type for $fieldName');
+  }
+}
+
 enum TeacherProfileMediaKind {
   lessonMedia('lesson_media'),
   seminarRecording('seminar_recording'),
@@ -104,6 +118,41 @@ enum TeacherProfileMediaKind {
   }
 }
 
+void _validateTeacherProfileMediaIdentity({
+  required TeacherProfileMediaKind mediaKind,
+  required String? lessonMediaId,
+  required String? seminarRecordingId,
+  required String? externalUrl,
+}) {
+  final hasLessonMedia = lessonMediaId != null;
+  final hasSeminarRecording = seminarRecordingId != null;
+  final hasExternal = externalUrl != null && externalUrl.trim().isNotEmpty;
+
+  switch (mediaKind) {
+    case TeacherProfileMediaKind.lessonMedia:
+      if (!hasLessonMedia || hasSeminarRecording || externalUrl != null) {
+        throw const FormatException(
+          'lesson_media items require lesson_media_id and forbid seminar_recording_id/external_url',
+        );
+      }
+      return;
+    case TeacherProfileMediaKind.seminarRecording:
+      if (!hasSeminarRecording || hasLessonMedia || externalUrl != null) {
+        throw const FormatException(
+          'seminar_recording items require seminar_recording_id and forbid lesson_media_id/external_url',
+        );
+      }
+      return;
+    case TeacherProfileMediaKind.external:
+      if (!hasExternal || hasLessonMedia || hasSeminarRecording) {
+        throw const FormatException(
+          'external items require external_url and forbid lesson_media_id/seminar_recording_id',
+        );
+      }
+      return;
+  }
+}
+
 class TeacherProfileLessonSource extends Equatable {
   const TeacherProfileLessonSource({
     required this.id,
@@ -119,10 +168,12 @@ class TeacherProfileLessonSource extends Equatable {
     this.durationSeconds,
     this.position,
     this.createdAt,
-    this.downloadUrl,
-    this.signedUrl,
-    this.signedUrlExpiresAt,
+    this.media,
   });
+
+  factory TeacherProfileLessonSource.fromJson(Object? payload) {
+    return TeacherProfileLessonSource.fromResponse(payload);
+  }
 
   factory TeacherProfileLessonSource.fromResponse(Object? payload) {
     return TeacherProfileLessonSource(
@@ -169,18 +220,7 @@ class TeacherProfileLessonSource extends Equatable {
         _requiredField(payload, 'created_at'),
         'created_at',
       ),
-      downloadUrl: _optionalString(
-        _requiredField(payload, 'download_url'),
-        'download_url',
-      ),
-      signedUrl: _optionalString(
-        _requiredField(payload, 'signed_url'),
-        'signed_url',
-      ),
-      signedUrlExpiresAt: _optionalString(
-        _requiredField(payload, 'signed_url_expires_at'),
-        'signed_url_expires_at',
-      ),
+      media: _optionalResolvedMedia(_requiredField(payload, 'media'), 'media'),
     );
   }
 
@@ -197,9 +237,7 @@ class TeacherProfileLessonSource extends Equatable {
   final int? durationSeconds;
   final int? position;
   final DateTime? createdAt;
-  final String? downloadUrl;
-  final String? signedUrl;
-  final String? signedUrlExpiresAt;
+  final ResolvedMediaData? media;
 
   @override
   List<Object?> get props => [
@@ -216,9 +254,7 @@ class TeacherProfileLessonSource extends Equatable {
     durationSeconds,
     position,
     createdAt,
-    downloadUrl,
-    signedUrl,
-    signedUrlExpiresAt,
+    media,
   ];
 }
 
@@ -277,6 +313,10 @@ class TeacherProfileRecordingSource extends Equatable {
     );
   }
 
+  factory TeacherProfileRecordingSource.fromJson(Object? payload) {
+    return TeacherProfileRecordingSource.fromResponse(payload);
+  }
+
   final String id;
   final String seminarId;
   final String? seminarTitle;
@@ -325,27 +365,39 @@ class TeacherProfileMediaItem extends Equatable {
   });
 
   factory TeacherProfileMediaItem.fromResponse(Object? payload) {
+    final id = _requireString(_requiredField(payload, 'id'), 'id');
+    final teacherId = _requireString(
+      _requiredField(payload, 'teacher_id'),
+      'teacher_id',
+    );
+    final mediaKind = TeacherProfileMediaKind.fromApi(
+      _requireString(_requiredField(payload, 'media_kind'), 'media_kind'),
+    );
+    final lessonMediaId = _optionalString(
+      _requiredField(payload, 'lesson_media_id'),
+      'lesson_media_id',
+    );
+    final seminarRecordingId = _optionalString(
+      _requiredField(payload, 'seminar_recording_id'),
+      'seminar_recording_id',
+    );
+    final externalUrl = _optionalString(
+      _requiredField(payload, 'external_url'),
+      'external_url',
+    );
+    _validateTeacherProfileMediaIdentity(
+      mediaKind: mediaKind,
+      lessonMediaId: lessonMediaId,
+      seminarRecordingId: seminarRecordingId,
+      externalUrl: externalUrl,
+    );
     return TeacherProfileMediaItem(
-      id: _requireString(_requiredField(payload, 'id'), 'id'),
-      teacherId: _requireString(
-        _requiredField(payload, 'teacher_id'),
-        'teacher_id',
-      ),
-      mediaKind: TeacherProfileMediaKind.fromApi(
-        _requireString(_requiredField(payload, 'media_kind'), 'media_kind'),
-      ),
-      lessonMediaId: _optionalString(
-        _requiredField(payload, 'lesson_media_id'),
-        'lesson_media_id',
-      ),
-      seminarRecordingId: _optionalString(
-        _requiredField(payload, 'seminar_recording_id'),
-        'seminar_recording_id',
-      ),
-      externalUrl: _optionalString(
-        _requiredField(payload, 'external_url'),
-        'external_url',
-      ),
+      id: id,
+      teacherId: teacherId,
+      mediaKind: mediaKind,
+      lessonMediaId: lessonMediaId,
+      seminarRecordingId: seminarRecordingId,
+      externalUrl: externalUrl,
       title: _optionalString(_requiredField(payload, 'title'), 'title'),
       description: _optionalString(
         _requiredField(payload, 'description'),
@@ -377,6 +429,10 @@ class TeacherProfileMediaItem extends Equatable {
         'updated_at',
       ),
     );
+  }
+
+  factory TeacherProfileMediaItem.fromJson(Object? payload) {
+    return TeacherProfileMediaItem.fromResponse(payload);
   }
 
   final String id;
@@ -458,6 +514,10 @@ class TeacherProfileMediaPayload extends Equatable {
           .map(TeacherProfileRecordingSource.fromResponse)
           .toList(growable: false),
     );
+  }
+
+  factory TeacherProfileMediaPayload.fromJson(Object? payload) {
+    return TeacherProfileMediaPayload.fromResponse(payload);
   }
 
   static const empty = TeacherProfileMediaPayload(

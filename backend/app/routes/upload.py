@@ -22,7 +22,7 @@ from ..permissions import TeacherUser
 from ..repositories import storage_objects
 from ..services import courses_service
 from ..services import storage_service
-from ..utils import media_paths, media_signer
+from ..utils import media_paths
 from ..utils.http_headers import build_content_disposition
 
 logger = logging.getLogger(__name__)
@@ -351,7 +351,6 @@ async def _persist_lesson_media(
     if kind in {"document", "pdf"}:
         row["media_state"] = "ready"
 
-    media_signer.attach_media_links(row, purpose="editor_preview")
     return row
 
 
@@ -731,7 +730,6 @@ async def upload_lesson_image(
                     detail="Failed to upload lesson image",
                 )
             persisted_storage_path = upload.path
-            public_url = storage_service.public_storage_service.public_url(upload.path)
         except storage_service.StorageServiceError as exc:
             logger.warning(
                 "Supabase lesson image upload signing failed: lesson_id=%s error=%s",
@@ -747,8 +745,7 @@ async def upload_lesson_image(
         destination_path = _safe_join(UPLOADS_ROOT, *relative_public_path.parts)
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         destination_path.write_bytes(payload)
-        public_url = _public_url(request, relative_public_path)
-        if public_url is None:
+        if _public_url(request, relative_public_path) is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Public upload storage misconfigured",
@@ -778,12 +775,7 @@ async def upload_lesson_image(
 
     media_payload = dict(row)
     media_payload["kind"] = "image"
-    media_payload["url"] = public_url
-    media_payload["preferredUrl"] = public_url
     media_payload["original_name"] = file.filename or media_payload.get("original_name")
-    media_payload.pop("signed_url", None)
-    media_payload.pop("signed_url_expires_at", None)
-    media_payload.pop("download_url", None)
 
     return {"media": media_payload}
 

@@ -51,6 +51,9 @@ _LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
     "true",
     "yes",
 }
+_STUDIO_MEDIA_STATES = frozenset(
+    {"pending_upload", "uploaded", "processing", "ready", "failed"}
+)
 _CANONICAL_COURSE_FIELDS = (
     "id",
     "slug",
@@ -281,6 +284,77 @@ def _preview_file_name(row: dict[str, Any]) -> str | None:
     return value or None
 
 
+def _normalized_studio_media_state(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in _STUDIO_MEDIA_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Canonical studio media state is unavailable",
+        )
+    return normalized
+
+
+def _normalized_resolved_url(playback: dict[str, Any]) -> str | None:
+    resolved = str(playback.get("resolved_url") or "").strip()
+    return resolved or None
+
+
+async def _compose_studio_media(
+    *,
+    lesson_media_id: str,
+    media_asset_id: str | None,
+    media_state: str,
+    user_id: str,
+) -> schemas.ResolvedMedia | None:
+    exact_media_asset_id = str(media_asset_id or "").strip()
+    if not exact_media_asset_id:
+        return None
+
+    normalized_state = _normalized_studio_media_state(media_state)
+    resolved_url: str | None = None
+    if normalized_state == "ready":
+        try:
+            playback = await lesson_playback_service.resolve_lesson_media_playback(
+                lesson_media_id=lesson_media_id,
+                user_id=user_id,
+            )
+        except HTTPException:
+            return None
+        resolved_url = _normalized_resolved_url(playback)
+        if resolved_url is None:
+            return None
+
+    return schemas.ResolvedMedia(
+        media_id=UUID(exact_media_asset_id),
+        state=normalized_state,
+        resolved_url=resolved_url,
+    )
+
+
+async def _studio_lesson_media_item_from_row(
+    *,
+    row: dict[str, Any],
+    user_id: str,
+) -> schemas.StudioLessonMediaItem:
+    lesson_media_id = str(row.get("lesson_media_id") or "").strip()
+    if not lesson_media_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Canonical studio lesson media identity is unavailable",
+        )
+
+    payload = dict(row)
+    payload["state"] = _normalized_studio_media_state(row.get("state"))
+    payload["preview_ready"] = bool(row.get("preview_ready"))
+    payload["media"] = await _compose_studio_media(
+        lesson_media_id=lesson_media_id,
+        media_asset_id=str(row.get("media_asset_id") or "").strip() or None,
+        media_state=payload["state"],
+        user_id=user_id,
+    )
+    return schemas.StudioLessonMediaItem(**payload)
+
+
 def _preview_failure_item(
     *,
     media_type: str,
@@ -322,7 +396,7 @@ async def _preview_item_from_row(
             failure_reason="unresolvable",
         )
 
-    resolved_url = str(playback.get("playback_url") or "").strip()
+    resolved_url = str(playback.get("resolved_url") or "").strip()
     if media_type in {"image", "video"} and not resolved_url:
         return _preview_failure_item(
             media_type=media_type,
@@ -513,7 +587,7 @@ async def studio_complete_lesson_media_upload(
     payload: schemas.StudioLessonMediaCompleteRequest,
     current: TeacherUser,
 ):
-    del current, payload
+    del payload
     await _require_studio_lesson(str(lesson_id))
     row = await courses_repo.get_lesson_media_for_studio(
         str(lesson_id),
@@ -546,7 +620,10 @@ async def studio_complete_lesson_media_upload(
     )
     if not refreshed:
         raise HTTPException(status_code=404, detail="Lesson media not found")
-    return schemas.StudioLessonMediaItem(**refreshed)
+    return await _studio_lesson_media_item_from_row(
+        row=dict(refreshed),
+        user_id=str(current["id"]),
+    )
 
 
 @lesson_media_router.get(
@@ -557,12 +634,16 @@ async def studio_list_lesson_media(
     lesson_id: UUID,
     current: TeacherUser,
 ):
-    del current
     await _require_studio_lesson(str(lesson_id))
     rows = await courses_service.list_studio_lesson_media(str(lesson_id))
-    return schemas.StudioLessonMediaListResponse(
-        items=[schemas.StudioLessonMediaItem(**dict(row)) for row in rows]
-    )
+    items = [
+        await _studio_lesson_media_item_from_row(
+            row=dict(row),
+            user_id=str(current["id"]),
+        )
+        for row in rows
+    ]
+    return schemas.StudioLessonMediaListResponse(items=items)
 
 
 @lesson_media_router.get(
@@ -592,16 +673,16 @@ async def studio_preview_lesson_media(
         lesson_media_id=str(lesson_media_id),
         user_id=str(current["id"]),
     )
-    playback_url = str(playback.get("playback_url") or "").strip()
+    resolved_url = str(playback.get("resolved_url") or "").strip()
     expires_at = playback.get("expires_at")
-    if not playback_url or not isinstance(expires_at, datetime):
+    if not resolved_url or not isinstance(expires_at, datetime):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Preview storage is unavailable",
         )
     return schemas.StudioLessonMediaPreviewResponse(
         lesson_media_id=lesson_media_id,
-        preview_url=playback_url,
+        preview_url=resolved_url,
         expires_at=expires_at,
     )
 

@@ -186,11 +186,11 @@ void assertNoRawMarkdownMediaRefs(String markdown) {
     if (raw == null || raw.isEmpty || source == null || source.isEmpty) {
       continue;
     }
-    final isLegacyMediaLink =
+    final isNoncanonicalMediaLink =
         studioMediaUrlPattern.hasMatch(source) ||
-        mediaStreamUrlPattern.hasMatch(source) ||
+        internalMediaUrlPattern.hasMatch(source) ||
         apiFilesUrlPattern.hasMatch(source);
-    if (!isLegacyMediaLink) {
+    if (!isNoncanonicalMediaLink) {
       continue;
     }
     throw StateError(
@@ -295,8 +295,9 @@ final RegExp apiFilesUrlPattern = RegExp(
   caseSensitive: false,
 );
 
-final RegExp mediaStreamUrlPattern = RegExp(
-  r'''(?:https?:\/\/[^\s"'()]+)?\/media\/stream\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)''',
+final RegExp internalMediaUrlPattern = RegExp(
+  r'''(?:https?:\/\/[^\s"'()]+)?\/media\/[^\s"'()]+''',
+  caseSensitive: false,
 );
 
 Set<String> extractLessonEmbeddedMediaIds(String markdown) {

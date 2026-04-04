@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:aveli/shared/models/request_headers.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 Object? _requireResponseField(Object? payload, String key, String label) {
   switch (payload) {
@@ -66,6 +67,28 @@ bool _requiredResponseBool(Object? payload, String key, String label) {
     return value;
   }
   throw StateError('$label field "$key" must be a bool');
+}
+
+ResolvedMediaData? _nullableResolvedMedia(
+  Object? payload,
+  String key,
+  String label,
+) {
+  switch (payload) {
+    case final Map data when data.containsKey(key):
+      final value = data[key];
+      if (value == null) {
+        return null;
+      }
+      if (value is Map) {
+        return ResolvedMediaData.fromJson(Map<String, dynamic>.from(value));
+      }
+      throw StateError('$label field "$key" must be an object or null');
+    case final Map _:
+      return null;
+    default:
+      throw StateError('$label returned a non-object payload');
+  }
 }
 
 RequestHeaders _requiredResponseHeaders(
@@ -154,10 +177,11 @@ class CourseStudio extends CourseCore {
         null => null,
         final Map<String, dynamic> data => CourseCoverData.fromJson(data),
         final Map data => CourseCoverData.fromJson(
-            Map<String, dynamic>.from(data),
-          ),
-        final Object _ =>
-          throw StateError('$label field "cover" must be an object or null'),
+          Map<String, dynamic>.from(data),
+        ),
+        final Object _ => throw StateError(
+          '$label field "cover" must be an object or null',
+        ),
       },
       priceAmountCents: _nullableResponseInt(
         payload,
@@ -274,6 +298,7 @@ class StudioLessonMediaItem {
     required this.state,
     required this.previewReady,
     this.mediaAssetId,
+    this.media,
     this.originalName,
   });
 
@@ -284,6 +309,7 @@ class StudioLessonMediaItem {
   final String state;
   final bool previewReady;
   final String? mediaAssetId;
+  final ResolvedMediaData? media;
   final String? originalName;
 
   factory StudioLessonMediaItem.fromResponse(Object? payload) {
@@ -319,6 +345,7 @@ class StudioLessonMediaItem {
         'media_asset_id',
         'StudioLessonMediaItem',
       ),
+      media: _nullableResolvedMedia(payload, 'media', 'StudioLessonMediaItem'),
       originalName: _nullableResponseString(
         payload,
         'original_name',
@@ -335,8 +362,10 @@ class StudioLessonMediaItem {
     String? state,
     bool? previewReady,
     String? mediaAssetId,
+    ResolvedMediaData? media,
     String? originalName,
     bool clearMediaAssetId = false,
+    bool clearMedia = false,
     bool clearOriginalName = false,
   }) {
     return StudioLessonMediaItem(
@@ -349,6 +378,7 @@ class StudioLessonMediaItem {
       mediaAssetId: clearMediaAssetId
           ? null
           : (mediaAssetId != null ? mediaAssetId : this.mediaAssetId),
+      media: clearMedia ? null : (media != null ? media : this.media),
       originalName: clearOriginalName
           ? null
           : (originalName != null ? originalName : this.originalName),

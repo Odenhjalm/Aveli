@@ -264,60 +264,12 @@ class ApiClient {
 
   static String? _mediaRequestContractViolation(RequestOptions options) {
     return _mediaUploadUrlContractViolation(options) ??
-        _mediaRuntimePlaybackContractViolation(options) ??
         _mediaPreviewContractViolation(options);
-  }
-
-  static String? _mediaRuntimePlaybackContractViolation(
-    RequestOptions options,
-  ) {
-    final path = options.path;
-    if (path != ApiPaths.mediaRuntimePlayback) {
-      return null;
-    }
-
-    final method = options.method.toUpperCase();
-    if (method != 'POST') {
-      return 'Runtime playback contract violation: expected POST for $path (got $method).';
-    }
-
-    final headerContentType = options.headers[Headers.contentTypeHeader]
-        ?.toString();
-    final contentTypeRaw = (options.contentType ?? headerContentType ?? '')
-        .trim();
-    final contentType = contentTypeRaw.toLowerCase();
-    final isJson = contentType.startsWith('application/json');
-    if (!isJson) {
-      return 'Runtime playback contract violation: expected application/json for $path (got "$contentTypeRaw").';
-    }
-
-    final data = options.data;
-    if (data is FormData) {
-      return 'Runtime playback contract violation: FormData is not allowed for $path (expected JSON body).';
-    }
-    if (data is! Map) {
-      return 'Runtime playback contract violation: expected JSON object body for $path (got ${data.runtimeType}).';
-    }
-
-    const allowedKeys = {'runtime_media_id'};
-    final payload = Map<String, dynamic>.from(data);
-    final extraKeys = payload.keys.where((key) => !allowedKeys.contains(key));
-    if (extraKeys.isNotEmpty) {
-      return 'Runtime playback contract violation: unexpected keys for $path: ${extraKeys.join(", ")}.';
-    }
-
-    final runtimeMediaId = payload['runtime_media_id'];
-    if (runtimeMediaId is! String || runtimeMediaId.trim().isEmpty) {
-      return 'Runtime playback contract violation: runtime_media_id must be a non-empty string for $path.';
-    }
-    return null;
   }
 
   static String? _mediaPreviewContractViolation(RequestOptions options) {
     final path = options.path;
-    final isLessonPlayback = path == ApiPaths.mediaLessonPlaybackUrl;
-    final isPreviewBatch = path == ApiPaths.mediaPreviews;
-    if (!isLessonPlayback && !isPreviewBatch) {
+    if (path != ApiPaths.mediaPreviews) {
       return null;
     }
 
@@ -345,19 +297,6 @@ class ApiClient {
     }
 
     final payload = Map<String, dynamic>.from(data);
-    if (isLessonPlayback) {
-      const allowedKeys = {'lesson_media_id'};
-      final extraKeys = payload.keys.where((key) => !allowedKeys.contains(key));
-      if (extraKeys.isNotEmpty) {
-        return 'Media preview contract violation: unexpected keys for $path: ${extraKeys.join(", ")}.';
-      }
-      final lessonMediaId = payload['lesson_media_id'];
-      if (lessonMediaId is! String || lessonMediaId.trim().isEmpty) {
-        return 'Media preview contract violation: lesson_media_id must be a non-empty string for $path.';
-      }
-      return null;
-    }
-
     const allowedKeys = {'ids'};
     final extraKeys = payload.keys.where((key) => !allowedKeys.contains(key));
     if (extraKeys.isNotEmpty) {

@@ -94,10 +94,7 @@ class _LessonContent extends ConsumerWidget {
 
   final LessonDetailData detail;
 
-  Future<void> _handleLinkTap(
-    BuildContext context,
-    String url,
-  ) async {
+  Future<void> _handleLinkTap(BuildContext context, String url) async {
     final parsed = Uri.tryParse(url);
     if (parsed != null &&
         parsed.pathSegments.contains('pay') &&
@@ -124,15 +121,14 @@ class _LessonContent extends ConsumerWidget {
       return;
     }
 
-    final parsedPath = parsed == null ? url : parsed.path;
-    if (_isAuthProtectedLessonMediaPath(parsedPath)) {
+    if (_isBlockedLessonMediaLink(url)) {
       logLegacyMediaBlocked(
         surface: 'lesson_page_link',
         mediaType: 'document',
         rawSource: url,
-        reason: 'legacy_path',
+        reason: 'noncanonical_link_target',
       );
-      throw StateError('Äldre medielänk är blockerad.');
+      throw StateError('Endast backend-auktoriserade dokumentlänkar stöds.');
     }
 
     if (!await launchUrlString(url, mode: LaunchMode.externalApplication)) {
@@ -195,8 +191,7 @@ class _LessonContent extends ConsumerWidget {
             child: LessonPageRenderer(
               markdown: markdownContent,
               lessonMedia: mediaItems,
-              onLaunchUrl: (url) =>
-                  unawaited(_handleLinkTap(context, url)),
+              onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
             ),
           ),
           if (trailingMedia.isNotEmpty) ...[
@@ -618,18 +613,18 @@ LessonMediaItem _embeddedLessonMediaItem(
   );
 }
 
-bool _isAuthProtectedLessonMediaPath(String path) {
-  if (path.isEmpty) return false;
-  final uri = Uri.tryParse(path);
-  final normalizedPath = uri == null ? path : uri.path;
+bool _isBlockedLessonMediaLink(String rawUrl) {
+  final normalizedUrl = rawUrl.trim();
+  if (normalizedUrl.isEmpty) return false;
+  final uri = Uri.tryParse(normalizedUrl);
+  if (uri == null) return true;
+  if (!uri.hasScheme) return true;
+  final normalizedPath = uri.path;
   if (normalizedPath.isEmpty) return false;
   return RegExp(
-        r'^/studio/media/',
-        caseSensitive: false,
-      ).hasMatch(normalizedPath) ||
-      RegExp(r'^/api/media/', caseSensitive: false).hasMatch(normalizedPath) ||
-      RegExp(r'^/media/sign', caseSensitive: false).hasMatch(normalizedPath) ||
-      RegExp(r'^/media/stream/', caseSensitive: false).hasMatch(normalizedPath);
+    r'^/(studio/media|api/media|media/)',
+    caseSensitive: false,
+  ).hasMatch(normalizedPath);
 }
 
 class _LessonMediaLoadingState extends StatelessWidget {

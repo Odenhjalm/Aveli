@@ -485,7 +485,7 @@ class _ProfileMediaTile extends ConsumerWidget {
         final source = payload.lessonSourceFor(item);
         if (source == null) return null;
         final kind = source.kind;
-        final url = (source.signedUrl ?? source.downloadUrl)?.trim();
+        final url = source.media?.resolvedUrl?.trim();
         final mediaType = switch (kind) {
           'audio' => MediaPlaybackType.audio,
           'video' => MediaPlaybackType.video,

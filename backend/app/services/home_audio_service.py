@@ -40,7 +40,7 @@ async def _compose_home_audio_media(
             )
         except HTTPException:
             return None
-        resolved_url = str(playback.get("playback_url") or "").strip() or None
+        resolved_url = str(playback.get("resolved_url") or "").strip() or None
 
     media = {
         "media_id": media_asset_id,
