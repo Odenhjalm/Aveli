@@ -7,8 +7,7 @@ from fastapi import HTTPException
 from app import db, models
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
-from app.services import home_audio_service
-from app.services import lesson_playback_service
+from app.services import courses_service
 from app.services import storage_service as storage_module
 
 
@@ -399,19 +398,19 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
         }
 
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.courses_service,
+        courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
@@ -470,7 +469,7 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
         return {"resolved_url": "https://stream.local/home-track.mp3"}
 
     monkeypatch.setattr(
-        home_audio_service.lesson_playback_service,
+        courses_service.lesson_playback_service,
         "resolve_media_asset_playback",
         fake_resolve_media_asset_playback,
         raising=True,
@@ -526,19 +525,19 @@ async def test_home_audio_direct_upload_uses_media_asset_identity_only(async_cli
         return {"resolved_url": "https://stream.local/direct-track.mp3"}
 
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.lesson_playback_service,
+        courses_service.lesson_playback_service,
         "resolve_media_asset_playback",
         fake_resolve_media_asset_playback,
         raising=True,
@@ -618,19 +617,19 @@ async def test_home_audio_course_link_disappears_when_source_deleted(async_clien
         return {"lesson": {"id": lesson_id}, "can_access": user_id == teacher_id}
 
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.courses_service,
+        courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
@@ -696,25 +695,25 @@ async def test_home_audio_non_ready_items_return_resolved_url_null(async_client,
         raise AssertionError(f"non-ready media should not resolve: {media_asset_id}")
 
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.courses_service,
+        courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.lesson_playback_service,
+        courses_service.lesson_playback_service,
         "resolve_media_asset_playback",
         should_not_resolve,
         raising=True,
@@ -786,19 +785,19 @@ async def test_home_audio_invalid_ready_items_are_excluded(async_client, monkeyp
         return {"lesson": {"id": lesson_id}, "can_access": user_id == teacher_id}
 
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.courses_service,
+        courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
@@ -810,7 +809,7 @@ async def test_home_audio_invalid_ready_items_are_excluded(async_client, monkeyp
         raise HTTPException(status_code=503, detail="Streaming asset unavailable")
 
     monkeypatch.setattr(
-        home_audio_service.lesson_playback_service,
+        courses_service.lesson_playback_service,
         "resolve_media_asset_playback",
         fake_resolve_media_asset_playback,
         raising=True,

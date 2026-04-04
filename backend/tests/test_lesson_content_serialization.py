@@ -38,7 +38,7 @@ def test_serialize_audio_embeds_from_quill_document():
 def test_serialize_audio_embeds_inline_payload_with_attributes():
     snippet = (
         'Meditation start.\n'
-        '{"insert":{"audio":{"source":"https://media.local/file.mp3","download_url":""}},'
+        '{"insert":{"audio":{"source":"https://media.local/file.mp3"}},'
         '"attributes":{"align":"center"}}\n'
         "Outro."
     )

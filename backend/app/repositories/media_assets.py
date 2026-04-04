@@ -23,6 +23,7 @@ _QUEUE_SUPPORT_REQUIRED_COLUMNS = frozenset(
 )
 _CONTROL_PLANE_PURPOSES = ("lesson_audio", "lesson_media", "home_player_audio")
 _OBSERVABILITY_DEFAULTS: dict[str, Any] = {
+    "storage_bucket": None,
     "course_id": None,
     "lesson_id": None,
     "original_content_type": None,
@@ -61,10 +62,28 @@ def _decorate_media_asset_row(row: dict[str, Any] | None) -> dict[str, Any] | No
     if row is None:
         return None
     normalized = dict(row)
-    normalized.setdefault("storage_bucket", settings.media_source_bucket)
     for key, value in _OBSERVABILITY_DEFAULTS.items():
         normalized.setdefault(key, value)
     return normalized
+
+
+def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
+    streaming_bucket = str(row.get("streaming_storage_bucket") or "").strip()
+    if streaming_bucket:
+        return streaming_bucket
+
+    playback_object_path = str(row.get("playback_object_path") or "").strip().lstrip("/")
+    original_object_path = str(row.get("original_object_path") or "").strip().lstrip("/")
+    purpose = str(row.get("purpose") or "").strip().lower()
+    media_type = str(row.get("media_type") or "").strip().lower()
+
+    if playback_object_path and purpose == "course_cover" and media_type == "image":
+        return settings.media_public_bucket
+    if playback_object_path.startswith("lessons/") or original_object_path.startswith("lessons/"):
+        return settings.media_public_bucket
+    if playback_object_path or original_object_path:
+        return settings.media_source_bucket
+    return None
 
 
 def _clamp_limit(limit: int | None, *, default: int, maximum: int) -> int:
@@ -160,6 +179,15 @@ async def create_media_asset(
     playback_object_path: str | None = None,
     playback_format: str | None = None,
 ) -> dict[str, Any]:
+    normalized_state = str(state or "").strip().lower()
+    if normalized_state != "pending_upload":
+        raise RuntimeError(
+            "create_media_asset only supports the canonical pending_upload initial state"
+        )
+    if playback_object_path is not None or playback_format is not None:
+        raise RuntimeError(
+            "playback metadata is assigned only through canonical worker helpers"
+        )
     query = """
         insert into app.media_assets (
             id,
@@ -201,9 +229,9 @@ async def create_media_asset(
                     purpose,
                     original_object_path,
                     ingest_format,
-                    playback_object_path,
-                    playback_format,
-                    state,
+                    None,
+                    None,
+                    normalized_state,
                 ),
             )
             row = await cur.fetchone()
@@ -220,32 +248,16 @@ async def update_media_asset_state(
     playback_object_path: str | None = None,
     playback_format: str | None = None,
 ) -> dict[str, Any] | None:
-    query = """
-        update app.media_assets
-        set
-            state = %s::app.media_state,
-            playback_object_path = coalesce(%s, playback_object_path),
-            playback_format = %s
-        where id = %s::uuid
-        returning
-            id,
-            media_type::text as media_type,
-            purpose::text as purpose,
-            original_object_path,
-            ingest_format,
-            playback_object_path,
-            playback_format,
-            state::text as state
-    """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                query,
-                (state, playback_object_path, playback_format, media_asset_id),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
-    return _decorate_media_asset_row(dict(row) if row else None)
+    normalized_state = str(state or "").strip().lower()
+    if normalized_state != "uploaded":
+        raise RuntimeError(
+            "update_media_asset_state only supports the canonical uploaded transition"
+        )
+    if playback_object_path is not None or playback_format is not None:
+        raise RuntimeError(
+            "playback metadata is assigned only through canonical worker helpers"
+        )
+    return await mark_media_asset_uploaded(media_id=media_asset_id)
 
 
 async def _call_canonical_worker_transition(
@@ -401,7 +413,7 @@ async def get_media_asset_access(media_asset_id: str) -> dict[str, Any] | None:
     row = await get_media_asset(media_asset_id)
     if not row:
         return None
-    row.setdefault("storage_bucket", settings.media_source_bucket)
+    row["storage_bucket"] = _canonical_storage_bucket_for_access(row)
     return row
 
 

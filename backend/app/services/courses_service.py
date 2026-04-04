@@ -1,14 +1,28 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping, Sequence
 
 from fastapi import HTTPException, status
 
 from ..config import settings
+from ..media_control_plane.services.media_resolver_service import (
+    LessonMediaPlaybackMode,
+    media_resolver_service as canonical_media_resolver,
+)
 from ..repositories import courses as courses_repo
-from ..repositories import runtime_media as runtime_media_repo
+from ..repositories import home_audio_runtime as home_audio_runtime_repo
+from ..repositories import media_assets as media_assets_repo
+from ..repositories import storage_objects
 from . import lesson_playback_service
 from . import storage_service
+from ..utils import media_signer
+
+logger = logging.getLogger(__name__)
+
+_HOME_AUDIO_MEDIA_STATES = frozenset(
+    {"pending_upload", "uploaded", "processing", "ready", "failed"}
+)
 
 
 def _is_admin_profile(profile: Mapping[str, Any] | None) -> bool:
@@ -50,13 +64,21 @@ def _validate_course_drip_configuration(
         raise ValueError("drip_interval_days must be null when drip_enabled is false")
 
 
+def _reject_legacy_cover_url_write(payload: Mapping[str, Any]) -> None:
+    if "cover_url" in payload:
+        raise ValueError("cover_url is deprecated")
+
+
 async def fetch_course(
     *,
     course_id: str | None = None,
     slug: str | None = None,
 ) -> dict[str, Any] | None:
     row = await courses_repo.get_course(course_id=course_id, slug=slug)
-    return dict(row) if row else None
+    course = dict(row) if row else None
+    if course is not None:
+        await attach_course_cover_read_contract(course)
+    return course
 
 
 async def fetch_course_pricing(slug: str) -> dict[str, Any] | None:
@@ -92,7 +114,9 @@ async def list_courses(
     search: str | None = None,
 ) -> Sequence[dict[str, Any]]:
     del teacher_id
-    return list(await courses_repo.list_courses(limit=limit, search=search))
+    rows = [dict(row) for row in await courses_repo.list_courses(limit=limit, search=search)]
+    await attach_course_cover_read_contract(rows)
+    return rows
 
 
 async def list_public_courses(
@@ -102,11 +126,18 @@ async def list_public_courses(
     limit: int | None = None,
 ) -> Sequence[dict[str, Any]]:
     del published_only
-    return list(await courses_repo.list_public_courses(search=search, limit=limit))
+    rows = [
+        dict(row)
+        for row in await courses_repo.list_public_courses(search=search, limit=limit)
+    ]
+    await attach_course_cover_read_contract(rows)
+    return rows
 
 
 async def list_my_courses(user_id: str) -> Sequence[dict[str, Any]]:
-    return list(await courses_repo.list_my_courses(str(user_id)))
+    rows = [dict(row) for row in await courses_repo.list_my_courses(str(user_id))]
+    await attach_course_cover_read_contract(rows)
+    return rows
 
 
 async def list_course_lessons(course_id: str) -> Sequence[dict[str, Any]]:
@@ -166,33 +197,40 @@ async def list_lesson_media(
     if not normalized_user_id:
         raise ValueError("user_id is required for student_render lesson media")
 
-    runtime_rows = await runtime_media_repo.list_runtime_media_for_lesson(lesson_id)
-    runtime_by_lesson_media_id = {
-        str(row["lesson_media_id"]): dict(row)
-        for row in runtime_rows
-        if row.get("lesson_media_id") is not None
-    }
-
     learner_rows: list[dict[str, Any]] = []
     for item in normalized_rows:
-        runtime_row = runtime_by_lesson_media_id.get(str(item["id"]))
-        if runtime_row is None:
+        lesson_media_id = str(item["id"])
+        resolution = await canonical_media_resolver.resolve_lesson_media(
+            lesson_media_id,
+            emit_logs=False,
+        )
+        media_asset_id = str(resolution.media_asset_id or "").strip()
+        if (
+            not resolution.is_playable
+            or resolution.playback_mode != LessonMediaPlaybackMode.PIPELINE_ASSET
+            or not media_asset_id
+        ):
             learner_rows.append(item)
             continue
 
-        playback = await lesson_playback_service.resolve_lesson_media_playback(
-            lesson_media_id=str(item["id"]),
-            user_id=normalized_user_id,
-        )
+        try:
+            playback = await lesson_playback_service.resolve_lesson_media_playback(
+                lesson_media_id=lesson_media_id,
+                user_id=normalized_user_id,
+            )
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_403_FORBIDDEN:
+                raise
+            learner_rows.append(item)
+            continue
         resolved_url = str(playback.get("resolved_url") or "").strip()
-        media_id = str(runtime_row.get("media_asset_id") or "").strip()
-        if not media_id or not resolved_url:
+        if not resolved_url:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Canonical media composition is unavailable",
             )
         item["media"] = {
-            "media_id": media_id,
+            "media_id": media_asset_id,
             "state": item["state"],
             "resolved_url": resolved_url,
         }
@@ -219,40 +257,236 @@ async def list_studio_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
     ]
 
 
+def _normalized_home_audio_state(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in _HOME_AUDIO_MEDIA_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Canonical home audio media state is unavailable",
+        )
+    return normalized
+
+
+async def _compose_home_audio_media(
+    *,
+    media_asset_id: str,
+    media_state: str,
+    playback_cache: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    cached = playback_cache.get(media_asset_id)
+    if cached is not None:
+        return cached
+
+    resolved_url: str | None = None
+    if media_state == "ready":
+        try:
+            playback = await lesson_playback_service.resolve_media_asset_playback(
+                media_asset_id=media_asset_id
+            )
+        except HTTPException:
+            return None
+        resolved_url = str(playback.get("resolved_url") or "").strip() or None
+
+    media = {
+        "media_id": media_asset_id,
+        "state": media_state,
+        "resolved_url": resolved_url,
+    }
+    playback_cache[media_asset_id] = media
+    return media
+
+
+async def list_home_audio_media(
+    user_id: str,
+    *,
+    limit: int = 12,
+) -> Sequence[dict[str, Any]]:
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_user_id:
+        raise ValueError("user_id is required for home audio")
+
+    capped_limit = max(1, min(int(limit or 12), 50))
+    candidate_limit = max(100, min(capped_limit * 4, 250))
+
+    direct_rows = await home_audio_runtime_repo.list_home_audio_direct_upload_sources(
+        limit=candidate_limit
+    )
+    course_link_rows = await home_audio_runtime_repo.list_home_audio_course_link_sources(
+        limit=candidate_limit
+    )
+
+    candidates = [
+        {"source_type": "direct_upload", **dict(row)} for row in direct_rows
+    ] + [{"source_type": "course_link", **dict(row)} for row in course_link_rows]
+    candidates.sort(
+        key=lambda row: (
+            row.get("created_at"),
+            str(row.get("media_asset_id") or ""),
+        ),
+        reverse=True,
+    )
+
+    lesson_access_cache: dict[str, bool] = {}
+    playback_cache: dict[str, dict[str, Any]] = {}
+    items: list[dict[str, Any]] = []
+
+    for row in candidates:
+        if len(items) >= capped_limit:
+            break
+
+        source_type = str(row.get("source_type") or "").strip()
+        teacher_id = str(row.get("teacher_id") or "").strip()
+        media_asset_id = str(row.get("media_asset_id") or "").strip()
+        if not teacher_id or not media_asset_id:
+            continue
+
+        if source_type == "direct_upload":
+            if teacher_id != normalized_user_id:
+                continue
+        elif source_type == "course_link":
+            lesson_id = str(row.get("lesson_id") or "").strip()
+            if not lesson_id:
+                continue
+            can_access = lesson_access_cache.get(lesson_id)
+            if can_access is None:
+                access = await read_canonical_lesson_access(
+                    normalized_user_id,
+                    lesson_id,
+                )
+                can_access = bool(access["can_access"])
+                lesson_access_cache[lesson_id] = can_access
+            if not can_access:
+                continue
+        else:
+            continue
+
+        media_state = _normalized_home_audio_state(row.get("media_state"))
+        media = await _compose_home_audio_media(
+            media_asset_id=media_asset_id,
+            media_state=media_state,
+            playback_cache=playback_cache,
+        )
+        if media is None:
+            continue
+
+        items.append(
+            {
+                "source_type": source_type,
+                "title": str(row.get("title") or "").strip(),
+                "lesson_title": (
+                    None
+                    if source_type == "direct_upload"
+                    else str(row.get("lesson_title") or "").strip() or None
+                ),
+                "course_id": row.get("course_id"),
+                "course_title": (
+                    str(row.get("course_title") or "").strip() or None
+                    if source_type == "course_link"
+                    else None
+                ),
+                "course_slug": (
+                    str(row.get("course_slug") or "").strip() or None
+                    if source_type == "course_link"
+                    else None
+                ),
+                "teacher_id": row.get("teacher_id"),
+                "teacher_name": str(row.get("teacher_name") or "").strip() or None,
+                "created_at": row.get("created_at"),
+                "media": media,
+            }
+        )
+
+    return items
+
+
 def _normalize_cover_media_id(value: Any) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
 
 
-def _course_cover_payload(
-    *,
-    media_id: str,
-    runtime_row: Mapping[str, Any] | None,
-) -> dict[str, Any] | None:
-    if runtime_row is None:
-        return None
+def _course_cover_placeholder(*, media_id: str | None, state: str) -> dict[str, Any]:
+    return {
+        "media_id": media_id,
+        "state": state,
+        "resolved_url": None,
+        "source": "placeholder",
+    }
 
-    media_type = str(runtime_row.get("media_type") or "").strip().lower()
-    playback_object_path = str(runtime_row.get("playback_object_path") or "").strip()
-    if media_type != "image":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Course cover runtime media is invalid",
+
+async def _resolve_course_cover_read_model(media_id: str) -> dict[str, Any]:
+    media_asset = await media_assets_repo.get_media_asset(media_id)
+    if media_asset is None:
+        return _course_cover_placeholder(media_id=media_id, state="placeholder")
+
+    asset_state = str(media_asset.get("state") or "").strip().lower() or "placeholder"
+    if asset_state != "ready":
+        logger.error(
+            "COURSE_COVER_RESOLVED_ASSET_NOT_READY media_id=%s state=%s",
+            media_id,
+            asset_state,
         )
-    if not playback_object_path:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Course cover playback path is missing",
+        return _course_cover_placeholder(media_id=media_id, state=asset_state)
+
+    asset_purpose = str(media_asset.get("purpose") or "").strip().lower()
+    asset_media_type = str(media_asset.get("media_type") or "").strip().lower()
+    if not asset_media_type and asset_purpose == "course_cover":
+        asset_media_type = "image"
+    storage_bucket = str(
+        media_asset.get("streaming_storage_bucket")
+        or media_asset.get("storage_bucket")
+        or settings.media_public_bucket
+        or ""
+    ).strip()
+    storage_path = str(
+        media_asset.get("playback_object_path")
+        or media_asset.get("streaming_object_path")
+        or ""
+    ).strip()
+
+    if asset_purpose != "course_cover" or asset_media_type != "image":
+        logger.error(
+            "COURSE_COVER_RESOLVED_ASSET_INVALID media_id=%s purpose=%s media_type=%s",
+            media_id,
+            asset_purpose or "<missing>",
+            asset_media_type or "<missing>",
         )
+        return _course_cover_placeholder(media_id=media_id, state="invalid")
 
-    resolved_url = storage_service.get_storage_service(
-        settings.media_source_bucket
-    ).public_url(playback_object_path)
+    if not storage_bucket or not storage_path:
+        logger.error(
+            "COURSE_COVER_RESOLVED_STORAGE_IDENTITY_MISSING media_id=%s bucket=%s path=%s",
+            media_id,
+            storage_bucket or "<missing>",
+            storage_path or "<missing>",
+        )
+        return _course_cover_placeholder(media_id=media_id, state="missing")
 
+    existence, storage_catalog_available = await storage_objects.fetch_storage_object_existence(
+        [(storage_bucket, storage_path)]
+    )
+    if not storage_catalog_available or not existence.get((storage_bucket, storage_path), False):
+        return _course_cover_placeholder(media_id=media_id, state="missing")
+
+    resolved_url = storage_service.get_storage_service(storage_bucket).public_url(storage_path)
     return {
         "media_id": media_id,
         "state": "ready",
         "resolved_url": resolved_url,
+        "source": "control_plane",
+    }
+
+
+def _course_cover_payload(
+    *,
+    media_id: str,
+    cover: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if cover is None:
+        return None
+    return {
+        "media_id": media_id,
+        "state": cover.get("state"),
+        "resolved_url": cover.get("resolved_url"),
     }
 
 
@@ -267,9 +501,8 @@ async def resolve_course_cover(
     if media_id is None:
         return None
 
-    runtime_rows = await runtime_media_repo.list_runtime_media_for_asset(media_id, limit=1)
-    runtime_row = dict(runtime_rows[0]) if runtime_rows else None
-    return _course_cover_payload(media_id=media_id, runtime_row=runtime_row)
+    cover = await _resolve_course_cover_read_model(media_id)
+    return _course_cover_payload(media_id=media_id, cover=cover)
 
 
 async def attach_course_cover_read_contract(
@@ -282,35 +515,22 @@ async def attach_course_cover_read_contract(
     if not rows:
         return
 
-    media_ids = [
-        media_id
-        for media_id in (
-            _normalize_cover_media_id(row.get("cover_media_id")) for row in rows
-        )
-        if media_id is not None
-    ]
-    runtime_rows_by_media_id: dict[str, Mapping[str, Any]] = {}
-    for media_id in dict.fromkeys(media_ids):
-        runtime_rows = await runtime_media_repo.list_runtime_media_for_asset(
-            media_id,
-            limit=1,
-        )
-        if runtime_rows:
-            runtime_rows_by_media_id[media_id] = dict(runtime_rows[0])
-
     for row in rows:
+        row.pop("cover_url", None)
+        row.pop("signed_cover_url", None)
+        row.pop("signed_cover_url_expires_at", None)
         media_id = _normalize_cover_media_id(row.get("cover_media_id"))
-        row["cover"] = (
-            None
-            if media_id is None
-            else _course_cover_payload(
-                media_id=media_id,
-                runtime_row=runtime_rows_by_media_id.get(media_id),
-            )
+        if media_id is None:
+            row.pop("cover", None)
+            continue
+        row["cover"] = _course_cover_payload(
+            media_id=media_id,
+            cover=await _resolve_course_cover_read_model(media_id),
         )
 
 
 async def create_course(payload: dict[str, Any]) -> dict[str, Any]:
+    _reject_legacy_cover_url_write(payload)
     _validate_course_drip_configuration(
         drip_enabled=bool(payload["drip_enabled"]),
         drip_interval_days=payload["drip_interval_days"],
@@ -320,6 +540,7 @@ async def create_course(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 async def update_course(course_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+    _reject_legacy_cover_url_write(patch)
     existing_course = await courses_repo.get_course(course_id=course_id)
     if existing_course is None:
         return None

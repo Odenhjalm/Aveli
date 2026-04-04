@@ -46,7 +46,6 @@ _SENSITIVE_FIELD_NAMES = {
     "secret",
     "set-cookie",
     "signature",
-    "signed_url",
     "teacher_id",
     "token",
     "user_id",
@@ -67,7 +66,7 @@ _BEARER_RE = re.compile(r"\bBearer\s+[A-Za-z0-9._\-+/=]+\b", re.IGNORECASE)
 _ASSIGNMENT_RE = re.compile(
     r"\b("
     r"access_token|api_key|authorization|cookie|email|owner_id|password|"
-    r"refresh_token|secret|set-cookie|signature|signed_url|teacher_id|token|user_id"
+    r"refresh_token|secret|set-cookie|signature|teacher_id|token|user_id"
     r")=([^\s]+)",
     re.IGNORECASE,
 )

@@ -119,6 +119,38 @@ def list_lesson_media(base_url: str, token: str, lesson_id: str) -> List[Dict[st
     return items if isinstance(items, list) else []
 
 
+def _lesson_media_id(item: Dict[str, Any]) -> str | None:
+    value = str(item.get("lesson_media_id") or item.get("id") or "").strip()
+    return value or None
+
+
+def _lesson_media_kind(item: Dict[str, Any]) -> str | None:
+    value = str(item.get("media_type") or item.get("kind") or "").strip()
+    return value or None
+
+
+def _lesson_media_resolved_url(item: Dict[str, Any]) -> str | None:
+    media = item.get("media")
+    if not isinstance(media, dict):
+        return None
+    value = str(media.get("resolved_url") or "").strip()
+    return value or None
+
+
+def get_lesson_media_item(
+    base_url: str,
+    token: str,
+    lesson_id: str,
+    lesson_media_id: str,
+) -> Dict[str, Any]:
+    for item in list_lesson_media(base_url, token, lesson_id):
+        if _lesson_media_id(item) == lesson_media_id:
+            return item
+    raise RuntimeError(
+        f"GET /studio/lessons/{lesson_id}/media missing lesson_media_id={lesson_media_id}"
+    )
+
+
 def list_course_lessons(base_url: str, token: str, course_id: str) -> List[Dict[str, Any]]:
     data = get_json(base_url, f"/studio/courses/{course_id}/lessons", token)
     items = data.get("items") if isinstance(data, dict) else None
@@ -208,7 +240,11 @@ def upload_media(base_url: str, token: str, lesson_id: str, file_path: Path, is_
         )
     if r.status_code >= 400:
         raise RuntimeError(f"Upload failed for {file_path}: {r.status_code} {r.text}")
-    return r.json()
+    payload = r.json()
+    lesson_media_id = _lesson_media_id(payload)
+    if lesson_media_id is None:
+        raise RuntimeError(f"Upload failed for {file_path}: missing lesson media id")
+    return get_lesson_media_item(base_url, token, lesson_id, lesson_media_id)
 
 
 def queue_cover_from_media(
@@ -236,7 +272,7 @@ def queue_cover_from_media_item(
     *,
     source_label: str,
 ) -> bool:
-    lesson_media_id = str(item.get("id") or "").strip()
+    lesson_media_id = _lesson_media_id(item) or ""
     if not lesson_media_id:
         print(
             f"      ! could not queue course cover from {source_label}: missing lesson media id"
@@ -578,7 +614,10 @@ def main() -> None:
                 existing_list = []
             if existing_list:
                 reused_item = existing_list.pop(0)
-                print(f"    ~ reuse media: {filename} -> {reused_item.get('id')}")
+                print(
+                    f"    ~ reuse media: {filename} ->"
+                    f" {_lesson_media_id(reused_item)}"
+                )
                 if cover_filename and filename == cover_filename and not cover_queued:
                     if queue_cover_from_media_item(
                         base,
@@ -590,7 +629,7 @@ def main() -> None:
                         cover_queued = True
                 if args.cleanup_duplicates:
                     for duplicate in list(existing_list):
-                        media_id = duplicate.get("id")
+                        media_id = _lesson_media_id(duplicate)
                         if media_id:
                             try:
                                 delete_media(base, token, media_id)
@@ -603,10 +642,12 @@ def main() -> None:
                 continue
 
             item = upload_media(base, token, lesson_id, media_path, is_intro=False)
+            resolved_url = _lesson_media_resolved_url(item)
             print(
                 "    + media:"
-                f" {media_path.name} -> {item.get('id')} {item.get('kind')}"
-                f" {item.get('download_url')}"
+                f" {media_path.name} -> {_lesson_media_id(item)}"
+                f" {_lesson_media_kind(item)}"
+                f"{f' {resolved_url}' if resolved_url else ''}"
             )
             if cover_filename and filename == cover_filename and not cover_queued:
                 if queue_cover_from_media_item(
@@ -632,10 +673,12 @@ def main() -> None:
                     cover_queued = True
             else:
                 item = upload_media(base, token, lesson_id, cover_path, is_intro=False)
+                resolved_url = _lesson_media_resolved_url(item)
                 print(
                     "    + media:"
-                    f" {cover_path.name} -> {item.get('id')} {item.get('kind')}"
-                    f" {item.get('download_url')}"
+                    f" {cover_path.name} -> {_lesson_media_id(item)}"
+                    f" {_lesson_media_kind(item)}"
+                    f"{f' {resolved_url}' if resolved_url else ''}"
                 )
                 if queue_cover_from_media_item(
                     base,

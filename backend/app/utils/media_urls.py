@@ -5,14 +5,10 @@ from urllib.parse import urljoin
 
 
 _RELATIVE_MEDIA_URL_FIELDS = (
-    "download_url",
-    "signed_url",
     "url",
     "external_url",
     "cover_image_url",
     "asset_url",
-    "preferred_url",
-    "preferredUrl",
     "thumbnail_url",
     "thumbnailUrl",
     "poster_frame",
