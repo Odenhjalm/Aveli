@@ -7,6 +7,7 @@ BACKEND_DIR="$(cd "$DEV_COMMON_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$BACKEND_DIR/.." && pwd)"
 LOCK_FILE="$BACKEND_DIR/supabase/baseline_slots.lock.json"
 AUTH_SUBSTRATE_SQL="$ROOT_DIR/ops/sql/minimal_auth_substrate.sql"
+STORAGE_SUBSTRATE_SQL="$ROOT_DIR/ops/sql/minimal_storage_substrate.sql"
 
 source "$ROOT_DIR/tools/runtime/python_paths.sh"
 aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"

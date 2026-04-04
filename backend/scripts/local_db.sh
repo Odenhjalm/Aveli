@@ -67,45 +67,17 @@ container_data_volume() {
 case "$CMD" in
   up)
     require_docker
-    if container_exists; then
-      if [[ -z "${LOCAL_DB_VOLUME:-}" ]]; then
-        detected_volume="$(container_data_volume)"
-        if [[ -n "$detected_volume" ]]; then
-          VOLUME="$detected_volume"
-        fi
-      fi
-      existing_port="$(container_host_port)"
-      if [[ -n "$existing_port" && "$existing_port" != "$PORT" ]]; then
-        echo "WARN: Existing ${CONTAINER} publishes port ${existing_port}; recreating on ${PORT} (volume preserved: ${VOLUME})." >&2
-        docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-      fi
-      if ! container_running; then
-        if container_exists; then
-          docker start "$CONTAINER" >/dev/null
-        fi
-      fi
-    fi
-    if ! container_exists; then
-      docker run -d \
-        --name "$CONTAINER" \
-        -e POSTGRES_PASSWORD="$PASSWORD" \
-        -e POSTGRES_USER="$USER" \
-        -e POSTGRES_DB="$DB" \
-        -p "${PORT}:5432" \
-        -v "${VOLUME}:/var/lib/postgresql/data" \
-        "$IMAGE" >/dev/null
-    fi
+    docker compose up -d db >/dev/null
     wait_ready
     echo "LOCAL_DATABASE_URL=${LOCAL_DATABASE_URL}"
     ;;
   down)
     require_docker
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    docker compose rm -fs db >/dev/null 2>&1 || true
     ;;
   reset)
     require_docker
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-    docker volume rm "$VOLUME" >/dev/null 2>&1 || true
+    docker compose rm -fsv db >/dev/null 2>&1 || true
     ;;
   url)
     echo "$LOCAL_DATABASE_URL"

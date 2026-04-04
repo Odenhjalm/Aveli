@@ -48,3 +48,15 @@ create type app.media_state as enum (
   'ready',
   'failed'
 );
+
+create type app.profile_role as enum (
+  'student',
+  'teacher',
+  'admin'
+);
+
+create type app.user_role as enum (
+  'user',
+  'professional',
+  'teacher'
+);
