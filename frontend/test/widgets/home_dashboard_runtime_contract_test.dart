@@ -19,8 +19,6 @@ import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 
@@ -81,97 +79,6 @@ class _StubAuthRepository implements AuthRepository {
   Future<String?> currentToken() async => null;
 }
 
-class _FakeMediaPipelineRepository implements MediaPipelineRepository {
-  _FakeMediaPipelineRepository({this.runtimePlaybackFuture});
-
-  final Future<String>? runtimePlaybackFuture;
-  int legacyPlaybackCalls = 0;
-  int lessonPlaybackCalls = 0;
-  int runtimePlaybackCalls = 0;
-  final List<String> requestedRuntimeMediaIds = <String>[];
-
-  @override
-  Future<MediaUploadTarget> requestUploadUrl({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String mediaType,
-    String? purpose,
-    String? courseId,
-    String? lessonId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaStatus> completeUpload({required String mediaId}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaStatus> attachUpload({
-    required String mediaId,
-    required String linkScope,
-    String? lessonId,
-    String? lessonMediaId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaUploadTarget> requestCoverUploadUrl({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String courseId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<CoverMediaResponse> requestCoverFromLessonMedia({
-    required String courseId,
-    required String lessonMediaId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<void> clearCourseCover(String courseId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaStatus> fetchStatus(String mediaId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaPlaybackUrl> fetchPlaybackUrl(String mediaId) {
-    legacyPlaybackCalls += 1;
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) {
-    lessonPlaybackCalls += 1;
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) {
-    runtimePlaybackCalls += 1;
-    requestedRuntimeMediaIds.add(runtimeMediaId);
-    return runtimePlaybackFuture ??
-        Future.value('https://cdn.test/runtime.mp3');
-  }
-}
-
 final _testProfile = Profile(
   id: 'user-1',
   email: 'user@test.local',
@@ -214,7 +121,6 @@ HomeAudioItem _audioItem({
 Future<void> _pumpDashboard(
   WidgetTester tester, {
   required List<HomeAudioItem> audioItems,
-  required MediaPipelineRepository mediaPipelineRepository,
 }) async {
   final router = GoRouter(
     initialLocation: '/',
@@ -254,9 +160,6 @@ Future<void> _pumpDashboard(
         backendAssetResolverProvider.overrideWith(
           (ref) => TestBackendAssetResolver(),
         ),
-        mediaPipelineRepositoryProvider.overrideWithValue(
-          mediaPipelineRepository,
-        ),
         homeFeedProvider.overrideWith((ref) async => const []),
         homeServicesProvider.overrideWith((ref) async => const <Service>[]),
         homeAudioProvider.overrideWith((ref) async => audioItems),
@@ -282,7 +185,6 @@ void main() {
   testWidgets(
     'home dashboard keeps all runtime rows visible and shows processing state',
     (tester) async {
-      final repo = _FakeMediaPipelineRepository();
       final items = <HomeAudioItem>[
         _audioItem(
           id: 'runtime-row-1',
@@ -319,7 +221,6 @@ void main() {
       await _pumpDashboard(
         tester,
         audioItems: items,
-        mediaPipelineRepository: repo,
       );
 
       await tester.tap(find.byTooltip('Bibliotek').first);
@@ -340,36 +241,4 @@ void main() {
     },
   );
 
-  testWidgets('home dashboard resolves playback through runtime media only', (
-    tester,
-  ) async {
-    final pendingPlayback = Completer<String>();
-    final repo = _FakeMediaPipelineRepository(
-      runtimePlaybackFuture: pendingPlayback.future,
-    );
-
-    await _pumpDashboard(
-      tester,
-      audioItems: <HomeAudioItem>[
-        _audioItem(
-          id: 'runtime-row-1',
-          title: 'Spelbart spår',
-          runtimeMediaId: 'runtime-media-1',
-          isPlayable: true,
-          playbackState: 'ready',
-          failureReason: 'ok_ready_asset',
-        ),
-      ],
-      mediaPipelineRepository: repo,
-    );
-
-    await tester.tap(find.byTooltip('Spela'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(repo.runtimePlaybackCalls, 1);
-    expect(repo.requestedRuntimeMediaIds, <String>['runtime-media-1']);
-    expect(repo.legacyPlaybackCalls, 0);
-    expect(repo.lessonPlaybackCalls, 0);
-  });
 }

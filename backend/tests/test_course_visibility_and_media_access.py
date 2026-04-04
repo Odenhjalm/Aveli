@@ -333,7 +333,7 @@ async def test_home_audio_requires_enrollment_for_course_links(async_client, mon
 
     async def fake_resolve_media_asset_playback(*, media_asset_id: str):
         assert media_asset_id == expected_media_asset_id
-        return {"playback_url": "https://stream.local/premium.mp3"}
+        return {"resolved_url": "https://stream.local/premium.mp3"}
 
     monkeypatch.setattr(
         home_audio_service.home_audio_runtime_repo,
@@ -498,22 +498,6 @@ async def test_trialing_membership_does_not_grant_non_intro_media_playback(
     assert access_payload["has_access"] is False
     assert access_payload["enrolled"] is False
 
-    # Owner can sign.
-    sign_owner = await async_client.post(
-        "/media/sign",
-        json={"media_id": str(legacy_media["id"])},
-        headers=auth_header(owner_token),
-    )
-    assert sign_owner.status_code == 200, sign_owner.text
-
-    # Unpublished courses must remain inaccessible even for subscription users.
-    sign_unpublished = await async_client.post(
-        "/media/sign",
-        json={"media_id": str(legacy_media["id"])},
-        headers=auth_header(student_token),
-    )
-    assert sign_unpublished.status_code == 403, sign_unpublished.text
-
     studio_get_unpublished = await async_client.get(
         f"/studio/media/{legacy_media['id']}",
         headers=auth_header(student_token),
@@ -526,14 +510,6 @@ async def test_trialing_membership_does_not_grant_non_intro_media_playback(
         json={"is_published": True},
     )
     assert publish_resp.status_code == 200, publish_resp.text
-
-    # Publishing the course must not reopen access without enrollment.
-    sign_ok = await async_client.post(
-        "/media/sign",
-        json={"media_id": str(legacy_media["id"])},
-        headers=auth_header(student_token),
-    )
-    assert sign_ok.status_code == 403, sign_ok.text
 
     studio_get_ok = await async_client.get(
         f"/studio/media/{legacy_media['id']}",
@@ -615,14 +591,6 @@ async def test_non_active_membership_statuses_do_not_grant_course_or_media_acces
     )
     assert lesson_detail_resp.status_code == 403, lesson_detail_resp.text
 
-    sign_resp = await async_client.post(
-        "/media/sign",
-        json={"media_id": str(legacy_media["id"])},
-        headers=auth_header(student_token),
-    )
-    assert sign_resp.status_code == 403, sign_resp.text
-
-
 async def test_lesson_detail_returns_unresolved_media_without_intro_enrollment_side_effect(
     async_client,
 ):
@@ -696,7 +664,6 @@ async def test_lesson_detail_returns_unresolved_media_without_intro_enrollment_s
     assert item["resolvable_for_editor"] is False
     assert "preferredUrl" not in item
     assert "download_url" not in item
-    assert "playback_url" not in item
     assert "signed_url" not in item
     assert "signed_url_expires_at" not in item
     assert await courses_repo.is_enrolled(student_id, course_id) is False
@@ -783,4 +750,3 @@ async def test_lesson_detail_access_check_does_not_depend_on_full_course_fetch(
     assert item["resolvable_for_editor"] is False
     assert "preferredUrl" not in item
     assert "download_url" not in item
-    assert "playback_url" not in item

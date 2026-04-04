@@ -67,14 +67,14 @@ void main() {
       expect(resolved, url);
     });
 
-    test('resolvePlaybackUrl resolves signed backend stream path', () {
+    test('resolvePlaybackUrl preserves backend-authored playback URLs', () {
       final repository = _buildRepository();
+      const playbackUrl =
+          'https://cdn.example.com/media/course/lesson/audio.mp3?signature=abc';
 
-      final resolved = repository.resolvePlaybackUrl(
-        '/media/stream/signed-token',
-      );
+      final resolved = repository.resolvePlaybackUrl(playbackUrl);
 
-      expect(resolved, 'https://api.example.com/media/stream/signed-token');
+      expect(resolved, playbackUrl);
     });
 
     test('blocks relative Supabase public URL usage', () {

@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app import db, models
-from app.repositories import create_home_player_upload
+from app.repositories.home_audio_sources import create_home_player_upload
 from app.repositories import runtime_media as runtime_media_repo
 from .test_media_api import cleanup_user, create_lesson, register_teacher
 

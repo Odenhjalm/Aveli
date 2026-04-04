@@ -13,10 +13,9 @@ import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
@@ -38,96 +37,6 @@ class _FakeAuthController extends AuthController {
 
   @override
   Future<void> loadSession({bool hydrateProfile = true}) async {}
-}
-
-class _FakeMediaPipelineRepository implements MediaPipelineRepository {
-  _FakeMediaPipelineRepository(this._responses);
-
-  final Map<String, Future<String> Function()> _responses;
-  int lessonPlaybackCalls = 0;
-  final List<String> requestedLessonMediaIds = <String>[];
-
-  @override
-  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
-    lessonPlaybackCalls += 1;
-    requestedLessonMediaIds.add(lessonMediaId);
-    final handler = _responses[lessonMediaId];
-    if (handler == null) {
-      throw StateError('Missing preview response for $lessonMediaId');
-    }
-    return handler();
-  }
-
-  @override
-  Future<MediaPlaybackUrl> fetchPlaybackUrl(String mediaId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaStatus> attachUpload({
-    required String mediaId,
-    required String linkScope,
-    String? lessonId,
-    String? lessonMediaId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaUploadTarget> requestUploadUrl({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String mediaType,
-    String? purpose,
-    String? courseId,
-    String? lessonId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaStatus> completeUpload({required String mediaId}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaUploadTarget> requestCoverUploadUrl({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String courseId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<CoverMediaResponse> requestCoverFromLessonMedia({
-    required String courseId,
-    required String lessonMediaId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<void> clearCourseCover(String courseId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaStatus> fetchStatus(String mediaId) {
-    throw UnimplementedError();
-  }
 }
 
 class _PreviewHarness extends StatefulWidget {
@@ -261,7 +170,11 @@ String _renderedPreviewText(WidgetTester tester) {
   ).map((segment) => segment.text).join();
 }
 
-LessonMediaItem _lessonMediaItem(String id, String kind) {
+LessonMediaItem _lessonMediaItem(
+  String id,
+  String kind, {
+  String? resolvedUrl,
+}) {
   return LessonMediaItem(
     id: id,
     lessonId: 'lesson-1',
@@ -269,15 +182,17 @@ LessonMediaItem _lessonMediaItem(String id, String kind) {
     position: 1,
     mediaType: kind,
     state: 'ready',
-    originalName: '$id.$kind',
-    previewReady: true,
+    media: ResolvedMediaData(
+      mediaId: 'asset-$id',
+      state: 'ready',
+      resolvedUrl: resolvedUrl,
+    ),
   );
 }
 
 Future<void> _pumpPreviewHarness(
   WidgetTester tester, {
   required MediaRepository mediaRepository,
-  required MediaPipelineRepository pipelineRepository,
   required String markdown,
   required List<LessonMediaItem> lessonMedia,
 }) async {
@@ -286,7 +201,6 @@ Future<void> _pumpPreviewHarness(
       overrides: [
         authControllerProvider.overrideWith((ref) => _FakeAuthController()),
         mediaRepositoryProvider.overrideWithValue(mediaRepository),
-        mediaPipelineRepositoryProvider.overrideWithValue(pipelineRepository),
       ],
       child: MaterialApp(
         localizationsDelegates: const [
@@ -319,11 +233,6 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       final mediaRepository = _MockMediaRepository();
-      final pipelineRepository = _FakeMediaPipelineRepository({
-        'media-image-1': () async => 'https://cdn.test/preview-image.webp',
-        'media-audio-1': () async => 'https://cdn.test/preview-audio.mp3',
-        'media-video-1': () async => 'https://cdn.test/preview-video.mp4',
-      });
 
       when(() => mediaRepository.resolvePlaybackUrl(any())).thenAnswer(
         (invocation) => invocation.positionalArguments.single as String,
@@ -332,13 +241,24 @@ void main() {
       await _pumpPreviewHarness(
         tester,
         mediaRepository: mediaRepository,
-        pipelineRepository: pipelineRepository,
         markdown:
             'Intro\n\n!image(media-image-1)\n\n!audio(media-audio-1)\n\n!video(media-video-1)\n',
         lessonMedia: [
-          _lessonMediaItem('media-image-1', 'image'),
-          _lessonMediaItem('media-audio-1', 'audio'),
-          _lessonMediaItem('media-video-1', 'video'),
+          _lessonMediaItem(
+            'media-image-1',
+            'image',
+            resolvedUrl: 'https://cdn.test/preview-image.webp',
+          ),
+          _lessonMediaItem(
+            'media-audio-1',
+            'audio',
+            resolvedUrl: 'https://cdn.test/preview-audio.mp3',
+          ),
+          _lessonMediaItem(
+            'media-video-1',
+            'video',
+            resolvedUrl: 'https://cdn.test/preview-video.mp4',
+          ),
         ],
       );
 
@@ -354,7 +274,6 @@ void main() {
       expect(_lessonMediaPlayerFinder('audio'), findsOneWidget);
       expect(_lessonMediaPlayerFinder('video'), findsOneWidget);
       expect(find.text('Ljud'), findsNothing);
-      expect(pipelineRepository.lessonPlaybackCalls, 3);
 
       final harnessState = tester.state<_PreviewHarnessState>(
         find.byType(_PreviewHarness),
@@ -363,7 +282,6 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(pipelineRepository.lessonPlaybackCalls, 3);
       expect(tester.takeException(), isNull);
     },
   );
@@ -372,12 +290,10 @@ void main() {
     'preview canonicalizes bold and underline with the same contract as the editor',
     (tester) async {
       final mediaRepository = _MockMediaRepository();
-      final pipelineRepository = _FakeMediaPipelineRepository(const {});
 
       await _pumpPreviewHarness(
         tester,
         mediaRepository: mediaRepository,
-        pipelineRepository: pipelineRepository,
         markdown:
             '<strong>Fet text</strong>\n\n<u>Understruken text</u>\n\n**<u>Fet understruken</u>**',
         lessonMedia: const <LessonMediaItem>[],
@@ -421,12 +337,10 @@ void main() {
     tester,
   ) async {
     final mediaRepository = _MockMediaRepository();
-    final pipelineRepository = _FakeMediaPipelineRepository(const {});
 
     await _pumpPreviewHarness(
       tester,
       mediaRepository: mediaRepository,
-      pipelineRepository: pipelineRepository,
       markdown: r'\*\*Should have been bold\*\*',
       lessonMedia: const <LessonMediaItem>[],
     );
@@ -450,25 +364,23 @@ void main() {
     tester,
   ) async {
     final mediaRepository = _MockMediaRepository();
-    final pipelineRepository = _FakeMediaPipelineRepository({
-      'media-image-valid': () async => 'https://cdn.test/valid-image.webp',
-      'media-audio-broken': () async =>
-          Future<String>.error(StateError('missing')),
-    });
 
     when(() => mediaRepository.resolvePlaybackUrl(any())).thenAnswer(
       (invocation) => invocation.positionalArguments.single as String,
     );
 
-    await _pumpPreviewHarness(
-      tester,
-      mediaRepository: mediaRepository,
-      pipelineRepository: pipelineRepository,
-      markdown:
-          'Intro\n\n!image(media-image-valid)\n\n!audio(media-audio-broken)\n',
-      lessonMedia: [
-        _lessonMediaItem('media-image-valid', 'image'),
-        _lessonMediaItem('media-audio-broken', 'audio'),
+      await _pumpPreviewHarness(
+        tester,
+        mediaRepository: mediaRepository,
+        markdown:
+            'Intro\n\n!image(media-image-valid)\n\n!audio(media-audio-broken)\n',
+        lessonMedia: [
+        _lessonMediaItem(
+          'media-image-valid',
+          'image',
+          resolvedUrl: 'https://cdn.test/valid-image.webp',
+        ),
+        _lessonMediaItem('media-audio-broken', 'audio', resolvedUrl: null),
       ],
     );
 
@@ -490,10 +402,6 @@ void main() {
     'unresolved lesson media stays in explicit error state without refetching on rebuild',
     (tester) async {
       final mediaRepository = _MockMediaRepository();
-      final pipelineRepository = _FakeMediaPipelineRepository({
-        'media-video-broken': () async =>
-            Future<String>.error(StateError('missing')),
-      });
 
       when(() => mediaRepository.resolvePlaybackUrl(any())).thenAnswer(
         (invocation) => invocation.positionalArguments.single as String,
@@ -502,9 +410,10 @@ void main() {
       await _pumpPreviewHarness(
         tester,
         mediaRepository: mediaRepository,
-        pipelineRepository: pipelineRepository,
         markdown: 'Intro\n\n!video(media-video-broken)\n',
-        lessonMedia: [_lessonMediaItem('media-video-broken', 'video')],
+        lessonMedia: [
+          _lessonMediaItem('media-video-broken', 'video', resolvedUrl: null),
+        ],
       );
 
       await tester.pump();
@@ -513,7 +422,6 @@ void main() {
       }
 
       expect(find.text('Lektionsmedia kunde inte laddas.'), findsOneWidget);
-      expect(pipelineRepository.lessonPlaybackCalls, 1);
 
       final harnessState = tester.state<_PreviewHarnessState>(
         find.byType(_PreviewHarness),
@@ -523,7 +431,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('Lektionsmedia kunde inte laddas.'), findsOneWidget);
-      expect(pipelineRepository.lessonPlaybackCalls, 1);
       expect(tester.takeException(), isNull);
     },
   );
@@ -532,21 +439,14 @@ void main() {
     tester,
   ) async {
     final mediaRepository = _MockMediaRepository();
-    final staleCompleter = Completer<String>();
-    final pipelineRepository = _FakeMediaPipelineRepository({
-      'media-video-stale': () => staleCompleter.future,
-    });
-
-    when(() => mediaRepository.resolvePlaybackUrl(any())).thenAnswer(
-      (invocation) => invocation.positionalArguments.single as String,
-    );
 
     await _pumpPreviewHarness(
       tester,
       mediaRepository: mediaRepository,
-      pipelineRepository: pipelineRepository,
       markdown: 'Intro\n\n!video(media-video-stale)\n',
-      lessonMedia: [_lessonMediaItem('media-video-stale', 'video')],
+      lessonMedia: [
+        _lessonMediaItem('media-video-stale', 'video', resolvedUrl: null),
+      ],
     );
 
     await tester.pump();
@@ -559,10 +459,6 @@ void main() {
       nextMarkdown: 'Andra lektionen',
       nextLessonMedia: const <LessonMediaItem>[],
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-
-    staleCompleter.complete('https://cdn.test/stale-video.mp4');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 

@@ -100,25 +100,6 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
     _statusCalls += 1;
     return statuses[index];
   }
-
-  @override
-  Future<MediaPlaybackUrl> fetchPlaybackUrl(String mediaId) async {
-    return MediaPlaybackUrl(
-      playbackUrl: Uri.parse('https://cdn.test/audio.mp3'),
-      expiresAt: DateTime.now().toUtc(),
-      format: 'mp3',
-    );
-  }
-
-  @override
-  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) async {
-    return 'https://cdn.test/audio.mp3';
-  }
-
-  @override
-  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) async {
-    return 'https://cdn.test/audio.mp3';
-  }
 }
 
 void main() {

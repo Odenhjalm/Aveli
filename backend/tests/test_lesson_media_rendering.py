@@ -100,7 +100,7 @@ async def test_lesson_detail_includes_processing_pipeline_media(async_client):
     assert item.get("media_state") == "processing"
 
 
-async def test_lesson_detail_resolves_audio_playback_url(async_client, monkeypatch):
+async def test_lesson_detail_resolves_audio_media_object(async_client, monkeypatch):
     token, owner_id = await register_user(async_client)
 
     course = await courses_repo.create_course(
@@ -194,9 +194,13 @@ async def test_lesson_detail_resolves_audio_playback_url(async_client, monkeypat
     media_items = resp.json().get("media") or []
     item = next(it for it in media_items if it.get("id") == str(lesson_media["id"]))
     assert item.get("kind") == "audio"
-    assert item.get("playback_url") == (
+    assert item.get("media") == {
+        "media_id": str(media_object["id"]),
+        "state": "ready",
+        "resolved_url": (
         f"https://stream.local/course-media/{derived_path}"
         f"?token=abc123&v={media_object['id']}"
-    )
+        ),
+    }
     assert "storage_path" not in item
     assert "storage_bucket" not in item

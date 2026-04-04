@@ -5,10 +5,10 @@ from httpx import ASGITransport, AsyncClient
 
 from app import db, models
 from app.main import app
-from app.repositories import create_home_player_upload
 from app.repositories import courses as courses_repo
-from app.repositories import home_player_library as home_player_repo
+from app.repositories import home_audio_sources as home_player_repo
 from app.repositories import media_assets as media_assets_repo
+from app.repositories.home_audio_sources import create_home_player_upload
 
 from .utils import register_user
 
@@ -130,13 +130,6 @@ async def test_production_queries_do_not_see_session_scoped_rows(async_client):
             headers=headers,
         )
         assert lesson_resp.status_code == 404, lesson_resp.text
-
-        playback_resp = await prod_client.post(
-            "/api/media/lesson-playback",
-            json={"lesson_media_id": graph["lesson_media_id"]},
-            headers=headers,
-        )
-        assert playback_resp.status_code == 404, playback_resp.text
 
     with db.use_test_session(None):
         public_courses = await courses_repo.list_public_courses(search="Isolated Test Course")

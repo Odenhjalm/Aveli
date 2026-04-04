@@ -206,13 +206,11 @@ async def test_pipeline_audio_becomes_editor_resolvable_after_processing(
         ok_item = next(it for it in items if it["id"] == str(lesson_media_ok["id"]))
         assert ok_item["media_state"] == "ready"
         assert ok_item["resolvable_for_editor"] is True
-        assert ok_item.get("playback_url") in {None, ""}
 
         missing_item = next(
             it for it in items if it["id"] == str(lesson_media_missing["id"])
         )
         assert missing_item["media_state"] == "ready"
         assert missing_item["resolvable_for_editor"] is False
-        assert missing_item.get("playback_url") in {None, ""}
     finally:
         await cleanup_user(user_id)

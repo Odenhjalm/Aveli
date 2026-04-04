@@ -23,144 +23,83 @@ void main() {
     await uploadServer.close();
   });
 
-  test('lesson MP3/WAV/M4A uploads use the audio pipeline', () async {
+  test('listLessonMedia parses canonical media objects from studio route', () async {
     final harness = await _Harness.create(uploadServer: uploadServer);
     final repo = StudioRepository(client: harness.client);
 
-    Future<void> expectAudioPipeline({
-      required String filename,
-      required String mimeType,
-      required String expectedObjectPath,
-    }) async {
-      harness.adapter.clear();
-      uploadServer.putPaths.clear();
+    final items = await repo.listLessonMedia('lesson-1');
 
-      final uploaded = await repo.uploadLessonMedia(
-        courseId: 'course-1',
-        lessonId: 'lesson-1',
-        data: Uint8List.fromList(List<int>.generate(16, (index) => index)),
-        filename: filename,
-        contentType: mimeType,
-        isIntro: false,
-      );
+    expect(items, hasLength(1));
+    expect(items.single.lessonMediaId, 'lesson-media-1');
+    expect(items.single.mediaType, 'document');
+    expect(items.single.media?.mediaId, 'media-1');
+    expect(items.single.media?.state, 'ready');
+    expect(items.single.media?.resolvedUrl, 'https://cdn.example.test/guide.pdf');
 
-      final uploadUrlRequests = harness.adapter.requestsFor(
-        ApiPaths.mediaUploadUrl,
-      );
-      final completeRequests = harness.adapter.requestsFor(
-        ApiPaths.mediaUploadUrlComplete,
-      );
-      expect(uploadUrlRequests, hasLength(1));
-      expect(completeRequests, hasLength(1));
-      expect(harness.adapter.requestsFor('/api/upload/course-media'), isEmpty);
-      expect(
-        harness.adapter.requestsFor('/studio/lessons/lesson-1/media/presign'),
-        isEmpty,
-      );
-
-      final uploadPayload = Map<String, dynamic>.from(
-        uploadUrlRequests.single.data as Map,
-      );
-      expect(uploadPayload['media_type'], 'audio');
-      expect(uploadPayload['lesson_id'], 'lesson-1');
-      expect(uploadPayload['course_id'], 'course-1');
-      expect(uploadPayload['filename'], filename);
-      expect(uploadPayload['mime_type'], mimeType);
-
-      final completePayload = Map<String, dynamic>.from(
-        completeRequests.single.data as Map,
-      );
-      expect(completePayload['media_id'], 'media-1');
-      expect(uploaded['id'], 'lesson-media-audio-1');
-      expect(uploaded['kind'], 'audio');
-      expect(uploaded['original_name'], filename);
-
-      expect(uploadServer.putPaths, contains(expectedObjectPath));
-    }
-
-    await expectAudioPipeline(
-      filename: 'lesson.mp3',
-      mimeType: 'audio/mpeg',
-      expectedObjectPath: '/audio/lesson.mp3',
-    );
-    await expectAudioPipeline(
-      filename: 'lesson.wav',
-      mimeType: 'audio/wav',
-      expectedObjectPath: '/audio/lesson.wav',
-    );
-    await expectAudioPipeline(
-      filename: 'lesson.m4a',
-      mimeType: 'audio/mp4',
-      expectedObjectPath: '/audio/lesson.m4a',
-    );
+    final requests = harness.adapter.requestsFor('/api/lesson-media/lesson-1');
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'GET');
   });
 
-  test(
-    'lesson PDF/video keep direct pipeline and image keeps legacy route',
-    () async {
-      final harness = await _Harness.create(uploadServer: uploadServer);
-      final repo = StudioRepository(client: harness.client);
+  test('uploadLessonMedia uses canonical studio upload endpoints', () async {
+    final harness = await _Harness.create(uploadServer: uploadServer);
+    final repo = StudioRepository(client: harness.client);
 
-      harness.adapter.clear();
-      await repo.uploadLessonMedia(
-        courseId: 'course-1',
-        lessonId: 'lesson-1',
-        data: Uint8List.fromList(List<int>.filled(8, 7)),
-        filename: 'guide.pdf',
-        contentType: 'application/pdf',
-        isIntro: false,
-      );
-      expect(
-        harness.adapter.requestsFor('/studio/lessons/lesson-1/media/presign'),
-        hasLength(1),
-      );
-      expect(
-        harness.adapter.requestsFor('/studio/lessons/lesson-1/media/complete'),
-        hasLength(1),
-      );
-      expect(harness.adapter.requestsFor(ApiPaths.mediaUploadUrl), isEmpty);
-      expect(harness.adapter.requestsFor('/api/upload/course-media'), isEmpty);
+    final uploaded = await repo.uploadLessonMedia(
+      lessonId: 'lesson-1',
+      data: Uint8List.fromList(List<int>.generate(16, (index) => index)),
+      filename: 'guide.pdf',
+      contentType: 'application/pdf',
+      mediaType: 'document',
+    );
 
-      harness.adapter.clear();
-      await repo.uploadLessonMedia(
-        courseId: 'course-1',
-        lessonId: 'lesson-1',
-        data: Uint8List.fromList(List<int>.filled(8, 9)),
-        filename: 'lesson.mp4',
-        contentType: 'video/mp4',
-        isIntro: false,
-      );
-      expect(
-        harness.adapter.requestsFor('/studio/lessons/lesson-1/media/presign'),
-        hasLength(1),
-      );
-      expect(
-        harness.adapter.requestsFor('/studio/lessons/lesson-1/media/complete'),
-        hasLength(1),
-      );
-      expect(harness.adapter.requestsFor(ApiPaths.mediaUploadUrl), isEmpty);
-      expect(harness.adapter.requestsFor('/api/upload/course-media'), isEmpty);
+    expect(uploaded.lessonMediaId, 'lesson-media-1');
+    expect(uploaded.mediaType, 'document');
+    expect(uploaded.media?.mediaId, 'media-1');
+    expect(
+      uploaded.media?.resolvedUrl,
+      'https://cdn.example.test/guide.pdf?token=studio',
+    );
 
-      harness.adapter.clear();
-      await repo.uploadLessonMedia(
-        courseId: 'course-1',
-        lessonId: 'lesson-1',
-        data: Uint8List.fromList(List<int>.filled(8, 3)),
-        filename: 'diagram.png',
-        contentType: 'image/png',
-        isIntro: false,
-      );
-      expect(
-        harness.adapter.requestsFor('/api/upload/course-media'),
-        hasLength(1),
-      );
-      expect(
-        harness.adapter.requestsFor('/studio/lessons/lesson-1/media/presign'),
-        isEmpty,
-      );
-      expect(harness.adapter.requestsFor(ApiPaths.mediaUploadUrl), isEmpty);
-    },
-  );
+    final uploadUrlRequests = harness.adapter.requestsFor(
+      '/api/lesson-media/lesson-1/upload-url',
+    );
+    final completeRequests = harness.adapter.requestsFor(
+      '/api/lesson-media/lesson-1/lesson-media-1/complete',
+    );
+
+    expect(uploadUrlRequests, hasLength(1));
+    expect(completeRequests, hasLength(1));
+    expect(uploadServer.putPaths, contains('/direct/guide.pdf'));
+
+    final uploadPayload = Map<String, dynamic>.from(
+      uploadUrlRequests.single.data as Map,
+    );
+    expect(uploadPayload, {
+      'filename': 'guide.pdf',
+      'mime_type': 'application/pdf',
+      'size_bytes': 16,
+      'media_type': 'document',
+    });
+  });
+
+  test('fetchLessonMediaPreviews uses preview batch route', () async {
+    final harness = await _Harness.create(uploadServer: uploadServer);
+    final repo = StudioRepository(client: harness.client);
+
+    final previews = await repo.fetchLessonMediaPreviews(['lesson-media-1']);
+    final preview = previews.itemFor('lesson-media-1');
+
+    expect(preview, isNotNull);
+    expect(preview?.previewUrl, 'https://cdn.example.test/preview.webp');
+
+    final requests = harness.adapter.requestsFor(ApiPaths.mediaPreviews);
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'POST');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'ids': <String>['lesson-media-1'],
+    });
+  });
 }
 
 class _Harness {
@@ -181,85 +120,79 @@ class _Harness {
       baseUrl: 'http://127.0.0.1:1',
       tokenStorage: tokens,
     );
-    var lastAudioFilename = 'lesson.mp3';
     final adapter = _RecordingAdapter((options) {
-      if (options.path == ApiPaths.mediaUploadUrl) {
-        final payload = Map<String, dynamic>.from(options.data as Map);
-        final filename = payload['filename'] as String;
-        lastAudioFilename = filename;
+      if (options.path == '/api/lesson-media/lesson-1') {
         return _jsonResponse(
           statusCode: 200,
           body: {
-            'media_asset_id': 'media-1',
-            'upload_url': uploadServer.url('/audio/$filename').toString(),
-            'storage_path':
-                'media/source/audio/courses/course-1/lessons/lesson-1/$filename',
+            'items': [
+              {
+                'lesson_media_id': 'lesson-media-1',
+                'lesson_id': 'lesson-1',
+                'media_asset_id': 'media-1',
+                'position': 1,
+                'media_type': 'document',
+                'state': 'ready',
+                'preview_ready': true,
+                'original_name': 'guide.pdf',
+                'media': {
+                  'media_id': 'media-1',
+                  'state': 'ready',
+                  'resolved_url': 'https://cdn.example.test/guide.pdf',
+                },
+              },
+            ],
+          },
+        );
+      }
+      if (options.path == '/api/lesson-media/lesson-1/upload-url') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'lesson_media_id': 'lesson-media-1',
+            'lesson_id': 'lesson-1',
+            'media_type': 'document',
+            'state': 'pending_upload',
+            'position': 1,
+            'upload_url': uploadServer.url('/direct/guide.pdf').toString(),
             'headers': const <String, String>{},
             'expires_at': DateTime.now().toUtc().toIso8601String(),
           },
         );
       }
-      if (options.path == ApiPaths.mediaUploadUrlComplete) {
+      if (options.path == '/api/lesson-media/lesson-1/lesson-media-1/complete') {
         return _jsonResponse(
           statusCode: 200,
           body: {
-            'media_id': 'media-1',
-            'state': 'uploaded',
-            'lesson_media_id': 'lesson-media-audio-1',
-            'lesson_media': {
-              'id': 'lesson-media-audio-1',
-              'kind': 'audio',
-              'storage_path':
-                  'media/derived/audio/courses/course-1/lessons/lesson-1/$lastAudioFilename',
-              'storage_bucket': 'course-media',
-              'original_name': lastAudioFilename,
-              'content_type': 'audio/mpeg',
-              'media_state': 'uploaded',
-              'playback_url':
-                  'https://api.example.test/media/stream/audio-token',
+            'lesson_media_id': 'lesson-media-1',
+            'lesson_id': 'lesson-1',
+            'media_asset_id': 'media-1',
+            'position': 1,
+            'media_type': 'document',
+            'state': 'ready',
+            'preview_ready': true,
+            'original_name': 'guide.pdf',
+            'media': {
+              'media_id': 'media-1',
+              'state': 'ready',
+              'resolved_url': 'https://cdn.example.test/guide.pdf?token=studio',
             },
           },
         );
       }
-      if (options.path == '/studio/lessons/lesson-1/media/presign') {
-        final payload = Map<String, dynamic>.from(options.data as Map);
-        final filename = payload['filename'] as String;
+      if (options.path == ApiPaths.mediaPreviews) {
         return _jsonResponse(
           statusCode: 200,
           body: {
-            'url': uploadServer.url('/direct/$filename').toString(),
-            'storage_path': 'lessons/lesson-1/$filename',
-            'storage_bucket': 'course-media',
-            'headers': const <String, String>{},
-            'method': 'PUT',
-          },
-        );
-      }
-      if (options.path == '/studio/lessons/lesson-1/media/complete') {
-        final payload = Map<String, dynamic>.from(options.data as Map);
-        return _jsonResponse(
-          statusCode: 200,
-          body: {
-            'id': 'lesson-media-1',
-            'kind': payload['content_type'] == 'application/pdf'
-                ? 'pdf'
-                : 'video',
-            'storage_path': payload['storage_path'],
-            'storage_bucket': payload['storage_bucket'],
-            'content_type': payload['content_type'],
-            'original_name': payload['original_name'],
-          },
-        );
-      }
-      if (options.path == '/api/upload/course-media') {
-        return _jsonResponse(
-          statusCode: 200,
-          body: {
-            'media': {
-              'id': 'lesson-media-legacy-1',
-              'kind': 'image',
-              'storage_path': 'courses/course-1/diagram.png',
-              'storage_bucket': 'course-media',
+            'items': {
+              'lesson-media-1': {
+                'media_type': 'image',
+                'authoritative_editor_ready': true,
+                'resolved_preview_url': 'https://cdn.example.test/preview.webp',
+                'duration_seconds': null,
+                'file_name': 'preview.webp',
+                'failure_reason': null,
+              },
             },
           },
         );
@@ -272,34 +205,35 @@ class _Harness {
 }
 
 class _UploadServer {
-  _UploadServer(this._server) {
-    _subscription = _server.listen(_handle);
-  }
+  _UploadServer._(this._server);
 
   final HttpServer _server;
-  late final StreamSubscription<HttpRequest> _subscription;
   final List<String> putPaths = <String>[];
 
   static Future<_UploadServer> start() async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    return _UploadServer(server);
+    final wrapper = _UploadServer._(server);
+    unawaited(wrapper._listen());
+    return wrapper;
+  }
+
+  Future<void> _listen() async {
+    await for (final request in _server) {
+      if (request.method == 'PUT') {
+        putPaths.add(request.uri.path);
+        await request.drain<void>();
+        request.response.statusCode = HttpStatus.ok;
+        await request.response.close();
+        continue;
+      }
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+    }
   }
 
   Uri url(String path) => Uri.parse('http://127.0.0.1:${_server.port}$path');
 
-  Future<void> _handle(HttpRequest request) async {
-    if (request.method.toUpperCase() == 'PUT') {
-      putPaths.add(request.uri.path);
-    }
-    await request.drain<void>();
-    request.response.statusCode = HttpStatus.ok;
-    await request.response.close();
-  }
-
-  Future<void> close() async {
-    await _subscription.cancel();
-    await _server.close(force: true);
-  }
+  Future<void> close() => _server.close(force: true);
 }
 
 ResponseBody _jsonResponse({
@@ -310,7 +244,7 @@ ResponseBody _jsonResponse({
     json.encode(body),
     statusCode,
     headers: {
-      Headers.contentTypeHeader: <String>[Headers.jsonContentType],
+      Headers.contentTypeHeader: [Headers.jsonContentType],
     },
   );
 }
@@ -328,8 +262,6 @@ class _RecordingAdapter implements HttpClientAdapter {
 
   final ResponseBody Function(RequestOptions options) _handler;
   final List<_RecordedRequest> _requests = <_RecordedRequest>[];
-
-  void clear() => _requests.clear();
 
   List<_RecordedRequest> requestsFor(String path) => _requests
       .where((request) => request.path == path)
@@ -375,45 +307,86 @@ class _RecordedRequest {
 }
 
 class _MemoryFlutterSecureStorage extends FlutterSecureStorage {
-  _MemoryFlutterSecureStorage();
+  final Map<String, String> _values = <String, String>{};
 
-  final Map<String, String?> _storage = <String, String?>{};
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    _values.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    _values.clear();
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    return Map<String, String>.from(_values);
+  }
 
   @override
   Future<String?> read({
     required String key,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
+    IOSOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async => _storage[key];
+    MacOsOptions? mOptions,
+  }) async {
+    return _values[key];
+  }
 
   @override
   Future<void> write({
     required String key,
     required String? value,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
+    IOSOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
     WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
   }) async {
-    _storage[key] = value;
+    if (value == null) {
+      _values.remove(key);
+      return;
+    }
+    _values[key] = value;
   }
 
   @override
-  Future<void> delete({
+  Future<bool> containsKey({
     required String key,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
+    IOSOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
     WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
   }) async {
-    _storage.remove(key);
+    return _values.containsKey(key);
   }
 }

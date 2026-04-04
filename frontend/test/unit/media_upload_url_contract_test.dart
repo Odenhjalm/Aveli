@@ -12,109 +12,100 @@ import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 
 void main() {
-  test(
-    'upload-url requests use POST + JSON and match expected payloads',
-    () async {
-      final storage = _MemoryFlutterSecureStorage();
-      final tokens = TokenStorage(storage: storage);
-      await tokens.saveTokens(
-        accessToken: _jwtWithExpSeconds(4102444800),
-        refreshToken: 'rt-1',
-      );
+  test('upload-url requests use POST + JSON and match expected payloads', () async {
+    final storage = _MemoryFlutterSecureStorage();
+    final tokens = TokenStorage(storage: storage);
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(4102444800),
+      refreshToken: 'rt-1',
+    );
 
-      final client = ApiClient(
-        baseUrl: 'http://127.0.0.1:1',
-        tokenStorage: tokens,
-      );
+    final client = ApiClient(
+      baseUrl: 'http://127.0.0.1:1',
+      tokenStorage: tokens,
+    );
 
-      final adapter = _RecordingAdapter((options) {
-        if (options.path == ApiPaths.mediaUploadUrl) {
-          return _jsonResponse(
-            statusCode: 200,
-            body: {
-              'media_asset_id': 'media-1',
-              'upload_url': 'https://storage.test/upload',
-              'storage_path': 'media/source/audio/demo.wav',
-              'headers': const <String, String>{},
-              'expires_at': DateTime.now().toUtc().toIso8601String(),
-            },
-          );
-        }
-        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-      });
-      client.raw.httpClientAdapter = adapter;
+    final adapter = _RecordingAdapter((options) {
+      if (options.path == ApiPaths.mediaUploadUrl) {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'media_id': 'media-1',
+            'upload_url': 'https://storage.test/upload',
+            'object_path': 'media/source/audio/demo.wav',
+            'headers': const <String, String>{},
+            'expires_at': DateTime.now().toUtc().toIso8601String(),
+          },
+        );
+      }
+      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+    });
+    client.raw.httpClientAdapter = adapter;
 
-      final repo = MediaPipelineRepository(client: client);
+    final repo = MediaPipelineRepository(client: client);
 
-      await repo.requestUploadUrl(
-        filename: 'demo.wav',
-        mimeType: 'audio/wav',
-        sizeBytes: 10,
-        mediaType: 'audio',
-        courseId: '00000000-0000-0000-0000-000000000001',
-        lessonId: '00000000-0000-0000-0000-000000000002',
-      );
+    await repo.requestUploadUrl(
+      filename: 'demo.wav',
+      mimeType: 'audio/wav',
+      sizeBytes: 10,
+      mediaType: 'audio',
+      courseId: '00000000-0000-0000-0000-000000000001',
+      lessonId: '00000000-0000-0000-0000-000000000002',
+    );
 
-      await repo.requestUploadUrl(
-        filename: 'demo.wav',
-        mimeType: 'audio/wav',
-        sizeBytes: 10,
-        mediaType: 'audio',
-        purpose: 'home_player_audio',
-      );
+    await repo.requestUploadUrl(
+      filename: 'demo.wav',
+      mimeType: 'audio/wav',
+      sizeBytes: 10,
+      mediaType: 'audio',
+      purpose: 'home_player_audio',
+    );
 
-      final requests = adapter.requestsFor(ApiPaths.mediaUploadUrl);
-      expect(requests.length, 2);
+    final requests = adapter.requestsFor(ApiPaths.mediaUploadUrl);
+    expect(requests.length, 2);
 
-      final lessonRequest = requests.first;
-      final homePlayerRequest = requests.last;
+    final lessonRequest = requests.first;
+    final homePlayerRequest = requests.last;
 
-      expect(lessonRequest.method, 'POST');
-      expect(homePlayerRequest.method, 'POST');
-      expect(
-        lessonRequest.contentType.toLowerCase().startsWith('application/json'),
-        true,
-      );
-      expect(
-        homePlayerRequest.contentType.toLowerCase().startsWith(
-          'application/json',
-        ),
-        true,
-      );
+    expect(lessonRequest.method, 'POST');
+    expect(homePlayerRequest.method, 'POST');
+    expect(
+      lessonRequest.contentType.toLowerCase().startsWith('application/json'),
+      true,
+    );
+    expect(
+      homePlayerRequest.contentType.toLowerCase().startsWith('application/json'),
+      true,
+    );
 
-      final lessonPayload = Map<String, dynamic>.from(
-        lessonRequest.data as Map,
-      );
-      final homePayload = Map<String, dynamic>.from(
-        homePlayerRequest.data as Map,
-      );
+    final lessonPayload = Map<String, dynamic>.from(lessonRequest.data as Map);
+    final homePayload = Map<String, dynamic>.from(homePlayerRequest.data as Map);
 
-      expect(lessonPayload.keys.toSet(), {
-        'filename',
-        'mime_type',
-        'size_bytes',
-        'media_type',
-        'course_id',
-        'lesson_id',
-      });
-      expect(lessonPayload['media_type'], 'audio');
-      expect(lessonPayload['course_id'], isNotNull);
-      expect(lessonPayload['lesson_id'], isNotNull);
-      expect(lessonPayload.containsKey('purpose'), false);
+    expect(lessonPayload.keys.toSet(), {
+      'filename',
+      'mime_type',
+      'size_bytes',
+      'media_type',
+      'course_id',
+      'lesson_id',
+    });
+    expect(lessonPayload['media_type'], 'audio');
+    expect(lessonPayload['course_id'], isNotNull);
+    expect(lessonPayload['lesson_id'], isNotNull);
+    expect(lessonPayload.containsKey('purpose'), false);
 
-      expect(homePayload.keys.toSet(), {
-        'filename',
-        'mime_type',
-        'size_bytes',
-        'media_type',
-        'purpose',
-      });
-      expect(homePayload['media_type'], 'audio');
-      expect(homePayload['purpose'], 'home_player_audio');
-      expect(homePayload.containsKey('course_id'), false);
-      expect(homePayload.containsKey('lesson_id'), false);
-    },
-  );
+    expect(homePayload.keys.toSet(), {
+      'filename',
+      'mime_type',
+      'size_bytes',
+      'media_type',
+      'purpose',
+    });
+    expect(homePayload['media_type'], 'audio');
+    expect(homePayload['purpose'], 'home_player_audio');
+    expect(homePayload.containsKey('course_id'), false);
+    expect(homePayload.containsKey('lesson_id'), false);
+  });
 
   test('lesson-audio upload contract requires lessonId', () async {
     final storage = _MemoryFlutterSecureStorage();
@@ -189,7 +180,7 @@ void main() {
     expect(adapter.requestsFor(ApiPaths.mediaUploadUrl), isEmpty);
   });
 
-  test('lesson playback parsing requires canonical playback_url', () async {
+  test('lesson preview batch requests use POST + JSON and match payloads', () async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);
     await tokens.saveTokens(
@@ -202,23 +193,36 @@ void main() {
       tokenStorage: tokens,
     );
     final adapter = _RecordingAdapter((options) {
-      if (options.path == ApiPaths.mediaLessonPlaybackUrl) {
+      if (options.path == ApiPaths.mediaPreviews) {
         return _jsonResponse(
           statusCode: 200,
-          body: {'playback_url': 'https://cdn.example.com/canonical.mp3'},
+          body: {
+            'items': {
+              'lesson-media-1': {
+                'media_type': 'image',
+                'authoritative_editor_ready': true,
+                'resolved_preview_url': 'https://cdn.example.com/preview.webp',
+                'duration_seconds': null,
+                'file_name': 'preview.webp',
+                'failure_reason': null,
+              },
+            },
+          },
         );
       }
       return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
     });
     client.raw.httpClientAdapter = adapter;
-    final repo = MediaPipelineRepository(client: client);
+    final repo = StudioRepository(client: client);
+
+    final previews = await repo.fetchLessonMediaPreviews(['lesson-media-1']);
 
     expect(
-      await repo.fetchLessonPlaybackUrl('lesson-media-1'),
-      'https://cdn.example.com/canonical.mp3',
+      previews.itemFor('lesson-media-1')?.previewUrl,
+      'https://cdn.example.com/preview.webp',
     );
 
-    final requests = adapter.requestsFor(ApiPaths.mediaLessonPlaybackUrl);
+    final requests = adapter.requestsFor(ApiPaths.mediaPreviews);
     expect(requests, hasLength(1));
     expect(requests.single.method, 'POST');
     expect(
@@ -226,187 +230,9 @@ void main() {
       true,
     );
     expect(Map<String, dynamic>.from(requests.single.data as Map), {
-      'lesson_media_id': 'lesson-media-1',
+      'ids': <String>['lesson-media-1'],
     });
   });
-
-  test('lesson playback parsing rejects legacy URL fields', () async {
-    final storage = _MemoryFlutterSecureStorage();
-    final tokens = TokenStorage(storage: storage);
-    await tokens.saveTokens(
-      accessToken: _jwtWithExpSeconds(4102444800),
-      refreshToken: 'rt-1',
-    );
-
-    final client = ApiClient(
-      baseUrl: 'http://127.0.0.1:1',
-      tokenStorage: tokens,
-    );
-    final responses = <Map<String, dynamic>>[
-      {'url': 'https://cdn.example.com/legacy.mp3'},
-      {'stream_url': 'https://cdn.example.com/stream.mp3'},
-      {'media_url': 'https://cdn.example.com/media.mp3'},
-    ];
-    var responseIndex = 0;
-    final adapter = _RecordingAdapter((options) {
-      if (options.path == ApiPaths.mediaLessonPlaybackUrl) {
-        return _jsonResponse(statusCode: 200, body: responses[responseIndex++]);
-      }
-      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-    });
-    client.raw.httpClientAdapter = adapter;
-    final repo = MediaPipelineRepository(client: client);
-
-    for (var i = 0; i < responses.length; i += 1) {
-      await expectLater(
-        () => repo.fetchLessonPlaybackUrl('lesson-media-$i'),
-        throwsA(isA<FormatException>()),
-      );
-    }
-  });
-
-  test(
-    'runtime playback requests use POST + JSON and match payloads',
-    () async {
-      final storage = _MemoryFlutterSecureStorage();
-      final tokens = TokenStorage(storage: storage);
-      await tokens.saveTokens(
-        accessToken: _jwtWithExpSeconds(4102444800),
-        refreshToken: 'rt-1',
-      );
-
-      final client = ApiClient(
-        baseUrl: 'http://127.0.0.1:1',
-        tokenStorage: tokens,
-      );
-      final adapter = _RecordingAdapter((options) {
-        if (options.path == ApiPaths.mediaRuntimePlayback) {
-          return _jsonResponse(
-            statusCode: 200,
-            body: {
-              'runtime_media_id': 'runtime-media-1',
-              'playback_url': 'https://cdn.example.com/runtime.mp3',
-              'kind': 'audio',
-              'content_type': 'audio/mpeg',
-              'duration_seconds': 321,
-            },
-          );
-        }
-        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-      });
-      client.raw.httpClientAdapter = adapter;
-      final repo = MediaPipelineRepository(client: client);
-
-      expect(
-        await repo.fetchRuntimePlaybackUrl('runtime-media-1'),
-        'https://cdn.example.com/runtime.mp3',
-      );
-
-      final requests = adapter.requestsFor(ApiPaths.mediaRuntimePlayback);
-      expect(requests, hasLength(1));
-      expect(requests.single.method, 'POST');
-      expect(
-        requests.single.contentType.toLowerCase().startsWith(
-          'application/json',
-        ),
-        true,
-      );
-      expect(Map<String, dynamic>.from(requests.single.data as Map), {
-        'runtime_media_id': 'runtime-media-1',
-      });
-    },
-  );
-
-  test('runtime playback parsing rejects legacy URL fields', () async {
-    final storage = _MemoryFlutterSecureStorage();
-    final tokens = TokenStorage(storage: storage);
-    await tokens.saveTokens(
-      accessToken: _jwtWithExpSeconds(4102444800),
-      refreshToken: 'rt-1',
-    );
-
-    final client = ApiClient(
-      baseUrl: 'http://127.0.0.1:1',
-      tokenStorage: tokens,
-    );
-    final responses = <Map<String, dynamic>>[
-      {'url': 'https://cdn.example.com/legacy.mp3'},
-      {'stream_url': 'https://cdn.example.com/stream.mp3'},
-      {'media_url': 'https://cdn.example.com/media.mp3'},
-    ];
-    var responseIndex = 0;
-    final adapter = _RecordingAdapter((options) {
-      if (options.path == ApiPaths.mediaRuntimePlayback) {
-        return _jsonResponse(statusCode: 200, body: responses[responseIndex++]);
-      }
-      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-    });
-    client.raw.httpClientAdapter = adapter;
-    final repo = MediaPipelineRepository(client: client);
-
-    for (var i = 0; i < responses.length; i += 1) {
-      await expectLater(
-        () => repo.fetchRuntimePlaybackUrl('runtime-media-$i'),
-        throwsA(isA<FormatException>()),
-      );
-    }
-  });
-
-  test(
-    'lesson preview batch requests use POST + JSON and match payloads',
-    () async {
-      final storage = _MemoryFlutterSecureStorage();
-      final tokens = TokenStorage(storage: storage);
-      await tokens.saveTokens(
-        accessToken: _jwtWithExpSeconds(4102444800),
-        refreshToken: 'rt-1',
-      );
-
-      final client = ApiClient(
-        baseUrl: 'http://127.0.0.1:1',
-        tokenStorage: tokens,
-      );
-      final adapter = _RecordingAdapter((options) {
-        if (options.path == ApiPaths.mediaPreviews) {
-          return _jsonResponse(
-            statusCode: 200,
-            body: {
-              'items': {
-                'lesson-media-1': {
-                  'media_type': 'image',
-                  'resolved_preview_url':
-                      'https://cdn.example.com/preview.webp',
-                },
-              },
-            },
-          );
-        }
-        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-      });
-      client.raw.httpClientAdapter = adapter;
-      final repo = StudioRepository(client: client);
-
-      final previews = await repo.fetchLessonMediaPreviews([
-        'lesson-media-1',
-        'lesson-media-1',
-        'lesson-media-2',
-      ]);
-
-      expect(previews.keys, contains('lesson-media-1'));
-      final requests = adapter.requestsFor(ApiPaths.mediaPreviews);
-      expect(requests, hasLength(1));
-      expect(requests.single.method, 'POST');
-      expect(
-        requests.single.contentType.toLowerCase().startsWith(
-          'application/json',
-        ),
-        true,
-      );
-      expect(Map<String, dynamic>.from(requests.single.data as Map), {
-        'ids': <String>['lesson-media-1', 'lesson-media-2'],
-      });
-    },
-  );
 }
 
 ResponseBody _jsonResponse({
@@ -483,45 +309,86 @@ class _RecordedRequest {
 }
 
 class _MemoryFlutterSecureStorage extends FlutterSecureStorage {
-  _MemoryFlutterSecureStorage();
+  final Map<String, String> _values = <String, String>{};
 
-  final Map<String, String?> _storage = <String, String?>{};
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    _values.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    _values.clear();
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    return Map<String, String>.from(_values);
+  }
 
   @override
   Future<String?> read({
     required String key,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
+    IOSOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async => _storage[key];
+    MacOsOptions? mOptions,
+  }) async {
+    return _values[key];
+  }
 
   @override
   Future<void> write({
     required String key,
     required String? value,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
+    IOSOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
     WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
   }) async {
-    _storage[key] = value;
+    if (value == null) {
+      _values.remove(key);
+      return;
+    }
+    _values[key] = value;
   }
 
   @override
-  Future<void> delete({
+  Future<bool> containsKey({
     required String key,
-    IOSOptions? iOptions = IOSOptions.defaultOptions,
+    IOSOptions? iOptions,
     AndroidOptions? aOptions,
     LinuxOptions? lOptions,
     WebOptions? webOptions,
-    MacOsOptions? mOptions,
     WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
   }) async {
-    _storage.remove(key);
+    return _values.containsKey(key);
   }
 }

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from app.media_control_plane.services.media_resolver_service import (
     RuntimeMediaResolution,
     RuntimeMediaResolutionReason,
 )
+from app.repositories import courses as courses_repo
 from app.services import media_control_plane_observability as service
 
 
@@ -160,6 +162,85 @@ async def _storage_catalog_present(
     pairs: list[tuple[str, str]],
 ) -> tuple[dict[tuple[str, str], dict | None], bool]:
     return {pair: None for pair in pairs}, True
+
+
+async def test_list_lesson_media_for_asset_reads_authored_placement_only(monkeypatch):
+    row = {
+        "id": "lm-1",
+        "lesson_id": "lesson-1",
+        "kind": None,
+        "position": 1,
+        "media_asset_id": "asset-1",
+        "media_state": "ready",
+        "content_type": None,
+        "duration_seconds": None,
+        "error_message": None,
+        "issue_reason": None,
+        "issue_details": None,
+        "issue_updated_at": None,
+        "created_at": None,
+        "storage_bucket": None,
+        "storage_path": None,
+    }
+
+    class _FakeCursor:
+        def __init__(self) -> None:
+            self.executed: list[tuple[str, tuple[object, ...]]] = []
+
+        async def execute(
+            self,
+            query: str,
+            params: tuple[object, ...] | list[object] | None = None,
+        ) -> None:
+            self.executed.append((" ".join(query.split()), tuple(params or ())))
+
+        async def fetchall(self) -> list[dict[str, object | None]]:
+            return [row]
+
+    class _FakeConnection:
+        def __init__(self, cursor: _FakeCursor) -> None:
+            self._cursor = cursor
+
+        def cursor(self, row_factory=None):  # noqa: ANN001
+            del row_factory
+
+            @asynccontextmanager
+            async def _cursor_ctx():
+                yield self._cursor
+
+            return _cursor_ctx()
+
+    class _FakePool:
+        def __init__(self, cursor: _FakeCursor) -> None:
+            self._cursor = cursor
+
+        def connection(self):
+            @asynccontextmanager
+            async def _connection_ctx():
+                yield _FakeConnection(self._cursor)
+
+            return _connection_ctx()
+
+    cursor = _FakeCursor()
+    monkeypatch.setattr(courses_repo, "pool", _FakePool(cursor), raising=True)
+
+    result = await courses_repo.list_lesson_media_for_asset("asset-1", limit=27)
+
+    assert result == [row]
+    assert cursor.executed == [
+        (
+            "select lm.id, lm.lesson_id, null::text as kind, lm.position, lm.media_asset_id, "
+            "ma.state::text as media_state, null::text as content_type, null::integer as duration_seconds, "
+            "null::text as error_message, null::text as issue_reason, null::jsonb as issue_details, "
+            "null::timestamptz as issue_updated_at, null::timestamptz as created_at, null::text as storage_bucket, "
+            "null::text as storage_path from app.lesson_media as lm join app.media_assets as ma on ma.id = lm.media_asset_id "
+            "where lm.media_asset_id = %s::uuid order by lm.position asc, lm.id asc limit %s",
+            ("asset-1", 27),
+        )
+    ]
+    assert "app.runtime_media" not in cursor.executed[0][0]
+    assert "lm.kind" not in cursor.executed[0][0]
+    assert "lm.storage_path" not in cursor.executed[0][0]
 
 
 async def test_validate_runtime_projection_reports_field_level_contract_diffs(monkeypatch):

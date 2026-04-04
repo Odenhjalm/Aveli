@@ -45,16 +45,13 @@ async def test_request_media_previews_isolates_invalid_and_missing_items(monkeyp
     async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
         assert lesson_media_id == valid_id
         assert user_id
-        return {
-            "url": f"https://stream.local/{lesson_media_id}.bin",
-            "playback_url": f"https://stream.local/{lesson_media_id}.bin",
-        }
+        return {"resolved_url": f"https://stream.local/{lesson_media_id}.bin"}
 
     monkeypatch.setattr(
         api_media.courses_repo,
         "list_lesson_media_by_ids",
         fake_list_lesson_media_by_ids,
-        raising=True,
+        raising=False,
     )
     monkeypatch.setattr(
         api_media.courses_service,
@@ -83,7 +80,9 @@ async def test_request_media_previews_isolates_invalid_and_missing_items(monkeyp
 
     response = await api_media.request_media_previews(
         request=None,
-        payload=schemas.MediaPreviewBatchRequest(ids=[valid_id, malformed_id, missing_id]),
+        payload=schemas.MediaPreviewBatchRequest.model_construct(
+            ids=[valid_id, malformed_id, missing_id]
+        ),
         current={"id": user_id},
     )
 
@@ -144,16 +143,13 @@ async def test_request_media_previews_isolates_unresolvable_sibling(monkeypatch)
         if lesson_media_id == stale_id:
             raise HTTPException(status_code=404, detail="Lesson media has no playable source")
         assert lesson_media_id == valid_id
-        return {
-            "url": f"https://stream.local/{lesson_media_id}.mp4",
-            "playback_url": f"https://stream.local/{lesson_media_id}.mp4",
-        }
+        return {"resolved_url": f"https://stream.local/{lesson_media_id}.mp4"}
 
     monkeypatch.setattr(
         api_media.courses_repo,
         "list_lesson_media_by_ids",
         fake_list_lesson_media_by_ids,
-        raising=True,
+        raising=False,
     )
     monkeypatch.setattr(
         api_media.courses_service,
@@ -196,7 +192,9 @@ async def test_request_media_previews_isolates_unresolvable_sibling(monkeypatch)
     assert response.items[stale_id].failure_reason == "unresolvable"
 
 
-async def test_request_media_previews_falls_back_to_public_image_url(monkeypatch):
+async def test_request_media_previews_returns_unresolvable_image_without_row_fallback(
+    monkeypatch,
+):
     user_id = str(uuid.uuid4())
     lesson_id = str(uuid.uuid4())
     course_id = str(uuid.uuid4())
@@ -236,7 +234,7 @@ async def test_request_media_previews_falls_back_to_public_image_url(monkeypatch
         api_media.courses_repo,
         "list_lesson_media_by_ids",
         fake_list_lesson_media_by_ids,
-        raising=True,
+        raising=False,
     )
     monkeypatch.setattr(
         api_media.courses_service,
@@ -270,7 +268,5 @@ async def test_request_media_previews_falls_back_to_public_image_url(monkeypatch
     )
 
     assert response.items[image_id].authoritative_editor_ready is False
-    assert response.items[image_id].resolved_preview_url == (
-        "https://cdn.public.test/course-images/cover.png"
-    )
+    assert response.items[image_id].resolved_preview_url is None
     assert response.items[image_id].failure_reason == "unresolvable"

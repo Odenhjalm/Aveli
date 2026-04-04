@@ -23,7 +23,6 @@ async def test_list_lesson_media_editor_suppresses_unresolvable_image_urls(
                 "storage_path": "lessons/lesson-1/images/missing.png",
                 "preferredUrl": "https://cdn.test/raw-image.png",
                 "download_url": "https://cdn.test/raw-image.png",
-                "playback_url": "https://cdn.test/raw-image.png",
                 "original_name": "missing.png",
             }
         ]
@@ -53,7 +52,6 @@ async def test_list_lesson_media_editor_suppresses_unresolvable_image_urls(
     assert item["resolvable_for_editor"] is False
     assert "preferredUrl" not in item
     assert "download_url" not in item
-    assert "playback_url" not in item
     assert "signed_url" not in item
 
 
@@ -78,7 +76,6 @@ async def test_list_lesson_media_student_suppresses_unresolvable_audio_urls(
 
     def fake_attach_media_links(item: dict, *, purpose: str | None = None) -> None:
         item["download_url"] = "https://cdn.test/raw-audio.mp3"
-        item["playback_url"] = "https://stream.test/raw-audio.mp3"
         item["signed_url"] = "https://signed.test/raw-audio.mp3"
         item["signed_url_expires_at"] = "2099-01-01T00:00:00+00:00"
 
@@ -109,7 +106,6 @@ async def test_list_lesson_media_student_suppresses_unresolvable_audio_urls(
     item = items[0]
     assert item["resolvable_for_student"] is False
     assert "download_url" not in item
-    assert "playback_url" not in item
     assert "signed_url" not in item
     assert "signed_url_expires_at" not in item
 
@@ -135,7 +131,6 @@ async def test_list_lesson_media_student_marks_legacy_video_not_playable(
 
     def fake_attach_media_links(item: dict, *, purpose: str | None = None) -> None:
         item["download_url"] = "https://cdn.test/raw-video.mp4"
-        item["playback_url"] = "https://stream.test/raw-video.mp4"
         item["signed_url"] = "https://signed.test/raw-video.mp4"
         item["signed_url_expires_at"] = "2099-01-01T00:00:00+00:00"
 
@@ -195,7 +190,6 @@ async def test_list_lesson_media_student_marks_legacy_video_not_playable(
     assert item["resolvable_for_student"] is False
     assert item["robustness_status"] == "not_playable"
     assert item["robustness_recommended_action"] == "manual_review"
-    assert item.get("playback_url") is None
     assert "download_url" not in item
     assert "signed_url" not in item
     assert "signed_url_expires_at" not in item
@@ -222,7 +216,6 @@ async def test_list_lesson_media_student_keeps_pipeline_video_playable(
         return {("course-media", "media/derived/video/demo.mp4"): True}, True
 
     def fake_attach_media_links(item: dict, *, purpose: str | None = None) -> None:
-        item["playback_url"] = "https://stream.test/pipeline-video.mp4"
         item["download_url"] = "https://cdn.test/pipeline-video.mp4"
         item["signed_url"] = "https://signed.test/pipeline-video.mp4"
 
@@ -281,6 +274,5 @@ async def test_list_lesson_media_student_keeps_pipeline_video_playable(
     item = items[0]
     assert item["resolvable_for_student"] is True
     assert item["robustness_status"] == "ok"
-    assert item["playback_url"] == "https://stream.test/pipeline-video.mp4"
     assert item["download_url"] == "https://cdn.test/pipeline-video.mp4"
     assert item["signed_url"] == "https://signed.test/pipeline-video.mp4"

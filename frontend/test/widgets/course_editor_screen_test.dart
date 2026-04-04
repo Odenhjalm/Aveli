@@ -2130,7 +2130,11 @@ void main() {
           <String, dynamic>{
             'id': 'media-image-1',
             'kind': 'image',
-            'playback_url': 'https://cdn.test/media-image-1.webp',
+            'media': <String, dynamic>{
+              'media_id': 'media-image-1',
+              'state': 'ready',
+              'resolved_url': 'https://cdn.test/media-image-1.webp',
+            },
           },
         ],
       );
@@ -4329,6 +4333,11 @@ void main() {
             'kind': 'document',
             'original_name': 'material.pdf',
             'position': 1,
+            'media': {
+              'media_id': 'media-pdf-1',
+              'state': 'ready',
+              'resolved_url': 'https://cdn.test/material.pdf?token=editor-open',
+            },
           },
         ],
       );
@@ -4342,12 +4351,6 @@ void main() {
         }
         return 'http://localhost:8080$raw';
       });
-      when(
-        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-pdf-1'),
-      ).thenAnswer(
-        (_) async => 'https://cdn.test/material.pdf?token=editor-open',
-      );
-
       await _pumpCourseEditorScreen(
         tester,
         studioRepo: studioRepo,
@@ -4377,9 +4380,6 @@ void main() {
         ),
         isTrue,
       );
-      verify(
-        () => mediaPipelineRepository.fetchLessonPlaybackUrl('media-pdf-1'),
-      ).called(1);
     },
   );
 

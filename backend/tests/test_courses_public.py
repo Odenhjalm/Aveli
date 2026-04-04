@@ -127,15 +127,7 @@ async def test_teacher_has_full_access_to_own_paid_course(async_client):
             data={"is_intro": "false"},
         )
         assert media_upload_resp.status_code == 200, media_upload_resp.text
-        media_id = str(media_upload_resp.json()["id"])
-
-        media_sign_resp = await async_client.post(
-            "/media/sign",
-            headers=auth_header(teacher_token),
-            json={"media_id": media_id, "mode": "student_render"},
-        )
-        assert media_sign_resp.status_code == 200, media_sign_resp.text
-        assert media_sign_resp.json()["media_id"] == media_id
+        assert str(media_upload_resp.json()["id"])
     finally:
         if teacher_id:
             await cleanup_user(teacher_id)

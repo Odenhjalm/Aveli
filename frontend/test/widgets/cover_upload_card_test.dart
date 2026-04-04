@@ -77,21 +77,6 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   Future<MediaStatus> fetchStatus(String mediaId) {
     throw UnimplementedError();
   }
-
-  @override
-  Future<MediaPlaybackUrl> fetchPlaybackUrl(String mediaId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<String> fetchRuntimePlaybackUrl(String runtimeMediaId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<String> fetchLessonPlaybackUrl(String lessonMediaId) {
-    throw UnimplementedError();
-  }
 }
 
 void main() {

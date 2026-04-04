@@ -9,6 +9,7 @@ import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/community/presentation/teacher_profile_page.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
@@ -192,9 +193,11 @@ void main() {
       durationSeconds: 600,
       position: 0,
       createdAt: DateTime(2025, 1, 1),
-      downloadUrl: 'https://example.com/audio.mp3',
-      signedUrl: 'https://example.com/audio.mp3',
-      signedUrlExpiresAt: null,
+      media: const ResolvedMediaData(
+        mediaId: 'media-asset-1',
+        state: 'ready',
+        resolvedUrl: 'https://example.com/audio.mp3',
+      ),
     );
 
     final state = TeacherProfileState(

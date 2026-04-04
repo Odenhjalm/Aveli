@@ -467,7 +467,7 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
 
     async def fake_resolve_media_asset_playback(*, media_asset_id: str):
         assert media_asset_id
-        return {"playback_url": "https://stream.local/home-track.mp3"}
+        return {"resolved_url": "https://stream.local/home-track.mp3"}
 
     monkeypatch.setattr(
         home_audio_service.lesson_playback_service,
@@ -523,7 +523,7 @@ async def test_home_audio_direct_upload_uses_media_asset_identity_only(async_cli
 
     async def fake_resolve_media_asset_playback(*, media_asset_id: str):
         assert media_asset_id == direct_rows[0]["media_asset_id"]
-        return {"playback_url": "https://stream.local/direct-track.mp3"}
+        return {"resolved_url": "https://stream.local/direct-track.mp3"}
 
     monkeypatch.setattr(
         home_audio_service.home_audio_runtime_repo,
@@ -806,7 +806,7 @@ async def test_home_audio_invalid_ready_items_are_excluded(async_client, monkeyp
 
     async def fake_resolve_media_asset_playback(*, media_asset_id: str):
         if media_asset_id == good_media_asset_id:
-            return {"playback_url": "https://stream.local/good-track.mp3"}
+            return {"resolved_url": "https://stream.local/good-track.mp3"}
         raise HTTPException(status_code=503, detail="Streaming asset unavailable")
 
     monkeypatch.setattr(
