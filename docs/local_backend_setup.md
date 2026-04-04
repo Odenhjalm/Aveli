@@ -1,6 +1,10 @@
-# Lokal backend + lokal DB-klon (NO DEPLOY)
+# Lokal backend + lokal DB-klon (REFERENCE ONLY, NO DEPLOY)
 
 Mål: köra FastAPI-backenden lokalt mot en **lokal Postgres** som är en **klon av cloud (Supabase/Postgres)** – utan deploy, utan schemaändringar i cloud och utan migrations mot prod.
+
+Viktig avgränsning:
+- För lokal MCP audit, test och verifiering är den auktoritativa lokala DB-källan `backend/supabase/baseline_slots`, materialiserad via `backend/scripts/replay_baseline.sh`.
+- Den här cloud-klon-guiden är ett referensworkflow och får inte omdefiniera canonical local verification truth.
 
 ## 1) Starta backend lokalt (med `.env.local`)
 
@@ -48,9 +52,20 @@ Skriv ut connection string:
 backend/scripts/local_db.sh url
 ```
 
-## 3) Klona cloud-databasen till lokal
+## 3) Materialisera canonical local baseline för MCP/audit/verifiering
 
-### Alternativ A (rekommenderat): Script (dump + restore + verifiering)
+För MCP audit, test och verifiering ska lokal DB byggas från `backend/supabase/baseline_slots`:
+
+```bash
+backend/scripts/local_db.sh up
+backend/scripts/replay_baseline.sh
+```
+
+Detta är den auktoritativa lokala DB-källan för lokal verifiering. Root `supabase/migrations/*.sql` är production migration source only. Cloud-klon är referensinput och får inte ersätta baseline authority.
+
+## 4) Klona cloud-databasen till lokal (referensworkflow)
+
+### Alternativ A: Script (dump + restore + verifiering)
 
 ```bash
 export SUPABASE_DB_URL='postgresql://...sslmode=require'
@@ -90,13 +105,13 @@ export LOCAL_DB_URL
 backend/scripts/clone_cloud_db_to_local.sh verify
 ```
 
-## 4) Miljö-isolering (skydd)
+## 5) Miljö-isolering (skydd)
 
 Skydd som finns:
 - `backend/scripts/start_backend.sh` vägrar starta om `APP_ENV` är `production/prod/live` (override: `AVELI_ALLOW_PROD_ENV_LOCAL=1`).
 - Backend vägrar koppla upp mot Supabase-host utanför cloud-runtime (t.ex. lokalt). Override: `AVELI_ALLOW_REMOTE_DB=1`.
 
-## How to verify backend is using local DB
+## 6) How to verify backend is using local DB
 
 Start `backend/scripts/start_backend.sh` and confirm it prints `DB target: 127.0.0.1:.../aveli_local`.
 Insert a test row via `psql "$(backend/scripts/local_db.sh url)" ...`.

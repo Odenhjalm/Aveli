@@ -120,6 +120,9 @@
 ## Baseline Truth Rule
 
 - `backend/supabase/baseline_slots` is the canonical baseline source of truth.
+- For local MCP audit, testing, and verification, the authoritative local database MUST be materialized from `backend/supabase/baseline_slots`.
+- `supabase/migrations/*.sql` remains the production migration source only and does NOT define the authoritative local verification database.
+- Cloud clones and other local DB copies are reference-only inputs and MUST NOT redefine canonical local verification truth.
 - Historical baseline slots and legacy DB state are reference-only inputs and MUST NOT redefine canonical media authority.
 
 ## Canonical Language Rules

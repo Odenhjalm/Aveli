@@ -1,13 +1,13 @@
 # Aveli Monorepo
 
-Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in one place. Supabase holds the canonical database schema; all migrations live under `supabase/migrations`.
+Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in one place. Production migrations live under `supabase/migrations`. For local MCP audit, testing, and verification, the authoritative local DB baseline is `backend/supabase/baseline_slots`, materialized with `backend/scripts/replay_baseline.sh` on local Postgres.
 
 ```
 .
 ├── backend/            # FastAPI app, Stripe/LiveKit, scripts, Dockerfile
 ├── frontend/           # Flutter app (lib/android/ios/web) + landing (Next.js)
 │   └── landing/        # Marketing/landing site (Next.js)
-├── supabase/           # SQL migrations (single source of truth)
+├── supabase/           # Production SQL migrations
 ├── docs/               # Architecture, security, deployment, env docs
 ├── .env.example*       # Safe templates for backend + Flutter
 ├── docker-compose.yml  # Backend + landing for local dev
@@ -44,6 +44,12 @@ SUPABASE_DB_PASSWORD=... \
 backend/scripts/apply_supabase_migrations.sh
 ```
 Production migration source: `supabase/migrations/*.sql` only.
+
+### Local DB authority for MCP and verification
+- Authoritative local DB source: `backend/supabase/baseline_slots`.
+- Materialize that source on local Postgres with `backend/scripts/replay_baseline.sh`.
+- `supabase/migrations/*.sql` remains the production migration source only.
+- Cloud clones and legacy DB state are reference inputs only and must not redefine local verification truth.
 
 ### Backend tests & lint
 ```bash
