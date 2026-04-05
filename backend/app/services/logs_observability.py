@@ -177,7 +177,15 @@ def _status_from_flags(
     last_error: dict[str, Any] | None,
     degraded_signal: bool = False,
     enabled: bool = True,
+    verification_mode: bool = False,
+    write_suppressed: bool = False,
 ) -> str:
+    if verification_mode and write_suppressed:
+        if not worker_running:
+            return "stopped"
+        if last_error is not None:
+            return "degraded"
+        return "ok"
     if not enabled:
         return "disabled"
     if not worker_running:
@@ -302,6 +310,8 @@ async def get_worker_health() -> dict[str, Any]:
     transcode_enabled = bool(transcode_metrics.get("final_state"))
     transcode_last_error = transcode_metrics.get("last_error")
     transcode_queue = transcode_metrics.get("queue_summary") or {}
+    transcode_verification_mode = bool(transcode_metrics.get("verification_mode"))
+    transcode_write_suppressed = bool(transcode_metrics.get("write_suppressed"))
     transcode_status = _status_from_flags(
         worker_running=bool(transcode_metrics.get("worker_running")),
         last_error=transcode_last_error,
@@ -310,17 +320,27 @@ async def get_worker_health() -> dict[str, Any]:
             or int(transcode_queue.get("stale_processing_locks") or 0) > 0
         ),
         enabled=transcode_enabled,
+        verification_mode=transcode_verification_mode,
+        write_suppressed=transcode_write_suppressed,
     )
 
+    webhook_verification_mode = bool(webhook_metrics.get("verification_mode"))
+    webhook_write_suppressed = bool(webhook_metrics.get("write_suppressed"))
     webhook_status = _status_from_flags(
         worker_running=bool(webhook_metrics.get("worker_running")),
         last_error=webhook_metrics.get("last_failure"),
         degraded_signal=bool(int(webhook_snapshot.get("failed") or 0) > 0),
+        verification_mode=webhook_verification_mode,
+        write_suppressed=webhook_write_suppressed,
     )
 
+    membership_verification_mode = bool(membership_metrics.get("verification_mode"))
+    membership_write_suppressed = bool(membership_metrics.get("write_suppressed"))
     membership_status = _status_from_flags(
         worker_running=bool(membership_metrics.get("worker_running")),
         last_error=membership_metrics.get("last_error"),
+        verification_mode=membership_verification_mode,
+        write_suppressed=membership_write_suppressed,
     )
 
     worker_health = {
@@ -348,6 +368,8 @@ async def get_worker_health() -> dict[str, Any]:
                 ),
             },
             "last_error": transcode_last_error,
+            "verification_mode": transcode_verification_mode,
+            "write_suppressed": transcode_write_suppressed,
         },
         "livekit_webhooks": {
             "status": webhook_status,
@@ -359,6 +381,8 @@ async def get_worker_health() -> dict[str, Any]:
             "next_due_at": _iso(webhook_snapshot.get("next_due_at")),
             "last_failed_at": _iso(webhook_snapshot.get("last_failed_at")),
             "last_failure": log_buffer.sanitize_value(webhook_metrics.get("last_failure")),
+            "verification_mode": webhook_verification_mode,
+            "write_suppressed": webhook_write_suppressed,
         },
         "membership_expiry_warnings": {
             "status": membership_status,
@@ -367,6 +391,8 @@ async def get_worker_health() -> dict[str, Any]:
                 membership_metrics.get("poll_interval_seconds") or 0
             ),
             "last_error": membership_metrics.get("last_error"),
+            "verification_mode": membership_verification_mode,
+            "write_suppressed": membership_write_suppressed,
         },
     }
     return {

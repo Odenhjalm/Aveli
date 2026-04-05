@@ -33,6 +33,7 @@ _poller_task: Optional[asyncio.Task[None]] = None
 _pending_jobs: int = 0
 _failed_jobs: int = 0
 _last_failure: Optional[dict[str, Any]] = None
+_verification_mode: bool = False
 
 
 def _sentry_enabled() -> bool:
@@ -66,23 +67,39 @@ def get_metrics() -> dict[str, Any]:
         "pending_jobs": _pending_jobs,
         "failed_jobs": _failed_jobs,
         "last_failure": _last_failure,
+        "verification_mode": _verification_mode,
+        "write_suppressed": _verification_mode,
     }
 
 
-async def start_worker() -> None:
-    global _queue, _worker_task, _poller_task, _pending_jobs, _failed_jobs, _last_failure
+async def _verification_idle_loop() -> None:
+    while True:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            break
+
+
+async def start_worker(*, verification_mode: bool = False) -> None:
+    global _queue, _worker_task, _poller_task, _pending_jobs, _failed_jobs, _last_failure, _verification_mode
     if _queue is not None:
         return
 
-    await repositories.release_processing_webhook_jobs()
     counts = await repositories.get_webhook_job_counts()
     _pending_jobs = counts["pending"]
     _failed_jobs = counts["failed"]
     _last_failure = None
     metrics.livekit_webhook_pending_jobs.set(_pending_jobs)
     metrics.livekit_webhook_queue_size.set(0)
+    _verification_mode = verification_mode
 
     _queue = asyncio.Queue()
+    if verification_mode:
+        _worker_task = asyncio.create_task(_verification_idle_loop())
+        logger.info("LiveKit webhook worker started in no-write verification mode")
+        return
+
+    await repositories.release_processing_webhook_jobs()
     _worker_task = asyncio.create_task(_worker_loop())
 
     initial_jobs = await repositories.fetch_and_lock_due_webhook_jobs(limit=50)
@@ -94,7 +111,7 @@ async def start_worker() -> None:
 
 
 async def stop_worker() -> None:
-    global _queue, _worker_task, _poller_task
+    global _queue, _worker_task, _poller_task, _verification_mode
     if _queue is None:
         return
 
@@ -117,12 +134,15 @@ async def stop_worker() -> None:
         _worker_task = None
 
     _queue = None
+    _verification_mode = False
     logger.info("LiveKit webhook worker stopped")
 
 
 async def enqueue_webhook(payload: dict[str, Any]) -> None:
     if _queue is None:
         raise RuntimeError("LiveKit webhook worker not initialised")
+    if _verification_mode:
+        raise RuntimeError("LiveKit webhook worker is running in no-write verification mode")
 
     job = await repositories.create_webhook_job(payload)
     global _pending_jobs

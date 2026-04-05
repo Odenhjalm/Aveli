@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Legacy Docker helper for an optional local Postgres container.
+
 CMD="${1:-}"
 
 IMAGE="${LOCAL_DB_IMAGE:-supabase/postgres:15.1.0.117}"
@@ -19,11 +21,11 @@ usage() {
 Usage: $(basename "$0") <command>
 
 Commands:
-  up       Start local Postgres container (creates if missing)
-  down     Stop/remove container (keeps volume)
-  reset    Stop/remove container + delete volume (DANGER: wipes data)
-  url      Print LOCAL_DATABASE_URL
-  psql     Open psql to local DB
+  up       Start legacy local Postgres container (creates if missing)
+  down     Stop/remove legacy container (keeps volume)
+  reset    Stop/remove legacy container + delete volume (DANGER: wipes data)
+  url      Print legacy LOCAL_DATABASE_URL
+  psql     Open psql to the legacy local DB
 TXT
 }
 

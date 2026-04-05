@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections.abc import Awaitable, Callable
@@ -26,6 +27,8 @@ class SourceNotReadyError(RuntimeError):
 
 _worker_task: asyncio.Task[None] | None = None
 _logged_missing_source_assets: set[str] = set()
+_verification_mode: bool = False
+_worker_run_started_at: float | None = None
 
 
 def _now() -> datetime:
@@ -162,12 +165,30 @@ async def _verify_ready_contract(
         ):
             raise RuntimeError("Ready verification failed: preview object is missing")
 
+async def _verification_idle_loop() -> None:
+    while True:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            break
 
-async def start_worker() -> None:
-    global _worker_task
+
+async def start_worker(*, verification_mode: bool = False) -> None:
+    global _worker_task, _verification_mode, _worker_run_started_at
     enablement = _enablement_state()
     if not enablement["final_state"]:
         logger.info("Media transcode worker disabled", extra=enablement)
+        return
+    if _worker_task is not None:
+        return
+    _verification_mode = verification_mode
+    _worker_run_started_at = time.time()
+    if verification_mode:
+        _worker_task = asyncio.create_task(_verification_idle_loop())
+        logger.info(
+            "Media transcode worker started in no-write verification mode",
+            extra={**enablement, "verification_mode": True, "write_suppressed": True},
+        )
         return
     queue_contract_supported = await media_assets_repo.media_processing_queue_supported()
     if not queue_contract_supported:
@@ -175,8 +196,6 @@ async def start_worker() -> None:
             "Media transcode worker unavailable for current local baseline",
             extra={**enablement, "queue_contract_supported": False},
         )
-        return
-    if _worker_task is not None:
         return
     released = await media_assets_repo.release_processing_media_assets(
         stale_after_seconds=settings.media_transcode_stale_lock_seconds
@@ -188,7 +207,7 @@ async def start_worker() -> None:
 
 
 async def stop_worker() -> None:
-    global _worker_task
+    global _worker_task, _verification_mode, _worker_run_started_at
     if _worker_task is None:
         return
     _worker_task.cancel()
@@ -197,6 +216,8 @@ async def stop_worker() -> None:
     except asyncio.CancelledError:
         pass
     _worker_task = None
+    _verification_mode = False
+    _worker_run_started_at = None
     logger.info("Media transcode worker stopped")
 
 
@@ -206,25 +227,40 @@ async def get_metrics() -> dict[str, Any]:
     summary = await media_assets_repo.get_media_processing_worker_summary(
         stale_after_seconds=settings.media_transcode_stale_lock_seconds
     )
-    last_error = next(
-        iter(
-            log_buffer.list_events(
-                limit=1,
-                min_level="ERROR",
-                logger_names={__name__},
-            )
-        ),
-        None,
-    )
+    if _worker_run_started_at is None:
+        last_error = None
+    else:
+        last_error = next(
+            iter(
+                log_buffer.list_events(
+                    limit=1,
+                    min_level="ERROR",
+                    logger_names={__name__},
+                    since_epoch_seconds=_worker_run_started_at,
+                )
+            ),
+            None,
+        )
     return {
         "worker_running": _worker_task is not None and not _worker_task.done(),
-        **(enablement | {"final_state": bool(enablement["final_state"] and queue_contract_supported)}),
+        **(
+            enablement
+            | {
+                "final_state": bool(
+                    enablement["final_state"]
+                    if _verification_mode
+                    else enablement["final_state"] and queue_contract_supported
+                )
+            }
+        ),
         "queue_contract_supported": queue_contract_supported,
         "poll_interval_seconds": settings.media_transcode_poll_interval_seconds,
         "batch_size": settings.media_transcode_batch_size,
         "max_attempts": settings.media_transcode_max_attempts,
         "queue_summary": summary,
         "last_error": last_error,
+        "verification_mode": _verification_mode,
+        "write_suppressed": _verification_mode,
     }
 
 

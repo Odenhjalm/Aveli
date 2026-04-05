@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "protected_min_slot": 1,
-  "protected_max_slot": 16,
+  "protected_max_slot": 18,
   "baseline_dir": "backend/supabase/baseline_slots",
   "slots": [
     {
@@ -99,6 +99,18 @@
       "filename": "0016_auth_runtime_support_core.sql",
       "path": "backend/supabase/baseline_slots/0016_auth_runtime_support_core.sql",
       "sha256": "39a879c82de3562f26898c41b4682c5dbf5d0b1cef8c12ba56ad8da2c32edc1a"
+    },
+    {
+      "slot": 17,
+      "filename": "00017_livekit_webhook_jobs_core.sql",
+      "path": "backend/supabase/baseline_slots/00017_livekit_webhook_jobs_core.sql",
+      "sha256": "5275501019a9a3814309ca8ff05163bf9d886b99e257b6b3fdae436068be7bd4"
+    },
+    {
+      "slot": 18,
+      "filename": "00018_membership_worker_support_core.sql",
+      "path": "backend/supabase/baseline_slots/00018_membership_worker_support_core.sql",
+      "sha256": "d4e5b8c5d1dfe59723b66cd6cc97db507295076bd56bf6aedd942e7284f1dbde"
     }
   ]
 }

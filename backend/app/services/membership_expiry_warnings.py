@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -16,18 +17,34 @@ logger = logging.getLogger(__name__)
 _worker_task: asyncio.Task[None] | None = None
 _WARNING_STEP = "membership_expiry_warning_sent"
 _WARNING_TYPE = "expiry_7_day"
+_verification_mode = False
+_worker_run_started_at: float | None = None
 
 
-async def start_worker() -> None:
-    global _worker_task
+async def _verification_idle_loop() -> None:
+    while True:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            break
+
+
+async def start_worker(*, verification_mode: bool = False) -> None:
+    global _worker_task, _verification_mode, _worker_run_started_at
     if _worker_task is not None:
+        return
+    _verification_mode = verification_mode
+    _worker_run_started_at = time.time()
+    if verification_mode:
+        _worker_task = asyncio.create_task(_verification_idle_loop())
+        logger.info("Membership expiry warning worker started in no-write verification mode")
         return
     _worker_task = asyncio.create_task(_poll_loop())
     logger.info("Membership expiry warning worker started")
 
 
 async def stop_worker() -> None:
-    global _worker_task
+    global _worker_task, _verification_mode, _worker_run_started_at
     if _worker_task is None:
         return
     _worker_task.cancel()
@@ -36,6 +53,8 @@ async def stop_worker() -> None:
     except asyncio.CancelledError:
         pass
     _worker_task = None
+    _verification_mode = False
+    _worker_run_started_at = None
     logger.info("Membership expiry warning worker stopped")
 
 
@@ -179,20 +198,26 @@ def _build_warning_email_text(
 
 
 def get_metrics() -> dict[str, Any]:
-    last_error = next(
-        iter(
-            log_buffer.list_events(
-                limit=1,
-                min_level="ERROR",
-                logger_names={__name__},
-            )
-        ),
-        None,
-    )
+    if _worker_run_started_at is None:
+        last_error = None
+    else:
+        last_error = next(
+            iter(
+                log_buffer.list_events(
+                    limit=1,
+                    min_level="ERROR",
+                    logger_names={__name__},
+                    since_epoch_seconds=_worker_run_started_at,
+                )
+            ),
+            None,
+        )
     return {
         "worker_running": _worker_task is not None and not _worker_task.done(),
         "poll_interval_seconds": settings.membership_expiry_warning_interval_seconds,
         "last_error": last_error,
+        "verification_mode": _verification_mode,
+        "write_suppressed": _verification_mode,
     }
 
 

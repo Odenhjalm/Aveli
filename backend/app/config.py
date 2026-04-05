@@ -278,6 +278,12 @@ class Settings(BaseSettings):
     resend_api_key: str | None = Field(default=None, validation_alias="RESEND_API_KEY")
     email_from: str | None = Field(default=None, validation_alias="EMAIL_FROM")
     membership_expiry_warning_interval_seconds: int = 60 * 60 * 24
+    # Required for deterministic Windows local runtime verification without replay:
+    # start workers in read-only standby mode so backend health surfaces stay verifiable.
+    runtime_verify_no_write: bool = Field(
+        default=False,
+        validation_alias="AVELI_RUNTIME_VERIFY_NO_WRITE",
+    )
     enable_test_session_headers: bool = False
     logs_mcp_enabled: bool = Field(default_factory=lambda: not _is_cloud_runtime())
     media_control_plane_mcp_enabled: bool = Field(

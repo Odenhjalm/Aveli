@@ -32,10 +32,13 @@ Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in 
 ```bash
 cd backend
 poetry install --no-interaction
-PORT=8080 poetry run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+cd ..
+python -m backend.bootstrap.run_server
 ```
 - Health: `/healthz`, Ready: `/readyz`.
 - Supabase Storage/Stripe/LiveKit features require the corresponding env vars.
+- Windows-safe canonical backend start: `python -m backend.bootstrap.run_server`
+- Direct `uvicorn app.main:app ...` usage is not canonical on Windows because the psycopg async pool requires the selector event loop policy before server bootstrap.
 
 ### Supabase migrations
 ```bash
@@ -47,7 +50,9 @@ Production migration source: `supabase/migrations/*.sql` only.
 
 ### Local DB authority for MCP and verification
 - Authoritative local DB source: `backend/supabase/baseline_slots`.
-- Materialize that source on local Postgres with `backend/scripts/replay_baseline.sh`.
+- Canonical native local target: `postgresql://postgres:postgres@127.0.0.1:5432/aveli_local`.
+- Ensure the native local database exists with `backend/scripts/ensure_db.sh`.
+- Materialize that source on native local Postgres with `backend/scripts/replay_baseline.sh`.
 - `supabase/migrations/*.sql` remains the production migration source only.
 - Cloud clones and legacy DB state are reference inputs only and must not redefine local verification truth.
 
@@ -85,6 +90,8 @@ Environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (set to
 docker compose --env-file .env.docker up --build
 # Backend: http://localhost:8080, Landing: http://localhost:3000
 ```
+
+Docker is optional and reference-only for the local DB path; the canonical baseline replay target is the native Postgres instance on `127.0.0.1:5432/aveli_local`.
 
 ## Deployment
 - Canonical production release is manual and exact-SHA based; see `docs/DEPLOYMENT.md`.

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"inspect-user","method":"tools/call","params":{"name":"inspect_user","arguments":{"user_id":"e80a4e06-f968-4d93-a5f1-d7cc577ed09b"}}}

@@ -10,10 +10,13 @@ source "$REPLAY_BASELINE_SCRIPT_DIR/dev_common.sh"
 load_backend_env
 require_local_db_config
 require_local_db_host
+require_postgres_cli
+wait_for_local_postgres postgres
+ensure_local_database_exists
 
 echo "==> Local MCP audit/testing/verification authority: backend/supabase/baseline_slots"
 echo "==> Resetting managed schemas for deterministic baseline replay..."
-compose_psql <<'SQL'
+db_psql <<'SQL'
 drop schema if exists app cascade;
 drop schema if exists auth cascade;
 drop schema if exists extensions cascade;
@@ -21,11 +24,16 @@ drop schema if exists storage cascade;
 SQL
 
 echo "==> Applying auth substrate..."
-compose_psql < "$AUTH_SUBSTRATE_SQL"
+db_psql < "$AUTH_SUBSTRATE_SQL"
 
 echo "==> Applying baseline slots..."
-mapfile -t slot_files < <(
-  "$AVELI_BACKEND_PYTHON" - <<'PY' "$LOCK_FILE"
+lock_file_for_python="$LOCK_FILE"
+if [[ "${AVELI_BACKEND_PYTHON,,}" == *.exe ]] && command -v wslpath >/dev/null 2>&1; then
+  lock_file_for_python="$(wslpath -w "$LOCK_FILE")"
+fi
+
+slot_listing="$(
+  "$AVELI_BACKEND_PYTHON" - <<'PY' "$lock_file_for_python"
 import json
 import sys
 from pathlib import Path
@@ -35,7 +43,9 @@ data = json.loads(lock_path.read_text())
 for entry in sorted(data["slots"], key=lambda item: int(item["slot"])):
     print(entry["path"])
 PY
-)
+)"
+
+mapfile -t slot_files < <(printf '%s\n' "$slot_listing" | tr -d '\r')
 
 for relative_path in "${slot_files[@]}"; do
   absolute_path="$ROOT_DIR/$relative_path"
@@ -43,15 +53,15 @@ for relative_path in "${slot_files[@]}"; do
     echo "ERROR: baseline slot missing: $absolute_path" >&2
     exit 1
   fi
-  compose_psql < "$absolute_path"
+  db_psql < "$absolute_path"
   echo "   applied ${relative_path##*/}"
 done
 
 echo "==> Applying storage substrate..."
-compose_psql < "$STORAGE_SUBSTRATE_SQL"
+db_psql < "$STORAGE_SUBSTRATE_SQL"
 
 echo "==> Applying local test cleanup substrate..."
-compose_psql <<'SQL'
+db_psql <<'SQL'
 create or replace function app.cleanup_test_session(target_test_session_id uuid)
 returns void
 language plpgsql

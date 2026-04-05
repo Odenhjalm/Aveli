@@ -485,7 +485,10 @@ report_var SUPABASE_PROJECT_REF optional
 report_var SUPABASE_PAT optional
 
 if has_value DATABASE_URL && ! has_value SUPABASE_DB_URL; then
-  warn "DATABASE_URL is set but SUPABASE_DB_URL is missing; backend requires SUPABASE_DB_URL"
+  database_url_host="$(get_url_host "${DATABASE_URL}")"
+  if ! is_local_host "$database_url_host"; then
+    warn "DATABASE_URL is set but SUPABASE_DB_URL is missing; non-local database workflows require SUPABASE_DB_URL"
+  fi
 fi
 
 if [[ -n "$stripe_active_secret" ]]; then

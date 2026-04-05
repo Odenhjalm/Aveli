@@ -56,6 +56,18 @@ _MEDIA_ASSET_RETURNING_SQL = """
     playback_format,
     state::text as state
 """
+_MEDIA_TRANSCODE_WORKER_SQL = """
+    id,
+    media_type::text as media_type,
+    purpose::text as purpose,
+    original_object_path,
+    ingest_format,
+    state::text as state,
+    storage_bucket,
+    original_filename,
+    processing_attempts,
+    course_id
+"""
 
 
 def _decorate_media_asset_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -88,6 +100,10 @@ def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
 
 def _clamp_limit(limit: int | None, *, default: int, maximum: int) -> int:
     return max(1, min(int(limit or default), maximum))
+
+
+def _transcode_worker_limit(limit: int) -> int:
+    return _clamp_limit(limit, default=1, maximum=100)
 
 
 async def _table_columns(schema: str, table: str) -> set[str]:
@@ -553,10 +569,37 @@ def compute_backoff(attempt: int, *, max_seconds: int) -> timedelta:
 
 
 async def release_processing_media_assets(*, stale_after_seconds: int) -> int:
-    del stale_after_seconds
     if not await media_processing_queue_supported():
         return 0
-    raise RuntimeError("media processing queue contract is unsupported in the current local baseline")
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                update app.media_assets
+                set
+                    processing_locked_at = null,
+                    next_retry_at = case
+                        when next_retry_at is null or next_retry_at > now()
+                            then now()
+                        else next_retry_at
+                    end,
+                    updated_at = now()
+                where state = 'processing'::app.media_state
+                  and processing_locked_at is not null
+                  and processing_locked_at < now() - make_interval(secs => %s::integer)
+                  and (
+                    media_type = 'audio'::app.media_type
+                    or (
+                      media_type = 'image'::app.media_type
+                      and purpose = 'course_cover'::app.media_purpose
+                    )
+                  )
+                """,
+                (max(1, int(stale_after_seconds)),),
+            )
+            released = cur.rowcount
+            await conn.commit()
+    return int(released or 0)
 
 
 async def fetch_and_lock_pending_media_assets(
@@ -564,10 +607,78 @@ async def fetch_and_lock_pending_media_assets(
     limit: int,
     max_attempts: int,
 ) -> list[dict[str, Any]]:
-    del limit, max_attempts
     if not await media_processing_queue_supported():
         return []
-    raise RuntimeError("media processing queue contract is unsupported in the current local baseline")
+    bounded_limit = _transcode_worker_limit(limit)
+    bounded_attempts = max(1, int(max_attempts))
+    locked_rows: list[dict[str, Any]] = []
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                select
+                    id,
+                    state::text as state
+                from app.media_assets
+                where (
+                    media_type = 'audio'::app.media_type
+                    or (
+                        media_type = 'image'::app.media_type
+                        and purpose = 'course_cover'::app.media_purpose
+                    )
+                )
+                  and state in (
+                    'uploaded'::app.media_state,
+                    'processing'::app.media_state
+                  )
+                  and coalesce(processing_attempts, 0) < %s::integer
+                  and processing_locked_at is null
+                  and coalesce(next_retry_at, now()) <= now()
+                order by coalesce(next_retry_at, created_at, updated_at, now()) asc, id asc
+                limit %s::integer
+                for update skip locked
+                """,
+                (bounded_attempts, bounded_limit),
+            )
+            candidates = [dict(row) for row in await cur.fetchall()]
+
+            for candidate in candidates:
+                media_id = str(candidate.get("id") or "").strip()
+                state = str(candidate.get("state") or "").strip().lower()
+                if not media_id:
+                    continue
+                if state == "uploaded":
+                    await cur.execute(
+                        """
+                        select app.canonical_worker_transition_media_asset_state(
+                            %s::uuid,
+                            'processing'::app.media_state,
+                            null
+                        )
+                        """,
+                        (media_id,),
+                    )
+                await cur.execute(
+                    f"""
+                    update app.media_assets
+                    set
+                        processing_locked_at = now(),
+                        updated_at = now()
+                    where id = %s::uuid
+                      and state = 'processing'::app.media_state
+                      and processing_locked_at is null
+                    returning
+                        {_MEDIA_TRANSCODE_WORKER_SQL}
+                    """,
+                    (media_id,),
+                )
+                row = await cur.fetchone()
+                if row is not None:
+                    locked_rows.append(_decorate_media_asset_row(dict(row)) or {})
+            await conn.commit()
+
+    return locked_rows
 
 
 async def list_pending_media_assets_missing_source(
@@ -578,7 +689,7 @@ async def list_pending_media_assets_missing_source(
     del limit, max_attempts
     if not await media_processing_queue_supported():
         return []
-    raise RuntimeError("media processing queue contract is unsupported in the current local baseline")
+    return []
 
 
 async def defer_media_asset_processing(
@@ -586,8 +697,26 @@ async def defer_media_asset_processing(
     media_id: str,
     next_retry_at: Any | None = None,
 ) -> None:
-    del media_id, next_retry_at
-    raise RuntimeError("media processing queue contract is unsupported in the current local baseline")
+    if not await media_processing_queue_supported():
+        return
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                update app.media_assets
+                set
+                    processing_locked_at = null,
+                    next_retry_at = coalesce(%s, now()),
+                    updated_at = now()
+                where id = %s::uuid
+                  and state in (
+                    'uploaded'::app.media_state,
+                    'processing'::app.media_state
+                  )
+                """,
+                (next_retry_at, media_id),
+            )
+            await conn.commit()
 
 
 async def mark_media_asset_failed(

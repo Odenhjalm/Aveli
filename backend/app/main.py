@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 import re
+from typing import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exception_handlers import http_exception_handler
@@ -43,6 +44,11 @@ from .routes import (
     verification_mcp,
 )
 from .db import get_conn
+from .services import (
+    livekit_events,
+    media_transcode_worker,
+    membership_expiry_warnings,
+)
 
 ASSETS_ROOT = Path(__file__).resolve().parents[1] / "assets"
 UPLOADS_ROOT = ASSETS_ROOT / "uploads"
@@ -52,6 +58,40 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 _CORS_ALLOW_METHODS = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
+_WorkerStop = Callable[[], Awaitable[None]]
+_WorkerStart = Callable[..., Awaitable[None]]
+
+
+def _local_background_workers() -> tuple[tuple[str, _WorkerStart, _WorkerStop], ...]:
+    return (
+        ("livekit_webhooks", livekit_events.start_worker, livekit_events.stop_worker),
+        ("media_transcode", media_transcode_worker.start_worker, media_transcode_worker.stop_worker),
+        (
+            "membership_expiry_warnings",
+            membership_expiry_warnings.start_worker,
+            membership_expiry_warnings.stop_worker,
+        ),
+    )
+
+
+async def _start_local_background_workers() -> list[tuple[str, _WorkerStop]]:
+    if not settings.mcp_workers_enabled:
+        logger.info("Skipping local background workers because MCP mode disables them")
+        return []
+
+    verification_mode = bool(settings.runtime_verify_no_write)
+    started_workers: list[tuple[str, _WorkerStop]] = []
+    for name, start_worker, stop_worker in _local_background_workers():
+        await start_worker(verification_mode=verification_mode)
+        started_workers.append((name, stop_worker))
+    return started_workers
+
+
+async def _stop_local_background_workers(
+    started_workers: list[tuple[str, _WorkerStop]],
+) -> None:
+    for _, stop_worker in reversed(started_workers):
+        await stop_worker()
 
 
 def setup_sentry() -> None:
@@ -75,14 +115,18 @@ setup_sentry()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    started_workers: list[tuple[str, _WorkerStop]] = []
+
     Path(settings.media_root).mkdir(parents=True, exist_ok=True)
     UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
     for sub in ("users", "courses", "lessons"):
         (UPLOADS_ROOT / sub).mkdir(parents=True, exist_ok=True)
     await pool.open(wait=True)
     try:
+        started_workers = await _start_local_background_workers()
         yield
     finally:
+        await _stop_local_background_workers(started_workers)
         await pool.close()
 
 

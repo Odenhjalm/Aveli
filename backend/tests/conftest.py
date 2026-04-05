@@ -12,13 +12,13 @@ if str(ROOT_DIR) not in sys.path:
 
 LOCAL_TEST_DATABASE_URL = os.environ.get(
     "AVELI_TEST_DATABASE_URL",
-    "postgresql://postgres:postgres@127.0.0.1:54322/aveli_local",
+    "postgresql://postgres:postgres@127.0.0.1:5432/aveli_local",
 )
 _parsed_test_db = urlparse(LOCAL_TEST_DATABASE_URL)
 os.environ["APP_ENV"] = "development"
 os.environ["MCP_MODE"] = "local"
 os.environ["DATABASE_HOST"] = _parsed_test_db.hostname or "127.0.0.1"
-os.environ["DATABASE_PORT"] = str(_parsed_test_db.port or 54322)
+os.environ["DATABASE_PORT"] = str(_parsed_test_db.port or 5432)
 os.environ["DATABASE_NAME"] = (_parsed_test_db.path or "/aveli_local").lstrip("/") or "aveli_local"
 os.environ["DATABASE_USER"] = _parsed_test_db.username or "postgres"
 os.environ["DATABASE_PASSWORD"] = _parsed_test_db.password or "postgres"

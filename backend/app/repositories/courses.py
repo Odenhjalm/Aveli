@@ -98,11 +98,15 @@ async def get_course_pricing_by_slug(slug: str) -> dict[str, Any] | None:
 
 async def list_courses(
     *,
+    teacher_id: str | None = None,
     limit: int | None = None,
     search: str | None = None,
 ) -> Sequence[CourseRow]:
     clauses: list[str] = []
     params: list[Any] = []
+    if teacher_id:
+        clauses.append("c.created_by = %s::uuid")
+        params.append(teacher_id)
     if search:
         pattern = f"%{search}%"
         clauses.append("(c.title ilike %s or c.slug ilike %s)")

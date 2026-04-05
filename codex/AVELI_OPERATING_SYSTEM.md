@@ -1086,7 +1086,7 @@ Ensure Codex runs against a safe, local, reproducible candidate database.
 
 Codex MUST prefer local database:
 
-`postgresql://postgres:postgres@127.0.0.1:54322/aveli_local`
+`postgresql://postgres:postgres@127.0.0.1:5432/aveli_local`
 
 Codex MUST verify required schemas:
 

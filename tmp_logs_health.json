@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"logs-health","method":"tools/call","params":{"name":"get_worker_health","arguments":{}}}

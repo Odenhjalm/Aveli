@@ -1,5 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
+import sys
 from typing import AsyncIterator
 from uuid import UUID
 
@@ -14,6 +16,26 @@ _test_session_id: ContextVar[str | None] = ContextVar(
     "aveli_test_session_id",
     default=None,
 )
+
+
+def configure_windows_asyncio_policy() -> None:
+    """Use a psycopg-compatible loop policy for local Windows runtimes."""
+
+    if sys.platform != "win32":
+        return
+
+    selector_policy_type = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy_type is None:
+        return
+
+    current_policy = asyncio.get_event_loop_policy()
+    if isinstance(current_policy, selector_policy_type):
+        return
+
+    asyncio.set_event_loop_policy(selector_policy_type())
+
+
+configure_windows_asyncio_policy()
 
 
 def _normalize_test_session_id(value: str | UUID | None) -> str | None:
