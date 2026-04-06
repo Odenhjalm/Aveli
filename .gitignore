@@ -175,3 +175,5 @@ verified_tasks/
 reconstruction
 production_inventory/*
 test_seed_assets/*
+tmp_*
+*.pid

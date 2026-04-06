@@ -5,8 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-# 🔥 LOAD ENV FIRST (CRITICAL)
-from backend.bootstrap.load_env import load_env
+from backend.scripts.bootstrap_gate import ensure_local_execution_ready
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -45,15 +44,11 @@ def _port() -> int:
 def main() -> None:
     print("[AVELI] Bootstrapping backend...")
 
-    # 🔥 STEP 1: LOAD ENV
-    load_env()
-
-    # 🔥 STEP 2: FIX EVENT LOOP (WINDOWS)
+    ensure_local_execution_ready()
     _apply_windows_selector_policy()
 
     print(f"[AVELI] HOST={_host()} PORT={_port()}")
 
-    # 🔥 STEP 3: IMPORT UVICORN AFTER ENV + LOOP FIX
     import uvicorn
 
     uvicorn.run(

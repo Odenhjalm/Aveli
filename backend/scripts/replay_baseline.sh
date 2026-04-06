@@ -3,6 +3,32 @@ set -euo pipefail
 
 REPLAY_BASELINE_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 REPLAY_BASELINE_SCRIPT_DIR="$(cd "$(dirname "$REPLAY_BASELINE_SCRIPT_PATH")" && pwd)"
+BOOTSTRAP_GATE_ROOT_DIR="$(cd "$REPLAY_BASELINE_SCRIPT_DIR/../.." && pwd)"
+
+source "$BOOTSTRAP_GATE_ROOT_DIR/tools/runtime/python_paths.sh"
+aveli_require_python "$AVELI_BACKEND_PYTHON" "backend python"
+PYTHON_BIN="$AVELI_BACKEND_PYTHON"
+export AVELI_BACKEND_PYTHON="$PYTHON_BIN"
+
+set +e
+GATE_OUTPUT="$(
+  cd "$BOOTSTRAP_GATE_ROOT_DIR" &&
+  "$PYTHON_BIN" backend/scripts/bootstrap_gate.py 2>&1
+)"
+GATE_STATUS=$?
+set -e
+
+printf '%s\n' "$GATE_OUTPUT"
+
+if [ "$GATE_STATUS" -ne 0 ]; then
+  echo "BOOTSTRAP GATE FAILED - STOPPING"
+  exit 1
+fi
+
+if ! printf '%s\n' "$GATE_OUTPUT" | grep -q '^BOOTSTRAP_GATE_OK=1$'; then
+  echo "BOOTSTRAP TOKEN MISSING - STOPPING"
+  exit 1
+fi
 
 # shellcheck source=/dev/null
 source "$REPLAY_BASELINE_SCRIPT_DIR/dev_common.sh"
@@ -28,12 +54,12 @@ db_psql < "$AUTH_SUBSTRATE_SQL"
 
 echo "==> Applying baseline slots..."
 lock_file_for_python="$LOCK_FILE"
-if [[ "${AVELI_BACKEND_PYTHON,,}" == *.exe ]] && command -v wslpath >/dev/null 2>&1; then
+if [[ "${PYTHON_BIN,,}" == *.exe ]] && command -v wslpath >/dev/null 2>&1; then
   lock_file_for_python="$(wslpath -w "$LOCK_FILE")"
 fi
 
 slot_listing="$(
-  "$AVELI_BACKEND_PYTHON" - <<'PY' "$lock_file_for_python"
+  "$PYTHON_BIN" - <<'PY' "$lock_file_for_python"
 import json
 import sys
 from pathlib import Path
