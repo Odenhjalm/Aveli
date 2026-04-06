@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
+
+# 🔥 LOAD ENV FIRST (CRITICAL)
+from backend.bootstrap.load_env import load_env
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -11,7 +14,7 @@ BACKEND_DIR = ROOT_DIR / "backend"
 
 
 def _apply_windows_selector_policy() -> None:
-    """Use a psycopg-compatible loop policy before uvicorn bootstraps on Windows."""
+    """Ensure psycopg-compatible event loop on Windows BEFORE uvicorn starts."""
 
     if sys.platform != "win32":
         return
@@ -35,15 +38,22 @@ def _port() -> int:
     raw = str(os.environ.get("PORT") or "8080").strip()
     try:
         return int(raw)
-    except ValueError as exc:  # pragma: no cover - defensive CLI guard
-        raise SystemExit(f"Invalid PORT value: {raw}") from exc
+    except ValueError as exc:
+        raise SystemExit(f"[AVELI] Invalid PORT value: {raw}") from exc
 
 
 def main() -> None:
+    print("[AVELI] Bootstrapping backend...")
+
+    # 🔥 STEP 1: LOAD ENV
+    load_env()
+
+    # 🔥 STEP 2: FIX EVENT LOOP (WINDOWS)
     _apply_windows_selector_policy()
 
-    # Import uvicorn only after the Windows loop policy guard is applied so the
-    # backend can start deterministically on Windows without reload.
+    print(f"[AVELI] HOST={_host()} PORT={_port()}")
+
+    # 🔥 STEP 3: IMPORT UVICORN AFTER ENV + LOOP FIX
     import uvicorn
 
     uvicorn.run(
