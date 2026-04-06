@@ -349,6 +349,25 @@ If index missing:
 
 ---
 
+### Temporary Rule 6A - Retrieval During RTX Outage
+
+This temporary operating rule is active until:
+
+- the RTX-capable machine is back in service
+- semantic indexing is explicitly re-approved by the user
+
+During this period:
+
+- GitHub code search is the default retrieval surface for repository search
+- absence of an approved local semantic index artifact MUST NOT trigger local index rebuild
+- local index rebuild is forbidden
+- remote GPU provisioning is forbidden
+- background indexing services are forbidden
+- semantic indexing is deferred
+- semantic indexing may be reconsidered only after documented retrieval failures across multiple system layers and explicit user re-approval
+
+---
+
 ### Rule 7 - INDEX ENVIRONMENT LAW
 
 All index-related tasks MUST:
