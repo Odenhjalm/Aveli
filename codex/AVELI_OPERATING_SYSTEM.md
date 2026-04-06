@@ -535,13 +535,20 @@ Codex MUST use explicit interpreter paths for repo tooling.
 
 Canonical interpreter split:
 
-- repo/tooling and OpenAI pipeline: `.venv/bin/python`
-- backend-specific scripts: `backend/.venv/bin/python`
-- semantic-search runtime / MCP search server: `.repo_index/.search_venv/bin/python`
+- repo/tooling, OpenAI pipeline, and canonical backend startup via `backend.bootstrap.run_server`
+  - Windows: `.\.venv\Scripts\python.exe`
+  - Linux: `./.venv/bin/python`
+- backend-specific scripts under `backend/scripts/`
+  - Windows: `.\backend\.venv\Scripts\python.exe`
+  - Linux: `./backend/.venv/bin/python`
+- semantic-search runtime / MCP search server
+  - Windows: `.\.repo_index\.search_venv\Scripts\python.exe`
+  - Linux: `./.repo_index/.search_venv/bin/python`
 
 Codex MUST:
 
 - invoke Python through the canonical interpreter for the relevant tool surface
+- use explicit interpreter path for backend startup
 - prefer explicit interpreter paths over PATH discovery
 - treat environment readiness as a precondition for execution
 - rebuild the vector index only after search-index hygiene rules are in place
@@ -550,6 +557,8 @@ Codex MUST NOT:
 
 - rely on shell activation
 - use bare `python`
+- use `poetry run`
+- call `uvicorn` directly for backend startup
 - use dynamic interpreter discovery when the canonical path is known
 - continue if the required interpreter, dependency set, or vector index is not ready
 
@@ -811,11 +820,26 @@ If `DATABASE_URL` is missing or ambiguous:
 ### Startup Command
 
 ```bash
-cd backend
-poetry run uvicorn app.main:app --host 127.0.0.1 --port 8080
+# Windows
+.\.venv\Scripts\python.exe -m backend.bootstrap.run_server
+
+# Linux
+./.venv/bin/python -m backend.bootstrap.run_server
 ```
 
-Codex MUST NOT modify this command unless explicitly instructed.
+This is the ONLY valid backend startup command set.
+
+Codex MUST use explicit interpreter path for backend startup.
+
+Codex MUST use `backend.bootstrap.run_server` as the only backend startup entrypoint.
+
+Codex MUST NOT:
+
+- use `python`
+- use `poetry run`
+- use shell activation (`activate`, `source`)
+- call `uvicorn` directly
+- modify this command unless explicitly instructed
 
 ### Pre-Flight Check
 
@@ -982,13 +1006,7 @@ Codex MUST:
 
 ## Python Execution
 
-Use:
-
-```bash
-poetry run <command>
-```
-
-for backend Python execution when operating inside backend environment.
+Use the explicit interpreter paths defined in `Python Execution Rules`.
 
 Use the task-declared environment otherwise.
 

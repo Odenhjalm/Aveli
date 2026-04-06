@@ -15,7 +15,7 @@ Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in 
 ```
 
 ## Prerequisites
-- Python 3.11+, Poetry
+- Python 3.11+
 - Flutter 3.24+ (run inside `frontend/`)
 - Node 18+ for the Next.js landing (`frontend/landing`)
 - `psql` client
@@ -30,15 +30,16 @@ Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in 
 
 ## Backend (FastAPI)
 ```bash
-cd backend
-poetry install --no-interaction
-cd ..
-python -m backend.bootstrap.run_server
+# Windows
+.\.venv\Scripts\python.exe -m backend.bootstrap.run_server
+
+# Linux
+./.venv/bin/python -m backend.bootstrap.run_server
 ```
 - Health: `/healthz`, Ready: `/readyz`.
 - Supabase Storage/Stripe/LiveKit features require the corresponding env vars.
-- Windows-safe canonical backend start: `python -m backend.bootstrap.run_server`
-- Direct `uvicorn app.main:app ...` usage is not canonical on Windows because the psycopg async pool requires the selector event loop policy before server bootstrap.
+- The only valid backend startup entrypoint is `backend.bootstrap.run_server`.
+- Do not use shell activation, `poetry run`, bare `python`, or direct `uvicorn` for backend startup.
 
 ### Supabase migrations
 ```bash
