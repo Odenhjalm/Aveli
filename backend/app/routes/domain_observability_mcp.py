@@ -21,7 +21,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 _TOOL_DEFINITIONS = [
     {
         "name": "inspect_user",
-        "description": "Return a deterministic user-domain snapshot covering auth, profile, onboarding, membership, authored courses, and enrolled courses.",
+        "description": "Return a deterministic user-domain snapshot covering auth, profile, onboarding, canonical membership app-entry authority, authored courses, and enrolled courses.",
         "inputSchema": {
             "type": "object",
             "properties": {

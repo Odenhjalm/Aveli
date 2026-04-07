@@ -1,34 +1,18 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-
-from fastapi import HTTPException
+from uuid import uuid4
 
 from ..db import get_conn
-from ..services import lesson_playback_service
 
-_PROFILE_MEDIA_STATES = frozenset(
-    {"pending_upload", "uploaded", "processing", "ready", "failed"}
-)
 
 _ITEM_SELECT = """
     select
-        tpm.id,
-        tpm.teacher_id,
-        tpm.media_kind,
-        tpm.lesson_media_id,
-        tpm.seminar_recording_id,
-        tpm.external_url,
-        tpm.title,
-        tpm.description,
-        tpm.cover_media_id,
-        tpm.cover_image_url,
-        tpm.position,
-        tpm.is_published,
-        tpm.enabled_for_home_player,
-        tpm.created_at,
-        tpm.updated_at
-    from app.teacher_profile_media tpm
+        pmp.id,
+        pmp.subject_user_id,
+        pmp.media_asset_id,
+        pmp.visibility
+    from app.profile_media_placements as pmp
 """
 
 
@@ -36,8 +20,8 @@ async def list_teacher_profile_media(teacher_id: str) -> list[dict[str, Any]]:
     query = (
         _ITEM_SELECT
         + """
-        where tpm.teacher_id = %(teacher_id)s
-        order by tpm.position asc, tpm.created_at asc
+        where pmp.subject_user_id = %(teacher_id)s
+        order by pmp.id asc
         """
     )
     async with get_conn() as cur:
@@ -54,8 +38,8 @@ async def get_teacher_profile_media(
     query = (
         _ITEM_SELECT
         + """
-        where tpm.id = %(item_id)s
-          and tpm.teacher_id = %(teacher_id)s
+        where pmp.id = %(item_id)s
+          and pmp.subject_user_id = %(teacher_id)s
         limit 1
         """
     )
@@ -68,60 +52,28 @@ async def get_teacher_profile_media(
 async def create_teacher_profile_media(
     *,
     teacher_id: str,
-    media_kind: str,
-    lesson_media_id: Optional[str],
-    seminar_recording_id: Optional[str],
-    external_url: Optional[str],
-    title: Optional[str],
-    description: Optional[str],
-    cover_media_id: Optional[str],
-    cover_image_url: Optional[str],
-    position: int,
-    is_published: bool,
-    enabled_for_home_player: bool,
+    media_asset_id: str,
+    visibility: str,
 ) -> Optional[dict[str, Any]]:
+    item_id = str(uuid4())
     params: dict[str, Any] = {
+        "item_id": item_id,
         "teacher_id": teacher_id,
-        "media_kind": media_kind,
-        "lesson_media_id": lesson_media_id,
-        "seminar_recording_id": seminar_recording_id,
-        "external_url": external_url,
-        "title": title,
-        "description": description,
-        "cover_media_id": cover_media_id,
-        "cover_image_url": cover_image_url,
-        "position": position,
-        "is_published": is_published,
-        "enabled_for_home_player": enabled_for_home_player,
+        "media_asset_id": media_asset_id,
+        "visibility": visibility,
     }
     query = """
-        insert into app.teacher_profile_media (
-            teacher_id,
-            media_kind,
-            lesson_media_id,
-            seminar_recording_id,
-            external_url,
-            title,
-            description,
-            cover_media_id,
-            cover_image_url,
-            position,
-            is_published,
-            enabled_for_home_player
+        insert into app.profile_media_placements (
+            id,
+            subject_user_id,
+            media_asset_id,
+            visibility
         )
         values (
+            %(item_id)s,
             %(teacher_id)s,
-            %(media_kind)s,
-            %(lesson_media_id)s,
-            %(seminar_recording_id)s,
-            %(external_url)s,
-            %(title)s,
-            %(description)s,
-            %(cover_media_id)s,
-            %(cover_image_url)s,
-            %(position)s,
-            %(is_published)s,
-            %(enabled_for_home_player)s
+            %(media_asset_id)s,
+            %(visibility)s
         )
         returning id
     """
@@ -130,7 +82,6 @@ async def create_teacher_profile_media(
         row = await cur.fetchone()
         if not row:
             return None
-        item_id = row["id"]
     return await get_teacher_profile_media(item_id=item_id, teacher_id=teacher_id)
 
 
@@ -153,11 +104,10 @@ async def update_teacher_profile_media(
         assignments.append(f"{key} = %({key})s")
 
     query = f"""
-        update app.teacher_profile_media
-           set {", ".join(assignments)},
-               updated_at = now()
+        update app.profile_media_placements
+           set {", ".join(assignments)}
          where id = %(item_id)s
-           and teacher_id = %(teacher_id)s
+           and subject_user_id = %(teacher_id)s
         returning id
     """
     async with get_conn() as cur:
@@ -174,9 +124,9 @@ async def delete_teacher_profile_media(
     teacher_id: str,
 ) -> bool:
     query = """
-        delete from app.teacher_profile_media
+        delete from app.profile_media_placements
         where id = %s
-          and teacher_id = %s
+          and subject_user_id = %s
         returning id
     """
     async with get_conn() as cur:
@@ -185,131 +135,16 @@ async def delete_teacher_profile_media(
     return bool(row)
 
 
-async def list_teacher_lesson_media_sources(teacher_id: str) -> list[dict[str, Any]]:
-    query = """
-        select
-            lm.id,
-            lm.lesson_id,
-            l.lesson_title,
-            l.position as lesson_position,
-            c.id as course_id,
-            c.title as course_title,
-            c.slug as course_slug,
-            lm.kind,
-            case
-                when ma.id is not null then
-                    case when ma.state = 'ready' then ma.streaming_object_path else null end
-                else coalesce(mo.storage_path, lm.storage_path)
-            end as storage_path,
-            case
-                when ma.id is not null then
-                    case when ma.state = 'ready' then ma.storage_bucket else null end
-                else coalesce(mo.storage_bucket, lm.storage_bucket)
-            end as storage_bucket,
-            mo.content_type,
-            mo.byte_size,
-            lm.media_asset_id,
-            coalesce(ma.duration_seconds, lm.duration_seconds) as duration_seconds,
-            ma.state as media_state,
-            lm.position,
-            lm.created_at
-        from app.lesson_media lm
-        join app.lessons l on l.id = lm.lesson_id
-        join app.courses c on c.id = l.course_id
-        left join app.media_objects mo on mo.id = lm.media_id
-        left join app.media_assets ma on ma.id = lm.media_asset_id
-        where c.created_by = %s
-        order by c.title asc, l.position asc, lm.position asc
-    """
-    async with get_conn() as cur:
-        await cur.execute(query, (teacher_id,))
-        rows = await cur.fetchall()
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        items.append(
-            await _attach_canonical_lesson_media(dict(row), teacher_id=teacher_id)
-        )
-    return items
-
-
 async def list_public_teacher_profile_media(teacher_id: str) -> list[dict[str, Any]]:
     query = (
         _ITEM_SELECT
         + """
-        where tpm.teacher_id = %(teacher_id)s
-          and tpm.is_published = true
-        order by tpm.position asc, tpm.created_at asc
+        where pmp.subject_user_id = %(teacher_id)s
+          and pmp.visibility = 'published'
+        order by pmp.id asc
         """
     )
     async with get_conn() as cur:
         await cur.execute(query, {"teacher_id": teacher_id})
-        rows = await cur.fetchall()
-    return [dict(row) for row in rows]
-
-
-def _normalized_profile_media_state(value: Any) -> str | None:
-    normalized = str(value or "").strip().lower()
-    if normalized not in _PROFILE_MEDIA_STATES:
-        return None
-    return normalized
-
-
-async def _attach_canonical_lesson_media(
-    data: dict[str, Any],
-    *,
-    teacher_id: str,
-) -> dict[str, Any]:
-    media_asset_id = str(data.get("media_asset_id") or "").strip() or None
-    if media_asset_id is None:
-        data["media"] = None
-        return data
-
-    normalized_state = _normalized_profile_media_state(data.get("media_state"))
-    if normalized_state is None:
-        data["media"] = None
-        return data
-
-    resolved_url: str | None = None
-    lesson_media_id = str(data.get("id") or "").strip()
-    if normalized_state == "ready" and lesson_media_id:
-        try:
-            playback = await lesson_playback_service.resolve_lesson_media_playback(
-                lesson_media_id=lesson_media_id,
-                user_id=teacher_id,
-            )
-        except HTTPException:
-            resolved_url = None
-        else:
-            resolved_url = str(playback.get("resolved_url") or "").strip() or None
-
-    data["media"] = {
-        "media_id": media_asset_id,
-        "state": normalized_state,
-        "resolved_url": resolved_url,
-    }
-    return data
-
-
-async def list_teacher_seminar_recording_sources(teacher_id: str) -> list[dict[str, Any]]:
-    query = """
-        select
-            sr.id,
-            sr.seminar_id,
-            sem.title as seminar_title,
-            sr.session_id,
-            sr.asset_url,
-            sr.status,
-            sr.duration_seconds,
-            sr.byte_size,
-            sr.published,
-            sr.created_at,
-            sr.updated_at
-        from app.seminar_recordings sr
-        join app.seminars sem on sem.id = sr.seminar_id
-        where sem.host_id = %s
-        order by sr.created_at desc
-    """
-    async with get_conn() as cur:
-        await cur.execute(query, (teacher_id,))
         rows = await cur.fetchall()
     return [dict(row) for row in rows]

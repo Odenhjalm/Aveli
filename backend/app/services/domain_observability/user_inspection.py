@@ -7,6 +7,7 @@ from psycopg import errors
 
 from ...repositories import (
     auth as auth_repo,
+    auth_subjects as auth_subjects_repo,
     courses as courses_repo,
     memberships as memberships_repo,
     profiles as profiles_repo,
@@ -27,6 +28,7 @@ from .common import (
 _COURSE_LIMIT = 25
 _SCHEMA_GUARDED_SOURCES = {
     "auth.get_user_by_id": "error",
+    "auth_subjects.get_auth_subject": "error",
     "profiles.get_profile": "error",
     "memberships.get_membership": "warning",
     "courses.list_courses": "warning",
@@ -42,12 +44,16 @@ def _email_verification_state(user_row: dict[str, Any] | None) -> str:
     return "unverified"
 
 
-def _role_state(profile_row: dict[str, Any] | None) -> str:
-    if profile_row is None:
+def _role_state(auth_subject_row: dict[str, Any] | None) -> str:
+    if auth_subject_row is None:
         return "missing"
-    if bool(profile_row.get("is_admin")):
+    if bool(auth_subject_row.get("is_admin")):
         return "admin"
-    return normalize_text(profile_row.get("role_v2")) or "missing"
+    role_v2 = normalize_text(auth_subject_row.get("role_v2"))
+    if role_v2 in {"learner", "teacher"}:
+        return role_v2
+    role = normalize_text(auth_subject_row.get("role"))
+    return role or "missing"
 
 
 async def _guard_schema(source: str, awaitable) -> tuple[Any, dict[str, Any] | None]:
@@ -69,12 +75,17 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
     normalized_user_id = str(user_id or "").strip()
     (
         (user_row, user_issue),
+        (auth_subject_row, auth_subject_issue),
         (profile_row, profile_issue),
         (membership_row, membership_issue),
         (authored_courses_raw, authored_courses_issue),
         (enrolled_courses_raw, enrolled_courses_issue),
     ) = await asyncio.gather(
         _guard_schema("auth.get_user_by_id", auth_repo.get_user_by_id(normalized_user_id)),
+        _guard_schema(
+            "auth_subjects.get_auth_subject",
+            auth_subjects_repo.get_auth_subject(normalized_user_id),
+        ),
         _guard_schema("profiles.get_profile", profiles_repo.get_profile(normalized_user_id)),
         _guard_schema("memberships.get_membership", memberships_repo.get_membership(normalized_user_id)),
         _guard_schema(
@@ -87,7 +98,7 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
     enrolled_courses_raw = enrolled_courses_raw or []
 
     derived_onboarding_state: str | None = None
-    if profile_row is not None:
+    if auth_subject_row is not None:
         try:
             derived_onboarding_state = await onboarding_state.derive_onboarding_state(
                 normalized_user_id
@@ -107,6 +118,7 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
     subject = {"user_id": normalized_user_id}
     for source_issue in (
         user_issue,
+        auth_subject_issue,
         profile_issue,
         membership_issue,
         authored_courses_issue,
@@ -151,6 +163,15 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
                 subject=subject,
             )
         )
+    if auth_subject_row is None:
+        violations.append(
+            violation(
+                "auth_subject_missing",
+                "Canonical auth subject was not found",
+                source="auth_subjects.get_auth_subject",
+                subject=subject,
+            )
+        )
 
     user_email = normalize_text((user_row or {}).get("email"))
     profile_email = normalize_text((profile_row or {}).get("email"))
@@ -179,7 +200,7 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
                 }
             )
 
-    stored_onboarding_state = normalize_text((profile_row or {}).get("onboarding_state"))
+    stored_onboarding_state = normalize_text((auth_subject_row or {}).get("onboarding_state"))
     if (
         stored_onboarding_state is not None
         and derived_onboarding_state is not None
@@ -227,8 +248,15 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
         "state_summary": {
             "auth_user_state": "present" if user_row is not None else "missing",
             "email_verification_state": _email_verification_state(user_row),
+            "auth_subject_state": "present" if auth_subject_row is not None else "missing",
             "profile_state": "present" if profile_row is not None else "missing",
-            "role_state": _role_state(profile_row),
+            "role_state": _role_state(auth_subject_row),
+            "app_entry_authority": "memberships",
+            "app_entry_state": (
+                "active"
+                if is_membership_row_active(membership_row)
+                else ("inactive" if membership_row is not None else "missing")
+            ),
             "membership_state": (
                 "active"
                 if is_membership_row_active(membership_row)
@@ -249,8 +277,20 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             "enrolled_course_count": len(enrolled_course_ids),
         },
         "truth_sources": {
+            "app_entry": {
+                "authority": "memberships",
+                "membership_present": membership_row is not None,
+                "membership_active": is_membership_row_active(membership_row),
+            },
             "auth": {
                 "user_present": user_row is not None,
+            },
+            "auth_subject": {
+                "authority": "auth_subjects",
+                "auth_subject_present": auth_subject_row is not None,
+                "role_v2": normalize_text((auth_subject_row or {}).get("role_v2")),
+                "role": normalize_text((auth_subject_row or {}).get("role")),
+                "is_admin": bool((auth_subject_row or {}).get("is_admin")),
             },
             "profile": {
                 "profile_present": profile_row is not None,
@@ -270,6 +310,7 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
         },
         "sources_consulted": [
             "auth.get_user_by_id",
+            "auth_subjects.get_auth_subject",
             "profiles.get_profile",
             "memberships.get_membership",
             "onboarding_state.derive_onboarding_state",

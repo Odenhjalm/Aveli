@@ -9,7 +9,7 @@ from .. import models, repositories, schemas
 from ..auth import CurrentUser
 from ..config import settings
 from ..services.onboarding_state import sync_onboarding_state
-from ..utils.membership_status import is_membership_active
+from ..utils.membership_status import is_membership_row_active
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -31,10 +31,7 @@ async def _profile_response(user_id: str) -> schemas.Profile:
     is_teacher = await models.is_teacher_user(user_id)
     user = await repositories.get_user_by_id(user_id) or {}
     membership = await repositories.get_membership(user_id)
-    membership_active = is_membership_active(
-        str((membership or {}).get("status") or ""),
-        (membership or {}).get("end_date"),
-    )
+    membership_active = is_membership_row_active(membership)
 
     payload = dict(profile)
     payload["onboarding_state"] = onboarding_state

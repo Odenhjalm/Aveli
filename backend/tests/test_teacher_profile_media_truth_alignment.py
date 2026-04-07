@@ -1,168 +1,96 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pytest
-from pydantic import ValidationError
+from types import SimpleNamespace
 
 from app import schemas
-from app.utils.profile_media import (
-    lesson_media_source_from_row,
-    recording_source_from_row,
-)
+from app.config import settings
+from app.utils import profile_media as profile_media_utils
 
 
 def _timestamp() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def test_profile_media_item_uses_lesson_media_identity_only() -> None:
+def test_profile_media_item_uses_subject_asset_visibility_shape() -> None:
     row = {
         "id": str(uuid4()),
-        "teacher_id": str(uuid4()),
-        "media_kind": "lesson_media",
-        "lesson_media_id": str(uuid4()),
-        "seminar_recording_id": None,
-        "external_url": None,
-        "title": "Lesson feature",
-        "description": "Breathing lesson",
-        "cover_media_id": None,
-        "cover_image_url": None,
-        "position": 2,
-        "is_published": True,
-        "enabled_for_home_player": False,
-        "created_at": _timestamp(),
-        "updated_at": _timestamp(),
+        "subject_user_id": str(uuid4()),
+        "media_asset_id": str(uuid4()),
+        "visibility": "published",
+        "media": None,
     }
 
     item = schemas.TeacherProfileMediaItem(**row)
 
-    assert item.media_kind == schemas.TeacherProfileMediaKind.lesson_media
-    assert item.lesson_media_id is not None
-    assert item.seminar_recording_id is None
-    assert item.external_url is None
+    assert item.subject_user_id is not None
+    assert item.media_asset_id is not None
+    assert item.visibility == schemas.ProfileMediaVisibility.published
 
 
-def test_profile_media_item_uses_seminar_recording_identity_only() -> None:
+def test_profile_media_item_from_row_uses_runtime_media_for_ready_image(monkeypatch) -> None:
     row = {
         "id": str(uuid4()),
-        "teacher_id": str(uuid4()),
-        "media_kind": "seminar_recording",
-        "lesson_media_id": None,
-        "seminar_recording_id": str(uuid4()),
-        "external_url": None,
-        "title": "Recording feature",
-        "description": None,
-        "cover_media_id": None,
-        "cover_image_url": None,
-        "position": 0,
-        "is_published": False,
-        "enabled_for_home_player": True,
-        "created_at": _timestamp(),
-        "updated_at": _timestamp(),
+        "subject_user_id": str(uuid4()),
+        "media_asset_id": str(uuid4()),
+        "visibility": "published",
     }
 
-    item = schemas.TeacherProfileMediaItem(**row)
+    async def _fake_runtime_row(media_asset_id: str):
+        assert media_asset_id == row["media_asset_id"]
+        return {
+            "media_type": "image",
+            "playback_object_path": "profiles/example.jpg",
+            "playback_format": "jpeg",
+            "state": "ready",
+        }
 
-    assert item.media_kind == schemas.TeacherProfileMediaKind.seminar_recording
-    assert item.lesson_media_id is None
-    assert item.seminar_recording_id is not None
-    assert item.external_url is None
+    monkeypatch.setattr(
+        profile_media_utils.runtime_media_repo,
+        "get_profile_runtime_media",
+        _fake_runtime_row,
+    )
+    monkeypatch.setattr(
+        profile_media_utils.storage_service,
+        "get_storage_service",
+        lambda bucket: SimpleNamespace(
+            public_url=lambda path: f"https://cdn.example/{bucket}/{path}"
+        ),
+    )
+
+    item = asyncio.run(profile_media_utils.profile_media_item_from_row(row))
+
+    assert item.media is not None
+    assert str(item.media.media_id) == row["media_asset_id"]
+    assert item.media.state == "ready"
+    assert (
+        item.media.resolved_url
+        == f"https://cdn.example/{settings.media_public_bucket}/profiles/example.jpg"
+    )
 
 
-def test_profile_media_item_preserves_external_identity_without_collapse() -> None:
+def test_profile_media_item_from_row_hides_media_when_runtime_truth_is_missing(
+    monkeypatch,
+) -> None:
     row = {
         "id": str(uuid4()),
-        "teacher_id": str(uuid4()),
-        "media_kind": "external",
-        "lesson_media_id": None,
-        "seminar_recording_id": None,
-        "external_url": "https://example.com/profile-media",
-        "title": None,
-        "description": None,
-        "cover_media_id": None,
-        "cover_image_url": None,
-        "position": 1,
-        "is_published": True,
-        "enabled_for_home_player": False,
-        "created_at": _timestamp(),
-        "updated_at": _timestamp(),
+        "subject_user_id": str(uuid4()),
+        "media_asset_id": str(uuid4()),
+        "visibility": "draft",
     }
 
-    item = schemas.TeacherProfileMediaItem(**row)
+    async def _missing_runtime_row(media_asset_id: str):
+        assert media_asset_id == row["media_asset_id"]
+        return None
 
-    assert item.media_kind == schemas.TeacherProfileMediaKind.external
-    assert item.lesson_media_id is None
-    assert item.seminar_recording_id is None
-    assert item.external_url == "https://example.com/profile-media"
+    monkeypatch.setattr(
+        profile_media_utils.runtime_media_repo,
+        "get_profile_runtime_media",
+        _missing_runtime_row,
+    )
 
+    item = asyncio.run(profile_media_utils.profile_media_item_from_row(row))
 
-def test_profile_media_item_rejects_missing_explicit_fields() -> None:
-    row = {
-        "id": str(uuid4()),
-        "teacher_id": str(uuid4()),
-        "media_kind": "external",
-        "lesson_media_id": None,
-        "seminar_recording_id": None,
-        "external_url": "https://example.com/profile-media",
-        "title": None,
-        "description": None,
-        "cover_media_id": None,
-        "cover_image_url": None,
-        "position": None,
-        "is_published": True,
-        "enabled_for_home_player": False,
-        "created_at": _timestamp(),
-        "updated_at": _timestamp(),
-    }
-
-    with pytest.raises(ValidationError):
-        schemas.TeacherProfileMediaItem(**row)
-
-
-def test_lesson_source_preserves_explicit_optional_storage_fields() -> None:
-    row = {
-        "id": str(uuid4()),
-        "lesson_id": str(uuid4()),
-        "lesson_title": "Morning flow",
-        "course_id": str(uuid4()),
-        "course_title": "Breathwork",
-        "course_slug": "breathwork",
-        "kind": "audio",
-        "storage_path": None,
-        "storage_bucket": None,
-        "content_type": "audio/mpeg",
-        "duration_seconds": 320,
-        "position": 0,
-        "created_at": _timestamp(),
-        "download_url": None,
-        "signed_url": None,
-        "signed_url_expires_at": None,
-    }
-
-    source = lesson_media_source_from_row(row)
-
-    assert source.kind == "audio"
-    assert source.storage_path is None
-    assert source.storage_bucket is None
-
-
-def test_recording_source_has_no_metadata_contract() -> None:
-    row = {
-        "id": str(uuid4()),
-        "seminar_id": str(uuid4()),
-        "seminar_title": "Live breath session",
-        "session_id": str(uuid4()),
-        "asset_url": "https://example.com/recording.mp4",
-        "status": "ready",
-        "duration_seconds": 1800,
-        "byte_size": 1024,
-        "published": True,
-        "created_at": _timestamp(),
-        "updated_at": _timestamp(),
-    }
-
-    source = recording_source_from_row(row)
-
-    assert source.asset_url == "https://example.com/recording.mp4"
-    assert source.status == "ready"
-    assert not hasattr(source, "metadata")
+    assert item.visibility == schemas.ProfileMediaVisibility.draft
+    assert item.media is None

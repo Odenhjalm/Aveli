@@ -36,7 +36,7 @@ from ..services.email_verification import (
     validate_invite_token,
 )
 from ..services.onboarding_state import sync_onboarding_state
-from ..utils.membership_status import is_membership_active
+from ..utils.membership_status import is_membership_row_active
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -69,8 +69,15 @@ async def _client_ip(request: Request) -> str | None:
 
 async def _claims_for_user(user_id: str, profile: dict | None = None) -> dict:
     profile = profile or await repositories.get_profile(user_id) or {}
+    role = str(profile.get("role_v2") or "").strip().lower()
+    if role not in {"learner", "teacher"}:
+        role = str(profile.get("role") or "").strip().lower()
+    if role not in {"learner", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Canonical role authority missing",
+        )
     is_admin = bool(profile.get("is_admin"))
-    role = profile.get("role_v2", "user") or "user"
     is_teacher = await models.is_teacher_user(user_id)
     return {
         "role": role,
@@ -207,6 +214,13 @@ async def _ensure_profile_row(
     display_name: str | None,
 ) -> dict[str, Any]:
     normalized_email = _normalized_email(email)
+    await repositories.ensure_auth_subject(
+        user_id,
+        onboarding_state="incomplete",
+        role_v2="learner",
+        role="learner",
+        is_admin=False,
+    )
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -215,10 +229,6 @@ async def _ensure_profile_row(
                     user_id,
                     email,
                     display_name,
-                    onboarding_state,
-                    role,
-                    role_v2,
-                    is_admin,
                     created_at,
                     updated_at
                 )
@@ -226,10 +236,6 @@ async def _ensure_profile_row(
                     %s,
                     %s,
                     %s,
-                    'registered_unverified',
-                    'student',
-                    'user',
-                    false,
                     now(),
                     now()
                 )
@@ -237,20 +243,13 @@ async def _ensure_profile_row(
                   SET email = excluded.email,
                       display_name = COALESCE(app.profiles.display_name, excluded.display_name),
                       updated_at = now()
-                RETURNING user_id,
-                          email,
-                          display_name,
-                          onboarding_state,
-                          role_v2,
-                          is_admin,
-                          created_at,
-                          updated_at
+                RETURNING user_id
                 """,
                 (user_id, normalized_email, display_name),
             )
-            row = await cur.fetchone()
+            await cur.fetchone()
             await conn.commit()
-    return dict(row) if row else {}
+    return await repositories.get_profile(user_id) or {}
 
 
 async def _insert_auth_event_best_effort(
@@ -292,10 +291,7 @@ async def _profile_response(user_id: str) -> schemas.Profile:
     is_teacher = await models.is_teacher_user(user_id)
     user = await repositories.get_user_by_id(user_id) or {}
     membership = await repositories.get_membership(user_id)
-    membership_active = is_membership_active(
-        str((membership or {}).get("status") or ""),
-        (membership or {}).get("end_date"),
-    )
+    membership_active = is_membership_row_active(membership)
 
     payload = dict(profile)
     payload["onboarding_state"] = onboarding_state
@@ -402,11 +398,7 @@ async def register(
             detail="Registration unavailable",
         ) from exc
 
-    claims = {
-        "role": profile.get("role_v2", "user") or "user",
-        "is_admin": bool(profile.get("is_admin")),
-        "is_teacher": False,
-    }
+    claims = await _claims_for_user(user_id, profile)
     access_token = create_access_token(user_id, claims=claims)
     await _insert_auth_event_best_effort(
         user_id=user_id,

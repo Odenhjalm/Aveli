@@ -110,55 +110,47 @@ class _FakeCoursePool:
         return self._connection
 
 
-def _asset(*, state: str = "ready", path: str = DERIVED_PATH) -> dict:
+def _runtime_row(
+    *,
+    state: str = "ready",
+    path: str = DERIVED_PATH,
+    media_type: str = "image",
+) -> dict:
     return {
-        "id": MEDIA_ID,
+        "id": None,
+        "lesson_media_id": None,
+        "lesson_id": None,
         "course_id": COURSE_ID,
-        "purpose": "course_cover",
+        "media_asset_id": MEDIA_ID,
+        "media_type": media_type,
+        "playback_object_path": path,
+        "playback_format": "jpg",
         "state": state,
-        "streaming_object_path": path,
-        "streaming_storage_bucket": "public-media",
-        "storage_bucket": "course-media",
     }
 
 
-def _install_storage(monkeypatch, *, existing_pairs: dict[tuple[str, str], bool]):
-    async def fake_fetch_storage_object_existence(pairs):
-        normalized = {tuple(pair): existing_pairs.get(tuple(pair), False) for pair in pairs}
-        return normalized, True
-
-    monkeypatch.setattr(
-        courses_service.storage_objects,
-        "fetch_storage_object_existence",
-        fake_fetch_storage_object_existence,
-        raising=True,
-    )
+def _install_storage(monkeypatch):
     monkeypatch.setattr(
         courses_service.storage_service,
         "get_storage_service",
         lambda bucket: _FakeStorageService(bucket),
         raising=True,
     )
-    monkeypatch.setattr(
-        courses_service.media_signer.settings,
-        "supabase_url",
-        None,
-        raising=False,
-    )
 
 
 async def test_resolve_course_cover_ready_asset_returns_control_plane(monkeypatch):
-    asset = _asset()
-    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): True})
+    runtime_row = _runtime_row()
+    _install_storage(monkeypatch)
 
-    async def fake_get_media_asset(media_id: str):
-        assert media_id == MEDIA_ID
-        return asset
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        assert course_id == COURSE_ID
+        assert media_asset_id == MEDIA_ID
+        return runtime_row
 
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
 
@@ -176,13 +168,13 @@ async def test_resolve_course_cover_ready_asset_returns_control_plane(monkeypatc
 
 
 async def test_resolve_course_cover_uploaded_asset_returns_placeholder(monkeypatch):
-    async def fake_get_media_asset(media_id: str):
-        return _asset(state="uploaded")
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row(state="uploaded")
 
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
     cover = await courses_service.resolve_course_cover(
@@ -199,13 +191,13 @@ async def test_resolve_course_cover_uploaded_asset_returns_placeholder(monkeypat
 
 
 async def test_resolve_course_cover_missing_asset_returns_placeholder(monkeypatch):
-    async def fake_get_media_asset(media_id: str):
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
         return None
 
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
     cover = await courses_service.resolve_course_cover(
@@ -224,13 +216,13 @@ async def test_resolve_course_cover_missing_asset_returns_placeholder(monkeypatc
 async def test_resolve_course_cover_missing_asset_without_legacy_returns_placeholder(
     monkeypatch,
 ):
-    async def fake_get_media_asset(media_id: str):
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
         return None
 
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
 
@@ -248,16 +240,15 @@ async def test_resolve_course_cover_missing_asset_without_legacy_returns_placeho
 
 
 async def test_resolve_course_cover_missing_derived_bytes_never_returns_ready(monkeypatch):
-    asset = _asset()
-    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): False})
+    _install_storage(monkeypatch)
 
-    async def fake_get_media_asset(media_id: str):
-        return asset
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row(path="")
 
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
 
@@ -275,15 +266,13 @@ async def test_resolve_course_cover_missing_derived_bytes_never_returns_ready(mo
 
 
 async def test_resolve_course_cover_logs_contract_violation(monkeypatch, caplog):
-    asset = _asset(state="processing")
-
-    async def fake_get_media_asset(media_id: str):
-        return asset
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row(state="processing")
 
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
 
@@ -298,16 +287,15 @@ async def test_resolve_course_cover_logs_contract_violation(monkeypatch, caplog)
 
 
 async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypatch):
-    asset = _asset()
-    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): True})
+    _install_storage(monkeypatch)
 
-    async def fake_get_media_asset(media_id: str):
-        return asset
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row()
 
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
 
@@ -346,17 +334,17 @@ async def test_attach_course_cover_read_contract_respects_feature_flag(monkeypat
 
 
 async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypatch):
-    asset = _asset()
-    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): True})
+    _install_storage(monkeypatch)
 
     async def fake_get_course(*, course_id: str | None = None, slug: str | None = None):
         assert course_id == COURSE_ID
         assert slug is None
         return _course()
 
-    async def fake_get_media_asset(media_id: str):
-        assert media_id == MEDIA_ID
-        return asset
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        assert course_id == COURSE_ID
+        assert media_asset_id == MEDIA_ID
+        return _runtime_row()
 
     monkeypatch.setattr(
         courses_service.courses_repo,
@@ -365,9 +353,9 @@ async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypa
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
     monkeypatch.delenv("COURSE_COVER_RESOLVED_READ_ENABLED", raising=False)
@@ -434,26 +422,26 @@ async def test_course_repository_read_omits_cover_url_when_step_level_missing(
 async def test_list_public_courses_includes_cover_when_cover_media_id_resolves(
     monkeypatch,
 ):
-    asset = _asset()
-    _install_storage(monkeypatch, existing_pairs={("public-media", DERIVED_PATH): True})
+    _install_storage(monkeypatch)
 
     async def fake_list_public_courses(**kwargs):
         return [_course()]
 
-    async def fake_get_media_asset(media_id: str):
-        assert media_id == MEDIA_ID
-        return asset
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        assert course_id == COURSE_ID
+        assert media_asset_id == MEDIA_ID
+        return _runtime_row()
 
     monkeypatch.setattr(
         courses_service.courses_repo,
-        "list_public_courses",
+        "list_public_course_discovery",
         fake_list_public_courses,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.media_assets_repo,
-        "get_media_asset",
-        fake_get_media_asset,
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
         raising=True,
     )
     monkeypatch.delenv("COURSE_COVER_RESOLVED_READ_ENABLED", raising=False)

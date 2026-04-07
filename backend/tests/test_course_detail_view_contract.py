@@ -101,6 +101,14 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
         "drip_enabled",
         "drip_interval_days",
     }
+    assert body["lessons"] == [
+        {
+            "id": LESSON_ID,
+            "lesson_title": "Lesson 1",
+            "position": 1,
+        }
+    ]
+    assert set(body["lessons"][0].keys()) == {"id", "lesson_title", "position"}
     for forbidden_key in (
         "lesson_content",
         "lesson_media",
@@ -161,37 +169,109 @@ async def test_course_detail_route_is_identity_independent(monkeypatch):
     assert calls == [(None, "course-1"), (None, "course-1")]
 
 
-async def test_read_course_detail_composes_cover_and_null_short_description(monkeypatch):
-    course_row = _course_payload(cover=None)
+async def test_course_detail_by_id_route_is_identity_independent(monkeypatch):
+    detail = _detail_response(cover=_cover_payload(), short_description="Short")
+    calls: list[tuple[str | None, str | None]] = []
 
-    async def fake_fetch_course(*, course_id: str | None = None, slug: str | None = None):
-        assert course_id == COURSE_ID
-        assert slug is None
-        return dict(course_row)
+    async def fake_read_course_detail(*, course_id: str | None = None, slug: str | None = None):
+        calls.append((course_id, slug))
+        return detail
+
+    monkeypatch.setattr(
+        course_routes.courses_read_service,
+        "read_course_detail",
+        fake_read_course_detail,
+        raising=True,
+    )
+
+    anonymous = await course_routes.course_detail(UUID(COURSE_ID), None)
+    authenticated = await course_routes.course_detail(
+        UUID(COURSE_ID),
+        {"id": UUID(COURSE_ID)},
+    )
+
+    assert anonymous.model_dump(mode="json") == authenticated.model_dump(mode="json")
+    assert calls == [(COURSE_ID, None), (COURSE_ID, None)]
+
+
+async def test_list_public_courses_reads_public_discovery_surface(monkeypatch):
+    async def fail_list_public_courses(*, search: str | None = None, limit: int | None = None):
+        raise AssertionError("raw course list must not back public discovery")
+
+    async def fake_list_public_course_discovery(
+        *,
+        search: str | None = None,
+        limit: int | None = None,
+    ):
+        assert search == "course"
+        assert limit == 5
+        return [_course_payload(cover=None)]
+
+    async def fake_attach_course_cover_read_contract(courses):
+        rows = [courses] if isinstance(courses, dict) else list(courses)
+        for row in rows:
+            row["cover"] = None
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "list_public_courses",
+        fail_list_public_courses,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "list_public_course_discovery",
+        fake_list_public_course_discovery,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service,
+        "attach_course_cover_read_contract",
+        fake_attach_course_cover_read_contract,
+        raising=True,
+    )
+
+    rows = await courses_service.list_public_courses(search="course", limit=5)
+
+    assert rows == [_course_payload(cover=None)]
+
+
+async def test_read_course_detail_composes_cover_and_null_short_description(monkeypatch):
+    async def fail_fetch_course(*, course_id: str | None = None, slug: str | None = None):
+        raise AssertionError("raw course reads must not back public course detail")
 
     async def fake_attach_course_cover_read_contract(course):
         assert course["cover_media_id"] == COVER_MEDIA_ID
         course["cover"] = _cover_payload()
 
-    async def fake_list_course_lessons(course_id: str):
+    async def fake_fetch_public_course_detail_rows(
+        *,
+        course_id: str | None = None,
+        slug: str | None = None,
+    ):
         assert course_id == COURSE_ID
+        assert slug is None
         return [
-            {"id": LESSON_ID, "lesson_title": "Lesson 1", "position": 1},
             {
-                "id": "55555555-5555-5555-5555-555555555555",
+                **_course_payload(cover=None),
+                "short_description": None,
+                "lesson_id": LESSON_ID,
+                "lesson_title": "Lesson 1",
+                "lesson_position": 1,
+            },
+            {
+                **_course_payload(cover=None),
+                "short_description": None,
+                "lesson_id": "55555555-5555-5555-5555-555555555555",
                 "lesson_title": "Lesson 2",
-                "position": 2,
+                "lesson_position": 2,
             },
         ]
-
-    async def fake_fetch_course_public_content(course_id: str):
-        assert course_id == COURSE_ID
-        return None
 
     monkeypatch.setattr(
         courses_service,
         "fetch_course",
-        fake_fetch_course,
+        fail_fetch_course,
         raising=True,
     )
     monkeypatch.setattr(
@@ -202,14 +282,20 @@ async def test_read_course_detail_composes_cover_and_null_short_description(monk
     )
     monkeypatch.setattr(
         courses_service,
+        "fetch_public_course_detail_rows",
+        fake_fetch_public_course_detail_rows,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service,
         "list_course_lessons",
-        fake_list_course_lessons,
+        fail_fetch_course,
         raising=True,
     )
     monkeypatch.setattr(
         courses_service,
         "fetch_course_public_content",
-        fake_fetch_course_public_content,
+        fail_fetch_course,
         raising=True,
     )
 
@@ -227,3 +313,29 @@ async def test_read_course_detail_composes_cover_and_null_short_description(monk
             "position": 2,
         },
     ]
+
+
+async def test_course_public_content_route_reads_through_public_detail_surface(
+    async_client,
+    monkeypatch,
+):
+    async def fake_read_public_course_content(course_id: str):
+        assert course_id == COURSE_ID
+        return {
+            "course_id": COURSE_ID,
+            "short_description": "Short description",
+        }
+
+    monkeypatch.setattr(
+        course_routes.courses_read_service,
+        "read_public_course_content",
+        fake_read_public_course_content,
+        raising=True,
+    )
+
+    response = await async_client.get(f"/courses/{COURSE_ID}/public")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "course_id": COURSE_ID,
+        "short_description": "Short description",
+    }

@@ -11,6 +11,8 @@ from psycopg.types.json import Jsonb
 
 from ..db import get_conn, pool
 from ..utils.referrals import referral_membership_window
+from .auth_subjects import ensure_auth_subject
+from .profiles import get_profile as get_profile_for_user
 from .referrals import normalize_referral_code, normalize_referral_email
 
 _USER_BY_ID_COLUMNS = (
@@ -66,6 +68,98 @@ def _with_missing_keys(row: dict[str, Any], expected_columns: tuple[str, ...]) -
     return row
 
 
+async def _upsert_profile_row(
+    *,
+    user_id: str | UUID,
+    email: str,
+    display_name: str | None,
+    onboarding_state: str,
+    role_v2: str,
+    role: str,
+    is_admin: bool,
+) -> dict[str, Any] | None:
+    available_columns = await _table_columns("app", "profiles")
+    if "user_id" not in available_columns:
+        return None
+
+    insert_columns: list[str] = ["user_id"]
+    insert_values: list[object] = [user_id]
+    update_clauses: list[str] = []
+
+    def _add_column(
+        column: str,
+        value: object,
+        *,
+        update_expression: str | None = None,
+    ) -> None:
+        if column not in available_columns:
+            return
+        insert_columns.append(column)
+        insert_values.append(value)
+        if update_expression is not None:
+            update_clauses.append(f"{column} = {update_expression}")
+
+    _add_column("email", email, update_expression="excluded.email")
+    _add_column(
+        "display_name",
+        display_name,
+        update_expression="COALESCE(app.profiles.display_name, excluded.display_name)",
+    )
+    _add_column("bio", None)
+    _add_column("photo_url", None)
+    _add_column("avatar_media_id", None)
+    _add_column("onboarding_state", onboarding_state, update_expression="excluded.onboarding_state")
+    _add_column("role_v2", role_v2, update_expression="excluded.role_v2")
+    _add_column("role", role, update_expression="excluded.role")
+    _add_column("is_admin", is_admin, update_expression="excluded.is_admin")
+    if "created_at" in available_columns:
+        insert_columns.append("created_at")
+        insert_values.append("now()")
+    if "updated_at" in available_columns:
+        insert_columns.append("updated_at")
+        insert_values.append("now()")
+        update_clauses.append("updated_at = now()")
+
+    placeholders = [
+        value if value == "now()" else "%s"
+        for value in insert_values
+    ]
+    params = [value for value in insert_values if value != "now()"]
+    returning_columns = [
+        column
+        for column in (
+            "user_id",
+            "email",
+            "display_name",
+            "bio",
+            "photo_url",
+            "avatar_media_id",
+            "created_at",
+            "updated_at",
+        )
+        if column in available_columns
+    ]
+    if not returning_columns:
+        return None
+    if not update_clauses:
+        update_clauses.append("user_id = excluded.user_id")
+
+    query = f"""
+        INSERT INTO app.profiles ({", ".join(insert_columns)})
+        VALUES ({", ".join(placeholders)})
+        ON CONFLICT (user_id) DO UPDATE
+          SET {", ".join(update_clauses)}
+        RETURNING {", ".join(returning_columns)}
+    """
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+            await conn.commit()
+            return dict(row) if row else None
+
+
 async def create_user(
     *,
     email: str,
@@ -76,6 +170,8 @@ async def create_user(
     """Insert a new auth user + profile."""
     new_id = uuid.uuid4()
     normalized_email = email.strip().lower()
+    canonical_onboarding_state = "incomplete"
+    canonical_role = "learner"
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             try:
@@ -93,51 +189,26 @@ async def create_user(
 
             user_row = await cur.fetchone()
             user_id = user_row["id"]
-
             await cur.execute(
                 """
-                INSERT INTO app.profiles (
+                INSERT INTO app.auth_subjects (
                     user_id,
-                    email,
-                    display_name,
                     onboarding_state,
-                    role,
                     role_v2,
-                    is_admin,
-                    created_at,
-                    updated_at
+                    role,
+                    is_admin
                 )
-                VALUES (
-                    %s,
-                    %s,
-                    %s,
-                    'registered_unverified',
-                    'student',
-                    'user',
-                    false,
-                    now(),
-                    now()
-                )
-                ON CONFLICT (user_id) DO UPDATE
-                  SET email = excluded.email,
-                      display_name = excluded.display_name,
-                      onboarding_state = COALESCE(
-                          app.profiles.onboarding_state,
-                          excluded.onboarding_state
-                      ),
-                      updated_at = now()
-                RETURNING user_id,
-                          email,
-                          display_name,
-                          onboarding_state,
-                          role_v2,
-                          is_admin,
-                          created_at,
-                          updated_at
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO NOTHING
                 """,
-                (user_id, normalized_email, display_name),
+                (
+                    user_id,
+                    canonical_onboarding_state,
+                    canonical_role,
+                    canonical_role,
+                    False,
+                ),
             )
-            profile_row = await cur.fetchone()
 
             redeemed_referral = None
             if referral_code:
@@ -212,9 +283,26 @@ async def create_user(
                 )
 
             await conn.commit()
+            await ensure_auth_subject(
+                user_id,
+                onboarding_state=canonical_onboarding_state,
+                role_v2=canonical_role,
+                role=canonical_role,
+                is_admin=False,
+            )
+            await _upsert_profile_row(
+                user_id=user_id,
+                email=normalized_email,
+                display_name=display_name,
+                onboarding_state=canonical_onboarding_state,
+                role_v2=canonical_role,
+                role=canonical_role,
+                is_admin=False,
+            )
+            profile_row = await get_profile_for_user(user_id)
             return {
                 "user": dict(user_row),
-                "profile": dict(profile_row) if profile_row else None,
+                "profile": profile_row,
                 "referral": dict(redeemed_referral) if redeemed_referral else None,
             }
 

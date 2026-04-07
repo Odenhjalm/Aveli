@@ -141,17 +141,21 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Lesson course_id is required",
         )
-    lessons = await courses_service.list_course_lessons(course_id)
-    media_rows = await courses_service.list_lesson_media(
+    protected_content = await courses_service.read_protected_lesson_content_surface(
         lesson_id,
-        mode="student_render",
         user_id=str((current or {}).get("id") or ""),
     )
+    if protected_content is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Canonical lesson content is unavailable",
+        )
+    lessons = await courses_service.list_course_lesson_structure(course_id)
     return _lesson_content_response(
-        lesson=lesson,
+        lesson=protected_content["lesson"],
         course_id=course_id,
         lessons=list(lessons),
-        media_rows=list(media_rows),
+        media_rows=list(protected_content["media"]),
     )
 
 
@@ -220,10 +224,7 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
 
 @router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)
 async def course_public_content(course_id: UUID):
-    course = await courses_service.fetch_course(course_id=str(course_id))
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    row = await courses_service.fetch_course_public_content(str(course_id))
+    row = await courses_read_service.read_public_course_content(str(course_id))
     if not row:
         raise HTTPException(status_code=404, detail="Public content not found")
     return schemas.CoursePublicContent(**row)

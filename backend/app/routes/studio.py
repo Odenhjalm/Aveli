@@ -35,10 +35,7 @@ from ..services import media_cleanup
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 from ..utils import media_signer
 from ..utils.media_urls import absolutize_media_url_items, absolutize_media_urls
-from ..utils.profile_media import (
-    lesson_media_source_from_row,
-    recording_source_from_row,
-)
+from ..utils.profile_media import profile_media_item_from_row
 from .media import _build_streaming_response
 from . import upload as upload_routes
 
@@ -927,24 +924,11 @@ async def list_lesson_media(request: Request, lesson_id: UUID, current: TeacherU
     "/profile/media",
     response_model=schemas.TeacherProfileMediaListResponse,
 )
-async def studio_profile_media(request: Request, current: TeacherUser):
+async def studio_profile_media(current: TeacherUser):
     teacher_id = str(current["id"])
-    items = await repositories.list_teacher_profile_media(teacher_id)
-    lesson_sources = await repositories.list_teacher_lesson_media_sources(teacher_id)
-    recording_sources = await repositories.list_teacher_seminar_recording_sources(
-        teacher_id
-    )
-    absolutize_media_url_items(items, base_url=str(request.base_url))
-    absolutize_media_url_items(lesson_sources, base_url=str(request.base_url))
-    absolutize_media_url_items(recording_sources, base_url=str(request.base_url))
+    rows = await repositories.list_teacher_profile_media(teacher_id)
     return schemas.TeacherProfileMediaListResponse(
-        items=[schemas.TeacherProfileMediaItem(**row) for row in items],
-        lesson_media_sources=[
-            lesson_media_source_from_row(row) for row in lesson_sources
-        ],
-        seminar_recording_sources=[
-            recording_source_from_row(row) for row in recording_sources
-        ],
+        items=[await profile_media_item_from_row(row) for row in rows],
     )
 
 
@@ -954,36 +938,19 @@ async def studio_profile_media(request: Request, current: TeacherUser):
     status_code=201,
 )
 async def studio_create_profile_media(
-    request: Request,
     payload: schemas.TeacherProfileMediaCreate,
     current: TeacherUser,
 ):
     row = await repositories.create_teacher_profile_media(
         teacher_id=str(current["id"]),
-        media_kind=payload.media_kind.value,
-        lesson_media_id=(
-            str(payload.lesson_media_id) if payload.lesson_media_id else None
-        ),
-        seminar_recording_id=(
-            str(payload.seminar_recording_id)
-            if payload.seminar_recording_id
-            else None
-        ),
-        external_url=payload.external_url,
-        title=payload.title,
-        description=payload.description,
-        cover_media_id=str(payload.cover_media_id) if payload.cover_media_id else None,
-        cover_image_url=payload.cover_image_url,
-        position=payload.position,
-        is_published=payload.is_published,
-        enabled_for_home_player=payload.enabled_for_home_player,
+        media_asset_id=str(payload.media_asset_id),
+        visibility=payload.visibility.value,
     )
     if not row:
         raise HTTPException(
             status_code=400, detail="Failed to create profile media item"
         )
-    absolutize_media_url_items([row], base_url=str(request.base_url))
-    return schemas.TeacherProfileMediaItem(**row)
+    return await profile_media_item_from_row(row)
 
 
 @router.patch(
@@ -991,40 +958,15 @@ async def studio_create_profile_media(
     response_model=schemas.TeacherProfileMediaItem,
 )
 async def studio_update_profile_media(
-    request: Request,
     item_id: UUID,
     payload: schemas.TeacherProfileMediaUpdate,
     current: TeacherUser,
 ):
-    if payload.title is not None and not payload.title.strip():
-        raise HTTPException(status_code=422, detail="title cannot be empty")
-
-    previous_cover_media_id: str | None = None
-    if payload.cover_media_id is not None:
-        existing = await repositories.get_teacher_profile_media(
-            item_id=str(item_id),
-            teacher_id=str(current["id"]),
-        )
-        if not existing:
-            raise HTTPException(status_code=404, detail="Profile media item not found")
-        if existing.get("cover_media_id"):
-            previous_cover_media_id = str(existing["cover_media_id"])
-
     fields: Dict[str, Any] = {}
-    if payload.title is not None:
-        fields["title"] = payload.title
-    if payload.description is not None:
-        fields["description"] = payload.description
-    if payload.cover_media_id is not None:
-        fields["cover_media_id"] = str(payload.cover_media_id)
-    if payload.cover_image_url is not None:
-        fields["cover_image_url"] = payload.cover_image_url
-    if payload.position is not None:
-        fields["position"] = payload.position
-    if payload.is_published is not None:
-        fields["is_published"] = payload.is_published
-    if payload.enabled_for_home_player is not None:
-        fields["enabled_for_home_player"] = payload.enabled_for_home_player
+    if payload.media_asset_id is not None:
+        fields["media_asset_id"] = str(payload.media_asset_id)
+    if payload.visibility is not None:
+        fields["visibility"] = payload.visibility.value
 
     row = await repositories.update_teacher_profile_media(
         item_id=str(item_id),
@@ -1033,13 +975,7 @@ async def studio_update_profile_media(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Profile media item not found")
-    current_cover_media_id = (
-        str(row["cover_media_id"]) if row.get("cover_media_id") else None
-    )
-    if previous_cover_media_id and previous_cover_media_id != current_cover_media_id:
-        await models.cleanup_media_object(previous_cover_media_id)
-    absolutize_media_url_items([row], base_url=str(request.base_url))
-    return schemas.TeacherProfileMediaItem(**row)
+    return await profile_media_item_from_row(row)
 
 
 @router.delete("/profile/media/{item_id}", status_code=204)
@@ -1050,17 +986,12 @@ async def studio_delete_profile_media(item_id: UUID, current: TeacherUser):
     )
     if not existing:
         raise HTTPException(status_code=404, detail="Profile media item not found")
-    cover_media_id = (
-        str(existing["cover_media_id"]) if existing.get("cover_media_id") else None
-    )
     deleted = await repositories.delete_teacher_profile_media(
         item_id=str(item_id),
         teacher_id=str(current["id"]),
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Profile media item not found")
-    if cover_media_id:
-        await models.cleanup_media_object(cover_media_id)
     return Response(status_code=204)
 
 

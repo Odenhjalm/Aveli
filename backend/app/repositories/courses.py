@@ -5,7 +5,7 @@ from typing import Any, Sequence
 
 from psycopg.rows import dict_row
 
-from ..db import pool
+from ..db import get_conn, pool
 
 
 CourseRow = dict[str, Any]
@@ -21,6 +21,18 @@ _COURSE_COLUMNS = """
     c.drip_enabled,
     c.drip_interval_days,
     c.cover_media_id
+"""
+
+_PUBLIC_DISCOVERY_COLUMNS = """
+    cds.id,
+    cds.slug,
+    cds.title,
+    cds.course_group_id,
+    cds.step::text as step,
+    cds.price_amount_cents,
+    cds.drip_enabled,
+    cds.drip_interval_days,
+    cds.cover_media_id
 """
 
 _MEDIA_ORIGINAL_NAME_SQL = """
@@ -138,6 +150,100 @@ async def list_public_courses(
     limit: int | None = None,
 ) -> Sequence[CourseRow]:
     return await list_courses(search=search, limit=limit)
+
+
+async def list_public_course_discovery(
+    *,
+    search: str | None = None,
+    limit: int | None = None,
+) -> Sequence[CourseRow]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if search:
+        pattern = f"%{search}%"
+        clauses.append("(cds.title ilike %s or cds.slug ilike %s)")
+        params.extend([pattern, pattern])
+
+    where_sql = f"where {' and '.join(clauses)}" if clauses else ""
+    limit_sql = "limit %s" if limit is not None else ""
+    if limit is not None:
+        params.append(int(limit))
+
+    query = f"""
+        select {_PUBLIC_DISCOVERY_COLUMNS}
+        from app.course_discovery_surface as cds
+        {where_sql}
+        order by cds.slug asc
+        {limit_sql}
+    """
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def list_lesson_structure_surface(course_id: str) -> Sequence[LessonRow]:
+    query = """
+        select
+            lss.id,
+            lss.course_id,
+            lss.lesson_title,
+            lss.position
+        from app.lesson_structure_surface as lss
+        where lss.course_id = %s::uuid
+        order by lss.position asc, lss.id asc
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_public_course_detail_rows(
+    *,
+    course_id: str | None = None,
+    slug: str | None = None,
+) -> Sequence[dict[str, Any]]:
+    if not course_id and not slug:
+        raise ValueError("course_id or slug is required")
+
+    clauses: list[str] = []
+    params: list[Any] = []
+    if course_id:
+        clauses.append("cd.id = %s::uuid")
+        params.append(course_id)
+    if slug:
+        clauses.append("cd.slug = %s")
+        params.append(slug)
+
+    query = """
+        select
+            cd.id,
+            cd.slug,
+            cd.title,
+            cd.course_group_id,
+            cd.step::text as step,
+            cd.cover_media_id,
+            cd.price_amount_cents,
+            cd.drip_enabled,
+            cd.drip_interval_days,
+            cd.short_description,
+            cd.lesson_id,
+            cd.lesson_title,
+            cd.lesson_position
+        from app.course_detail_surface as cd
+        where {where_sql}
+        order by cd.lesson_position asc nulls last, cd.lesson_id asc nulls last
+    """.format(where_sql=" and ".join(clauses))
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
 
 
 async def create_course(payload: dict[str, Any]) -> CourseRow:
@@ -341,6 +447,38 @@ async def list_course_lessons(course_id: str) -> Sequence[LessonRow]:
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (course_id,))
             rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_lesson_content_surface_rows(
+    *,
+    lesson_id: str,
+    user_id: str,
+) -> Sequence[dict[str, Any]]:
+    async with get_conn() as cur:
+        await cur.execute(
+            "select set_config('request.jwt.claim.sub', %s, true)",
+            (user_id,),
+        )
+        await cur.execute(
+            """
+            select
+                lcs.id,
+                lcs.course_id,
+                lcs.lesson_title,
+                lcs.position,
+                lcs.content_markdown,
+                lcs.lesson_media_id,
+                lcs.media_asset_id,
+                lcs.lesson_media_position
+            from app.lesson_content_surface as lcs
+            where lcs.id = %s::uuid
+            order by lcs.lesson_media_position asc nulls last,
+                     lcs.lesson_media_id asc nulls last
+            """,
+            (lesson_id,),
+        )
+        rows = await cur.fetchall()
     return [dict(row) for row in rows]
 
 

@@ -376,27 +376,11 @@ async def is_teacher_user(user_id: str) -> bool:
     profile = await get_profile(user_id)
     if not profile:
         return False
-    if profile.get("is_admin"):
+    role_v2 = str(profile.get("role_v2") or "").strip().lower()
+    if role_v2 == "teacher":
         return True
-    if (profile.get("role_v2") or "user") in {"teacher", "admin"}:
-        return True
-
-    async with get_conn() as cur:
-        await cur.execute(
-            "SELECT 1 FROM app.teacher_permissions "
-            "WHERE profile_id = %s AND (can_edit_courses = true OR can_publish = true) "
-            "LIMIT 1",
-            (user_id,),
-        )
-        if await _fetchone(cur):
-            return True
-
-        await cur.execute(
-            "SELECT 1 FROM app.teacher_approvals WHERE user_id = %s AND approved_at IS NOT NULL LIMIT 1",
-            (user_id,),
-        )
-        row = await _fetchone(cur)
-        return row is not None
+    role = str(profile.get("role") or "").strip().lower()
+    return role_v2 not in {"learner", "teacher"} and role == "teacher"
 
 
 async def teacher_courses(user_id: str) -> Iterable[dict]:
@@ -1554,52 +1538,10 @@ async def redeem_coupon(
             if not isinstance(grants, dict):
                 grants = {}
 
-            role_target = grants.get("role")
-            teacher_grant = grants.get("teacher") in (True, "true", "True", 1, "1")
             raw_areas = grants.get("certified_areas") if grants else []
             certified_areas = []
             if isinstance(raw_areas, list):
                 certified_areas = [str(area) for area in raw_areas if str(area).strip()]
-
-            if role_target:
-                await cur.execute(
-                    "SELECT raw_app_meta_data FROM auth.users WHERE id = %s FOR UPDATE",
-                    (user_id,),
-                )
-                user_row = await _fetchone(cur)
-                raw_meta = user_row.get("raw_app_meta_data") if user_row else {}
-                if isinstance(raw_meta, str):
-                    try:
-                        raw_meta = json.loads(raw_meta)
-                    except ValueError:
-                        raw_meta = {}
-                if isinstance(raw_meta, dict):
-                    raw_meta["role"] = role_target
-                else:
-                    raw_meta = {"role": role_target}
-                await cur.execute(
-                    "UPDATE auth.users SET raw_app_meta_data = %s WHERE id = %s",
-                    (Jsonb(raw_meta), user_id),
-                )
-
-            if teacher_grant:
-                await cur.execute(
-                    """
-                    INSERT INTO app.teacher_permissions (
-                      profile_id,
-                      can_edit_courses,
-                      can_publish,
-                      granted_by,
-                      granted_at
-                    )
-                    VALUES (%s, true, true, %s, now())
-                    ON CONFLICT (profile_id) DO UPDATE
-                      SET can_edit_courses = true,
-                          can_publish = true,
-                          granted_at = COALESCE(app.teacher_permissions.granted_at, excluded.granted_at)
-                    """,
-                    (user_id, user_id),
-                )
 
             for area in certified_areas:
                 await cur.execute(
@@ -2520,9 +2462,19 @@ async def get_profile_row(user_id: str) -> dict | None:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT user_id, email, display_name, bio, photo_url, role_v2, is_admin
-            FROM app.profiles
-            WHERE user_id = %s
+            SELECT p.user_id,
+                   p.email,
+                   p.display_name,
+                   p.bio,
+                   p.photo_url,
+                   s.onboarding_state,
+                   s.role_v2,
+                   s.role,
+                   s.is_admin
+            FROM app.profiles p
+            LEFT JOIN app.auth_subjects s
+              ON s.user_id = p.user_id
+            WHERE p.user_id = %s
             LIMIT 1
             """,
             (user_id,),
@@ -2535,10 +2487,7 @@ async def is_admin_user(user_id: str) -> bool:
     profile = await get_profile_row(user_id)
     if not profile:
         return False
-    if profile.get("is_admin"):
-        return True
-    role = (profile.get("role_v2") or "").lower()
-    return role == "admin"
+    return bool(profile.get("is_admin"))
 
 
 async def list_teacher_applications() -> list[dict]:
@@ -2555,11 +2504,12 @@ async def list_teacher_applications() -> list[dict]:
                    c.updated_at,
                    prof.display_name,
                    prof.email,
-                   prof.role_v2,
+                   subj.role_v2,
                    ta.approved_by,
                    ta.approved_at
             FROM app.certificates c
             LEFT JOIN app.profiles prof ON prof.user_id = c.user_id
+            LEFT JOIN app.auth_subjects subj ON subj.user_id = c.user_id
             LEFT JOIN app.teacher_approvals ta ON ta.user_id = c.user_id
             WHERE lower(c.title) = lower(%s)
             ORDER BY c.created_at DESC
@@ -2620,9 +2570,19 @@ async def approve_teacher_user(user_id: str, reviewer_id: str) -> None:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                "UPDATE app.profiles SET role_v2 = 'teacher', updated_at = now() WHERE user_id = %s",
+                """
+                UPDATE app.auth_subjects
+                   SET role_v2 = 'teacher',
+                       role = 'teacher'
+                 WHERE user_id = %s
+                 RETURNING user_id
+                """,
                 (user_id,),
             )
+            updated_subject = await _fetchone(cur)
+            if not updated_subject:
+                await conn.rollback()
+                raise ValueError("Canonical auth subject missing")
             await cur.execute(
                 """
                 INSERT INTO app.teacher_approvals (user_id, approved_by, approved_at)
@@ -2644,6 +2604,7 @@ async def approve_teacher_user(user_id: str, reviewer_id: str) -> None:
 
 
 async def reject_teacher_user(user_id: str, reviewer_id: str) -> None:
+    del reviewer_id
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(

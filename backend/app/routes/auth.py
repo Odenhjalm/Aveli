@@ -114,9 +114,15 @@ async def _token_claims(user_id: str) -> dict[str, Any]:
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     profile = await models.get_profile_row(user_id)
+    if not profile:
+        raise HTTPException(status_code=401, detail="Canonical auth subject missing")
     is_teacher = await models.is_teacher_user(user_id)
-    role = (profile.get("role_v2") if profile else "user") or "user"
-    is_admin = bool(profile.get("is_admin")) if profile else False
+    role = str(profile.get("role_v2") or "").strip().lower()
+    if role not in {"learner", "teacher"}:
+        role = str(profile.get("role") or "").strip().lower()
+    if role not in {"learner", "teacher"}:
+        raise HTTPException(status_code=401, detail="Canonical role authority missing")
+    is_admin = bool(profile.get("is_admin"))
     return {
         "role": role,
         "is_admin": is_admin,

@@ -13,6 +13,11 @@ from .auth import (
     touch_refresh_token_as_rotated,
     upsert_refresh_token,
 )
+from .auth_subjects import (
+    ensure_auth_subject,
+    get_auth_subject,
+    set_role_authority,
+)
 from .feed import list_feed
 from .livekit_jobs import (
     create_webhook_job,
@@ -76,9 +81,7 @@ from .teacher_profile_media import (
     delete_teacher_profile_media,
     get_teacher_profile_media,
     list_public_teacher_profile_media,
-    list_teacher_lesson_media_sources,
     list_teacher_profile_media,
-    list_teacher_seminar_recording_sources,
     update_teacher_profile_media,
 )
 from .teachers import get_teacher, update_teacher_status, upsert_teacher
@@ -92,6 +95,7 @@ __all__ = [
     "create_teacher_profile_media",
     "create_user",
     "create_webhook_job",
+    "ensure_auth_subject",
     "delete_session",
     "delete_teacher_profile_media",
     "delete_webhook_job",
@@ -100,6 +104,7 @@ __all__ = [
     "get_media_asset",
     "get_membership",
     "get_order",
+    "get_auth_subject",
     "get_profile",
     "get_refresh_token",
     "get_seminar",
@@ -127,9 +132,7 @@ __all__ = [
     "list_seminar_sessions",
     "list_services",
     "list_session_slots",
-    "list_teacher_lesson_media_sources",
     "list_teacher_profile_media",
-    "list_teacher_seminar_recording_sources",
     "list_teacher_sessions",
     "list_user_orders",
     "lock_webhook_job",
@@ -141,6 +144,7 @@ __all__ = [
     "revoke_refresh_token",
     "revoke_refresh_tokens_for_user",
     "schedule_webhook_retry",
+    "set_role_authority",
     "set_onboarding_state",
     "set_order_checkout_reference",
     "set_seminar_status",

@@ -160,24 +160,43 @@ def _mapping_claim(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _normalized_subject_role(role_v2: object, role: object) -> str | None:
+    for candidate in (role_v2, role):
+        normalized = str(candidate or "").strip().lower()
+        if normalized in {"learner", "teacher"}:
+            return normalized
+    return None
+
+
+def _validated_onboarding_state(value: object) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"incomplete", "completed"}:
+        return normalized
+    return None
+
+
+async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    from .repositories.auth_subjects import get_auth_subject
+
+    auth_subject = await get_auth_subject(user_id)
+    if auth_subject is None:
+        raise ValueError("Canonical auth subject missing")
+
+    normalized_role = _normalized_subject_role(
+        auth_subject.get("role_v2"),
+        auth_subject.get("role"),
+    )
+    onboarding_state = _validated_onboarding_state(auth_subject.get("onboarding_state"))
+    is_admin = auth_subject.get("is_admin")
+    if normalized_role is None:
+        raise ValueError("Canonical role authority missing")
+    if onboarding_state is None:
+        raise ValueError("Canonical onboarding_state invalid")
+    if not isinstance(is_admin, bool):
+        raise ValueError("Canonical is_admin invalid")
+
     app_metadata = _mapping_claim(payload.get("app_metadata"))
     user_metadata = _mapping_claim(payload.get("user_metadata"))
-    role_value = (
-        payload.get("role_v2")
-        or payload.get("role")
-        or app_metadata.get("role_v2")
-        or app_metadata.get("role")
-        or user_metadata.get("role_v2")
-        or user_metadata.get("role")
-        or "user"
-    )
-    normalized_role = str(role_value or "user").strip().lower() or "user"
-    is_admin = _bool_claim(payload.get("is_admin")) or _bool_claim(
-        app_metadata.get("is_admin")
-    )
-    if normalized_role == "admin":
-        is_admin = True
 
     display_name = (
         payload.get("display_name")
@@ -195,6 +214,8 @@ def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str, Any]
     return {
         "id": user_id,
         "email": payload.get("email"),
+        "onboarding_state": onboarding_state,
+        "role": normalized_role,
         "role_v2": normalized_role,
         "is_admin": is_admin,
         "display_name": display_name,
@@ -226,7 +247,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     except Exception as exc:  # pragma: no cover
         raise credentials_exception from exc
 
-    return _build_current_user(user_id, payload)
+    return await _build_current_user(user_id, payload)
 
 
 async def get_optional_user(
@@ -249,7 +270,10 @@ async def get_optional_user(
     except Exception:  # pragma: no cover
         return None
 
-    return _build_current_user(user_id, payload)
+    try:
+        return await _build_current_user(user_id, payload)
+    except ValueError:
+        return None
 
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]

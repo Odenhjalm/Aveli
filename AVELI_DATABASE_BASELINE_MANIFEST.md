@@ -1,12 +1,14 @@
 # AVELI Database Baseline Manifest
 
-This document defines the canonical database baseline for course-level drip configuration and deterministic surface-boundary interpretation.
+This document defines the canonical database baseline for app-entry authority, course-level drip configuration, and deterministic surface-boundary interpretation.
 
 It exists to keep DB shape deterministic while preventing the database from inventing business behavior.
 
 ## 1. Canonical Boundary
 
 - Drip is controlled only by course configuration.
+- App entry is controlled only by memberships.
+- Subject onboarding and role authority is controlled only by auth_subjects.
 - Enrollment stores state only.
 - The baseline database is shape-only for canonical core domain truth.
 - Canonical data categories are:
@@ -72,6 +74,49 @@ Canonical storage rules:
 - Enrollment rows store state regardless of `source`.
 - `source` remains access-origin metadata only and must not define drip behavior.
 
+### `memberships`
+
+The canonical `memberships` table must allow these app-entry authority fields:
+
+| Field | Type | Constraints | Meaning |
+| --- | --- | --- | --- |
+| `membership_id` | uuid | required PK | Stable membership identity |
+| `user_id` | uuid | required unique soft reference to `auth.users.id` | Canonical subject binding for app entry |
+| `status` | text | required | Canonical app-entry state |
+| `end_date` | timestamptz | nullable | Canonical app-entry expiry boundary |
+| `created_at` | timestamptz | required | Canonical membership creation timestamp |
+| `updated_at` | timestamptz | required | Canonical membership update timestamp |
+
+Canonical membership rules:
+
+- `memberships` is the sole canonical app-entry authority.
+- `memberships` is global and must keep one row per `user_id`.
+- `user_id` remains a soft reference to `auth.users(id)` and must not gain a database foreign key.
+- `memberships` must not store onboarding, role, admin, enrollment, or lesson-content access authority.
+- Billing, Stripe, and legacy subscription fields are not part of the baseline-owned canonical `memberships` shape.
+
+### `auth_subjects`
+
+The canonical `auth_subjects` table must allow these subject-authority fields:
+
+| Field | Type | Constraints | Meaning |
+| --- | --- | --- | --- |
+| `user_id` | uuid | required PK, soft reference to `auth.users.id` | Canonical subject binding above Supabase Auth |
+| `onboarding_state` | text | required, allowed values `incomplete` or `completed` | Canonical onboarding authority |
+| `role_v2` | text | required, allowed values `learner` or `teacher` | Canonical role authority |
+| `role` | text | required, allowed values `learner` or `teacher` | Compatibility role fallback |
+| `is_admin` | boolean | required | Canonical admin override authority |
+
+Canonical auth-subject rules:
+
+- `auth_subjects` is the canonical owner of subject onboarding, role, and admin authority.
+- `user_id` remains a soft reference to `auth.users(id)` and must not gain a database foreign key.
+- `role_v2` owns role truth.
+- `role` exists for compatibility only and does not replace `role_v2`.
+- `is_admin` is a separate admin override and does not create teacher rights.
+- `app.profiles` is not the canonical owner for these authority fields.
+- `auth_subjects` must not store membership authority, enrollment authority, or lesson-content access authority.
+
 ### `lessons`
 
 The canonical `lessons` table must allow these structure fields:
@@ -124,6 +169,28 @@ Canonical media rules:
 - `playback_object_path` lifecycle is `NULL` -> set during processing -> immutable.
 - `playback_format` stores the canonical playback format assigned by worker processing.
 - Audio rows may become `ready` only when `playback_format = mp3`.
+- `home_player_audio` is a canonical media purpose value for home-player direct-upload sources that remain in the unified media domain.
+- `profile_media` is a canonical media purpose value for profile-media placements that remain in the unified media domain.
+
+### `profile_media_placements`
+
+The canonical `profile_media_placements` feature table must allow these authored-placement fields:
+
+| Field | Type | Constraints | Meaning |
+| --- | --- | --- | --- |
+| `id` | uuid | required PK | Stable profile-media placement identity |
+| `subject_user_id` | uuid | required soft subject reference | Canonical profile-media subject binding |
+| `media_asset_id` | uuid | required FK to `media_assets.id` | Canonical media identity pointer |
+| `visibility` | text | required, allowed values `draft` or `published`, no implicit default | Canonical publication state |
+
+Canonical profile-media rules:
+
+- `profile_media_placements` is the only canonical authored-placement source entity for the profile-media feature domain.
+- `subject_user_id` remains a soft external subject reference and must not gain a database foreign key to `auth.users`.
+- `auth_subjects` does not own profile-media feature authority.
+- only `published` profile-media placements may feed `runtime_media`.
+- no separate `community_media` purpose value exists in the current canonical baseline scope.
+- community surfaces consume the same source model through backend read composition rather than a separate source-truth domain.
 
 ### `runtime_media` projection
 
@@ -137,6 +204,8 @@ The canonical `runtime_media` projection must:
 - include `playback_object_path`
 - include `playback_format`
 - express runtime truth without joining `media_assets` for frontend representation
+- project direct-upload home-player runtime rows only from explicit `home_player_uploads.active = true` source truth linked to canonical `home_player_audio` assets
+- project profile-media runtime rows only from explicit `profile_media_placements.visibility = published` source truth linked to canonical `profile_media` assets
 
 ## 3. DB Enforcement Rules
 
@@ -147,6 +216,8 @@ The canonical `runtime_media` projection must:
 - DB access policies must expose `courses` through `course_discovery_surface` without requiring `course_enrollments`, limited to the allowed discovery categories only.
 - DB access policies must expose lesson structure through `lesson_structure_surface` without requiring `course_enrollments`, limited to the allowed structure categories only.
 - DB access policies must make `lesson_content_surface` accessible only when `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- DB must keep `memberships.user_id` as a soft external reference without a database foreign key to `auth.users`.
+- DB must keep `auth_subjects.user_id` as a soft external reference without a database foreign key to `auth.users`.
 - DB must not expose forbidden categories through `course_discovery_surface` or `lesson_structure_surface`.
 - `app.lessons` must remain structure-only and `app.lesson_contents` must remain content-only.
 - `app.lessons` and `app.lesson_contents` must not be collapsed into one raw-table lesson access surface that bypasses canonical surface boundaries.
@@ -164,6 +235,10 @@ The database baseline must explicitly forbid:
 - tying drip logic to `intro_enrollment` vs `purchase`
 - hardcoded drip defaults
 - fallback drip behavior
+- duplicate app-entry authorities parallel to `memberships`
+- reusing `app.profiles` as canonical onboarding, role, or admin authority
+- duplicate auth-subject authorities parallel to `auth_subjects`
+- database foreign keys from baseline-owned tables to external auth subjects
 - implicit unlock strategies
 - treating `course_discovery_surface` as enrollment-gated
 - hiding course catalog behind enrollment
@@ -185,7 +260,11 @@ The database baseline must explicitly forbid:
 
 - Drip is controlled only by `courses.drip_enabled` and `courses.drip_interval_days`.
 - Enrollment is state-only for drip semantics.
+- App entry is canonical only through `memberships`.
+- Subject onboarding, role, and admin authority are canonical only through `auth_subjects`.
 - The database baseline remains shape-only and does not invent feature behavior.
+- `memberships` keeps exactly one global app-entry row per `user_id` without an `auth.users` foreign key.
+- `auth_subjects` keeps exactly one subject-authority row per `user_id` without an `auth.users` foreign key.
 - `course_discovery_surface` remains defined by allowed and forbidden categories without `course_enrollments`.
 - `lesson_structure_surface` remains defined by allowed and forbidden categories without `course_enrollments`.
 - `lesson_content_surface` requires `course_enrollments` AND `lesson.position <= current_unlock_position`.

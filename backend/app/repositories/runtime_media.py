@@ -13,7 +13,8 @@ _RUNTIME_MEDIA_COLUMNS = """
     rm.media_asset_id,
     rm.media_type::text as media_type,
     rm.playback_object_path,
-    rm.playback_format
+    rm.playback_format,
+    rm.state::text as state
 """
 
 
@@ -46,6 +47,96 @@ async def list_runtime_media_for_asset(
         )
         rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def get_course_cover_runtime_media(
+    *,
+    course_id: str,
+    media_asset_id: str,
+) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            f"""
+            select
+              {_RUNTIME_MEDIA_COLUMNS}
+            from app.runtime_media as rm
+            where rm.course_id = %s::uuid
+              and rm.media_asset_id = %s::uuid
+              and rm.lesson_media_id is null
+              and rm.lesson_id is null
+            limit 1
+            """,
+            (course_id, media_asset_id),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_home_player_runtime_media(
+    *,
+    media_asset_id: str,
+) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            f"""
+            select
+              {_RUNTIME_MEDIA_COLUMNS}
+            from app.runtime_media as rm
+            where rm.media_asset_id = %s::uuid
+              and rm.lesson_media_id is null
+              and rm.lesson_id is null
+              and rm.course_id is null
+            limit 1
+            """,
+            (media_asset_id,),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_profile_runtime_media(
+    *,
+    media_asset_id: str,
+) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            f"""
+            select
+              {_RUNTIME_MEDIA_COLUMNS}
+            from app.runtime_media as rm
+            where rm.media_asset_id = %s::uuid
+              and rm.lesson_media_id is null
+              and rm.lesson_id is null
+              and rm.course_id is null
+            limit 1
+            """,
+            (media_asset_id,),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_lesson_runtime_media(
+    *,
+    lesson_id: str,
+    media_asset_id: str,
+) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            f"""
+            select
+              {_RUNTIME_MEDIA_COLUMNS}
+            from app.runtime_media as rm
+            where rm.lesson_id = %s::uuid
+              and rm.media_asset_id = %s::uuid
+              and rm.lesson_media_id is not null
+            order by rm.lesson_media_id asc
+            limit 1
+            """,
+            (lesson_id, media_asset_id),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
 
 
 async def list_runtime_media_for_lesson(

@@ -397,6 +397,22 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
             "can_access": user_id in accessible_users,
         }
 
+    async def fake_get_lesson_runtime_media(*, lesson_id: str, media_asset_id: str):
+        assert media_asset_id == course_link_rows[0]["media_asset_id"]
+        media_state = str(course_link_rows[0]["media_state"])
+        return {
+            "lesson_id": lesson_id,
+            "media_asset_id": media_asset_id,
+            "media_type": "audio",
+            "playback_object_path": (
+                "media/derived/audio/home/home-track.mp3"
+                if media_state == "ready"
+                else None
+            ),
+            "playback_format": "mp3" if media_state == "ready" else None,
+            "state": media_state,
+        }
+
     monkeypatch.setattr(
         courses_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
@@ -413,6 +429,18 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
         courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_lesson_runtime_media",
+        fake_get_lesson_runtime_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.storage_service,
+        "get_storage_service",
+        lambda bucket: _FakePlaybackStorageClient("https://stream.local/home-track.mp3"),
         raising=True,
     )
 
@@ -464,16 +492,6 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
     assert enrolled_item
     assert enrolled_item["media"]["media_id"] == media_asset_id
 
-    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
-        assert media_asset_id
-        return {"resolved_url": "https://stream.local/home-track.mp3"}
-
-    monkeypatch.setattr(
-        courses_service.lesson_playback_service,
-        "resolve_media_asset_playback",
-        fake_resolve_media_asset_playback,
-        raising=True,
-    )
     course_link_rows[0]["media_state"] = "ready"
 
     ready_resp = await async_client.get(
@@ -520,9 +538,15 @@ async def test_home_audio_direct_upload_uses_media_asset_identity_only(async_cli
     async def fake_list_course_links(*, limit: int = 100):
         return []
 
-    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
+    async def fake_get_home_player_runtime_media(*, media_asset_id: str):
         assert media_asset_id == direct_rows[0]["media_asset_id"]
-        return {"resolved_url": "https://stream.local/direct-track.mp3"}
+        return {
+            "media_asset_id": media_asset_id,
+            "media_type": "audio",
+            "playback_object_path": "media/derived/audio/home/direct-track.mp3",
+            "playback_format": "mp3",
+            "state": "ready",
+        }
 
     monkeypatch.setattr(
         courses_service.home_audio_runtime_repo,
@@ -537,9 +561,15 @@ async def test_home_audio_direct_upload_uses_media_asset_identity_only(async_cli
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.lesson_playback_service,
-        "resolve_media_asset_playback",
-        fake_resolve_media_asset_playback,
+        courses_service.runtime_media_repo,
+        "get_home_player_runtime_media",
+        fake_get_home_player_runtime_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.storage_service,
+        "get_storage_service",
+        lambda bucket: _FakePlaybackStorageClient("https://stream.local/direct-track.mp3"),
         raising=True,
     )
 
@@ -691,8 +721,15 @@ async def test_home_audio_non_ready_items_return_resolved_url_null(async_client,
         assert candidate_lesson_id == lesson_id
         return {"lesson": {"id": lesson_id}, "can_access": user_id == teacher_id}
 
-    async def should_not_resolve(*, media_asset_id: str):
-        raise AssertionError(f"non-ready media should not resolve: {media_asset_id}")
+    async def fake_get_lesson_runtime_media(*, lesson_id: str, media_asset_id: str):
+        return {
+            "lesson_id": lesson_id,
+            "media_asset_id": media_asset_id,
+            "media_type": "audio",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "uploaded",
+        }
 
     monkeypatch.setattr(
         courses_service.home_audio_runtime_repo,
@@ -713,9 +750,9 @@ async def test_home_audio_non_ready_items_return_resolved_url_null(async_client,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.lesson_playback_service,
-        "resolve_media_asset_playback",
-        should_not_resolve,
+        courses_service.runtime_media_repo,
+        "get_lesson_runtime_media",
+        fake_get_lesson_runtime_media,
         raising=True,
     )
 
@@ -803,15 +840,35 @@ async def test_home_audio_invalid_ready_items_are_excluded(async_client, monkeyp
         raising=True,
     )
 
-    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
+    async def fake_get_lesson_runtime_media(*, lesson_id: str, media_asset_id: str):
         if media_asset_id == good_media_asset_id:
-            return {"resolved_url": "https://stream.local/good-track.mp3"}
-        raise HTTPException(status_code=503, detail="Streaming asset unavailable")
+            return {
+                "lesson_id": lesson_id,
+                "media_asset_id": media_asset_id,
+                "media_type": "audio",
+                "playback_object_path": "media/derived/audio/home/good-track.mp3",
+                "playback_format": "mp3",
+                "state": "ready",
+            }
+        return {
+            "lesson_id": lesson_id,
+            "media_asset_id": media_asset_id,
+            "media_type": "audio",
+            "playback_object_path": "",
+            "playback_format": "mp3",
+            "state": "ready",
+        }
 
     monkeypatch.setattr(
-        courses_service.lesson_playback_service,
-        "resolve_media_asset_playback",
-        fake_resolve_media_asset_playback,
+        courses_service.runtime_media_repo,
+        "get_lesson_runtime_media",
+        fake_get_lesson_runtime_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.storage_service,
+        "get_storage_service",
+        lambda bucket: _FakePlaybackStorageClient("https://stream.local/good-track.mp3"),
         raising=True,
     )
 

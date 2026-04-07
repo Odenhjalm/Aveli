@@ -213,163 +213,45 @@ class SeminarRecordingResponse(BaseModel):
     updated_at: datetime
 
 
-class TeacherProfileMediaKind(str, Enum):
-    lesson_media = "lesson_media"
-    seminar_recording = "seminar_recording"
-    external = "external"
-
-
-def _validate_teacher_profile_media_identity(
-    *,
-    media_kind: "TeacherProfileMediaKind",
-    lesson_media_id: UUID | None,
-    seminar_recording_id: UUID | None,
-    external_url: str | None,
-) -> None:
-    has_lesson_media = lesson_media_id is not None
-    has_seminar_recording = seminar_recording_id is not None
-    has_external = external_url is not None and external_url.strip() != ""
-
-    if media_kind == TeacherProfileMediaKind.lesson_media:
-        if not has_lesson_media or has_seminar_recording or external_url is not None:
-            raise ValueError(
-                "lesson_media items require lesson_media_id and forbid "
-                "seminar_recording_id/external_url"
-            )
-        return
-
-    if media_kind == TeacherProfileMediaKind.seminar_recording:
-        if not has_seminar_recording or has_lesson_media or external_url is not None:
-            raise ValueError(
-                "seminar_recording items require seminar_recording_id and forbid "
-                "lesson_media_id/external_url"
-            )
-        return
-
-    if not has_external or has_lesson_media or has_seminar_recording:
-        raise ValueError(
-            "external items require external_url and forbid "
-            "lesson_media_id/seminar_recording_id"
-        )
-
-
-class TeacherProfileLessonSource(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    lesson_id: UUID
-    lesson_title: Optional[str] = None
-    course_id: Optional[UUID] = None
-    course_title: Optional[str] = None
-    course_slug: Optional[str] = None
-    kind: str
-    storage_path: Optional[str] = None
-    storage_bucket: Optional[str] = None
-    content_type: Optional[str] = None
-    duration_seconds: Optional[int] = None
-    position: Optional[int] = None
-    created_at: Optional[datetime] = None
-    media: Optional["ResolvedMedia"] = None
-
-
-class TeacherProfileRecordingSource(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    seminar_id: UUID
-    seminar_title: Optional[str] = None
-    session_id: Optional[UUID] = None
-    asset_url: str
-    status: str
-    duration_seconds: Optional[int] = None
-    byte_size: Optional[int] = None
-    published: bool
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+class ProfileMediaVisibility(str, Enum):
+    draft = "draft"
+    published = "published"
 
 
 class TeacherProfileMediaItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
-    teacher_id: UUID
-    media_kind: TeacherProfileMediaKind
-    lesson_media_id: Optional[UUID] = None
-    seminar_recording_id: Optional[UUID] = None
-    external_url: Optional[str] = None
-    title: Optional[str] = None
-    description: Optional[str] = None
-    cover_media_id: Optional[UUID] = None
-    cover_image_url: Optional[str] = None
-    position: int = Field(ge=0)
-    is_published: bool
-    enabled_for_home_player: bool
-    created_at: datetime
-    updated_at: datetime
-
-    @model_validator(mode="after")
-    def _validate_identity(self) -> "TeacherProfileMediaItem":
-        _validate_teacher_profile_media_identity(
-            media_kind=self.media_kind,
-            lesson_media_id=self.lesson_media_id,
-            seminar_recording_id=self.seminar_recording_id,
-            external_url=self.external_url,
-        )
-        return self
+    subject_user_id: UUID
+    media_asset_id: UUID
+    visibility: ProfileMediaVisibility
+    media: Optional["ResolvedMedia"] = None
 
 
 class TeacherProfileMediaCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    media_kind: TeacherProfileMediaKind
-    lesson_media_id: Optional[UUID] = None
-    seminar_recording_id: Optional[UUID] = None
-    external_url: Optional[str] = None
-    title: Optional[str] = None
-    description: Optional[str] = None
-    cover_media_id: Optional[UUID] = None
-    cover_image_url: Optional[str] = None
-    position: int = Field(ge=0)
-    is_published: bool
-    enabled_for_home_player: bool
-
-    @model_validator(mode="after")
-    def _validate_identity(self) -> "TeacherProfileMediaCreate":
-        _validate_teacher_profile_media_identity(
-            media_kind=self.media_kind,
-            lesson_media_id=self.lesson_media_id,
-            seminar_recording_id=self.seminar_recording_id,
-            external_url=self.external_url,
-        )
-        return self
+    media_asset_id: UUID
+    visibility: ProfileMediaVisibility
 
 
 class TeacherProfileMediaUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: Optional[str] = None
-    description: Optional[str] = None
-    cover_media_id: Optional[UUID] = None
-    cover_image_url: Optional[str] = None
-    position: Optional[int] = None
-    is_published: Optional[bool] = None
-    enabled_for_home_player: Optional[bool] = None
+    media_asset_id: Optional[UUID] = None
+    visibility: Optional[ProfileMediaVisibility] = None
 
 
 class TeacherProfileMediaListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: List[TeacherProfileMediaItem]
-    lesson_media_sources: List[TeacherProfileLessonSource]
-    seminar_recording_sources: List[TeacherProfileRecordingSource]
 
 
 class TeacherProfileMediaPublicResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: List[TeacherProfileMediaItem]
-    lesson_media_sources: List[TeacherProfileLessonSource]
-    seminar_recording_sources: List[TeacherProfileRecordingSource]
 
 
 class SeminarDetailResponse(BaseModel):
