@@ -38,7 +38,7 @@
       "slot": 6,
       "filename": "0006_lesson_media_core.sql",
       "path": "backend/supabase/baseline_slots/0006_lesson_media_core.sql",
-      "sha256": "6ae5eb19aa42d4010790ef016a958419f6099551636be1e92a136c340ac66048"
+      "sha256": "cde1e00eed50e4a44d08ac818e4214d86ceb2a0b5c114f3067a2ad1aaa48672b"
     },
     {
       "slot": 7,
@@ -117,6 +117,12 @@
       "filename": "0019_runtime_media_profile_media.sql",
       "path": "backend/supabase/baseline_slots/0019_runtime_media_profile_media.sql",
       "sha256": "242c047101907e6933cd5cc724d03b410f6fd5c1994411707d447509c86e73f7"
+    },
+    {
+      "slot": 20,
+      "filename": "0020_lesson_media_media_asset_fk_recovery.sql",
+      "path": "backend/supabase/baseline_slots/0020_lesson_media_media_asset_fk_recovery.sql",
+      "sha256": "2b6220e80839be832579417590c80db6123c2e07eba4aed97ee4442bbd5abc61"
     }
   ]
 }
