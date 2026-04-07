@@ -633,37 +633,6 @@ async def garbage_collect_media(*, batch_size: int = 200, max_batches: int = 10)
                         SELECT 1 FROM app.profiles p WHERE p.avatar_media_id = mo.id
                       )
                       AND NOT EXISTS (
-                        SELECT 1 FROM app.teacher_profile_media tpm WHERE tpm.cover_media_id = mo.id
-                      )
-                      AND NOT EXISTS (
-                        SELECT 1 FROM app.home_player_uploads hpu WHERE hpu.media_id = mo.id
-                      )
-                      AND NOT EXISTS (
-                        SELECT 1 FROM app.meditations m WHERE m.media_id = mo.id
-                      )
-                      ORDER BY mo.created_at ASC
-                      LIMIT %s
-                      FOR UPDATE SKIP LOCKED
-                    ),
-                    deleted AS (
-                      DELETE FROM app.media_objects mo
-                      USING candidates c
-                      WHERE mo.id = c.id
-                      RETURNING mo.storage_path, mo.storage_bucket
-                    )
-                    SELECT * FROM deleted
-                    """,
-                    """
-                    WITH candidates AS (
-                      SELECT mo.id
-                      FROM app.media_objects mo
-                      WHERE NOT EXISTS (
-                        SELECT 1 FROM app.lesson_media lm WHERE lm.media_id = mo.id
-                      )
-                      AND NOT EXISTS (
-                        SELECT 1 FROM app.profiles p WHERE p.avatar_media_id = mo.id
-                      )
-                      AND NOT EXISTS (
                         SELECT 1 FROM app.home_player_uploads hpu WHERE hpu.media_id = mo.id
                       )
                       AND NOT EXISTS (

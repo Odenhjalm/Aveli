@@ -456,14 +456,12 @@ def fetch_orphan_media_objects(
         "FROM app.media_objects mo",
         "LEFT JOIN app.lesson_media lm ON lm.media_id = mo.id",
         "LEFT JOIN app.home_player_uploads hpu ON hpu.media_id = mo.id",
-        "LEFT JOIN app.teacher_profile_media tpm ON tpm.cover_media_id = mo.id",
         "LEFT JOIN app.profiles p ON p.avatar_media_id = mo.id",
         "LEFT JOIN app.meditations m ON m.media_id = mo.id",
     ]
     where_clauses = [
         "WHERE lm.id IS NULL",
         "  AND hpu.id IS NULL",
-        "  AND tpm.id IS NULL",
         "  AND p.user_id IS NULL",
         "  AND m.id IS NULL",
     ]

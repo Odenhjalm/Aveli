@@ -47,9 +47,10 @@ Minimal read-only MCP server for deterministic inspection of `media_assets`,
   - `backend/app/services/media_transcode_worker.py`
 - Projection correctness and fallback rules:
   - `backend/app/media_control_plane/services/media_resolver_service.py`
-- Runtime projection source-of-truth shape:
-  - DB-triggered `app.upsert_runtime_media_for_lesson_media(...)`
-  - `backend/supabase/migrations/20260320075542_remote_schema.sql`
+- Canonical runtime projection source-of-truth shape:
+  - append-only baseline slots `backend/supabase/baseline_slots/0017_runtime_media_unified.sql`
+  - append-only baseline slots `backend/supabase/baseline_slots/0018_runtime_media_home_player.sql`
+  - append-only baseline slots `backend/supabase/baseline_slots/0019_runtime_media_profile_media.sql`
 
 ### Canonical model
 
@@ -57,6 +58,12 @@ Minimal read-only MCP server for deterministic inspection of `media_assets`,
 - `lesson_media` is the authored lesson reference layer
 - `runtime_media` is the delivery/auth projection layer
 - `storage.objects` remains the byte-existence authority when available
+
+### Diagnostic legacy-field boundary
+
+- Some MCP observability payloads may still expose diagnostic fields such as `fallback_policy` and `legacy_storage_*`.
+- Those fields are observability residue only. They do not redefine canonical migration, baseline, runtime-truth, or frontend-contract authority.
+- Canonical authority remains the append-only baseline slots and the active contract set.
 
 ## Tool Contract
 

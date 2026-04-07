@@ -123,6 +123,12 @@
       "filename": "0020_lesson_media_media_asset_fk_recovery.sql",
       "path": "backend/supabase/baseline_slots/0020_lesson_media_media_asset_fk_recovery.sql",
       "sha256": "2b6220e80839be832579417590c80db6123c2e07eba4aed97ee4442bbd5abc61"
+    },
+    {
+      "slot": 21,
+      "filename": "0021_livekit_webhook_jobs_operational_queue.sql",
+      "path": "backend/supabase/baseline_slots/0021_livekit_webhook_jobs_operational_queue.sql",
+      "sha256": "76670559d5d11786efca5a63486b94becdc7719c21a7518f624d197475440932"
     }
   ]
 }
