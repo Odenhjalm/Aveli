@@ -15,11 +15,10 @@ void main() {
       'updated_at': '2024-01-02T00:00:00Z',
     });
 
-    expect(profile.userRole, UserRole.learner);
-    expect(profile.isTeacher, isFalse);
-    expect(profile.isAdmin, isFalse);
-    expect(profile.onboardingState, OnboardingStateValue.incomplete);
     expect(profile.displayName, 'Teacher');
     expect(profile.avatarMediaId, 'media-1');
+    expect(profile.toJson().containsKey('role'), isFalse);
+    expect(profile.toJson().containsKey('is_admin'), isFalse);
+    expect(profile.toJson().containsKey('onboarding_state'), isFalse);
   });
 }

@@ -57,13 +57,7 @@ async def test_profiles_set_onboarding_state_delegates_to_auth_subject_authority
 
     async def _fake_set_onboarding_state(user_id: str, onboarding_state: str):
         calls.append((user_id, onboarding_state))
-        return {
-            "user_id": user_id,
-            "onboarding_state": onboarding_state,
-            "role_v2": "teacher",
-            "role": "teacher",
-            "is_admin": False,
-        }
+        return {"user_id": user_id}
 
     async def _fake_get_profile(user_id: str):
         return {
@@ -73,10 +67,6 @@ async def test_profiles_set_onboarding_state_delegates_to_auth_subject_authority
             "bio": None,
             "photo_url": None,
             "avatar_media_id": None,
-            "onboarding_state": "completed",
-            "role_v2": "teacher",
-            "role": "teacher",
-            "is_admin": False,
             "created_at": None,
             "updated_at": None,
         }
@@ -92,5 +82,6 @@ async def test_profiles_set_onboarding_state_delegates_to_auth_subject_authority
 
     assert calls == [("teacher-123", "completed")]
     assert result is not None
-    assert result["onboarding_state"] == "completed"
-    assert result["role_v2"] == "teacher"
+    assert result["display_name"] == "Teacher"
+    assert "onboarding_state" not in result
+    assert "role_v2" not in result

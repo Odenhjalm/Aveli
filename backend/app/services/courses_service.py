@@ -27,15 +27,6 @@ _LEARNER_MEDIA_STATES = frozenset(
 )
 
 
-def _is_admin_profile(profile: Mapping[str, Any] | None) -> bool:
-    if not profile:
-        return False
-    if profile.get("is_admin"):
-        return True
-    role = str(profile.get("role_v2") or "").strip().lower()
-    return role == "admin"
-
-
 def _source_matches_course_step(*, course_step: str, enrollment_source: str) -> bool:
     normalized_step = str(course_step or "").strip().lower()
     normalized_source = str(enrollment_source or "").strip().lower()

@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/profile.dart';
@@ -111,6 +112,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final access = ref.watch(userAccessProvider);
     final authState = ref.watch(authControllerProvider);
     final profile = authState.profile;
     final certificatesAsync = ref.watch(myCertificatesProvider);
@@ -175,6 +177,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _IdentitySection(
+                  isTeacher: access.isTeacher,
+                  isAdmin: access.isAdmin,
                   profile: profile,
                   displayNameController: _displayNameCtrl,
                   editing: _editing,
@@ -196,7 +200,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 columnGap,
                 buildRow(
                   _ServicesSection(
-                    profile: profile,
+                    isTeacher: access.isTeacher,
                     onOpenStudio: () => context.goNamed(AppRoute.studio),
                   ),
                   _CoursesSection(
@@ -225,6 +229,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
 class _IdentitySection extends StatelessWidget {
   const _IdentitySection({
+    required this.isTeacher,
+    required this.isAdmin,
     required this.profile,
     required this.displayNameController,
     required this.editing,
@@ -234,6 +240,8 @@ class _IdentitySection extends StatelessWidget {
     required this.onSaveProfile,
   });
 
+  final bool isTeacher;
+  final bool isAdmin;
   final Profile profile;
   final TextEditingController displayNameController;
   final bool editing;
@@ -264,12 +272,9 @@ class _IdentitySection extends StatelessWidget {
         icon: Icons.calendar_today_rounded,
         label: 'Medlem sedan $joinDate',
       ),
-      _ProfileChip(
-        icon: Icons.workspace_premium_rounded,
-        label: profile.isProfessional ? 'Pro-medlem' : 'Medlem',
-      ),
-      if (profile.isAdmin)
-        const _ProfileChip(icon: Icons.shield_rounded, label: 'Admin'),
+      if (isTeacher)
+        const _ProfileChip(icon: Icons.workspace_premium_rounded, label: 'L?rare'),
+      if (isAdmin) const _ProfileChip(icon: Icons.shield_rounded, label: 'Admin'),
     ];
 
     final actions = <Widget>[];
@@ -771,15 +776,15 @@ class _SubscriptionEntry extends StatelessWidget {
 }
 
 class _ServicesSection extends StatelessWidget {
-  const _ServicesSection({required this.profile, required this.onOpenStudio});
+  const _ServicesSection({required this.isTeacher, required this.onOpenStudio});
 
-  final Profile profile;
+  final bool isTeacher;
   final VoidCallback onOpenStudio;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (profile.isProfessional) {
+    if (isTeacher) {
       return _GlassSection(
         title: 'Mina tjänster',
         child: Column(

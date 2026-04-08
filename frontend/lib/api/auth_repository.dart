@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
-import 'package:aveli/core/auth/auth_claims.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/errors/app_failure.dart';
@@ -186,18 +185,7 @@ class AuthRepository {
 
   Future<Profile> getCurrentProfile() async {
     final data = await _client.get<Map<String, dynamic>>(ApiPaths.authMe);
-    final profile = Profile.fromJson(data);
-    final token = await _tokens.readAccessToken();
-    final claims = token == null ? null : AuthClaims.fromToken(token);
-    if (claims == null) {
-      return profile;
-    }
-    return profile.copyWith(
-      userRole: claims.userRole,
-      isAdmin: claims.isAdmin,
-      onboardingState:
-          claims.onboardingState ?? OnboardingStateValue.incomplete,
-    );
+    return Profile.fromJson(data);
   }
 
   Future<void> completeWelcome() async {

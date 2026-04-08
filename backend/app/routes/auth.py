@@ -8,12 +8,15 @@ from jose import JWTError
 
 from ..auth import (
     CurrentUser,
+    _normalized_subject_role,
+    _validated_onboarding_state,
     create_access_token,
     create_refresh_token,
     decode_jwt,
     is_token_expired,
     verify_password,
 )
+from ..repositories import auth_subjects as auth_subjects_repo
 from .. import models, schemas
 from ..services.email_verification import (
     InvalidInviteTokenError,
@@ -114,24 +117,32 @@ async def _token_claims(user_id: str) -> dict[str, Any]:
     user = await models.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="Kontot kunde inte hittas")
-    profile = await models.get_profile_row(user_id)
-    if not profile:
+    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
+    if not auth_subject:
         raise HTTPException(
             status_code=401,
             detail="Kanoniskt auth-subjekt saknas",
         )
-    role = str(profile.get("role_v2") or "").strip().lower()
-    if role not in {"learner", "teacher"}:
-        role = str(profile.get("role") or "").strip().lower()
-    if role not in {"learner", "teacher"}:
+    role = _normalized_subject_role(
+        auth_subject.get("role_v2"),
+        auth_subject.get("role"),
+    )
+    if role is None:
         raise HTTPException(status_code=401, detail="Kanonisk rollbehorighet saknas")
-    onboarding_state = str(profile.get("onboarding_state") or "").strip().lower()
-    if onboarding_state not in {"incomplete", "completed"}:
+    onboarding_state = _validated_onboarding_state(
+        auth_subject.get("onboarding_state")
+    )
+    if onboarding_state is None:
         raise HTTPException(
             status_code=401,
             detail="Ogiltigt kanoniskt onboarding-tillstand",
         )
-    is_admin = bool(profile.get("is_admin"))
+    is_admin = auth_subject.get("is_admin")
+    if not isinstance(is_admin, bool):
+        raise HTTPException(
+            status_code=401,
+            detail="Ogiltig kanonisk adminbehorighet",
+        )
     return {
         "role": role,
         "onboarding_state": onboarding_state,

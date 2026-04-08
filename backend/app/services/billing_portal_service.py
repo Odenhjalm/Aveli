@@ -8,7 +8,6 @@ from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
 from .. import stripe_mode
-from ..db import get_conn
 from ..repositories import memberships as memberships_repo
 from ..repositories import stripe_customers as stripe_customers_repo
 from ..utils.membership_status import is_membership_active
@@ -96,8 +95,6 @@ async def ensure_customer_id(
     membership_row = membership or await memberships_repo.get_membership(user_id)
     customer_id = membership_row.get("stripe_customer_id") if membership_row else None
     if not customer_id:
-        customer_id = await _get_profile_customer_id(user_id)
-    if not customer_id:
         customer_id = await stripe_customers_repo.get_customer_id_for_user(user_id)
     if customer_id:
         await _persist_customer_id(user_id, customer_id, membership_row)
@@ -118,34 +115,6 @@ async def ensure_customer_id(
     return created_id
 
 
-async def _get_profile_customer_id(user_id: str) -> str | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT stripe_customer_id
-              FROM app.profiles
-             WHERE user_id = %s
-             LIMIT 1
-            """,
-            (user_id,),
-        )
-        row = await cur.fetchone()
-    return row["stripe_customer_id"] if row and row.get("stripe_customer_id") else None
-
-
-async def _set_profile_customer_id(user_id: str, customer_id: str) -> None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            UPDATE app.profiles
-               SET stripe_customer_id = %s,
-                   updated_at = now()
-             WHERE user_id = %s
-            """,
-            (customer_id, user_id),
-        )
-
-
 async def _persist_customer_id(
     user_id: str,
     customer_id: str,
@@ -160,10 +129,6 @@ async def _persist_customer_id(
             await memberships_repo.set_customer_id(user_id, customer_id)
         except Exception:  # pragma: no cover - best effort
             logger.debug("Failed to persist customer id on membership", exc_info=True)
-    try:
-        await _set_profile_customer_id(user_id, customer_id)
-    except Exception:  # pragma: no cover - best effort
-        logger.debug("Failed to persist customer id on profile", exc_info=True)
 
 
 def _build_return_url() -> str:

@@ -257,8 +257,6 @@ void main() {
     final profile = Profile(
       id: 'user-1',
       email: 'user@example.com',
-      userRole: UserRole.teacher,
-      isAdmin: false,
       createdAt: DateTime.utc(2024, 1, 1),
       updatedAt: DateTime.utc(2024, 1, 1),
       displayName: 'Test User',

@@ -19,15 +19,9 @@ async def get_profile(user_id: str | UUID) -> dict[str, Any] | None:
                    p.bio,
                    p.photo_url,
                    p.avatar_media_id,
-                   s.onboarding_state,
-                   s.role_v2,
-                   s.role,
-                   s.is_admin,
                    p.created_at,
                    p.updated_at
             FROM app.profiles p
-            LEFT JOIN app.auth_subjects s
-              ON s.user_id = p.user_id
             WHERE p.user_id = %s
             LIMIT 1
             """,

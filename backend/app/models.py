@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 from .db import get_conn, pool
 from .auth import hash_password
 from .repositories import (
+    auth_subjects as auth_subjects_repo,
     create_order as repo_create_order,
     create_user as repo_create_user,
     get_profile as repo_get_profile,
@@ -49,6 +50,18 @@ def _effective_role_sql(alias: str) -> str:
             ELSE NULL
         END
     """
+
+
+def _effective_subject_role(auth_subject: dict[str, Any] | None) -> str | None:
+    if auth_subject is None:
+        return None
+    role_v2 = str(auth_subject.get("role_v2") or "").strip().lower()
+    if role_v2 in {"learner", "teacher"}:
+        return role_v2
+    role = str(auth_subject.get("role") or "").strip().lower()
+    if role in {"learner", "teacher"}:
+        return role
+    return None
 
 
 async def _fetchone(cur):
@@ -366,14 +379,8 @@ async def create_user(email: str, password: str, display_name: str):
 
 
 async def is_teacher_user(user_id: str) -> bool:
-    profile = await get_profile(user_id)
-    if not profile:
-        return False
-    role_v2 = str(profile.get("role_v2") or "").strip().lower()
-    if role_v2 == "teacher":
-        return True
-    role = str(profile.get("role") or "").strip().lower()
-    return role_v2 not in {"learner", "teacher"} and role == "teacher"
+    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
+    return _effective_subject_role(auth_subject) == "teacher"
 
 
 async def teacher_courses(user_id: str) -> Iterable[dict]:
@@ -442,19 +449,13 @@ async def certificates_of(user_id: str, verified_only: bool = False) -> Iterable
 
 
 async def teacher_status(user_id: str) -> dict:
-    profile = await get_profile_row(user_id)
-    role = "learner"
-    if profile:
-        role_v2 = str(profile.get("role_v2") or "").strip().lower()
-        if role_v2 not in {"learner", "teacher"}:
-            role_v2 = str(profile.get("role") or "").strip().lower()
-        if role_v2 == "teacher":
-            role = "teacher"
+    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
+    role = "teacher" if _effective_subject_role(auth_subject) == "teacher" else "learner"
     verified = await user_certificates(user_id, True)
     application = await teacher_application_certificate(user_id)
     return {
         "role": role,
-        "is_admin": bool(profile.get("is_admin")) if profile else False,
+        "is_admin": bool(auth_subject.get("is_admin")) if auth_subject else False,
         "verified_certificates": len(verified),
         "has_application": application is not None,
     }
@@ -2474,35 +2475,12 @@ async def list_public_meditations(limit: int = 100) -> list[dict]:
 
 
 async def get_profile_row(user_id: str) -> dict | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT p.user_id,
-                   p.email,
-                   p.display_name,
-                   p.bio,
-                   p.photo_url,
-                   s.onboarding_state,
-                   s.role_v2,
-                   s.role,
-                   s.is_admin
-            FROM app.profiles p
-            LEFT JOIN app.auth_subjects s
-              ON s.user_id = p.user_id
-            WHERE p.user_id = %s
-            LIMIT 1
-            """,
-            (user_id,),
-        )
-        row = await _fetchone(cur)
-    return dict(row) if row else None
+    return await repo_get_profile(user_id)
 
 
 async def is_admin_user(user_id: str) -> bool:
-    profile = await get_profile_row(user_id)
-    if not profile:
-        return False
-    return bool(profile.get("is_admin"))
+    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
+    return bool(auth_subject.get("is_admin")) if auth_subject else False
 
 
 async def list_teacher_applications() -> list[dict]:

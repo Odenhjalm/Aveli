@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -9,6 +11,12 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/gate.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
+
+String _tokenForClaims(Map<String, Object?> claims) {
+  final header = base64Url.encode(utf8.encode('{"alg":"none","typ":"JWT"}'));
+  final payload = base64Url.encode(utf8.encode(jsonEncode(claims)));
+  return '$header.$payload.signature';
+}
 
 void main() {
   setUpAll(() {
@@ -23,8 +31,6 @@ void main() {
     final profile = Profile(
       id: 'user-1',
       email: 'user@example.com',
-      userRole: UserRole.teacher,
-      isAdmin: false,
       createdAt: DateTime.utc(2024, 1, 1),
       updatedAt: DateTime.utc(2024, 1, 1),
       displayName: 'Test User',
@@ -95,10 +101,7 @@ void main() {
 
       controller.state = AuthState(
         profile: profile,
-        claims: AuthClaims(
-          role: profile.userRole.name,
-          isAdmin: profile.isAdmin,
-        ),
+        claims: const AuthClaims(role: 'teacher', isAdmin: false),
       );
       gate.allow();
 
@@ -112,18 +115,19 @@ void main() {
     });
 
     test('completeWelcome refreshes the hydrated profile', () async {
+      final refreshedToken = _tokenForClaims({
+        'role': 'teacher',
+        'is_admin': false,
+        'onboarding_state': OnboardingStateValue.completed,
+      });
       when(() => repo.completeWelcome()).thenAnswer((_) async {});
-      when(() => repo.currentToken()).thenAnswer((_) async => 'token');
-      when(() => repo.getCurrentProfile()).thenAnswer(
-        (_) async => profile.copyWith(
-          onboardingState: OnboardingStateValue.completed,
-        ),
-      );
+      when(() => repo.currentToken()).thenAnswer((_) async => refreshedToken);
+      when(() => repo.getCurrentProfile()).thenAnswer((_) async => profile);
 
       await controller.completeWelcome();
 
       expect(
-        controller.state.profile?.onboardingState,
+        controller.state.claims?.onboardingState,
         OnboardingStateValue.completed,
       );
       verify(() => repo.completeWelcome()).called(1);

@@ -40,8 +40,6 @@ class _FakeAuthController extends AuthController {
       profile: Profile(
         id: 'user-1',
         email: 'user@example.com',
-        userRole: UserRole.learner,
-        isAdmin: false,
         createdAt: DateTime.utc(2024, 1, 1),
         updatedAt: DateTime.utc(2024, 1, 1),
       ),

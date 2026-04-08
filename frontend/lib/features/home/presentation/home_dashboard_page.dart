@@ -6,6 +6,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_extras.dart';
+import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/data/models/activity.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/seminar.dart';
@@ -38,12 +39,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
+    final access = ref.watch(userAccessProvider);
     final profile = authState.profile;
     if (profile == null) {
       return const AuthBootPage();
     }
 
-    final isTeacher = profile.isTeacher || profile.isAdmin;
+    final isTeacher = access.isTeacher || access.isAdmin;
     final feedAsync = ref.watch(homeFeedProvider);
     final servicesAsync = ref.watch(homeServicesProvider);
     final seminarsAsync = ref.watch(publicSeminarsProvider);
@@ -58,7 +60,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       contentPadding: EdgeInsets.zero,
       actions: [
         IconButton(
-          tooltip: 'Home',
+          tooltip: 'Hem',
           onPressed: () => context.goNamed(AppRoute.home),
           icon: const Icon(Icons.home_outlined),
         ),
@@ -68,9 +70,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             onPressed: () => context.goNamed(AppRoute.studio),
             icon: const Icon(Icons.edit),
           ),
-        if (profile.isAdmin)
+        if (access.isAdmin)
           IconButton(
-            tooltip: 'Media Control Plane',
+            tooltip: 'Mediekontroll',
             onPressed: () => context.goNamed(AppRoute.adminMedia),
             icon: const Icon(Icons.perm_media_outlined),
           ),

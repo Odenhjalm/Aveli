@@ -21,6 +21,12 @@ import '../helpers/backend_asset_resolver_stub.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
+String _tokenForClaims(Map<String, Object?> claims) {
+  final header = base64Url.encode(utf8.encode('{"alg":"none","typ":"JWT"}'));
+  final payload = base64Url.encode(utf8.encode(jsonEncode(claims)));
+  return '$header.$payload.signature';
+}
+
 class _TestAuthController extends AuthController {
   _TestAuthController(AuthRepository repo) : super(repo, AuthHttpObserver());
 
@@ -126,14 +132,16 @@ void main() {
 
   testWidgets('teacher login redirects to teacher home', (tester) async {
     final repo = _MockAuthRepository();
+    final teacherToken = _tokenForClaims({
+      'role': 'teacher',
+      'is_admin': false,
+      'onboarding_state': OnboardingStateValue.completed,
+    });
     final profile = Profile(
       id: 'teacher-1',
       email: 'teacher@example.com',
-      userRole: UserRole.teacher,
-      isAdmin: false,
       createdAt: DateTime.utc(2024, 1, 1),
       updatedAt: DateTime.utc(2024, 1, 2),
-      onboardingState: OnboardingStateValue.completed,
     );
 
     when(
@@ -142,7 +150,7 @@ void main() {
         password: any(named: 'password'),
       ),
     ).thenAnswer((_) async => profile);
-    when(() => repo.currentToken()).thenAnswer((_) async => null);
+    when(() => repo.currentToken()).thenAnswer((_) async => teacherToken);
 
     final controller = _TestAuthController(repo);
     final router = GoRouter(

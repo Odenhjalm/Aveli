@@ -32,7 +32,6 @@ final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
     hasTentativeSession: authState.claims != null,
     isTeacher: access.isTeacher,
     isAdmin: access.isAdmin,
-    onboardingState:
-        authState.profile?.onboardingState ?? authState.claims?.onboardingState,
+    onboardingState: authState.claims?.onboardingState,
   );
 });

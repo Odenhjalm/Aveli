@@ -55,8 +55,6 @@ void main() {
   final ownerProfile = Profile(
     id: 'owner-1',
     email: 'owner@example.com',
-    userRole: UserRole.teacher,
-    isAdmin: false,
     createdAt: DateTime.utc(2024, 1, 1),
     updatedAt: DateTime.utc(2024, 1, 1),
   );

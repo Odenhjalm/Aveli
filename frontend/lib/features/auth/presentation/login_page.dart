@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aveli/core/auth/auth_claims.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -213,7 +213,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         context.go(redirect);
       } else {
         context.goNamed(
-          _defaultPostLoginRoute(ref.read(authControllerProvider).profile),
+          _defaultPostLoginRoute(ref.read(authControllerProvider).claims),
         );
       }
     } catch (error) {
@@ -246,11 +246,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 }
 
-String _defaultPostLoginRoute(Profile? profile) {
-  if (profile?.isAdmin == true) {
+String _defaultPostLoginRoute(AuthClaims? claims) {
+  if (claims?.isAdmin == true) {
     return AppRoute.home;
   }
-  if (profile?.isTeacher == true) {
+  if (claims?.isTeacher == true) {
     return AppRoute.teacherHome;
   }
   return AppRoute.home;
