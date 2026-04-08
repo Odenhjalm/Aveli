@@ -129,6 +129,12 @@
       "filename": "0021_livekit_webhook_jobs_operational_queue.sql",
       "path": "backend/supabase/baseline_slots/0021_livekit_webhook_jobs_operational_queue.sql",
       "sha256": "76670559d5d11786efca5a63486b94becdc7719c21a7518f624d197475440932"
+    },
+    {
+      "slot": 22,
+      "filename": "0022_profiles_projection_surface.sql",
+      "path": "backend/supabase/baseline_slots/0022_profiles_projection_surface.sql",
+      "sha256": "54cf119468161ec0140e9f823646128657711b9d75bd6b722da587971f6bf314"
     }
   ]
 }
