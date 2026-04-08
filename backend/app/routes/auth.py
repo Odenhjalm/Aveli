@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from jose import JWTError
 
 from ..auth import (
+    CurrentUser,
     create_access_token,
     create_refresh_token,
     decode_jwt,
@@ -112,21 +113,29 @@ async def _record_auth_event(
 async def _token_claims(user_id: str) -> dict[str, Any]:
     user = await models.get_user_by_id(user_id)
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=401, detail="Kontot kunde inte hittas")
     profile = await models.get_profile_row(user_id)
     if not profile:
-        raise HTTPException(status_code=401, detail="Canonical auth subject missing")
-    is_teacher = await models.is_teacher_user(user_id)
+        raise HTTPException(
+            status_code=401,
+            detail="Kanoniskt auth-subjekt saknas",
+        )
     role = str(profile.get("role_v2") or "").strip().lower()
     if role not in {"learner", "teacher"}:
         role = str(profile.get("role") or "").strip().lower()
     if role not in {"learner", "teacher"}:
-        raise HTTPException(status_code=401, detail="Canonical role authority missing")
+        raise HTTPException(status_code=401, detail="Kanonisk rollbehorighet saknas")
+    onboarding_state = str(profile.get("onboarding_state") or "").strip().lower()
+    if onboarding_state not in {"incomplete", "completed"}:
+        raise HTTPException(
+            status_code=401,
+            detail="Ogiltigt kanoniskt onboarding-tillstand",
+        )
     is_admin = bool(profile.get("is_admin"))
     return {
         "role": role,
+        "onboarding_state": onboarding_state,
         "is_admin": is_admin,
-        "is_teacher": bool(is_teacher),
     }
 
 
@@ -155,7 +164,7 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
             event="register_conflict",
             request=request,
         )
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="E-postadressen ar redan registrerad")
 
     user_id = await models.create_user(
         payload.email, payload.password, payload.display_name
@@ -199,7 +208,7 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
             event="login_invalid_user",
             request=request,
         )
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Fel e-postadress eller losenord")
 
     hashed = user.get("encrypted_password")
     if not hashed or not verify_password(payload.password, hashed):
@@ -209,7 +218,7 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
             event="login_invalid_password",
             request=request,
         )
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Fel e-postadress eller losenord")
 
     user_id = str(user["id"])
     claims = await _token_claims(user_id)
@@ -251,25 +260,69 @@ async def reset_password(payload: schemas.AuthResetPasswordRequest):
     return {"status": result["status"]}
 
 
+@router.post("/change-password")
+async def change_password(
+    payload: schemas.AuthChangePasswordRequest,
+    request: Request,
+    current_user: CurrentUser,
+):
+    user_id = str(current_user["id"])
+    user = await models.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kontot kunde inte hittas",
+        )
+
+    hashed = user.get("encrypted_password")
+    if not hashed or not verify_password(payload.current_password, hashed):
+        await _record_auth_event(
+            user_id=user_id,
+            email=user.get("email"),
+            event="password_change_invalid_current_password",
+            request=request,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_current_password",
+        )
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="new_password_must_differ",
+        )
+
+    await models.update_user_password(user_id, payload.new_password)
+    await models.revoke_refresh_tokens_for_user(user_id)
+    await _record_auth_event(
+        user_id=user_id,
+        email=user.get("email"),
+        event="password_change_success",
+        request=request,
+    )
+    return {"status": "password_changed", "reauth_required": True}
+
+
 @router.post("/refresh", response_model=schemas.Token)
 async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
     try:
         decoded = decode_jwt(payload.refresh_token)
         if is_token_expired(decoded):
-            raise HTTPException(status_code=401, detail="Refresh token expired")
+            raise HTTPException(status_code=401, detail="Uppdateringstoken har gatt ut")
     except JWTError as exc:
-        raise HTTPException(status_code=401, detail="Invalid refresh token") from exc
+        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken") from exc
 
     if decoded.get("token_type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
 
     user_id: str | None = decoded.get("sub")
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
 
     jti: str | None = decoded.get("jti")
     if not jti:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
 
     token_row = await models.validate_refresh_token(jti, payload.refresh_token)
     if not token_row:
@@ -280,7 +333,7 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
             request=request,
             metadata={"jti": jti},
         )
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
 
     db_user_id = str(token_row.get("user_id")) if token_row.get("user_id") else None
     if db_user_id and db_user_id != user_id:
@@ -291,7 +344,7 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
             request=request,
             metadata={"expected": user_id, "actual": db_user_id},
         )
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
 
     user_row = await models.get_user_by_id(user_id)
     email = user_row.get("email") if user_row else None

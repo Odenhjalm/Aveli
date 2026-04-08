@@ -50,24 +50,12 @@ async def admin_teacher_requests(current: AdminUser):
     return schemas.TeacherApplicationListResponse(items=items)
 
 
-@router.post("/teachers/{user_id}/approve", status_code=status.HTTP_204_NO_CONTENT)
-async def admin_approve_teacher(user_id: str, current: AdminUser):
-    await _approve_teacher(user_id, current["id"])
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @router.post(
     "/teacher-requests/{user_id}/approve",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def admin_teacher_request_approve(user_id: str, current: AdminUser):
     await _approve_teacher(user_id, current["id"])
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/teachers/{user_id}/reject", status_code=status.HTTP_204_NO_CONTENT)
-async def admin_reject_teacher(user_id: str, current: AdminUser):
-    await _reject_teacher(user_id, current["id"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

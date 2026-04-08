@@ -54,12 +54,10 @@ void main() {
         },
       );
 
-      when(() => apiClient.get<Map<String, dynamic>>('/auth/me')).thenAnswer(
+      when(() => apiClient.get<Map<String, dynamic>>('/profiles/me')).thenAnswer(
         (_) async => {
           'user_id': 'user-1',
           'email': 'teacher@example.com',
-          'role_v2': 'teacher',
-          'is_admin': false,
           'display_name': 'Teacher',
           'bio': null,
           'photo_url': null,

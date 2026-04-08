@@ -100,7 +100,12 @@ async def _promote_to_teacher(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
+                """
+                UPDATE app.auth_subjects
+                   SET role_v2 = 'teacher',
+                       role = 'teacher'
+                 WHERE user_id = %s
+                """,
                 (user_id,),
             )
             await conn.commit()
@@ -130,7 +135,7 @@ async def _register_user(client, email: str, password: str, display_name: str):
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    me_resp = await client.get("/auth/me", headers=headers)
+    me_resp = await client.get("/profiles/me", headers=headers)
     assert me_resp.status_code == 200, me_resp.text
     user_id = me_resp.json()["user_id"]
     return tokens["access_token"], tokens["refresh_token"], user_id

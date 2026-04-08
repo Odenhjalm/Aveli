@@ -152,7 +152,12 @@ def _promote_teacher(database_url: str, user_id: str) -> None:
         with psycopg.connect(database_url, autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "update app.profiles set role_v2 = 'teacher' where user_id = %s",
+                    """
+                    update app.auth_subjects
+                       set role_v2 = 'teacher',
+                           role = 'teacher'
+                     where user_id = %s
+                    """,
                     (user_id,),
                 )
                 if cur.rowcount == 0:
@@ -171,8 +176,17 @@ def _assert_teacher_role(base_url: str, session: AuthSession) -> None:
     )
     if resp.status_code != 200:
         raise SmokeTestError(f"Failed to verify teacher role: {resp.status_code} {resp.text}")
-    role = resp.json().get("role_v2") or resp.json().get("role")
-    if role != "teacher":
+    teacher_headers = _auth_headers(session)
+    status_resp = requests.get(
+        f"{base_url}/studio/status",
+        headers=teacher_headers,
+        timeout=10,
+    )
+    if status_resp.status_code != 200:
+        raise SmokeTestError(
+            f"Failed to verify teacher status: {status_resp.status_code} {status_resp.text}"
+        )
+    if status_resp.json().get("role") != "teacher":
         raise SmokeTestError(
             "Host account is not a teacher; provide --database-url or promote manually before rerunning"
         )

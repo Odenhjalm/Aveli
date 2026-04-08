@@ -23,7 +23,7 @@ async def register_teacher(async_client):
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    profile_resp = await async_client.get("/auth/me", headers=headers)
+    profile_resp = await async_client.get("/profiles/me", headers=headers)
     assert profile_resp.status_code == 200, profile_resp.text
     user_id = profile_resp.json()["user_id"]
     await promote_to_teacher(user_id)
@@ -34,7 +34,12 @@ async def promote_to_teacher(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
+                """
+                UPDATE app.auth_subjects
+                   SET role_v2 = 'teacher',
+                       role = 'teacher'
+                 WHERE user_id = %s
+                """,
                 (user_id,),
             )
             await conn.commit()

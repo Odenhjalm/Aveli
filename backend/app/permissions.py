@@ -19,7 +19,7 @@ async def require_teacher(current: CurrentUser):
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Teacher permissions required",
+            detail="Lararbehorighet kravs",
         )
     return current
 
@@ -33,7 +33,7 @@ async def require_admin(current: CurrentUser):
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin permissions required",
+            detail="Adminbehorighet kravs",
         )
     return current
 

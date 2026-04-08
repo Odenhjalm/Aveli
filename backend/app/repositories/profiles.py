@@ -44,7 +44,6 @@ async def update_profile(
     bio: str | None = None,
     photo_url: str | None = None,
     avatar_media_id: str | None = None,
-    onboarding_state: str | None = None,
 ) -> dict[str, Any] | None:
     assignments: list[str] = []
     params: list[object] = []
@@ -61,8 +60,6 @@ async def update_profile(
         _append("photo_url", photo_url.strip() or None)
     if avatar_media_id is not None:
         _append("avatar_media_id", avatar_media_id)
-    if onboarding_state is not None:
-        await auth_subjects_repo.set_onboarding_state(user_id, onboarding_state)
 
     if not assignments:
         return await get_profile(user_id)

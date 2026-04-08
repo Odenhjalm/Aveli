@@ -9,7 +9,7 @@ pytestmark = pytest.mark.anyio("asyncio")
 async def test_profile_response_reports_membership_as_sole_app_entry_authority(
     monkeypatch,
 ) -> None:
-    from app.routes import api_profiles
+    from app.routes import profiles as profile_routes
 
     user_id = str(uuid4())
     now = datetime.now(timezone.utc)
@@ -22,44 +22,25 @@ async def test_profile_response_reports_membership_as_sole_app_entry_authority(
             "bio": None,
             "photo_url": None,
             "avatar_media_id": None,
-            "role_v2": "teacher",
-            "role": "teacher",
-            "is_admin": False,
             "created_at": now,
             "updated_at": now,
         }
 
-    async def _fake_sync_onboarding_state(_: str) -> str:
-        return "completed"
+    monkeypatch.setattr(profile_routes.models, "get_profile", _fake_get_profile)
 
-    async def _fake_is_teacher_user(_: str) -> bool:
-        return True
+    profile = await profile_routes.get_me(current_user={"id": user_id})
+    payload = profile.model_dump()
 
-    async def _fake_get_user_by_id(_: str):
-        return {"email_confirmed_at": "2026-04-07T12:00:00+00:00"}
-
-    async def _fake_get_membership(_: str):
-        return None
-
-    monkeypatch.setattr(api_profiles.repositories, "get_profile", _fake_get_profile)
-    monkeypatch.setattr(
-        api_profiles, "sync_onboarding_state", _fake_sync_onboarding_state
-    )
-    monkeypatch.setattr(
-        api_profiles.models, "is_teacher_user", _fake_is_teacher_user
-    )
-    monkeypatch.setattr(
-        api_profiles.repositories, "get_user_by_id", _fake_get_user_by_id
-    )
-    monkeypatch.setattr(
-        api_profiles.repositories, "get_membership", _fake_get_membership
-    )
-
-    profile = await api_profiles._profile_response(user_id)
-
-    assert profile.is_teacher is True
-    assert profile.onboarding_state == "completed"
-    assert profile.membership_active is False
+    assert set(payload) == {
+        "user_id",
+        "email",
+        "display_name",
+        "bio",
+        "photo_url",
+        "avatar_media_id",
+        "created_at",
+        "updated_at",
+    }
 
 
 async def test_domain_observability_keeps_enrollment_separate_from_app_entry(

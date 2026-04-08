@@ -19,7 +19,7 @@ class AdminRepository {
 
   Future<void> approveTeacher(String userId) async {
     try {
-      await _client.post('/admin/teachers/$userId/approve');
+      await _client.post('/admin/teacher-requests/$userId/approve');
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -27,7 +27,7 @@ class AdminRepository {
 
   Future<void> rejectTeacher(String userId) async {
     try {
-      await _client.post('/admin/teachers/$userId/reject');
+      await _client.post('/admin/teacher-requests/$userId/reject');
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }

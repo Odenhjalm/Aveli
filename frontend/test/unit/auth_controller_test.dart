@@ -97,7 +97,6 @@ void main() {
         profile: profile,
         claims: AuthClaims(
           role: profile.userRole.name,
-          isTeacher: profile.userRole == UserRole.teacher,
           isAdmin: profile.isAdmin,
         ),
       );
@@ -117,7 +116,7 @@ void main() {
       when(() => repo.currentToken()).thenAnswer((_) async => 'token');
       when(() => repo.getCurrentProfile()).thenAnswer(
         (_) async => profile.copyWith(
-          onboardingState: OnboardingStateValue.welcomed,
+          onboardingState: OnboardingStateValue.completed,
         ),
       );
 
@@ -125,7 +124,7 @@ void main() {
 
       expect(
         controller.state.profile?.onboardingState,
-        OnboardingStateValue.welcomed,
+        OnboardingStateValue.completed,
       );
       verify(() => repo.completeWelcome()).called(1);
       verify(() => repo.getCurrentProfile()).called(1);

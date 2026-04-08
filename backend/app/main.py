@@ -31,6 +31,7 @@ from .db import pool
 from .logging_utils import setup_logging
 from .middleware.request_context import RequestContextMiddleware
 from .routes import (
+    admin,
     auth,
     playback,
     courses,
@@ -40,6 +41,7 @@ from .routes import (
     logs_mcp,
     media_control_plane_mcp,
     profiles,
+    referrals,
     studio,
     verification_mcp,
 )
@@ -173,6 +175,8 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(auth.router)
     app.include_router(email_verification.router)
     app.include_router(profiles.router)
+    app.include_router(referrals.router)
+    app.include_router(admin.router)
     app.include_router(home.router)
     app.include_router(playback.router)
     app.include_router(courses.router)

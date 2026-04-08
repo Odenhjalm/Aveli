@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from typing import Any
 
 from ..config import settings
 from ..repositories import referrals as referrals_repo
@@ -57,6 +58,19 @@ async def create_referral_invitation(
     return referral, delivery
 
 
+async def redeem_referral(
+    *,
+    code: str,
+    user_id: str,
+    email: str,
+) -> dict[str, Any]:
+    return await referrals_repo.redeem_referral_code(
+        code=code,
+        user_id=user_id,
+        email=email,
+    )
+
+
 def _build_referral_email_text(
     *,
     code: str,
@@ -81,4 +95,5 @@ __all__ = [
     "build_signup_url",
     "create_referral_invitation",
     "generate_referral_code",
+    "redeem_referral",
 ]

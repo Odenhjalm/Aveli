@@ -28,7 +28,7 @@ async def register_user(async_client) -> tuple[str, str]:
     )
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
-    me_resp = await async_client.get("/auth/me", headers=auth_header(tokens["access_token"]))
+    me_resp = await async_client.get("/profiles/me", headers=auth_header(tokens["access_token"]))
     assert me_resp.status_code == 200, me_resp.text
     return tokens["access_token"], me_resp.json()["user_id"]
 

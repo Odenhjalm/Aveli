@@ -14,7 +14,7 @@ class ProfileRepository {
   final ApiClient _client;
 
   Future<Profile?> getMe() async {
-    final data = await _client.get<Map<String, dynamic>>('/auth/me');
+    final data = await _client.get<Map<String, dynamic>>('/profiles/me');
     if (data.isEmpty) return null;
     return Profile.fromJson(data);
   }
@@ -36,7 +36,7 @@ class ProfileRepository {
     }
 
     final data = await _client.patch<Map<String, dynamic>>(
-      '/auth/me',
+      '/profiles/me',
       body: body.isEmpty ? null : body,
     );
     if (data == null || data.isEmpty) {

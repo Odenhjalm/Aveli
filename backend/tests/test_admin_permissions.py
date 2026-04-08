@@ -44,10 +44,8 @@ async def promote_to_admin(user_id: str):
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                UPDATE app.profiles
-                SET is_admin = true,
-                    role_v2 = COALESCE(role_v2, 'user'),
-                    updated_at = now()
+                UPDATE app.auth_subjects
+                   SET is_admin = true
                 WHERE user_id = %s
                 """,
                 (user_id,),
@@ -66,7 +64,7 @@ async def profile_role(user_id: str) -> tuple[str, bool]:
     async with db.pool.connection() as conn:  # type: ignore
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                "SELECT role_v2, is_admin FROM app.profiles WHERE user_id = %s",
+                "SELECT role_v2, is_admin FROM app.auth_subjects WHERE user_id = %s",
                 (user_id,),
             )
             row = await cur.fetchone()
@@ -116,7 +114,7 @@ async def test_admin_guard_for_teacher_approval(async_client):
     try:
         # Non-admin call should be forbidden.
         resp = await async_client.post(
-            f"/admin/teachers/{candidate_id}/approve",
+            f"/admin/teacher-requests/{candidate_id}/approve",
             headers=auth_header(admin_token),
         )
         assert resp.status_code == 403
@@ -125,7 +123,7 @@ async def test_admin_guard_for_teacher_approval(async_client):
         await promote_to_admin(admin_id)
 
         resp = await async_client.post(
-            f"/admin/teachers/{candidate_id}/approve",
+            f"/admin/teacher-requests/{candidate_id}/approve",
             headers=auth_header(admin_token),
         )
         assert resp.status_code == 204
@@ -135,7 +133,7 @@ async def test_admin_guard_for_teacher_approval(async_client):
         assert is_admin is False
 
         resp = await async_client.post(
-            f"/admin/teachers/{candidate_id}/reject",
+            f"/admin/teacher-requests/{candidate_id}/reject",
             headers=auth_header(admin_token),
         )
         assert resp.status_code == 204
@@ -149,7 +147,7 @@ async def test_admin_guard_for_teacher_approval(async_client):
         refreshed = refresh_resp.json()
         claims = decode_token(refreshed["access_token"])
         assert claims.get("is_admin") is True
-        assert claims.get("is_teacher") is True
+        assert claims.get("role") == "learner"
     finally:
         await cleanup_user(admin_id)
         await cleanup_user(candidate_id)

@@ -65,7 +65,12 @@ def _fetch_user_id(conn: psycopg.Connection, email: str) -> str | None:
 def _set_teacher_role(conn: psycopg.Connection, user_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE app.profiles SET role_v2 = 'teacher', updated_at = now() WHERE user_id = %s",
+            """
+            UPDATE app.auth_subjects
+               SET role_v2 = 'teacher',
+                   role = 'teacher'
+             WHERE user_id = %s
+            """,
             (user_id,),
         )
     conn.commit()

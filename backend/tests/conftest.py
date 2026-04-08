@@ -15,7 +15,24 @@ LOCAL_TEST_DATABASE_URL = os.environ.get(
     "postgresql://postgres:postgres@127.0.0.1:5432/aveli_local",
 )
 _parsed_test_db = urlparse(LOCAL_TEST_DATABASE_URL)
-os.environ["APP_ENV"] = "development"
+for forbidden_key in (
+    "SUPABASE_DB_URL",
+    "SUPABASE_URL",
+    "SUPABASE_SECRET_API_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_PUBLISHABLE_API_KEY",
+    "SUPABASE_PUBLIC_API_KEY",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_PROJECT_REF",
+    "SUPABASE_JWKS_URL",
+    "SUPABASE_JWT_ISSUER",
+    "SUPABASE_JWT_SECRET",
+    "SUPABASE_JWT_SECRET_LEGACY",
+    "MCP_PRODUCTION_DATABASE_URL",
+    "MCP_PRODUCTION_SUPABASE_DB_URL",
+):
+    os.environ.pop(forbidden_key, None)
+os.environ["APP_ENV"] = "local"
 os.environ["MCP_MODE"] = "local"
 os.environ["DATABASE_HOST"] = _parsed_test_db.hostname or "127.0.0.1"
 os.environ["DATABASE_PORT"] = str(_parsed_test_db.port or 5432)
@@ -23,19 +40,6 @@ os.environ["DATABASE_NAME"] = (_parsed_test_db.path or "/aveli_local").lstrip("/
 os.environ["DATABASE_USER"] = _parsed_test_db.username or "postgres"
 os.environ["DATABASE_PASSWORD"] = _parsed_test_db.password or "postgres"
 os.environ["DATABASE_URL"] = LOCAL_TEST_DATABASE_URL
-os.environ["SUPABASE_DB_URL"] = LOCAL_TEST_DATABASE_URL
-os.environ["SUPABASE_URL"] = os.environ.get(
-    "AVELI_TEST_SUPABASE_URL",
-    "http://127.0.0.1:54321",
-)
-os.environ["SUPABASE_SECRET_API_KEY"] = os.environ.get(
-    "AVELI_TEST_SUPABASE_SECRET_API_KEY",
-    "local-test-secret",
-)
-os.environ["SUPABASE_PUBLISHABLE_API_KEY"] = os.environ.get(
-    "AVELI_TEST_SUPABASE_PUBLISHABLE_API_KEY",
-    "local-test-publishable",
-)
 os.environ["SENTRY_DSN"] = os.environ.get("AVELI_TEST_SENTRY_DSN", "")
 
 import pytest  # noqa: E402
@@ -134,46 +138,5 @@ def _temp_media_root(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _local_supabase_registration_stub(monkeypatch):
-    from app.repositories import auth as auth_repo
-    from app.routes import api_auth
-
-    async def fake_create_supabase_auth_user(
-        *,
-        email: str,
-        password: str,
-        display_name: str | None,
-    ) -> dict[str, str]:
-        try:
-            result = await auth_repo.create_user(
-                email=email,
-                hashed_password=hash_password(password),
-                display_name=display_name,
-            )
-        except auth_repo.UniqueViolationError as exc:
-            raise AssertionError(
-                f"duplicate local auth seed for {email}"
-            ) from exc
-
-        await auth_repo.mark_user_email_verified(email)
-        user = result.get("user") or {}
-        return {
-            "id": str(user["id"]),
-            "email": str(user["email"]),
-        }
-
-    async def fake_enqueue_verification_email(email: str) -> None:
-        return None
-
-    monkeypatch.setattr(
-        api_auth,
-        "_create_supabase_auth_user",
-        fake_create_supabase_auth_user,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        api_auth,
-        "_enqueue_verification_email",
-        fake_enqueue_verification_email,
-        raising=True,
-    )
+def _local_supabase_registration_stub():
+    yield

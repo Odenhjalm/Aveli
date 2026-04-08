@@ -182,7 +182,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                                 : (_) => _signUp(context),
                             decoration: const InputDecoration(
                               labelText: 'Inbjudningskod (valfritt)',
-                              hintText: 'Ange din referral-kod',
+                              hintText: 'Ange din inbjudningskod',
                             ),
                           ),
                           gap24,

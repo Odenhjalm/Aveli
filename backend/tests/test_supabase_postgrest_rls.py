@@ -5,6 +5,12 @@ import httpx
 import psycopg
 import pytest
 
+if os.getenv("AVELI_ALLOW_REMOTE_SUPABASE_TESTS") != "1":
+    pytest.skip(
+        "Remote Supabase integration tests are disabled unless explicitly enabled",
+        allow_module_level=True,
+    )
+
 REQUIRED_ENV_VARS = [
     "SUPABASE_URL",
     "SUPABASE_DB_URL",
@@ -138,27 +144,51 @@ def _seed_supabase(db_url: str, users: dict[str, dict[str, str]]):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                insert into app.profiles (user_id, email, display_name, role, role_v2, is_admin)
-                values (%s, %s, %s, 'teacher', 'teacher', false)
+                insert into app.profiles (user_id, email, display_name)
+                values (%s, %s, %s)
                 on conflict (user_id) do nothing
                 """,
                 (host_id, host_email, "Host Tester"),
             )
             cur.execute(
                 """
-                insert into app.profiles (user_id, email, display_name, role, role_v2, is_admin)
-                values (%s, %s, %s, 'student', 'user', false)
+                insert into app.profiles (user_id, email, display_name)
+                values (%s, %s, %s)
                 on conflict (user_id) do nothing
                 """,
                 (attendee_id, attendee_email, "Attendee Tester"),
             )
             cur.execute(
                 """
-                insert into app.profiles (user_id, email, display_name, role, role_v2, is_admin)
-                values (%s, %s, %s, 'student', 'user', false)
+                insert into app.profiles (user_id, email, display_name)
+                values (%s, %s, %s)
                 on conflict (user_id) do nothing
                 """,
                 (outsider_id, outsider_email, "Outsider Tester"),
+            )
+            cur.execute(
+                """
+                insert into app.auth_subjects (user_id, onboarding_state, role_v2, role, is_admin)
+                values (%s, 'completed', 'teacher', 'teacher', false)
+                on conflict (user_id) do nothing
+                """,
+                (host_id,),
+            )
+            cur.execute(
+                """
+                insert into app.auth_subjects (user_id, onboarding_state, role_v2, role, is_admin)
+                values (%s, 'completed', 'learner', 'learner', false)
+                on conflict (user_id) do nothing
+                """,
+                (attendee_id,),
+            )
+            cur.execute(
+                """
+                insert into app.auth_subjects (user_id, onboarding_state, role_v2, role, is_admin)
+                values (%s, 'completed', 'learner', 'learner', false)
+                on conflict (user_id) do nothing
+                """,
+                (outsider_id,),
             )
 
             cur.execute(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -75,7 +76,10 @@ class MvpApiClient {
 
   Future<ProfileSummary> fetchProfile() async {
     final response = await _dio.get(ApiPaths.authMe);
-    return ProfileSummary.fromJson(response.data as Map<String, dynamic>);
+    return ProfileSummary.fromJson(
+      response.data as Map<String, dynamic>,
+      role: _currentRole(),
+    );
   }
 
   Future<List<CourseSummary>> listMyCourses() async {
@@ -133,6 +137,31 @@ class MvpApiClient {
   }
 
   String get baseUrl => _config.baseUrl;
+
+  String _currentRole() {
+    final token = accessToken.value;
+    if (token == null || token.isEmpty) {
+      return 'learner';
+    }
+    final parts = token.split('.');
+    if (parts.length != 3) {
+      return 'learner';
+    }
+    try {
+      final normalized = base64Url.normalize(parts[1]);
+      final decoded = utf8.decode(base64Url.decode(normalized));
+      final data = json.decode(decoded);
+      if (data is Map<String, dynamic>) {
+        final role = data['role'] as String?;
+        if (role == 'teacher') {
+          return 'teacher';
+        }
+      }
+    } catch (_) {
+      return 'learner';
+    }
+    return 'learner';
+  }
 }
 
 class ProfileSummary {
@@ -143,12 +172,15 @@ class ProfileSummary {
     required this.role,
   });
 
-  factory ProfileSummary.fromJson(Map<String, dynamic> json) {
+  factory ProfileSummary.fromJson(
+    Map<String, dynamic> json, {
+    required String role,
+  }) {
     return ProfileSummary(
       userId: json['user_id'] as String,
       email: json['email'] as String? ?? '',
       displayName: json['display_name'] as String? ?? '',
-      role: json['role_v2'] as String? ?? json['role'] as String? ?? 'student',
+      role: role,
     );
   }
 

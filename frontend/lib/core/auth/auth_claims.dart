@@ -5,21 +5,31 @@ import 'package:aveli/data/models/profile.dart';
 class AuthClaims {
   const AuthClaims({
     required this.role,
-    required this.isTeacher,
     required this.isAdmin,
+    this.onboardingState,
   });
 
   final String role;
-  final bool isTeacher;
   final bool isAdmin;
+  final String? onboardingState;
 
-  UserRole get userRole => isAdmin ? UserRole.teacher : parseUserRole(role);
+  UserRole get userRole => parseUserRole(role);
+  bool get isTeacher => userRole == UserRole.teacher;
 
   factory AuthClaims.fromMap(Map<String, dynamic> payload) {
-    final rawRole = (payload['role'] as String?) ?? 'user';
+    final normalizedRole = parseUserRole(payload['role'] as String?);
     final admin = payload['is_admin'] == true;
-    final teacher = payload['is_teacher'] == true || admin;
-    return AuthClaims(role: rawRole, isTeacher: teacher, isAdmin: admin);
+    final rawOnboardingState = payload['onboarding_state'] as String?;
+    final onboardingState =
+        rawOnboardingState == OnboardingStateValue.incomplete ||
+            rawOnboardingState == OnboardingStateValue.completed
+        ? rawOnboardingState
+        : null;
+    return AuthClaims(
+      role: normalizedRole == UserRole.teacher ? 'teacher' : 'learner',
+      isAdmin: admin,
+      onboardingState: onboardingState,
+    );
   }
 
   static AuthClaims? fromToken(String token) {

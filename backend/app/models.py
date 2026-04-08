@@ -21,6 +21,7 @@ from .repositories import (
     get_user_order as repo_get_user_order,
     list_services as repo_list_services,
     mark_order_paid as repo_mark_order_paid,
+    revoke_refresh_tokens_for_user as repo_revoke_refresh_tokens_for_user,
     set_order_checkout_reference as repo_set_order_checkout_reference,
     update_profile as repo_update_profile,
     upsert_refresh_token as repo_upsert_refresh_token,
@@ -36,6 +37,18 @@ logger = logging.getLogger(__name__)
 
 def _test_visibility_clause(alias: str) -> str:
     return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
+
+
+def _effective_role_sql(alias: str) -> str:
+    return f"""
+        CASE
+            WHEN lower(COALESCE({alias}.role_v2, '')) IN ('learner', 'teacher')
+                THEN lower({alias}.role_v2)
+            WHEN lower(COALESCE({alias}.role, '')) IN ('learner', 'teacher')
+                THEN lower({alias}.role)
+            ELSE NULL
+        END
+    """
 
 
 async def _fetchone(cur):
@@ -429,11 +442,19 @@ async def certificates_of(user_id: str, verified_only: bool = False) -> Iterable
 
 
 async def teacher_status(user_id: str) -> dict:
-    is_teacher = await is_teacher_user(user_id)
+    profile = await get_profile_row(user_id)
+    role = "learner"
+    if profile:
+        role_v2 = str(profile.get("role_v2") or "").strip().lower()
+        if role_v2 not in {"learner", "teacher"}:
+            role_v2 = str(profile.get("role") or "").strip().lower()
+        if role_v2 == "teacher":
+            role = "teacher"
     verified = await user_certificates(user_id, True)
     application = await teacher_application_certificate(user_id)
     return {
-        "is_teacher": is_teacher,
+        "role": role,
+        "is_admin": bool(profile.get("is_admin")) if profile else False,
         "verified_certificates": len(verified),
         "has_application": application is not None,
     }
@@ -451,6 +472,10 @@ async def update_user_password(user_id: str, password: str) -> None:
             """,
             (hashed, user_id),
         )
+
+
+async def revoke_refresh_tokens_for_user(user_id: str) -> None:
+    await repo_revoke_refresh_tokens_for_user(user_id)
 
 
 async def create_course_for_user(user_id: str, data: dict) -> dict | None:
@@ -541,9 +566,10 @@ async def _list_landing_courses(
 
 
 async def list_teachers(limit: int = 20) -> Iterable[dict]:
+    teacher_role_sql = _effective_role_sql("subj")
     async with get_conn() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT
               prof.user_id,
               prof.display_name,
@@ -553,7 +579,8 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
               u.raw_user_meta_data->>'picture' AS auth_picture_url
             FROM app.profiles prof
             LEFT JOIN auth.users u ON u.id = prof.user_id
-            WHERE (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+            LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
+            WHERE ({teacher_role_sql}) = 'teacher'
               AND lower(prof.email) = lower(%s)
             ORDER BY prof.display_name NULLS LAST
             LIMIT %s
@@ -665,6 +692,7 @@ def _choose_public_profile_photo_url(
 
 
 async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]:
+    teacher_role_sql = _effective_role_sql("subj")
     clauses = """
         WITH course_stats AS (
             SELECT
@@ -687,13 +715,15 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
             COALESCE(stats.total_courses, 0) AS total_courses,
             COALESCE(stats.published_courses, 0) AS published_courses
         FROM app.profiles prof
+        LEFT JOIN app.auth_subjects subj
+          ON subj.user_id = prof.user_id
         LEFT JOIN app.course_display_priorities pr
           ON pr.teacher_id = prof.user_id
         LEFT JOIN app.profiles upd
           ON upd.user_id = pr.updated_by
         LEFT JOIN course_stats stats
           ON stats.teacher_id = prof.user_id
-        WHERE prof.role_v2 = 'teacher' OR prof.is_admin = true
+        WHERE ({teacher_role_sql}) = 'teacher'
         ORDER BY COALESCE(pr.priority, 1000), lower(COALESCE(prof.display_name, prof.email))
     """
     params: tuple = ()
@@ -751,10 +781,11 @@ async def delete_teacher_course_priority(teacher_id: str) -> None:
 
 
 async def get_teacher_course_priority(teacher_id: str) -> dict | None:
+    teacher_role_sql = _effective_role_sql("subj")
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                """
+                f"""
                 WITH course_stats AS (
                     SELECT
                         created_by AS teacher_id,
@@ -776,13 +807,15 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                     COALESCE(stats.total_courses, 0) AS total_courses,
                     COALESCE(stats.published_courses, 0) AS published_courses
                 FROM app.profiles prof
+                LEFT JOIN app.auth_subjects subj
+                  ON subj.user_id = prof.user_id
                 LEFT JOIN app.course_display_priorities pr
                   ON pr.teacher_id = prof.user_id
                 LEFT JOIN app.profiles upd
                   ON upd.user_id = pr.updated_by
                 LEFT JOIN course_stats stats
                   ON stats.teacher_id = prof.user_id
-                WHERE (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+                WHERE ({teacher_role_sql}) = 'teacher'
                   AND prof.user_id = %s
                 """,
                 (teacher_id,),
@@ -791,14 +824,15 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
 
 
 async def fetch_admin_metrics() -> dict:
+    teacher_role_sql = _effective_role_sql("subj")
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                """
+                f"""
                 SELECT
                     (SELECT COUNT(*) FROM app.profiles) AS total_users,
-                    (SELECT COUNT(*) FROM app.profiles
-                        WHERE role_v2 = 'teacher' OR is_admin = true) AS total_teachers,
+                    (SELECT COUNT(*) FROM app.auth_subjects subj
+                        WHERE ({teacher_role_sql}) = 'teacher') AS total_teachers,
                     (SELECT COUNT(*) FROM app.courses) AS total_courses,
                     (SELECT COUNT(*) FROM app.courses WHERE is_published = true) AS published_courses,
                     (SELECT COUNT(*) FROM app.orders WHERE status = 'paid') AS paid_orders_total,
@@ -2095,7 +2129,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
 
         if not row:
             await cur.execute(
-                """
+                f"""
                 SELECT prof.user_id,
                        prof.display_name,
                        prof.photo_url,
@@ -2105,8 +2139,9 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                        u.raw_user_meta_data->>'picture' AS auth_picture_url
                 FROM app.profiles prof
                 LEFT JOIN auth.users u ON u.id = prof.user_id
+                LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
                 WHERE prof.user_id = %s
-                  AND (prof.role_v2 = 'teacher' OR prof.is_admin = true)
+                  AND ({_effective_role_sql("subj")}) = 'teacher'
                   AND lower(prof.email) = lower(%s)
                 LIMIT 1
                 """,

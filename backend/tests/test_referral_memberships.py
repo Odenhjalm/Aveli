@@ -31,13 +31,19 @@ async def register_user(
         "password": password,
         "display_name": display_name,
     }
-    if referral_code:
-        payload["referral_code"] = referral_code
 
     register_resp = await client.post("/auth/register", json=payload)
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
-    me_resp = await client.get("/auth/me", headers=auth_header(tokens["access_token"]))
+    if referral_code:
+        redeem_resp = await client.post(
+            "/referrals/redeem",
+            headers=auth_header(tokens["access_token"]),
+            json={"code": referral_code},
+        )
+        assert redeem_resp.status_code == 200, redeem_resp.text
+        assert redeem_resp.json() == {"status": "redeemed"}
+    me_resp = await client.get("/profiles/me", headers=auth_header(tokens["access_token"]))
     assert me_resp.status_code == 200, me_resp.text
     return tokens["access_token"], str(me_resp.json()["user_id"])
 
@@ -47,9 +53,9 @@ async def promote_to_teacher(user_id: str) -> None:
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                UPDATE app.profiles
+                UPDATE app.auth_subjects
                    SET role_v2 = 'teacher',
-                       updated_at = now()
+                       role = 'teacher'
                  WHERE user_id = %s
                 """,
                 (user_id,),
@@ -139,7 +145,7 @@ async def test_referral_signup_grants_membership_without_stripe(async_client, mo
         assert membership is not None
         assert membership["status"] == "active"
         assert membership["price_id"] == "referral_grant"
-        assert membership["plan_interval"] == "referral"
+        assert membership["plan_interval"] == "invite"
         assert membership["stripe_customer_id"] is None
         assert membership["stripe_subscription_id"] is None
         assert membership["end_date"] is not None
@@ -168,7 +174,7 @@ async def test_membership_expiry_logic_requires_future_end_date(async_client):
 
         await repositories.upsert_membership_record(
             user_id,
-            plan_interval="referral",
+            plan_interval="invite",
             price_id="referral_grant",
             status="active",
             start_date=datetime.now(timezone.utc) - timedelta(days=2),
@@ -181,7 +187,7 @@ async def test_membership_expiry_logic_requires_future_end_date(async_client):
 
         await repositories.upsert_membership_record(
             user_id,
-            plan_interval="referral",
+            plan_interval="invite",
             price_id="referral_grant",
             status="trialing",
             start_date=datetime.now(timezone.utc) - timedelta(days=1),
@@ -206,6 +212,7 @@ async def test_referral_code_is_single_use(async_client, monkeypatch):
     password = "Passw0rd!"
     teacher_id = None
     first_user_id = None
+    second_user_id = None
     try:
         teacher_token, teacher_id = await register_user(
             async_client,
@@ -235,18 +242,22 @@ async def test_referral_code_is_single_use(async_client, monkeypatch):
         second_email = f"single_use_second_{uuid.uuid4().hex[:8]}@example.com"
         await update_referral_email(referral["id"], second_email)
 
+        second_token, second_user_id = await register_user(
+            async_client,
+            email=second_email,
+            password=password,
+            display_name="Second User",
+        )
         second_resp = await async_client.post(
-            "/auth/register",
-            json={
-                "email": second_email,
-                "password": password,
-                "display_name": "Second User",
-                "referral_code": referral["code"],
-            },
+            "/referrals/redeem",
+            headers=auth_header(second_token),
+            json={"code": referral["code"]},
         )
         assert second_resp.status_code == 400, second_resp.text
-        assert "Referral code" in second_resp.text
+        assert second_resp.json() == {"detail": "invalid_referral_code"}
     finally:
+        if second_user_id:
+            await cleanup_user(second_user_id)
         if first_user_id:
             await cleanup_user(first_user_id)
         if teacher_id:
@@ -328,7 +339,7 @@ async def test_membership_expiry_warning_job_sends_once(async_client, monkeypatc
         now = datetime.now(timezone.utc)
         membership = await repositories.upsert_membership_record(
             user_id,
-            plan_interval="referral",
+            plan_interval="invite",
             price_id="referral_grant",
             status="active",
             start_date=now - timedelta(days=1),

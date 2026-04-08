@@ -5,25 +5,19 @@ import 'json_utils.dart';
 
 part 'profile.g.dart';
 
-enum UserRole { user, professional, teacher }
+enum UserRole { learner, teacher }
 
 abstract final class OnboardingStateValue {
-  static const registeredUnverified = 'registered_unverified';
-  static const verifiedUnpaid = 'verified_unpaid';
-  static const accessActiveProfileIncomplete =
-      'access_active_profile_incomplete';
-  static const accessActiveProfileComplete = 'access_active_profile_complete';
-  static const welcomed = 'welcomed';
+  static const incomplete = 'incomplete';
+  static const completed = 'completed';
 }
 
 UserRole parseUserRole(String? value) {
   switch (value) {
     case 'teacher':
       return UserRole.teacher;
-    case 'professional':
-      return UserRole.professional;
     default:
-      return UserRole.user;
+      return UserRole.learner;
   }
 }
 
@@ -32,18 +26,15 @@ class Profile extends Equatable {
   const Profile({
     required this.id,
     required this.email,
-    required this.userRole,
-    required this.isAdmin,
     required this.createdAt,
     required this.updatedAt,
     this.displayName,
     this.bio,
     this.photoUrl,
     this.avatarMediaId,
-    this.onboardingState,
-    this.emailVerified = false,
-    this.membershipActive = false,
-    this.hasTeacherAccess = false,
+    this.userRole = UserRole.learner,
+    this.isAdmin = false,
+    this.onboardingState = OnboardingStateValue.incomplete,
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) =>
@@ -56,10 +47,10 @@ class Profile extends Equatable {
 
   final String email;
 
-  @JsonKey(name: 'role_v2', readValue: _readUserRole, toJson: _writeUserRole)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   final UserRole userRole;
 
-  @JsonKey(name: 'is_admin')
+  @JsonKey(includeFromJson: false, includeToJson: false)
   final bool isAdmin;
 
   final String? displayName;
@@ -69,17 +60,8 @@ class Profile extends Equatable {
   @JsonKey(name: 'avatar_media_id')
   final String? avatarMediaId;
 
-  @JsonKey(name: 'onboarding_state')
-  final String? onboardingState;
-
-  @JsonKey(name: 'email_verified', defaultValue: false)
-  final bool emailVerified;
-
-  @JsonKey(name: 'membership_active', defaultValue: false)
-  final bool membershipActive;
-
-  @JsonKey(name: 'is_teacher', defaultValue: false)
-  final bool hasTeacherAccess;
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String onboardingState;
 
   @JsonKey(fromJson: parseDateTime, toJson: dateTimeToIsoString)
   final DateTime createdAt;
@@ -99,9 +81,6 @@ class Profile extends Equatable {
     String? photoUrl,
     String? avatarMediaId,
     String? onboardingState,
-    bool? emailVerified,
-    bool? membershipActive,
-    bool? hasTeacherAccess,
   }) {
     return Profile(
       id: id ?? this.id,
@@ -115,15 +94,11 @@ class Profile extends Equatable {
       photoUrl: photoUrl ?? this.photoUrl,
       avatarMediaId: avatarMediaId ?? this.avatarMediaId,
       onboardingState: onboardingState ?? this.onboardingState,
-      emailVerified: emailVerified ?? this.emailVerified,
-      membershipActive: membershipActive ?? this.membershipActive,
-      hasTeacherAccess: hasTeacherAccess ?? this.hasTeacherAccess,
     );
   }
 
-  bool get isTeacher =>
-      isAdmin || hasTeacherAccess || userRole == UserRole.teacher;
-  bool get isProfessional => userRole == UserRole.professional || isTeacher;
+  bool get isTeacher => userRole == UserRole.teacher;
+  bool get isProfessional => isTeacher;
 
   @override
   List<Object?> get props => [
@@ -136,9 +111,6 @@ class Profile extends Equatable {
     photoUrl,
     avatarMediaId,
     onboardingState,
-    emailVerified,
-    membershipActive,
-    hasTeacherAccess,
     createdAt,
     updatedAt,
   ];
@@ -147,18 +119,4 @@ class Profile extends Equatable {
     final value = json['user_id'] ?? json['id'];
     return value?.toString() ?? '';
   }
-
-  static String _readUserRole(Map json, String key) {
-    final legacy = (json['role'] as String?) ?? 'user';
-    final userRoleValue = json['role_v2'] as String?;
-    final admin = json['is_admin'] == true || legacy == 'admin';
-    final role = userRoleValue ?? legacy;
-    return admin ? 'teacher' : role;
-  }
-
-  static String _writeUserRole(UserRole role) => switch (role) {
-    UserRole.teacher => 'teacher',
-    UserRole.professional => 'professional',
-    UserRole.user => 'user',
-  };
 }

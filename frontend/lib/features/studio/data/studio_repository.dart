@@ -375,9 +375,14 @@ class StudioStatus {
   final bool hasApplication;
 
   factory StudioStatus.fromResponse(Object? payload) {
-    final isTeacher = StudioRepository._requiredResponseField(
+    final role = StudioRepository._requiredResponseField(
       payload,
-      'is_teacher',
+      'role',
+      'Studio status',
+    );
+    final isAdmin = StudioRepository._requiredResponseField(
+      payload,
+      'is_admin',
       'Studio status',
     );
     final verifiedCertificates = StudioRepository._requiredResponseField(
@@ -390,8 +395,11 @@ class StudioStatus {
       'has_application',
       'Studio status',
     );
-    if (isTeacher is! bool) {
-      throw StateError('Studio status field "is_teacher" must be a bool');
+    if (role is! String) {
+      throw StateError('Studio status field "role" must be a string');
+    }
+    if (isAdmin is! bool) {
+      throw StateError('Studio status field "is_admin" must be a bool');
     }
     if (verifiedCertificates is! int && verifiedCertificates is! num) {
       throw StateError(
@@ -402,7 +410,7 @@ class StudioStatus {
       throw StateError('Studio status field "has_application" must be a bool');
     }
     return StudioStatus(
-      isTeacher: isTeacher,
+      isTeacher: role == 'teacher',
       verifiedCertificates: verifiedCertificates is int
           ? verifiedCertificates
           : (verifiedCertificates as num).toInt(),

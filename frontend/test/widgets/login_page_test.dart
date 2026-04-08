@@ -69,7 +69,7 @@ void main() {
       response: Response(
         requestOptions: RequestOptions(path: '/auth/login'),
         statusCode: 401,
-        data: {'detail': 'Invalid credentials'},
+        data: {'detail': 'Fel e-postadress eller lösenord.'},
       ),
       type: DioExceptionType.badResponse,
     );
@@ -129,12 +129,11 @@ void main() {
     final profile = Profile(
       id: 'teacher-1',
       email: 'teacher@example.com',
-      userRole: UserRole.user,
+      userRole: UserRole.teacher,
       isAdmin: false,
       createdAt: DateTime.utc(2024, 1, 1),
       updatedAt: DateTime.utc(2024, 1, 2),
-      onboardingState: OnboardingStateValue.welcomed,
-      hasTeacherAccess: true,
+      onboardingState: OnboardingStateValue.completed,
     );
 
     when(

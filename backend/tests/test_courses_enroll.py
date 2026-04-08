@@ -35,7 +35,7 @@ async def test_enroll_free_intro_course_updates_my_courses(async_client):
         pytest.skip("No free intro courses available in clean Supabase dataset")
     course_id = items[0]["id"]
 
-    me = await async_client.get("/auth/me", headers=headers)
+    me = await async_client.get("/profiles/me", headers=headers)
     assert me.status_code == 200, me.text
     user_id = str(me.json()["user_id"])
     await repositories.upsert_membership_record(

@@ -33,10 +33,8 @@ async def promote_to_admin(user_id: str):
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                UPDATE app.profiles
-                   SET is_admin = true,
-                       role_v2 = COALESCE(role_v2, 'user'),
-                       updated_at = now()
+                UPDATE app.auth_subjects
+                   SET is_admin = true
                  WHERE user_id = %s
                 """,
                 (user_id,),

@@ -66,7 +66,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Inbjudningslänken saknar token.';
+        _errorMessage = 'Inbjudningslänken saknar giltig kod.';
       });
       return;
     }

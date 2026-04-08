@@ -32,6 +32,8 @@ from .referrals import (
     ReferralCodeCreateRequest as ReferralCodeCreateRequest,
     ReferralCodeCreateResponse as ReferralCodeCreateResponse,
     ReferralCodeRecord as ReferralCodeRecord,
+    ReferralRedeemRequest as ReferralRedeemRequest,
+    ReferralRedeemResponse as ReferralRedeemResponse,
 )
 
 __all__ = [
@@ -43,6 +45,8 @@ __all__ = [
     "ReferralCodeCreateRequest",
     "ReferralCodeCreateResponse",
     "ReferralCodeRecord",
+    "ReferralRedeemRequest",
+    "ReferralRedeemResponse",
     "SubscriptionCheckoutResponse",
     "SubscriptionInterval",
     "SubscriptionSessionRequest",
@@ -62,28 +66,44 @@ class TokenPayload(BaseModel):
 
 
 class AuthLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: str
     password: str
 
 
 class AuthRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: str
     password: str
     display_name: str
-    referral_code: str | None = None
     invite_token: str | None = None
 
 
 class AuthForgotPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: str
 
 
 class AuthResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     token: str
     new_password: str
 
 
+class AuthChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 class TokenRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     refresh_token: str
 
 
@@ -94,12 +114,6 @@ class Profile(BaseModel):
     bio: str | None = None
     photo_url: str | None = None
     avatar_media_id: UUID | None = None
-    onboarding_state: str | None = None
-    email_verified: bool = False
-    membership_active: bool = False
-    is_teacher: bool = False
-    role_v2: str
-    is_admin: bool
     created_at: datetime
     updated_at: datetime
 
@@ -1432,6 +1446,8 @@ class CancelSubscriptionRequest(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     display_name: Optional[str] = None
     bio: Optional[str] = None
     photo_url: Optional[str] = None

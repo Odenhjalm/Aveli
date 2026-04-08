@@ -115,7 +115,12 @@ async def _promote_to_teacher(user_id: str) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                "update app.profiles set role_v2 = 'teacher' where user_id = %s::uuid",
+                """
+                update app.auth_subjects
+                   set role_v2 = 'teacher',
+                       role = 'teacher'
+                 where user_id = %s::uuid
+                """,
                 (user_id,),
             )
             await conn.commit()

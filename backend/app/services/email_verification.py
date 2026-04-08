@@ -12,9 +12,9 @@ from .email_tokens import EmailTokenError, create_email_token, verify_email_toke
 _VERIFY_TOKEN_EXPIRY_MINUTES = 15
 _RESET_TOKEN_EXPIRY_MINUTES = 10
 _INVITE_TOKEN_EXPIRY_MINUTES = 24 * 60
-_VERIFY_EMAIL_SUBJECT = "Verify your Aveli account"
-_RESET_PASSWORD_SUBJECT = "Reset your Aveli password"
-_INVITE_EMAIL_SUBJECT = "You're invited to Aveli"
+_VERIFY_EMAIL_SUBJECT = "Verifiera ditt Aveli-konto"
+_RESET_PASSWORD_SUBJECT = "Återställ ditt Aveli-lösenord"
+_INVITE_EMAIL_SUBJECT = "Du är inbjuden till Aveli"
 _DEFAULT_FRONTEND_BASE_URL = "https://app.aveli.app"
 
 
@@ -39,7 +39,7 @@ async def send_verification_email(email: str) -> None:
     )
     verify_url = _build_verify_url(token)
     html_body = render_template("verify_email.html", verify_url=verify_url)
-    text_body = f"Verify your Aveli account: {verify_url}"
+    text_body = f"Verifiera ditt Aveli-konto: {verify_url}"
 
     await send_email(
         to_email=normalized_email,
@@ -78,7 +78,7 @@ async def send_password_reset_email(email: str) -> None:
     )
     reset_url = _build_frontend_url("/reset-password", token)
     html_body = render_template("reset_password.html", reset_url=reset_url)
-    text_body = f"Reset your Aveli password: {reset_url}"
+    text_body = f"Återställ ditt Aveli-lösenord: {reset_url}"
 
     await send_email(
         to_email=normalized_email,
@@ -118,11 +118,11 @@ async def send_invite_email(email: str, *, inviter_email: str | None = None) -> 
         inviter_email=(inviter_email or "").strip().lower(),
     )
     inviter_line = (
-        f"You've been invited by {inviter_email.strip().lower()} to join Aveli."
+        f"Du har blivit inbjuden av {inviter_email.strip().lower()} att gå med i Aveli."
         if inviter_email and inviter_email.strip()
-        else "You've been invited to join Aveli."
+        else "Du har blivit inbjuden att gå med i Aveli."
     )
-    text_body = f"{inviter_line} Accept your invite: {invite_url}"
+    text_body = f"{inviter_line} Acceptera din inbjudan: {invite_url}"
 
     await send_email(
         to_email=normalized_email,

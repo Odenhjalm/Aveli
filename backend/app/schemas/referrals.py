@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ReferralCodeCreateRequest(BaseModel):
@@ -36,3 +38,13 @@ class ReferralCodeRecord(BaseModel):
 class ReferralCodeCreateResponse(BaseModel):
     referral: ReferralCodeRecord
     email_delivery: str
+
+
+class ReferralRedeemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+
+
+class ReferralRedeemResponse(BaseModel):
+    status: Literal["redeemed"]

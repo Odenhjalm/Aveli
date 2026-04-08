@@ -9,9 +9,8 @@ from jose import jwt
 import pytest
 
 from app.config import settings
-from app.routes import api_auth as api_auth_routes
+from app.routes import auth as auth_routes
 from app.routes import email_verification as email_verification_routes
-from app.services.email_service import EmailDeliveryError
 from app.services.email_tokens import (
     EmailTokenError,
     create_email_token,
@@ -39,7 +38,7 @@ async def email_verification_client(anyio_backend):
 @pytest.fixture
 async def auth_client(anyio_backend):
     app = FastAPI()
-    app.include_router(api_auth_routes.router)
+    app.include_router(auth_routes.router)
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport,
@@ -170,80 +169,61 @@ async def test_send_verification_endpoint_rate_limits_by_email(
 
 
 @pytest.mark.anyio("asyncio")
-async def test_signup_triggers_verification_email_and_ignores_delivery_failure(
+async def test_register_endpoint_uses_canonical_auth_route(
     auth_client,
     monkeypatch,
 ):
     requested_email = f"verify_{uuid.uuid4().hex[:8]}@example.com"
     created_user_id = uuid.uuid4()
-    delivery_attempts: list[str] = []
 
     async def fake_get_user_by_email(_: str) -> None:
         return None
 
-    async def fake_create_user(
-        *,
-        email: str,
-        hashed_password: str,
-        display_name: str | None,
-        referral_code: str | None = None,
-    ) -> dict[str, object]:
-        assert hashed_password
+    async def fake_create_user(email: str, password: str, display_name: str) -> uuid.UUID:
+        assert email == requested_email
+        assert password == "Secret123!"
         assert display_name == "Verifier"
-        assert referral_code is None
+        return created_user_id
+
+    async def fake_get_user_by_id(user_id: str):
+        return {"id": user_id, "email": requested_email}
+
+    async def fake_get_profile_row(user_id: str):
         return {
-            "user": {"id": created_user_id, "email": email},
-            "profile": {
-                "user_id": created_user_id,
-                "email": email,
-                "display_name": display_name,
-                "role_v2": "user",
-                "is_admin": False,
-            },
+            "user_id": user_id,
+            "onboarding_state": "completed",
+            "role_v2": "learner",
+            "role": "learner",
+            "is_admin": False,
         }
 
     async def fake_is_teacher_user(_: str) -> bool:
         return False
 
-    async def fake_upsert_refresh_token(**_: object) -> None:
+    async def fake_register_refresh_token(*_: object) -> None:
         return None
 
-    async def fake_insert_auth_event(**_: object) -> None:
+    recorded_events: list[str] = []
+
+    async def fake_record_auth_event(**kwargs: object) -> None:
+        recorded_events.append(str(kwargs["event"]))
         return None
 
-    async def fake_send_verification_email(email: str) -> None:
-        delivery_attempts.append(email)
-        raise EmailDeliveryError("Failed to send email")
-
+    auth_routes._login_attempts.clear()
+    monkeypatch.setattr(auth_routes.models, "get_user_by_email", fake_get_user_by_email)
+    monkeypatch.setattr(auth_routes.models, "create_user", fake_create_user)
+    monkeypatch.setattr(auth_routes.models, "get_user_by_id", fake_get_user_by_id)
+    monkeypatch.setattr(auth_routes.models, "get_profile_row", fake_get_profile_row)
+    monkeypatch.setattr(auth_routes.models, "is_teacher_user", fake_is_teacher_user)
     monkeypatch.setattr(
-        api_auth_routes.repositories,
-        "get_user_by_email",
-        fake_get_user_by_email,
+        auth_routes.models,
+        "register_refresh_token",
+        fake_register_refresh_token,
     )
     monkeypatch.setattr(
-        api_auth_routes.repositories,
-        "create_user",
-        fake_create_user,
-    )
-    monkeypatch.setattr(
-        api_auth_routes.models,
-        "is_teacher_user",
-        fake_is_teacher_user,
-    )
-    monkeypatch.setattr(
-        api_auth_routes.repositories,
-        "upsert_refresh_token",
-        fake_upsert_refresh_token,
-    )
-    monkeypatch.setattr(
-        api_auth_routes.repositories,
-        "insert_auth_event",
-        fake_insert_auth_event,
-    )
-    monkeypatch.setattr(
-        api_auth_routes,
-        "send_verification_email",
-        fake_send_verification_email,
+        auth_routes.models,
+        "record_auth_event",
+        fake_record_auth_event,
     )
 
     response = await auth_client.post(
@@ -259,4 +239,4 @@ async def test_signup_triggers_verification_email_and_ignores_delivery_failure(
     payload = response.json()
     assert payload["access_token"]
     assert payload["refresh_token"]
-    assert delivery_attempts == [requested_email]
+    assert recorded_events[-1] == "register_success"

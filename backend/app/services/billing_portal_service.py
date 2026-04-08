@@ -77,7 +77,7 @@ async def create_billing_portal_session(user: Mapping[str, Any]) -> str:
 def _has_active_membership(membership: Mapping[str, Any] | None) -> bool:
     if not membership:
         return False
-    if (membership.get("plan_interval") or "").lower() == "referral":
+    if (membership.get("plan_interval") or "").lower() in {"referral", "invite"}:
         return False
     return is_membership_active(
         (membership.get("status") or "").lower(),

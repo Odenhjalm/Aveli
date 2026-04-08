@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import uuid
 
 import pytest
 
 from app import schemas
 from app.repositories import auth as auth_repo
-from app.routes import api_auth
+from app.routes import profiles as profile_routes
 from app.services import email_verification, onboarding_state, subscription_service
 
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-async def test_create_user_initializes_registered_unverified(monkeypatch):
+async def test_create_user_initializes_canonical_auth_subject_and_profile_projection(
+    monkeypatch,
+):
     created_at = datetime.now(timezone.utc)
     executed_queries: list[str] = []
+    ensured_subjects: list[dict[str, object]] = []
+    upserted_profiles: list[dict[str, object]] = []
 
     class _Cursor:
         def __init__(self) -> None:
@@ -36,20 +40,7 @@ async def test_create_user_initializes_registered_unverified(monkeypatch):
                     "created_at": created_at,
                     "updated_at": created_at,
                 }
-            elif "INSERT INTO app.profiles" in query:
-                assert "onboarding_state" in query
-                assert "'registered_unverified'" in query
-                self._current_row = {
-                    "user_id": params[0],
-                    "email": params[1],
-                    "display_name": params[2],
-                    "onboarding_state": "registered_unverified",
-                    "role_v2": "user",
-                    "is_admin": False,
-                    "created_at": created_at,
-                    "updated_at": created_at,
-                }
-            else:  # pragma: no cover - defensive for unexpected queries
+            else:
                 self._current_row = None
 
         async def fetchone(self):
@@ -71,250 +62,138 @@ async def test_create_user_initializes_registered_unverified(monkeypatch):
         async def rollback(self):
             return None
 
-    monkeypatch.setattr(
-        auth_repo.pool,
-        "connection",
-        lambda: _Connection(),
-    )
+    async def fake_ensure_auth_subject(
+        user_id: str,
+        *,
+        onboarding_state: str,
+        role_v2: str,
+        role: str,
+        is_admin: bool,
+    ):
+        ensured_subjects.append(
+            {
+                "user_id": user_id,
+                "onboarding_state": onboarding_state,
+                "role_v2": role_v2,
+                "role": role,
+                "is_admin": is_admin,
+            }
+        )
+        return ensured_subjects[-1]
+
+    async def fake_upsert_profile_row(*, user_id: str, email: str, display_name: str | None):
+        upserted_profiles.append(
+            {
+                "user_id": user_id,
+                "email": email,
+                "display_name": display_name,
+            }
+        )
+        return None
+
+    async def fake_get_profile(user_id: str):
+        return {
+            "user_id": user_id,
+            "email": "unit@example.com",
+            "display_name": "Unit User",
+            "bio": None,
+            "photo_url": None,
+            "avatar_media_id": None,
+            "created_at": created_at,
+            "updated_at": created_at,
+        }
+
+    monkeypatch.setattr(auth_repo.pool, "connection", lambda: _Connection())
+    monkeypatch.setattr(auth_repo, "ensure_auth_subject", fake_ensure_auth_subject)
+    monkeypatch.setattr(auth_repo, "_upsert_profile_row", fake_upsert_profile_row)
+    monkeypatch.setattr(auth_repo, "get_profile_for_user", fake_get_profile)
 
     result = await auth_repo.create_user(
-        email="unit@example.com",
+        email=" Unit@Example.com ",
         hashed_password="hashed",
         display_name="Unit User",
     )
 
-    assert result["profile"]["onboarding_state"] == "registered_unverified"
-    assert any("INSERT INTO app.profiles" in query for query in executed_queries)
+    assert result["profile"]["email"] == "unit@example.com"
+    assert ensured_subjects == [
+        {
+            "user_id": result["user"]["id"],
+            "onboarding_state": "incomplete",
+            "role_v2": "learner",
+            "role": "learner",
+            "is_admin": False,
+        }
+    ]
+    assert upserted_profiles == [
+        {
+            "user_id": result["user"]["id"],
+            "email": "unit@example.com",
+            "display_name": "Unit User",
+        }
+    ]
+    assert any("INSERT INTO app.auth_subjects" in query for query in executed_queries)
 
 
-async def test_derive_onboarding_state_returns_registered_unverified(monkeypatch):
-    async def fake_get_profile(user_id: str):
+async def test_derive_onboarding_state_returns_canonical_subject_state(monkeypatch):
+    async def fake_get_auth_subject(user_id: str):
         return {
             "user_id": user_id,
-            "display_name": None,
-            "onboarding_state": None,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "onboarding_state": "completed",
+            "role_v2": "learner",
+            "role": "learner",
+            "is_admin": False,
         }
 
-    async def fake_get_user_by_id(user_id: str):
-        return {"id": user_id, "email_confirmed_at": None, "confirmed_at": None}
-
     monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_profile",
-        fake_get_profile,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_user_by_id",
-        fake_get_user_by_id,
+        "app.services.onboarding_state.repositories.get_auth_subject",
+        fake_get_auth_subject,
     )
 
     state = await onboarding_state.derive_onboarding_state("user-1")
-    assert state == "registered_unverified"
+    assert state == "completed"
 
 
-async def test_derive_onboarding_state_returns_verified_unpaid(monkeypatch):
-    now = datetime.now(timezone.utc)
-
-    async def fake_get_profile(user_id: str):
-        return {
-            "user_id": user_id,
-            "display_name": "Verified User",
-            "onboarding_state": None,
-            "created_at": now,
-            "updated_at": now,
-        }
-
-    async def fake_get_user_by_id(user_id: str):
-        return {"id": user_id, "email_confirmed_at": now, "confirmed_at": now}
-
-    async def fake_get_membership(user_id: str):
+async def test_derive_onboarding_state_rejects_missing_subject(monkeypatch):
+    async def fake_get_auth_subject(user_id: str):
         return None
 
-    async def fake_is_teacher_user(user_id: str) -> bool:
-        return False
-
     monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_profile",
-        fake_get_profile,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_user_by_id",
-        fake_get_user_by_id,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.models.is_teacher_user",
-        fake_is_teacher_user,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_membership",
-        fake_get_membership,
+        "app.services.onboarding_state.repositories.get_auth_subject",
+        fake_get_auth_subject,
     )
 
-    state = await onboarding_state.derive_onboarding_state("user-2")
-    assert state == "verified_unpaid"
+    with pytest.raises(ValueError, match="Auth subject missing"):
+        await onboarding_state.derive_onboarding_state("user-2")
 
 
-async def test_derive_onboarding_state_bypasses_subscription_for_teacher(monkeypatch):
-    now = datetime.now(timezone.utc)
-
-    async def fake_get_profile(user_id: str):
+async def test_derive_onboarding_state_rejects_invalid_canonical_state(monkeypatch):
+    async def fake_get_auth_subject(user_id: str):
         return {
             "user_id": user_id,
-            "display_name": "Teacher User",
-            "onboarding_state": None,
-            "created_at": now,
-            "updated_at": now + timedelta(seconds=1),
+            "onboarding_state": "broken_state",
+            "role_v2": "learner",
+            "role": "learner",
+            "is_admin": False,
         }
 
-    async def fake_get_user_by_id(user_id: str):
-        return {"id": user_id, "email_confirmed_at": now, "confirmed_at": now}
-
-    async def fake_get_membership(user_id: str):
-        return None
-
-    async def fake_is_teacher_user(user_id: str) -> bool:
-        return True
-
     monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_profile",
-        fake_get_profile,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_user_by_id",
-        fake_get_user_by_id,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.models.is_teacher_user",
-        fake_is_teacher_user,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_membership",
-        fake_get_membership,
+        "app.services.onboarding_state.repositories.get_auth_subject",
+        fake_get_auth_subject,
     )
 
-    state = await onboarding_state.derive_onboarding_state("teacher-1")
-    assert state == "access_active_profile_complete"
+    with pytest.raises(ValueError, match="Invalid canonical onboarding_state"):
+        await onboarding_state.derive_onboarding_state("user-3")
 
 
-async def test_derive_onboarding_state_returns_profile_incomplete(monkeypatch):
-    now = datetime.now(timezone.utc)
+async def test_sync_onboarding_state_returns_derived_canonical_state(monkeypatch):
+    async def fake_derive_onboarding_state(user_id: str):
+        assert user_id == "user-4"
+        return "completed"
 
-    async def fake_get_profile(user_id: str):
-        return {
-            "user_id": user_id,
-            "display_name": "Paid User",
-            "onboarding_state": None,
-            "created_at": now,
-            "updated_at": now,
-        }
-
-    async def fake_get_user_by_id(user_id: str):
-        return {"id": user_id, "email_confirmed_at": now, "confirmed_at": now}
-
-    async def fake_get_membership(user_id: str):
-        return {"status": "active", "end_date": None}
-
-    async def fake_is_teacher_user(user_id: str) -> bool:
-        return False
-
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_profile",
-        fake_get_profile,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_user_by_id",
-        fake_get_user_by_id,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.models.is_teacher_user",
-        fake_is_teacher_user,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_membership",
-        fake_get_membership,
-    )
-
-    state = await onboarding_state.derive_onboarding_state("user-3")
-    assert state == "access_active_profile_incomplete"
-
-
-async def test_sync_onboarding_state_persists_new_state(monkeypatch):
-    now = datetime.now(timezone.utc)
-    set_calls: list[tuple[str, str]] = []
-
-    async def fake_get_profile(user_id: str):
-        return {
-            "user_id": user_id,
-            "display_name": "Verified User",
-            "onboarding_state": "registered_unverified",
-            "created_at": now,
-            "updated_at": now,
-        }
-
-    async def fake_get_user_by_id(user_id: str):
-        return {"id": user_id, "email_confirmed_at": now, "confirmed_at": now}
-
-    async def fake_get_membership(user_id: str):
-        return None
-
-    async def fake_set_onboarding_state(user_id: str, state: str):
-        set_calls.append((user_id, state))
-        return {"user_id": user_id, "onboarding_state": state}
-
-    async def fake_is_teacher_user(user_id: str) -> bool:
-        return False
-
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_profile",
-        fake_get_profile,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_user_by_id",
-        fake_get_user_by_id,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.models.is_teacher_user",
-        fake_is_teacher_user,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_membership",
-        fake_get_membership,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.set_onboarding_state",
-        fake_set_onboarding_state,
-    )
+    monkeypatch.setattr(onboarding_state, "derive_onboarding_state", fake_derive_onboarding_state)
 
     state = await onboarding_state.sync_onboarding_state("user-4")
-    assert state == "verified_unpaid"
-    assert set_calls == [("user-4", "verified_unpaid")]
-
-
-async def test_sync_onboarding_state_keeps_welcomed_terminal(monkeypatch):
-    async def fake_get_profile(user_id: str):
-        return {
-            "user_id": user_id,
-            "display_name": "Welcomed User",
-            "onboarding_state": "welcomed",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-        }
-
-    async def fake_set_onboarding_state(user_id: str, state: str):  # pragma: no cover
-        raise AssertionError("welcomed should be terminal")
-
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.get_profile",
-        fake_get_profile,
-    )
-    monkeypatch.setattr(
-        "app.services.onboarding_state.repositories.set_onboarding_state",
-        fake_set_onboarding_state,
-    )
-
-    state = await onboarding_state.sync_onboarding_state("user-5")
-    assert state == "welcomed"
+    assert state == "completed"
 
 
 async def test_verify_email_marks_user_and_syncs_state(monkeypatch):
@@ -338,7 +217,7 @@ async def test_verify_email_marks_user_and_syncs_state(monkeypatch):
 
     async def fake_sync_onboarding_state(user_id: str):
         synced_users.append(user_id)
-        return "verified_unpaid"
+        return "completed"
 
     monkeypatch.setattr(
         "app.services.email_verification.repositories.get_user_by_email",
@@ -360,62 +239,43 @@ async def test_verify_email_marks_user_and_syncs_state(monkeypatch):
     assert synced_users == ["verify-user"]
 
 
-async def test_profile_update_syncs_onboarding_state(monkeypatch):
+async def test_profile_update_returns_projection_only_shape(monkeypatch):
+    now = datetime.now(timezone.utc)
+
     async def fake_update_profile(user_id: str, **kwargs):
         return {
-            "user_id": user_id,
+            "user_id": uuid.UUID("00000000-0000-0000-0000-000000000123"),
             "email": "profile@example.com",
             "display_name": kwargs["display_name"],
             "bio": kwargs.get("bio"),
             "photo_url": kwargs.get("photo_url"),
             "avatar_media_id": None,
-            "onboarding_state": "access_active_profile_incomplete",
-            "role_v2": "user",
-            "is_admin": False,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": now,
+            "updated_at": now,
         }
 
-    async def fake_sync_onboarding_state(user_id: str):
-        assert user_id == "profile-user"
-        return "access_active_profile_complete"
+    monkeypatch.setattr("app.routes.profiles.models.update_profile", fake_update_profile)
 
-    async def fake_profile_response(user_id: str):
-        return schemas.Profile(
-            user_id=uuid.UUID("00000000-0000-0000-0000-000000000123"),
-            email="profile@example.com",
-            display_name="Updated Name",
-            onboarding_state="access_active_profile_complete",
-            email_verified=True,
-            membership_active=True,
-            role_v2="user",
-            is_admin=False,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-        )
-
-    monkeypatch.setattr(
-        "app.routes.api_auth.repositories.update_profile",
-        fake_update_profile,
-    )
-    monkeypatch.setattr(
-        "app.routes.api_auth.sync_onboarding_state",
-        fake_sync_onboarding_state,
-    )
-    monkeypatch.setattr(
-        "app.routes.api_auth._profile_response",
-        fake_profile_response,
-    )
-
-    response = await api_auth.update_me(
+    response = await profile_routes.patch_me(
         schemas.ProfileUpdate(display_name="Updated Name"),
-        current={"id": "profile-user"},
+        current_user={"id": "profile-user"},
     )
 
-    assert response.onboarding_state == "access_active_profile_complete"
+    payload = response.model_dump()
+    assert payload["display_name"] == "Updated Name"
+    assert set(payload) == {
+        "user_id",
+        "email",
+        "display_name",
+        "bio",
+        "photo_url",
+        "avatar_media_id",
+        "created_at",
+        "updated_at",
+    }
 
 
-async def test_auth_me_response_includes_computed_teacher_access(monkeypatch):
+async def test_profiles_me_response_excludes_legacy_auth_fields(monkeypatch):
     now = datetime.now(timezone.utc)
 
     async def fake_get_profile(user_id: str):
@@ -426,49 +286,25 @@ async def test_auth_me_response_includes_computed_teacher_access(monkeypatch):
             "bio": None,
             "photo_url": None,
             "avatar_media_id": None,
-            "onboarding_state": "welcomed",
-            "role_v2": "user",
-            "is_admin": False,
             "created_at": now,
             "updated_at": now,
         }
 
-    async def fake_sync_onboarding_state(user_id: str):
-        return "welcomed"
+    monkeypatch.setattr("app.routes.profiles.models.get_profile", fake_get_profile)
 
-    async def fake_is_teacher_user(user_id: str) -> bool:
-        return True
-
-    async def fake_get_user_by_id(user_id: str):
-        return {"id": user_id, "email_confirmed_at": now, "confirmed_at": now}
-
-    async def fake_get_membership(user_id: str):
-        return None
-
-    monkeypatch.setattr(
-        "app.routes.api_auth.repositories.get_profile",
-        fake_get_profile,
-    )
-    monkeypatch.setattr(
-        "app.routes.api_auth.sync_onboarding_state",
-        fake_sync_onboarding_state,
-    )
-    monkeypatch.setattr(
-        "app.routes.api_auth.models.is_teacher_user",
-        fake_is_teacher_user,
-    )
-    monkeypatch.setattr(
-        "app.routes.api_auth.repositories.get_user_by_id",
-        fake_get_user_by_id,
-    )
-    monkeypatch.setattr(
-        "app.routes.api_auth.repositories.get_membership",
-        fake_get_membership,
-    )
-
-    response = await api_auth._profile_response("teacher-user")
-    assert response.is_teacher is True
-    assert response.membership_active is False
+    response = await profile_routes.get_me(current_user={"id": "teacher-user"})
+    payload = response.model_dump()
+    assert payload["email"] == "teacher@example.com"
+    assert set(payload) == {
+        "user_id",
+        "email",
+        "display_name",
+        "bio",
+        "photo_url",
+        "avatar_media_id",
+        "created_at",
+        "updated_at",
+    }
 
 
 async def test_subscription_webhook_syncs_state_and_skips_duplicates(monkeypatch):
@@ -484,7 +320,7 @@ async def test_subscription_webhook_syncs_state_and_skips_duplicates(monkeypatch
 
     async def fake_sync_onboarding_state(user_id: str):
         sync_calls.append(user_id)
-        return "access_active_profile_incomplete"
+        return "completed"
 
     monkeypatch.setattr(
         "app.services.subscription_service.memberships_repo.insert_payment_event",

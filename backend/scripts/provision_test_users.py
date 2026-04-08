@@ -26,16 +26,15 @@ from dotenv import dotenv_values
 BACKEND_ENV_FILE = Path(os.environ.get("BACKEND_ENV_FILE", "/home/oden/Aveli/backend/.env"))
 DEFAULT_PASSWORD = "Secret123!ChangeMe"
 TARGET_USERS = [
-    {"email": "admin@aveli.app", "role": "admin", "is_admin": True, "metadata": {"is_admin": True}},
-    {"email": "ai.admin@aveli.app", "role": "admin", "is_admin": True, "metadata": {"is_admin": True, "is_ai_admin": True}},
-    {"email": "teacher@aveli.app", "role": "teacher", "is_admin": False, "metadata": {"is_teacher": True}},
-    {"email": "teacher2@aveli.app", "role": "teacher", "is_admin": False, "metadata": {"is_teacher": True}},
-    {"email": "user.1@aveli.app", "role": "user", "is_admin": False, "metadata": {}},
-    {"email": "user.2@aveli.app", "role": "user", "is_admin": False, "metadata": {}},
+    {"email": "admin@aveli.app", "role": "learner", "is_admin": True, "metadata": {"is_admin": True}},
+    {"email": "ai.admin@aveli.app", "role": "learner", "is_admin": True, "metadata": {"is_admin": True, "is_ai_admin": True}},
+    {"email": "teacher@aveli.app", "role": "teacher", "is_admin": False, "metadata": {}},
+    {"email": "teacher2@aveli.app", "role": "teacher", "is_admin": False, "metadata": {}},
+    {"email": "user.1@aveli.app", "role": "learner", "is_admin": False, "metadata": {}},
+    {"email": "user.2@aveli.app", "role": "learner", "is_admin": False, "metadata": {}},
 ]
 
-USER_ROLE_ENUM = {"user", "professional", "teacher"}
-PROFILE_ROLE_ENUM = {"student", "teacher", "admin"}
+CANONICAL_ROLE_ENUM = {"learner", "teacher"}
 
 
 @dataclass
@@ -154,9 +153,10 @@ def update_user(
 
 def normalize_roles(role: str, is_admin: bool) -> tuple[str, str]:
     role_lower = role.lower()
-    profile_role = "admin" if is_admin or role_lower == "admin" else "teacher" if role_lower == "teacher" else "student"
-    user_role = role_lower if role_lower in USER_ROLE_ENUM else "user"
-    return user_role, profile_role
+    canonical_role = "teacher" if role_lower == "teacher" else "learner"
+    if canonical_role not in CANONICAL_ROLE_ENUM:
+        canonical_role = "learner"
+    return canonical_role, canonical_role
 
 
 def upsert_profile(
@@ -167,13 +167,9 @@ def upsert_profile(
     role: str,
     is_admin: bool,
 ) -> None:
-    role_v2, profile_role = normalize_roles(role, is_admin)
     payload = {
         "user_id": user_id,
         "email": email,
-        "role_v2": role_v2,
-        "role": profile_role,
-        "is_admin": is_admin,
     }
     headers = {
         "Prefer": "resolution=merge-duplicates,return=minimal",
@@ -183,6 +179,33 @@ def upsert_profile(
     resp = client.post("/rest/v1/profiles", json=payload, headers=headers)
     if resp.status_code >= 400:
         die(f"Failed to upsert profile for {user_id}: {resp.status_code} {resp.text}")
+
+
+def upsert_auth_subject(
+    client: httpx.Client,
+    *,
+    user_id: str,
+    role: str,
+    is_admin: bool,
+) -> None:
+    role_v2, legacy_role = normalize_roles(role, is_admin)
+    payload = {
+        "user_id": user_id,
+        "onboarding_state": "completed",
+        "role_v2": role_v2,
+        "role": legacy_role,
+        "is_admin": is_admin,
+    }
+    headers = {
+        "Prefer": "resolution=merge-duplicates,return=minimal",
+        "Accept-Profile": "app",
+        "Content-Profile": "app",
+    }
+    resp = client.post("/rest/v1/auth_subjects", json=payload, headers=headers)
+    if resp.status_code >= 400:
+        die(
+            f"Failed to upsert auth_subject for {user_id}: {resp.status_code} {resp.text}"
+        )
 
 
 def print_summary(rows: List[SummaryRow]) -> None:
@@ -266,6 +289,12 @@ def main() -> None:
 
             if user_id != "<pending>" and not dry_run:
                 upsert_profile(client, user_id=user_id, email=email, role=role, is_admin=is_admin)
+                upsert_auth_subject(
+                    client,
+                    user_id=user_id,
+                    role=role,
+                    is_admin=is_admin,
+                )
                 if status == "updated":
                     status = "updated/profile"
                 elif status == "created":

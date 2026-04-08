@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/auth_claims.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/errors/app_failure.dart';
@@ -29,7 +30,7 @@ class AuthRepository {
       final accessToken = data['access_token'] as String?;
       final refreshToken = data['refresh_token'] as String?;
       if (accessToken == null || refreshToken == null) {
-        throw const FormatException('Missing access_token in response');
+        throw const FormatException('access_token saknas i svaret');
       }
       await _tokens.saveTokens(
         accessToken: accessToken,
@@ -55,8 +56,6 @@ class AuthRepository {
         'email': email,
         'password': password,
         'display_name': displayName,
-        if (referralCode != null && referralCode.trim().isNotEmpty)
-          'referral_code': referralCode.trim(),
         if (inviteToken != null && inviteToken.trim().isNotEmpty)
           'invite_token': inviteToken.trim(),
       },
@@ -65,13 +64,29 @@ class AuthRepository {
     final accessToken = data['access_token'] as String?;
     final refreshToken = data['refresh_token'] as String?;
     if (accessToken == null || refreshToken == null) {
-      throw const FormatException('Missing access_token in response');
+      throw const FormatException('access_token saknas i svaret');
     }
     await _tokens.saveTokens(
       accessToken: accessToken,
       refreshToken: refreshToken,
     );
-    return await getCurrentProfile();
+    try {
+      final normalizedReferralCode = referralCode?.trim();
+      if (normalizedReferralCode != null && normalizedReferralCode.isNotEmpty) {
+        await redeemReferral(normalizedReferralCode);
+      }
+      return await getCurrentProfile();
+    } catch (_) {
+      await _tokens.clear();
+      rethrow;
+    }
+  }
+
+  Future<void> redeemReferral(String code) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiPaths.referralsRedeem,
+      body: {'code': code.trim()},
+    );
   }
 
   Future<void> requestPasswordReset(String email) async {
@@ -126,9 +141,7 @@ class AuthRepository {
       );
       final email = data['email'] as String?;
       if (email == null || email.trim().isEmpty) {
-        throw const FormatException(
-          'Missing email in invite validation response',
-        );
+        throw const FormatException('E-post saknas i inbjudningssvaret');
       }
       return email;
     } on DioException catch (e) {
@@ -153,9 +166,38 @@ class AuthRepository {
     }
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      await _client.post<Map<String, dynamic>>(
+        ApiPaths.authChangePassword,
+        body: {
+          'current_password': currentPassword,
+          'new_password': newPassword,
+        },
+      );
+    } on DioException catch (e) {
+      debugPrint('Change password failed: ${e.response?.data ?? e.message}');
+      rethrow;
+    }
+  }
+
   Future<Profile> getCurrentProfile() async {
     final data = await _client.get<Map<String, dynamic>>(ApiPaths.authMe);
-    return Profile.fromJson(data);
+    final profile = Profile.fromJson(data);
+    final token = await _tokens.readAccessToken();
+    final claims = token == null ? null : AuthClaims.fromToken(token);
+    if (claims == null) {
+      return profile;
+    }
+    return profile.copyWith(
+      userRole: claims.userRole,
+      isAdmin: claims.isAdmin,
+      onboardingState:
+          claims.onboardingState ?? OnboardingStateValue.incomplete,
+    );
   }
 
   Future<void> completeWelcome() async {

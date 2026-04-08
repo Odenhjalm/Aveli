@@ -9,7 +9,7 @@ pytestmark = pytest.mark.anyio("asyncio")
 
 
 async def _seed_user(
-    cur, user_id: uuid.UUID, email: str, profile_role: str, role_v2: str
+    cur, user_id: uuid.UUID, email: str, display_name: str, role: str
 ) -> None:
     await cur.execute(
         """
@@ -22,12 +22,23 @@ async def _seed_user(
     await cur.execute(
         """
         insert into app.profiles (
-            user_id, email, display_name, role, role_v2, is_admin
+            user_id, email, display_name
         )
-        values (%s, %s, %s, %s, %s, false)
+        values (%s, %s, %s)
         on conflict (user_id) do nothing
         """,
-        (user_id, email, profile_role.title(), profile_role, role_v2),
+        (user_id, email, display_name),
+    )
+    normalized_role = "teacher" if role == "teacher" else "learner"
+    await cur.execute(
+        """
+        insert into app.auth_subjects (
+            user_id, onboarding_state, role_v2, role, is_admin
+        )
+        values (%s, 'completed', %s, %s, false)
+        on conflict (user_id) do nothing
+        """,
+        (user_id, normalized_role, normalized_role),
     )
 
 
@@ -47,22 +58,22 @@ async def seminar_context():
                 cur,
                 host_id,
                 f"host_{host_id.hex[:8]}@aveli.local",
-                profile_role="teacher",
-                role_v2="teacher",
+                display_name="Teacher",
+                role="teacher",
             )
             await _seed_user(
                 cur,
                 attendee_id,
                 f"attendee_{attendee_id.hex[:8]}@aveli.local",
-                profile_role="student",
-                role_v2="user",
+                display_name="Learner",
+                role="learner",
             )
             await _seed_user(
                 cur,
                 outsider_id,
                 f"outsider_{outsider_id.hex[:8]}@aveli.local",
-                profile_role="student",
-                role_v2="user",
+                display_name="Learner",
+                role="learner",
             )
 
             await cur.execute(

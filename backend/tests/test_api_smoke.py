@@ -52,7 +52,7 @@ async def test_backend_api_smoke(async_client, monkeypatch):
 
     auth_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
-    me_resp = await async_client.get("/auth/me", headers=auth_headers)
+    me_resp = await async_client.get("/profiles/me", headers=auth_headers)
     assert me_resp.status_code == 200
     assert me_resp.json()["email"] == email
 
@@ -160,17 +160,30 @@ async def test_backend_api_smoke(async_client, monkeypatch):
                             user_id,
                             email,
                             display_name,
-                            role,
-                            role_v2,
-                            is_admin,
                             created_at,
                             updated_at
                         )
-                        SELECT id, email, %s, 'student', 'user', false, NOW(), NOW()
+                        SELECT id, email, %s, NOW(), NOW()
                         FROM auth.users WHERE email = %s
                         ON CONFLICT (user_id) DO NOTHING
                         """,
                         ("Student", student_email),
+                    )
+                    await cur.execute(
+                        """
+                        INSERT INTO app.auth_subjects (
+                            user_id,
+                            onboarding_state,
+                            role_v2,
+                            role,
+                            is_admin
+                        )
+                        SELECT id, 'incomplete', 'learner', 'learner', false
+                        FROM auth.users
+                        WHERE email = %s
+                        ON CONFLICT (user_id) DO NOTHING
+                        """,
+                        (student_email,),
                     )
                     await conn.commit()
             refreshed = await auth_repo.get_user_by_email(student_email)
@@ -254,7 +267,12 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
         async with db.pool.connection() as conn:  # type: ignore
             async with conn.cursor() as cur:  # type: ignore[attr-defined]
                 await cur.execute(
-                    "UPDATE app.profiles SET role_v2 = 'teacher' WHERE user_id = %s",
+                    """
+                    UPDATE app.auth_subjects
+                       SET role_v2 = 'teacher',
+                           role = 'teacher'
+                     WHERE user_id = %s
+                    """,
                     (teacher_id,),
                 )
                 await conn.commit()

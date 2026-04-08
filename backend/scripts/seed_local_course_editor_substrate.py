@@ -216,10 +216,6 @@ async def _ensure_seed_teacher() -> str:
                     user_id,
                     email,
                     display_name,
-                    onboarding_state,
-                    role,
-                    role_v2,
-                    is_admin,
                     created_at,
                     updated_at
                 )
@@ -227,36 +223,53 @@ async def _ensure_seed_teacher() -> str:
                     %s,
                     %s,
                     %s,
-                    'welcomed',
-                    'teacher',
-                    'teacher',
-                    false,
                     now(),
                     now()
                 )
                 ON CONFLICT (user_id) DO UPDATE
                   SET email = excluded.email,
                       display_name = excluded.display_name,
-                      onboarding_state = excluded.onboarding_state,
-                      role = excluded.role,
-                      role_v2 = excluded.role_v2,
-                      is_admin = excluded.is_admin,
                       updated_at = now()
                 """,
                 (user_id, SEED_TEACHER_EMAIL, SEED_TEACHER_NAME),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.auth_subjects (
+                    user_id,
+                    onboarding_state,
+                    role_v2,
+                    role,
+                    is_admin
+                )
+                VALUES (%s, 'completed', 'teacher', 'teacher', false)
+                ON CONFLICT (user_id) DO UPDATE
+                  SET onboarding_state = excluded.onboarding_state,
+                      role_v2 = excluded.role_v2,
+                      role = excluded.role,
+                      is_admin = excluded.is_admin
+                """,
+                (user_id,),
             )
         await cur.execute(
             """
             UPDATE app.profiles
             SET display_name = %s,
-                onboarding_state = 'welcomed',
-                role = 'teacher',
-                role_v2 = 'teacher',
-                is_admin = false,
                 updated_at = now()
             WHERE user_id = %s
             """,
             (SEED_TEACHER_NAME, user_id),
+        )
+        await cur.execute(
+            """
+            UPDATE app.auth_subjects
+               SET onboarding_state = 'completed',
+                   role = 'teacher',
+                   role_v2 = 'teacher',
+                   is_admin = false
+             WHERE user_id = %s
+            """,
+            (user_id,),
         )
     return user_id
 

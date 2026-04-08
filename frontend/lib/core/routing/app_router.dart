@@ -192,14 +192,10 @@ String? _handleOnboardingRedirect(
   }
 
   if (_isCheckoutResultRoute(state)) {
-    if (onboardingState == OnboardingStateValue.verifiedUnpaid) {
-      return null;
-    }
-    return _resolveOnboardingTarget(session) ??
-        _resolveDefaultAuthedTarget(session);
+    return null;
   }
 
-  if (onboardingState == OnboardingStateValue.welcomed &&
+  if (onboardingState == OnboardingStateValue.completed &&
       _isOnboardingOnlyRoute(state.uri.path)) {
     return _resolveDefaultAuthedTarget(session);
   }
@@ -237,17 +233,8 @@ String? _sanitizeRedirect(String? raw) {
 
 String? _resolveOnboardingTarget(RouteSessionSnapshot session) {
   switch (session.onboardingState) {
-    case OnboardingStateValue.registeredUnverified:
-      return RoutePath.verifyEmail;
-    case OnboardingStateValue.verifiedUnpaid:
-      if (session.isTeacher || session.isAdmin) {
-        return null;
-      }
-      return RoutePath.subscribe;
-    case OnboardingStateValue.accessActiveProfileIncomplete:
+    case OnboardingStateValue.incomplete:
       return RoutePath.createProfile;
-    case OnboardingStateValue.accessActiveProfileComplete:
-      return RoutePath.welcome;
     default:
       return null;
   }
@@ -265,29 +252,15 @@ String _resolveDefaultAuthedTarget(RouteSessionSnapshot session) {
 
 bool _isAllowedOnboardingRoute(String path, String onboardingState) {
   switch (onboardingState) {
-    case OnboardingStateValue.registeredUnverified:
-      return path == RoutePath.verifyEmail;
-    case OnboardingStateValue.verifiedUnpaid:
-      return path == RoutePath.subscribe || path == RoutePath.checkout;
-    case OnboardingStateValue.accessActiveProfileIncomplete:
+    case OnboardingStateValue.incomplete:
       return path == RoutePath.createProfile;
-    case OnboardingStateValue.accessActiveProfileComplete:
-      return path == RoutePath.welcome;
-    case OnboardingStateValue.welcomed:
-      return !_isOnboardingOnlyRoute(path);
     default:
       return true;
   }
 }
 
 bool _isOnboardingOnlyRoute(String path) {
-  return path == RoutePath.verifyEmail ||
-      path == RoutePath.subscribe ||
-      path == RoutePath.createProfile ||
-      path == RoutePath.welcome ||
-      path == RoutePath.checkout ||
-      path == RoutePath.checkoutSuccess ||
-      path == RoutePath.checkoutCancel;
+  return path == RoutePath.createProfile;
 }
 
 bool _isCheckoutResultRoute(GoRouterState state) {

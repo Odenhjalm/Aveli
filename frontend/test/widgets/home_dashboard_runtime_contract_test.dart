@@ -82,7 +82,7 @@ class _StubAuthRepository implements AuthRepository {
 final _testProfile = Profile(
   id: 'user-1',
   email: 'user@test.local',
-  userRole: UserRole.user,
+  userRole: UserRole.learner,
   isAdmin: false,
   createdAt: DateTime(2024, 1, 1),
   updatedAt: DateTime(2024, 1, 1),

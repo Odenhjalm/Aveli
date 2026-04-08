@@ -28,14 +28,20 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
             "email_confirmed_at": "2026-03-23T12:00:00+00:00",
         }
 
+    async def _fake_get_auth_subject(_: str):
+        return {
+            "user_id": "user-123",
+            "onboarding_state": "completed",
+            "role_v2": "teacher",
+            "role": "teacher",
+            "is_admin": False,
+        }
+
     async def _fake_get_profile(_: str):
         return {
             "user_id": "user-123",
             "email": "teacher@example.com",
             "display_name": "Teacher",
-            "onboarding_state": "registered_unverified",
-            "role_v2": "teacher",
-            "is_admin": False,
         }
 
     async def _fake_get_membership(_: str):
@@ -50,12 +56,18 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
         return [{"id": "course-z"}]
 
     async def _fake_derive_onboarding_state(_: str):
-        return "access_active_profile_complete"
+        return "completed"
 
     monkeypatch.setattr(
         user_inspection.auth_repo,
         "get_user_by_id",
         _fake_get_user_by_id,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        user_inspection.auth_subjects_repo,
+        "get_auth_subject",
+        _fake_get_auth_subject,
         raising=True,
     )
     monkeypatch.setattr(
@@ -144,8 +156,10 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
     assert result["confidence"] == "high"
     assert result["source"]["server"] == "aveli-domain-observability-mcp"
     assert result["data"]["subject"] == {"user_id": "user-123"}
-    assert result["data"]["status"] == "warning"
+    assert result["data"]["status"] == "ok"
     assert result["data"]["state_summary"]["role_state"] == "teacher"
+    assert result["data"]["state_summary"]["stored_onboarding_state"] == "completed"
+    assert result["data"]["state_summary"]["derived_onboarding_state"] == "completed"
     assert result["data"]["state_summary"]["authored_course_count"] == 2
     assert result["data"]["truth_sources"]["courses"]["authored_course_ids"] == [
         "course-a",

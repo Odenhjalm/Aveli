@@ -21,7 +21,7 @@ _AVATAR_ROOT = Path("avatars")
 async def get_me(current_user: CurrentUser):
     profile = await models.get_profile(current_user["id"])
     if not profile:
-        raise RuntimeError("Profile missing for current user")
+        raise RuntimeError("Profil saknas for aktuell anvandare")
     return schemas.Profile(**profile)
 
 
@@ -37,7 +37,8 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
         profile = await models.get_profile(current_user["id"])
         if not profile:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profil saknas",
             )
         return schemas.Profile(**profile)
 
@@ -49,7 +50,8 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
     )
     if not updated:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profil saknas",
         )
     return schemas.Profile(**updated)
 
@@ -59,25 +61,27 @@ async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...))
     profile = await models.get_profile(current_user["id"])
     if not profile:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Profile missing"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profil saknas",
         )
 
     content_type = (file.content_type or "").lower()
     if not any(content_type.startswith(prefix) for prefix in _AVATAR_ALLOWED_PREFIXES):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported media type",
+            detail="Filtypen stods inte",
         )
 
     blob = await file.read()
     if not blob:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Filen ar tom",
         )
     if len(blob) > _AVATAR_MAX_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large",
+            detail="Filen ar for stor",
         )
 
     avatar_dir = Path(settings.media_root) / _AVATAR_ROOT / str(profile["user_id"])
@@ -100,7 +104,7 @@ async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...))
     if not media_object or not media_object.get("id"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to persist avatar",
+            detail="Det gick inte att spara avataren",
         )
 
     media_id = media_object["id"]
@@ -113,7 +117,7 @@ async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...))
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update profile",
+            detail="Det gick inte att uppdatera profilen",
         )
 
     previous_media_id = profile.get("avatar_media_id")
@@ -128,13 +132,15 @@ async def avatar_file(media_id: str):
     media = await models.get_media_object(media_id)
     if not media:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Avatar saknas",
         )
 
     storage_path = media.get("storage_path")
     if not storage_path:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Avatar saknas",
         )
 
     base_dir = Path(settings.media_root)
@@ -151,7 +157,8 @@ async def avatar_file(media_id: str):
             )
 
     raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND, detail="Avatar file missing"
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Avatarfil saknas",
     )
 
 
@@ -163,7 +170,7 @@ async def certificates(
     if user_id != viewer_id and not bool(current_user.get("is_admin")):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to access certificates",
+            detail="Du far inte komma at certifikat",
         )
     rows = await models.certificates_of(user_id, verified_only)
     return {"items": rows}

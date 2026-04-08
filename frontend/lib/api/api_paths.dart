@@ -1,15 +1,17 @@
 class ApiPaths {
   ApiPaths._();
 
-  static const authRequestPasswordReset = '/auth/request-password-reset';
+  static const authRequestPasswordReset = '/auth/forgot-password';
   static const authResetPassword = '/auth/reset-password';
+  static const authChangePassword = '/auth/change-password';
   static const authRefresh = '/auth/refresh';
-  static const authMe = '/auth/me';
+  static const authMe = '/profiles/me';
   static const authLogin = '/auth/login';
   static const authRegister = '/auth/register';
   static const authSendVerification = '/auth/send-verification';
   static const authValidateInvite = '/auth/validate-invite';
   static const authVerifyEmail = '/auth/verify-email';
+  static const referralsRedeem = '/referrals/redeem';
 
   static const billingCustomerPortal = '/api/billing/customer-portal';
   static const billingSessionStatus = '/api/billing/session-status';

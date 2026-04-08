@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -101,33 +100,14 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
     }
 
     final authController = ref.read(authControllerProvider.notifier);
-
-    final attempts = widget.success ? 6 : 1;
-    for (var attempt = 0; attempt < attempts; attempt++) {
-      await authController.loadSession();
-
-      if (!mounted) return;
-
-      final onboardingState = ref
-          .read(authControllerProvider)
-          .profile
-          ?.onboardingState;
-      final waitingForWebhook =
-          widget.success &&
-          onboardingState == OnboardingStateValue.verifiedUnpaid;
-      if (!waitingForWebhook) {
-        setState(() => _isRefreshing = false);
-        return;
-      }
-
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
+    await authController.loadSession();
 
     if (!mounted) return;
     setState(() {
       _isRefreshing = false;
-      _message =
-          'Betalningen ser ut att vara registrerad, men webhooken har inte hunnit uppdatera ditt konto an.';
+      _message = widget.success
+          ? 'Betalningen registreras just nu. Kontrollera igen om din åtkomst inte har uppdaterats ännu.'
+          : null;
     });
   }
 }
