@@ -22,6 +22,22 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
         "app.repositories.auth_subjects.get_auth_subject",
         _fake_get_auth_subject,
     )
+    async def _fake_get_profile(_: str):
+        return {
+            "user_id": "user-123",
+            "email": "user@example.com",
+            "display_name": "Canonical Profile Name",
+            "bio": "Canonical bio",
+            "photo_url": "/profiles/avatar/media-123",
+            "avatar_media_id": "media-123",
+            "created_at": None,
+            "updated_at": None,
+        }
+
+    monkeypatch.setattr(
+        "app.repositories.profiles.get_profile",
+        _fake_get_profile,
+    )
 
     current_user = await auth_module._build_current_user(
         "user-123",
@@ -45,7 +61,51 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
     assert current_user["role_v2"] == "learner"
     assert current_user["onboarding_state"] == "completed"
     assert current_user["is_admin"] is False
-    assert current_user["display_name"] == "Payload Name"
+    assert current_user["display_name"] == "Canonical Profile Name"
+    assert current_user["bio"] == "Canonical bio"
+    assert current_user["photo_url"] == "/profiles/avatar/media-123"
+
+
+async def test_build_current_user_does_not_fallback_to_supabase_metadata(
+    monkeypatch,
+) -> None:
+    from app import auth as auth_module
+
+    async def _fake_get_auth_subject(_: str):
+        return {
+            "user_id": "user-123",
+            "onboarding_state": "completed",
+            "role_v2": "learner",
+            "role": "learner",
+            "is_admin": False,
+        }
+
+    async def _fake_get_profile(_: str):
+        return None
+
+    monkeypatch.setattr(
+        "app.repositories.auth_subjects.get_auth_subject",
+        _fake_get_auth_subject,
+    )
+    monkeypatch.setattr("app.repositories.profiles.get_profile", _fake_get_profile)
+
+    current_user = await auth_module._build_current_user(
+        "user-123",
+        {
+            "email": "user@example.com",
+            "display_name": "Payload Name",
+            "avatar_url": "https://example.com/avatar.jpg",
+            "user_metadata": {
+                "display_name": "User Metadata Name",
+                "photo_url": "https://example.com/avatar.jpg",
+                "bio": "Metadata bio",
+            },
+        },
+    )
+
+    assert current_user["display_name"] is None
+    assert current_user["bio"] is None
+    assert current_user["photo_url"] is None
 
 
 async def test_profiles_set_onboarding_state_delegates_to_auth_subject_authority(
@@ -85,3 +145,19 @@ async def test_profiles_set_onboarding_state_delegates_to_auth_subject_authority
     assert result["display_name"] == "Teacher"
     assert "onboarding_state" not in result
     assert "role_v2" not in result
+
+
+async def test_profiles_patch_rejects_photo_url_updates() -> None:
+    from fastapi import HTTPException
+
+    from app import schemas
+    from app.routes import profiles as profile_routes
+
+    with pytest.raises(HTTPException) as exc_info:
+        await profile_routes.patch_me(
+            schemas.ProfileUpdate(photo_url="https://example.com/avatar.jpg"),
+            current_user={"id": "teacher-123"},
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Profilbild uppdateras via profilbildsuppladdning."

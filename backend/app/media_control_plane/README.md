@@ -8,7 +8,8 @@ used by Studio authoring, editor preview, and runtime playback.
 - `lesson_media.id` is the only authored lesson-media identity.
 - `runtime_media` is the delivery and authorization read model.
 - `media_assets` owns bytes, lifecycle, ingest, and derivatives.
-- `storage.objects` is the physical existence source of truth.
+- `storage.objects` is a physical persistence check only.
+- Supabase Storage never defines media runtime truth, access, or frontend representation.
 - `media_objects` remains a temporary legacy read-compatibility layer only.
 - `course-media` is the canonical private bucket.
 - `public-media` is reserved for explicitly public assets and derivatives.

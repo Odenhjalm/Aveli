@@ -148,18 +148,6 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _bool_claim(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _mapping_claim(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
 def _normalized_subject_role(role_v2: object, role: object) -> str | None:
     for candidate in (role_v2, role):
         normalized = str(candidate or "").strip().lower()
@@ -177,6 +165,7 @@ def _validated_onboarding_state(value: object) -> str | None:
 
 async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     from .repositories.auth_subjects import get_auth_subject
+    from .repositories.profiles import get_profile
 
     auth_subject = await get_auth_subject(user_id)
     if auth_subject is None:
@@ -195,21 +184,7 @@ async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str
     if not isinstance(is_admin, bool):
         raise ValueError("Canonical is_admin invalid")
 
-    app_metadata = _mapping_claim(payload.get("app_metadata"))
-    user_metadata = _mapping_claim(payload.get("user_metadata"))
-
-    display_name = (
-        payload.get("display_name")
-        or user_metadata.get("display_name")
-        or user_metadata.get("full_name")
-        or payload.get("name")
-    )
-    photo_url = (
-        payload.get("photo_url")
-        or payload.get("avatar_url")
-        or user_metadata.get("photo_url")
-        or user_metadata.get("avatar_url")
-    )
+    profile = await get_profile(user_id)
 
     return {
         "id": user_id,
@@ -218,9 +193,9 @@ async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str
         "role": normalized_role,
         "role_v2": normalized_role,
         "is_admin": is_admin,
-        "display_name": display_name,
-        "bio": user_metadata.get("bio"),
-        "photo_url": photo_url,
+        "display_name": profile.get("display_name") if profile else None,
+        "bio": profile.get("bio") if profile else None,
+        "photo_url": profile.get("photo_url") if profile else None,
     }
 
 

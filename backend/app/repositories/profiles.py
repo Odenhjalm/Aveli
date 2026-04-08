@@ -9,26 +9,35 @@ from ..db import get_conn, pool
 from . import auth_subjects as auth_subjects_repo
 
 
+def _hydrate_profile_projection(row: dict[str, Any]) -> dict[str, Any]:
+    hydrated = dict(row)
+    avatar_media_id = hydrated.get("avatar_media_id")
+    hydrated["photo_url"] = (
+        f"/profiles/avatar/{avatar_media_id}" if avatar_media_id is not None else None
+    )
+    return hydrated
+
+
 async def get_profile(user_id: str | UUID) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
             """
             SELECT p.user_id,
-                   p.email,
+                   u.email,
                    p.display_name,
                    p.bio,
-                   p.photo_url,
                    p.avatar_media_id,
                    p.created_at,
                    p.updated_at
             FROM app.profiles p
+            JOIN auth.users u ON u.id = p.user_id
             WHERE p.user_id = %s
             LIMIT 1
             """,
             (user_id,),
         )
         row = await cur.fetchone()
-        return dict(row) if row else None
+        return _hydrate_profile_projection(dict(row)) if row else None
 
 
 async def update_profile(
@@ -36,7 +45,6 @@ async def update_profile(
     *,
     display_name: str | None = None,
     bio: str | None = None,
-    photo_url: str | None = None,
     avatar_media_id: str | None = None,
 ) -> dict[str, Any] | None:
     assignments: list[str] = []
@@ -50,8 +58,6 @@ async def update_profile(
         _append("display_name", display_name.strip() or None)
     if bio is not None:
         _append("bio", bio.strip() or None)
-    if photo_url is not None:
-        _append("photo_url", photo_url.strip() or None)
     if avatar_media_id is not None:
         _append("avatar_media_id", avatar_media_id)
 
@@ -65,9 +71,7 @@ async def update_profile(
         UPDATE app.profiles
            SET {set_clause}
          WHERE user_id = %s
-         RETURNING user_id, email, display_name, bio, photo_url,
-                   avatar_media_id,
-                   created_at, updated_at
+         RETURNING user_id
     """.format(set_clause=", ".join(assignments))
 
     async with pool.connection() as conn:  # type: ignore[attr-defined]
@@ -76,6 +80,24 @@ async def update_profile(
             await cur.fetchone()
             await conn.commit()
             return await get_profile(user_id)
+
+
+async def clear_profile_avatar(user_id: str | UUID) -> dict[str, Any] | None:
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.profiles
+                   SET avatar_media_id = NULL,
+                       updated_at = now()
+                 WHERE user_id = %s
+                 RETURNING user_id
+                """,
+                (str(user_id),),
+            )
+            await cur.fetchone()
+            await conn.commit()
+    return await get_profile(user_id)
 
 
 async def set_onboarding_state(

@@ -1,17 +1,16 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/repositories/profile_repository.dart';
@@ -112,8 +111,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final access = ref.watch(userAccessProvider);
     final authState = ref.watch(authControllerProvider);
+    final access = ref.watch(userAccessProvider);
     final profile = authState.profile;
     final certificatesAsync = ref.watch(myCertificatesProvider);
     final coursesAsync = ref.watch(courses_front.myCoursesProvider);
@@ -177,9 +176,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _IdentitySection(
+                  profile: profile,
                   isTeacher: access.isTeacher,
                   isAdmin: access.isAdmin,
-                  profile: profile,
                   displayNameController: _displayNameCtrl,
                   editing: _editing,
                   saving: _saving,
@@ -216,7 +215,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 columnGap,
                 const _OrdersSection(),
                 columnGap,
-                _ChangePasswordSection(email: profile.email),
+                const _ChangePasswordSection(),
                 const ProfileLogoutSection(),
               ],
             ),
@@ -229,9 +228,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
 class _IdentitySection extends StatelessWidget {
   const _IdentitySection({
+    required this.profile,
     required this.isTeacher,
     required this.isAdmin,
-    required this.profile,
     required this.displayNameController,
     required this.editing,
     required this.saving,
@@ -240,9 +239,9 @@ class _IdentitySection extends StatelessWidget {
     required this.onSaveProfile,
   });
 
+  final Profile profile;
   final bool isTeacher;
   final bool isAdmin;
-  final Profile profile;
   final TextEditingController displayNameController;
   final bool editing;
   final bool saving;
@@ -273,7 +272,7 @@ class _IdentitySection extends StatelessWidget {
         label: 'Medlem sedan $joinDate',
       ),
       if (isTeacher)
-        const _ProfileChip(icon: Icons.workspace_premium_rounded, label: 'L?rare'),
+        const _ProfileChip(icon: Icons.workspace_premium_rounded, label: 'Lärare'),
       if (isAdmin) const _ProfileChip(icon: Icons.shield_rounded, label: 'Admin'),
     ];
 
@@ -464,13 +463,13 @@ class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
 
   Future<void> _removeAvatar() async {
     if (_photoPath == null || _photoPath!.isEmpty) return;
-    setState(() => _uploading = true);
-    try {
-      final repo = ref.read(profileRepositoryProvider);
-      final updated = await repo.updateMe(photoUrl: '');
-      await ref.read(authControllerProvider.notifier).loadSession();
-      if (!mounted) return;
-      setState(() {
+      setState(() => _uploading = true);
+      try {
+        final repo = ref.read(profileRepositoryProvider);
+        final updated = await repo.clearAvatar();
+        await ref.read(authControllerProvider.notifier).loadSession();
+        if (!mounted) return;
+        setState(() {
         _uploading = false;
         _photoPath = updated.photoUrl;
         _previewBytes = null;
@@ -861,9 +860,7 @@ class _OrdersSection extends StatelessWidget {
 }
 
 class _ChangePasswordSection extends ConsumerStatefulWidget {
-  const _ChangePasswordSection({required this.email});
-
-  final String email;
+  const _ChangePasswordSection();
 
   @override
   ConsumerState<_ChangePasswordSection> createState() =>
@@ -1012,12 +1009,6 @@ class _ChangePasswordSectionState
 
     FocusScope.of(context).unfocus();
 
-    final email = widget.email.trim();
-    if (email.isEmpty) {
-      _setFeedback('Ett oväntat fel inträffade.', isError: true);
-      return;
-    }
-
     setState(() {
       _submitting = true;
       _feedback = null;
@@ -1025,58 +1016,33 @@ class _ChangePasswordSectionState
     });
 
     try {
-      late final SupabaseClient client;
-      try {
-        client = Supabase.instance.client;
-      } catch (_) {
-        _setFeedback('Ett oväntat fel inträffade.', isError: true);
-        return;
-      }
-
-      final currentPassword = _currentPasswordCtrl.text;
-      final newPassword = _newPasswordCtrl.text;
-
-      // Step 1: Re-authenticate using email + current password.
-      try {
-        await client.auth.signInWithPassword(
-          email: email,
-          password: currentPassword,
-        );
-      } catch (error) {
-        _currentPasswordCtrl.clear();
-        _setFeedback(_mapReauthError(error), isError: true);
-        return;
-      } finally {
-        _currentPasswordCtrl.clear();
-      }
-
-      // Step 2: Update password.
-      try {
-        await client.auth.updateUser(UserAttributes(password: newPassword));
-      } catch (error) {
-        _setFeedback(_mapUpdateError(error), isError: true);
-        return;
-      }
-
-      // Step 3: Session handling.
-      if (client.auth.currentSession == null) {
-        _setFeedback('Logga in igen med ditt nya lösenord.', isError: false);
-        if (!mounted) return;
-        showSnack(context, 'Logga in igen med ditt nya lösenord.');
-        await ref.read(authControllerProvider.notifier).logout();
-        if (!mounted) return;
-        context.goNamed(
-          AppRoute.login,
-          queryParameters: {'redirect': RoutePath.profile},
-        );
-        return;
-      }
-
+      await ref
+          .read(authRepositoryProvider)
+          .changePassword(
+            currentPassword: _currentPasswordCtrl.text,
+            newPassword: _newPasswordCtrl.text,
+          );
+      _currentPasswordCtrl.clear();
       _newPasswordCtrl.clear();
       _confirmPasswordCtrl.clear();
-      _setFeedback('Lösenordet har uppdaterats.');
+      _setFeedback(
+        'Lösenordet är uppdaterat. Logga in igen med ditt nya lösenord.',
+      );
       if (!mounted) return;
-      showSnack(context, 'Lösenordet har uppdaterats.');
+      showSnack(
+        context,
+        'Lösenordet är uppdaterat. Logga in igen med ditt nya lösenord.',
+      );
+      await ref.read(authControllerProvider.notifier).logout();
+      if (!mounted) return;
+      context.goNamed(
+        AppRoute.login,
+        queryParameters: {'redirect': RoutePath.profile},
+      );
+    } catch (error, stackTrace) {
+      _currentPasswordCtrl.clear();
+      final failure = AppFailure.from(error, stackTrace);
+      _setFeedback(failure.message, isError: true);
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
@@ -1090,41 +1056,6 @@ class _ChangePasswordSectionState
       _feedback = message;
       _feedbackIsError = isError;
     });
-  }
-
-  String _mapReauthError(Object error) {
-    if (error is AuthRetryableFetchException || error is TimeoutException) {
-      return 'Kunde inte uppdatera lösenordet. Försök igen.';
-    }
-    if (error is AuthException) {
-      final code = (error.code ?? '').toLowerCase();
-      final message = error.message.toLowerCase();
-      final isInvalidCredentials =
-          code == 'invalid_credentials' ||
-          code == 'invalid_grant' ||
-          message.contains('invalid login credentials') ||
-          message.contains('invalid credentials');
-      if (isInvalidCredentials) {
-        return 'Nuvarande lösenord är fel.';
-      }
-    }
-    return 'Ett oväntat fel inträffade.';
-  }
-
-  String _mapUpdateError(Object error) {
-    if (error is AuthWeakPasswordException) {
-      return 'Lösenordet är för svagt.';
-    }
-    if (error is AuthRetryableFetchException || error is TimeoutException) {
-      return 'Kunde inte uppdatera lösenordet. Försök igen.';
-    }
-    if (error is AuthException) {
-      final code = (error.code ?? '').toLowerCase();
-      if (code == 'weak_password') {
-        return 'Lösenordet är för svagt.';
-      }
-    }
-    return 'Ett oväntat fel inträffade.';
   }
 }
 

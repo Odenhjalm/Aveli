@@ -14,6 +14,7 @@ from .db import get_conn, pool
 from .auth import hash_password
 from .repositories import (
     auth_subjects as auth_subjects_repo,
+    clear_profile_avatar as repo_clear_profile_avatar,
     create_order as repo_create_order,
     create_user as repo_create_user,
     get_profile as repo_get_profile,
@@ -50,6 +51,14 @@ def _effective_role_sql(alias: str) -> str:
             ELSE NULL
         END
     """
+
+
+def _profile_photo_url_sql(alias: str) -> str:
+    return (
+        f"CASE WHEN {alias}.avatar_media_id IS NOT NULL "
+        f"THEN '/profiles/avatar/' || {alias}.avatar_media_id::text "
+        f"ELSE NULL END"
+    )
 
 
 def _effective_subject_role(auth_subject: dict[str, Any] | None) -> str | None:
@@ -574,10 +583,8 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
             SELECT
               prof.user_id,
               prof.display_name,
-              prof.photo_url,
-              prof.bio,
-              u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
-              u.raw_user_meta_data->>'picture' AS auth_picture_url
+              {_profile_photo_url_sql("prof")} AS photo_url,
+              prof.bio
             FROM app.profiles prof
             LEFT JOIN auth.users u ON u.id = prof.user_id
             LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
@@ -593,13 +600,7 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
     items: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
-        item["photo_url"] = _choose_public_profile_photo_url(
-            item.get("photo_url"),
-            auth_avatar_url=item.get("auth_avatar_url"),
-            auth_picture_url=item.get("auth_picture_url"),
-        )
-        item.pop("auth_avatar_url", None)
-        item.pop("auth_picture_url", None)
+        item["photo_url"] = _choose_public_profile_photo_url(item.get("photo_url"))
         items.append(item)
     return items
 
@@ -654,29 +655,7 @@ def _public_upload_exists(api_files_url: str) -> bool:
     return candidate.exists() and candidate.is_file()
 
 
-def _sanitize_public_avatar_url(url: str | None) -> str | None:
-    if not url:
-        return None
-    value = url.strip()
-    if not value:
-        return None
-
-    parsed = urlparse(value)
-    if parsed.scheme == "https":
-        return parsed.geturl()
-    if parsed.scheme == "http":
-        return parsed._replace(scheme="https").geturl()
-    if not parsed.scheme and parsed.netloc:
-        return f"https:{value}"
-    return None
-
-
-def _choose_public_profile_photo_url(
-    photo_url: str | None,
-    *,
-    auth_avatar_url: str | None = None,
-    auth_picture_url: str | None = None,
-) -> str | None:
+def _choose_public_profile_photo_url(photo_url: str | None) -> str | None:
     resolved = _normalize_public_profile_photo_url(photo_url)
     if (
         resolved
@@ -685,16 +664,12 @@ def _choose_public_profile_photo_url(
     ):
         resolved = None
 
-    return (
-        resolved
-        or _sanitize_public_avatar_url(auth_avatar_url)
-        or _sanitize_public_avatar_url(auth_picture_url)
-    )
+    return resolved
 
 
 async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]:
     teacher_role_sql = _effective_role_sql("subj")
-    clauses = """
+    clauses = f"""
         WITH course_stats AS (
             SELECT
                 created_by AS teacher_id,
@@ -707,7 +682,7 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
             prof.user_id AS teacher_id,
             prof.display_name,
             u.email AS email,
-            prof.photo_url,
+            {_profile_photo_url_sql("prof")} AS photo_url,
             COALESCE(pr.priority, 100) AS priority,
             pr.notes,
             pr.updated_at,
@@ -801,7 +776,7 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                     prof.user_id AS teacher_id,
                     prof.display_name,
                     u.email AS email,
-                    prof.photo_url,
+                    {_profile_photo_url_sql("prof")} AS photo_url,
                     COALESCE(pr.priority, 100) AS priority,
                     pr.notes,
                     pr.updated_at,
@@ -1313,16 +1288,18 @@ async def update_profile(
     *,
     display_name: str | None = None,
     bio: str | None = None,
-    photo_url: str | None = None,
     avatar_media_id: str | None = None,
 ) -> dict | None:
     return await repo_update_profile(
         user_id,
         display_name=display_name,
         bio=bio,
-        photo_url=photo_url,
         avatar_media_id=avatar_media_id,
     )
+
+
+async def clear_profile_avatar(user_id: str) -> dict | None:
+    return await repo_clear_profile_avatar(user_id)
 
 
 async def is_enrolled(user_id: str, course_id: str) -> bool:
@@ -1937,14 +1914,14 @@ def _as_string_list(value) -> list[str]:
 async def list_community_posts(limit: int = 50) -> list[dict]:
     async with get_conn() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT p.id,
                    p.author_id,
                    p.content,
                    p.media_paths,
                    p.created_at,
                    prof.display_name,
-                   prof.photo_url,
+                   {_profile_photo_url_sql("prof")} AS photo_url,
                    prof.bio
             FROM app.posts p
             LEFT JOIN app.profiles prof ON prof.user_id = p.author_id
@@ -1963,7 +1940,7 @@ async def list_community_posts(limit: int = 50) -> list[dict]:
             profile = {
                 "user_id": row.get("author_id"),
                 "display_name": row.get("display_name"),
-                "photo_url": row.get("photo_url"),
+                "photo_url": _choose_public_profile_photo_url(row.get("photo_url")),
                 "bio": row.get("bio"),
             }
         items.append(
@@ -1988,7 +1965,7 @@ async def create_community_post(
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                """
+                f"""
                 WITH inserted AS (
                     INSERT INTO app.posts (author_id, content, media_paths)
                     VALUES (%s, %s, %s)
@@ -2000,7 +1977,7 @@ async def create_community_post(
                        i.media_paths,
                        i.created_at,
                        prof.display_name,
-                       prof.photo_url,
+                       {_profile_photo_url_sql("prof")} AS photo_url,
                        prof.bio
                 FROM inserted i
                 LEFT JOIN app.profiles prof ON prof.user_id = i.author_id
@@ -2018,7 +1995,7 @@ async def create_community_post(
         profile = {
             "user_id": row.get("author_id"),
             "display_name": row.get("display_name"),
-            "photo_url": row.get("photo_url"),
+            "photo_url": _choose_public_profile_photo_url(row.get("photo_url")),
             "bio": row.get("bio"),
         }
     return {
@@ -2034,21 +2011,18 @@ async def create_community_post(
 async def list_teacher_directory(limit: int = 100) -> list[dict]:
     async with get_conn() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT td.user_id,
                    td.headline,
                    td.specialties,
                    td.rating,
                    td.created_at,
                    prof.display_name,
-                   prof.photo_url,
+                   {_profile_photo_url_sql("prof")} AS photo_url,
                    prof.bio,
-                   u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
-                   u.raw_user_meta_data->>'picture' AS auth_picture_url,
                    COALESCE(cert.count, 0) AS verified_certificates
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
-            LEFT JOIN auth.users u ON u.id = td.user_id
             LEFT JOIN (
                 SELECT user_id, COUNT(*) FILTER (WHERE status = 'verified') AS count
                 FROM app.certificates
@@ -2072,11 +2046,7 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
             profile = {
                 "user_id": row.get("user_id"),
                 "display_name": row.get("display_name"),
-                "photo_url": _choose_public_profile_photo_url(
-                    row.get("photo_url"),
-                    auth_avatar_url=row.get("auth_avatar_url"),
-                    auth_picture_url=row.get("auth_picture_url"),
-                ),
+                "photo_url": _choose_public_profile_photo_url(row.get("photo_url")),
                 "bio": row.get("bio"),
             }
         items.append(
@@ -2096,21 +2066,18 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
 async def get_teacher_directory_item(user_id: str) -> dict | None:
     async with get_conn() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT td.user_id,
                    td.headline,
                    td.specialties,
                    td.rating,
                    td.created_at,
                    prof.display_name,
-                   prof.photo_url,
+                   {_profile_photo_url_sql("prof")} AS photo_url,
                    prof.bio,
-                   u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
-                   u.raw_user_meta_data->>'picture' AS auth_picture_url,
                    COALESCE(cert.count, 0) AS verified_certificates
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
-            LEFT JOIN auth.users u ON u.id = td.user_id
             LEFT JOIN (
                 SELECT user_id, COUNT(*) FILTER (WHERE status = 'verified') AS count
                 FROM app.certificates
@@ -2128,11 +2095,9 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                 f"""
                 SELECT prof.user_id,
                        prof.display_name,
-                       prof.photo_url,
+                       {_profile_photo_url_sql("prof")} AS photo_url,
                        prof.bio,
-                       prof.created_at,
-                       u.raw_user_meta_data->>'avatar_url' AS auth_avatar_url,
-                       u.raw_user_meta_data->>'picture' AS auth_picture_url
+                       prof.created_at
                 FROM app.profiles prof
                 LEFT JOIN auth.users u ON u.id = prof.user_id
                 LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
@@ -2155,9 +2120,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
             "user_id": fallback_profile.get("user_id"),
             "display_name": fallback_profile.get("display_name"),
             "photo_url": _choose_public_profile_photo_url(
-                fallback_profile.get("photo_url"),
-                auth_avatar_url=fallback_profile.get("auth_avatar_url"),
-                auth_picture_url=fallback_profile.get("auth_picture_url"),
+                fallback_profile.get("photo_url")
             ),
             "bio": fallback_profile.get("bio"),
         }
@@ -2180,11 +2143,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         profile = {
             "user_id": row.get("user_id"),
             "display_name": row.get("display_name"),
-            "photo_url": _choose_public_profile_photo_url(
-                row.get("photo_url"),
-                auth_avatar_url=row.get("auth_avatar_url"),
-                auth_picture_url=row.get("auth_picture_url"),
-            ),
+            "photo_url": _choose_public_profile_photo_url(row.get("photo_url")),
             "bio": row.get("bio"),
         }
     return {
@@ -2217,7 +2176,7 @@ async def list_teacher_services(user_id: str) -> list[dict]:
 async def service_detail(service_id: str) -> tuple[dict | None, dict | None]:
     async with get_conn() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT
                 s.id,
                 s.provider_id,
@@ -2230,7 +2189,7 @@ async def service_detail(service_id: str) -> tuple[dict | None, dict | None]:
                 s.created_at,
                 p.user_id AS provider_user_id,
                 p.display_name AS provider_display_name,
-                p.photo_url AS provider_photo_url,
+                {_profile_photo_url_sql("p")} AS provider_photo_url,
                 p.bio AS provider_bio
             FROM app.services s
             LEFT JOIN app.profiles p ON p.user_id = s.provider_id
@@ -2261,7 +2220,9 @@ async def service_detail(service_id: str) -> tuple[dict | None, dict | None]:
         provider = {
             "user_id": provider_user_id,
             "display_name": row_dict.get("provider_display_name"),
-            "photo_url": row_dict.get("provider_photo_url"),
+            "photo_url": _choose_public_profile_photo_url(
+                row_dict.get("provider_photo_url")
+            ),
             "bio": row_dict.get("provider_bio"),
         }
     return service, provider

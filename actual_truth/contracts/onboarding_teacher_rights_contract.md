@@ -1,257 +1,246 @@
 # Onboarding and Teacher Rights Authority Contract
 
-## 1. Authority Statement
+## STATUS
+
+ACTIVE
 
 This file is the PRIMARY AUTHORITY for:
 
 - `onboarding_state`
-- `role`
 - `role_v2`
+- `role`
 - `is_admin`
 - teacher-rights ownership
 - teacher-rights mutation rules
+- admin-bootstrap authority boundaries
 
-For these domains, every other source is non-primary.
+This contract composes with:
 
-- `codex/AVELI_EXECUTION_POLICY.md` is a policy constraint source.
-- `Aveli_System_Decisions.md` is a semantic framing source.
-- `aveli_system_manifest.json` is an execution-governance source.
-- `docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md` is OBSERVATIONAL evidence.
-- `docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md` is OBSERVATIONAL evidence.
+- `auth_onboarding_contract.md`
+- `auth_onboarding_baseline_contract.md`
 
-If any non-primary source disagrees with this file on these domains, this file wins.
-
-## 2. Canonical Fields
+## 1. CANONICAL FIELDS
 
 ### `onboarding_state`
 
-`onboarding_state` is the canonical onboarding field.
-
 Allowed values:
 
-- `incomplete`: canonical onboarding is not complete.
-- `completed`: canonical onboarding is complete.
+- `incomplete`
+- `completed`
 
 Rules:
 
 - `onboarding_state` is required.
-- No implicit default exists at runtime.
+- `completed` is the only onboarding-complete state.
 - Any value outside this enum is invalid.
 
 ### `role_v2`
 
-`role_v2` is the canonical runtime role field.
-
 Allowed values:
 
-- `learner`: non-teacher learning role.
-- `teacher`: approved teacher role.
+- `learner`
+- `teacher`
 
 Rules:
 
 - `role_v2` is required.
-- `role_v2` owns role truth.
+- `role_v2` is the only canonical non-admin role truth.
 - Any value outside this enum is invalid.
 
 ### `role`
 
-`role` is the legacy fallback role field.
-
 Allowed values:
 
-- `learner`: legacy fallback for the non-teacher learning role.
-- `teacher`: legacy fallback for the approved teacher role.
+- `learner`
+- `teacher`
 
 Rules:
 
 - `role` is required for compatibility.
-- `role` does not own role truth.
-- `role` is consulted only when `role_v2` is missing or invalid.
-- Any value outside this enum is invalid.
+- `role` is a mirror only.
+- `role` MUST equal `role_v2` on every valid row.
+- `role` never owns role truth.
+- A mismatch between `role` and `role_v2` is compatibility drift.
 
 ### `is_admin`
 
-`is_admin` is the canonical admin override field.
-
 Allowed values:
 
-- `false`: no admin override is active.
-- `true`: admin override is active.
+- `false`
+- `true`
 
 Rules:
 
 - `is_admin` is required.
-- `is_admin` is not a role enum.
-- `is_admin` does not change the semantic value of `role_v2`.
+- `is_admin` grants admin authority only.
+- `is_admin` does not create teacher rights.
 
-### Precedence Rules
+## 2. READ AUTHORITY
 
-Role evaluation follows this order:
+Authority evaluation follows this order:
 
 1. `is_admin` determines admin authority.
-2. `role_v2` determines canonical non-admin role authority.
-3. `role` is used only when `role_v2` is missing or invalid.
-4. If both `role_v2` and `role` are missing or invalid, role evaluation is invalid and privileged access is denied.
+2. `role_v2` determines non-admin role truth.
+3. `role` may be observed only as a compatibility mirror.
 
-Teacher-rights evaluation follows this rule:
+Rules:
 
-- Teacher rights exist only when the effective non-admin role is `teacher`.
-- `is_admin = true` does not create teacher rights.
+- Teacher rights exist only when `role_v2 = teacher`.
+- `is_admin = true` does not convert `learner` into `teacher`.
+- `role` MUST NOT be used as runtime fallback when `role_v2` is missing or invalid.
+- If `role_v2` is missing or invalid, privileged non-admin role access is denied.
 
-## 3. Ownership Rules
+## 3. OWNERSHIP RULES
 
 ### `onboarding_state`
 
-- `onboarding_state` belongs to the subject user's canonical onboarding lifecycle.
-- The subject user owns progression of the subject user's own onboarding lifecycle through the canonical onboarding process.
-- The system may persist the result of a valid onboarding progression.
+- `onboarding_state` belongs to the subject user's lifecycle in `app.auth_subjects`.
+- The subject user may progress only the subject user's own onboarding state.
+- Progression is allowed only through the canonical onboarding-completion route.
 
 ### `role_v2`
 
-- `role_v2` belongs to system-governed role authority.
-- The subject user does not self-assign `role_v2`.
-- Teacher rights are canonically represented by `role_v2 = teacher`.
+- `role_v2` belongs to admin-governed teacher-role authority.
+- The subject user does not self-assign teacher rights.
 
 ### `role`
 
 - `role` belongs to compatibility support only.
-- `role` does not override `role_v2`.
+- `role` must be maintained in sync with `role_v2`.
 
 ### `is_admin`
 
-- `is_admin` belongs to admin-governed override authority.
+- `is_admin` belongs to operator-controlled admin authority.
 - The subject user does not self-assign `is_admin`.
+- App-runtime routes do not own `is_admin` mutation.
 
-## 4. Mutation Authority
+## 4. MUTATION AUTHORITY
 
-### Onboarding Progression
+### Onboarding Completion
 
-Canonical onboarding progression uses `onboarding_state`.
+Canonical route:
 
-Allowed transitions:
-
-- `incomplete -> completed`: allowed for the subject user through the canonical onboarding process, or for the system when recording a valid completion for that subject user.
-- `completed -> completed`: allowed as an idempotent write.
-
-Forbidden transitions:
-
-- `completed -> incomplete`
-- any transition from an invalid value
-- any transition to an invalid value
-- any mutation of another user's onboarding state by a non-admin user
-
-### Role Assignment
-
-Canonical role assignment uses `role_v2`.
+- `POST /auth/onboarding/complete`
 
 Allowed transitions:
 
-- `learner -> teacher`: allowed only through canonical admin teacher approval.
-- `learner -> learner`: allowed as a no-op.
-- `teacher -> teacher`: allowed as a no-op.
+- `incomplete -> completed`
+- `completed -> completed`
 
-Forbidden transitions:
+Rules:
+
+- Completion is explicit-action-derived only.
+- `PATCH /profiles/me` MUST NOT mutate `onboarding_state`.
+- Email verification, referral transport, membership state, webhooks, and profile writes MUST NOT mutate `onboarding_state`.
+- `completed -> incomplete` is forbidden.
+- The completion route does not issue tokens.
+- After success, the subject user must refresh auth context through `POST /auth/refresh`.
+
+### Teacher Role Grant
+
+Canonical route:
+
+- `POST /admin/users/{user_id}/grant-teacher-role`
+
+Allowed transitions:
+
+- `learner -> teacher`
+- `teacher -> teacher`
+
+Rules:
+
+- Grant authority is admin-only.
+- Grant MUST write canonical truth to `role_v2`.
+- Grant MUST mirror the same value to `role`.
+- Grant MUST record `teacher_role_granted` in `app.auth_events`.
+- Grant MUST revoke the target user's refresh tokens.
+- Grant MUST NOT introduce pending or request state.
+
+### Teacher Role Revoke
+
+Canonical route:
+
+- `POST /admin/users/{user_id}/revoke-teacher-role`
+
+Allowed transitions:
 
 - `teacher -> learner`
-- any user-initiated self-assignment to `teacher`
-- any mutation to an invalid role value
-- any direct legacy-role mutation that conflicts with canonical `role_v2`
-
-### Teacher Approval Path
-
-Teacher approval is the only canonical path that grants teacher rights.
+- `learner -> learner`
 
 Rules:
 
-- Approval authority is admin authority.
-- Approval grants teacher rights by setting canonical role authority to `teacher`.
-- Rejection does not grant teacher rights.
-- Rejection preserves the non-teacher role state.
-- Teacher rights are not granted by onboarding completion alone.
-- Teacher rights are not granted by `is_admin` alone.
+- Revoke authority is admin-only.
+- Revoke MUST write canonical truth to `role_v2`.
+- Revoke MUST mirror the same value to `role`.
+- Revoke MUST record `teacher_role_revoked` in `app.auth_events`.
+- Revoke MUST revoke the target user's refresh tokens.
+- Revoke MUST NOT introduce pending or request state.
 
-### Admin Override Mutation
+### Admin Bootstrap
 
-Canonical admin override uses `is_admin`.
+Canonical mutation authority:
 
-Allowed transitions:
-
-- `false -> true`: allowed only by admin-governed authority.
-- `true -> false`: allowed only by admin-governed authority.
-- `false -> false`: allowed as a no-op.
-- `true -> true`: allowed as a no-op.
-
-Forbidden transitions:
-
-- any subject-user self-assignment of `is_admin`
-- any non-admin mutation of another user's `is_admin`
-
-## 5. Runtime Read Rules
-
-### Effective Role Read
-
-Runtime reads role authority in this order:
-
-1. Validate `role_v2`.
-2. Use valid `role_v2` when present.
-3. If `role_v2` is missing or invalid, validate `role`.
-4. Use valid `role` only as legacy fallback.
-5. If no valid role exists, deny privileged role-based access.
-
-### Onboarding Gate Read
-
-Runtime reads onboarding completion from `onboarding_state`.
+- operator-controlled `app.bootstrap_first_admin(target_user_id uuid)`
 
 Rules:
 
-- `completed` is the only onboarding-complete state.
-- `incomplete` is not onboarding-complete.
-- invalid `onboarding_state` is an invalid runtime condition.
-- invalid `onboarding_state` must not be normalized silently.
-- `onboarding_state` does not replace membership authority for app entry.
+- The first admin is established only through the one-time bootstrap in the baseline contract.
+- No app-runtime route exists for mutating `is_admin`.
+- Tests, seeds, frontend flows, and legacy routes MUST NOT create admin authority.
 
-### Teacher-Rights Read
+## 5. EXPLICIT ELIMINATIONS
 
-Runtime reads teacher rights from effective role authority.
+- No teacher-request lifecycle exists.
+- No pending teacher state exists.
+- No request queue exists.
+- No certificate-approval model exists as teacher-role authority.
+- No profile-derived teacher-role authority exists.
+
+## 6. AUDIT EVENT REQUIREMENTS
+
+The following event types are required:
+
+- `admin_bootstrap_consumed`
+- `onboarding_completed`
+- `teacher_role_granted`
+- `teacher_role_revoked`
 
 Rules:
 
-- Effective teacher rights exist only for effective role `teacher`.
-- Teacher-scoped runtime behavior requires teacher rights.
-- Admin authority and teacher rights are separate authorities.
-- A subject may hold both admin authority and teacher rights at the same time.
+- Auth events are canonical audit evidence, not authority.
+- Missing required auth events is implementation drift.
 
-## 6. Conflict Resolution Rules
+## 7. CONFLICT RULES
 
-### `role` and `role_v2` Disagree
+### `role_v2` and `role` Disagree
 
 - `role_v2` wins.
-- `role` does not suppress or elevate `role_v2`.
-- A disagreement is compatibility drift, not a second source of truth.
+- The disagreement is compatibility drift.
+- Runtime MUST NOT fall back from invalid `role_v2` to `role`.
+
+### `is_admin` and `role_v2` Both Active
+
+- Both authorities are active.
+- Admin authority remains separate from teacher rights.
 
 ### `onboarding_state` Is Invalid
 
-- Runtime treats the onboarding state as invalid.
-- Runtime does not invent a fallback onboarding value.
-- Onboarding-gated access remains blocked until the state is valid.
+- Runtime treats the state as invalid.
+- Runtime MUST NOT invent a fallback onboarding value.
 
-### `is_admin` Conflicts With `role_v2`
-
-- `is_admin = true` grants admin authority.
-- `is_admin = true` does not convert `learner` into `teacher`.
-- `role_v2 = teacher` grants teacher rights even when `is_admin = false`.
-- `role_v2 = teacher` and `is_admin = true` means both authorities are active.
-
-## 7. Non-Goals / Out of Scope
+## 8. NON-GOALS
 
 This contract does not define:
 
-- route definitions
-- endpoint definitions
-- database schema
-- storage schema
-- API implementation
-- UI behavior
-- membership authority
-- external provider onboarding state
+- password-reset semantics
+- invite-validation semantics
+- referral redemption semantics
+- profile projection response shape
+- binary avatar/media upload behavior
 
+## 9. FINAL ASSERTION
+
+- `app.auth_subjects` is the only truth carrier for onboarding completion, non-admin role truth, and admin override.
+- Teacher rights are admin-only.
+- Admin bootstrap is operator-controlled only.
+- Teacher-request lifecycle is eliminated.

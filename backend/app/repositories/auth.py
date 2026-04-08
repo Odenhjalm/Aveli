@@ -67,77 +67,26 @@ async def _upsert_profile_row(
     user_id: str | UUID,
     display_name: str | None,
 ) -> dict[str, Any] | None:
-    available_columns = await _table_columns("app", "profiles")
-    if "user_id" not in available_columns:
-        return None
-
-    insert_columns: list[str] = ["user_id"]
-    insert_values: list[object] = [user_id]
-    update_clauses: list[str] = []
-
-    def _add_column(
-        column: str,
-        value: object,
-        *,
-        update_expression: str | None = None,
-    ) -> None:
-        if column not in available_columns:
-            return
-        insert_columns.append(column)
-        insert_values.append(value)
-        if update_expression is not None:
-            update_clauses.append(f"{column} = {update_expression}")
-
-    _add_column(
-        "display_name",
-        display_name,
-        update_expression="COALESCE(app.profiles.display_name, excluded.display_name)",
-    )
-    _add_column("bio", None)
-    _add_column("photo_url", None)
-    _add_column("avatar_media_id", None)
-    if "created_at" in available_columns:
-        insert_columns.append("created_at")
-        insert_values.append("now()")
-    if "updated_at" in available_columns:
-        insert_columns.append("updated_at")
-        insert_values.append("now()")
-        update_clauses.append("updated_at = now()")
-
-    placeholders = [
-        value if value == "now()" else "%s"
-        for value in insert_values
-    ]
-    params = [value for value in insert_values if value != "now()"]
-    returning_columns = [
-        column
-        for column in (
-            "user_id",
-            "display_name",
-            "bio",
-            "photo_url",
-            "avatar_media_id",
-            "created_at",
-            "updated_at",
-        )
-        if column in available_columns
-    ]
-    if not returning_columns:
-        return None
-    if not update_clauses:
-        update_clauses.append("user_id = excluded.user_id")
-
-    query = f"""
-        INSERT INTO app.profiles ({", ".join(insert_columns)})
-        VALUES ({", ".join(placeholders)})
-        ON CONFLICT (user_id) DO UPDATE
-          SET {", ".join(update_clauses)}
-        RETURNING {", ".join(returning_columns)}
-    """
-
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, params)
+            await cur.execute(
+                """
+                INSERT INTO app.profiles (
+                    user_id,
+                    display_name,
+                    bio,
+                    avatar_media_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (%s, %s, %s, %s, now(), now())
+                ON CONFLICT (user_id) DO UPDATE
+                  SET display_name = COALESCE(app.profiles.display_name, excluded.display_name),
+                      updated_at = now()
+                RETURNING user_id, display_name, bio, avatar_media_id, created_at, updated_at
+                """,
+                (user_id, display_name, None, None),
+            )
             row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None

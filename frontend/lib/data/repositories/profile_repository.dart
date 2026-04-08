@@ -22,7 +22,6 @@ class ProfileRepository {
   Future<Profile> updateMe({
     String? displayName,
     String? bio,
-    String? photoUrl,
   }) async {
     final body = <String, dynamic>{};
     if (displayName != null) {
@@ -31,16 +30,13 @@ class ProfileRepository {
     if (bio != null) {
       body['bio'] = bio;
     }
-    if (photoUrl != null) {
-      body['photo_url'] = photoUrl;
-    }
 
     final data = await _client.patch<Map<String, dynamic>>(
       '/profiles/me',
       body: body.isEmpty ? null : body,
     );
     if (data == null || data.isEmpty) {
-      throw StateError('Failed to update profile');
+      throw StateError('Det gick inte att uppdatera profilen.');
     }
     return Profile.fromJson(data);
   }
@@ -57,15 +53,22 @@ class ProfileRepository {
     );
     final formData = FormData.fromMap({'file': multipart});
 
-    final uploadResponse = await _client.postForm<Map<String, dynamic>>(
-      '/api/upload/profile',
+    final data = await _client.postForm<Map<String, dynamic>>(
+      '/profiles/me/avatar',
       formData,
     );
-    final url = uploadResponse?['url'] as String?;
-    if (url == null || url.isEmpty) {
-      throw StateError('Failed to upload avatar');
+    if (data == null || data.isEmpty) {
+      throw StateError('Det gick inte att ladda upp profilbilden.');
     }
-    return updateMe(photoUrl: url);
+    return Profile.fromJson(data);
+  }
+
+  Future<Profile> clearAvatar() async {
+    final data = await _client.delete<Map<String, dynamic>>('/profiles/me/avatar');
+    if (data == null || data.isEmpty) {
+      throw StateError('Det gick inte att ta bort profilbilden.');
+    }
+    return Profile.fromJson(data);
   }
 }
 

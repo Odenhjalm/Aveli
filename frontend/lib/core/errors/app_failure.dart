@@ -190,6 +190,10 @@ String _localizeDetail(String detail) {
       return 'Kontot kunde inte hittas.';
     case 'invalid_or_expired_token':
       return 'Länken är ogiltig eller har gått ut.';
+    case 'invalid_current_password':
+      return 'Nuvarande lÃ¶senord Ã¤r fel.';
+    case 'new_password_must_differ':
+      return 'Det nya lÃ¶senordet mÃ¥ste skilja sig frÃ¥n det nuvarande.';
     case 'rate_limited':
       return 'För många försök. Vänta en stund och försök igen.';
     case 'unauthorized':

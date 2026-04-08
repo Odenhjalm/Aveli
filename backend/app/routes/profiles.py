@@ -27,11 +27,16 @@ async def get_me(current_user: CurrentUser):
 
 @router.patch("/me", response_model=schemas.Profile)
 async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
+    if payload.photo_url is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Profilbild uppdateras via profilbildsuppladdning.",
+        )
+
     if not any(
         [
             payload.display_name is not None,
             payload.bio is not None,
-            payload.photo_url is not None,
         ]
     ):
         profile = await models.get_profile(current_user["id"])
@@ -46,7 +51,6 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
         current_user["id"],
         display_name=payload.display_name,
         bio=payload.bio,
-        photo_url=payload.photo_url,
     )
     if not updated:
         raise HTTPException(
@@ -108,10 +112,8 @@ async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...))
         )
 
     media_id = media_object["id"]
-    photo_url = f"/profiles/avatar/{media_id}"
     updated = await models.update_profile(
         profile["user_id"],
-        photo_url=photo_url,
         avatar_media_id=media_id,
     )
     if not updated:
@@ -124,6 +126,30 @@ async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...))
     if previous_media_id and previous_media_id != media_id:
         await models.cleanup_media_object(previous_media_id)
 
+    return schemas.Profile(**updated)
+
+
+@router.delete("/me/avatar", response_model=schemas.Profile)
+async def delete_avatar(current_user: CurrentUser):
+    profile = await models.get_profile(current_user["id"])
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profil saknas",
+        )
+
+    previous_media_id = profile.get("avatar_media_id")
+    if previous_media_id is None:
+        return schemas.Profile(**profile)
+
+    updated = await models.clear_profile_avatar(profile["user_id"])
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Det gick inte att ta bort profilbilden",
+        )
+
+    await models.cleanup_media_object(previous_media_id)
     return schemas.Profile(**updated)
 
 

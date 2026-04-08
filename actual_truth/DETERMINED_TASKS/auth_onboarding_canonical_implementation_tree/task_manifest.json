@@ -1,0 +1,231 @@
+{
+  "input": {
+    "task": "Generate deterministic Auth + Onboarding implementation task tree from approved canonical decision package",
+    "mode": "generate",
+    "scope": [
+      "Contracts under actual_truth/contracts are authoritative",
+      "Baseline under backend/supabase/baseline_slots is the physical target state",
+      "Repository code is legacy reference only",
+      "Deferred binary avatar/media work is excluded",
+      "Task tree begins after contract decisions are materialized"
+    ],
+    "contracts": [
+      "actual_truth/contracts/auth_onboarding_contract.md",
+      "actual_truth/contracts/auth_onboarding_failure_contract.md",
+      "actual_truth/contracts/auth_onboarding_baseline_contract.md",
+      "actual_truth/contracts/onboarding_teacher_rights_contract.md",
+      "actual_truth/contracts/profile_projection_contract.md",
+      "actual_truth/contracts/referral_membership_grant_contract.md"
+    ]
+  },
+  "task_tree": [
+    {
+      "task_id": "AOI-001",
+      "type": "OWNER",
+      "task_type": "BASELINE_SLOT",
+      "description": "Add append-only baseline slot 0023 for canonical auth runtime substrate by creating app.refresh_tokens and app.auth_events exactly as required by the baseline contract.",
+      "depends_on": [],
+      "target_files": [
+        "backend/supabase/baseline_slots/0023_auth_runtime_substrate.sql"
+      ]
+    },
+    {
+      "task_id": "AOI-002",
+      "type": "OWNER",
+      "task_type": "BASELINE_SLOT",
+      "description": "Add append-only baseline slot 0024 for operator-controlled first-admin bootstrap by creating app.admin_bootstrap_state and app.bootstrap_first_admin(target_user_id uuid).",
+      "depends_on": [
+        "AOI-001"
+      ],
+      "target_files": [
+        "backend/supabase/baseline_slots/0024_admin_bootstrap_operator_surface.sql"
+      ]
+    },
+    {
+      "task_id": "AOI-003",
+      "type": "OWNER",
+      "task_type": "BACKEND_ALIGNMENT",
+      "description": "Align backend auth persistence to the baseline-owned auth substrate only, including refresh-token persistence, auth-event writes, operator bootstrap boundary, and removal of runtime schema introspection from auth/profile repositories.",
+      "depends_on": [
+        "AOI-001",
+        "AOI-002"
+      ],
+      "target_files": [
+        "backend/app/repositories/auth.py",
+        "backend/app/repositories/profiles.py",
+        "backend/app/models.py"
+      ]
+    },
+    {
+      "task_id": "AOI-004",
+      "type": "OWNER",
+      "task_type": "BACKEND_ALIGNMENT",
+      "description": "Implement the canonical onboarding-completion surface POST /auth/onboarding/complete as the only incomplete-to-completed transition path, with explicit action semantics and token_refresh_required=true success response.",
+      "depends_on": [
+        "AOI-001",
+        "AOI-003"
+      ],
+      "target_files": [
+        "backend/app/routes/auth.py",
+        "backend/app/repositories/auth.py",
+        "backend/app/schemas.py",
+        "backend/app/schemas/__init__.py"
+      ]
+    },
+    {
+      "task_id": "AOI-005",
+      "type": "OWNER",
+      "task_type": "BACKEND_ALIGNMENT",
+      "description": "Replace teacher-request authority with canonical admin grant/revoke teacher-role routes that mutate app.auth_subjects.role_v2 plus role mirror only, write auth events, and revoke target refresh tokens.",
+      "depends_on": [
+        "AOI-001",
+        "AOI-002",
+        "AOI-003"
+      ],
+      "target_files": [
+        "backend/app/routes/admin.py",
+        "backend/app/repositories/auth.py",
+        "backend/app/models.py",
+        "backend/app/permissions.py"
+      ]
+    },
+    {
+      "task_id": "AOI-006",
+      "type": "OWNER",
+      "task_type": "BACKEND_ALIGNMENT",
+      "description": "Align profile projection surfaces so PATCH /profiles/me writes only display_name and bio, photo_url remains read composition only, avatar_media_id remains persisted projection only, and no auth/onboarding surface owns avatar upload behavior.",
+      "depends_on": [
+        "AOI-003"
+      ],
+      "target_files": [
+        "backend/app/routes/profiles.py",
+        "backend/app/repositories/profiles.py",
+        "backend/app/schemas.py",
+        "backend/app/schemas/__init__.py"
+      ]
+    },
+    {
+      "task_id": "AOI-007",
+      "type": "OWNER",
+      "task_type": "BACKEND_ALIGNMENT",
+      "description": "Separate referral from auth execution by removing referral_code acceptance and auth-side redemption or membership-grant behavior from register and adjacent auth persistence paths.",
+      "depends_on": [
+        "AOI-003"
+      ],
+      "target_files": [
+        "backend/app/routes/auth.py",
+        "backend/app/repositories/auth.py",
+        "backend/app/schemas.py",
+        "backend/app/schemas/__init__.py"
+      ]
+    },
+    {
+      "task_id": "AOI-008",
+      "type": "OWNER",
+      "task_type": "BACKEND_ALIGNMENT",
+      "description": "Apply the canonical Auth + Onboarding failure contract and Swedish user-facing message policy to all kept backend surfaces, removing detail/error ambiguity on owned routes only.",
+      "depends_on": [
+        "AOI-003",
+        "AOI-004",
+        "AOI-005",
+        "AOI-006",
+        "AOI-007"
+      ],
+      "target_files": [
+        "backend/app/routes/auth.py",
+        "backend/app/routes/profiles.py",
+        "backend/app/routes/admin.py",
+        "backend/app/permissions.py",
+        "backend/app/services/email_verification.py"
+      ]
+    },
+    {
+      "task_id": "AOI-009",
+      "type": "OWNER",
+      "task_type": "FRONTEND_ALIGNMENT",
+      "description": "Align frontend auth and onboarding flows to canonical routes, canonical profile projection, referral separation, token refresh consequences, admin teacher grant/revoke routes, and the canonical failure envelope.",
+      "depends_on": [
+        "AOI-004",
+        "AOI-005",
+        "AOI-006",
+        "AOI-007",
+        "AOI-008"
+      ],
+      "target_files": [
+        "frontend/lib/api/auth_repository.dart",
+        "frontend/lib/data/repositories/profile_repository.dart",
+        "frontend/lib/core/errors/app_failure.dart",
+        "frontend/lib/core/routing/app_router.dart",
+        "frontend/lib/core/auth/auth_claims.dart",
+        "frontend/lib/features/onboarding/welcome_page.dart",
+        "frontend/lib/features/community/data/admin_repository.dart",
+        "frontend/lib/features/auth/presentation/signup_page.dart"
+      ]
+    },
+    {
+      "task_id": "AOI-010",
+      "type": "OWNER",
+      "task_type": "LEGACY_REMOVAL",
+      "description": "Remove forbidden legacy Auth + Onboarding surfaces and hidden authority sources after canonical replacements exist, including teacher-request flows, certificate/approval authority, avatar write surfaces, change-password route, legacy onboarding states, and auth referral coupling.",
+      "depends_on": [
+        "AOI-004",
+        "AOI-005",
+        "AOI-006",
+        "AOI-007",
+        "AOI-008",
+        "AOI-009"
+      ],
+      "target_files": [
+        "backend/app/routes/api_auth.py",
+        "backend/app/routes/api_profiles.py",
+        "backend/app/routes/upload.py",
+        "backend/app/routes/auth.py",
+        "backend/app/routes/profiles.py",
+        "backend/app/routes/admin.py",
+        "backend/app/models.py",
+        "frontend/lib",
+        "backend/scripts"
+      ]
+    },
+    {
+      "task_id": "AOI-011",
+      "type": "GATE",
+      "task_type": "TEST_ALIGNMENT",
+      "description": "Rewrite tests and verification scripts so they assert only canonical Auth + Onboarding truth, canonical baseline objects, canonical failure payloads, and the elimination of teacher-request and avatar-write authority.",
+      "depends_on": [
+        "AOI-001",
+        "AOI-002",
+        "AOI-003",
+        "AOI-004",
+        "AOI-005",
+        "AOI-006",
+        "AOI-007",
+        "AOI-008",
+        "AOI-009",
+        "AOI-010"
+      ],
+      "target_files": [
+        "backend/tests",
+        "frontend/test",
+        "backend/scripts/check_auth_onboarding_contract_surface.py"
+      ]
+    },
+    {
+      "task_id": "AOI-012",
+      "type": "AGGREGATE",
+      "task_type": "TEST_ALIGNMENT",
+      "description": "Run the aggregate contract-surface gate for route inventory, baseline object inventory, failure-envelope shape, referral separation, and the absence of forbidden legacy authority.",
+      "depends_on": [
+        "AOI-011"
+      ],
+      "target_files": [
+        "actual_truth/contracts",
+        "backend/supabase/baseline_slots",
+        "backend/app",
+        "frontend/lib",
+        "backend/tests",
+        "frontend/test"
+      ]
+    }
+  ]
+}

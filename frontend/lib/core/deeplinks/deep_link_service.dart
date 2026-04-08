@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import 'package:aveli/core/routing/app_router.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/checkout_flow.dart';
@@ -62,7 +61,8 @@ class DeepLinkService {
     final isAppScheme =
         uri.scheme == 'aveliapp' &&
         (uri.host == 'auth-callback' || uri.path.contains('auth-callback'));
-    final isAuthCallback = uri.path.toLowerCase().contains('auth/callback') ||
+    final isAuthCallback =
+        uri.path.toLowerCase().contains('auth/callback') ||
         uri.path.toLowerCase().contains('auth-callback');
     final isHttp = uri.scheme == 'http' || uri.scheme == 'https';
     return isAppScheme || (isHttp && isAuthCallback);
@@ -85,8 +85,9 @@ class DeepLinkService {
       _handleMissingSession();
       return;
     }
-    _ref.read(checkoutRedirectStateProvider.notifier).state =
-        CheckoutRedirectState(
+    _ref
+        .read(checkoutRedirectStateProvider.notifier)
+        .state = CheckoutRedirectState(
       status: CheckoutRedirectStatus.processing,
       sessionId: sessionId,
     );
@@ -126,9 +127,7 @@ class DeepLinkService {
     bool errored = false,
     Map<String, String>? extraParams,
   }) {
-    final params = <String, String>{
-      if (extraParams != null) ...extraParams,
-    };
+    final params = <String, String>{if (extraParams != null) ...extraParams};
     if (sessionId != null && sessionId.isNotEmpty) {
       params['session_id'] = sessionId;
     }
@@ -141,30 +140,15 @@ class DeepLinkService {
   }
 
   Future<void> _handleAuthCallback(Uri uri) async {
-    try {
-      debugPrint('Deep link auth callback uri: $uri');
-      final res = await supa.Supabase.instance.client.auth.getSessionFromUrl(
-        uri,
-        storeSession: true,
-      );
-      debugPrint('Deep link getSessionFromUrl session=${res.session}');
-    } catch (error, stackTrace) {
-      final errorParam = uri.queryParameters['error'];
-      final errorDescription = uri.queryParameters['error_description'];
-      debugPrint(
-        'Auth callback session recovery failed: $error '
-        '(error=$errorParam, description=$errorDescription, uri=$uri)',
-      );
-      debugPrint(stackTrace.toString());
-    }
-    if (supa.Supabase.instance.client.auth.currentSession != null) {
-      try {
-        await HapticFeedback.mediumImpact();
-      } catch (_) {}
-    }
     final router = _ref.read(appRouterProvider);
     final redirect = _sanitizeRedirect(uri.queryParameters['redirect']);
-    router.go(redirect ?? RoutePath.home);
+    final target = Uri(
+      path: RoutePath.login,
+      queryParameters: {
+        if (redirect != null && redirect.isNotEmpty) 'redirect': redirect,
+      },
+    ).toString();
+    router.go(target);
   }
 
   String? _sanitizeRedirect(String? raw) {
