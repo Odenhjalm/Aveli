@@ -219,8 +219,8 @@ async def _lookup_seed_teacher_id() -> str:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT user_id
-            FROM app.profiles
+            SELECT id AS user_id
+            FROM auth.users
             WHERE lower(email) = lower(%s)
             LIMIT 1
             """,

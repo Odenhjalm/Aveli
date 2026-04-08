@@ -173,33 +173,6 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             )
         )
 
-    user_email = normalize_text((user_row or {}).get("email"))
-    profile_email = normalize_text((profile_row or {}).get("email"))
-    if user_email is not None and profile_email is not None:
-        if user_email.lower() != profile_email.lower():
-            details = {
-                "auth_email_present": True,
-                "profile_email_present": True,
-            }
-            violations.append(
-                violation(
-                    "profile_auth_email_mismatch",
-                    "Auth user and profile email do not align",
-                    source="auth.get_user_by_id",
-                    severity_value="warning",
-                    subject=subject,
-                    details=details,
-                )
-            )
-            inconsistencies.append(
-                {
-                    "code": "profile_auth_email_mismatch",
-                    "message": "Auth user and profile email do not align",
-                    "source": "auth.get_user_by_id",
-                    "details": details,
-                }
-            )
-
     stored_onboarding_state = normalize_text((auth_subject_row or {}).get("onboarding_state"))
     if (
         stored_onboarding_state is not None

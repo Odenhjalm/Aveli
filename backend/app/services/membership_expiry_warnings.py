@@ -145,9 +145,10 @@ async def _list_expiring_memberships(
                    m.user_id,
                    m.status,
                    m.end_date,
-                   p.email,
+                   u.email AS email,
                    p.display_name
               FROM app.memberships m
+              JOIN auth.users u ON u.id = m.user_id
               JOIN app.profiles p ON p.user_id = m.user_id
              WHERE m.status IN ('active', 'trialing')
                AND m.end_date >= %s

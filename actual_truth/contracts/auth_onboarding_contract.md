@@ -13,15 +13,10 @@
 
 ## 2. AUTHORITY MODEL
 
-- `auth.users` owns identity creation, authentication, and credential truth.
-- `app.profiles` owns above-core profile projection only:
-  - `email`
-  - `display_name`
-  - `bio`
-  - `photo_url`
-  - `avatar_media_id`
-  - `created_at`
-  - `updated_at`
+- `auth.users` owns identity creation, authentication, credential truth, and canonical email identity.
+- `app.profiles` remains projection-only and non-authoritative.
+- Persisted `app.profiles` field semantics are governed by `profile_projection_contract.md`.
+- `/profiles/me` may expose composed profile read fields, but `email` on that surface comes from `auth.users`, not from `app.profiles`.
 - Canonical onboarding and teacher-rights field authority is defined only by `onboarding_teacher_rights_contract.md`.
 
 ## 3. CANONICAL ENTRYPOINTS
@@ -148,7 +143,7 @@ Entrypoint responsibilities:
 5. Backend returns access and refresh tokens.
 6. Client may call `POST /auth/login` to authenticate against `auth.users`.
 7. Client may call `POST /auth/send-verification`, then `GET /auth/verify-email`.
-8. Client reads current profile through `GET /profiles/me`.
+8. Client reads current profile through `GET /profiles/me`, where email is composed from `auth.users` and profile projection fields come from `app.profiles`.
 9. Client updates editable profile fields only through `PATCH /profiles/me`.
 10. Admin teacher approval uses `POST /admin/teacher-requests/{user_id}/approve`.
 11. Admin teacher rejection uses `POST /admin/teacher-requests/{user_id}/reject`.

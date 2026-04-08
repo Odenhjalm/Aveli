@@ -190,8 +190,8 @@ async def _ensure_seed_teacher() -> str:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT user_id
-            FROM app.profiles
+            SELECT id AS user_id
+            FROM auth.users
             WHERE lower(email) = lower(%s)
             LIMIT 1
             """,
@@ -204,17 +204,17 @@ async def _ensure_seed_teacher() -> str:
             user_id = str(uuid4())
             await cur.execute(
                 """
-                INSERT INTO auth.users (id)
-                VALUES (%s)
-                ON CONFLICT (id) DO NOTHING
+                INSERT INTO auth.users (id, email)
+                VALUES (%s, %s)
+                ON CONFLICT (id) DO UPDATE
+                  SET email = EXCLUDED.email
                 """,
-                (user_id,),
+                (user_id, SEED_TEACHER_EMAIL),
             )
             await cur.execute(
                 """
                 INSERT INTO app.profiles (
                     user_id,
-                    email,
                     display_name,
                     created_at,
                     updated_at
@@ -222,16 +222,14 @@ async def _ensure_seed_teacher() -> str:
                 VALUES (
                     %s,
                     %s,
-                    %s,
                     now(),
                     now()
                 )
                 ON CONFLICT (user_id) DO UPDATE
-                  SET email = excluded.email,
-                      display_name = excluded.display_name,
+                  SET display_name = excluded.display_name,
                       updated_at = now()
                 """,
-                (user_id, SEED_TEACHER_EMAIL, SEED_TEACHER_NAME),
+                (user_id, SEED_TEACHER_NAME),
             )
             await cur.execute(
                 """

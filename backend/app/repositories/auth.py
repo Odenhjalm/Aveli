@@ -65,7 +65,6 @@ def _with_missing_keys(row: dict[str, Any], expected_columns: tuple[str, ...]) -
 async def _upsert_profile_row(
     *,
     user_id: str | UUID,
-    email: str,
     display_name: str | None,
 ) -> dict[str, Any] | None:
     available_columns = await _table_columns("app", "profiles")
@@ -89,7 +88,6 @@ async def _upsert_profile_row(
         if update_expression is not None:
             update_clauses.append(f"{column} = {update_expression}")
 
-    _add_column("email", email, update_expression="excluded.email")
     _add_column(
         "display_name",
         display_name,
@@ -115,7 +113,6 @@ async def _upsert_profile_row(
         column
         for column in (
             "user_id",
-            "email",
             "display_name",
             "bio",
             "photo_url",
@@ -205,7 +202,6 @@ async def create_user(
             )
             await _upsert_profile_row(
                 user_id=user_id,
-                email=normalized_email,
                 display_name=display_name,
             )
             profile_row = await get_profile_for_user(user_id)

@@ -18,11 +18,12 @@ _SEMINAR_ATTENDEE_BASE = """
         sa.livekit_participant_sid,
         sa.created_at,
         p.display_name as profile_display_name,
-        p.email as profile_email,
+        u.email as profile_email,
         coalesce(host_courses.course_titles, ARRAY[]::text[]) as host_course_titles
     from app.seminar_attendees sa
     join app.seminars s on s.id = sa.seminar_id
     left join app.profiles p on p.user_id = sa.user_id
+    left join auth.users u on u.id = sa.user_id
     left join lateral (
         select array_agg(c.title order by c.title) as course_titles
         from app.enrollments e

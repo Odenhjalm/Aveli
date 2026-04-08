@@ -582,7 +582,7 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
             LEFT JOIN auth.users u ON u.id = prof.user_id
             LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
             WHERE ({teacher_role_sql}) = 'teacher'
-              AND lower(prof.email) = lower(%s)
+              AND lower(u.email) = lower(%s)
             ORDER BY prof.display_name NULLS LAST
             LIMIT %s
             """,
@@ -706,7 +706,7 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
         SELECT
             prof.user_id AS teacher_id,
             prof.display_name,
-            prof.email,
+            u.email AS email,
             prof.photo_url,
             COALESCE(pr.priority, 100) AS priority,
             pr.notes,
@@ -716,6 +716,8 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
             COALESCE(stats.total_courses, 0) AS total_courses,
             COALESCE(stats.published_courses, 0) AS published_courses
         FROM app.profiles prof
+        LEFT JOIN auth.users u
+          ON u.id = prof.user_id
         LEFT JOIN app.auth_subjects subj
           ON subj.user_id = prof.user_id
         LEFT JOIN app.course_display_priorities pr
@@ -725,7 +727,7 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
         LEFT JOIN course_stats stats
           ON stats.teacher_id = prof.user_id
         WHERE ({teacher_role_sql}) = 'teacher'
-        ORDER BY COALESCE(pr.priority, 1000), lower(COALESCE(prof.display_name, prof.email))
+        ORDER BY COALESCE(pr.priority, 1000), lower(COALESCE(prof.display_name, u.email))
     """
     params: tuple = ()
     if limit is not None:
@@ -798,7 +800,7 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                 SELECT
                     prof.user_id AS teacher_id,
                     prof.display_name,
-                    prof.email,
+                    u.email AS email,
                     prof.photo_url,
                     COALESCE(pr.priority, 100) AS priority,
                     pr.notes,
@@ -808,6 +810,8 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                     COALESCE(stats.total_courses, 0) AS total_courses,
                     COALESCE(stats.published_courses, 0) AS published_courses
                 FROM app.profiles prof
+                LEFT JOIN auth.users u
+                  ON u.id = prof.user_id
                 LEFT JOIN app.auth_subjects subj
                   ON subj.user_id = prof.user_id
                 LEFT JOIN app.course_display_priorities pr
@@ -1352,15 +1356,6 @@ async def set_order_checkout_reference(
 
 
 async def get_user_email(user_id: str) -> str | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            "SELECT email FROM app.profiles WHERE user_id = %s LIMIT 1",
-            (user_id,),
-        )
-        row = await _fetchone(cur)
-    if row and row.get("email"):
-        return row.get("email")
-
     async with get_conn() as cur:
         await cur.execute(
             "SELECT email FROM auth.users WHERE id = %s LIMIT 1",
@@ -2143,7 +2138,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                 LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
                 WHERE prof.user_id = %s
                   AND ({_effective_role_sql("subj")}) = 'teacher'
-                  AND lower(prof.email) = lower(%s)
+                  AND lower(u.email) = lower(%s)
                 LIMIT 1
                 """,
                 (user_id, "avelibooks@gmail.com"),
@@ -2496,12 +2491,13 @@ async def list_teacher_applications() -> list[dict]:
                    c.created_at,
                    c.updated_at,
                    prof.display_name,
-                   prof.email,
+                   u.email AS email,
                    subj.role_v2,
                    ta.approved_by,
                    ta.approved_at
             FROM app.certificates c
             LEFT JOIN app.profiles prof ON prof.user_id = c.user_id
+            LEFT JOIN auth.users u ON u.id = c.user_id
             LEFT JOIN app.auth_subjects subj ON subj.user_id = c.user_id
             LEFT JOIN app.teacher_approvals ta ON ta.user_id = c.user_id
             WHERE lower(c.title) = lower(%s)

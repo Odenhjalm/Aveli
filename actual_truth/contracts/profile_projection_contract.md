@@ -51,15 +51,18 @@ This contract does not define:
 
 The only allowed projection fields are:
 
+- `user_id`
 - `display_name`
-- `email`
 - `bio`
 - `avatar_media_id`
+- `created_at`
+- `updated_at`
 
 Canonical rules:
 
-- `email` is display-only inside `app.profiles`.
-- `email` in `app.profiles` MUST NOT be treated as identity, credential, or access authority.
+- `email` is not persisted as profile truth in `app.profiles`.
+- When a surface such as `/profiles/me` exposes `email`, it MUST come from canonical identity in `auth.users`.
+- `photo_url` is not a canonical persisted field of `app.profiles`.
 - No field outside this allowed list may become canonical profile projection truth without an explicit contract change.
 
 ## 5. FORBIDDEN FIELDS AND RULE FAMILIES
@@ -107,8 +110,8 @@ Rules:
 ## 9. FRONTEND USAGE
 
 - Frontend usage of `app.profiles` is render only.
-- Frontend may render only the allowed projection fields.
-- Frontend must treat `email` as display-only.
+- Frontend may render persisted projection fields from `app.profiles` and composed current-user email from `auth.users` when delivered by `/profiles/me`.
+- Frontend must treat `email` on `/profiles/me` as display-only and sourced from `auth.users`.
 - Frontend must not use `app.profiles` or `/profiles/me` for auth, onboarding, role, membership, billing, or access decisions.
 - Frontend must not infer missing authority from profile projection.
 
@@ -125,5 +128,5 @@ Rules:
 
 - This contract is the canonical projection-only domain contract for `app.profiles`.
 - `app.profiles` is projection-only, non-authoritative, and derived from auth + subject state.
-- The only allowed projection fields are `display_name`, `email`, `bio`, and `avatar_media_id`.
+- The only allowed persisted projection fields are `user_id`, `display_name`, `bio`, `avatar_media_id`, `created_at`, and `updated_at`.
 - Profiles MUST NOT be used as authority anywhere.

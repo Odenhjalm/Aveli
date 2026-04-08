@@ -22,12 +22,12 @@ async def _seed_user(
     await cur.execute(
         """
         insert into app.profiles (
-            user_id, email, display_name
+            user_id, display_name
         )
-        values (%s, %s, %s)
+        values (%s, %s)
         on conflict (user_id) do nothing
         """,
-        (user_id, email, display_name),
+        (user_id, display_name),
     )
     normalized_role = "teacher" if role == "teacher" else "learner"
     await cur.execute(

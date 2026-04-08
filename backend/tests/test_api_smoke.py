@@ -158,12 +158,11 @@ async def test_backend_api_smoke(async_client, monkeypatch):
                         """
                         INSERT INTO app.profiles (
                             user_id,
-                            email,
                             display_name,
                             created_at,
                             updated_at
                         )
-                        SELECT id, email, %s, NOW(), NOW()
+                        SELECT id, %s, NOW(), NOW()
                         FROM auth.users WHERE email = %s
                         ON CONFLICT (user_id) DO NOTHING
                         """,

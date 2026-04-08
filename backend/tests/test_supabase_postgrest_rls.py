@@ -144,27 +144,27 @@ def _seed_supabase(db_url: str, users: dict[str, dict[str, str]]):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                insert into app.profiles (user_id, email, display_name)
-                values (%s, %s, %s)
+                insert into app.profiles (user_id, display_name)
+                values (%s, %s)
                 on conflict (user_id) do nothing
                 """,
-                (host_id, host_email, "Host Tester"),
+                (host_id, "Host Tester"),
             )
             cur.execute(
                 """
-                insert into app.profiles (user_id, email, display_name)
-                values (%s, %s, %s)
+                insert into app.profiles (user_id, display_name)
+                values (%s, %s)
                 on conflict (user_id) do nothing
                 """,
-                (attendee_id, attendee_email, "Attendee Tester"),
+                (attendee_id, "Attendee Tester"),
             )
             cur.execute(
                 """
-                insert into app.profiles (user_id, email, display_name)
-                values (%s, %s, %s)
+                insert into app.profiles (user_id, display_name)
+                values (%s, %s)
                 on conflict (user_id) do nothing
                 """,
-                (outsider_id, outsider_email, "Outsider Tester"),
+                (outsider_id, "Outsider Tester"),
             )
             cur.execute(
                 """

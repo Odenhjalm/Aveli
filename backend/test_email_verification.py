@@ -188,7 +188,7 @@ async def test_register_endpoint_uses_canonical_auth_route(
     async def fake_get_user_by_id(user_id: str):
         return {"id": user_id, "email": requested_email}
 
-    async def fake_get_profile_row(user_id: str):
+    async def fake_get_auth_subject(user_id: str):
         return {
             "user_id": user_id,
             "onboarding_state": "completed",
@@ -196,9 +196,6 @@ async def test_register_endpoint_uses_canonical_auth_route(
             "role": "learner",
             "is_admin": False,
         }
-
-    async def fake_is_teacher_user(_: str) -> bool:
-        return False
 
     async def fake_register_refresh_token(*_: object) -> None:
         return None
@@ -213,8 +210,11 @@ async def test_register_endpoint_uses_canonical_auth_route(
     monkeypatch.setattr(auth_routes.models, "get_user_by_email", fake_get_user_by_email)
     monkeypatch.setattr(auth_routes.models, "create_user", fake_create_user)
     monkeypatch.setattr(auth_routes.models, "get_user_by_id", fake_get_user_by_id)
-    monkeypatch.setattr(auth_routes.models, "get_profile_row", fake_get_profile_row)
-    monkeypatch.setattr(auth_routes.models, "is_teacher_user", fake_is_teacher_user)
+    monkeypatch.setattr(
+        auth_routes.auth_subjects_repo,
+        "get_auth_subject",
+        fake_get_auth_subject,
+    )
     monkeypatch.setattr(
         auth_routes.models,
         "register_refresh_token",
