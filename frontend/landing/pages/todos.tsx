@@ -1,10 +1,8 @@
 import Head from 'next/head';
 import type {
   GetServerSideProps,
-  GetServerSidePropsContext,
   InferGetServerSidePropsType,
 } from 'next';
-import { createClient } from '../utils/supabase/server';
 
 type Todo = {
   id: number | string;
@@ -15,16 +13,9 @@ type TodosPageProps = {
   todos: Todo[];
 };
 
-export const getServerSideProps: GetServerSideProps<TodosPageProps> = async (
-  context: GetServerSidePropsContext
-) => {
-  const supabase = createClient(context);
-  const { data: todos } = await supabase.from('todos').select('id, name');
-
+export const getServerSideProps: GetServerSideProps<TodosPageProps> = async () => {
   return {
-    props: {
-      todos: todos ?? [],
-    },
+    notFound: true,
   };
 };
 
@@ -34,7 +25,7 @@ export default function TodosPage({
   return (
     <>
       <Head>
-        <title>Aveli Todos</title>
+        <title>Aveli Att göra</title>
       </Head>
       <main>
         <ul>
