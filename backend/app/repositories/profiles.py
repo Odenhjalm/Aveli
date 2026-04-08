@@ -9,12 +9,7 @@ from ..db import get_conn, pool
 
 
 def _hydrate_profile_projection(row: dict[str, Any]) -> dict[str, Any]:
-    hydrated = dict(row)
-    avatar_media_id = hydrated.get("avatar_media_id")
-    hydrated["photo_url"] = (
-        f"/profiles/avatar/{avatar_media_id}" if avatar_media_id is not None else None
-    )
-    return hydrated
+    return dict(row)
 
 
 async def get_profile(user_id: str | UUID) -> dict[str, Any] | None:
@@ -44,7 +39,6 @@ async def update_profile(
     *,
     display_name: str | None = None,
     bio: str | None = None,
-    avatar_media_id: str | None = None,
 ) -> dict[str, Any] | None:
     assignments: list[str] = []
     params: list[object] = []
@@ -57,8 +51,6 @@ async def update_profile(
         _append("display_name", display_name.strip() or None)
     if bio is not None:
         _append("bio", bio.strip() or None)
-    if avatar_media_id is not None:
-        _append("avatar_media_id", avatar_media_id)
 
     if not assignments:
         return await get_profile(user_id)
@@ -79,21 +71,3 @@ async def update_profile(
             await cur.fetchone()
             await conn.commit()
             return await get_profile(user_id)
-
-
-async def clear_profile_avatar(user_id: str | UUID) -> dict[str, Any] | None:
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.profiles
-                   SET avatar_media_id = NULL,
-                       updated_at = now()
-                 WHERE user_id = %s
-                 RETURNING user_id
-                """,
-                (str(user_id),),
-            )
-            await cur.fetchone()
-            await conn.commit()
-    return await get_profile(user_id)

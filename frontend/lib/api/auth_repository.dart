@@ -2,8 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/api_client.dart';
+import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
@@ -46,7 +46,6 @@ class AuthRepository {
     required String email,
     required String password,
     required String displayName,
-    String? referralCode,
     String? inviteToken,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
@@ -70,22 +69,11 @@ class AuthRepository {
       refreshToken: refreshToken,
     );
     try {
-      final normalizedReferralCode = referralCode?.trim();
-      if (normalizedReferralCode != null && normalizedReferralCode.isNotEmpty) {
-        await redeemReferral(normalizedReferralCode);
-      }
       return await getCurrentProfile();
     } catch (_) {
       await _tokens.clear();
       rethrow;
     }
-  }
-
-  Future<void> redeemReferral(String code) async {
-    await _client.post<Map<String, dynamic>>(
-      ApiPaths.referralsRedeem,
-      body: {'code': code.trim()},
-    );
   }
 
   Future<void> requestPasswordReset(String email) async {
@@ -188,11 +176,35 @@ class AuthRepository {
     return Profile.fromJson(data);
   }
 
-  Future<void> completeWelcome() async {
-    throw UnexpectedFailure(
-      message:
-          'Välkomststeget stöds inte längre via den borttagna legacy-/api/me-ytan.',
+  Future<Profile> completeWelcome() async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiPaths.authOnboardingComplete,
     );
+    if (data['token_refresh_required'] == true) {
+      final refreshToken = await _tokens.readRefreshToken();
+      if (refreshToken == null || refreshToken.isEmpty) {
+        throw UnauthorizedFailure(
+          message: 'Sessionen kunde inte uppdateras. Logga in igen.',
+        );
+      }
+      final refreshed = await _client.post<Map<String, dynamic>>(
+        ApiPaths.authRefresh,
+        body: {'refresh_token': refreshToken},
+        skipAuth: true,
+      );
+      final accessToken = refreshed['access_token'] as String?;
+      final nextRefreshToken = refreshed['refresh_token'] as String?;
+      if (accessToken == null || nextRefreshToken == null) {
+        throw UnexpectedFailure(
+          message: 'Sessionen kunde inte uppdateras efter onboarding.',
+        );
+      }
+      await _tokens.saveTokens(
+        accessToken: accessToken,
+        refreshToken: nextRefreshToken,
+      );
+    }
+    return getCurrentProfile();
   }
 
   Future<void> logout() => _tokens.clear();

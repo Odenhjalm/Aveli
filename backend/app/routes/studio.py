@@ -462,13 +462,16 @@ async def studio_add_certificate(
     payload: schemas.StudioCertificateCreate,
     current: TeacherUser,
 ):
-    row = await models.add_certificate(
-        current["id"],
-        title=payload.title,
-        status=payload.status,
-        notes=payload.notes,
-        evidence_url=payload.evidence_url,
-    )
+    try:
+        row = await models.add_certificate(
+            current["id"],
+            title=payload.title,
+            status=payload.status,
+            notes=payload.notes,
+            evidence_url=payload.evidence_url,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return row
 
 

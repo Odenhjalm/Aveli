@@ -11,7 +11,7 @@ class ApiPaths {
   static const authSendVerification = '/auth/send-verification';
   static const authValidateInvite = '/auth/validate-invite';
   static const authVerifyEmail = '/auth/verify-email';
-  static const referralsRedeem = '/referrals/redeem';
+  static const authOnboardingComplete = '/auth/onboarding/complete';
 
   static const billingCustomerPortal = '/api/billing/customer-portal';
   static const billingSessionStatus = '/api/billing/session-status';

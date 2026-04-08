@@ -14,7 +14,6 @@ from .db import get_conn, pool
 from .auth import hash_password
 from .repositories import (
     auth_subjects as auth_subjects_repo,
-    clear_profile_avatar as repo_clear_profile_avatar,
     create_order as repo_create_order,
     create_user as repo_create_user,
     get_profile as repo_get_profile,
@@ -47,8 +46,6 @@ def _effective_role_sql(alias: str) -> str:
         CASE
             WHEN lower(COALESCE({alias}.role_v2, '')) IN ('learner', 'teacher')
                 THEN lower({alias}.role_v2)
-            WHEN lower(COALESCE({alias}.role, '')) IN ('learner', 'teacher')
-                THEN lower({alias}.role)
             ELSE NULL
         END
     """
@@ -68,9 +65,6 @@ def _effective_subject_role(auth_subject: dict[str, Any] | None) -> str | None:
     role_v2 = str(auth_subject.get("role_v2") or "").strip().lower()
     if role_v2 in {"learner", "teacher"}:
         return role_v2
-    role = str(auth_subject.get("role") or "").strip().lower()
-    if role in {"learner", "teacher"}:
-        return role
     return None
 
 
@@ -402,8 +396,9 @@ async def teacher_courses(user_id: str) -> Iterable[dict]:
 async def user_certificates(
     user_id: str, verified_only: bool = False
 ) -> Iterable[dict]:
-    clauses = ["user_id = %s"]
+    clauses = ["user_id = %s", "lower(title) <> lower(%s)"]
     params = [user_id]
+    params.append("Läraransökan")
     if verified_only:
         clauses.append("status = 'verified'")
     query = """
@@ -417,21 +412,6 @@ async def user_certificates(
         return await cur.fetchall()
 
 
-async def teacher_application_certificate(user_id: str) -> dict | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT id, user_id, title, status, notes, evidence_url, created_at, updated_at
-            FROM app.certificates
-            WHERE user_id = %s AND lower(title) = lower(%s)
-            ORDER BY updated_at DESC
-            LIMIT 1
-            """,
-            (user_id, "Läraransökan"),
-        )
-        return await _fetchone(cur)
-
-
 async def add_certificate(
     user_id: str,
     *,
@@ -440,6 +420,8 @@ async def add_certificate(
     notes: str | None = None,
     evidence_url: str | None = None,
 ) -> dict:
+    if str(title or "").strip().lower() == "läraransökan":
+        raise ValueError("Teacher application certificates are forbidden")
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -463,12 +445,10 @@ async def teacher_status(user_id: str) -> dict:
     auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
     role = "teacher" if _effective_subject_role(auth_subject) == "teacher" else "learner"
     verified = await user_certificates(user_id, True)
-    application = await teacher_application_certificate(user_id)
     return {
         "role": role,
         "is_admin": bool(auth_subject.get("is_admin")) if auth_subject else False,
         "verified_certificates": len(verified),
-        "has_application": application is not None,
     }
 
 
@@ -1290,18 +1270,12 @@ async def update_profile(
     *,
     display_name: str | None = None,
     bio: str | None = None,
-    avatar_media_id: str | None = None,
 ) -> dict | None:
     return await repo_update_profile(
         user_id,
         display_name=display_name,
         bio=bio,
-        avatar_media_id=avatar_media_id,
     )
-
-
-async def clear_profile_avatar(user_id: str) -> dict | None:
-    return await repo_clear_profile_avatar(user_id)
 
 
 async def is_enrolled(user_id: str, course_id: str) -> bool:
@@ -2441,137 +2415,57 @@ async def is_admin_user(user_id: str) -> bool:
     return bool(auth_subject.get("is_admin")) if auth_subject else False
 
 
-async def list_teacher_applications() -> list[dict]:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT c.id,
-                   c.user_id,
-                   c.title,
-                   c.status,
-                   c.notes,
-                   c.evidence_url,
-                   c.created_at,
-                   c.updated_at,
-                   prof.display_name,
-                   u.email AS email,
-                   subj.role_v2,
-                   ta.approved_by,
-                   ta.approved_at
-            FROM app.certificates c
-            LEFT JOIN app.profiles prof ON prof.user_id = c.user_id
-            LEFT JOIN auth.users u ON u.id = c.user_id
-            LEFT JOIN app.auth_subjects subj ON subj.user_id = c.user_id
-            LEFT JOIN app.teacher_approvals ta ON ta.user_id = c.user_id
-            WHERE lower(c.title) = lower(%s)
-            ORDER BY c.created_at DESC
-            """,
-            ("Läraransökan",),
-        )
-        rows = await cur.fetchall()
+async def _set_teacher_role(
+    *,
+    target_user_id: str,
+    actor_user_id: str,
+    role_v2: str,
+    event_type: str,
+) -> dict[str, Any]:
+    if actor_user_id == target_user_id:
+        raise PermissionError("Teacher role self-mutation is forbidden")
 
-    items: list[dict] = []
-    for row in rows:
-        item = dict(row)
-        approval = None
-        if row.get("approved_at") is not None or row.get("approved_by") is not None:
-            approval = {
-                "approved_by": row.get("approved_by"),
-                "approved_at": row.get("approved_at"),
-            }
-        if approval:
-            item["approval"] = approval
-        items.append(item)
-    return items
+    target_user = await repo_get_user_by_id(target_user_id)
+    if not target_user:
+        raise LookupError("Canonical identity missing")
+
+    updated_subject = await auth_subjects_repo.set_role_authority(
+        target_user_id,
+        role_v2=role_v2,
+        role=role_v2,
+    )
+    if not updated_subject:
+        raise LookupError("Canonical auth subject missing")
+
+    await repo_revoke_refresh_tokens_for_user(target_user_id)
+    await repo_insert_auth_event(
+        actor_user_id=actor_user_id,
+        subject_user_id=target_user_id,
+        event_type=event_type,
+        metadata={"role_v2": role_v2},
+    )
+    return updated_subject
 
 
-async def list_recent_certificates(limit: int = 200) -> list[dict]:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT id, user_id, title, status, notes, evidence_url,
-                   created_at, updated_at
-            FROM app.certificates
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
-        rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+async def grant_teacher_role(target_user_id: str, actor_user_id: str) -> dict[str, Any]:
+    return await _set_teacher_role(
+        target_user_id=target_user_id,
+        actor_user_id=actor_user_id,
+        role_v2="teacher",
+        event_type="teacher_role_granted",
+    )
 
 
-async def set_certificate_status(cert_id: str, status: str) -> dict | None:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.certificates
-                SET status = %s, updated_at = now()
-                WHERE id = %s
-                RETURNING id, user_id, title, status, notes, evidence_url, created_at, updated_at
-                """,
-                (status, cert_id),
-            )
-            row = await _fetchone(cur)
-            await conn.commit()
-    return dict(row) if row else None
-
-
-async def approve_teacher_user(user_id: str, reviewer_id: str) -> None:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
-                       role = 'teacher'
-                 WHERE user_id = %s
-                 RETURNING user_id
-                """,
-                (user_id,),
-            )
-            updated_subject = await _fetchone(cur)
-            if not updated_subject:
-                await conn.rollback()
-                raise ValueError("Canonical auth subject missing")
-            await cur.execute(
-                """
-                INSERT INTO app.teacher_approvals (user_id, approved_by, approved_at)
-                VALUES (%s, %s, now())
-                ON CONFLICT (user_id)
-                DO UPDATE SET approved_by = EXCLUDED.approved_by, approved_at = EXCLUDED.approved_at
-                """,
-                (user_id, reviewer_id),
-            )
-            await cur.execute(
-                """
-                UPDATE app.certificates
-                SET status = 'verified', updated_at = now()
-                WHERE user_id = %s AND lower(title) = lower(%s)
-                """,
-                (user_id, "Läraransökan"),
-            )
-            await conn.commit()
-
-
-async def reject_teacher_user(user_id: str, reviewer_id: str) -> None:
-    del reviewer_id
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.certificates
-                SET status = 'rejected', updated_at = now()
-                WHERE user_id = %s AND lower(title) = lower(%s)
-                """,
-                (user_id, "Läraransökan"),
-            )
-            await cur.execute(
-                "DELETE FROM app.teacher_approvals WHERE user_id = %s",
-                (user_id,),
-            )
-            await conn.commit()
+async def revoke_teacher_role(
+    target_user_id: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    return await _set_teacher_role(
+        target_user_id=target_user_id,
+        actor_user_id=actor_user_id,
+        role_v2="learner",
+        event_type="teacher_role_revoked",
+    )
 
 
 async def follow_user(follower_id: str, followee_id: str) -> None:

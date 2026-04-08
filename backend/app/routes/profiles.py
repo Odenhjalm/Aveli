@@ -1,38 +1,24 @@
-import hashlib
-from pathlib import Path
-from uuid import uuid4
-
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, status
 
 from ..auth import CurrentUser
 from .. import models, schemas
-from ..config import settings
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
-
-_AVATAR_ALLOWED_PREFIXES = ("image/",)
-_AVATAR_MAX_BYTES = 5 * 1024 * 1024  # 5 MB avatars
-_AVATAR_BUCKET = "profile-avatars"
-_AVATAR_ROOT = Path("avatars")
 
 
 @router.get("/me", response_model=schemas.Profile)
 async def get_me(current_user: CurrentUser):
     profile = await models.get_profile(current_user["id"])
     if not profile:
-        raise RuntimeError("Profil saknas for aktuell anvandare")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="profile_not_found",
+        )
     return schemas.Profile(**profile)
 
 
 @router.patch("/me", response_model=schemas.Profile)
 async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
-    if payload.photo_url is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Profilbild uppdateras via profilbildsuppladdning.",
-        )
-
     if not any(
         [
             payload.display_name is not None,
@@ -43,7 +29,7 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
         if not profile:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Profil saknas",
+                detail="profile_not_found",
             )
         return schemas.Profile(**profile)
 
@@ -55,137 +41,9 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profil saknas",
+            detail="profile_not_found",
         )
     return schemas.Profile(**updated)
-
-
-@router.post("/me/avatar", response_model=schemas.Profile)
-async def upload_avatar(current_user: CurrentUser, file: UploadFile = File(...)):
-    profile = await models.get_profile(current_user["id"])
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profil saknas",
-        )
-
-    content_type = (file.content_type or "").lower()
-    if not any(content_type.startswith(prefix) for prefix in _AVATAR_ALLOWED_PREFIXES):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Filtypen stods inte",
-        )
-
-    blob = await file.read()
-    if not blob:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Filen ar tom",
-        )
-    if len(blob) > _AVATAR_MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Filen ar for stor",
-        )
-
-    avatar_dir = Path(settings.media_root) / _AVATAR_ROOT / str(profile["user_id"])
-    avatar_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = f"{uuid4().hex}_{file.filename or 'avatar'}"
-    relative_path = str(_AVATAR_ROOT / str(profile["user_id"]) / safe_name)
-    dest_path = avatar_dir / safe_name
-    dest_path.write_bytes(blob)
-
-    checksum = hashlib.sha256(blob).hexdigest()
-    media_object = await models.create_media_object(
-        owner_id=profile["user_id"],
-        storage_path=relative_path,
-        storage_bucket=_AVATAR_BUCKET,
-        content_type=content_type,
-        byte_size=len(blob),
-        checksum=checksum,
-        original_name=file.filename,
-    )
-    if not media_object or not media_object.get("id"):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Det gick inte att spara avataren",
-        )
-
-    media_id = media_object["id"]
-    updated = await models.update_profile(
-        profile["user_id"],
-        avatar_media_id=media_id,
-    )
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Det gick inte att uppdatera profilen",
-        )
-
-    previous_media_id = profile.get("avatar_media_id")
-    if previous_media_id and previous_media_id != media_id:
-        await models.cleanup_media_object(previous_media_id)
-
-    return schemas.Profile(**updated)
-
-
-@router.delete("/me/avatar", response_model=schemas.Profile)
-async def delete_avatar(current_user: CurrentUser):
-    profile = await models.get_profile(current_user["id"])
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profil saknas",
-        )
-
-    previous_media_id = profile.get("avatar_media_id")
-    if previous_media_id is None:
-        return schemas.Profile(**profile)
-
-    updated = await models.clear_profile_avatar(profile["user_id"])
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Det gick inte att ta bort profilbilden",
-        )
-
-    await models.cleanup_media_object(previous_media_id)
-    return schemas.Profile(**updated)
-
-
-@router.get("/avatar/{media_id}")
-async def avatar_file(media_id: str):
-    media = await models.get_media_object(media_id)
-    if not media:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Avatar saknas",
-        )
-
-    storage_path = media.get("storage_path")
-    if not storage_path:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Avatar saknas",
-        )
-
-    base_dir = Path(settings.media_root)
-    candidates = []
-    bucket = media.get("storage_bucket")
-    if bucket:
-        candidates.append(base_dir / bucket / storage_path)
-    candidates.append(base_dir / storage_path)
-
-    for path in candidates:
-        if path.exists():
-            return FileResponse(
-                path, media_type=media.get("content_type") or "image/jpeg"
-            )
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Avatarfil saknas",
-    )
 
 
 @router.get("/{user_id}/certificates")

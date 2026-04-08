@@ -1,9 +1,6 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:file_picker/file_picker.dart';
 
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
@@ -215,7 +212,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 columnGap,
                 const _OrdersSection(),
                 columnGap,
-                const _ChangePasswordSection(),
+                const _PasswordResetSection(),
                 const ProfileLogoutSection(),
               ],
             ),
@@ -357,7 +354,7 @@ class _IdentitySection extends StatelessWidget {
   }
 }
 
-class _ProfileAvatar extends ConsumerStatefulWidget {
+class _ProfileAvatar extends ConsumerWidget {
   const _ProfileAvatar({
     required this.profile,
     required this.initials,
@@ -369,233 +366,57 @@ class _ProfileAvatar extends ConsumerStatefulWidget {
   final String displayName;
 
   @override
-  ConsumerState<_ProfileAvatar> createState() => _ProfileAvatarState();
-}
-
-class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
-  static const int _maxAvatarBytes = 5 * 1024 * 1024;
-
-  bool _uploading = false;
-  String? _photoPath;
-  Uint8List? _previewBytes;
-
-  @override
-  void initState() {
-    super.initState();
-    _photoPath = widget.profile.photoUrl;
-  }
-
-  @override
-  void didUpdateWidget(covariant _ProfileAvatar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.profile.photoUrl != widget.profile.photoUrl) {
-      setState(() {
-        _photoPath = widget.profile.photoUrl;
-        _previewBytes = null;
-      });
-    }
-  }
-
-  String? _resolvedPhotoUrl() {
-    final path = _photoPath;
-    if (path == null || path.isEmpty) return null;
-    final config = ref.read(appConfigProvider);
-    return Uri.parse(config.apiBaseUrl).resolve(path).toString();
-  }
-
-  Future<void> _pickAndUpload() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.first;
-      final Uint8List? data = file.bytes;
-      if (data == null) {
-        if (mounted) {
-          showSnack(context, 'Kunde inte läsa den valda bilden.');
-        }
-        return;
-      }
-      if (data.length > _maxAvatarBytes) {
-        if (mounted) {
-          showSnack(context, 'Bildfilen är större än 5 MB.');
-        }
-        return;
-      }
-
-      final rawName = file.name;
-      final filename = rawName.trim().isEmpty ? 'avatar.png' : rawName;
-      final contentType = _detectContentType(filename);
-
-      setState(() {
-        _uploading = true;
-        _previewBytes = data;
-      });
-
-      final repo = ref.read(profileRepositoryProvider);
-      final updated = await repo.uploadAvatar(
-        bytes: data,
-        filename: filename,
-        contentType: contentType,
-      );
-      await ref.read(authControllerProvider.notifier).loadSession();
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _photoPath = updated.photoUrl;
-        _previewBytes = null;
-      });
-      showSnack(context, 'Profilbild uppdaterad.');
-    } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _previewBytes = null;
-      });
-      showSnack(context, 'Kunde inte ladda upp bild: ${failure.message}');
-    }
-  }
-
-  Future<void> _removeAvatar() async {
-    if (_photoPath == null || _photoPath!.isEmpty) return;
-      setState(() => _uploading = true);
-      try {
-        final repo = ref.read(profileRepositoryProvider);
-        final updated = await repo.clearAvatar();
-        await ref.read(authControllerProvider.notifier).loadSession();
-        if (!mounted) return;
-        setState(() {
-        _uploading = false;
-        _photoPath = updated.photoUrl;
-        _previewBytes = null;
-      });
-      showSnack(context, 'Profilbild borttagen.');
-    } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
-      if (!mounted) return;
-      setState(() => _uploading = false);
-      showSnack(context, 'Kunde inte ta bort bild: ${failure.message}');
-    }
-  }
-
-  String _detectContentType(String filename) {
-    final lower = filename.toLowerCase();
-    if (lower.endsWith('.png')) return 'image/png';
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-    if (lower.endsWith('.gif')) return 'image/gif';
-    if (lower.endsWith('.webp')) return 'image/webp';
-    return 'image/png';
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final resolvedUrl = _resolvedPhotoUrl();
-    ImageProvider? image;
-    if (_previewBytes != null) {
-      image = MemoryImage(_previewBytes!);
-    } else if (resolvedUrl != null) {
-      image = NetworkImage(resolvedUrl);
-    }
-
-    final initials = widget.initials.isEmpty
-        ? widget.displayName.characters.first.toUpperCase()
-        : widget.initials;
+    final photoPath = profile.photoUrl?.trim();
+    final resolvedUrl = photoPath == null || photoPath.isEmpty
+        ? null
+        : Uri.parse(
+            ref.read(appConfigProvider).apiBaseUrl,
+          ).resolve(photoPath).toString();
+    final avatarLabel = initials.isEmpty
+        ? displayName.characters.first.toUpperCase()
+        : initials;
 
     return Tooltip(
-      message: _uploading
-          ? 'Laddar upp…'
-          : 'Tryck för att uppdatera profilbild',
-      child: InkWell(
-        onTap: _uploading ? null : _pickAndUpload,
-        borderRadius: BorderRadius.circular(48),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            CircleAvatar(
-              radius: 32,
-              backgroundColor: Colors.white.withValues(alpha: 0.2),
-              backgroundImage: image,
-              child: image == null
-                  ? Text(
-                      initials,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    )
-                  : null,
-            ),
-            if (!_uploading && _photoPath != null && _photoPath!.isNotEmpty)
-              Positioned(
-                top: -2,
-                left: -2,
-                child: Tooltip(
-                  message: 'Ta bort profilbild',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _removeAvatar,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          size: 14,
-                          color: Colors.white,
-                        ),
-                      ),
+      message: resolvedUrl == null
+          ? 'Profilbild saknas'
+          : 'Profilbild visas som skrivskyddad projektion',
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          resolvedUrl == null
+              ? CircleAvatar(
+                  radius: 32,
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                  child: Text(
+                    avatarLabel,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ),
+                )
+              : AppAvatar(url: resolvedUrl, size: 64),
+          Positioned(
+            bottom: -2,
+            right: -2,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24),
               ),
-            Positioned(
-              bottom: -2,
-              right: -2,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.all(2),
-                  child: Icon(
-                    Icons.camera_alt_rounded,
-                    size: 16,
-                    color: Colors.white,
-                  ),
+              child: const Padding(
+                padding: EdgeInsets.all(2),
+                child: Icon(
+                  Icons.visibility_outlined,
+                  size: 16,
+                  color: Colors.white,
                 ),
               ),
             ),
-            if (_uploading)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black45,
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                  child: const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -852,6 +673,33 @@ class _OrdersSection extends StatelessWidget {
             onPressed: () => context.goNamed(AppRoute.orders),
             icon: const Icon(Icons.receipt_long_rounded),
             label: const Text('Visa mina köp'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PasswordResetSection extends StatelessWidget {
+  const _PasswordResetSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _GlassSection(
+      title: 'Byt lÃ¶senord',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Byt losenord via glomt-losenord-flodet. Det ar den kanoniska authytan som fortfarande stods i frontend.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 12),
+          GradientButton.icon(
+            onPressed: () => context.goNamed(AppRoute.forgotPassword),
+            icon: const Icon(Icons.lock_reset_rounded),
+            label: const Text('Ga till glomt losenord'),
           ),
         ],
       ),

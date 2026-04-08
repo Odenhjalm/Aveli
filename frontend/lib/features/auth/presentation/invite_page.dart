@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -49,7 +50,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
                       : _InviteFailure(
                           errorMessage:
                               _errorMessage ??
-                              'Inbjudningslänken är ogiltig eller har gått ut.',
+                              'Inbjudningslanken ar ogiltig eller har gatt ut.',
                         ),
                 ),
               ),
@@ -66,15 +67,13 @@ class _InvitePageState extends ConsumerState<InvitePage> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Inbjudningslänken saknar giltig kod.';
+        _errorMessage = 'Inbjudningslanken saknar giltig kod.';
       });
       return;
     }
 
     try {
-      final email = await ref
-          .read(authRepositoryProvider)
-          .validateInvite(token);
+      final email = await ref.read(authRepositoryProvider).validateInvite(token);
       if (!mounted || !context.mounted) return;
       context.goNamed(
         AppRoute.signup,
@@ -82,35 +81,18 @@ class _InvitePageState extends ConsumerState<InvitePage> {
       );
     } on DioException catch (error) {
       if (!mounted) return;
+      final failure = AppFailure.from(error);
       setState(() {
         _isLoading = false;
-        _errorMessage = _errorMessageFor(error);
+        _errorMessage = failure.message;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Inbjudningslänken är ogiltig eller har gått ut.';
+        _errorMessage = 'Inbjudningslanken ar ogiltig eller har gatt ut.';
       });
     }
-  }
-
-  String _errorMessageFor(DioException error) {
-    final data = error.response?.data;
-    if (data is Map<String, dynamic>) {
-      final detail = data['detail'];
-      if (detail is String && detail.trim().isNotEmpty) {
-        return detail;
-      }
-      final message = data['error'];
-      if (message is String && message.trim().isNotEmpty) {
-        if (message == 'invalid_or_expired_token') {
-          return 'Inbjudningslänken är ogiltig eller har gått ut.';
-        }
-        return message;
-      }
-    }
-    return 'Inbjudningslänken är ogiltig eller har gått ut.';
   }
 }
 
@@ -143,7 +125,7 @@ class _InviteFailure extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Inbjudan kunde inte användas',
+          'Inbjudan kunde inte anvandas',
           textAlign: TextAlign.center,
           style: Theme.of(
             context,
@@ -154,7 +136,7 @@ class _InviteFailure extends StatelessWidget {
         const SizedBox(height: 24),
         GradientButton(
           onPressed: () => context.goNamed(AppRoute.signup),
-          child: const Text('Gå till registrering'),
+          child: const Text('Ga till registrering'),
         ),
       ],
     );

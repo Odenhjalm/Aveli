@@ -14,7 +14,6 @@ import 'package:aveli/core/routing/route_manifest.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/core/routing/route_extras.dart';
-import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/auth/presentation/forgot_password_page.dart';
 import 'package:aveli/features/auth/presentation/invite_page.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
@@ -103,11 +102,7 @@ class AppRouterNotifier extends ChangeNotifier {
         return null;
       }
       if (isAuthed) {
-        final onboardingTarget = _resolveOnboardingTarget(session);
-        if (onboardingTarget != null) {
-          return onboardingTarget;
-        }
-        return redirectTarget ?? _resolveDefaultAuthedTarget(session);
+        return redirectTarget ?? _resolveDefaultAuthedTarget();
       }
 
       if (redirectTarget != null &&
@@ -127,7 +122,7 @@ class AppRouterNotifier extends ChangeNotifier {
         return null;
       }
 
-      // We may have a token/claims, but until the profile is hydrated we treat
+      // We may have a stored token, but until the profile is hydrated we treat
       // auth as unverified. Route to a stable boot surface and verify there.
       if (isAuthLoading || hasTentativeSession) {
         try {
@@ -153,23 +148,7 @@ class AppRouterNotifier extends ChangeNotifier {
     }
 
     if (meta.redirectAuthed) {
-      return _resolveOnboardingTarget(session) ??
-          _resolveDefaultAuthedTarget(session);
-    }
-
-    final onboardingRedirect = _handleOnboardingRedirect(state, session);
-    if (onboardingRedirect != null) {
-      return onboardingRedirect;
-    }
-
-    if (meta.level == RouteAccessLevel.admin && !session.isAdmin) {
-      return state.namedLocation(AppRoute.home);
-    }
-
-    if (meta.level == RouteAccessLevel.teacher &&
-        !session.isTeacher &&
-        !session.isAdmin) {
-      return state.namedLocation(AppRoute.home);
+      return _resolveDefaultAuthedTarget();
     }
 
     return null;
@@ -180,36 +159,6 @@ class AppRouterNotifier extends ChangeNotifier {
     _sessionSub.close();
     super.dispose();
   }
-}
-
-String? _handleOnboardingRedirect(
-  GoRouterState state,
-  RouteSessionSnapshot session,
-) {
-  final onboardingState = session.onboardingState;
-  if (onboardingState == null) {
-    return null;
-  }
-
-  if (_isCheckoutResultRoute(state)) {
-    return null;
-  }
-
-  if (onboardingState == OnboardingStateValue.completed &&
-      _isOnboardingOnlyRoute(state.uri.path)) {
-    return _resolveDefaultAuthedTarget(session);
-  }
-
-  final onboardingTarget = _resolveOnboardingTarget(session);
-  if (onboardingTarget == null) {
-    return null;
-  }
-
-  if (_isAllowedOnboardingRoute(state.uri.path, onboardingState)) {
-    return null;
-  }
-
-  return onboardingTarget;
 }
 
 const RouteAccessMeta _defaultPrivateMeta = RouteAccessMeta(
@@ -231,41 +180,8 @@ String? _sanitizeRedirect(String? raw) {
   return raw.startsWith('/') ? raw : null;
 }
 
-String? _resolveOnboardingTarget(RouteSessionSnapshot session) {
-  switch (session.onboardingState) {
-    case OnboardingStateValue.incomplete:
-      return RoutePath.createProfile;
-    default:
-      return null;
-  }
-}
-
-String _resolveDefaultAuthedTarget(RouteSessionSnapshot session) {
-  if (session.isAdmin) {
-    return RoutePath.home;
-  }
-  if (session.isTeacher) {
-    return RoutePath.teacherHome;
-  }
+String _resolveDefaultAuthedTarget() {
   return RoutePath.home;
-}
-
-bool _isAllowedOnboardingRoute(String path, String onboardingState) {
-  switch (onboardingState) {
-    case OnboardingStateValue.incomplete:
-      return path == RoutePath.createProfile;
-    default:
-      return true;
-  }
-}
-
-bool _isOnboardingOnlyRoute(String path) {
-  return path == RoutePath.createProfile;
-}
-
-bool _isCheckoutResultRoute(GoRouterState state) {
-  return state.uri.path == RoutePath.checkoutSuccess ||
-      state.uri.path == RoutePath.checkoutCancel;
 }
 
 final Map<String, RouteAccessMeta> _routeAccessMeta = {
@@ -319,7 +235,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => SignupPage(
           initialEmail: state.uri.queryParameters['email'],
           inviteToken: state.uri.queryParameters['invite_token'],
-          referralCode: state.uri.queryParameters['referral_code'],
         ),
       ),
       GoRoute(

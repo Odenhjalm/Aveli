@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 
-/// High-level error classification used across repositories and providers.
 enum AppFailureKind {
   network,
   unauthorized,
@@ -35,7 +34,7 @@ sealed class AppFailure implements Exception {
     if (error is TimeoutException) {
       return TimeoutFailure(
         message:
-            'Tidsgränsen överskreds. Kontrollera din uppkoppling och försök igen.',
+            'Tidsgransen overskreds. Kontrollera din uppkoppling och forsok igen.',
         original: error,
         stackTrace: stackTrace,
       );
@@ -43,7 +42,7 @@ sealed class AppFailure implements Exception {
 
     if (_looksLikeConfigError(error)) {
       return ConfigurationFailure(
-        message: 'API är inte korrekt konfigurerat.',
+        message: 'API ar inte korrekt konfigurerat.',
         original: error,
         stackTrace: stackTrace,
       );
@@ -55,7 +54,7 @@ sealed class AppFailure implements Exception {
 
     if (_looksLikeNetworkIssue(error)) {
       return NetworkFailure(
-        message: 'Kunde inte nå servern. Försök igen.',
+        message: 'Kunde inte na servern. Forsok igen.',
         original: error,
         stackTrace: stackTrace,
       );
@@ -71,15 +70,16 @@ sealed class AppFailure implements Exception {
   static AppFailure _fromDio(DioException error, StackTrace? stackTrace) {
     final status = error.response?.statusCode ?? 0;
     final payload = error.response?.data;
-    final detail = _extractDetail(payload);
+    final canonical = _extractCanonicalError(payload);
+    final fallbackDetail = _extractFallbackDetail(payload);
     final path = error.requestOptions.path;
     final isMediaUploadUrl =
         path == '/api/media/upload-url' ||
         path == '/api/media/upload-url/refresh';
     if (isMediaUploadUrl &&
         (status == 405 ||
-            (detail != null &&
-                detail.toLowerCase().contains('method not allowed')))) {
+            (fallbackDetail != null &&
+                fallbackDetail.toLowerCase().contains('method not allowed')))) {
       return ValidationFailure(
         message: 'Felaktigt uppladdningsanrop (utvecklingsfel).',
         original: error,
@@ -88,51 +88,48 @@ sealed class AppFailure implements Exception {
     }
     if (status == 0) {
       return NetworkFailure(
-        message: 'Kunde inte nå servern. Försök igen.',
+        message: 'Kunde inte na servern. Forsok igen.',
         original: error,
         stackTrace: stackTrace,
       );
     }
+
+    final message =
+        canonical?.message ??
+        (fallbackDetail != null ? _localizeDetail(fallbackDetail) : null);
+    final code = canonical?.errorCode;
+
     if (status == 401 || status == 403) {
-      final message = detail != null
-          ? _localizeDetail(detail)
-          : 'Behörighet saknas. Logga in igen.';
       return UnauthorizedFailure(
-        message: message,
+        message: message ?? 'Behorighet saknas. Logga in igen.',
+        code: code,
         original: error,
         stackTrace: stackTrace,
       );
     }
     if (status == 404) {
       return NotFoundFailure(
-        message: detail != null
-            ? _localizeDetail(detail)
-            : 'Resursen kunde inte hittas.',
-        original: error,
-        stackTrace: stackTrace,
-      );
-    }
-    if (status == 402) {
-      return ValidationFailure(
-        message: detail != null
-            ? _localizeDetail(detail)
-            : 'Betalningen kunde inte genomföras. Kontrollera dina betalningsuppgifter och försök igen.',
+        message: message ?? 'Resursen kunde inte hittas.',
+        code: code,
         original: error,
         stackTrace: stackTrace,
       );
     }
     if (status >= 400 && status < 500) {
       return ValidationFailure(
-        message: detail != null
-            ? _localizeDetail(detail)
-            : 'Förfrågan kunde inte behandlas. Kontrollera uppgifterna och försök igen.',
+        message:
+            message ??
+            'Forfragan kunde inte behandlas. Kontrollera uppgifterna och forsok igen.',
+        code: code,
         original: error,
         stackTrace: stackTrace,
       );
     }
     return ServerFailure(
       message:
-          'Serverfel ($status). Försök igen senare eller kontakta supporten om problemet kvarstår.',
+          message ??
+          'Serverfel ($status). Forsok igen senare eller kontakta supporten om problemet kvarstar.',
+      code: code,
       original: error,
       stackTrace: stackTrace,
     );
@@ -164,7 +161,35 @@ sealed class AppFailure implements Exception {
       'AppFailure(kind: $kind, message: $message, code: $code)';
 }
 
-String? _extractDetail(dynamic data) {
+class _CanonicalErrorEnvelope {
+  const _CanonicalErrorEnvelope({
+    required this.errorCode,
+    required this.message,
+  });
+
+  final String errorCode;
+  final String message;
+}
+
+_CanonicalErrorEnvelope? _extractCanonicalError(dynamic data) {
+  if (data is! Map) return null;
+  final status = data['status'];
+  final errorCode = data['error_code'];
+  final message = data['message'];
+  if (status == 'error' &&
+      errorCode is String &&
+      errorCode.trim().isNotEmpty &&
+      message is String &&
+      message.trim().isNotEmpty) {
+    return _CanonicalErrorEnvelope(
+      errorCode: errorCode.trim(),
+      message: message.trim(),
+    );
+  }
+  return null;
+}
+
+String? _extractFallbackDetail(dynamic data) {
   if (data == null) return null;
   if (data is String && data.trim().isNotEmpty) {
     return data.trim();
@@ -183,25 +208,30 @@ String? _extractDetail(dynamic data) {
 String _localizeDetail(String detail) {
   switch (detail.toLowerCase()) {
     case 'invalid credentials':
-      return 'Fel e-postadress eller lösenord.';
+    case 'invalid_credentials':
+      return 'Fel e-postadress eller losenord.';
     case 'email already registered':
-      return 'E-postadressen är redan registrerad.';
+    case 'email_already_registered':
+      return 'E-postadressen ar redan registrerad.';
     case 'user not found':
+    case 'user_not_found':
       return 'Kontot kunde inte hittas.';
     case 'invalid_or_expired_token':
-      return 'Länken är ogiltig eller har gått ut.';
+      return 'Lanken ar ogiltig eller har gatt ut.';
     case 'invalid_current_password':
-      return 'Nuvarande lÃ¶senord Ã¤r fel.';
+      return 'Nuvarande losenord ar fel.';
     case 'new_password_must_differ':
-      return 'Det nya lÃ¶senordet mÃ¥ste skilja sig frÃ¥n det nuvarande.';
+      return 'Det nya losenordet maste skilja sig fran det nuvarande.';
     case 'rate_limited':
-      return 'För många försök. Vänta en stund och försök igen.';
+      return 'For manga forsok. Vanta en stund och forsok igen.';
     case 'unauthorized':
-      return 'Behörighet saknas. Logga in igen.';
+    case 'unauthenticated':
+      return 'Behorighet saknas. Logga in igen.';
     case 'forbidden':
     case 'forbidden_action':
     case 'not_allowed':
-      return 'Du har inte behörighet att utföra den här åtgärden.';
+    case 'admin_required':
+      return 'Du har inte behorighet att utfora den har atgarden.';
     case 'payment required':
     case 'payment_failed':
     case 'payment_failed_error':
@@ -209,7 +239,7 @@ String _localizeDetail(String detail) {
     case 'card_declined':
       return 'Kortet nekades av banken. Prova ett annat kort eller kontakta banken.';
     case 'insufficient_funds':
-      return 'Kortet har otillräckligt saldo för att genomföra köpet.';
+      return 'Kortet har otillrackligt saldo for att genomfora kopet.';
     default:
       return detail;
   }

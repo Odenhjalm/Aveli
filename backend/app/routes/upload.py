@@ -16,7 +16,6 @@ from fastapi.responses import FileResponse
 from starlette import status
 
 from .. import models
-from ..auth import CurrentUser
 from ..config import settings
 from ..permissions import TeacherUser
 from ..repositories import storage_objects
@@ -35,7 +34,6 @@ _COURSE_MEDIA_BUCKET = "course-media"
 _LESSON_ALLOWED_PREFIXES = ("image/", "video/", "audio/")
 _LESSON_ALLOWED_EXACT_TYPES = {"application/pdf"}
 _PUBLIC_UPLOAD_BUCKETS = {"public-media", "users", "avatars", "hero", "logos"}
-_PROFILE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB avatars
 _LESSON_IMAGE_ALLOWED_CONTENT_TYPES = {
     "image/png",
     "image/jpeg",
@@ -69,7 +67,6 @@ router = APIRouter(prefix="/api/upload", tags=["upload"])
 files_router = APIRouter(prefix="/api/files", tags=["files"])
 legacy_router = APIRouter(prefix="/upload", tags=["upload"])
 
-_ALLOWED_PROFILE_PREFIXES = ("image/",)
 _ALLOWED_MEDIA_PREFIXES = {
     UploadMediaType.image: ("image/",),
     UploadMediaType.audio: ("audio/",),
@@ -352,128 +349,6 @@ async def _persist_lesson_media(
         row["media_state"] = "ready"
 
     return row
-
-
-@router.post("/profile")
-async def upload_profile_media(
-    request: Request,
-    file: Annotated[UploadFile, File(description="Profile image file")],
-    current: CurrentUser,
-) -> dict[str, Any]:
-    user_id = str(current["id"])
-    suffix = Path(file.filename or "").suffix.lower()
-    safe_name = f"{uuid4().hex}{suffix}"
-    relative_path = Path("users") / user_id / safe_name
-
-    payload = await file.read()
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="File payload is empty"
-        )
-    if len(payload) > _PROFILE_MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large",
-        )
-
-    content_type = (
-        file.content_type
-        or mimetypes.guess_type(relative_path.name)[0]
-        or "application/octet-stream"
-    )
-    normalized_content_type = content_type.lower()
-    if not any(
-        normalized_content_type.startswith(prefix)
-        for prefix in _ALLOWED_PROFILE_PREFIXES
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported media type",
-        )
-
-    if storage_service.public_storage_service.enabled:
-        try:
-            upload = await storage_service.public_storage_service.create_upload_url(
-                relative_path.as_posix(),
-                content_type=content_type,
-                upsert=True,
-                cache_seconds=settings.media_public_cache_seconds,
-            )
-            timeout = httpx.Timeout(10.0, read=None)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.put(
-                    upload.url, headers=dict(upload.headers), content=payload
-                )
-            if response.status_code >= 400:
-                logger.warning(
-                    "Supabase avatar upload failed: user_id=%s status=%s path=%s",
-                    user_id,
-                    response.status_code,
-                    upload.path,
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Failed to upload avatar",
-                )
-        except storage_service.StorageServiceError as exc:
-            logger.warning(
-                "Supabase avatar upload signing failed: user_id=%s error=%s",
-                user_id,
-                exc,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storage unavailable",
-            ) from exc
-
-        public_url = storage_service.public_storage_service.public_url(upload.path)
-        logger.info(
-            "Profile upload successful (supabase): user_id=%s path=%s size_bytes=%s",
-            user_id,
-            upload.path,
-            len(payload),
-        )
-        return {
-            "url": public_url,
-            "path": upload.path,
-            "content_type": content_type,
-            "size": len(payload),
-        }
-
-    # Fallback for local dev without Supabase storage configured.
-    await file.seek(0)
-    relative_dir = relative_path.parent
-    destination_dir = _safe_join(UPLOADS_ROOT, *relative_dir.parts)
-    write_result = await _write_upload(
-        destination_dir,
-        file,
-        allowed_prefixes=_ALLOWED_PROFILE_PREFIXES,
-        max_bytes=_PROFILE_MAX_BYTES,
-    )
-    relative_path = relative_dir / write_result.filename
-    url = _public_url(request, relative_path)
-    if url is None:
-        logger.error(
-            "Profile upload attempted to write outside public buckets: user_id=%s path=%s",
-            user_id,
-            relative_path,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Profile storage misconfigured",
-        )
-    logger.info(
-        "Profile upload successful (local): user_id=%s path=%s size_bytes=%s",
-        user_id,
-        relative_path,
-        write_result.size,
-    )
-    return {
-        "url": url,
-        "path": relative_path.as_posix(),
-        "content_type": content_type,
-        "size": write_result.size,
-    }
 
 
 @router.post("/course-media")
@@ -814,12 +689,6 @@ async def upload_public_media(
         "content_type": content_type,
         "size": write_result.size,
     }
-
-
-async def legacy_profile_upload_disabled(current: CurrentUser) -> dict[str, Any]:
-    _raise_legacy_lesson_upload_disabled()
-
-
 async def legacy_teacher_upload_disabled(current: TeacherUser) -> dict[str, Any]:
     _raise_legacy_lesson_upload_disabled()
 
@@ -866,9 +735,6 @@ async def serve_uploaded_file(path: str):
 
 
 # Backwards-compatible aliases for older Flutter Web routes.
-legacy_router.add_api_route(
-    "/profile", legacy_profile_upload_disabled, methods=["POST"]
-)
 legacy_router.add_api_route(
     "/course-media", legacy_teacher_upload_disabled, methods=["POST"]
 )

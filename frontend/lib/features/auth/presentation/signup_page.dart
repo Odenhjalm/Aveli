@@ -16,12 +16,10 @@ class SignupPage extends ConsumerStatefulWidget {
     super.key,
     this.initialEmail,
     this.inviteToken,
-    this.referralCode,
   });
 
   final String? initialEmail;
   final String? inviteToken;
-  final String? referralCode;
 
   @override
   ConsumerState<SignupPage> createState() => _SignupPageState();
@@ -32,7 +30,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _displayNameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
-  final TextEditingController _referralCodeCtrl = TextEditingController();
   String? _inviteToken;
 
   @override
@@ -41,10 +38,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     final email = widget.initialEmail?.trim();
     if (email != null && email.isNotEmpty) {
       _emailCtrl.text = email;
-    }
-    final referralCode = widget.referralCode?.trim();
-    if (referralCode != null && referralCode.isNotEmpty) {
-      _referralCodeCtrl.text = referralCode;
     }
     final inviteToken = widget.inviteToken?.trim();
     if (inviteToken != null && inviteToken.isNotEmpty) {
@@ -57,7 +50,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     _emailCtrl.dispose();
     _displayNameCtrl.dispose();
     _passwordCtrl.dispose();
-    _referralCodeCtrl.dispose();
     super.dispose();
   }
 
@@ -172,19 +164,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                             ),
                             validator: _validatePassword,
                           ),
-                          gap16,
-                          TextFormField(
-                            controller: _referralCodeCtrl,
-                            enabled: !envBlocked,
-                            textInputAction: TextInputAction.done,
-                            onFieldSubmitted: busy || envBlocked
-                                ? null
-                                : (_) => _signUp(context),
-                            decoration: const InputDecoration(
-                              labelText: 'Inbjudningskod (valfritt)',
-                              hintText: 'Ange din inbjudningskod',
-                            ),
-                          ),
                           gap24,
                           GradientButton(
                             onPressed: busy || envBlocked
@@ -253,7 +232,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     final email = _emailCtrl.text.trim();
     final displayName = _displayNameCtrl.text.trim();
     final password = _passwordCtrl.text;
-    final referralCode = _referralCodeCtrl.text.trim();
 
     try {
       final controller = ref.read(authControllerProvider.notifier);
@@ -261,7 +239,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
         email,
         password,
         displayName: displayName,
-        referralCode: referralCode.isEmpty ? null : referralCode,
         inviteToken: _inviteToken,
       );
       if (!mounted || !context.mounted) return;

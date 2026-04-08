@@ -1450,7 +1450,6 @@ class ProfileUpdate(BaseModel):
 
     display_name: Optional[str] = None
     bio: Optional[str] = None
-    photo_url: Optional[str] = None
 
 
 class StudioCertificateCreate(BaseModel):

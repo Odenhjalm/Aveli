@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -119,9 +120,10 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
       setState(() => _pageState = _VerifyPageState.verified);
     } on DioException catch (error) {
       if (!mounted) return;
+      final failure = AppFailure.from(error);
       setState(() {
         _pageState = _VerifyPageState.failed;
-        _resendError = _resendErrorMessage(error);
+        _resendError = failure.message;
       });
     } catch (_) {
       if (!mounted) return;
@@ -157,8 +159,9 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
       });
     } on DioException catch (error) {
       if (!mounted) return;
+      final failure = AppFailure.from(error);
       setState(() {
-        _resendError = _resendErrorMessage(error);
+        _resendError = failure.message;
       });
     } catch (_) {
       if (!mounted) return;
@@ -196,24 +199,6 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
     } catch (_) {
       return null;
     }
-  }
-
-  String _resendErrorMessage(DioException error) {
-    final data = error.response?.data;
-    if (data is Map<String, dynamic>) {
-      final detail = data['detail'];
-      if (detail is String && detail.trim().isNotEmpty) {
-        return detail;
-      }
-      final message = data['error'];
-      if (message is String && message.trim().isNotEmpty) {
-        if (message == 'rate_limited') {
-          return 'Vanta en stund innan du begar ett nytt verifieringsmail.';
-        }
-        return message;
-      }
-    }
-    return 'Kunde inte skicka verifieringsmail.';
   }
 }
 

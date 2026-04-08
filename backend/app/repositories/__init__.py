@@ -41,7 +41,6 @@ from .orders import (
 )
 from .payments import mark_order_paid
 from .profiles import (
-    clear_profile_avatar,
     get_profile,
     update_profile,
 )
@@ -149,7 +148,6 @@ __all__ = [
     "revoke_refresh_token",
     "revoke_refresh_tokens_for_user",
     "schedule_webhook_retry",
-    "clear_profile_avatar",
     "complete_onboarding",
     "set_role_authority",
     "set_order_checkout_reference",

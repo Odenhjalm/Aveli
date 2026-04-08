@@ -6,28 +6,10 @@ from ..permissions import AdminUser
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-async def _ensure_teacher_application_payload() -> list[schemas.TeacherApplication]:
-    rows = await models.list_teacher_applications()
-    return [schemas.TeacherApplication(**row) for row in rows]
-
-
-async def _approve_teacher(user_id: str, reviewer_id: str):
-    await models.approve_teacher_user(user_id, reviewer_id)
-
-
-async def _reject_teacher(user_id: str, reviewer_id: str):
-    await models.reject_teacher_user(user_id, reviewer_id)
-
-
 @router.get("/dashboard", response_model=schemas.AdminDashboard)
 async def admin_dashboard(current: AdminUser):
-    requests = await _ensure_teacher_application_payload()
-    certificates = await models.list_recent_certificates()
-    return schemas.AdminDashboard(
-        is_admin=True,
-        requests=requests,
-        certificates=certificates,
-    )
+    del current
+    return schemas.AdminDashboard(is_admin=True, requests=[], certificates=[])
 
 
 @router.get("/settings", response_model=schemas.AdminSettingsResponse)
@@ -41,46 +23,38 @@ async def admin_settings(current: AdminUser):
     return schemas.AdminSettingsResponse(metrics=metrics, priorities=priorities)
 
 
-@router.get(
-    "/teacher-requests",
-    response_model=schemas.TeacherApplicationListResponse,
-)
-async def admin_teacher_requests(current: AdminUser):
-    items = await _ensure_teacher_application_payload()
-    return schemas.TeacherApplicationListResponse(items=items)
-
-
 @router.post(
-    "/teacher-requests/{user_id}/approve",
+    "/users/{user_id}/grant-teacher-role",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def admin_teacher_request_approve(user_id: str, current: AdminUser):
-    await _approve_teacher(user_id, current["id"])
+async def admin_grant_teacher_role(user_id: str, current: AdminUser):
+    try:
+        await models.grant_teacher_role(user_id, str(current["id"]))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="user_not_found") from exc
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="forbidden",
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
-    "/teacher-requests/{user_id}/reject",
+    "/users/{user_id}/revoke-teacher-role",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def admin_teacher_request_reject(user_id: str, current: AdminUser):
-    await _reject_teacher(user_id, current["id"])
+async def admin_revoke_teacher_role(user_id: str, current: AdminUser):
+    try:
+        await models.revoke_teacher_role(user_id, str(current["id"]))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="user_not_found") from exc
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="forbidden",
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.patch(
-    "/certificates/{certificate_id}",
-    response_model=schemas.CertificateRecord,
-)
-async def admin_update_certificate(
-    certificate_id: str,
-    payload: schemas.CertificateStatusUpdate,
-    current: AdminUser,
-):
-    row = await models.set_certificate_status(certificate_id, payload.status)
-    if not row:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    return row
 
 
 @router.patch(

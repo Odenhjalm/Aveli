@@ -1,4 +1,3 @@
-import 'package:aveli/core/auth/auth_claims.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/profile.dart';
 
@@ -45,21 +44,20 @@ class UserAccessState {
     required this.effectiveProfile,
     required this.approval,
     required this.application,
-    required this.claims,
   });
 
   final Profile? profile;
   final Profile? effectiveProfile;
   final TeacherApprovalInfo approval;
   final TeacherApplication? application;
-  final AuthClaims? claims;
 
-  /// Verified access: JWT claims are tentative until the profile is hydrated.
   bool get isAuthenticated => effectiveProfile != null;
-  bool get isAdmin => claims?.isAdmin ?? false;
-  UserRole get role => claims?.userRole ?? UserRole.learner;
-  bool get isTeacher => claims?.isTeacher ?? false;
-  bool get isProfessional => isTeacher;
+
+  // Frontend must not derive role/admin authority from JWT claims.
+  bool get isAdmin => false;
+  UserRole get role => UserRole.learner;
+  bool get isTeacher => false;
+  bool get isProfessional => false;
 
   CertificateStatus get applicationStatus =>
       application?.status ?? CertificateStatus.unknown;
@@ -70,15 +68,12 @@ class UserAccessState {
     Profile? effectiveProfile,
     TeacherApprovalInfo? approval,
     TeacherApplication? application,
-    AuthClaims? claims,
-    bool clearClaims = false,
   }) {
     return UserAccessState(
       profile: profile ?? this.profile,
       effectiveProfile: effectiveProfile ?? this.effectiveProfile,
       approval: approval ?? this.approval,
       application: application ?? this.application,
-      claims: clearClaims ? null : (claims ?? this.claims),
     );
   }
 
@@ -87,6 +82,5 @@ class UserAccessState {
     effectiveProfile: null,
     approval: TeacherApprovalInfo.empty,
     application: null,
-    claims: null,
   );
 }

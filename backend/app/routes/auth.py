@@ -3,7 +3,6 @@ from collections import defaultdict, deque
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from jose import JWTError
 
 from ..auth import (
@@ -38,10 +37,6 @@ _CANONICAL_AUTH_EVENT_TYPES = frozenset(
         "teacher_role_revoked",
     }
 )
-
-
-_RATE_LIMIT_MESSAGE = "För många försök. Försök igen om en liten stund."
-
 
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
@@ -123,33 +118,24 @@ async def _record_auth_event(
 async def _token_claims(user_id: str) -> dict[str, Any]:
     user = await models.get_user_by_id(user_id)
     if not user:
-        raise HTTPException(status_code=401, detail="Kontot kunde inte hittas")
+        raise HTTPException(status_code=404, detail="user_not_found")
     auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
     if not auth_subject:
-        raise HTTPException(
-            status_code=401,
-            detail="Kanoniskt auth-subjekt saknas",
-        )
+        raise HTTPException(status_code=404, detail="subject_not_found")
     role = _normalized_subject_role(
         auth_subject.get("role_v2"),
         auth_subject.get("role"),
     )
     if role is None:
-        raise HTTPException(status_code=401, detail="Kanonisk rollbehorighet saknas")
+        raise HTTPException(status_code=500, detail="internal_error")
     onboarding_state = _validated_onboarding_state(
         auth_subject.get("onboarding_state")
     )
     if onboarding_state is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Ogiltigt kanoniskt onboarding-tillstand",
-        )
+        raise HTTPException(status_code=500, detail="internal_error")
     is_admin = auth_subject.get("is_admin")
     if not isinstance(is_admin, bool):
-        raise HTTPException(
-            status_code=401,
-            detail="Ogiltig kanonisk adminbehorighet",
-        )
+        raise HTTPException(status_code=500, detail="internal_error")
     return {
         "role": role,
         "is_admin": is_admin,
@@ -170,7 +156,8 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
             request=request,
         )
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_RATE_LIMIT_MESSAGE
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="rate_limited",
         )
 
     existing = await models.get_user_by_email(payload.email)
@@ -181,7 +168,10 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
             event="register_conflict",
             request=request,
         )
-        raise HTTPException(status_code=400, detail="E-postadressen ar redan registrerad")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="email_already_registered",
+        )
 
     user_id = await models.create_user(
         payload.email, payload.password, payload.display_name
@@ -214,7 +204,8 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
             request=request,
         )
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_RATE_LIMIT_MESSAGE
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="rate_limited",
         )
 
     user = await models.get_user_by_email(payload.email)
@@ -225,7 +216,7 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
             event="login_invalid_user",
             request=request,
         )
-        raise HTTPException(status_code=401, detail="Fel e-postadress eller losenord")
+        raise HTTPException(status_code=401, detail="invalid_credentials")
 
     hashed = user.get("encrypted_password")
     if not hashed or not verify_password(payload.password, hashed):
@@ -235,7 +226,7 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
             event="login_invalid_password",
             request=request,
         )
-        raise HTTPException(status_code=401, detail="Fel e-postadress eller losenord")
+        raise HTTPException(status_code=401, detail="invalid_credentials")
 
     user_id = str(user["id"])
     claims = await _token_claims(user_id)
@@ -269,11 +260,11 @@ async def forgot_password(payload: schemas.AuthForgotPasswordRequest):
 async def reset_password(payload: schemas.AuthResetPasswordRequest):
     try:
         result = await reset_password_with_token(payload.token, payload.new_password)
-    except InvalidPasswordResetTokenError:
-        return JSONResponse(
+    except InvalidPasswordResetTokenError as exc:
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "invalid_or_expired_token"},
-        )
+            detail="invalid_or_expired_token",
+        ) from exc
     return {"status": result["status"]}
 
 
@@ -288,7 +279,7 @@ async def change_password(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Kontot kunde inte hittas",
+            detail="user_not_found",
         )
 
     hashed = user.get("encrypted_password")
@@ -326,20 +317,20 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
     try:
         decoded = decode_jwt(payload.refresh_token)
         if is_token_expired(decoded):
-            raise HTTPException(status_code=401, detail="Uppdateringstoken har gatt ut")
+            raise HTTPException(status_code=401, detail="refresh_token_invalid")
     except JWTError as exc:
-        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken") from exc
+        raise HTTPException(status_code=401, detail="refresh_token_invalid") from exc
 
     if decoded.get("token_type") != "refresh":
-        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
+        raise HTTPException(status_code=401, detail="refresh_token_invalid")
 
     user_id: str | None = decoded.get("sub")
     if not user_id:
-        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
+        raise HTTPException(status_code=401, detail="refresh_token_invalid")
 
     jti: str | None = decoded.get("jti")
     if not jti:
-        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
+        raise HTTPException(status_code=401, detail="refresh_token_invalid")
 
     token_row = await models.validate_refresh_token(jti, payload.refresh_token)
     if not token_row:
@@ -350,7 +341,7 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
             request=request,
             metadata={"jti": jti},
         )
-        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
+        raise HTTPException(status_code=401, detail="refresh_token_invalid")
 
     db_user_id = str(token_row.get("user_id")) if token_row.get("user_id") else None
     if db_user_id and db_user_id != user_id:
@@ -361,7 +352,7 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
             request=request,
             metadata={"expected": user_id, "actual": db_user_id},
         )
-        raise HTTPException(status_code=401, detail="Ogiltig uppdateringstoken")
+        raise HTTPException(status_code=401, detail="refresh_token_invalid")
 
     user_row = await models.get_user_by_id(user_id)
     email = user_row.get("email") if user_row else None
@@ -395,22 +386,22 @@ async def complete_onboarding(request: Request, current_user: CurrentUser):
     auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
     if not auth_subject:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Kanoniskt auth-subjekt saknas",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="subject_not_found",
         )
 
     previous_state = _validated_onboarding_state(auth_subject.get("onboarding_state"))
     if previous_state is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ogiltigt kanoniskt onboarding-tillstand",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="internal_error",
         )
 
     updated_subject = await auth_subjects_repo.complete_onboarding(user_id)
     if not updated_subject:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ogiltigt kanoniskt onboarding-tillstand",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="subject_not_found",
         )
 
     await _record_auth_event(

@@ -299,52 +299,33 @@ class AdminSettingsState {
 final adminDashboardProvider = AutoDisposeFutureProvider<AdminDashboardState>((
   ref,
 ) async {
-  try {
-    final repo = ref.watch(adminRepositoryProvider);
-    final data = await repo.fetchDashboard();
-    final isAdmin = data['is_admin'] == true;
-    if (!isAdmin) {
-      return const AdminDashboardState(
-        isAdmin: false,
-        requests: [],
-        certificates: [],
-      );
-    }
-    final requests = (data['requests'] as List? ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList(growable: false);
-    final certs = (data['certificates'] as List? ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList(growable: false);
-    return AdminDashboardState(
-      isAdmin: true,
-      requests: requests,
-      certificates: certs,
-    );
-  } catch (error, stackTrace) {
-    throw AppFailure.from(error, stackTrace);
-  }
+  return const AdminDashboardState(
+    isAdmin: false,
+    requests: [],
+    certificates: [],
+  );
 });
 
 final adminSettingsProvider = AutoDisposeFutureProvider<AdminSettingsState>((
   ref,
 ) async {
-  try {
-    final repo = ref.watch(adminRepositoryProvider);
-    final data = await repo.fetchSettings();
-    final metrics = AdminMetricsState.fromJson(
-      data['metrics'] as Map<String, dynamic>?,
-    );
-    final list = (data['priorities'] as List? ?? const <dynamic>[])
-        .map(
-          (entry) =>
-              TeacherPriorityEntry.fromJson(Map<String, dynamic>.from(entry)),
-        )
-        .toList(growable: false);
-    return AdminSettingsState(metrics: metrics, priorities: list);
-  } catch (error, stackTrace) {
-    throw AppFailure.from(error, stackTrace);
-  }
+  return const AdminSettingsState(
+    metrics: AdminMetricsState(
+      totalUsers: 0,
+      totalTeachers: 0,
+      totalCourses: 0,
+      publishedCourses: 0,
+      paidOrdersTotal: 0,
+      paidOrders30d: 0,
+      payingCustomersTotal: 0,
+      payingCustomers30d: 0,
+      revenueTotalCents: 0,
+      revenue30dCents: 0,
+      loginEvents7d: 0,
+      activeUsers7d: 0,
+    ),
+    priorities: const <TeacherPriorityEntry>[],
+  );
 });
 
 class ProfileViewState {

@@ -6,7 +6,11 @@ import re
 from typing import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.exception_handlers import http_exception_handler
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +31,12 @@ except (
 
 
 from .config import settings
+from .auth_onboarding_failures import (
+    canonical_error_response,
+    canonical_http_error_response,
+    is_auth_onboarding_request,
+    validation_error_response,
+)
 from .db import pool
 from .logging_utils import setup_logging
 from .middleware.request_context import RequestContextMiddleware
@@ -197,7 +207,32 @@ _configure_middleware(app)
 
 @app.exception_handler(StarletteHTTPException)
 async def cors_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if is_auth_onboarding_request(request):
+        response = canonical_http_error_response(
+            status_code=exc.status_code,
+            detail=exc.detail,
+            headers=exc.headers,
+        )
+        for key, value in _cors_error_headers(request).items():
+            response.headers.setdefault(key, value)
+        return response
     response = await http_exception_handler(request, exc)
+    for key, value in _cors_error_headers(request).items():
+        response.headers.setdefault(key, value)
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def auth_onboarding_validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+):
+    if is_auth_onboarding_request(request):
+        response = validation_error_response(exc, headers=_cors_error_headers(request))
+        for key, value in _cors_error_headers(request).items():
+            response.headers.setdefault(key, value)
+        return response
+    response = await request_validation_exception_handler(request, exc)
     for key, value in _cors_error_headers(request).items():
         response.headers.setdefault(key, value)
     return response
@@ -205,6 +240,12 @@ async def cors_http_exception_handler(request: Request, exc: StarletteHTTPExcept
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if is_auth_onboarding_request(request):
+        return canonical_error_response(
+            status_code=500,
+            error_code="internal_error",
+            headers=_cors_error_headers(request),
+        )
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal Server Error"},

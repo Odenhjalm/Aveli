@@ -4,8 +4,7 @@ from collections import defaultdict, deque
 import logging
 import time
 
-from fastapi import APIRouter, Query, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Query, status
 
 from .. import repositories, schemas
 from ..services.email_verification import (
@@ -40,9 +39,9 @@ def _consume_send_verification_attempt(email: str) -> bool:
 async def send_verification(payload: schemas.AuthForgotPasswordRequest):
     normalized_email = payload.email.strip().lower()
     if not _consume_send_verification_attempt(normalized_email):
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            content={"error": "rate_limited"},
+            detail="rate_limited",
         )
 
     user = await repositories.get_user_by_email(normalized_email)
@@ -62,11 +61,11 @@ async def send_verification(payload: schemas.AuthForgotPasswordRequest):
 async def verify_email(token: str = Query(..., min_length=1)):
     try:
         result = await verify_email_token_and_mark_user(token)
-    except InvalidEmailVerificationTokenError:
-        return JSONResponse(
+    except InvalidEmailVerificationTokenError as exc:
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "invalid_or_expired_token"},
-        )
+            detail="invalid_or_expired_token",
+        ) from exc
 
     return {"status": result["status"]}
 
@@ -75,10 +74,10 @@ async def verify_email(token: str = Query(..., min_length=1)):
 async def validate_invite(token: str = Query(..., min_length=1)):
     try:
         email = validate_invite_token(token)
-    except InvalidInviteTokenError:
-        return JSONResponse(
+    except InvalidInviteTokenError as exc:
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "invalid_or_expired_token"},
-        )
+            detail="invalid_or_expired_token",
+        ) from exc
 
     return {"status": "valid", "email": email}

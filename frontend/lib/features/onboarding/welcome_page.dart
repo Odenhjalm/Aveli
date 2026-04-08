@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -80,6 +82,8 @@ class _WelcomePageState extends ConsumerState<WelcomePage> {
     setState(() => _isSubmitting = true);
     try {
       await ref.read(authControllerProvider.notifier).completeWelcome();
+      if (!mounted || !context.mounted) return;
+      context.goNamed(AppRoute.home);
     } catch (error) {
       if (!mounted) return;
       final message = error is AppFailure

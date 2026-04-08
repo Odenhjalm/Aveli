@@ -149,10 +149,10 @@ def hash_refresh_token(token: str) -> str:
 
 
 def _normalized_subject_role(role_v2: object, role: object) -> str | None:
-    for candidate in (role_v2, role):
-        normalized = str(candidate or "").strip().lower()
-        if normalized in {"learner", "teacher"}:
-            return normalized
+    del role
+    normalized = str(role_v2 or "").strip().lower()
+    if normalized in {"learner", "teacher"}:
+        return normalized
     return None
 
 
@@ -202,7 +202,7 @@ async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="unauthenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:

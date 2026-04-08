@@ -6,7 +6,6 @@ import 'package:aveli/domain/models/user_access.dart';
 final userAccessProvider = Provider<UserAccessState>((ref) {
   final authState = ref.watch(authControllerProvider);
   final profile = authState.profile;
-  final claims = authState.claims;
   if (profile == null) {
     return UserAccessState.unauthenticated;
   }
@@ -16,6 +15,5 @@ final userAccessProvider = Provider<UserAccessState>((ref) {
     effectiveProfile: profile,
     approval: TeacherApprovalInfo.empty,
     application: null,
-    claims: claims,
   );
 });
