@@ -1,0 +1,298 @@
+{
+  "task_tree": [
+    {
+      "task_id": "BCP-010",
+      "type": "OWNER",
+      "cluster": "APP_ENTRY_AUTHORITY",
+      "description": "Resolve the minimum canonical app.memberships field set and valid-state boundary that may own app entry.",
+      "action": "resolve",
+      "depends_on": []
+    },
+    {
+      "task_id": "BCP-011",
+      "type": "GATE",
+      "cluster": "APP_ENTRY_AUTHORITY",
+      "description": "Verify that the resolved membership boundary excludes onboarding, enrollment, and subject fields from app-entry authority.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-010"
+      ]
+    },
+    {
+      "task_id": "BCP-012",
+      "type": "OWNER",
+      "cluster": "APP_ENTRY_AUTHORITY",
+      "description": "Append baseline ownership for canonical app.memberships above the protected slot range.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-011"
+      ]
+    },
+    {
+      "task_id": "BCP-013",
+      "type": "OWNER",
+      "cluster": "APP_ENTRY_AUTHORITY",
+      "description": "Align runtime app-entry reads and writes to canonical app.memberships only.",
+      "action": "align",
+      "depends_on": [
+        "BCP-012"
+      ]
+    },
+    {
+      "task_id": "BCP-014",
+      "type": "GATE",
+      "cluster": "APP_ENTRY_AUTHORITY",
+      "description": "Verify that app.memberships is the sole app-entry authority in baseline and mounted runtime paths.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-013"
+      ]
+    },
+    {
+      "task_id": "BCP-020",
+      "type": "OWNER",
+      "cluster": "AUTH_SUBJECT_AUTHORITY",
+      "description": "Resolve the canonical auth-subject entity above Supabase Auth and its minimum authority shape.",
+      "action": "resolve",
+      "depends_on": []
+    },
+    {
+      "task_id": "BCP-021",
+      "type": "GATE",
+      "cluster": "AUTH_SUBJECT_AUTHORITY",
+      "description": "Verify that the resolved auth-subject boundary is separate from membership and learner-content authority.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-020"
+      ]
+    },
+    {
+      "task_id": "BCP-022",
+      "type": "OWNER",
+      "cluster": "AUTH_SUBJECT_AUTHORITY",
+      "description": "Append baseline ownership for the canonical auth-subject entity above Supabase Auth.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-021"
+      ]
+    },
+    {
+      "task_id": "BCP-023",
+      "type": "OWNER",
+      "cluster": "AUTH_SUBJECT_AUTHORITY",
+      "description": "Align runtime auth, onboarding, and teacher-rights surfaces to the canonical auth-subject entity instead of legacy profile logic.",
+      "action": "align",
+      "depends_on": [
+        "BCP-022"
+      ]
+    },
+    {
+      "task_id": "BCP-024",
+      "type": "GATE",
+      "cluster": "AUTH_SUBJECT_AUTHORITY",
+      "description": "Verify that auth-subject authority is canonical and teacher-rights separation is preserved.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-023"
+      ]
+    },
+    {
+      "task_id": "BCP-030",
+      "type": "OWNER",
+      "cluster": "DB_SURFACES",
+      "description": "Resolve the canonical DB-surface object map and source boundaries for discovery, detail, structure, and protected content.",
+      "action": "resolve",
+      "depends_on": []
+    },
+    {
+      "task_id": "BCP-031",
+      "type": "GATE",
+      "cluster": "DB_SURFACES",
+      "description": "Verify that the DB-surface map is deterministic and supersedes raw-table semantics.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-030"
+      ]
+    },
+    {
+      "task_id": "BCP-032",
+      "type": "OWNER",
+      "cluster": "DB_SURFACES",
+      "description": "Materialize the public user-independent DB surfaces for discovery, course detail, and lesson structure.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-031"
+      ]
+    },
+    {
+      "task_id": "BCP-033A",
+      "type": "OWNER",
+      "cluster": "DB_SURFACES",
+      "description": "Align mounted public runtime reads to the canonical public DB surfaces so the public-surface gate can be re-run without raw-table bypass.",
+      "action": "align",
+      "depends_on": [
+        "BCP-032"
+      ]
+    },
+    {
+      "task_id": "BCP-033",
+      "type": "GATE",
+      "cluster": "DB_SURFACES",
+      "description": "Verify that public DB surfaces remain user-independent and course_public_content is expressed only through public course detail.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-032",
+        "BCP-033A"
+      ]
+    },
+    {
+      "task_id": "BCP-034",
+      "type": "OWNER",
+      "cluster": "DB_SURFACES",
+      "description": "Materialize the protected user-scoped lesson-content DB surface.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-031"
+      ]
+    },
+    {
+      "task_id": "BCP-035",
+      "type": "GATE",
+      "cluster": "DB_SURFACES",
+      "description": "Verify that protected lesson-content access is enrollment and unlock bound, not membership bound.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-034"
+      ]
+    },
+    {
+      "task_id": "BCP-036",
+      "type": "OWNER",
+      "cluster": "DB_SURFACES",
+      "description": "Align mounted repositories, services, and routes to consume canonical DB surfaces instead of raw tables.",
+      "action": "align",
+      "depends_on": [
+        "BCP-033",
+        "BCP-035",
+        "BCP-044"
+      ]
+    },
+    {
+      "task_id": "BCP-037",
+      "type": "GATE",
+      "cluster": "DB_SURFACES",
+      "description": "Verify that mounted read paths are surface-based end to end and do not restore raw-table authority.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-036"
+      ]
+    },
+    {
+      "task_id": "BCP-040",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Resolve the unified runtime_media expansion boundary, row model, and governed-surface coverage above the protected lesson-only projection.",
+      "action": "resolve",
+      "depends_on": []
+    },
+    {
+      "task_id": "BCP-041",
+      "type": "GATE",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Verify that the unified runtime_media boundary preserves authored identity owners and forbids alternate media truth paths.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-040"
+      ]
+    },
+    {
+      "task_id": "BCP-042",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Append baseline ownership for unified runtime_media, including course cover, visibility, state, and resolution eligibility truth.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-041"
+      ]
+    },
+    {
+      "task_id": "BCP-042A",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Append the missing home-player runtime authority to unified runtime_media so mounted media alignment can proceed without inventing a second runtime truth path.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-042"
+      ]
+    },
+    {
+      "task_id": "BCP-042B",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Append the approved profile-media runtime authority to unified runtime_media so the remaining mounted profile/community consumers can align without inventing a second source-truth domain.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-042A"
+      ]
+    },
+    {
+      "task_id": "BCP-043A",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Align mounted course-cover and home-player read composition to unified runtime_media for the governed surfaces already covered by canonical baseline authority.",
+      "action": "align",
+      "depends_on": [
+        "BCP-042",
+        "BCP-042A"
+      ]
+    },
+    {
+      "task_id": "BCP-043",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Align the remaining mounted profile/community media consumers to unified runtime_media once dependency-valid authority exists for that non-core surface.",
+      "action": "align",
+      "depends_on": [
+        "BCP-042",
+        "BCP-042A",
+        "BCP-042B",
+        "BCP-043A"
+      ]
+    },
+    {
+      "task_id": "BCP-044",
+      "type": "GATE",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Verify that unified runtime_media is canonical across course cover and other governed media surfaces.",
+      "action": "gate",
+      "depends_on": [
+        "BCP-043"
+      ]
+    },
+    {
+      "task_id": "BCP-050",
+      "type": "AGGREGATE",
+      "cluster": "AGGREGATE_AUDITS",
+      "description": "Run the append-only and substrate-only aggregate audit for the baseline-completion plan.",
+      "action": "aggregate",
+      "depends_on": [
+        "BCP-014",
+        "BCP-024",
+        "BCP-033",
+        "BCP-035",
+        "BCP-044"
+      ]
+    },
+    {
+      "task_id": "BCP-051",
+      "type": "AGGREGATE",
+      "cluster": "AGGREGATE_AUDITS",
+      "description": "Run the final canonical authority completion audit across app entry, auth subject, DB surfaces, and unified runtime media.",
+      "action": "aggregate",
+      "depends_on": [
+        "BCP-037",
+        "BCP-050"
+      ]
+    }
+  ]
+}

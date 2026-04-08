@@ -1,0 +1,47 @@
+# MCR-003F7
+
+- TASK_ID: `MCR-003F7`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining legacy download_url consumer from backend/scripts/import_course.py so course import no longer expects forbidden legacy media URL fields from the studio lesson-media upload boundary.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003F4`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove legacy-field consumption from backend/scripts/import_course.py`
+  - `ensure the course import script does not read or log download_url from /studio/lessons/{lesson_id}/media responses`
+  - `keep import output aligned to canonical lesson-media identity and backend-authored media truth only`
+- CURRENT STATE:
+  - `backend/scripts/import_course.py` still prints item.get("download_url") after upload_media(...) returns the /studio/lessons/{lesson_id}/media payload`
+  - `semantic and lexical retrieval prove the live studio upload boundary now relies on media_signer preview metadata plus canonical lesson-media identity rather than legacy download_url contract truth`
+  - `no existing materialized media-conflict-resolution task owns backend/scripts/import_course.py as a legacy media-field consumer`
+- TARGET STATE:
+  - `backend/scripts/import_course.py no longer reads, logs, or branches on download_url`
+  - `the import script reports upload success using canonical lesson-media identity and other non-legacy response fields only`
+  - `no replacement fallback to signed_url, signed_url_expires_at, preferredUrl, or storage-path-derived URL construction is introduced`
+- TARGET_FILES:
+  - `backend/scripts/import_course.py`
+- SCOPE:
+  - `backend/scripts/import_course.py`
+- CONSTRAINTS:
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent URL fields as contract truth`
+  - `do not widen this task into studio route/helper mutation; upstream output-shape ownership remains with existing media-conflict-resolution tasks`
+- STOP CONDITIONS:
+  - `if backend/scripts/import_course.py still requires a URL-valued upload response field to complete canonical import flow and no canonical replacement exists in the scoped response contract`
+  - `if removing the scoped download_url read would force the script to parse storage_path, storage_bucket, or any other storage-adjacent field as media truth`
+  - `if scoped retrieval reveals a second live import or ingestion script that shares the same legacy upload-response doctrine and must be owned together`
+- VERIFICATION REQUIREMENTS:
+  - `scoped lexical and semantic retrieval confirm backend/scripts/import_course.py contains no download_url references after execution`
+  - `scoped lexical retrieval confirms backend/scripts/import_course.py does not replace download_url with signed_url, signed_url_expires_at, preferredUrl, or preferred_url`
+  - `python -m py_compile backend/scripts/import_course.py passes after execution`
+  - `the script's upload logging remains deterministic and uses only canonical non-legacy response fields`

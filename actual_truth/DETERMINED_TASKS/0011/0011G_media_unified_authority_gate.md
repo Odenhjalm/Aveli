@@ -1,0 +1,21 @@
+# 0011G
+
+- TASK_ID: `0011G`
+- TYPE: `GATE`
+- TITLE: `Lock MEDIA_UNIFIED_AUTHORITY invariants with backend and frontend tests`
+- PROBLEM_STATEMENT: `The repo currently allows duplicate media pipelines and legacy URL surfaces to reappear because no focused gate asserts backend-only authority across course cover, lesson media, home-player, and profile/community reads.`
+- TARGET_STATE:
+  - backend and frontend tests lock unified authority invariants
+  - identical media identity produces identical backend-authored output
+  - frontend tests fail if read surfaces construct URLs or prefer storage fields
+  - backend tests fail if repositories join runtime_media for read composition or routes resolve media directly
+- DEPENDS_ON:
+  - `0011B`
+  - `0011C`
+  - `0011D`
+  - `0011E`
+  - `0011F`
+- VERIFICATION_METHOD:
+  - add targeted tests for course cover, lesson media, home-player feed, and profile/community media contracts
+  - run focused backend/frontend test suites or analyzers for the touched surfaces
+  - confirm grep-based invariant checks return no forbidden patterns on mounted read paths

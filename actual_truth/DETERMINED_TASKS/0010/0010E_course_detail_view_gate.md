@@ -1,0 +1,26 @@
+# 0010E
+
+- TASK_ID: `0010E`
+- TYPE: `GATE`
+- TITLE: `Add view-scoped verification for COURSE_DETAIL_VIEW invariants`
+- PURPOSE: `Lock the COURSE_DETAIL_VIEW contract with tests that fail on shape drift, sibling-data omission, cover fallback, route-level composition regressions, or user-specific variation.`
+- FILES AFFECTED:
+  - `backend/tests/test_course_detail_view_contract.py`
+  - `backend/app/routes/courses.py`
+  - `backend/app/services/courses_read_service.py`
+- DEPENDS_ON:
+  - `0010B`
+  - `0010C`
+  - `0010D`
+- BLOCKER_CLEARED: `B010E`
+- DONE_WHEN:
+  - tests assert identical COURSE_DETAIL_VIEW output for anonymous and authenticated requests
+  - tests assert `lessons` is ordered by `position ASC` and serializes as `[]` when no lessons exist
+  - tests assert `short_description` is present and null when sibling public content is missing
+  - tests assert `cover` is present and null or canonically resolved without fallback
+  - tests assert course-detail responses exclude `lesson_content`, `lesson_media`, `runtime_media`, and `course_enrollments`
+- VALIDATION:
+  - the gate fails if route code resumes direct COURSE_DETAIL_VIEW assembly
+  - the gate fails if response shape changes across missing-sibling scenarios
+  - the gate fails if any forbidden source appears in the course-detail read path
+  - EXECUTION_STATUS: `PENDING`

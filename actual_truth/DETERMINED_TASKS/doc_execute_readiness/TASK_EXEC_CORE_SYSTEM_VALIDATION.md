@@ -1,0 +1,22 @@
+# TASK_EXEC_CORE_SYSTEM_VALIDATION
+
+- TASK_ID: `TASK_EXEC_CORE_SYSTEM_VALIDATION`
+- TYPE: `AGGREGATE`
+- CLUSTER: `DOC_EXECUTE_READINESS`
+- DESCRIPTION: `Run the execute-mode core system validation only after documentation authority is stable enough to create and verify a user, assign teacher rights, create a course and lesson, upload audio/image/video/document media, and verify rendering through the canonical runtime chain.`
+- EXECUTION_MODE: `execute`
+- TARGET_STATE:
+  - create one test user through the canonical auth path
+  - verify the canonical profile, role, and onboarding state through the documented auth truth path
+  - assign teacher rights through the canonical mutation path only
+  - create one course and one lesson through the canonical studio route path only
+  - upload one `audio`, one `image`, one `video`, and one `document` through the canonical media path only
+  - verify media rendering through `runtime_media -> backend_read_composition -> API -> frontend`
+  - capture before and after evidence and clean up all created entities
+- DEPENDS_ON:
+  - `TASK_CONFIRM_BASELINE_ONBOARDING_READINESS`
+- VERIFICATION_METHOD:
+  - STOP immediately if any dependency task has not cleared its blocker
+  - STOP immediately if auth, onboarding, teacher-rights, or upload route authority remains ambiguous
+  - pass only if every mutation and render check uses one canonical path and cleanup verifies complete removal
+  - EXECUTION_STATUS: `DEFERRED`

@@ -1,0 +1,22 @@
+# 0010A
+
+- TASK_ID: `0010A`
+- TYPE: `OWNER`
+- TITLE: `Align canonical COURSE_DETAIL_VIEW contract shape`
+- PURPOSE: `Remove contract drift so COURSE_DETAIL_VIEW has one explicit field set, one ownership map, and one nullability rule before runtime changes proceed.`
+- FILES AFFECTED:
+  - `actual_truth/contracts/COURSE_DETAIL_VIEW_DETERMINISTIC_RULE.md`
+  - `actual_truth/contracts/learner_public_edge_contract.md`
+- DEPENDS_ON:
+  - none
+- BLOCKER_CLEARED: `B010A`
+- DONE_WHEN:
+  - canonical contract files define the same COURSE_DETAIL_VIEW field set
+  - canonical contract files define whether `short_description` is part of COURSE_DETAIL_VIEW or a separate companion contract without contradiction
+  - canonical contract files define whether `cover` is part of COURSE_DETAIL_VIEW or a separate companion contract without contradiction
+  - canonical contract files define identical nullability rules for all optional COURSE_DETAIL_VIEW fields
+- VALIDATION:
+  - no conflicting COURSE_DETAIL_VIEW shape remains across canonical contract files
+  - `short_description` ownership is explicit as `app.course_public_content` only
+  - cover ownership and resolution rule are explicit and traceable to the canonical media contract
+  - EXECUTION_STATUS: `PENDING`

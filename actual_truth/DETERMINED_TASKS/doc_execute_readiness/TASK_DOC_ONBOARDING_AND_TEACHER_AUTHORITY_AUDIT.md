@@ -1,0 +1,29 @@
+# TASK_DOC_ONBOARDING_AND_TEACHER_AUTHORITY_AUDIT
+
+- TASK_ID: `TASK_DOC_ONBOARDING_AND_TEACHER_AUTHORITY_AUDIT`
+- TYPE: `OWNER`
+- CLUSTER: `DOC_EXECUTE_READINESS`
+- DESCRIPTION: `Establish one canonical documentation authority for onboarding state, role-bearing profile fields, teacher-rights ownership, and the exact mutation paths required for user creation, onboarding completion, and teacher approval before execute-mode validation can begin.`
+- TARGET_FILES:
+  - `codex/AVELI_EXECUTION_POLICY.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+  - `actual_truth/system_runtime_rules.md`
+  - `actual_truth/contracts/`
+  - `docs/audit/20260109_aveli_visdom_audit/API_CATALOG.md`
+  - `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md`
+  - `docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md`
+  - `docs/audit/20260109_aveli_visdom_audit/E2E_FLOWS.md`
+- ACTION: `reconcile`
+- DEPENDS_ON:
+  - `TASK_DOC_AUTH_STORAGE_AUTHORITY_AUDIT`
+- DONE_WHEN:
+  - one canonical authority defines `onboarding_state`, `role`, `role_v2`, and `is_admin`
+  - one canonical authority defines whether teacher rights are owned by `app.teacher_approvals`, `app.teacher_permissions`, `app.teachers`, profile role fields, or an explicit composition of them
+  - one canonical mutation path is documented for user creation, onboarding completion, and teacher approval or assignment
+  - route inventory explicitly resolves whether `/auth/*`, `/api/me/onboarding/welcome-complete`, `/admin/teachers/{user_id}/approve`, and `/connect/*` are active runtime truth or reference-only audit evidence
+  - no competing documentation leaves teacher-rights authority ambiguous
+- VALIDATION:
+  - add or update the canonical contract location under `actual_truth/contracts/` if onboarding or teacher-rights authority currently lacks one
+  - confirm `system_runtime_rules.md` and runtime-observed API docs no longer disagree for in-scope auth and teacher flows
+  - EXECUTION_STATUS: `PENDING`

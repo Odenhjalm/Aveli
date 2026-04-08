@@ -1,0 +1,63 @@
+# COURSE ACCESS CONTRACT
+
+## STATUS
+
+ACTIVE
+
+This contract defines the canonical protected course-access truth.
+This contract operates under `SYSTEM_LAWS.md` and `commerce_membership_contract.md`.
+
+## 1. CONTRACT LAW
+
+- Protected course-access authority is owned only by `app.course_enrollments`.
+- `app.course_enrollments` owns protected course-access state only.
+- `app.course_enrollments` does not own purchase truth.
+- Membership alone never grants canonical protected course content.
+- Course enrollment never grants app entry.
+
+## 2. AUTHORITY MODEL
+
+- `app.course_enrollments` is the only canonical protected course-access source entity.
+- A course enrollment row is not proof of purchase without an order/payment trail.
+- Canonical paid purchase authority remains outside this contract and is owned by `commerce_membership_contract.md`.
+- Public course and lesson read semantics remain outside this contract and are owned by `course_public_surface_contract.md`.
+
+## 3. PURCHASE DEPENDENCY
+
+Canonical paid course purchase depends on the commerce contract:
+
+- initiation: `POST /api/checkout/create`
+- payment confirmation: `POST /api/stripe/webhook`
+
+When a paid course purchase completes:
+
+- webhook records payment under `commerce_membership_contract.md`
+- webhook creates `app.course_enrollments` with `source = purchase`
+
+No purchase flow may bypass that order/payment trail and create course access as fallback authority.
+
+## 4. PROTECTED COURSE-ACCESS LAW
+
+- Protected course content access requires canonical course-access state in `app.course_enrollments`.
+- Membership state does not replace `app.course_enrollments` as protected course-access authority.
+- Purchase authority does not replace `app.course_enrollments` as protected course-access state.
+- Course-access state must remain explicit and non-implicit.
+
+## 5. FORBIDDEN PATTERNS
+
+- Membership as protected course-access authority.
+- Course enrollment as standalone purchase authority.
+- Protected course access without canonical course-enrollment state.
+- Fallback protected access derived from membership state alone.
+- Fallback protected access derived from order/payment state without course-enrollment state.
+
+## 6. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
+
+- Current webhook implementation does not yet fully align purchase settlement with canonical course-access creation in all branches.
+- Current repo code may still mix purchase and access reasoning in the same runtime paths.
+
+## 7. FINAL ASSERTION
+
+- This contract is the canonical protected course-access truth.
+- It is lockable as a contract artifact.
+- Contract truth and implementation drift are intentionally separated.

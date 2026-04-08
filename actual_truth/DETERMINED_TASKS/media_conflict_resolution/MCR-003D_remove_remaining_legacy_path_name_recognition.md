@@ -1,0 +1,56 @@
+# MCR-003D
+
+- TASK_ID: `MCR-003D`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining explicit recognition of /media/sign and /media/stream/{token} from active backend/frontend interpretation logic so deleted legacy path names no longer survive as named compatibility inputs anywhere in scoped media handling.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003C`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `actual_truth/contracts/learner_public_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove explicit recognition of /media/sign and /media/stream/{token} from active backend/frontend interpretation logic`
+  - `preserve canonical rejection of noncanonical media links without naming deleted legacy routes as valid shapes`
+  - `keep runtime_media as runtime truth and keep backend/frontend interpretation aligned to canonical media identities only`
+- CURRENT STATE:
+  - `backend/app/routes/api_media.py` still defines `_is_removed_legacy_media_path(...)` and explicitly matches `/media/sign` and `/media/stream/`
+  - `backend/app/utils/lesson_content.py` still defines `_is_removed_legacy_media_path(...)` and explicitly matches `/media/sign` and `/media/stream/`
+  - `frontend/lib/shared/utils/lesson_content_pipeline.dart` still defines `mediaStreamUrlPattern` and still classifies `/media/stream/...` as a named legacy media link
+  - `MCR-003` gate failure proves legacy path-name recognition still survives after route deletion and after scoped backend/frontend cleanup`
+- TARGET STATE:
+  - `no scoped backend or frontend interpretation helper explicitly recognizes /media/sign`
+  - `no scoped backend or frontend interpretation helper explicitly recognizes /media/stream/{token}`
+  - `canonical rejection, if still required, is generic noncanonical-link rejection rather than deleted-route recognition`
+  - `lesson-content normalization and preview filtering operate only on canonical media identities and canonical backend-authored media objects`
+- TARGET_FILES:
+  - `backend/app/routes/api_media.py`
+  - `backend/app/utils/lesson_content.py`
+  - `frontend/lib/shared/utils/lesson_content_pipeline.dart`
+- SCOPE:
+  - `backend/app/routes/api_media.py`
+  - `backend/app/utils/lesson_content.py`
+  - `frontend/lib/shared/utils/lesson_content_pipeline.dart`
+- CONSTRAINTS:
+  - `runtime_media = runtime truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `do not introduce replacement logic for deleted route names`
+  - `do not expand beyond named scope`
+- STOP CONDITIONS:
+  - `if any scoped surface still requires explicit /media/sign recognition to preserve canonical media flow`
+  - `if any scoped surface still requires explicit /media/stream/{token} recognition to preserve canonical media flow`
+  - `if removing named legacy-path recognition would force a new fallback or second resolver path`
+  - `if canonical valid-media-path handling is ambiguous inside the scoped files`
+- VERIFICATION REQUIREMENTS:
+  - `repo search over the scoped files returns no /media/sign matches used as recognized media input`
+  - `repo search over the scoped files returns no /media/stream/ matches used as recognized media input`
+  - `no scoped regex/helper/function remains whose purpose is to classify deleted stream/sign paths as media references`
+  - `scoped backend/frontend logic still rejects noncanonical media links where required, but does so without naming deleted route paths as accepted compatibility shapes`

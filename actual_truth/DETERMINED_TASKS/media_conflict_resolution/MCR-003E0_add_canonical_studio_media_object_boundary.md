@@ -1,0 +1,65 @@
+# MCR-003E0
+
+- TASK_ID: `MCR-003E0`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Add the canonical backend-authored studio media object boundary for studio/editor lesson media so studio can consume media = { media_id, state, resolved_url } | null directly from backend read composition and MCR-003E can remove the secondary playback resolver path without breaking active authoring workflows.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003D`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `create the canonical backend-authored media object boundary for studio/editor lesson media`
+  - `make studio/frontend receive resolved_url from backend read composition rather than dynamic playback_url resolver fetches`
+  - `materialize the already-declared StudioLessonMediaItem canonical shape so MCR-003E can remove the secondary resolver path deterministically`
+- CURRENT STATE:
+  - `backend/app/repositories/courses.py` studio lesson-media queries return authored-placement and runtime-adjacent fields such as `media_asset_id`, `state`, `preview_ready`, and `original_name`, but do not expose the canonical `media = { media_id, state, resolved_url } | null` object required by the authority contracts`
+  - `backend/app/routes/studio.py` still resolves studio preview and delivery behavior through `lesson_playback_service.resolve_lesson_media_playback(...)`, emits preview-oriented URL fields, and does not compose canonical lesson-media truth for the studio/editor surface`
+  - `backend/app/schemas/__init__.py` and `frontend/lib/features/studio/data/studio_models.dart` still define `StudioLessonMediaItem` without the canonical `media` field even though `lesson_media_edge_contract.md` already declares the final shape`
+  - `frontend/lib/features/studio/presentation/course_editor_page.dart` still depends on dynamic lesson-media delivery resolution instead of consuming backend-authored `resolved_url` from the studio lesson-media payload`
+  - `MCR-003E` STOP proved that removing playback resolver endpoints before this boundary exists would break active studio/editor workflow`
+- TARGET STATE:
+  - `studio lesson-media payloads include canonical backend-authored media object truth as media = { media_id, state, resolved_url } | null, while preserving authored placement identity fields`
+  - `StudioLessonMediaItem` matches the canonical studio item shape declared in `lesson_media_edge_contract.md` and reuses the unified media contract rather than inventing a studio-specific resolver payload`
+  - `studio/frontend receives resolved_url from backend read composition inside the lesson-media payload and does not depend on dynamic playback_url resolver fetches for core editor launch/playback/download flows`
+  - `resolved_preview_url`, `preview_url`, and other preview metadata remain secondary preview metadata only and do not replace canonical media object truth`
+  - `no new resolver path, no fallback contract, and no storage-adjacent frontend media truth are introduced`
+- TARGET_FILES:
+  - `backend/app/repositories/courses.py`
+  - `backend/app/routes/studio.py`
+  - `backend/app/schemas/__init__.py`
+  - `frontend/lib/features/studio/data/studio_models.dart`
+  - `frontend/lib/features/studio/data/studio_repository_lesson_media.dart`
+  - `frontend/lib/features/studio/presentation/course_editor_page.dart`
+- SCOPE:
+  - `backend/app/repositories/courses.py`
+  - `backend/app/routes/studio.py`
+  - `backend/app/schemas/__init__.py`
+  - `frontend/lib/features/studio/data/studio_models.dart`
+  - `frontend/lib/features/studio/data/studio_repository_lesson_media.dart`
+  - `frontend/lib/features/studio/presentation/course_editor_page.dart`
+- CONSTRAINTS:
+  - `runtime_media = runtime truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `no implementation in this run`
+  - `no schema invention unless authority requires explicit shape change`
+  - `use the existing unified media object shape rather than defining a studio-only alternative`
+- STOP CONDITIONS:
+  - `if the canonical studio lesson-media object shape cannot be derived deterministically from the named authority files`
+  - `if studio/editor cannot receive canonical media truth without introducing a new resolver path or fallback`
+  - `if resolved_preview_url or other preview metadata would have to become primary contract truth to make the task pass`
+  - `if the scoped files reveal that studio/editor lacks a canonical backend-composed lesson-media payload boundary entirely outside the named scope`
+- VERIFICATION REQUIREMENTS:
+  - `scoped backend studio lesson-media payload definitions include canonical media = { media_id, state, resolved_url } | null truth rather than preview-only delivery fields`
+  - `scoped frontend StudioLessonMediaItem parsing includes the canonical media object instead of relying on preview-only or legacy transition fields as delivery truth`
+  - `scoped studio/editor frontend consumption uses backend-authored resolved_url from the lesson-media payload for core lesson-media delivery behavior`
+  - `scoped preview metadata remains secondary only and is not promoted to canonical media truth`
+  - `no scoped code introduces a new playback resolver path, alternate studio media pipeline, or fallback media contract`

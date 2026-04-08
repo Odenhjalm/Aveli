@@ -1,0 +1,49 @@
+# MCR-003F4T
+
+- TASK_ID: `MCR-003F4T`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Align backend/tests/test_media_signer.py with the canonical media_signer contract after MCR-003F4 so the verifier no longer enforces removed download_url or signed_url behavior.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003F4`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `align backend/tests/test_media_signer.py to the current canonical media_signer output shape`
+  - `remove legacy test expectations for download_url, signed_url, and signed_url_expires_at`
+  - `preserve validation of preview-only public-link metadata where the active helper still emits preferredUrl and url for ready public images`
+- CURRENT STATE:
+  - `live lexical retrieval over backend/app/utils/media_signer.py proves attach_media_links(...) now emits only preview-only preferredUrl and url for ready public images and removes preferredUrl/preferred_url/url when the row is not renderable`
+  - `live lexical retrieval over backend/app/utils/media_signer.py proves the helper no longer emits, strips, or preserves download_url, signed_url, or signed_url_expires_at as media contract fields`
+  - `backend/tests/test_media_signer.py still asserts legacy download_url access in the ready-public-image cases, specifically the tests at lines that read item["download_url"] after attach_media_links(...)`
+  - `active validation outside this file already aligns to preview-only helper behavior: backend/tests/test_lesson_image_compat.py asserts preferredUrl and url for the lesson-image upload surface, while backend/tests/test_course_visibility_and_media_access.py asserts preferredUrl/download_url/signed_url/signed_url_expires_at are absent when media is not resolvable`
+  - `semantic retrieval against the existing .repo_index returns legacy snippets for backend/tests/test_media_signer.py and older media_signer behavior, but live lexical retrieval against the working tree resolves the current canonical helper behavior deterministically`
+- TARGET STATE:
+  - `backend/tests/test_media_signer.py validates the current canonical helper contract only`
+  - `ready public image cases assert preferredUrl and url when preview-only metadata is expected`
+  - `all tests in scope assert that download_url, signed_url, and signed_url_expires_at are absent`
+  - `no test in scope reintroduces playback_url, download_url, signed_url, or signed_url_expires_at as required helper output`
+- TARGET_FILES:
+  - `backend/tests/test_media_signer.py`
+- SCOPE:
+  - `backend/tests/test_media_signer.py`
+- CONSTRAINTS:
+  - `do not modify backend/app/utils/media_signer.py`
+  - `do not reintroduce legacy fields`
+  - `do not expand into route, service, schema, or frontend changes`
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `preview-only metadata is secondary and must not be promoted into fallback media authority`
+- STOP CONDITIONS:
+  - `if backend/app/utils/media_signer.py current helper behavior cannot be determined deterministically from indexed retrieval plus live lexical inspection`
+  - `if multiple conflicting live output shapes exist in the current working tree for attach_media_links(...)`
+  - `if backend/tests/test_media_signer.py must preserve download_url, signed_url, or signed_url_expires_at to remain consistent with an active canonical helper consumer`
+- VERIFICATION REQUIREMENTS:
+  - `pytest passes for backend/tests/test_media_signer.py`
+  - `backend/tests/test_media_signer.py contains no legacy field references to download_url, signed_url, or signed_url_expires_at`
+  - `ready public-image assertions validate preferredUrl and url only where preview-only metadata is allowed`
+  - `all other scoped assertions confirm the absence of legacy media fields`

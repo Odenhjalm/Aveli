@@ -1,0 +1,180 @@
+{
+  "task_tree": [
+    {
+      "task_id": "MCR-001",
+      "type": "OWNER",
+      "cluster": "DELETE_LEGACY_MEDIA_PATHS",
+      "description": "Delete the legacy /api/media/sign adapter so api_media no longer forwards media signing into removed legacy route doctrine.",
+      "target_files": [
+        "backend/app/routes/api_media.py"
+      ],
+      "action": "delete",
+      "depends_on": []
+    },
+    {
+      "task_id": "MCR-002",
+      "type": "OWNER",
+      "cluster": "DELETE_LEGACY_MEDIA_PATHS",
+      "description": "Delete the remaining legacy media routes /media/sign and /media/stream/{token} from the legacy media router.",
+      "target_files": [
+        "backend/app/routes/media.py"
+      ],
+      "action": "delete",
+      "depends_on": [
+        "MCR-001"
+      ]
+    },
+    {
+      "task_id": "MCR-003",
+      "type": "GATE",
+      "cluster": "DELETE_LEGACY_MEDIA_PATHS",
+      "description": "Validate that no legacy media sign or stream routes remain after phase-1 deletions complete.",
+      "target_files": [
+        "backend/app/routes/api_media.py",
+        "backend/app/routes/media.py"
+      ],
+      "action": "implement",
+      "depends_on": [
+        "MCR-002"
+      ]
+    },
+    {
+      "task_id": "MCR-004",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_ALIGNMENT",
+      "description": "Rewrite api_media runtime lookups to remove illegal runtime_media assumptions about id, home_player_upload_id, active, created_at, and updated_at.",
+      "target_files": [
+        "backend/app/routes/api_media.py"
+      ],
+      "action": "rewrite",
+      "depends_on": [
+        "MCR-003"
+      ]
+    },
+    {
+      "task_id": "MCR-005",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_ALIGNMENT",
+      "description": "Rewrite courses_service media composition so runtime_media is treated only as read-only projection truth feeding backend-authored media objects.",
+      "target_files": [
+        "backend/app/services/courses_service.py"
+      ],
+      "action": "rewrite",
+      "depends_on": [
+        "MCR-004"
+      ]
+    },
+    {
+      "task_id": "MCR-006",
+      "type": "GATE",
+      "cluster": "RUNTIME_MEDIA_ALIGNMENT",
+      "description": "Validate that runtime-media consumers use only canonical projection columns and do not preserve invented mutable-table semantics.",
+      "target_files": [
+        "backend/app/routes/api_media.py",
+        "backend/app/services/courses_service.py"
+      ],
+      "action": "implement",
+      "depends_on": [
+        "MCR-005"
+      ]
+    },
+    {
+      "task_id": "MCR-007",
+      "type": "OWNER",
+      "cluster": "MEDIA_ASSET_HELPERS_ALIGNMENT",
+      "description": "Implement canonical media-asset repository helpers for uploaded-state transition and worker-bound readiness/failure boundaries without direct ready writes.",
+      "target_files": [
+        "backend/app/repositories/media_assets.py"
+      ],
+      "action": "implement",
+      "depends_on": [
+        "MCR-006"
+      ]
+    },
+    {
+      "task_id": "MCR-008",
+      "type": "OWNER",
+      "cluster": "MEDIA_ASSET_HELPERS_ALIGNMENT",
+      "description": "Rewrite api_media helper usage so route logic consumes canonical media-asset helpers and no longer assumes passthrough-ready or alternate repository payloads.",
+      "target_files": [
+        "backend/app/routes/api_media.py"
+      ],
+      "action": "rewrite",
+      "depends_on": [
+        "MCR-007"
+      ]
+    },
+    {
+      "task_id": "MCR-009",
+      "type": "GATE",
+      "cluster": "MEDIA_ASSET_HELPERS_ALIGNMENT",
+      "description": "Validate that media-asset helper alignment preserves the canonical worker-only readiness boundary and does not expose storage-derived media truth.",
+      "target_files": [
+        "backend/app/repositories/media_assets.py",
+        "backend/app/routes/api_media.py"
+      ],
+      "action": "implement",
+      "depends_on": [
+        "MCR-008"
+      ]
+    },
+    {
+      "task_id": "MCR-010",
+      "type": "OWNER",
+      "cluster": "HOME_AUDIO_ALIGNMENT",
+      "description": "Implement canonical home-audio composition in courses_service using home-player curation membership plus unified media read composition.",
+      "target_files": [
+        "backend/app/services/courses_service.py"
+      ],
+      "action": "implement",
+      "depends_on": [
+        "MCR-009"
+      ]
+    },
+    {
+      "task_id": "MCR-011",
+      "type": "OWNER",
+      "cluster": "HOME_AUDIO_ALIGNMENT",
+      "description": "Rewrite the home audio route so it consumes canonical home-audio composition only and does not infer media truth from legacy or invented runtime fields.",
+      "target_files": [
+        "backend/app/routes/home.py"
+      ],
+      "action": "rewrite",
+      "depends_on": [
+        "MCR-010"
+      ]
+    },
+    {
+      "task_id": "MCR-012",
+      "type": "GATE",
+      "cluster": "HOME_AUDIO_ALIGNMENT",
+      "description": "Validate that home-audio output is fully backend-authored, uses unified media composition, and does not depend on invented runtime_media columns.",
+      "target_files": [
+        "backend/app/routes/home.py",
+        "backend/app/services/courses_service.py"
+      ],
+      "action": "implement",
+      "depends_on": [
+        "MCR-011"
+      ]
+    },
+    {
+      "task_id": "MCR-013",
+      "type": "AGGREGATE",
+      "cluster": "MEDIA_VERIFICATION",
+      "description": "Run aggregate media verification to confirm that legacy sign/stream paths, direct ready writes, invented runtime_media columns, and raw playback_url or download_url contract payloads are absent.",
+      "target_files": [
+        "actual_truth/DETERMINED_TASKS/media_conflict_resolution/task_manifest.json",
+        "backend/app/routes/api_media.py",
+        "backend/app/routes/media.py",
+        "backend/app/routes/home.py",
+        "backend/app/services/courses_service.py",
+        "backend/app/repositories/media_assets.py"
+      ],
+      "action": "implement",
+      "depends_on": [
+        "MCR-012"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+# MCR-003F6
+
+- TASK_ID: `MCR-003F6`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove api_media's remaining route-level legacy preview fallback handling and the live debug signed_url response leak so the route no longer accepts or emits storage-adjacent media URL fields outside canonical backend resolution.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003F4`
+  - `MCR-003F6V0`
+  - `MCR-003F6V1`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove the live signed_url contract leak from backend/app/routes/api_media.py debug response handling`
+  - `remove the stale route-level preview fallback branch that still accepts preferredUrl, resolved_preview_url, and download_url as api_media preview truth`
+  - `own route-level legacy-field removal in api_media before helper-level media_urls cleanup executes`
+  - `align scoped api_media tests to canonical backend resolution only so test enforcement no longer keeps legacy fallback doctrine alive`
+- CURRENT STATE:
+  - `backend/app/routes/api_media.py` still defines DebugMediaResponse.signed_url and the /debug/media/{lesson_media_id} endpoint still returns signed_url from live playback resolution`
+  - `backend/app/routes/api_media.py` still runs _resolve_image_public_fallback_url(...), which accepts preferredUrl, preferred_url, resolved_preview_url, resolvedPreviewUrl, download_url, and downloadUrl as image preview fallback candidates`
+  - `backend/tests/test_media_api.py` and `backend/tests/test_media_preview_batch_unit.py` still inject preferredUrl rows and assert resolved_preview_url fallback when canonical playback resolution fails`
+  - `backend/app/services/courses_service.py` already strips editor-preview lesson-media rows to canonical fields, so api_media fallback acceptance is now stale route doctrine with active test enforcement rather than a required current runtime producer`
+  - `execution STOP evidence for MCR-003F5 proved helper-level media_urls cleanup still depends on api_media route cleanup, so route-level legacy removal must execute first`
+  - `local verification baseline drift blocks full pytest closure evidence until MCR-003F6V0 restores the canonical local DB and test runner substrate`
+  - `current full-suite verification still stops during pytest collection because backend/tests/test_runtime_media_migration.py imports create_home_player_upload from app.repositories but the symbol is not currently exported, so MCR-003F6 verification remains blocked until MCR-003F6V1 restores test runtime import integrity`
+- TARGET STATE:
+  - `backend/app/routes/api_media.py` no longer emits signed_url in any debug response contract or route payload`
+  - `api_media preview resolution relies only on backend lesson playback resolution and does not accept preferredUrl, resolved_preview_url, or download_url as row-carried fallback truth`
+  - `scoped api_media tests verify canonical preview resolution success or explicit unresolvable/null outcomes, not legacy fallback field behavior`
+  - `full pytest verification can run past backend/tests/test_runtime_media_migration.py collection so MCR-003F6 closure is no longer blocked by repository import drift`
+- TARGET_FILES:
+  - `backend/app/routes/api_media.py`
+  - `backend/tests/test_media_api.py`
+  - `backend/tests/test_media_preview_batch_unit.py`
+- SCOPE:
+  - `backend/app/routes/api_media.py`
+  - `backend/tests/test_media_api.py`
+  - `backend/tests/test_media_preview_batch_unit.py`
+- CONSTRAINTS:
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media representation authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no second resolver path`
+  - `no storage-adjacent URL fields as contract truth`
+  - `helper-level media_urls cleanup remains owned by MCR-003F5`
+  - `do not widen this task into upload/media_signer preferredUrl producer cleanup or observability redaction cleanup; those surfaces remain owned by existing MCR-003F4 and MCR-003F3 scope`
+  - `no implementation in this run`
+- STOP CONDITIONS:
+  - `if the scoped debug route still requires a storage-path plus playback-URL response contract because no canonical diagnostic replacement exists`
+  - `if any scoped preview flow still requires preferredUrl, resolved_preview_url, or download_url because canonical backend playback resolution cannot cover an active governed case`
+  - `if removing the scoped fallback logic reveals an active upstream scoped producer that still injects those fields into api_media preview rows in current runtime, contradicting the current courses_service evidence`
+- VERIFICATION REQUIREMENTS:
+  - `scoped lexical and semantic retrieval confirm api_media no longer defines or returns signed_url in DebugMediaResponse or debug_media`
+  - `scoped lexical and semantic retrieval confirm api_media no longer accepts preferredUrl, preferred_url, resolved_preview_url, resolvedPreviewUrl, download_url, or downloadUrl as preview fallback candidates`
+  - `backend/tests/test_media_api.py and backend/tests/test_media_preview_batch_unit.py are updated to canonical no-fallback expectations and pass after execution`
+  - `request_media_previews returns resolved_preview_url only from backend resolution or null on failure, with no row-carried fallback doctrine surviving in scope`

@@ -1,0 +1,25 @@
+# TASK_DOC_AUTH_STORAGE_AUTHORITY_AUDIT
+
+- TASK_ID: `TASK_DOC_AUTH_STORAGE_AUTHORITY_AUDIT`
+- TYPE: `GATE`
+- CLUSTER: `DOC_EXECUTE_READINESS`
+- DESCRIPTION: `Verify and lock the documentation authority for auth and storage ownership so Supabase external dependencies and local verification scaffolding are described once and without contradiction before any execute-mode system validation.`
+- TARGET_FILES:
+  - `codex/AVELI_OPERATING_SYSTEM.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+  - `actual_truth/system_runtime_rules.md`
+  - `ARCHITECTURE.md`
+  - `docs/audit/20260109_aveli_visdom_audit/SECURITY_REVIEW.md`
+  - `docs/audit/20260109_aveli_visdom_audit/API_USAGE_DIFF.md`
+- ACTION: `audit`
+- DEPENDS_ON: `[]`
+- DONE_WHEN:
+  - `auth.users`, `storage.objects`, and `storage.buckets` are documented consistently as external dependencies
+  - local auth substrate is documented only as baseline replay or verification scaffolding
+  - local storage substrate is documented only as verification scaffolding when storage-backed workers require it
+  - no in-scope document presents storage as business truth, media authority, or canonical access authority
+- VALIDATION:
+  - cite the final authority statements in OS, DECISIONS, and MANIFEST
+  - confirm runtime-observed API docs do not redefine storage as canonical truth
+  - EXECUTION_STATUS: `PENDING`

@@ -1,0 +1,23 @@
+# 0010B
+
+- TASK_ID: `0010B`
+- TYPE: `OWNER`
+- TITLE: `Move COURSE_DETAIL_VIEW assembly into a dedicated read composition layer`
+- PURPOSE: `Make one read-layer authority build COURSE_DETAIL_VIEW so routes, services, and repositories stop performing ad hoc view assembly.`
+- FILES AFFECTED:
+  - `backend/app/routes/courses.py`
+  - `backend/app/services/courses_read_service.py`
+  - `backend/app/services/__init__.py`
+- DEPENDS_ON:
+  - `0010A`
+- BLOCKER_CLEARED: `B010B`
+- DONE_WHEN:
+  - both mounted course-detail endpoints delegate COURSE_DETAIL_VIEW assembly to one read composition layer
+  - route code no longer instantiates `CourseDetailResponse` directly for course detail
+  - repositories continue returning source-owned records only and do not assemble COURSE_DETAIL_VIEW
+  - the read composition layer enforces the fixed load order: course shell, lesson structure, sibling public content, typed assembly, nullability application
+- VALIDATION:
+  - no direct COURSE_DETAIL_VIEW assembly remains in `backend/app/routes/courses.py`
+  - one dedicated read composition entry point exists for both `/courses/{course_id}` and `/courses/by-slug/{slug}`
+  - repository calls used by the read layer remain source-scoped rather than view-shaped
+  - EXECUTION_STATUS: `PENDING`

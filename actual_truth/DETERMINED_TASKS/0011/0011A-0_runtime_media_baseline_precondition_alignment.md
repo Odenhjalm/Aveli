@@ -1,0 +1,25 @@
+# 0011A-0
+
+- TASK_ID: `0011A-0`
+- TYPE: `OWNER`
+- TITLE: `Establish append-only baseline owner path for unified runtime_media authority`
+- PROBLEM_STATEMENT: `MEDIA_UNIFIED_AUTHORITY now requires app.runtime_media to cover course cover, lesson media, home player, profile/community, and future media surfaces, but the accepted baseline slots 0012-0016 and completed 0009 runtime tasks still define runtime_media as lesson/home playback-only with fallback-era columns. Because accepted baseline slots are immutable, 0011A cannot safely mutate runtime_media semantics until an append-only owner path above slot 0018 is defined and the older playback-only task lineage is explicitly superseded.`
+- TARGET_STATE:
+  - `backend/supabase/baseline_slots.lock.json`
+  - `backend/supabase/baseline_slots/0012_runtime_media_lesson_projection_core.sql`
+  - `backend/supabase/baseline_slots/0013_runtime_media_lesson_sync_core.sql`
+  - `backend/supabase/baseline_slots/0016_live_schema_media_home_player_alignment.sql`
+  - `actual_truth/NEW_BASELINE_DESIGN_PLAN.md`
+  - `actual_truth/DETERMINED_TASKS/0009/0009B_runtime_media_projection.md`
+  - `actual_truth/DETERMINED_TASKS/0009/0009C_runtime_resolver_alignment.md`
+  - `actual_truth/DETERMINED_TASKS/0009/0009D_playback_service_alignment.md`
+  - one explicit append-only baseline extension path exists for expanding `app.runtime_media` beyond lesson/home origins
+  - no protected baseline slot requires mutation to satisfy MEDIA_UNIFIED_AUTHORITY
+  - the playback-only `0009` runtime lineage is explicitly superseded or scoped so it no longer conflicts with `0011A`
+- DEPENDS_ON:
+  - none
+- VERIFICATION_METHOD:
+  - `python ops/check_baseline_slots.py`
+  - `rg -n "runtime_media|playback-only|home_player_upload|cover_media_id|teacher_profile_media" actual_truth backend/supabase/baseline_slots`
+  - confirm all required runtime_media expansion work is assigned to append-only slots above the protected range
+  - confirm no canonical task artifact still claims playback-only runtime_media scope without an explicit supersession note

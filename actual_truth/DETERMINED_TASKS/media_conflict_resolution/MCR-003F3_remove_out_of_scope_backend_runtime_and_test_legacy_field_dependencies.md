@@ -1,0 +1,56 @@
+# MCR-003F3
+
+- TASK_ID: `MCR-003F3`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining out-of-scope backend runtime and test legacy-field dependencies discovered during the MCR-003F1 stop result so download_url, signed_url, and signed_url_expires_at no longer survive in those residual surfaces before MCR-003F closure.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003F1`
+  - `MCR-003F4`
+  - `MCR-003F6`
+  - `MCR-003F5`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove the remaining out-of-scope backend runtime and test legacy-field dependencies that blocked deterministic closure of MCR-003F1`
+  - `eliminate download_url, signed_url, and signed_url_expires_at from the named residual runtime, observability, and test surfaces`
+  - `preserve canonical media = { media_id, state, resolved_url } | null as the only governed media truth while preventing legacy-field doctrine from surviving in backend-adjacent cleanup surfaces`
+- CURRENT STATE:
+  - `backend/app/routes/upload.py` still strips download_url, signed_url, and signed_url_expires_at from runtime payloads, proving that the upload boundary still carries legacy-field cleanup doctrine`
+  - `backend/tests/test_lesson_content_serialization.py` still embeds download_url in a lesson-content serialization fixture, preserving a legacy media-field test dependency outside MCR-003F1 scope`
+  - `backend/app/observability/log_buffer.py` still explicitly lists signed_url in redaction patterns, leaving legacy-field naming alive in an active backend observability surface`
+  - `the MCR-003F1 STOP result proved these residual out-of-scope surfaces must be cleaned before MCR-003F1 can be closed deterministically`
+- TARGET STATE:
+  - `backend/app/routes/upload.py` no longer strips or references download_url, signed_url, or signed_url_expires_at because canonical media-object truth is the only governed media contract crossing that runtime boundary`
+  - `backend/tests/test_lesson_content_serialization.py` no longer injects or depends on download_url, signed_url, or signed_url_expires_at and instead verifies canonical source/url behavior only`
+  - `backend/app/observability/log_buffer.py` no longer preserves legacy media-field names as active observability doctrine`
+  - `the scoped runtime and test surfaces remain canonical and do not introduce fallback or secondary resolver behavior while legacy-field remnants are removed`
+- TARGET_FILES:
+  - `backend/app/routes/upload.py`
+  - `backend/tests/test_lesson_content_serialization.py`
+  - `backend/app/observability/log_buffer.py`
+- SCOPE:
+  - `backend/app/routes/upload.py`
+  - `backend/tests/test_lesson_content_serialization.py`
+  - `backend/app/observability/log_buffer.py`
+- CONSTRAINTS:
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `no implementation in this run`
+  - `do not expand beyond named scope`
+- STOP CONDITIONS:
+  - `if any scoped runtime or test surface still requires download_url, signed_url, or signed_url_expires_at for canonical media-object flow to remain functional`
+  - `if removing the scoped legacy-field references would break canonical media-object flow or force a fallback doctrine`
+  - `if the scoped files reveal hidden resolver or parallel media-representation behavior that keeps legacy-field truth alive`
+- VERIFICATION REQUIREMENTS:
+  - `scoped grep and semantic search over backend/app/routes/upload.py, backend/tests/test_lesson_content_serialization.py, and backend/app/observability/log_buffer.py confirm removal of download_url, signed_url, and signed_url_expires_at`
+  - `python -m py_compile` passes for the edited scoped backend runtime files after execution`
+  - `scoped tests pass for backend/tests/test_lesson_content_serialization.py after execution`
+  - `no fallback paths, secondary resolver paths, or storage-adjacent media-truth fields are introduced while removing the scoped residual legacy-field surfaces`

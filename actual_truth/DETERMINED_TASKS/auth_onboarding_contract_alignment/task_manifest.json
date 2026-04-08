@@ -1,0 +1,215 @@
+{
+  "input": {
+    "task": "Construct deterministic implementation task tree for Auth + Onboarding",
+    "mode": "generate",
+    "scope": [
+      "Auth + Onboarding contract alignment only",
+      "Contracts are authoritative",
+      "Repository code is non-authoritative",
+      "Only canonical compatibility fallback for role is allowed"
+    ],
+    "retrieval_queries": [
+      "/auth/me",
+      "/profiles/me",
+      "/auth/request-password-reset",
+      "/auth/forgot-password",
+      "/admin/teachers/",
+      "/admin/teacher-requests/",
+      "api_auth",
+      "api_profiles",
+      "registered_unverified",
+      "verified_unpaid",
+      "access_active_profile_incomplete",
+      "access_active_profile_complete",
+      "welcomed",
+      "role_v2",
+      "role",
+      "is_admin",
+      "is_teacher",
+      "membership_active",
+      "email_verified",
+      "referral_code"
+    ],
+    "evaluation_criteria": [
+      "Mounted and consumed Auth + Onboarding surfaces match actual_truth/contracts/auth_onboarding_contract.md",
+      "app.auth_subjects owns onboarding and role authority",
+      "app.profiles is projection-only authority",
+      "No legacy endpoint, duplicate authority, or non-canonical fallback behavior remains",
+      "Each materialized task declares TYPE and DEPENDS_ON"
+    ]
+  },
+  "task_tree": [
+    {
+      "task_id": "AOC-001",
+      "type": "OWNER",
+      "cluster": "CANONICAL_ENTRYPOINT_REPLACEMENT",
+      "classification": "REPLACE",
+      "description": "Replace mounted Auth + Onboarding entrypoints so runtime, frontend, tests, and scripts use only the canonical contract inventory.",
+      "target_files": [
+        "backend/app/main.py",
+        "backend/app/routes/admin.py",
+        "frontend/lib/api/api_paths.dart",
+        "frontend/lib/api/auth_repository.dart",
+        "frontend/lib/data/repositories/profile_repository.dart",
+        "frontend/lib/features/community/data/admin_repository.dart",
+        "backend/tests",
+        "backend/scripts"
+      ],
+      "action": "replace",
+      "depends_on": []
+    },
+    {
+      "task_id": "AOC-002",
+      "type": "OWNER",
+      "cluster": "DUPLICATE_SURFACE_COLLAPSE",
+      "classification": "COLLAPSE",
+      "description": "Collapse duplicate auth/profile routes and schema definitions into a single canonical implementation surface.",
+      "target_files": [
+        "backend/app/routes/auth.py",
+        "backend/app/routes/profiles.py",
+        "backend/app/routes/email_verification.py",
+        "backend/app/routes/admin.py",
+        "backend/app/routes/api_auth.py",
+        "backend/app/routes/api_profiles.py",
+        "backend/app/schemas.py",
+        "backend/app/schemas/__init__.py"
+      ],
+      "action": "collapse",
+      "depends_on": [
+        "AOC-001"
+      ]
+    },
+    {
+      "task_id": "AOC-003",
+      "type": "OWNER",
+      "cluster": "LEGACY_SURFACE_ISOLATION",
+      "classification": "ISOLATE",
+      "description": "Isolate legacy shadow route modules and direct validation imports so they cannot continue acting as competing auth/profile authority.",
+      "target_files": [
+        "backend/test_email_verification.py",
+        "backend/tests/conftest.py",
+        "backend/tests/test_membership_app_entry_gate.py",
+        "backend/tests/test_onboarding_state.py",
+        "backend/app/routes/api_auth.py",
+        "backend/app/routes/api_profiles.py"
+      ],
+      "action": "isolate",
+      "depends_on": [
+        "AOC-002"
+      ]
+    },
+    {
+      "task_id": "AOC-004",
+      "type": "OWNER",
+      "cluster": "SUBJECT_PROFILE_AUTHORITY_REPLACEMENT",
+      "classification": "REPLACE",
+      "description": "Replace profile-authority leakage so registration and profile writes persist onboarding and role authority only through app.auth_subjects, never through app.profiles or forbidden request fields.",
+      "target_files": [
+        "backend/app/repositories/auth.py",
+        "backend/app/repositories/profiles.py",
+        "backend/app/routes/auth.py",
+        "backend/app/schemas/__init__.py",
+        "frontend/lib/api/auth_repository.dart",
+        "backend/tests",
+        "backend/scripts"
+      ],
+      "action": "replace",
+      "depends_on": [
+        "AOC-002"
+      ]
+    },
+    {
+      "task_id": "AOC-005",
+      "type": "OWNER",
+      "cluster": "LEGACY_ROLE_AND_STATE_REMOVAL",
+      "classification": "REMOVE",
+      "description": "Remove invalid teacher inference, legacy onboarding states, and cross-domain auth fields from backend and frontend Auth + Onboarding surfaces while preserving canonical role compatibility fallback.",
+      "target_files": [
+        "backend/app/auth.py",
+        "backend/app/models.py",
+        "backend/app/routes/auth.py",
+        "frontend/lib/core/auth/auth_claims.dart",
+        "frontend/lib/core/routing/app_router.dart",
+        "frontend/lib/data/models/profile.dart",
+        "frontend/lib/domain/models/user_access.dart",
+        "frontend/lib/features/studio/data/studio_repository.dart",
+        "frontend/lib/mvp/api_client.dart",
+        "backend/tests",
+        "frontend/test",
+        "backend/scripts"
+      ],
+      "action": "remove",
+      "depends_on": [
+        "AOC-003",
+        "AOC-004"
+      ]
+    },
+    {
+      "task_id": "AOC-006",
+      "type": "OWNER",
+      "cluster": "AUTH_TEXT_LANGUAGE_REPLACEMENT",
+      "classification": "REPLACE",
+      "description": "Replace remaining non-Swedish Auth + Onboarding user-facing and runtime text on canonical kept surfaces only.",
+      "target_files": [
+        "backend/app/services/email_verification.py",
+        "backend/app/routes/auth.py",
+        "backend/app/routes/profiles.py",
+        "backend/app/permissions.py",
+        "backend/app/email_templates/verify_email.html",
+        "backend/app/email_templates/reset_password.html",
+        "backend/app/email_templates/invite_email.html",
+        "frontend/lib/features/auth/presentation"
+      ],
+      "action": "replace",
+      "depends_on": [
+        "AOC-005"
+      ]
+    },
+    {
+      "task_id": "AOC-007",
+      "type": "GATE",
+      "cluster": "VALIDATION_GATE_REWRITE",
+      "classification": "REMOVE",
+      "description": "Rewrite tests, fixtures, and scripts so validation uses only canonical Auth + Onboarding truth, canonical /profiles/me response shape, and canonical field-authority rules.",
+      "target_files": [
+        "backend/tests",
+        "backend/test_email_verification.py",
+        "frontend/test",
+        "backend/scripts"
+      ],
+      "action": "gate",
+      "depends_on": [
+        "AOC-001",
+        "AOC-003",
+        "AOC-004",
+        "AOC-005",
+        "AOC-006"
+      ]
+    },
+    {
+      "task_id": "AOC-008",
+      "type": "AGGREGATE",
+      "cluster": "AGGREGATE_VERIFICATION",
+      "description": "Run the aggregate grep and route-inventory gate to confirm that legacy Auth + Onboarding authority is absent, /profiles/me matches the execution contract, and the canonical contract surface is the only surviving truth.",
+      "target_files": [
+        "actual_truth/DETERMINED_TASKS/auth_onboarding_contract_alignment/task_manifest.json",
+        "backend/app/main.py",
+        "backend/app/routes/auth.py",
+        "backend/app/routes/profiles.py",
+        "backend/app/routes/email_verification.py",
+        "backend/app/routes/admin.py",
+        "backend/app/repositories/auth.py",
+        "backend/app/repositories/profiles.py",
+        "backend/app/models.py",
+        "frontend/lib",
+        "backend/tests",
+        "frontend/test",
+        "backend/scripts"
+      ],
+      "action": "aggregate",
+      "depends_on": [
+        "AOC-007"
+      ]
+    }
+  ]
+}

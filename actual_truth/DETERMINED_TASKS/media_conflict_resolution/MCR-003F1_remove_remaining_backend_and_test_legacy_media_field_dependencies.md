@@ -1,0 +1,68 @@
+# MCR-003F1
+
+- TASK_ID: `MCR-003F1`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining legacy media field dependencies from active backend route/helper code and enforcing backend/frontend tests so download_url, signed_url, and signed_url_expires_at no longer survive anywhere in governed runtime or verification surfaces.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003F0`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/profile_media_edge_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove the remaining legacy media field doctrine from active backend routes/helpers and enforcing tests`
+  - `eliminate download_url, signed_url, and signed_url_expires_at as runtime or verification truth now that canonical media objects already exist on studio and profile/community surfaces`
+  - `make MCR-003 gate closure deterministic by removing the last scoped backend/test dependencies on legacy media URL fields`
+- CURRENT STATE:
+  - `backend/app/routes/api_media.py` still defines a debug response carrying signed_url, returns signed_url from a live debug endpoint, and still treats download_url as an acceptable preview fallback candidate`
+  - `backend/app/utils/media_signer.py` still attaches, strips, and preserves legacy field handling for download_url, signed_url, and signed_url_expires_at inside active backend helper code`
+  - `backend/app/utils/media_urls.py` still treats download_url and signed_url as active media URL fields during absolute-URL normalization`
+  - `frontend/test/widgets/course_editor_screen_test.dart` still scaffolds editor preview behavior from download_url fallback data`
+  - `backend/tests/test_teacher_profile_media_truth_alignment.py`, `backend/tests/test_lesson_media_truth_alignment.py`, and `backend/tests/test_media_signer.py` still inject, assert, or preserve legacy media URL fields in scoped verification surfaces`
+  - `the MCR-003 gate re-run proved that the system cannot close while these backend/helper/test dependencies remain even though canonical media = { media_id, state, resolved_url } | null already exists on studio and profile/community surfaces`
+- TARGET STATE:
+  - `backend/app/routes/api_media.py` no longer exposes signed_url in any scoped response model or endpoint and no longer treats download_url as valid preview/renderability authority`
+  - `backend/app/utils/media_signer.py` no longer attaches, strips, or preserves download_url, signed_url, or signed_url_expires_at as media contract fields`
+  - `backend/app/utils/media_urls.py` no longer normalizes download_url or signed_url as active media URL fields`
+  - `scoped backend and frontend tests no longer inject, assert, or depend on legacy media URL fields and instead verify canonical media objects, resolved_url, or preview-only metadata as appropriate`
+  - `the scoped system is canonical end-to-end: no governed runtime code or enforcing test preserves legacy media field doctrine once this task is complete`
+- TARGET_FILES:
+  - `backend/app/routes/api_media.py`
+  - `backend/app/utils/media_signer.py`
+  - `backend/app/utils/media_urls.py`
+  - `frontend/test/widgets/course_editor_screen_test.dart`
+  - `backend/tests/test_teacher_profile_media_truth_alignment.py`
+  - `backend/tests/test_lesson_media_truth_alignment.py`
+  - `backend/tests/test_media_signer.py`
+- SCOPE:
+  - `backend/app/routes/api_media.py`
+  - `backend/app/utils/media_signer.py`
+  - `backend/app/utils/media_urls.py`
+  - `frontend/test/widgets/course_editor_screen_test.dart`
+  - `backend/tests/test_teacher_profile_media_truth_alignment.py`
+  - `backend/tests/test_lesson_media_truth_alignment.py`
+  - `backend/tests/test_media_signer.py`
+- CONSTRAINTS:
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `no implementation in this run`
+  - `do not expand beyond named scope`
+  - `do not preserve legacy fields in debug, helper, or test surfaces as a temporary compatibility doctrine`
+- STOP CONDITIONS:
+  - `if any scoped runtime flow still requires download_url, signed_url, or signed_url_expires_at because canonical media truth is not sufficient in the named files`
+  - `if removing legacy field handling from scoped helpers or debug surfaces would break a governed canonical media flow`
+  - `if the scoped tests cannot be rewritten to canonical media assertions without introducing fallback doctrine or a second media representation`
+  - `if the named files reveal ambiguity about whether preview-only metadata is being used as replacement media truth`
+- VERIFICATION REQUIREMENTS:
+  - `scoped grep and semantic search over the named files confirm that download_url, signed_url, and signed_url_expires_at no longer exist as active runtime or test dependencies`
+  - `python -m py_compile` passes for backend/app/routes/api_media.py, backend/app/utils/media_signer.py, and backend/app/utils/media_urls.py after execution`
+  - `scoped backend tests and frontend widget tests pass with canonical media-object or resolved_url assertions and no legacy-field fallbacks`
+  - `no new fallback fields, secondary resolver paths, or storage-adjacent truth are introduced while completing the scoped cleanup`

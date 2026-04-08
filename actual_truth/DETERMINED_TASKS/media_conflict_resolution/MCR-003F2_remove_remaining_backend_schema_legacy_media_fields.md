@@ -1,0 +1,52 @@
+# MCR-003F2
+
+- TASK_ID: `MCR-003F2`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining legacy media field dependencies from backend runtime and schema surfaces outside MCR-003F1 scope so canonical media-object truth can close MCR-003F1 and unblock final MCR-003F verification.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003F1`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove remaining backend runtime and schema handling for download_url, signed_url, and signed_url_expires_at outside the MCR-003F1 test/helper cleanup scope`
+  - `eliminate the last scoped backend/schema legacy-field surfaces that prevented deterministic execution of MCR-003F1`
+  - `align backend runtime and schema surfaces to canonical media = { media_id, state, resolved_url } | null as the only governed media truth`
+- CURRENT STATE:
+  - `backend/app/utils/lesson_content.py` still accepts download_url as a valid media-source key when resolving lesson content media`
+  - `backend/app/schemas/__init__.py` still contains active legacy media-field schema definitions, including signed_url`
+  - `backend/app/schemas.py` still contains legacy media-field schema definitions for download_url, signed_url, and signed_url_expires_at`
+  - `MCR-003F1 STOP proved that these out-of-scope backend runtime/schema hits block truthful closure of the remaining legacy-field cleanup chain`
+- TARGET STATE:
+  - `backend runtime logic no longer accepts, handles, or exposes download_url, signed_url, or signed_url_expires_at as media truth`
+  - `backend schema surfaces no longer define download_url, signed_url, or signed_url_expires_at as governed media contract fields`
+  - `the scoped backend surfaces rely solely on canonical media-object truth and do not preserve legacy media URLs as compatibility doctrine`
+- TARGET_FILES:
+  - `backend/app/utils/lesson_content.py`
+  - `backend/app/schemas/__init__.py`
+  - `backend/app/schemas.py`
+- SCOPE:
+  - `backend/app/utils/lesson_content.py`
+  - `backend/app/schemas/__init__.py`
+  - `backend/app/schemas.py`
+- CONSTRAINTS:
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `no implementation in this run`
+  - `do not expand beyond named scope`
+  - `use the real repo schema path backend/app/schemas.py rather than the stale prompt path backend/app/schemas/schemas.py`
+- STOP CONDITIONS:
+  - `if any scoped backend runtime or schema surface still requires download_url, signed_url, or signed_url_expires_at for canonical media-object flow to remain functional`
+  - `if removing the scoped legacy fields would break canonical media-object flow or force a new fallback doctrine`
+  - `if the scoped files reveal ambiguous parallel media representations that would keep legacy-field truth alive after the change`
+- VERIFICATION REQUIREMENTS:
+  - `scoped grep and semantic search over backend/app/utils/lesson_content.py, backend/app/schemas/__init__.py, and backend/app/schemas.py confirm removal of download_url, signed_url, and signed_url_expires_at`
+  - `python -m py_compile` passes for all edited scoped backend files after execution`
+  - `no fallback paths, secondary resolver paths, or storage-adjacent media-truth fields are introduced while removing the scoped legacy schema/runtime surfaces`

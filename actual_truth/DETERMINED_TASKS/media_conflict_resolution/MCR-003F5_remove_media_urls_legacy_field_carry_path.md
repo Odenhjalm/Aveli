@@ -1,0 +1,60 @@
+# MCR-003F5
+
+- TASK_ID: `MCR-003F5`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining helper-level legacy and fallback media URL carry path in media_urls.py and align its direct scoped helper consumers after api_media route cleanup so download_url, signed_url, and preferredUrl no longer gain normalized authority through helper usage.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003E0`
+  - `MCR-003F0`
+  - `MCR-003F6`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `actual_truth/contracts/profile_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove helper-carried normalization authority for legacy and fallback media URL fields in backend/app/utils/media_urls.py`
+  - `align the scoped api_media, studio, and community helper call sites so they no longer legitimize download_url, signed_url, or preferredUrl as normalized media contract data after route-level cleanup lands`
+  - `complete helper-level cleanup only after api_media route-level legacy removal executes, because media_urls currently sits behind active route logic in api_media`
+- CURRENT STATE:
+  - `backend/app/utils/media_urls.py` still lists download_url, signed_url, preferred_url, and preferredUrl in _RELATIVE_MEDIA_URL_FIELDS, so the helper still treats those legacy and fallback URL fields as acceptable route-normalized media data`
+  - `backend/app/routes/api_media.py`, `backend/app/routes/studio.py`, and `backend/app/routes/community.py` still call absolutize_media_urls(...) or absolutize_media_url_items(...), so helper-carried fallback fields can still cross active backend route boundaries whenever upstream rows include them`
+  - `backend/app/services/courses_service.py` already strips editor-preview lesson-media rows down to canonical fields, which proves the media_urls helper path is now residual carrier doctrine rather than a required canonical producer`
+  - `frontend/lib` no longer consumes preferredUrl, download_url, or signed_url in live app code, so the remaining helper carriage is contract drift instead of a required runtime frontend dependency`
+  - `backend/app/routes/api_media.py` still contains live route-level preview fallback and debug signed_url logic, so media_urls cleanup cannot close deterministically until MCR-003F6 removes that active route doctrine`
+- TARGET STATE:
+  - `backend/app/utils/media_urls.py` no longer normalizes download_url, signed_url, preferred_url, or preferredUrl as media URL fields`
+  - `scoped api_media, studio, and community routes do not rely on helper-normalized legacy or fallback URL fields to build or expose media payloads`
+  - `direct helper consumers preserve only authority-approved URL fields and canonical media-object truth, with no second carry path for signed/download/preferred fallback data`
+- TARGET_FILES:
+  - `backend/app/utils/media_urls.py`
+  - `backend/app/routes/api_media.py`
+  - `backend/app/routes/studio.py`
+  - `backend/app/routes/community.py`
+- SCOPE:
+  - `backend/app/utils/media_urls.py`
+  - `backend/app/routes/api_media.py`
+  - `backend/app/routes/studio.py`
+  - `backend/app/routes/community.py`
+- CONSTRAINTS:
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media representation authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no second resolver path`
+  - `no storage-adjacent URL fields as contract truth`
+  - `route-level preview/debug fallback removal in api_media remains owned by MCR-003F6`
+  - `do not widen this task into media_signer or upload preferredUrl producer cleanup; that producer ownership remains with existing MCR-003F4 scope`
+  - `no implementation in this run`
+- STOP CONDITIONS:
+  - `if any scoped route still requires helper-normalized download_url, signed_url, preferred_url, or preferredUrl for an active governed runtime flow`
+  - `if removing helper carriage reveals a live scoped caller that still needs those fields because canonical media or authority-approved preview metadata is insufficient`
+  - `if direct helper consumers still expose raw dict route payloads whose canonical replacement is ambiguous after the helper field removal`
+- VERIFICATION REQUIREMENTS:
+  - `scoped lexical and semantic retrieval confirm that backend/app/utils/media_urls.py no longer carries download_url, signed_url, preferred_url, or preferredUrl in its normalization field set after execution`
+  - `scoped route retrieval confirms backend/app/routes/api_media.py, backend/app/routes/studio.py, and backend/app/routes/community.py no longer rely on helper-normalized legacy or fallback URL fields`
+  - `scoped cross-surface search confirms live frontend app code still does not require preferredUrl, download_url, or signed_url before this task is closed`
+  - `no fallback path, second resolver path, or storage-adjacent contract truth is introduced while removing the helper carry path`

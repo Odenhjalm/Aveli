@@ -1,0 +1,64 @@
+# MCR-003F0
+
+- TASK_ID: `MCR-003F0`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Add the canonical backend-authored profile/community media object boundary for profile/community lesson media so those surfaces can consume media = { media_id, state, resolved_url } | null directly from backend read composition and MCR-003F can remove legacy signed/download fallback fields without breaking active profile/community workflows.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003E`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/profile_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `create the canonical backend-authored media object boundary for profile/community lesson media`
+  - `make profile/community frontend receive resolved_url from backend read composition rather than download_url, signed_url, or signed_url_expires_at fallback fields`
+  - `materialize the unified media contract on the profile/community lesson-media surface so MCR-003F can remove the legacy fallback doctrine deterministically`
+- CURRENT STATE:
+  - `backend/app/repositories/teacher_profile_media.py` still attaches `download_url`, `signed_url`, and `signed_url_expires_at` onto profile/community lesson-media rows and does not expose canonical media object truth`
+  - `backend/app/utils/profile_media.py` still maps lesson-media rows into `TeacherProfileLessonSource` using legacy signed/download fields and no canonical `media = { media_id, state, resolved_url } | null` payload`
+  - `backend/app/schemas/__init__.py` still defines `TeacherProfileLessonSource` with `download_url`, `signed_url`, and `signed_url_expires_at`, but without the unified `media` object required by authority`
+  - `frontend/lib/data/models/teacher_profile_media.dart` still parses legacy signed/download fields as lesson-media source contract and does not parse canonical media object truth for profile/community lesson media`
+  - `frontend/lib/features/community/presentation/teacher_profile_page.dart` still resolves playable lesson media from `source.signedUrl ?? source.downloadUrl` instead of backend-authored canonical media object truth`
+  - `MCR-003F` STOP proved that removing legacy fallback fields before this boundary exists would break active profile/community flow`
+- TARGET STATE:
+  - `profile/community lesson-media payloads include canonical backend-authored media object truth as media = { media_id, state, resolved_url } | null while preserving lesson/profile identity metadata`
+  - `TeacherProfileLessonSource` backend schema and frontend model reuse the unified media object shape rather than inventing a profile/community-specific resolver payload`
+  - `profile/community frontend rendering consumes backend-authored resolved_url from the canonical media object only for playable lesson media`
+  - `download_url`, `signed_url`, and `signed_url_expires_at` are not frontend truth and are not required for active profile/community rendering once the canonical boundary exists`
+  - `no new resolver path, no fallback contract, and no storage-adjacent frontend media truth are introduced`
+- TARGET_FILES:
+  - `backend/app/repositories/teacher_profile_media.py`
+  - `backend/app/utils/profile_media.py`
+  - `backend/app/schemas/__init__.py`
+  - `frontend/lib/data/models/teacher_profile_media.dart`
+  - `frontend/lib/features/community/presentation/teacher_profile_page.dart`
+- SCOPE:
+  - `backend/app/repositories/teacher_profile_media.py`
+  - `backend/app/utils/profile_media.py`
+  - `backend/app/schemas/__init__.py`
+  - `frontend/lib/data/models/teacher_profile_media.dart`
+  - `frontend/lib/features/community/presentation/teacher_profile_page.dart`
+- CONSTRAINTS:
+  - `runtime_media = runtime truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `no implementation in this run`
+  - `no schema invention unless authority requires explicit shape change`
+  - `use the existing unified media object shape rather than defining a profile/community-specific alternative`
+- STOP CONDITIONS:
+  - `if the canonical profile/community lesson-media object shape cannot be derived deterministically from the named authority files`
+  - `if profile/community cannot receive canonical media truth within named scope without introducing a new resolver path or fallback`
+  - `if storage_path, storage_bucket, or legacy signed/download fields would still have to act as frontend media truth after the scoped boundary change`
+  - `if the scoped files reveal that profile/community cannot gain canonical media object truth without mutating surfaces outside the named scope`
+- VERIFICATION REQUIREMENTS:
+  - `scoped backend repository/helper/schema definitions expose canonical media = { media_id, state, resolved_url } | null for profile/community lesson-media payloads instead of signed/download fallback fields`
+- `scoped frontend profile/community model parsing includes the canonical media object and does not parse legacy signed/download fields as frontend truth`
+  - `scoped community/profile UI selects playable lesson-media source only from backend-authored canonical media object truth`
+  - `no scoped code introduces a new resolver path, alternate profile/community media doctrine, or fallback media contract`
+  - `scoped profile/community media handling is aligned to the unified authority chain: media_id -> runtime_media -> backend read composition -> API -> frontend`

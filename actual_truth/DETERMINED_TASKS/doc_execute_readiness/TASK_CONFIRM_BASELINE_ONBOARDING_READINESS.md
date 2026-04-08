@@ -1,0 +1,23 @@
+# TASK_CONFIRM_BASELINE_ONBOARDING_READINESS
+
+- TASK_ID: `TASK_CONFIRM_BASELINE_ONBOARDING_READINESS`
+- TYPE: `GATE`
+- CLUSTER: `DOC_EXECUTE_READINESS`
+- DESCRIPTION: `Confirm whether the baseline and runtime documentation are now aligned enough to support execute-mode onboarding and teacher-rights validation without guessing any schema field, route mount, or mutation boundary.`
+- TARGET_STATE:
+  - `codex/AVELI_OPERATING_SYSTEM.md`
+  - `codex/AVELI_EXECUTION_WORKFLOW.md`
+  - `codex/AVELI_EXECUTION_POLICY.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+  - `actual_truth/system_runtime_rules.md`
+  - `actual_truth/contracts/`
+  - one explicit readiness verdict for execute-mode onboarding and teacher-rights validation
+- DEPENDS_ON:
+  - `TASK_DOC_AUTH_STORAGE_AUTHORITY_AUDIT`
+  - `TASK_DOC_ONBOARDING_AND_TEACHER_AUTHORITY_AUDIT`
+- VERIFICATION_METHOD:
+  - confirm user creation, login, `/auth/me`, onboarding completion, and teacher-rights mutation each have one canonical authority chain
+  - confirm in-scope mounted-route documentation is consistent across runtime rules and API audit artifacts
+  - return `READY` only if no missing contract or route-authority contradiction remains
+  - EXECUTION_STATUS: `PENDING`

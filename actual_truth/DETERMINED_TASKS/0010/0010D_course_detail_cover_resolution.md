@@ -1,0 +1,26 @@
+# 0010D
+
+- TASK_ID: `0010D`
+- TYPE: `OWNER`
+- TITLE: `Resolve COURSE_DETAIL_VIEW cover through the canonical media pipeline`
+- PURPOSE: `Expose an authoritative cover field on COURSE_DETAIL_VIEW using control-plane-approved identity and deterministic media resolution rather than raw pointers or fallback paths.`
+- FILES AFFECTED:
+  - `backend/app/schemas/__init__.py`
+  - `backend/app/routes/courses.py`
+  - `backend/app/services/courses_read_service.py`
+  - `backend/app/services/courses_service.py`
+- DEPENDS_ON:
+  - `0009A`
+  - `0010A`
+  - `0010B`
+- BLOCKER_CLEARED: `B010D`
+- DONE_WHEN:
+  - COURSE_DETAIL_VIEW exposes `cover` through the canonical cover contract
+  - cover resolution uses `cover_media_id` and canonical media identity only
+  - missing `cover_media_id` yields `cover = null`
+  - course-detail reads do not use raw storage paths, legacy `cover_url`, or frontend inference
+- VALIDATION:
+  - the course-detail path resolves cover through the canonical media pipeline
+  - same course input yields identical resolved cover output
+  - no course-detail code path reads or serializes legacy `cover_url`
+  - EXECUTION_STATUS: `PENDING`

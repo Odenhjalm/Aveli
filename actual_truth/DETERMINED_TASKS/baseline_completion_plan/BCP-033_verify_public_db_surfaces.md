@@ -1,0 +1,21 @@
+# BCP-033
+
+- TASK_ID: `BCP-033`
+- TYPE: `GATE`
+- TITLE: `Verify the public DB surfaces`
+- PROBLEM_STATEMENT: `Public read authority remains invalid if discovery, course detail, or lesson structure can vary by user identity, leak protected categories, or bypass the resolved DB-surface map through raw-table access.`
+- IMPLEMENTATION_SURFACES:
+  - `backend/tests/`
+  - append-only public surface slots created by `BCP-032`
+  - `backend/app/services/courses_read_service.py`
+- TARGET_STATE:
+  - verification fails when public discovery or public course detail varies by user identity
+  - verification fails when `lesson_content`, `lesson_media`, enrollment state, or unlock state leak onto public surfaces
+  - verification fails when `course_public_content` is read outside the public course-detail surface
+- DEPENDS_ON:
+  - `BCP-032`
+  - `BCP-033A`
+- VERIFICATION_METHOD:
+  - add focused DB and backend tests for anonymous versus authenticated public reads
+  - confirm `LessonSummary` remains structure-only on public course detail
+  - confirm grep checks show no raw-table public read bypass in mounted code paths

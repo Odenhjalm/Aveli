@@ -1,0 +1,25 @@
+# 0010C
+
+- TASK_ID: `0010C`
+- TYPE: `OWNER`
+- TITLE: `Compose short_description into COURSE_DETAIL_VIEW with deterministic null semantics`
+- PURPOSE: `Ensure COURSE_DETAIL_VIEW always carries the sibling public-description field from its single canonical source and represents missing data as null rather than omission or fallback.`
+- FILES AFFECTED:
+  - `backend/app/schemas/__init__.py`
+  - `backend/app/routes/courses.py`
+  - `backend/app/services/courses_read_service.py`
+  - `backend/app/repositories/courses.py`
+- DEPENDS_ON:
+  - `0010A`
+  - `0010B`
+- BLOCKER_CLEARED: `B010C`
+- DONE_WHEN:
+  - COURSE_DETAIL_VIEW always includes `short_description`
+  - the read composition layer loads `app.course_public_content` after course shell and lesson structure
+  - missing `app.course_public_content` rows produce `short_description = null`
+  - no fallback to `courses.description`, `lesson_contents`, or injected default text exists
+- VALIDATION:
+  - course-detail responses keep the same field set whether public content exists or not
+  - a missing sibling row yields `short_description: null`
+  - no course-detail query or read path sources description text from forbidden tables
+  - EXECUTION_STATUS: `PENDING`

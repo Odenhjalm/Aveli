@@ -1,0 +1,26 @@
+# MCR-003B
+
+- TASK_ID: `MCR-003B`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove backend interpretation of legacy /media/sign and /media/stream/{token} paths so backend path handling, preview filtering, and lesson-content normalization no longer treat deleted routes as valid media identities or valid runtime playback paths.`
+- TARGET_FILES:
+  - `backend/app/routes/api_media.py`
+  - `backend/app/utils/lesson_content.py`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- EVIDENCE:
+  - `backend/app/routes/api_media.py` still classifies `/media/sign` and `/media/stream/` as auth-protected preview paths
+  - `backend/app/utils/lesson_content.py` still defines `_MEDIA_STREAM_URL_PATTERN`
+  - `backend/app/utils/lesson_content.py` still extracts lesson media identity from `/media/stream/{token}` URLs
+- TARGET_CONTRACT:
+  - backend accepts only canonical media identities and backend-authored media objects
+  - deleted legacy stream/sign paths are no longer recognized as valid runtime media references
+  - lesson content normalization does not preserve or decode removed stream-token URLs as current contract truth
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003`
+  - `MCR-003A`

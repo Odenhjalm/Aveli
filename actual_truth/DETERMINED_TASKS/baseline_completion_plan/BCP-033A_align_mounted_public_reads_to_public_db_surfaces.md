@@ -1,0 +1,35 @@
+# BCP-033A
+
+- TASK_ID: `BCP-033A`
+- TYPE: `OWNER`
+- TITLE: `Align mounted public runtime reads to canonical public DB surfaces`
+- PROBLEM_STATEMENT: `BCP-033 cannot pass while mounted public course reads still bypass the append-only public DB surfaces created by BCP-032. The current mounted public path still flows through courses_read_service, raw course reads, raw lesson-structure reads, raw course_public_content reads, and a direct /courses/{course_id}/public path that treats course_public_content as an independent public authority.`
+- IMPLEMENTATION_SURFACES:
+  - `backend/app/repositories/courses.py`
+  - `backend/app/services/courses_service.py`
+  - `backend/app/services/courses_read_service.py`
+  - `backend/app/routes/courses.py`
+  - mounted public course discovery and course-detail helpers only
+- TARGET_STATE:
+  - mounted public discovery reads consume `app.course_discovery_surface`
+  - mounted public course detail reads consume the canonical public detail and lesson-structure surfaces instead of raw table joins
+  - `course_public_content.short_description` no longer reaches mounted public runtime outside the canonical public course-detail path
+  - `/courses/{course_id}/public` no longer acts as an independent public authority path for `course_public_content`
+  - mounted public runtime no longer treats raw tables as the final public read authority
+- DEPENDS_ON:
+  - `BCP-032`
+- EXPECTED_OUTCOME_BEFORE_ACTION:
+  - the exact mounted public read-path bypass that failed `BCP-033` is removed without touching protected lesson-content alignment, runtime_media alignment, auth-subject work, or memberships work
+- VERIFICATION_METHOD:
+  - grep mounted public routes, services, and repositories for raw public reads of `app.courses`, `app.lessons`, and `app.course_public_content`
+  - confirm mounted public course-detail composition no longer reads `course_public_content` outside the canonical public course-detail path
+  - confirm mounted public course detail remains structure-only for lesson summaries and does not expose `lesson_content`, `lesson_media`, enrollment state, or unlock state
+- CONSTRAINTS:
+  - do not modify protected lesson-content paths already owned by `BCP-034`, `BCP-035`, and `BCP-036`
+  - do not introduce new schema objects or mutate baseline slots
+  - do not broaden into unified `runtime_media` ownership or resolver refactors outside the mounted public read-path blocker
+  - do not restore raw-table authority through convenience helpers, compatibility routes, or parallel read contracts
+- STOP_CONDITIONS:
+  - stop if the mounted public route contract requires fields or semantics that are not present in the canonical public DB surfaces and no primary source authorizes extending those surfaces
+  - stop if removing the direct `course_public_content` public path would require protected-surface work or runtime_media work outside this blocker scope
+  - stop if anonymous and authenticated mounted public reads still diverge after the public-surface rewiring

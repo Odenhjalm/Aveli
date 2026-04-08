@@ -1,0 +1,115 @@
+# MCR-003E
+
+- TASK_ID: `MCR-003E`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining playback_url-based secondary resolver path across active backend routes, service/helper contracts, frontend client contracts, and enforcing tests so no governed frontend surface exposes, fetches, parses, or preserves playback_url as media truth.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003D`
+  - `MCR-003E0`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/lesson_media_edge_contract.md`
+  - `actual_truth/contracts/lesson_document_edge_contract.md`
+  - `actual_truth/contracts/lesson_audio_playback_edge_contract.md`
+  - `actual_truth/contracts/lesson_video_playback_edge_contract.md`
+  - `actual_truth/contracts/home_audio_runtime_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove every remaining playback_url route/schema/frontend contract that keeps a second media-delivery path alive`
+  - `collapse surviving playback resolver behavior into runtime_media -> backend_read_composition -> API -> frontend`
+  - `ensure media = { media_id, state, resolved_url } | null is the only governed frontend media truth while preview metadata remains secondary only`
+- CURRENT STATE:
+  - `classification rule: only active runtime code, active schemas, and tests that enforce or scaffold playback_url behavior are in scope; docs, archive, comments-only references, and config/TTL-only hits such as media_playback_url_ttl_seconds are explicitly excluded`
+  - `backend routes: backend/app/routes/playback.py still exposes /api/playback/lesson with LessonPlaybackResolveResponse(playback_url); backend/app/routes/api_media.py still exposes /api/media/playback-url, /api/media/playback, and /api/media/lesson-playback with playback_url-bearing response models; backend/app/routes/studio.py still normalizes playback dictionaries for canonical studio media composition and preview responses`
+  - `backend services/helpers: backend/app/services/lesson_playback_service.py still builds dict responses keyed by playback_url; backend/app/services/media_resolver.py still defines resolve_storage_playback_url(...) and resolve_lesson_media_playback_url(...); backend/app/services/courses_service.py and backend/app/services/home_audio_service.py still read playback_url while composing resolved_url/media; backend/app/utils/media_signer.py and backend/app/utils/media_urls.py still attach, strip, or normalize playback_url as an active media field`
+  - `frontend consumers: frontend/lib/api/api_paths.dart and frontend/lib/api/api_client.dart still define and validate playback endpoints; frontend/lib/features/media/data/media_pipeline_repository.dart still fetches /api/media/playback-url, /api/media/playback, and /api/playback/lesson and parses playback_url; frontend/lib/features/studio/data/studio_repository.dart and frontend/lib/features/studio/data/studio_repository_lesson_media.dart still preserve the deprecated lesson-playback fetch surface even though MCR-003E0 removed the direct course_editor_page.dart caller`
+  - `schema/contracts: backend/app/schemas/__init__.py still exposes MediaPlaybackUrlResponse(playback_url); backend/app/routes/api_media.py and backend/app/routes/playback.py still define playback_url-bearing response models; frontend/lib/features/media/data/media_pipeline_repository.dart still defines MediaPlaybackUrl and playback_url parsing as a frontend client contract`
+  - `tests: backend/tests/test_media_api.py, backend/tests/test_lesson_playback_resolution_order.py, backend/tests/test_lesson_media_rendering.py, backend/tests/test_media_preview_batch_unit.py, backend/tests/test_home_audio_feed.py, backend/tests/test_lesson_media_truth_alignment.py, backend/tests/test_media_signer.py, backend/tests/test_studio_lesson_media_contract_unit.py, frontend/test/unit/media_upload_url_contract_test.dart, frontend/test/unit/studio_repository_lesson_media_routing_test.dart, frontend/test/unit/lesson_media_playback_resolver_test.dart, and frontend/test/widgets/course_editor_screen_test.dart still enforce or scaffold playback_url-based behavior`
+- TARGET STATE:
+  - `playback_url does not exist in any backend route response, schema, or frontend API/client contract`
+  - `no backend route exposes /api/playback/lesson, /api/media/playback-url, /api/media/playback, or /api/media/lesson-playback as frontend delivery surfaces`
+  - `no frontend runtime code defines ApiPaths or repository methods for playback_url endpoints, and no frontend runtime code fetches, parses, resolves, or preserves playback_url as media truth`
+  - `backend playback resolution, if it survives internally, is normalized to resolved_url or canonical media objects before crossing route, schema, or test boundaries`
+  - `media = { media_id, state, resolved_url } | null is the only governed frontend media truth; preview_url and resolved_preview_url remain preview-only metadata and must not carry playback_url doctrine`
+  - `MCR-003E0 canonical studio media object remains the studio/editor truth and no second resolver path survives anywhere in scoped runtime code`
+- TARGET_FILES:
+  - `backend/app/routes/playback.py`
+  - `backend/app/routes/api_media.py`
+  - `backend/app/routes/studio.py`
+  - `backend/app/services/lesson_playback_service.py`
+  - `backend/app/services/media_resolver.py`
+  - `backend/app/services/courses_service.py`
+  - `backend/app/services/home_audio_service.py`
+  - `backend/app/utils/media_signer.py`
+  - `backend/app/utils/media_urls.py`
+  - `backend/app/schemas/__init__.py`
+  - `frontend/lib/api/api_paths.dart`
+  - `frontend/lib/api/api_client.dart`
+  - `frontend/lib/features/media/data/media_pipeline_repository.dart`
+  - `frontend/lib/features/studio/data/studio_repository.dart`
+  - `frontend/lib/features/studio/data/studio_repository_lesson_media.dart`
+  - `backend/tests/test_media_api.py`
+  - `backend/tests/test_lesson_playback_resolution_order.py`
+  - `backend/tests/test_lesson_media_rendering.py`
+  - `backend/tests/test_media_preview_batch_unit.py`
+  - `backend/tests/test_home_audio_feed.py`
+  - `backend/tests/test_lesson_media_truth_alignment.py`
+  - `backend/tests/test_media_signer.py`
+  - `backend/tests/test_studio_lesson_media_contract_unit.py`
+  - `frontend/test/unit/media_upload_url_contract_test.dart`
+  - `frontend/test/unit/studio_repository_lesson_media_routing_test.dart`
+  - `frontend/test/unit/lesson_media_playback_resolver_test.dart`
+  - `frontend/test/widgets/course_editor_screen_test.dart`
+- SCOPE:
+  - `backend/app/routes/playback.py`
+  - `backend/app/routes/api_media.py`
+  - `backend/app/routes/studio.py`
+  - `backend/app/services/lesson_playback_service.py`
+  - `backend/app/services/media_resolver.py`
+  - `backend/app/services/courses_service.py`
+  - `backend/app/services/home_audio_service.py`
+  - `backend/app/utils/media_signer.py`
+  - `backend/app/utils/media_urls.py`
+  - `backend/app/schemas/__init__.py`
+  - `frontend/lib/api/api_paths.dart`
+  - `frontend/lib/api/api_client.dart`
+  - `frontend/lib/features/media/data/media_pipeline_repository.dart`
+  - `frontend/lib/features/studio/data/studio_repository.dart`
+  - `frontend/lib/features/studio/data/studio_repository_lesson_media.dart`
+  - `backend/tests/test_media_api.py`
+  - `backend/tests/test_lesson_playback_resolution_order.py`
+  - `backend/tests/test_lesson_media_rendering.py`
+  - `backend/tests/test_media_preview_batch_unit.py`
+  - `backend/tests/test_home_audio_feed.py`
+  - `backend/tests/test_lesson_media_truth_alignment.py`
+  - `backend/tests/test_media_signer.py`
+  - `backend/tests/test_studio_lesson_media_contract_unit.py`
+  - `frontend/test/unit/media_upload_url_contract_test.dart`
+  - `frontend/test/unit/studio_repository_lesson_media_routing_test.dart`
+  - `frontend/test/unit/lesson_media_playback_resolver_test.dart`
+  - `frontend/test/widgets/course_editor_screen_test.dart`
+- CONSTRAINTS:
+  - `runtime_media = runtime truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `do not preserve playback_url as a temporary alias, parallel field, or compatibility payload`
+  - `do not introduce a new surface-specific resolver or playback contract`
+  - `exclude docs, archive, comments-only references, and config/TTL-only hits from mutation scope`
+- STOP CONDITIONS:
+  - `if any scoped governed surface still requires playback_url because canonical media object or resolved_url truth is not available after MCR-003E0`
+  - `if removing playback_url from shared route/service/schema contracts would break a governed surface whose canonical replacement is not defined by the named authority files`
+  - `if the only way to complete the task would be to keep multiple frontend media representations in parallel`
+  - `if any scoped route, schema, or frontend client must keep playback_url to avoid a runtime_media -> backend_read_composition bypass`
+- VERIFICATION REQUIREMENTS:
+  - `repo search over scoped backend route/schema/runtime files returns no playback_url field, response model, parser, or helper contract`
+  - `repo search over scoped frontend runtime files returns no ApiPaths.mediaPlaybackUrl, ApiPaths.mediaRuntimePlayback, ApiPaths.mediaLessonPlaybackUrl, fetchPlaybackUrl(...), fetchRuntimePlaybackUrl(...), fetchLessonPlaybackUrl(...), or fetchLessonMediaPlaybackUrl(...)`
+  - `repo search over scoped backend route files returns no live /api/playback/lesson, /api/media/playback-url, /api/media/playback, or /api/media/lesson-playback definitions`
+  - `scoped backend helpers no longer attach, strip, or absolutize playback_url as a renderable media field`
+  - `scoped tests that currently assert playback_url behavior are rewritten to canonical media/resolved_url assertions or removed when obsolete`
+  - `every governed surface touched by this task crosses the API boundary only through backend-authored media objects or preview-only metadata consistent with authority`

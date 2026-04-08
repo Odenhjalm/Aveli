@@ -1,0 +1,57 @@
+# LEARNER PUBLIC EDGE CONTRACT
+
+## STATUS
+
+ACTIVE
+
+This contract operates under `SYSTEM_LAWS.md`, `course_public_surface_contract.md`, and `media_unified_authority_contract.md`.
+This contract defines no domain ownership, public-surface semantic ownership, media doctrine, fallback authority, or cross-domain doctrine.
+
+## CANONICAL RESPONSE SURFACES
+
+`CourseDiscoveryCourse` serialized field order:
+
+- `id`
+- `slug`
+- `title`
+- `course_group_id`
+- `step`
+- `cover_media_id`
+- `cover`
+- `price_amount_cents`
+- `drip_enabled`
+- `drip_interval_days`
+
+Field rules:
+
+- All listed fields MUST be present in the response
+- `cover_media_id: UUID | null`
+- `cover` MUST be present and MUST be `{ media_id, state, resolved_url } | null`
+- No additional cover fields may be emitted
+
+`CourseDetailResponse` serialized field order:
+
+- `course`
+- `lessons`
+- `short_description`
+
+Field rules:
+
+- All listed fields MUST be present in the response
+- `course` MUST be serialized as an object
+- `lessons` MUST be serialized as an array
+- `short_description` MUST be serialized as `str | null`
+
+`LessonContentResponse` media output rules:
+
+- `media` MUST be serialized as an array
+- Each media item MUST contain a `media` field
+- `media` MUST be `{ media_id, state, resolved_url } | null`
+- Learner/public surfaces MUST NOT expose storage fields, signed URLs, or resolver-specific payloads
+
+## TRANSPORT CONSTRAINTS
+
+- Response payloads MUST preserve listed field names exactly
+- Field omission is forbidden where a field is part of the declared surface
+- Optional learner/public media fields MUST use `null` rather than omission
+- No additional storage-adjacent media payloads may be emitted

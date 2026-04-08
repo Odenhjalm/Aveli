@@ -1,0 +1,31 @@
+# MCR-003C
+
+- TASK_ID: `MCR-003C`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove frontend consumption of /api/media/sign, /media/sign, and /media/stream/{token} and align frontend media handling to backend-authored media objects flowing through the canonical chain runtime_media -> backend read composition -> API -> frontend.`
+- TARGET_FILES:
+  - `frontend/lib/api/api_paths.dart`
+  - `frontend/lib/services/media_service.dart`
+  - `frontend/lib/features/courses/presentation/lesson_page.dart`
+  - `frontend/test/unit/media_repository_resolver_test.dart`
+  - `frontend/test/unit/lesson_markdown_normalization_test.dart`
+  - `frontend/test/unit/studio_repository_lesson_media_routing_test.dart`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- EVIDENCE:
+  - `frontend/lib/api/api_paths.dart` still defines `mediaSign = '/api/media/sign'`
+  - `frontend/lib/services/media_service.dart` still posts to `ApiPaths.mediaSign` and consumes `signed_url`
+  - `frontend/lib/features/courses/presentation/lesson_page.dart` still treats `/media/sign` and `/media/stream/` as live protected lesson-media paths
+  - frontend unit tests still assert `/media/stream/...` behavior
+- TARGET_CONTRACT:
+  - frontend renders backend-authored media payloads only
+  - frontend no longer calls removed sign routes
+  - frontend no longer recognizes deleted stream-token paths as valid playback contract
+  - playback path usage is aligned to the canonical media chain rather than a second frontend-side resolver path
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003`
+  - `MCR-003B`

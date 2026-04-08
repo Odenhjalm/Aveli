@@ -1,0 +1,29 @@
+# MCR-003A
+
+- TASK_ID: `MCR-003A`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove backend production of /media/stream/{token} and remove backend test/fixture assumptions that legacy /media/sign and /media/stream remain valid playback delivery paths after route deletion.`
+- TARGET_FILES:
+  - `backend/app/utils/media_signer.py`
+  - `backend/tests/conftest.py`
+  - `backend/tests/test_media_signer.py`
+  - `backend/tests/test_media_resolution_telemetry.py`
+  - `backend/tests/test_courses_public.py`
+  - `backend/tests/test_course_visibility_and_media_access.py`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- EVIDENCE:
+  - `backend/app/utils/media_signer.py` returns `/media/stream/{token}` from `issue_signed_url(...)`
+  - `backend/app/utils/media_signer.py` writes legacy `signed_url` and `playback_url` values derived from the removed stream path
+  - `backend/tests/conftest.py` forces signing on with the stated assumption that `/media/sign` remains enabled
+  - `backend/tests/test_media_resolution_telemetry.py`, `backend/tests/test_courses_public.py`, and `backend/tests/test_course_visibility_and_media_access.py` still post to `/media/sign`
+- TARGET_CONTRACT:
+  - `runtime_media` remains runtime truth
+  - backend read composition remains the only frontend media representation authority
+  - removed `/media/sign` and `/media/stream/{token}` paths are no longer emitted, required, or asserted anywhere in the scoped backend producer surface
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003`

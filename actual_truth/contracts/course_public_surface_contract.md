@@ -1,0 +1,202 @@
+# COURSE PUBLIC SURFACE CONTRACT
+
+## STATUS
+
+ACTIVE
+
+This contract materializes the canonical, deterministic Course + Lesson public surface domain.
+It encodes already-ratified decisions only.
+Cross-domain separation doctrine is defined only by `SYSTEM_LAWS.md`.
+Implementation drift does not alter this contract.
+
+## 1. CONTRACT LAW
+
+The Course + Lesson public surface domain is governed by the following laws:
+
+The canonical domain flow is:
+
+~~~text
+learner structure read -> public structure surfaces -> API response
+learner content read -> lesson_content_surface -> API response
+frontend render -> backend-provided truth only
+~~~
+
+## 2. AUTHORITY MODEL
+
+Canonical authorities are:
+
+- learner structure read authority: `app.course_detail_surface`
+- learner content read authority: `app.lesson_content_surface`
+- lesson media representation authority inside lesson content: backend read composition, subordinate to the media pipeline contract
+
+Sibling authority outside core structure/content:
+
+- `app.course_public_content.short_description` is not course structure
+- `app.course_public_content.short_description` is not lesson content
+- it remains a sibling public-content surface
+
+Forbidden as authority:
+
+- `LessonSummary` as content authority
+
+## 3. PUBLIC STRUCTURE AND CONTENT VISIBILITY
+
+Lesson content read context may additionally include:
+
+- lesson identity
+- lesson structure
+- lesson media
+
+`short_description` is sibling public content and must not be treated as course structure or lesson content.
+
+## 4. CANONICAL ENTRYPOINTS
+
+### Learner Structure Reads
+
+- `GET /courses`
+- `GET /courses/{course_id}`
+- `GET /courses/by-slug/{slug}`
+
+### Learner Content Read
+
+- `GET /courses/lessons/{lesson_id}`
+
+### Sibling Public-Content Surface Outside Core Structure/Content
+
+- `POST /studio/courses/{course_id}/public`
+- `GET /courses/{course_id}/public`
+
+## 5. STRUCTURE READ CONTRACT
+
+### 5.1 Learner Structure Reads
+
+`GET /courses/{course_id}` and `GET /courses/by-slug/{slug}` response:
+
+~~~json
+{
+  "course": {
+    "id": "uuid",
+    "slug": "string",
+    "title": "string",
+    "course_group_id": "uuid",
+    "step": "intro | step1 | step2 | step3",
+    "cover_media_id": "uuid | null",
+    "cover": {
+      "media_id": "string",
+      "state": "string",
+      "resolved_url": "string | null"
+    },
+    "price_amount_cents": 123,
+    "drip_enabled": true,
+    "drip_interval_days": 7
+  },
+  "lessons": [
+    {
+      "id": "uuid",
+      "lesson_title": "string",
+      "position": 1
+    }
+  ],
+  "short_description": "string | null"
+}
+~~~
+
+Rules:
+
+- `lessons` is `LessonSummary[]`
+- `lessons` may contain only `id`, `lesson_title`, and `position`
+- `content_markdown` is forbidden
+- `lesson_media` is forbidden
+- access does not require enrollment
+
+## 6. CONTENT READ CONTRACT
+
+Endpoint:
+
+`GET /courses/lessons/{lesson_id}`
+
+Response:
+
+~~~json
+{
+  "lesson": {
+    "id": "uuid",
+    "course_id": "uuid",
+    "lesson_title": "string",
+    "position": 1,
+    "content_markdown": "string | null"
+  },
+  "course_id": "uuid",
+  "lessons": [
+    {
+      "id": "uuid",
+      "lesson_title": "string",
+      "position": 1
+    }
+  ],
+  "media": [
+    {
+      "id": "uuid",
+      "lesson_id": "uuid",
+      "media_asset_id": "uuid | null",
+      "position": 1,
+      "media_type": "audio | image | video | document",
+      "state": "pending_upload | uploaded | processing | ready | failed",
+      "media": {
+        "media_id": "string",
+        "state": "string",
+        "resolved_url": "string | null"
+      }
+    }
+  ]
+}
+~~~
+
+Rules:
+
+- this endpoint is the canonical `lesson_content_surface`
+- it may expose lesson identity, lesson structure, lesson content, and lesson media only
+- access requires `course_enrollments` and `lesson.position <= current_unlock_position`
+- `media` must use backend-authored media objects only
+- structure context inside this response does not authorize structure surfaces to expose content
+
+## 7. FORBIDDEN PATTERNS
+
+The following are forbidden:
+
+- structure reads that expose `content_markdown`
+
+## 8. FRONTEND ALIGNMENT TARGET
+
+Learner frontend may use only these canonical read surfaces:
+
+- `GET /courses`
+- `GET /courses/{course_id}`
+- `GET /courses/by-slug/{slug}`
+- `GET /courses/lessons/{lesson_id}`
+
+Frontend model separation law:
+
+- learner structure models must not contain `content_markdown`
+- learner content models may contain `content_markdown`
+- frontend must not infer content from lesson structure lists
+- frontend must not infer structure mutations from content responses
+- frontend must not invent lesson semantics
+- frontend must not use `title` as lesson authority
+- frontend must not use `is_intro` as lesson authority
+
+Sibling public-content rule:
+
+- if frontend edits `short_description`, it must use the dedicated public-content surface
+- `short_description` must not be sent through course structure endpoints
+
+## 9. FINAL ASSERTION
+
+This contract is complete, deterministic, and lockable.
+
+It is valid only if all future implementation preserves these laws:
+
+- no structure-read surface leaks `content_markdown`
+- legacy aliases and mixed surfaces do not survive as contract truth
+
+This contract is ready to govern deterministic task-tree construction for implementation.

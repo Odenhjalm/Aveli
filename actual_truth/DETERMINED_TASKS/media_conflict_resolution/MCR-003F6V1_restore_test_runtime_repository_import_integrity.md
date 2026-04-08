@@ -1,0 +1,45 @@
+# MCR-003F6V1
+
+- TASK_ID: `MCR-003F6V1`
+- TYPE: `OWNER`
+- CLUSTER: `TEST_RUNTIME_INTEGRITY`
+- DESCRIPTION: `Restore backend test runtime import integrity so pytest collection no longer stops on create_home_player_upload import drift before MCR-003F6 verification can complete.`
+- ACTION: `implement`
+- DEPENDS_ON:
+  - `none`
+- AUTHORITY:
+  - `codex/AVELI_OPERATING_SYSTEM.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `restore missing repository import integrity or align the blocking test to the current repository export contract`
+  - `ensure pytest collection reaches runtime execution instead of failing during import resolution`
+  - `remove the test/runtime-layer blocker that currently prevents deterministic re-run of MCR-003F6 verification`
+- CURRENT STATE:
+  - `backend/tests/test_runtime_media_migration.py` imports create_home_player_upload from app.repositories, but current pytest collection fails with ImportError because app.repositories no longer exports that symbol`
+  - `make backend.test` stops during collection before MCR-003F6 verification can complete, so route-level legacy-media verification cannot be closed deterministically`
+  - `ownership of the symbol may now live in another repository module or the test may still target a stale export path`
+- TARGET STATE:
+  - `backend/tests/test_runtime_media_migration.py imports resolve against the current repository structure without ImportError`
+  - `repository exports and test imports are aligned to the current runtime contract`
+  - `pytest collection proceeds past backend/tests/test_runtime_media_migration.py so MCR-003F6 verification can be re-run`
+- TARGET_FILES:
+  - `backend/tests/test_runtime_media_migration.py`
+  - `backend/app/repositories/__init__.py`
+  - `backend/app/repositories/*`
+- SCOPE:
+  - `backend/tests/test_runtime_media_migration.py`
+  - `backend/app/repositories/*`
+  - `relevant module exports required for deterministic test/runtime alignment`
+- CONSTRAINTS:
+  - `NO media logic changes`
+  - `NO fallback`
+  - `only restore test/runtime consistency`
+  - `do not widen this task into runtime_media contract rewrites or api_media route work`
+- STOP CONDITIONS:
+  - `if correct module ownership for create_home_player_upload cannot be determined from current repository structure and test evidence`
+  - `if multiple conflicting live implementations of create_home_player_upload are found`
+  - `if restoring import integrity would require changing media-domain behavior instead of aligning exports or test imports`
+- VERIFICATION REQUIREMENTS:
+  - `backend/.venv/bin/python -m pytest backend/tests/test_runtime_media_migration.py no longer fails with ImportError during collection`
+  - `make backend.test runs past backend/tests/test_runtime_media_migration.py collection`
+  - `no ImportError remains for create_home_player_upload from app.repositories or its corrected canonical import path`

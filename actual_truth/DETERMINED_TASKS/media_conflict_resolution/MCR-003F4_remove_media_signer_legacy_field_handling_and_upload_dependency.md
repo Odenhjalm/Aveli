@@ -1,0 +1,49 @@
+# MCR-003F4
+
+- TASK_ID: `MCR-003F4`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove the remaining legacy media-field handling in media_signer.py and the dependent upload.py runtime usage so the upload boundary no longer depends on download_url, signed_url, or signed_url_expires_at cleanup doctrine before MCR-003F3 executes.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003F1`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove legacy-field handling from backend/app/utils/media_signer.py`
+  - `remove dependent runtime usage in backend/app/routes/upload.py that currently relies on media_signer legacy-field cleanup behavior`
+  - `make the upload boundary canonical so MCR-003F3 can execute deterministically without risking re-exposure of legacy media fields`
+- CURRENT STATE:
+  - `backend/app/utils/media_signer.py` still handles, strips, and emits download_url while also preserving cleanup logic for signed_url and signed_url_expires_at`
+  - `backend/app/routes/upload.py` still depends on media_signer.attach_media_links(...) during lesson-media persistence and still strips signed_url, signed_url_expires_at, and download_url from a runtime payload before returning it`
+  - `the MCR-003F3 STOP result proved that upload.py cannot safely remove its scoped legacy-field references until the underlying media_signer helper stops producing and handling those fields`
+- TARGET STATE:
+  - `backend/app/utils/media_signer.py` no longer handles, emits, strips, or preserves download_url, signed_url, or signed_url_expires_at as media contract fields`
+  - `backend/app/routes/upload.py` no longer depends on legacy-field cleanup from media_signer and no longer carries legacy-field cleanup doctrine in the runtime upload boundary`
+  - `scoped upload runtime surfaces rely only on canonical media-object truth and any authority-approved preview-only metadata, with no fallback or secondary resolver behavior`
+- TARGET_FILES:
+  - `backend/app/utils/media_signer.py`
+  - `backend/app/routes/upload.py`
+- SCOPE:
+  - `backend/app/utils/media_signer.py`
+  - `backend/app/routes/upload.py`
+- CONSTRAINTS:
+  - `runtime_media = canonical truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `no implementation in this run`
+  - `do not expand beyond named scope`
+- STOP CONDITIONS:
+  - `if any scoped runtime surface still requires download_url, signed_url, or signed_url_expires_at for canonical media-object flow to remain functional`
+  - `if removing the scoped legacy-field handling would break upload runtime flow because canonical media-object truth or authority-approved preview metadata is not sufficient`
+  - `if the scoped files reveal hidden parallel media representations or fallback doctrine that would survive after the change`
+- VERIFICATION REQUIREMENTS:
+  - `scoped grep and semantic search over backend/app/utils/media_signer.py and backend/app/routes/upload.py confirm removal of download_url, signed_url, and signed_url_expires_at`
+  - `python -m py_compile` passes for the edited scoped backend files after execution`
+  - `dependent scoped tests that cover media_signer or upload runtime behavior pass after execution`
+  - `no fallback paths, secondary resolver paths, or storage-adjacent media-truth fields are introduced while removing the scoped legacy-field handling`

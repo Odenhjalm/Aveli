@@ -1,0 +1,62 @@
+# MCR-003F
+
+- TASK_ID: `MCR-003F`
+- TYPE: `OWNER`
+- CLUSTER: `DELETE_LEGACY_MEDIA_PATHS_RECOVERY`
+- DESCRIPTION: `Remove profile/community fallback media fields and align that surface to the canonical media contract only so download_url, signed_url, and signed_url_expires_at no longer cross the profile/community boundary as frontend truth.`
+- ACTION: `rewrite`
+- DEPENDS_ON:
+  - `MCR-003E`
+  - `MCR-003F0`
+  - `MCR-003F1`
+  - `MCR-003F2`
+  - `MCR-003F3`
+  - `MCR-003F5`
+  - `MCR-003F6`
+- AUTHORITY:
+  - `actual_truth/contracts/media_unified_authority_contract.md`
+  - `actual_truth/contracts/profile_media_edge_contract.md`
+  - `actual_truth/contracts/media_image_edge_contract.md`
+  - `Aveli_System_Decisions.md`
+  - `aveli_system_manifest.json`
+- PURPOSE:
+  - `remove profile/community fallback media fields`
+  - `align profile/community media to canonical media contract only`
+  - `eliminate signed/download URL fields as frontend truth on profile/community surfaces`
+- CURRENT STATE:
+  - `backend/app/repositories/teacher_profile_media.py` still copies `download_url`, `signed_url`, and `signed_url_expires_at` into profile/community lesson-media payloads`
+  - `frontend/lib/data/models/teacher_profile_media.dart` still parses `download_url`, `signed_url`, and `signed_url_expires_at` as model fields`
+  - `frontend/lib/features/community/presentation/teacher_profile_page.dart` still prefers `source.signedUrl ?? source.downloadUrl` as playable lesson-media source`
+  - `MCR-003` gate failure proves profile/community still preserves a fallback media-field doctrine outside the canonical media object contract`
+- TARGET STATE:
+  - `profile/community surfaces do not emit or consume download_url`
+  - `profile/community surfaces do not emit or consume signed_url`
+  - `profile/community surfaces do not emit or consume signed_url_expires_at`
+  - `profile/community media uses canonical backend-authored media objects only and does not expose storage-adjacent or signed/download fields as truth`
+- TARGET_FILES:
+  - `backend/app/repositories/teacher_profile_media.py`
+  - `frontend/lib/data/models/teacher_profile_media.dart`
+  - `frontend/lib/features/community/presentation/teacher_profile_page.dart`
+- SCOPE:
+  - `backend/app/repositories/teacher_profile_media.py`
+  - `frontend/lib/data/models/teacher_profile_media.dart`
+  - `frontend/lib/features/community/presentation/teacher_profile_page.dart`
+- CONSTRAINTS:
+  - `runtime_media = runtime truth`
+  - `backend_read_composition = sole frontend media authority`
+  - `frontend = render only`
+  - `no fallback`
+  - `no secondary resolver path`
+  - `no storage-adjacent fields as frontend truth`
+  - `do not reintroduce media signing or download fallbacks under different field names`
+  - `do not expand beyond named scope`
+- STOP CONDITIONS:
+  - `if the scoped profile/community surface has no canonical backend-authored media object available to replace signed/download URL fallback fields`
+  - `if removing fallback fields would force profile/community to infer media truth from storage_path or storage_bucket`
+  - `if the scoped surface requires a second resolver path to remain functional`
+  - `if canonical profile/community media representation is ambiguous in the scoped files`
+- VERIFICATION REQUIREMENTS:
+  - `scoped backend code no longer emits download_url, signed_url, or signed_url_expires_at for profile/community lesson-media payloads`
+  - `scoped frontend model code no longer parses download_url, signed_url, or signed_url_expires_at as contract fields`
+  - `scoped community/profile UI no longer selects media sources from signed/download fallback fields`
+  - `profile/community media handling in scope is aligned to canonical backend-authored media objects only`

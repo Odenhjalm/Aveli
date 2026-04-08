@@ -1,0 +1,67 @@
+# MCR-003F6V0
+
+- TASK_ID: `MCR-003F6V0`
+- TYPE: `OWNER`
+- CLUSTER: `LOCAL_VERIFICATION_BASELINE`
+- DESCRIPTION: `Restore the deterministic local verification baseline and backend test runner required to close MCR-003F6 so canonical pytest verification can execute without missing-function, auth-schema, or runner drift.`
+- ACTION: `implement`
+- DEPENDS_ON:
+  - `none`
+- AUTHORITY:
+  - `codex/AVELI_OPERATING_SYSTEM.md`
+  - `aveli_system_manifest.json`
+  - `Aveli_System_Decisions.md`
+- PURPOSE:
+  - `restore the local test and verification environment so canonical task verification can run deterministically`
+  - `materialize the authoritative local verification database from backend/supabase/baseline_slots through the canonical replay path rather than ad hoc schema mutation`
+  - `repair the local auth/test substrate and backend test runner so full pytest can execute without environment errors before MCR-003F6 verification resumes`
+- CURRENT STATE:
+  - `backend/tests/conftest.py` always executes SELECT app.cleanup_test_session(%s::uuid), but the current local verification DB reports UndefinedFunction for app.cleanup_test_session(uuid)`
+  - `ops/sql/minimal_auth_substrate.sql` currently materializes auth.users with only id and email, while backend auth repositories, routes, and tests still query auth.users.encrypted_password in local verification`
+  - `backend/app/repositories/auth.py` inserts onboarding_state, role, role_v2, and is_admin into app.profiles during local registration/auth test flows, but backend/supabase/baseline_slots/0013_profiles_core.sql does not materialize that profile surface, so scoped api_media verification still fails with UndefinedColumn on app.profiles.onboarding_state`
+  - `Makefile` defines the canonical backend test entrypoint as backend/.venv/bin/python -m pytest, but the current backend venv does not expose pytest, so the documented full-suite runner is not executable deterministically`
+  - `fallback execution from the repo root venv surfaces environment teardown/schema errors and current local route expectation failures in the same run, so MCR-003F6 cannot be closed with deterministic verification evidence`
+- TARGET STATE:
+  - `local verification DB replay deterministically materializes the environment from backend/supabase/baseline_slots.lock.json, backend/supabase/baseline_slots, and the canonical local auth/test substrate`
+  - `app.cleanup_test_session(uuid) exists and is callable in the local verification DB`
+  - `auth.users in the local verification DB exposes the canonical fields required by backend auth/test surfaces, including encrypted_password`
+  - `app.profiles in the local verification DB exposes the canonical fields required by backend auth/test registration flows, including onboarding_state, role, role_v2, and is_admin, or the canonical runtime is realigned so those writes no longer target missing columns`
+  - `the canonical backend test runner entrypoint make backend.test executes from backend/.venv without missing-pytest, missing-function, or auth-schema-mismatch environment errors`
+  - `full pytest verification runs deterministically so any remaining route expectation failures are implementation evidence rather than environment drift`
+- TARGET_FILES:
+  - `backend/scripts/replay_baseline.sh`
+  - `backend/scripts/dev_common.sh`
+  - `backend/supabase/baseline_slots.lock.json`
+  - `backend/supabase/baseline_slots`
+  - `ops/sql/minimal_auth_substrate.sql`
+  - `backend/tests/conftest.py`
+  - `backend/pyproject.toml`
+  - `backend/poetry.lock`
+  - `Makefile`
+- SCOPE:
+  - `backend/scripts/replay_baseline.sh`
+  - `backend/supabase/baseline_slots/*`
+  - `ops/sql/minimal_auth_substrate.sql`
+  - `local database instance`
+  - `backend/tests/conftest.py`
+  - `backend/pyproject.toml`
+  - `backend/poetry.lock`
+  - `test configuration`
+- CONSTRAINTS:
+  - `NO domain logic changes`
+  - `NO media pipeline changes`
+  - `NO fallback`
+  - `MUST use canonical baseline_slots as truth`
+  - `do not reclassify implementation or route-surface failures as environment repair`
+  - `restore the documented backend/.venv test runner instead of creating alternate verification entrypoints`
+- STOP CONDITIONS:
+  - `if canonical DB structure cannot be determined from backend/supabase/baseline_slots, backend/supabase/baseline_slots.lock.json, docs/local_backend_setup.md, and the replay entrypoints`
+  - `if required baseline slots are missing`
+  - `if auth/test substrate definitions conflict with the canonical baseline or with each other`
+- VERIFICATION REQUIREMENTS:
+  - `backend/scripts/local_db.sh up && backend/scripts/replay_baseline.sh complete successfully against the local DB`
+  - `make backend.test executes without missing pytest, missing DB function, or auth schema mismatch errors`
+  - `SELECT app.cleanup_test_session(<uuid>) succeeds in the local verification DB`
+  - `queries against auth.users for encrypted_password no longer fail in local verification`
+  - `local auth registration/profile writes no longer fail with UndefinedColumn against app.profiles`
+  - `full pytest runs without environment errors`
