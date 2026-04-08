@@ -135,6 +135,24 @@
       "filename": "0022_profiles_projection_surface.sql",
       "path": "backend/supabase/baseline_slots/0022_profiles_projection_surface.sql",
       "sha256": "54cf119468161ec0140e9f823646128657711b9d75bd6b722da587971f6bf314"
+    },
+    {
+      "slot": 23,
+      "filename": "0023_auth_runtime_substrate.sql",
+      "path": "backend/supabase/baseline_slots/0023_auth_runtime_substrate.sql",
+      "sha256": "1434505373a243a82559a677e19445456fca3a0ca0ed47de883ebee1b4fd3121"
+    },
+    {
+      "slot": 24,
+      "filename": "0024_admin_bootstrap_operator_surface.sql",
+      "path": "backend/supabase/baseline_slots/0024_admin_bootstrap_operator_surface.sql",
+      "sha256": "4b1c0810a24991f4410da86364a3a2a49fe33840109ef4d690d8951fc03c918c"
+    },
+    {
+      "slot": 25,
+      "filename": "0025_admin_bootstrap_service_role_access.sql",
+      "path": "backend/supabase/baseline_slots/0025_admin_bootstrap_service_role_access.sql",
+      "sha256": "ec7c98af6d76b0c177ba6aa133f2e03b67cd14e62fcac678c5f101ea654a872e"
     }
   ]
 }

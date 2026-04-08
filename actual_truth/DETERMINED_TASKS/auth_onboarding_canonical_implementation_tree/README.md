@@ -24,23 +24,24 @@
 
 1. `AOI-001` baseline auth runtime substrate slot
 2. `AOI-002` admin bootstrap operator surface slot
-3. `AOI-003` baseline-bound auth persistence and fallback removal
-4. `AOI-004` onboarding completion route alignment
-5. `AOI-005` teacher role admin grant/revoke alignment
-6. `AOI-006` profile projection boundary alignment
-7. `AOI-007` referral separation alignment inside auth surfaces
-8. `AOI-008` failure envelope and Swedish message alignment
-9. `AOI-009` frontend canonical flow alignment
-10. `AOI-010` legacy auth/onboarding surface removal
-11. `AOI-011` canonical test and verification alignment
-12. `AOI-012` aggregate contract-surface verification
+3. `AOI-002.5` admin bootstrap service_role execution access slot
+4. `AOI-003` baseline-bound auth persistence and fallback removal
+5. `AOI-004` onboarding completion route alignment
+6. `AOI-005` teacher role admin grant/revoke alignment
+7. `AOI-006` profile projection boundary alignment
+8. `AOI-007` referral separation alignment inside auth surfaces
+9. `AOI-008` failure envelope and Swedish message alignment
+10. `AOI-009` frontend canonical flow alignment
+11. `AOI-010` legacy auth/onboarding surface removal
+12. `AOI-011` canonical test and verification alignment
+13. `AOI-012` aggregate contract-surface verification
 
 ## Coverage Map
 
 - Onboarding completion: `AOI-004`, `AOI-009`, `AOI-011`
-- Admin bootstrap: `AOI-002`, `AOI-003`, `AOI-011`
+- Admin bootstrap: `AOI-002`, `AOI-002.5`, `AOI-003`, `AOI-011`
 - Teacher role authority: `AOI-005`, `AOI-009`, `AOI-010`, `AOI-011`
 - Profile projection: `AOI-006`, `AOI-009`, `AOI-010`, `AOI-011`
 - Referral separation: `AOI-007`, `AOI-009`, `AOI-010`, `AOI-011`
 - Failure contract: `AOI-008`, `AOI-009`, `AOI-011`
-- Baseline auth substrate: `AOI-001`, `AOI-002`, `AOI-003`, `AOI-011`
+- Baseline auth substrate: `AOI-001`, `AOI-002`, `AOI-002.5`, `AOI-003`, `AOI-011`

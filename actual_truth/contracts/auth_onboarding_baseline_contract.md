@@ -95,6 +95,26 @@ Required event families:
 - MUST record `admin_bootstrap_consumed` in `app.auth_events`
 - MUST NOT be exposed as a public app-runtime route
 
+## OPERATOR EXECUTION ACCESS
+
+- Operator-controlled functions (such as `app.bootstrap_first_admin`) MUST:
+  - NOT be callable by:
+    - `public`
+    - `anon`
+    - `authenticated`
+  - MAY be callable by:
+    - `service_role`
+    - direct SQL execution by operator
+
+- `service_role` access is strictly an operator/tooling channel and MUST NOT:
+  - be exposed through application runtime routes
+  - be used as domain authority
+  - be used by frontend clients
+
+- Allowing `service_role` execution does not change authority ownership:
+  - backend remains the only runtime authority
+  - `service_role` is an execution mechanism only
+
 ## 3. OPTIONAL OBJECTS
 
 The following remain optional for Auth + Onboarding:

@@ -1,4 +1,4 @@
-## Change Proposals
+winget search ripgrep## Change Proposals
 
 ### PCM-001
 

@@ -42,13 +42,26 @@
       ]
     },
     {
+      "task_id": "AOI-002.5",
+      "type": "OWNER",
+      "task_type": "BASELINE_SLOT",
+      "description": "Align bootstrap function execution permissions with the operator/service_role access model by granting service_role execution while preserving operator-only authority and no public runtime route.",
+      "depends_on": [
+        "AOI-002"
+      ],
+      "target_files": [
+        "backend/supabase/baseline_slots/0025_admin_bootstrap_service_role_access.sql"
+      ]
+    },
+    {
       "task_id": "AOI-003",
       "type": "OWNER",
       "task_type": "BACKEND_ALIGNMENT",
       "description": "Align backend auth persistence to the baseline-owned auth substrate only, including refresh-token persistence, auth-event writes, operator bootstrap boundary, and removal of runtime schema introspection from auth/profile repositories.",
       "depends_on": [
         "AOI-001",
-        "AOI-002"
+        "AOI-002",
+        "AOI-002.5"
       ],
       "target_files": [
         "backend/app/repositories/auth.py",
@@ -195,6 +208,7 @@
       "depends_on": [
         "AOI-001",
         "AOI-002",
+        "AOI-002.5",
         "AOI-003",
         "AOI-004",
         "AOI-005",

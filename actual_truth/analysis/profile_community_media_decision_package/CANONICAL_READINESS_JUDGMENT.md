@@ -1,4 +1,4 @@
-## Canonical Readiness Judgment
+winget install BurntSushi.ripgrep.MSVCwinget install BurntSushi.ripgrep.MSVC## Canonical Readiness Judgment
 
 ### Is The Recommended Decision Set Strong Enough To Become New Canonical Truth If Approved?
 
