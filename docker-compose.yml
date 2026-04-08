@@ -42,8 +42,6 @@ services:
       context: ./frontend/landing
       dockerfile: Dockerfile
     environment:
-      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:-}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_PUBLISHABLE_API_KEY:-}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080}
       PORT: 3000
     ports:

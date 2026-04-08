@@ -13,7 +13,7 @@ export AVELI_BACKEND_PYTHON="$PYTHON_BIN"
 set +e
 GATE_OUTPUT="$(
   cd "$BOOTSTRAP_GATE_ROOT_DIR" &&
-  "$PYTHON_BIN" backend/scripts/bootstrap_gate.py 2>&1
+  "$PYTHON_BIN" backend/scripts/bootstrap_gate.py 2>&1 | tr -d '\r'
 )"
 GATE_STATUS=$?
 set -e

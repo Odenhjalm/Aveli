@@ -76,7 +76,7 @@ For web builds, use a web-specific defines file:
 ```bash
 flutter run -d chrome --dart-define-from-file=.env.web
 ```
-Ensure `.env.local`/`.env.web` include `API_BASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_API_KEY`, and `OAUTH_REDIRECT_WEB`/`OAUTH_REDIRECT_MOBILE` as needed.
+Ensure `.env.local`/`.env.web` include `API_BASE_URL` and `OAUTH_REDIRECT_WEB`/`OAUTH_REDIRECT_MOBILE` as needed.
 
 ## Landing (Next.js)
 ```bash
@@ -84,7 +84,7 @@ cd frontend/landing
 npm install
 npm run dev   # http://localhost:3000
 ```
-Environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (set to the Supabase publishable key), `NEXT_PUBLIC_API_BASE_URL` (default `http://backend:8080` in compose).
+Environment: `NEXT_PUBLIC_API_BASE_URL` (default `http://backend:8080` in compose).
 
 ## Docker (backend + landing)
 ```bash

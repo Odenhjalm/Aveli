@@ -38,7 +38,6 @@ MediaRepository _buildMediaRepository() {
       stripePublishableKey: 'pk_test_123',
       stripeMerchantDisplayName: 'Aveli',
       subscriptionsEnabled: true,
-      supabaseUrl: 'https://project.supabase.co',
     ),
   );
 }
@@ -55,22 +54,19 @@ void main() {
       );
     });
 
-    test(
-      'does not rewrite /api/files URLs in canonical runtime',
-      () {
-        const id = '123e4567-e89b-12d3-a456-426614174000';
-        const apiPath = '/api/files/public-media/course/lesson/file.png';
-        const absUrl = 'https://api.example.com$apiPath?download=1';
-        final markdown = '<audio controls src="$absUrl"></audio>';
+    test('does not rewrite /api/files URLs in canonical runtime', () {
+      const id = '123e4567-e89b-12d3-a456-426614174000';
+      const apiPath = '/api/files/public-media/course/lesson/file.png';
+      const absUrl = 'https://api.example.com$apiPath?download=1';
+      final markdown = '<audio controls src="$absUrl"></audio>';
 
-        final rewritten = rewriteLessonMarkdownApiFilesUrls(
-          markdown: markdown,
-          apiFilesPathToStudioMediaUrl: {apiPath: '/studio/media/$id'},
-        );
+      final rewritten = rewriteLessonMarkdownApiFilesUrls(
+        markdown: markdown,
+        apiFilesPathToStudioMediaUrl: {apiPath: '/studio/media/$id'},
+      );
 
-        expect(rewritten, markdown);
-      },
-    );
+      expect(rewritten, markdown);
+    });
 
     test('document link helper encodes and decodes canonical ids', () {
       const id = '123e4567-e89b-12d3-a456-426614174010';
@@ -126,21 +122,18 @@ void main() {
       );
     });
 
-    test(
-      'rendering preparation leaves legacy embeds untouched',
-      () async {
-        final mediaRepository = _buildMediaRepository();
+    test('rendering preparation leaves legacy embeds untouched', () async {
+      final mediaRepository = _buildMediaRepository();
 
-        const legacyMarkdown =
-            'Introtext\n\n<video src="ftp://cdn.test/legacy.mp4"></video>\n\nEftertext';
-        final preparedLegacy = await prepareLessonMarkdownForRendering(
-          mediaRepository,
-          legacyMarkdown,
-        );
+      const legacyMarkdown =
+          'Introtext\n\n<video src="ftp://cdn.test/legacy.mp4"></video>\n\nEftertext';
+      final preparedLegacy = await prepareLessonMarkdownForRendering(
+        mediaRepository,
+        legacyMarkdown,
+      );
 
-        expect(preparedLegacy, legacyMarkdown);
-      },
-    );
+      expect(preparedLegacy, legacyMarkdown);
+    });
 
     test(
       'rendering preparation preserves canonical video tokens for render-only surfaces',

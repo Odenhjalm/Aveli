@@ -37,7 +37,6 @@ MediaRepository _buildRepository() {
       stripePublishableKey: 'pk_test_123',
       stripeMerchantDisplayName: 'Aveli',
       subscriptionsEnabled: true,
-      supabaseUrl: 'https://project.supabase.co',
     ),
   );
 }

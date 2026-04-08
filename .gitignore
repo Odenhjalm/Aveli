@@ -169,7 +169,6 @@ storage-catalog.json
 *-report.json
 *-report.md
 *.deb
-actual_truth/*
 implementation_plan.md
 verified_tasks/
 reconstruction

@@ -9,11 +9,42 @@ BASELINE_DIR = ROOT / "backend" / "supabase" / "baseline_slots"
 AUTH_PATH = ROOT / "backend" / "app" / "auth.py"
 MODELS_PATH = ROOT / "backend" / "app" / "models.py"
 PROFILES_REPO_PATH = ROOT / "backend" / "app" / "repositories" / "profiles.py"
+TOOL_DISPATCHER_PATH = ROOT / "backend" / "app" / "services" / "tool_dispatcher.py"
 FRONTEND_DIRS = (ROOT / "frontend" / "lib", ROOT / "frontend" / "landing")
 RUNTIME_DIRS = (ROOT / "backend" / "app", ROOT / "frontend" / "lib")
 ALLOWED_FRONTEND_SUPABASE_STUBS = {
     ROOT / "frontend" / "landing" / "utils" / "supabase" / "client.ts",
     ROOT / "frontend" / "landing" / "utils" / "supabase" / "server.ts",
+}
+FRONTEND_SUPPORTING_FILES_WITHOUT_SUPABASE_RUNTIME_ENV = {
+    ROOT / ".env.example": ("NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    ROOT / "README.md": ("NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    ROOT / "docker-compose.yml": ("NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    ROOT / "frontend" / ".env.web": (
+        "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_API_KEY",
+        "SUPABASE_PUBLIC_API_KEY",
+        "SUPABASE_ANON_KEY",
+    ),
+    ROOT / "frontend" / "scripts" / "build_prod.sh": (
+        "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_API_KEY",
+        "SUPABASE_PUBLIC_API_KEY",
+        "SUPABASE_ANON_KEY",
+    ),
+    ROOT / "frontend" / "scripts" / "guard_web_defines.sh": (
+        "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_API_KEY",
+        "SUPABASE_PUBLIC_API_KEY",
+        "SUPABASE_ANON_KEY",
+    ),
+    ROOT / "frontend" / "scripts" / "netlify_build_web.sh": (
+        "FLUTTER_SUPABASE_URL",
+        "FLUTTER_SUPABASE_PUBLISHABLE_API_KEY",
+        "FLUTTER_SUPABASE_PUBLIC_API_KEY",
+        "FLUTTER_SUPABASE_ANON_KEY",
+    ),
+    ROOT / "netlify.toml": ("FLUTTER_SUPABASE_URL", "FLUTTER_SUPABASE_PUBLIC_API_KEY"),
 }
 
 
@@ -80,6 +111,13 @@ def test_frontend_runtime_has_no_direct_supabase_clients() -> None:
             assert "Supabase.instance.client" not in source, _repo_relative(path)
 
 
+def test_frontend_supporting_files_do_not_require_supabase_runtime_env() -> None:
+    for path, forbidden_fragments in FRONTEND_SUPPORTING_FILES_WITHOUT_SUPABASE_RUNTIME_ENV.items():
+        source = _read(path)
+        for forbidden in forbidden_fragments:
+            assert forbidden not in source, f"{_repo_relative(path)} references {forbidden}"
+
+
 def test_backend_auth_and_profile_reads_do_not_use_supabase_auth_metadata_as_domain_fallback() -> None:
     auth_source = _read(AUTH_PATH)
     models_source = _read(MODELS_PATH)
@@ -101,6 +139,29 @@ def test_profiles_repository_does_not_adapt_to_nonbaseline_profile_columns() -> 
     source = _read(PROFILES_REPO_PATH)
 
     for forbidden in ("information_schema.columns", "SELECT column_name", "available_columns"):
+        assert forbidden not in source, forbidden
+
+
+def test_tool_dispatcher_uses_canonical_identity_and_role_sources() -> None:
+    source = _read(TOOL_DISPATCHER_PATH)
+
+    required_fragments = (
+        "JOIN auth.users u ON u.id = e.user_id",
+        "JOIN app.auth_subjects a ON a.user_id = u.id",
+        "COALESCE(p.display_name, u.email)",
+        "a.role_v2 AS role",
+        'detail="DATABASE_URL missing"',
+    )
+    forbidden_fragments = (
+        "SUPABASE_DB_URL",
+        "COALESCE(p.role_v2, p.role)",
+        "p.email",
+    )
+
+    for required in required_fragments:
+        assert required in source, required
+
+    for forbidden in forbidden_fragments:
         assert forbidden not in source, forbidden
 
 

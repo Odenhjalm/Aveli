@@ -462,20 +462,11 @@ report_var STRIPE_TEST_WEBHOOK_BILLING_SECRET optional
 
 note "==> Flutter (required for app clients)"
 report_var API_BASE_URL required
-report_var SUPABASE_URL required
-if [[ -n "$supabase_client_source" ]]; then
-  note "  - SUPABASE client key: set (${supabase_client_label})"
-else
-  note "  - SUPABASE client key: missing"
-  warn "SUPABASE_PUBLISHABLE_API_KEY (or SUPABASE_PUBLIC_API_KEY) is required for Flutter"
-fi
 report_var STRIPE_PUBLISHABLE_KEY optional
 report_var OAUTH_REDIRECT_WEB required
 report_var OAUTH_REDIRECT_MOBILE required
 
 note "==> Landing (Next.js)"
-report_var NEXT_PUBLIC_SUPABASE_URL required
-report_var NEXT_PUBLIC_SUPABASE_ANON_KEY required
 report_var NEXT_PUBLIC_API_BASE_URL required
 report_var NEXT_PUBLIC_SENTRY_DSN optional
 report_var SENTRY_DSN optional

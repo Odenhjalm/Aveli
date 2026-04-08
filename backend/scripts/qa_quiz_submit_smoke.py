@@ -21,7 +21,7 @@ def resolve_base_url(cli_value: str | None = None) -> str:
 
 def _ensure_db_url(url: str | None) -> str:
     if not url:
-        raise SystemExit("SUPABASE_DB_URL is missing")
+        raise SystemExit("DATABASE_URL or SUPABASE_DB_URL is missing")
     if "sslmode=" in url:
         return url
     if "localhost" in url or "127.0.0.1" in url:
@@ -104,20 +104,31 @@ def _cleanup(
                 cur.execute("DELETE FROM app.profiles WHERE user_id = %s", (user_id,))
                 cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
             else:
-                cur.execute("DELETE FROM app.profiles WHERE lower(email) = lower(%s)", (email,))
-                cur.execute("DELETE FROM auth.users WHERE lower(email) = lower(%s)", (email,))
+                resolved_user_id = _fetch_user_id(conn, email)
+                if resolved_user_id:
+                    cur.execute("DELETE FROM app.refresh_tokens WHERE user_id = %s", (resolved_user_id,))
+                    cur.execute("DELETE FROM app.auth_events WHERE user_id = %s", (resolved_user_id,))
+                    cur.execute("DELETE FROM app.profiles WHERE user_id = %s", (resolved_user_id,))
+                    cur.execute("DELETE FROM auth.users WHERE id = %s", (resolved_user_id,))
+                else:
+                    cur.execute("DELETE FROM auth.users WHERE lower(email) = lower(%s)", (email,))
         conn.commit()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", help="Override base URL for the backend")
-    parser.add_argument("--db-url", help="Override database URL (defaults to SUPABASE_DB_URL)")
+    parser.add_argument(
+        "--db-url",
+        help="Override database URL (defaults to DATABASE_URL or SUPABASE_DB_URL)",
+    )
     parser.add_argument("--keep-data", action="store_true", help="Skip cleanup")
     args = parser.parse_args()
 
     base_url = resolve_base_url(args.base_url).rstrip("/")
-    db_url = _ensure_db_url(args.db_url or os.environ.get("SUPABASE_DB_URL"))
+    db_url = _ensure_db_url(
+        args.db_url or os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL")
+    )
     print(f"[config] base URL: {base_url}")
 
     teacher_email = f"qa_teacher_{uuid.uuid4().hex[:8]}@aveli.local"

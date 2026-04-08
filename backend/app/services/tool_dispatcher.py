@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 import re
 from typing import Any, Mapping, Sequence
 
 import psycopg
 from fastapi import HTTPException, status
+
+from ..config import settings
 
 _READONLY_OPTIONS = "-c default_transaction_read_only=on -c statement_timeout=3000"
 _ALLOWED_ACTIONS: dict[str, set[str]] = {
@@ -57,10 +58,12 @@ def enforce_tool_allowed(*, tool: str, action: str, tools_allowed: list[str]) ->
 
 
 def _require_db_url() -> str:
-    db_url = os.environ.get("SUPABASE_DB_URL")
-    if not db_url:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SUPABASE_DB_URL missing")
-    return db_url
+    if settings.database_url is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DATABASE_URL missing",
+        )
+    return settings.database_url.unicode_string()
 
 
 def _with_cursor():
@@ -291,29 +294,16 @@ def _list_course_students(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
     limit = _validated_limit(args, default=50, maximum=100)
     sql = """
         SELECT e.user_id,
-               COALESCE(p.display_name, p.email) AS display_name,
-               p.email
-          FROM app.enrollments e
+               COALESCE(p.display_name, u.email) AS display_name,
+               u.email
+         FROM app.enrollments e
+         JOIN auth.users u ON u.id = e.user_id
      LEFT JOIN app.profiles p ON p.user_id = e.user_id
          WHERE e.course_id = %s
          ORDER BY e.user_id DESC
          LIMIT %s
     """
-    try:
-        return _fetch_rows(sql, (course_id, limit), limit_cap=limit)
-    except HTTPException as exc:
-        if exc.status_code != status.HTTP_502_BAD_GATEWAY:
-            raise
-        fallback_sql = """
-            SELECT e.user_id,
-                   COALESCE(p.display_name, p.email) AS display_name,
-                   p.email
-              FROM app.enrollments e
-         LEFT JOIN app.profiles p ON p.user_id = e.user_id
-             WHERE e.course_id = %s
-             LIMIT %s
-        """
-        return _fetch_rows(fallback_sql, (course_id, limit), limit_cap=limit)
+    return _fetch_rows(sql, (course_id, limit), limit_cap=limit)
 
 
 def _get_user_summary(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -322,38 +312,23 @@ def _get_user_summary(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
     user_id = str(args.get("user_id"))
 
     sql = """
-        SELECT p.user_id,
-               p.email,
+        SELECT u.id AS user_id,
+               u.email,
                p.display_name,
-               COALESCE(p.role_v2, p.role) AS role,
-               p.is_admin,
+               a.role_v2 AS role,
+               a.is_admin,
                m.status AS membership_status,
-               m.plan_interval AS membership_plan_interval,
                m.end_date AS membership_end_date,
                m.updated_at AS membership_updated_at
-          FROM app.profiles p
-     LEFT JOIN app.memberships m ON m.user_id = p.user_id
-         WHERE p.user_id = %s
+          FROM auth.users u
+          JOIN app.auth_subjects a ON a.user_id = u.id
+     LEFT JOIN app.profiles p ON p.user_id = u.id
+     LEFT JOIN app.memberships m ON m.user_id = u.id
+         WHERE u.id = %s
          ORDER BY m.updated_at DESC NULLS LAST
          LIMIT 1
     """
-    try:
-        return _fetch_rows(sql, (user_id,), limit_cap=1)
-    except HTTPException as exc:
-        if exc.status_code != status.HTTP_502_BAD_GATEWAY:
-            raise
-        fallback_sql = """
-            SELECT p.user_id,
-                   p.email,
-                   p.display_name
-              FROM app.profiles p
-             WHERE p.user_id = %s
-             LIMIT 1
-        """
-        fallback = _fetch_rows(fallback_sql, (user_id,), limit_cap=1)
-        if fallback.get("row_count", 0) == 0:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-        return fallback
+    return _fetch_rows(sql, (user_id,), limit_cap=1)
 
 
 def _get_course_progress(args: Mapping[str, Any] | None) -> Mapping[str, Any]:

@@ -103,7 +103,7 @@ fi
 
 export DATABASE_URL="$db_url"
 
-cd "$BACKEND_DIR"
+cd "$ROOT_DIR"
 
-echo "[Backend] Starting Uvicorn on port ${PORT}..."
-exec "$AVELI_BACKEND_PYTHON" -m uvicorn app.main:app --reload --host 127.0.0.1 --port "${PORT}"
+echo "[Backend] Starting canonical bootstrap on port ${PORT}..."
+exec "$AVELI_BACKEND_PYTHON" -m backend.bootstrap.run_server
