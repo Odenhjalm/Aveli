@@ -24,7 +24,6 @@ import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/deeplinks/deep_link_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
 import 'shared/theme/light_theme.dart';
 import 'shared/widgets/background_layer.dart';
@@ -66,33 +65,12 @@ void main() {
         return false;
       };
 
-      if (kIsWeb) {
-        final base = Uri.base;
-        final fragmentHasAuth =
-            base.fragment.contains('access_token') ||
-            base.fragment.contains('refresh_token') ||
-            base.fragment.contains('code=') ||
-            base.fragment.contains('token_type');
-        if (fragmentHasAuth) {
-          debugPrint(
-            'OAuth fragment detected, preserving Uri.fragment for Supabase session parse.',
-          );
-        }
-      }
-
       MediaKit.ensureInitialized();
       await _loadEnvFile(requiredFile: false);
       if (dotenv.isInitialized) {
-        final dotenvSupabaseClientKey =
-            dotenv.maybeGet('SUPABASE_PUBLISHABLE_API_KEY') ??
-            dotenv.maybeGet('SUPABASE_PUBLIC_API_KEY') ??
-            dotenv.maybeGet('SUPABASE_ANON_KEY');
         debugPrint('ENV KEYS: ${dotenv.env.keys}');
         debugPrint(
           'DOTENV STRIPE_PUBLISHABLE_KEY=${_maskSecret(dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY'))}',
-        );
-        debugPrint(
-          'DOTENV SUPABASE_CLIENT_KEY=${_maskSecret(dotenvSupabaseClientKey)}',
         );
       } else {
         debugPrint(
@@ -106,9 +84,6 @@ void main() {
       final publishableKey = EnvResolver.stripePublishableKey;
       final merchantDisplayName = EnvResolver.stripeMerchantDisplayName;
       final subscriptionsEnabled = EnvResolver.subscriptionsEnabled;
-
-      final supabaseUrl = EnvResolver.supabaseUrl;
-      final supabaseClientKey = EnvResolver.supabaseClientKey;
       final oauthRedirectWeb = EnvResolver.oauthRedirectWeb;
       final oauthRedirectMobile = EnvResolver.oauthRedirectMobile;
 
@@ -117,8 +92,6 @@ void main() {
       if (kDebugMode) {
         debugPrint(
           'Env resolved apiBase=$baseUrl '
-          'supabase=$supabaseUrl '
-          'supabaseKey=${_maskSecret(supabaseClientKey)} '
           'redirectWeb=$oauthRedirectWeb '
           'redirectMobile=$oauthRedirectMobile',
         );
@@ -131,21 +104,6 @@ void main() {
         debugPrint(
           'Missing required environment keys (${envValidation.mode.name}): ${missingKeys.join(', ')}. '
           '${kIsWeb ? 'Provide them via --dart-define/--dart-define-from-file for Flutter Web.' : 'Provide them via DOTENV_FILE (dotenv), process env, or --dart-define.'}',
-        );
-      }
-
-      if (supabaseUrl.isNotEmpty && supabaseClientKey.isNotEmpty) {
-        await supa.Supabase.initialize(
-          url: supabaseUrl,
-          anonKey: supabaseClientKey,
-          authOptions: const supa.FlutterAuthClientOptions(
-            authFlowType: supa.AuthFlowType.pkce,
-          ),
-        );
-      } else {
-        debugPrint(
-          'Supabase config saknas. Checkout/token-flöden kan kräva SUPABASE_URL och '
-          'SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY/SUPABASE_ANON_KEY.',
         );
       }
 
@@ -199,7 +157,6 @@ void main() {
                       ? merchantDisplayName
                       : 'Aveli',
                   subscriptionsEnabled: subscriptionsEnabled,
-                  supabaseUrl: supabaseUrl,
                   imageLoggingEnabled: imageLoggingEnabled,
                 ),
               ),

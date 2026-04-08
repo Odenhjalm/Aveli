@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/env_resolver.dart';
 
@@ -31,10 +30,7 @@ class CoursePricing {
     if (rawCurrency is! String || rawCurrency.isEmpty) {
       throw StateError('Course pricing field "currency" must be a string');
     }
-    return CoursePricing(
-      amountCents: rawAmount,
-      currency: rawCurrency,
-    );
+    return CoursePricing(amountCents: rawAmount, currency: rawCurrency);
   }
 }
 
@@ -67,18 +63,6 @@ class CoursePricingApi {
   }
 
   Future<String?> _accessToken() async {
-    final supabaseToken = _trySupabaseToken();
-    if (supabaseToken != null && supabaseToken.isNotEmpty) {
-      return supabaseToken;
-    }
     return _tokenStorage.readAccessToken();
-  }
-
-  String? _trySupabaseToken() {
-    try {
-      return Supabase.instance.client.auth.currentSession?.accessToken;
-    } catch (_) {
-      return null;
-    }
   }
 }

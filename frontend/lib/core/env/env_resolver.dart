@@ -64,16 +64,6 @@ class EnvResolver {
       displayName: 'STRIPE_PUBLISHABLE_KEY',
       keys: ['STRIPE_PUBLISHABLE_KEY'],
     ),
-    _RequiredKey(displayName: 'SUPABASE_URL', keys: ['SUPABASE_URL']),
-    _RequiredKey(
-      displayName:
-          'SUPABASE_PUBLISHABLE_API_KEY/SUPABASE_PUBLIC_API_KEY/SUPABASE_ANON_KEY',
-      keys: [
-        'SUPABASE_PUBLISHABLE_API_KEY',
-        'SUPABASE_PUBLIC_API_KEY',
-        'SUPABASE_ANON_KEY',
-      ],
-    ),
     _RequiredKey(
       displayName: 'OAUTH_REDIRECT_WEB',
       keys: ['OAUTH_REDIRECT_WEB'],
@@ -93,14 +83,6 @@ class EnvResolver {
     'FRONTEND_URL': String.fromEnvironment('FRONTEND_URL'),
     'OAUTH_REDIRECT_WEB': String.fromEnvironment('OAUTH_REDIRECT_WEB'),
     'OAUTH_REDIRECT_MOBILE': String.fromEnvironment('OAUTH_REDIRECT_MOBILE'),
-    'SUPABASE_URL': String.fromEnvironment('SUPABASE_URL'),
-    'SUPABASE_PUBLISHABLE_API_KEY': String.fromEnvironment(
-      'SUPABASE_PUBLISHABLE_API_KEY',
-    ),
-    'SUPABASE_PUBLIC_API_KEY': String.fromEnvironment(
-      'SUPABASE_PUBLIC_API_KEY',
-    ),
-    'SUPABASE_ANON_KEY': String.fromEnvironment('SUPABASE_ANON_KEY'),
     'STRIPE_PUBLISHABLE_KEY': String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
     'STRIPE_MERCHANT_DISPLAY_NAME': String.fromEnvironment(
       'STRIPE_MERCHANT_DISPLAY_NAME',
@@ -210,18 +192,6 @@ class EnvResolver {
 
   static String get buildNumber => _readFirstNonEmpty(const ['BUILD_NUMBER']);
 
-  static String get supabaseUrl => _readFirstNonEmpty(const ['SUPABASE_URL']);
-
-  static String get supabaseClientKey {
-    return _readFirstNonEmpty(const [
-      'SUPABASE_PUBLISHABLE_API_KEY',
-      'SUPABASE_PUBLIC_API_KEY',
-      'SUPABASE_ANON_KEY',
-    ]);
-  }
-
-  static String get supabasePublishableKey => supabaseClientKey;
-
   static String get apiBaseUrl => _readFirstNonEmpty(const ['API_BASE_URL']);
 
   static String get oauthRedirectWeb =>
@@ -254,8 +224,6 @@ class EnvResolver {
       'frontendUrl=${_logValue(frontendUrl)} '
       'oauthRedirectWeb=${_logValue(oauthRedirectWeb)} '
       'oauthRedirectMobile=${_logValue(oauthRedirectMobile)} '
-      'supabaseUrl=${_logValue(supabaseUrl)} '
-      'supabaseKey=${_maskSecret(supabaseClientKey)} '
       'stripeKey=${_maskSecret(stripePublishableKey)} '
       'source=${mode == EnvResolutionMode.runtime ? 'dotenv>dart-define' : 'dart-define-only'}',
     );

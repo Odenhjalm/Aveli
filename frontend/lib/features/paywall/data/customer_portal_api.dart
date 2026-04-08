@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/auth_repository.dart';
@@ -56,19 +55,7 @@ class CustomerPortalApi {
   }
 
   Future<String?> _accessToken() async {
-    final supabaseToken = _trySupabaseToken();
-    if (supabaseToken != null && supabaseToken.isNotEmpty) {
-      return supabaseToken;
-    }
     return _tokenStorage.readAccessToken();
-  }
-
-  String? _trySupabaseToken() {
-    try {
-      return Supabase.instance.client.auth.currentSession?.accessToken;
-    } catch (_) {
-      return null;
-    }
   }
 }
 
