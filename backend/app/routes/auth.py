@@ -30,6 +30,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMIT_MAX_ATTEMPTS = 5
 _login_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
+_CANONICAL_AUTH_EVENT_TYPES = frozenset(
+    {
+        "admin_bootstrap_consumed",
+        "onboarding_completed",
+        "teacher_role_granted",
+        "teacher_role_revoked",
+    }
+)
 
 
 _RATE_LIMIT_MESSAGE = "För många försök. Försök igen om en liten stund."
@@ -101,14 +109,13 @@ async def _record_auth_event(
     request: Request,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    ip = _client_ip(request)
-    user_agent = request.headers.get("user-agent")
+    del email, request
+    if event not in _CANONICAL_AUTH_EVENT_TYPES or not user_id:
+        return
     await models.record_auth_event(
-        user_id=user_id,
-        email=email,
-        event=event,
-        ip_address=ip,
-        user_agent=user_agent,
+        actor_user_id=user_id,
+        subject_user_id=user_id,
+        event_type=event,
         metadata=metadata,
     )
 
@@ -145,7 +152,6 @@ async def _token_claims(user_id: str) -> dict[str, Any]:
         )
     return {
         "role": role,
-        "onboarding_state": onboarding_state,
         "is_admin": is_admin,
     }
 
@@ -363,7 +369,13 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
     claims = await _token_claims(user_id)
     access_token = create_access_token(user_id, claims=claims)
     new_refresh_token, new_jti, new_exp = create_refresh_token(user_id)
-    await models.register_refresh_token(user_id, new_refresh_token, new_jti, new_exp)
+    await models.register_refresh_token(
+        user_id,
+        new_refresh_token,
+        new_jti,
+        new_exp,
+        rotated_from_jti=jti,
+    )
     await _record_auth_event(
         user_id=user_id,
         email=email,
@@ -372,3 +384,48 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
         metadata={"old_jti": jti, "new_jti": new_jti},
     )
     return schemas.Token(access_token=access_token, refresh_token=new_refresh_token)
+
+
+@router.post(
+    "/onboarding/complete",
+    response_model=schemas.OnboardingCompletionResponse,
+)
+async def complete_onboarding(request: Request, current_user: CurrentUser):
+    user_id = str(current_user["id"])
+    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
+    if not auth_subject:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kanoniskt auth-subjekt saknas",
+        )
+
+    previous_state = _validated_onboarding_state(auth_subject.get("onboarding_state"))
+    if previous_state is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ogiltigt kanoniskt onboarding-tillstand",
+        )
+
+    updated_subject = await auth_subjects_repo.complete_onboarding(user_id)
+    if not updated_subject:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ogiltigt kanoniskt onboarding-tillstand",
+        )
+
+    await _record_auth_event(
+        user_id=user_id,
+        email=current_user.get("email"),
+        event="onboarding_completed",
+        request=request,
+        metadata={
+            "previous_onboarding_state": previous_state,
+            "current_onboarding_state": updated_subject.get("onboarding_state"),
+        },
+    )
+
+    return schemas.OnboardingCompletionResponse(
+        status="completed",
+        onboarding_state="completed",
+        token_refresh_required=True,
+    )

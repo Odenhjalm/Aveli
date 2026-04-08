@@ -100,21 +100,18 @@ async def ensure_auth_subject(
             return dict(row) if row else None
 
 
-async def set_onboarding_state(
-    user_id: str | UUID,
-    onboarding_state: str,
-) -> dict[str, Any] | None:
-    validated_onboarding_state = _validated_onboarding_state(onboarding_state)
+async def complete_onboarding(user_id: str | UUID) -> dict[str, Any] | None:
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET onboarding_state = %s
+                   SET onboarding_state = 'completed'
                  WHERE user_id = %s
+                   AND onboarding_state IN ('incomplete', 'completed')
                  RETURNING user_id, onboarding_state, role_v2, role, is_admin
                 """,
-                (validated_onboarding_state, user_id),
+                (user_id,),
             )
             row = await cur.fetchone()
             await conn.commit()

@@ -23,6 +23,7 @@ from .repositories import (
     get_user_order as repo_get_user_order,
     list_services as repo_list_services,
     mark_order_paid as repo_mark_order_paid,
+    insert_auth_event as repo_insert_auth_event,
     revoke_refresh_tokens_for_user as repo_revoke_refresh_tokens_for_user,
     set_order_checkout_reference as repo_set_order_checkout_reference,
     update_profile as repo_update_profile,
@@ -278,7 +279,12 @@ def _hash_refresh_token(token: str) -> str:
 
 
 async def register_refresh_token(
-    user_id: str, token: str, jti: str, expires_at: datetime
+    user_id: str,
+    token: str,
+    jti: str,
+    expires_at: datetime,
+    *,
+    rotated_from_jti: str | None = None,
 ) -> None:
     token_hash = _hash_refresh_token(token)
     await repo_upsert_refresh_token(
@@ -286,6 +292,7 @@ async def register_refresh_token(
         jti=jti,
         token_hash=token_hash,
         expires_at=expires_at,
+        rotated_from_jti=rotated_from_jti,
     )
 
 
@@ -295,7 +302,15 @@ async def validate_refresh_token(jti: str, token: str) -> dict | None:
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                SELECT id, user_id, token_hash, expires_at, revoked_at, rotated_at
+                SELECT jti,
+                       user_id,
+                       token_hash,
+                       issued_at,
+                       expires_at,
+                       last_used_at,
+                       revoked_at,
+                       rotated_at,
+                       rotated_from_jti
                 FROM app.refresh_tokens
                 WHERE jti = %s
                 FOR UPDATE
@@ -342,31 +357,18 @@ async def validate_refresh_token(jti: str, token: str) -> dict | None:
 
 
 async def record_auth_event(
-    user_id: str | None,
-    email: str | None,
-    event: str,
-    ip_address: str | None,
-    user_agent: str | None,
+    *,
+    actor_user_id: str | None,
+    subject_user_id: str,
+    event_type: str,
     metadata: dict | None = None,
 ) -> None:
-    ip_value = ip_address if ip_address and ip_address != "unknown" else None
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.auth_events (user_id, email, event, ip_address, user_agent, metadata)
-                VALUES (%s, %s, %s, %s::inet, %s, %s)
-                """,
-                (
-                    user_id,
-                    email.lower() if email else None,
-                    event,
-                    ip_value,
-                    user_agent,
-                    Jsonb(metadata or {}),
-                ),
-            )
-            await conn.commit()
+    await repo_insert_auth_event(
+        actor_user_id=actor_user_id,
+        subject_user_id=subject_user_id,
+        event_type=event_type,
+        metadata=metadata,
+    )
 
 
 async def get_user_by_email(email: str):

@@ -6,7 +6,6 @@ from uuid import UUID
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
-from . import auth_subjects as auth_subjects_repo
 
 
 def _hydrate_profile_projection(row: dict[str, Any]) -> dict[str, Any]:
@@ -97,12 +96,4 @@ async def clear_profile_avatar(user_id: str | UUID) -> dict[str, Any] | None:
             )
             await cur.fetchone()
             await conn.commit()
-    return await get_profile(user_id)
-
-
-async def set_onboarding_state(
-    user_id: str | UUID,
-    onboarding_state: str,
-) -> dict[str, Any] | None:
-    await auth_subjects_repo.set_onboarding_state(user_id, onboarding_state)
     return await get_profile(user_id)

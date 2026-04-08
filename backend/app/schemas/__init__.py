@@ -1472,6 +1472,12 @@ class OnboardingStateResponse(BaseModel):
     onboarding_state: str
 
 
+class OnboardingCompletionResponse(BaseModel):
+    status: Literal["completed"]
+    onboarding_state: Literal["completed"]
+    token_refresh_required: Literal[True]
+
+
 class EntitlementsMembership(BaseModel):
     is_active: bool
     status: Optional[str] = None

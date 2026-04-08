@@ -14,6 +14,7 @@ from .auth import (
     upsert_refresh_token,
 )
 from .auth_subjects import (
+    complete_onboarding,
     ensure_auth_subject,
     get_auth_subject,
     set_role_authority,
@@ -42,7 +43,6 @@ from .payments import mark_order_paid
 from .profiles import (
     clear_profile_avatar,
     get_profile,
-    set_onboarding_state,
     update_profile,
 )
 from .seminars import (
@@ -150,8 +150,8 @@ __all__ = [
     "revoke_refresh_tokens_for_user",
     "schedule_webhook_retry",
     "clear_profile_avatar",
+    "complete_onboarding",
     "set_role_authority",
-    "set_onboarding_state",
     "set_order_checkout_reference",
     "set_seminar_status",
     "touch_attendee_presence",
