@@ -18,19 +18,32 @@ def _normalize_datetime(value: datetime | str | None) -> datetime | None:
     return None
 
 
+def membership_expires_at(
+    membership: Mapping[str, Any] | None,
+) -> datetime | str | None:
+    if not membership:
+        return None
+    return membership.get("expires_at", membership.get("end_date"))
+
+
 def is_membership_active(
     status: str,
-    end_date: datetime | str | None = None,
+    expires_at: datetime | str | None = None,
     *,
     now: datetime | None = None,
 ) -> bool:
-    if status not in ("active", "trialing"):
-        return False
-    normalized_end = _normalize_datetime(end_date)
-    if normalized_end is None:
+    normalized_status = str(status or "").strip().lower()
+    if normalized_status == "active":
         return True
+
     current_time = now or datetime.now(timezone.utc)
-    return normalized_end > current_time
+    if normalized_status != "canceled":
+        return False
+
+    normalized_expiry = _normalize_datetime(expires_at)
+    if normalized_expiry is None:
+        return False
+    return normalized_expiry > current_time
 
 
 def is_membership_row_active(
@@ -42,6 +55,6 @@ def is_membership_row_active(
         return False
     return is_membership_active(
         str(membership.get("status") or ""),
-        membership.get("end_date"),
+        membership_expires_at(membership),
         now=now,
     )

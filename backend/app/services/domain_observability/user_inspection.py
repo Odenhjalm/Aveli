@@ -112,6 +112,8 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
     enrolled_course_ids = unique_sorted_strings(
         row.get("id") for row in list(enrolled_courses_raw)[:_COURSE_LIMIT]
     )
+    membership_status = normalize_text((membership_row or {}).get("status"))
+    membership_access = is_membership_row_active(membership_row)
 
     violations: list[dict[str, Any]] = []
     inconsistencies: list[dict[str, Any]] = []
@@ -225,16 +227,8 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             "profile_state": "present" if profile_row is not None else "missing",
             "role_state": _role_state(auth_subject_row),
             "app_entry_authority": "memberships",
-            "app_entry_state": (
-                "active"
-                if is_membership_row_active(membership_row)
-                else ("inactive" if membership_row is not None else "missing")
-            ),
-            "membership_state": (
-                "active"
-                if is_membership_row_active(membership_row)
-                else ("inactive" if membership_row is not None else "missing")
-            ),
+            "app_entry_state": membership_status or ("missing" if membership_row is None else "inactive"),
+            "membership_state": membership_status or ("missing" if membership_row is None else "inactive"),
             "stored_onboarding_state": stored_onboarding_state,
             "derived_onboarding_state": derived_onboarding_state,
             "onboarding_alignment": (
@@ -253,7 +247,8 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             "app_entry": {
                 "authority": "memberships",
                 "membership_present": membership_row is not None,
-                "membership_active": is_membership_row_active(membership_row),
+                "membership_active": membership_access,
+                "membership_status": membership_status,
             },
             "auth": {
                 "user_present": user_row is not None,
@@ -270,7 +265,8 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             },
             "membership": {
                 "membership_present": membership_row is not None,
-                "membership_active": is_membership_row_active(membership_row),
+                "membership_active": membership_access,
+                "membership_status": membership_status,
             },
             "onboarding": {
                 "stored": stored_onboarding_state,

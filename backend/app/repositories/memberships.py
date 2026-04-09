@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import uuid4
 from typing import Any, Mapping
+from uuid import uuid4
 
 from psycopg import errors
 from psycopg.rows import dict_row
@@ -12,15 +12,23 @@ from ..db import get_conn, pool
 
 MembershipRow = dict[str, Any]
 _TABLE_COLUMNS_CACHE: dict[tuple[str, str], set[str]] = {}
-_CANONICAL_MEMBERSHIP_COLUMNS = (
+_UNSET = object()
+_REQUIRED_MEMBERSHIP_COLUMNS = (
     "membership_id",
     "user_id",
     "status",
-    "end_date",
     "created_at",
     "updated_at",
 )
-_OPTIONAL_COMPAT_MEMBERSHIP_COLUMNS = (
+_OPTIONAL_MEMBERSHIP_COLUMNS = (
+    "end_date",
+    "effective_at",
+    "expires_at",
+    "canceled_at",
+    "ended_at",
+    "source",
+    "provider_customer_id",
+    "provider_subscription_id",
     "plan_interval",
     "price_id",
     "stripe_customer_id",
@@ -63,15 +71,38 @@ async def _table_columns(schema: str, table: str) -> set[str]:
 
 async def _membership_columns() -> tuple[tuple[str, ...], set[str]]:
     available_columns = await _table_columns("app", "memberships")
-    if not set(_CANONICAL_MEMBERSHIP_COLUMNS).issubset(available_columns):
+    if not set(_REQUIRED_MEMBERSHIP_COLUMNS).issubset(available_columns):
         return (), available_columns
 
-    selected_columns = list(_CANONICAL_MEMBERSHIP_COLUMNS)
-    for column in _OPTIONAL_COMPAT_MEMBERSHIP_COLUMNS:
-        if column in available_columns:
+    selected_columns = list(_REQUIRED_MEMBERSHIP_COLUMNS)
+    for column in _OPTIONAL_MEMBERSHIP_COLUMNS:
+        if column in available_columns and column not in selected_columns:
             selected_columns.append(column)
 
     return tuple(selected_columns), available_columns
+
+
+def _resolve_explicit(explicit: Any, fallback: Any) -> Any:
+    if explicit is _UNSET:
+        return fallback
+    return explicit
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _expiry_column_sql(columns: set[str], alias: str = "m") -> str | None:
+    if "expires_at" in columns and "end_date" in columns:
+        return f"COALESCE({alias}.expires_at, {alias}.end_date)"
+    if "expires_at" in columns:
+        return f"{alias}.expires_at"
+    if "end_date" in columns:
+        return f"{alias}.end_date"
+    return None
 
 
 async def get_membership(user_id: str) -> MembershipRow | None:
@@ -101,11 +132,6 @@ async def get_membership_by_stripe_reference(
     customer_id: str | None = None,
     subscription_id: str | None = None,
 ) -> MembershipRow | None:
-    """
-    Find a membership by Stripe references. Prefer subscription_id matches, otherwise fall back
-    to the most recent customer_id match. This avoids returning stale rows when dummy IDs (e.g. in tests)
-    collide across users.
-    """
     if not customer_id and not subscription_id:
         return None
 
@@ -113,33 +139,27 @@ async def get_membership_by_stripe_reference(
     if not selected_columns:
         return None
 
+    lookups = (
+        ("provider_subscription_id", subscription_id),
+        ("stripe_subscription_id", subscription_id),
+        ("provider_customer_id", customer_id),
+        ("stripe_customer_id", customer_id),
+    )
+
     async with get_conn() as cur:
         try:
-            if subscription_id and "stripe_subscription_id" in available_columns:
+            for column_name, lookup_value in lookups:
+                if not lookup_value or column_name not in available_columns:
+                    continue
                 await cur.execute(
                     f"""
                     SELECT {", ".join(selected_columns)}
                       FROM app.memberships
-                     WHERE stripe_subscription_id = %s
+                     WHERE {column_name} = %s
                      ORDER BY updated_at DESC
                      LIMIT 1
                     """,
-                    (subscription_id,),
-                )
-                row = await cur.fetchone()
-                if row:
-                    return _normalize_membership_row(row)
-
-            if customer_id and "stripe_customer_id" in available_columns:
-                await cur.execute(
-                    f"""
-                    SELECT {", ".join(selected_columns)}
-                      FROM app.memberships
-                     WHERE stripe_customer_id = %s
-                     ORDER BY updated_at DESC
-                     LIMIT 1
-                    """,
-                    (customer_id,),
+                    (lookup_value,),
                 )
                 row = await cur.fetchone()
                 if row:
@@ -150,22 +170,59 @@ async def get_membership_by_stripe_reference(
     return None
 
 
+async def list_current_member_user_ids() -> list[str]:
+    _, available_columns = await _membership_columns()
+    if not available_columns:
+        return []
+
+    expiry_sql = _expiry_column_sql(available_columns)
+    access_clause = "m.status = 'active'"
+    if expiry_sql:
+        access_clause = (
+            f"(m.status = 'active' OR (m.status = 'canceled' AND {expiry_sql} IS NOT NULL AND {expiry_sql} > now()))"
+        )
+
+    async with get_conn() as cur:
+        try:
+            await cur.execute(
+                f"""
+                SELECT DISTINCT m.user_id
+                  FROM app.memberships m
+                 WHERE {access_clause}
+                """
+            )
+            rows = await cur.fetchall()
+        except (errors.UndefinedTable, errors.UndefinedColumn):
+            return []
+
+    return [str(row["user_id"]) for row in (rows or []) if row.get("user_id")]
+
+
 async def set_customer_id(user_id: str, customer_id: str) -> None:
     _, available_columns = await _membership_columns()
-    if "stripe_customer_id" not in available_columns:
+    customer_columns = [
+        column_name
+        for column_name in ("provider_customer_id", "stripe_customer_id")
+        if column_name in available_columns
+    ]
+    if not customer_columns:
         return
+
+    assignments = ", ".join(f"{column_name} = %s" for column_name in customer_columns)
+    params = [customer_id for _ in customer_columns]
+    params.extend([user_id])
 
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
                 await cur.execute(
-                    """
+                    f"""
                     UPDATE app.memberships
-                       SET stripe_customer_id = %s,
+                       SET {assignments},
                            updated_at = now()
                      WHERE user_id = %s
                     """,
-                    (customer_id, user_id),
+                    params,
                 )
             except errors.UndefinedTable:
                 await conn.rollback()
@@ -176,118 +233,155 @@ async def set_customer_id(user_id: str, customer_id: str) -> None:
 async def upsert_membership_record(
     user_id: str,
     *,
+    status: str | None = None,
+    effective_at: datetime | None | object = _UNSET,
+    expires_at: datetime | None | object = _UNSET,
+    canceled_at: datetime | None | object = _UNSET,
+    ended_at: datetime | None | object = _UNSET,
+    source: str | None | object = _UNSET,
+    provider_customer_id: str | None | object = _UNSET,
+    provider_subscription_id: str | None | object = _UNSET,
     plan_interval: str | None = None,
     price_id: str | None = None,
-    status: str | None = None,
     stripe_customer_id: str | None = None,
     stripe_subscription_id: str | None = None,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
 ) -> MembershipRow:
-    _, available_columns = await _membership_columns()
-    if not set(_CANONICAL_MEMBERSHIP_COLUMNS).issubset(available_columns):
+    selected_columns, available_columns = await _membership_columns()
+    if not selected_columns:
         raise RuntimeError("app.memberships is unavailable")
 
     existing = await get_membership(user_id)
+    membership_id = str((existing or {}).get("membership_id") or uuid4())
 
-    # When legacy billing columns still exist, keep them as non-authority compatibility
-    # fields. When the canonical baseline shape is active, only canonical app-entry fields
-    # are written.
-    if {"plan_interval", "price_id"}.issubset(available_columns):
-        plan_value = plan_interval or (existing or {}).get("plan_interval")
-        price_value = price_id or (existing or {}).get("price_id")
-        if not plan_value or not price_value:
-            raise ValueError("plan_interval and price_id are required for memberships")
+    resolved_status = str(status or (existing or {}).get("status") or "inactive").strip().lower()
+    existing_effective_at = _first_present(
+        (existing or {}).get("effective_at"),
+        (existing or {}).get("start_date"),
+    )
+    existing_expires_at = _first_present(
+        (existing or {}).get("expires_at"),
+        (existing or {}).get("end_date"),
+    )
+    existing_provider_customer_id = _first_present(
+        (existing or {}).get("provider_customer_id"),
+        (existing or {}).get("stripe_customer_id"),
+    )
+    existing_provider_subscription_id = _first_present(
+        (existing or {}).get("provider_subscription_id"),
+        (existing or {}).get("stripe_subscription_id"),
+    )
 
-        async with pool.connection() as conn:  # type: ignore[attr-defined]
-            async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-                try:
-                    await cur.execute(
-                        """
-                        INSERT INTO app.memberships (
-                            user_id,
-                            plan_interval,
-                            price_id,
-                            status,
-                            stripe_customer_id,
-                            stripe_subscription_id,
-                            start_date,
-                            end_date,
-                            created_at,
-                            updated_at
-                        )
-                        VALUES (%s, %s, %s, COALESCE(%s, 'active'), %s, %s, COALESCE(%s, now()), %s, now(), now())
-                        ON CONFLICT (user_id) DO UPDATE
-                        SET plan_interval = EXCLUDED.plan_interval,
-                            price_id = EXCLUDED.price_id,
-                            status = COALESCE(EXCLUDED.status, app.memberships.status),
-                            stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, app.memberships.stripe_customer_id),
-                            stripe_subscription_id = COALESCE(
-                                EXCLUDED.stripe_subscription_id,
-                                app.memberships.stripe_subscription_id
-                            ),
-                            start_date = COALESCE(EXCLUDED.start_date, app.memberships.start_date),
-                            end_date = COALESCE(EXCLUDED.end_date, app.memberships.end_date),
-                            updated_at = now()
-                        RETURNING membership_id,
-                                  user_id,
-                                  plan_interval,
-                                  price_id,
-                                  stripe_customer_id,
-                                  stripe_subscription_id,
-                                  status,
-                                  start_date,
-                                  end_date,
-                                  created_at,
-                                  updated_at
-                        """,
-                        (
-                            user_id,
-                            plan_value,
-                            price_value,
-                            status,
-                            stripe_customer_id,
-                            stripe_subscription_id,
-                            start_date,
-                            end_date,
-                        ),
-                    )
-                except errors.UndefinedTable:
-                    raise
-                row = await cur.fetchone()
-                await conn.commit()
-        return _normalize_membership_row(row)
+    effective_explicit = effective_at if effective_at is not _UNSET else start_date
+    expires_explicit = expires_at if expires_at is not _UNSET else end_date
+    customer_explicit = (
+        provider_customer_id
+        if provider_customer_id is not _UNSET
+        else (stripe_customer_id if stripe_customer_id is not None else _UNSET)
+    )
+    subscription_explicit = (
+        provider_subscription_id
+        if provider_subscription_id is not _UNSET
+        else (stripe_subscription_id if stripe_subscription_id is not None else _UNSET)
+    )
+
+    values_by_column: dict[str, Any] = {
+        "membership_id": membership_id,
+        "user_id": user_id,
+        "status": resolved_status,
+    }
+
+    if "effective_at" in available_columns:
+        values_by_column["effective_at"] = _resolve_explicit(effective_explicit, existing_effective_at)
+    if "expires_at" in available_columns:
+        values_by_column["expires_at"] = _resolve_explicit(expires_explicit, existing_expires_at)
+    if "canceled_at" in available_columns:
+        values_by_column["canceled_at"] = _resolve_explicit(
+            canceled_at,
+            (existing or {}).get("canceled_at"),
+        )
+    if "ended_at" in available_columns:
+        values_by_column["ended_at"] = _resolve_explicit(
+            ended_at,
+            (existing or {}).get("ended_at"),
+        )
+    if "source" in available_columns:
+        values_by_column["source"] = _resolve_explicit(
+            source,
+            (existing or {}).get("source"),
+        )
+    if "provider_customer_id" in available_columns:
+        values_by_column["provider_customer_id"] = _resolve_explicit(
+            customer_explicit,
+            existing_provider_customer_id,
+        )
+    if "provider_subscription_id" in available_columns:
+        values_by_column["provider_subscription_id"] = _resolve_explicit(
+            subscription_explicit,
+            existing_provider_subscription_id,
+        )
+    if "plan_interval" in available_columns:
+        values_by_column["plan_interval"] = plan_interval or (existing or {}).get("plan_interval")
+    if "price_id" in available_columns:
+        values_by_column["price_id"] = price_id or (existing or {}).get("price_id")
+    if "stripe_customer_id" in available_columns:
+        values_by_column["stripe_customer_id"] = _resolve_explicit(
+            customer_explicit,
+            existing_provider_customer_id,
+        )
+    if "stripe_subscription_id" in available_columns:
+        values_by_column["stripe_subscription_id"] = _resolve_explicit(
+            subscription_explicit,
+            existing_provider_subscription_id,
+        )
+    if "start_date" in available_columns:
+        values_by_column["start_date"] = _resolve_explicit(
+            effective_explicit,
+            existing_effective_at,
+        )
+    if "end_date" in available_columns:
+        values_by_column["end_date"] = _resolve_explicit(
+            expires_explicit,
+            existing_expires_at,
+        )
+
+    dynamic_columns = [
+        column_name
+        for column_name in values_by_column.keys()
+        if column_name not in {"membership_id", "user_id", "status"}
+    ]
+    insert_columns = ["membership_id", "user_id", "status", *dynamic_columns, "created_at", "updated_at"]
+    insert_values = [
+        values_by_column["membership_id"],
+        values_by_column["user_id"],
+        values_by_column["status"],
+        *[values_by_column[column_name] for column_name in dynamic_columns],
+    ]
+    insert_placeholders = ", ".join(
+        [
+            *["%s" for _ in range(3 + len(dynamic_columns))],
+            "now()",
+            "now()",
+        ]
+    )
+    update_assignments = [
+        "status = EXCLUDED.status",
+        *[f"{column_name} = EXCLUDED.{column_name}" for column_name in dynamic_columns],
+        "updated_at = now()",
+    ]
 
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
-                """
-                INSERT INTO app.memberships (
-                    membership_id,
-                    user_id,
-                    status,
-                    end_date,
-                    created_at,
-                    updated_at
-                )
-                VALUES (%s, %s, COALESCE(%s, 'active'), %s, now(), now())
+                f"""
+                INSERT INTO app.memberships ({", ".join(insert_columns)})
+                VALUES ({insert_placeholders})
                 ON CONFLICT (user_id) DO UPDATE
-                SET status = COALESCE(EXCLUDED.status, app.memberships.status),
-                    end_date = EXCLUDED.end_date,
-                    updated_at = now()
-                RETURNING membership_id,
-                          user_id,
-                          status,
-                          end_date,
-                          created_at,
-                          updated_at
+                SET {", ".join(update_assignments)}
+                RETURNING {", ".join(selected_columns)}
                 """,
-                (
-                    str((existing or {}).get("membership_id") or uuid4()),
-                    user_id,
-                    status,
-                    end_date,
-                ),
+                insert_values,
             )
             row = await cur.fetchone()
             await conn.commit()
@@ -341,19 +435,38 @@ def _normalize_membership_row(row: Mapping[str, Any] | None) -> MembershipRow | 
     if row is None:
         return None
     data = dict(row)
+    effective_at = _first_present(data.get("effective_at"), data.get("start_date"))
+    expires_at = _first_present(data.get("expires_at"), data.get("end_date"))
+    provider_customer_id = _first_present(
+        data.get("provider_customer_id"),
+        data.get("stripe_customer_id"),
+        data.get("customer_id"),
+    )
+    provider_subscription_id = _first_present(
+        data.get("provider_subscription_id"),
+        data.get("stripe_subscription_id"),
+        data.get("subscription_id"),
+    )
     normalized: MembershipRow = {
         "id": data.get("membership_id") or data.get("id"),
         "membership_id": data.get("membership_id") or data.get("id"),
         "user_id": data.get("user_id"),
-        "subscription_id": data.get("stripe_subscription_id") or data.get("subscription_id"),
-        "customer_id": data.get("stripe_customer_id") or data.get("customer_id"),
         "status": data.get("status"),
+        "effective_at": effective_at,
+        "expires_at": expires_at,
+        "canceled_at": data.get("canceled_at"),
+        "ended_at": data.get("ended_at"),
+        "source": data.get("source"),
+        "provider_customer_id": provider_customer_id,
+        "provider_subscription_id": provider_subscription_id,
+        "customer_id": provider_customer_id,
+        "subscription_id": provider_subscription_id,
+        "stripe_customer_id": provider_customer_id,
+        "stripe_subscription_id": provider_subscription_id,
+        "start_date": effective_at,
+        "end_date": expires_at,
         "price_id": data.get("price_id"),
         "plan_interval": data.get("plan_interval"),
-        "stripe_subscription_id": data.get("stripe_subscription_id"),
-        "stripe_customer_id": data.get("stripe_customer_id"),
-        "start_date": data.get("start_date"),
-        "end_date": data.get("end_date"),
         "created_at": data.get("created_at"),
         "updated_at": data.get("updated_at"),
     }
@@ -363,8 +476,10 @@ def _normalize_membership_row(row: Mapping[str, Any] | None) -> MembershipRow | 
 __all__ = [
     "get_latest_subscription",
     "get_membership",
-    "upsert_membership_record",
     "get_membership_by_stripe_reference",
-    "insert_payment_event",
     "insert_billing_log",
+    "insert_payment_event",
+    "list_current_member_user_ids",
+    "set_customer_id",
+    "upsert_membership_record",
 ]

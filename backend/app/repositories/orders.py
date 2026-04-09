@@ -8,6 +8,28 @@ from psycopg.types.json import Jsonb
 
 from ..db import get_conn, pool
 
+_ORDER_SELECT = """
+    SELECT id,
+           user_id,
+           service_id,
+           course_id,
+           session_id,
+           session_slot_id,
+           order_type,
+           amount_cents,
+           currency,
+           status,
+           stripe_checkout_id,
+           stripe_payment_intent,
+           stripe_subscription_id,
+           stripe_customer_id,
+           connected_account_id,
+           metadata,
+           created_at,
+           updated_at
+      FROM app.orders
+"""
+
 
 async def create_order(
     *,
@@ -89,28 +111,10 @@ async def create_order(
 async def get_order(order_id: str | UUID) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
-            """
-            SELECT id,
-                   user_id,
-                   service_id,
-                   course_id,
-                   session_id,
-                   session_slot_id,
-                   order_type,
-                   amount_cents,
-                   currency,
-                   status,
-                   stripe_checkout_id,
-                   stripe_payment_intent,
-                   stripe_subscription_id,
-                   stripe_customer_id,
-                   connected_account_id,
-                   metadata,
-                   created_at,
-                   updated_at
-            FROM app.orders
-            WHERE id = %s
-            LIMIT 1
+            f"""
+            {_ORDER_SELECT}
+             WHERE id = %s
+             LIMIT 1
             """,
             (order_id,),
         )
@@ -119,32 +123,15 @@ async def get_order(order_id: str | UUID) -> dict[str, Any] | None:
 
 
 async def get_user_order(
-    order_id: str | UUID, user_id: str | UUID
+    order_id: str | UUID,
+    user_id: str | UUID,
 ) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
-            """
-            SELECT id,
-                   user_id,
-                   service_id,
-                   course_id,
-                   session_id,
-                   session_slot_id,
-                   order_type,
-                   amount_cents,
-                   currency,
-                   status,
-                   stripe_checkout_id,
-                   stripe_payment_intent,
-                   stripe_subscription_id,
-                   stripe_customer_id,
-                   connected_account_id,
-                   metadata,
-                   created_at,
-                   updated_at
-            FROM app.orders
-            WHERE id = %s AND user_id = %s
-            LIMIT 1
+            f"""
+            {_ORDER_SELECT}
+             WHERE id = %s AND user_id = %s
+             LIMIT 1
             """,
             (order_id, user_id),
         )
@@ -166,28 +153,10 @@ async def list_user_orders(
     if limit <= 0 or limit > 200:
         limit = 50
     query = f"""
-        SELECT id,
-               user_id,
-               service_id,
-               course_id,
-               session_id,
-               session_slot_id,
-               order_type,
-               amount_cents,
-               currency,
-               status,
-               stripe_checkout_id,
-               stripe_payment_intent,
-               stripe_subscription_id,
-               stripe_customer_id,
-               connected_account_id,
-               metadata,
-               created_at,
-               updated_at
-        FROM app.orders
-        WHERE {' AND '.join(clauses)}
-        ORDER BY created_at DESC
-        LIMIT %s
+        {_ORDER_SELECT}
+         WHERE {' AND '.join(clauses)}
+         ORDER BY created_at DESC
+         LIMIT %s
     """
     params.append(limit)
     async with get_conn() as cur:
@@ -202,31 +171,58 @@ async def get_latest_order_for_course(
 ) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
-            """
-            SELECT id,
-                   user_id,
-                   service_id,
-                   course_id,
-                   session_id,
-                   session_slot_id,
-                   order_type,
-                   amount_cents,
-                   currency,
-                   status,
-                   stripe_checkout_id,
-                   stripe_payment_intent,
-                   stripe_subscription_id,
-                   stripe_customer_id,
-                   connected_account_id,
-                   metadata,
-                   created_at,
-                   updated_at
-            FROM app.orders
-            WHERE user_id = %s AND course_id = %s
-            ORDER BY created_at DESC
-            LIMIT 1
+            f"""
+            {_ORDER_SELECT}
+             WHERE user_id = %s AND course_id = %s
+             ORDER BY created_at DESC
+             LIMIT 1
             """,
             (user_id, course_id),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_order_by_checkout_id(checkout_id: str) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            f"""
+            {_ORDER_SELECT}
+             WHERE stripe_checkout_id = %s
+             ORDER BY updated_at DESC
+             LIMIT 1
+            """,
+            (checkout_id,),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_order_by_payment_intent(payment_intent: str) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            f"""
+            {_ORDER_SELECT}
+             WHERE stripe_payment_intent = %s
+             ORDER BY updated_at DESC
+             LIMIT 1
+            """,
+            (payment_intent,),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_order_by_subscription_id(subscription_id: str) -> dict[str, Any] | None:
+    async with get_conn() as cur:
+        await cur.execute(
+            f"""
+            {_ORDER_SELECT}
+             WHERE stripe_subscription_id = %s
+             ORDER BY updated_at DESC
+             LIMIT 1
+            """,
+            (subscription_id,),
         )
         row = await cur.fetchone()
     return dict(row) if row else None
@@ -237,14 +233,18 @@ async def set_order_checkout_reference(
     order_id: str | UUID,
     checkout_id: str | None,
     payment_intent: str | None,
+    subscription_id: str | None = None,
+    customer_id: str | None = None,
 ) -> dict[str, Any] | None:
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 UPDATE app.orders
-                   SET stripe_checkout_id = %s,
+                   SET stripe_checkout_id = COALESCE(%s, stripe_checkout_id),
                        stripe_payment_intent = COALESCE(%s, stripe_payment_intent),
+                       stripe_subscription_id = COALESCE(%s, stripe_subscription_id),
+                       stripe_customer_id = COALESCE(%s, stripe_customer_id),
                        updated_at = now()
                  WHERE id = %s
                  RETURNING id,
@@ -266,44 +266,11 @@ async def set_order_checkout_reference(
                            created_at,
                            updated_at
                 """,
-                (checkout_id, payment_intent, order_id),
+                (checkout_id, payment_intent, subscription_id, customer_id, order_id),
             )
             row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None
-
-
-async def get_order_by_payment_intent(payment_intent: str) -> dict[str, Any] | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT id,
-                   user_id,
-                   service_id,
-                   course_id,
-                   session_id,
-                   session_slot_id,
-                   order_type,
-                   amount_cents,
-                   currency,
-                   status,
-                   stripe_checkout_id,
-                   stripe_payment_intent,
-                   stripe_subscription_id,
-                   stripe_customer_id,
-                   connected_account_id,
-                   metadata,
-                   created_at,
-                   updated_at
-            FROM app.orders
-            WHERE stripe_payment_intent = %s
-            ORDER BY updated_at DESC
-            LIMIT 1
-            """,
-            (payment_intent,),
-        )
-        row = await cur.fetchone()
-    return dict(row) if row else None
 
 
 async def mark_order_refunded(
@@ -317,39 +284,39 @@ async def mark_order_refunded(
                 """
                 WITH existing AS (
                     SELECT status
-                    FROM app.orders
-                    WHERE id = %s
-                    FOR UPDATE
+                      FROM app.orders
+                     WHERE id = %s
+                     FOR UPDATE
                 ),
                 updated AS (
                     UPDATE app.orders
-                    SET status = 'refunded',
-                        stripe_payment_intent = COALESCE(%s, stripe_payment_intent),
-                        updated_at = now()
-                    WHERE id = %s
-                    RETURNING id,
-                              user_id,
-                              service_id,
-                              course_id,
-                              session_id,
-                              session_slot_id,
-                              order_type,
-                              amount_cents,
-                              currency,
-                              status,
-                              stripe_checkout_id,
-                              stripe_payment_intent,
-                              stripe_subscription_id,
-                              stripe_customer_id,
-                              connected_account_id,
-                              metadata,
-                              created_at,
-                              updated_at
+                       SET status = 'refunded',
+                           stripe_payment_intent = COALESCE(%s, stripe_payment_intent),
+                           updated_at = now()
+                     WHERE id = %s
+                 RETURNING id,
+                           user_id,
+                           service_id,
+                           course_id,
+                           session_id,
+                           session_slot_id,
+                           order_type,
+                           amount_cents,
+                           currency,
+                           status,
+                           stripe_checkout_id,
+                           stripe_payment_intent,
+                           stripe_subscription_id,
+                           stripe_customer_id,
+                           connected_account_id,
+                           metadata,
+                           created_at,
+                           updated_at
                 )
                 SELECT updated.*,
                        existing.status AS previous_status
-                FROM updated
-                LEFT JOIN existing ON true
+                  FROM updated
+             LEFT JOIN existing ON true
                 """,
                 (order_id, payment_intent, order_id),
             )

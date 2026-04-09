@@ -12,7 +12,6 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import repositories, schemas
 from ..config import settings
-from ..repositories import memberships as memberships_repo
 from . import stripe_customers as stripe_customers_service
 from .. import stripe_mode
 
@@ -162,10 +161,14 @@ async def create_checkout_session(
     price_info = await _resolve_price(payload, context)
     customer_id = await _get_or_create_customer(user)
 
+    checkout_type = payload.type.value
+    if payload.type is schemas.CheckoutType.subscription:
+        checkout_type = "membership"
+
     metadata: dict[str, Any] = {
         "user_id": user_id,
         "price_id": price_info.price_id,
-        "checkout_type": payload.type.value,
+        "checkout_type": checkout_type,
     }
 
     if payload.type is schemas.CheckoutType.course and payload.slug:
@@ -219,7 +222,6 @@ async def create_checkout_session(
     }
     if payload.type is schemas.CheckoutType.subscription:
         checkout_kwargs["subscription_data"] = {
-            "trial_period_days": 14,
             "metadata": metadata,
         }
     ui_mode = settings.stripe_checkout_ui_mode or "custom"
@@ -268,25 +270,6 @@ async def create_checkout_session(
             ui_mode,
         )
         raise CheckoutError("Stripe session missing checkout url", status_code=502)
-
-    if payload.type is schemas.CheckoutType.subscription and payload.interval:
-        await memberships_repo.upsert_membership_record(
-            user_id,
-            plan_interval=payload.interval.value,
-            price_id=price_info.price_id,
-            status="incomplete",
-            stripe_customer_id=customer_id,
-            stripe_subscription_id=None,
-        )
-        await memberships_repo.insert_billing_log(
-            user_id=user_id,
-            step="create_unified_checkout",
-            info={
-                "interval": payload.interval.value,
-                "order_id": str(order["id"]),
-                "session_id": session.get("id"),
-            },
-        )
 
     return schemas.CheckoutCreateResponse(
         url=url,

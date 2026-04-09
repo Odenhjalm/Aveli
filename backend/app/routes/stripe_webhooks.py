@@ -8,13 +8,13 @@ import stripe
 from fastapi import APIRouter, HTTPException, Request, status
 from starlette.concurrency import run_in_threadpool
 
-from .. import repositories
 from ..repositories import courses as courses_repo
+from ..repositories import memberships as memberships_repo
 from ..repositories import orders as orders_repo
 from ..repositories import payments as payments_repo
 from ..repositories import teachers as teachers_repo
-from ..services import checkout_service, subscription_service, course_bundles_service
 from .. import stripe_mode
+from ..services import checkout_service, course_bundles_service, subscription_service
 
 router = APIRouter(prefix="/api/stripe", tags=["stripe-webhooks"])
 logger = logging.getLogger(__name__)
@@ -127,6 +127,12 @@ async def stripe_payment_element_webhook(request: Request):
     event_id = event.get("id")
     data_object = event.get("data", {}).get("object", {})
 
+    if isinstance(event_id, str) and event_id:
+        inserted = await memberships_repo.insert_payment_event(event_id, dict(event))
+        if not inserted:
+            logger.info("Skipping duplicate Stripe event %s", event_id)
+            return {"status": "ok"}
+
     try:
         if event_type == "payment_intent.succeeded":
             await checkout_service.handle_payment_intent_succeeded(data_object)
@@ -143,10 +149,11 @@ async def stripe_payment_element_webhook(request: Request):
                             source="purchase",
                         )
         elif event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
-            await _handle_checkout_session(data_object, event_type)
-        elif event_type and (
-            event_type.startswith("customer.subscription") or event_type.startswith("invoice.payment_")
-        ):
+            if subscription_service.is_membership_checkout_session(data_object):
+                await subscription_service.process_event(event)
+            else:
+                await _handle_checkout_session(data_object, event_type)
+        elif subscription_service.is_membership_event_type(str(event_type) if event_type else None):
             await subscription_service.process_event(event)
         elif event_type == "payment_intent.payment_failed":
             logger.info(
@@ -196,6 +203,8 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
             order_id,
             payment_intent=str(payment_intent) if payment_intent else None,
             checkout_id=checkout_id if isinstance(checkout_id, str) else None,
+            subscription_id=str(session.get("subscription")) if session.get("subscription") else None,
+            customer_id=str(session.get("customer")) if session.get("customer") else None,
         )
 
     if order_id:
@@ -232,28 +241,6 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to grant bundle entitlements; bundle=%s error=%s", bundle_id, exc)
-
-    service_slug = metadata.get("service_slug")
-    if user_id and service_slug and not order and amount_cents > 0:
-        created_order = await repositories.create_order(
-            user_id=str(user_id),
-            service_id=None,
-            course_id=None,
-            amount_cents=amount_cents or 0,
-            currency=currency,
-            order_type="one_off",
-            metadata={"service_slug": service_slug, "price_id": metadata.get("price_id")},
-            stripe_customer_id=str(session.get("customer")) if session.get("customer") else None,
-            stripe_subscription_id=None,
-            connected_account_id=None,
-            session_id=None,
-            session_slot_id=None,
-        )
-        await payments_repo.mark_order_paid(
-            created_order["id"],
-            payment_intent=str(payment_intent) if payment_intent else None,
-            checkout_id=checkout_id if isinstance(checkout_id, str) else None,
-        )
 
 
 async def _handle_refund_event(event_type: str, payload: dict[str, object]) -> None:

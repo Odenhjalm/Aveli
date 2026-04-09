@@ -225,6 +225,7 @@ async def list_events(
 ) -> EventListResponse:
     user_id = str(current["id"])
     is_admin = _is_admin(current)
+    has_membership_access = await _has_active_membership(user_id)
 
     conditions: list[str] = [
         """
@@ -236,16 +237,7 @@ async def list_events(
             e.status <> 'draft'
             AND (
               e.visibility = 'public'
-              OR (
-                e.visibility = 'members'
-                AND EXISTS (
-                  SELECT 1
-                  FROM app.memberships m
-                  WHERE m.user_id = %(user_id)s
-                    AND m.status IN ('active', 'trialing')
-                    AND (m.end_date IS NULL OR m.end_date > now())
-                )
-              )
+              OR (e.visibility = 'members' AND %(has_membership_access)s)
             )
           )
         )
@@ -254,6 +246,7 @@ async def list_events(
     params: dict[str, object] = {
         "user_id": user_id,
         "is_admin": is_admin,
+        "has_membership_access": has_membership_access,
         "limit": limit,
     }
 

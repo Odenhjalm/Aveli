@@ -76,11 +76,12 @@ async def create_billing_portal_session(user: Mapping[str, Any]) -> str:
 def _has_active_membership(membership: Mapping[str, Any] | None) -> bool:
     if not membership:
         return False
-    if (membership.get("plan_interval") or "").lower() in {"referral", "invite"}:
+    source = str(membership.get("source") or "").strip().lower()
+    if source and source != "purchase":
         return False
     return is_membership_active(
         (membership.get("status") or "").lower(),
-        membership.get("end_date"),
+        membership.get("expires_at", membership.get("end_date")),
     )
 
 
@@ -93,7 +94,12 @@ async def ensure_customer_id(
 
     user_id = str(user["id"])
     membership_row = membership or await memberships_repo.get_membership(user_id)
-    customer_id = membership_row.get("stripe_customer_id") if membership_row else None
+    customer_id = None
+    if membership_row:
+        customer_id = (
+            membership_row.get("provider_customer_id")
+            or membership_row.get("stripe_customer_id")
+        )
     if not customer_id:
         customer_id = await stripe_customers_repo.get_customer_id_for_user(user_id)
     if customer_id:
@@ -124,7 +130,9 @@ async def _persist_customer_id(
         await stripe_customers_repo.upsert_customer(user_id, customer_id)
     except Exception:  # pragma: no cover - best effort
         logger.debug("Failed to store stripe customer in legacy table", exc_info=True)
-    if membership and not membership.get("stripe_customer_id"):
+    if membership and not (
+        membership.get("provider_customer_id") or membership.get("stripe_customer_id")
+    ):
         try:
             await memberships_repo.set_customer_id(user_id, customer_id)
         except Exception:  # pragma: no cover - best effort

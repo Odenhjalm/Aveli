@@ -14,6 +14,8 @@ async def mark_order_paid(
     *,
     payment_intent: str | None = None,
     checkout_id: str | None = None,
+    subscription_id: str | None = None,
+    customer_id: str | None = None,
 ) -> dict[str, Any] | None:
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
@@ -23,13 +25,16 @@ async def mark_order_paid(
                    SET status = 'paid',
                        stripe_payment_intent = COALESCE(%s, stripe_payment_intent),
                        stripe_checkout_id = COALESCE(%s, stripe_checkout_id),
+                       stripe_subscription_id = COALESCE(%s, stripe_subscription_id),
+                       stripe_customer_id = COALESCE(%s, stripe_customer_id),
                        updated_at = now()
                  WHERE id = %s
                  RETURNING id, user_id, service_id, course_id, amount_cents,
                            currency, status, stripe_checkout_id, stripe_payment_intent,
+                           stripe_subscription_id, stripe_customer_id,
                            metadata, created_at, updated_at
                 """,
-                (payment_intent, checkout_id, order_id),
+                (payment_intent, checkout_id, subscription_id, customer_id, order_id),
             )
             row = await cur.fetchone()
             await conn.commit()

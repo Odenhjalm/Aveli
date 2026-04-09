@@ -7,6 +7,7 @@ from psycopg import errors
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
+from ..repositories import memberships as memberships_repo
 from ..permissions import TeacherUser
 from ..schemas.notifications import (
     NotificationAudienceCreate,
@@ -99,20 +100,17 @@ async def _resolve_recipients(audiences: list[NotificationAudienceCreate]) -> se
         elif aud.audience_type == NotificationAudienceType.course_members and aud.course_id:
             course_member_ids.add(str(aud.course_id))
 
+    if course_member_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="course_members audience is non-canonical; use course_participants",
+        )
+
     recipients: set[str] = set()
+    if wants_all_members:
+        recipients.update(await memberships_repo.list_current_member_user_ids())
+
     async with get_conn() as cur:
-        if wants_all_members:
-            await cur.execute(
-                """
-                SELECT DISTINCT p.user_id
-                FROM app.memberships m
-                JOIN app.profiles p ON p.user_id = m.user_id
-                WHERE m.status IN ('active', 'trialing')
-                  AND (m.end_date IS NULL OR m.end_date > now())
-                """,
-            )
-            rows = await cur.fetchall()
-            recipients.update(str(r["user_id"]) for r in (rows or []))
 
         if event_ids:
             await cur.execute(
@@ -136,20 +134,6 @@ async def _resolve_recipients(audiences: list[NotificationAudienceCreate]) -> se
                   AND e.status = 'active'
                 """,
                 (sorted(course_participant_ids),),
-            )
-            rows = await cur.fetchall()
-            recipients.update(str(r["user_id"]) for r in (rows or []))
-
-        if course_member_ids:
-            await cur.execute(
-                """
-                SELECT DISTINCT e.user_id
-                FROM app.enrollments e
-                WHERE e.course_id = ANY(%s::uuid[])
-                  AND e.status = 'active'
-                  AND e.source = 'membership'
-                """,
-                (sorted(course_member_ids),),
             )
             rows = await cur.fetchall()
             recipients.update(str(r["user_id"]) for r in (rows or []))

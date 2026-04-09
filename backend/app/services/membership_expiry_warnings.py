@@ -66,17 +66,17 @@ async def run_once(*, now: datetime | None = None) -> int:
     sent_count = 0
 
     for membership in candidates:
-        end_date = membership.get("end_date")
+        expires_at = membership.get("expires_at")
         membership_id = str(membership["membership_id"])
         user_id = str(membership["user_id"])
-        if not isinstance(end_date, datetime):
+        if not isinstance(expires_at, datetime):
             continue
-        if end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
 
         if await _warning_already_sent(
             membership_id=membership_id,
-            end_date=end_date,
+            expires_at=expires_at,
         ):
             continue
 
@@ -87,10 +87,10 @@ async def run_once(*, now: datetime | None = None) -> int:
         try:
             delivery = await email_service.send_email(
                 to_email=email,
-                subject="Ditt Aveli-medlemskap löper snart ut",
+                subject="Your Aveli membership expires soon",
                 text_body=_build_warning_email_text(
                     display_name=membership.get("display_name"),
-                    end_date=end_date,
+                    expires_at=expires_at,
                 ),
             )
         except email_service.EmailDeliveryError:
@@ -106,7 +106,7 @@ async def run_once(*, now: datetime | None = None) -> int:
             step=_WARNING_STEP,
             info={
                 "membership_id": membership_id,
-                "end_date": end_date.isoformat(),
+                "expires_at": expires_at.isoformat(),
                 "warning_type": _WARNING_TYPE,
                 "delivery_mode": delivery.mode,
             },
@@ -144,16 +144,19 @@ async def _list_expiring_memberships(
             SELECT m.membership_id,
                    m.user_id,
                    m.status,
-                   m.end_date,
+                   COALESCE(m.expires_at, m.end_date) AS expires_at,
                    u.email AS email,
                    p.display_name
               FROM app.memberships m
               JOIN auth.users u ON u.id = m.user_id
               JOIN app.profiles p ON p.user_id = m.user_id
-             WHERE m.status IN ('active', 'trialing')
-               AND m.end_date >= %s
-               AND m.end_date < %s
-             ORDER BY m.end_date ASC
+             WHERE (
+                   m.status = 'active'
+                   OR (m.status = 'canceled' AND COALESCE(m.expires_at, m.end_date) > now())
+               )
+               AND COALESCE(m.expires_at, m.end_date) >= %s
+               AND COALESCE(m.expires_at, m.end_date) < %s
+             ORDER BY COALESCE(m.expires_at, m.end_date) ASC
             """,
             (window_start, window_end),
         )
@@ -161,7 +164,7 @@ async def _list_expiring_memberships(
     return [dict(row) for row in (rows or [])]
 
 
-async def _warning_already_sent(*, membership_id: str, end_date: datetime) -> bool:
+async def _warning_already_sent(*, membership_id: str, expires_at: datetime) -> bool:
     async with get_conn() as cur:
         await cur.execute(
             """
@@ -170,14 +173,14 @@ async def _warning_already_sent(*, membership_id: str, end_date: datetime) -> bo
              WHERE step = %s
                AND info->>'warning_type' = %s
                AND info->>'membership_id' = %s
-               AND info->>'end_date' = %s
+               AND info->>'expires_at' = %s
              LIMIT 1
             """,
             (
                 _WARNING_STEP,
                 _WARNING_TYPE,
                 membership_id,
-                end_date.isoformat(),
+                expires_at.isoformat(),
             ),
         )
         return (await cur.fetchone()) is not None
@@ -186,15 +189,15 @@ async def _warning_already_sent(*, membership_id: str, end_date: datetime) -> bo
 def _build_warning_email_text(
     *,
     display_name: str | None,
-    end_date: datetime,
+    expires_at: datetime,
 ) -> str:
-    greeting = f"Hej {display_name}," if display_name else "Hej,"
-    formatted_date = end_date.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    greeting = f"Hello {display_name}," if display_name else "Hello,"
+    formatted_date = expires_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return (
         f"{greeting}\n\n"
-        "Ditt Aveli-medlemskap löper snart ut.\n"
-        f"Nuvarande åtkomst avslutas {formatted_date}.\n\n"
-        "Om du vill fortsätta utan avbrott, uppdatera eller förnya medlemskapet innan dess.\n"
+        "Your Aveli membership expires soon.\n"
+        f"Current access ends {formatted_date}.\n\n"
+        "If you want to continue without interruption, renew before then.\n"
     )
 
 

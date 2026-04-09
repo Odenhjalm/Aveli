@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class SubscriptionInterval(str, Enum):
@@ -16,7 +16,9 @@ class SubscriptionSessionRequest(BaseModel):
 
 
 class SubscriptionCheckoutResponse(BaseModel):
-    checkout_url: str
+    url: str
+    session_id: str
+    order_id: str
 
 
 class SubscriptionCancelRequest(BaseModel):
@@ -31,25 +33,6 @@ class SubscriptionCancelResponse(BaseModel):
 
 
 class BillingPortalResponse(BaseModel):
-    url: str
-
-
-class CheckoutSessionRequest(BaseModel):
-    plan: SubscriptionInterval = Field(validation_alias=AliasChoices("plan", "interval"))
-
-    @field_validator("plan", mode="before")
-    @classmethod
-    def _normalize_plan(cls, value):
-        if isinstance(value, str):
-            lowered = value.lower()
-            if lowered in {"monthly", "month"}:
-                return SubscriptionInterval.month
-            if lowered in {"yearly", "annual", "year"}:
-                return SubscriptionInterval.year
-        return value
-
-
-class CheckoutSessionResponse(BaseModel):
     url: str
 
 
