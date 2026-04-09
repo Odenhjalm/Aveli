@@ -1,0 +1,146 @@
+{
+  "tree_id": "course_monetization_canonical_implementation_tree",
+  "status": "READY",
+  "source_contracts": [
+    "actual_truth/contracts/course_monetization_contract.md",
+    "actual_truth/contracts/commerce_membership_contract.md",
+    "actual_truth/contracts/supabase_integration_boundary_contract.md"
+  ],
+  "audit_mode": "verified_repository_retrieval",
+  "audit_inputs": [
+    "CMA-01",
+    "CMA-02",
+    "CMA-03",
+    "CMA-04",
+    "CMA-05",
+    "CMA-06",
+    "CMA-07",
+    "CMA-08",
+    "CMA-09",
+    "CMA-10",
+    "CMA-11",
+    "CMA-12",
+    "CMA-13",
+    "CMA-14",
+    "CMA-15",
+    "CMA-16"
+  ],
+  "tasks": [
+    {
+      "id": "CMTZ-001",
+      "title": "BASELINE_MONETIZATION_FOUNDATION",
+      "type": "OWNER",
+      "group": "BASELINE",
+      "depends_on": [],
+      "audit_inputs": ["CMA-03", "CMA-04", "CMA-08", "CMA-14"]
+    },
+    {
+      "id": "CMTZ-002",
+      "title": "TEACHER_PRICING_AUTHORITY",
+      "type": "OWNER",
+      "group": "PRICING AUTHORITY",
+      "depends_on": ["CMTZ-001"],
+      "audit_inputs": ["CMA-05", "CMA-11"]
+    },
+    {
+      "id": "CMTZ-003",
+      "title": "STRIPE_COURSE_MAPPING",
+      "type": "OWNER",
+      "group": "STRIPE COURSE MAPPING",
+      "depends_on": ["CMTZ-001", "CMTZ-002"],
+      "audit_inputs": ["CMA-03", "CMA-14"]
+    },
+    {
+      "id": "CMTZ-004",
+      "title": "BUNDLE_COMPOSITION",
+      "type": "OWNER",
+      "group": "BUNDLE COMPOSITION",
+      "depends_on": [],
+      "audit_inputs": ["CMA-07"]
+    },
+    {
+      "id": "CMTZ-005",
+      "title": "BUNDLE_PRICING_AUTHORITY",
+      "type": "OWNER",
+      "group": "BUNDLE PRICING",
+      "depends_on": ["CMTZ-001", "CMTZ-004"],
+      "audit_inputs": ["CMA-08"]
+    },
+    {
+      "id": "CMTZ-006",
+      "title": "STRIPE_BUNDLE_MAPPING",
+      "type": "OWNER",
+      "group": "STRIPE BUNDLE MAPPING",
+      "depends_on": ["CMTZ-001", "CMTZ-004", "CMTZ-005"],
+      "audit_inputs": ["CMA-07", "CMA-08"]
+    },
+    {
+      "id": "CMTZ-007",
+      "title": "SELLABLE_COMPUTATION",
+      "type": "OWNER",
+      "group": "SELLABLE COMPUTATION",
+      "depends_on": ["CMTZ-001", "CMTZ-002", "CMTZ-003", "CMTZ-005", "CMTZ-006"],
+      "audit_inputs": ["CMA-04", "CMA-08", "CMA-13"]
+    },
+    {
+      "id": "CMTZ-008",
+      "title": "PURCHASE_INTEGRATION",
+      "type": "OWNER",
+      "group": "PURCHASE INTEGRATION",
+      "depends_on": ["CMTZ-003", "CMTZ-006", "CMTZ-007"],
+      "audit_inputs": ["CMA-02", "CMA-03", "CMA-07", "CMA-09", "CMA-10", "CMA-16"]
+    },
+    {
+      "id": "CMTZ-009",
+      "title": "FRONTEND_ALIGNMENT",
+      "type": "OWNER",
+      "group": "FRONTEND ALIGNMENT",
+      "depends_on": ["CMTZ-002", "CMTZ-005", "CMTZ-007", "CMTZ-008"],
+      "audit_inputs": ["CMA-09", "CMA-10", "CMA-11", "CMA-15", "CMA-16"]
+    },
+    {
+      "id": "CMTZ-010",
+      "title": "LEGACY_REMOVAL",
+      "type": "OWNER",
+      "group": "LEGACY REMOVAL",
+      "depends_on": ["CMTZ-002", "CMTZ-003", "CMTZ-007", "CMTZ-009"],
+      "audit_inputs": ["CMA-06", "CMA-12", "CMA-13"]
+    },
+    {
+      "id": "CMTZ-011",
+      "title": "TEST_AND_GATE",
+      "type": "AGGREGATE",
+      "group": "TEST + GATE",
+      "depends_on": [
+        "CMTZ-001",
+        "CMTZ-002",
+        "CMTZ-003",
+        "CMTZ-004",
+        "CMTZ-005",
+        "CMTZ-006",
+        "CMTZ-007",
+        "CMTZ-008",
+        "CMTZ-009",
+        "CMTZ-010"
+      ],
+      "audit_inputs": [
+        "CMA-01",
+        "CMA-02",
+        "CMA-03",
+        "CMA-04",
+        "CMA-05",
+        "CMA-06",
+        "CMA-07",
+        "CMA-08",
+        "CMA-09",
+        "CMA-10",
+        "CMA-11",
+        "CMA-12",
+        "CMA-13",
+        "CMA-14",
+        "CMA-15",
+        "CMA-16"
+      ]
+    }
+  ]
+}
