@@ -31,7 +31,7 @@ This task preserves the correct bundle composition behavior and seals the remain
 
 ## Depends On
 
-- none
+- `CMTZ-000`
 
 ## Acceptance Criteria
 

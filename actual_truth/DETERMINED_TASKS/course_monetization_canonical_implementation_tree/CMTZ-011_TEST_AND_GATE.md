@@ -42,6 +42,7 @@ Course Monetization and Teacher Pricing need final contract gates so the repaire
 
 ## Depends On
 
+- `CMTZ-000`
 - `CMTZ-001`
 - `CMTZ-002`
 - `CMTZ-003`

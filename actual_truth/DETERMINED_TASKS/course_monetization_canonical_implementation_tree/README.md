@@ -87,6 +87,8 @@ Execution order and dependency graph are defined in:
 
 - [DAG_SUMMARY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/DAG_SUMMARY.md)
 
+The DAG entrypoint now begins with [CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md) so later bundle-backed monetization tasks extend canonical baseline truth rather than an implicit schema assumption.
+
 Machine-readable task metadata is defined in:
 
 - [task_manifest.json](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/task_manifest.json)

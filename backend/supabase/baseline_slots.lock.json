@@ -159,6 +159,12 @@
       "filename": "0026_canonical_app_memberships_authority.sql",
       "path": "backend/supabase/baseline_slots/0026_canonical_app_memberships_authority.sql",
       "sha256": "44bee1ef40426236bf48094b348331e15dae807594f262772ff735c4acece403"
+    },
+    {
+      "slot": 27,
+      "filename": "0027_canonical_course_bundles_core.sql",
+      "path": "backend/supabase/baseline_slots/0027_canonical_course_bundles_core.sql",
+      "sha256": "96176c04bb24146142f69ed94a2c74cbf2c15e787fd474260131dfc908b4be71"
     }
   ]
 }

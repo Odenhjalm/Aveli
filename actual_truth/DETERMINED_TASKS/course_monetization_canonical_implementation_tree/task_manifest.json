@@ -27,11 +27,19 @@
   ],
   "tasks": [
     {
+      "id": "CMTZ-000",
+      "title": "BUNDLE_BASELINE_FOUNDATION",
+      "type": "OWNER",
+      "group": "BASELINE",
+      "depends_on": [],
+      "audit_inputs": ["CMA-07", "CMA-08", "CMA-16"]
+    },
+    {
       "id": "CMTZ-001",
       "title": "BASELINE_MONETIZATION_FOUNDATION",
       "type": "OWNER",
       "group": "BASELINE",
-      "depends_on": [],
+      "depends_on": ["CMTZ-000"],
       "audit_inputs": ["CMA-03", "CMA-04", "CMA-08", "CMA-14"]
     },
     {
@@ -55,7 +63,7 @@
       "title": "BUNDLE_COMPOSITION",
       "type": "OWNER",
       "group": "BUNDLE COMPOSITION",
-      "depends_on": [],
+      "depends_on": ["CMTZ-000"],
       "audit_inputs": ["CMA-07"]
     },
     {
@@ -112,6 +120,7 @@
       "type": "AGGREGATE",
       "group": "TEST + GATE",
       "depends_on": [
+        "CMTZ-000",
         "CMTZ-001",
         "CMTZ-002",
         "CMTZ-003",

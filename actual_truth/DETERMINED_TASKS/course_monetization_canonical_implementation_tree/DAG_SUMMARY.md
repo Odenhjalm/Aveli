@@ -45,20 +45,24 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 
 ## TASK LIST
 
-1. [CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md)
-2. [CMTZ-002_TEACHER_PRICING_AUTHORITY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-002_TEACHER_PRICING_AUTHORITY.md)
-3. [CMTZ-003_STRIPE_COURSE_MAPPING.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-003_STRIPE_COURSE_MAPPING.md)
-4. [CMTZ-004_BUNDLE_COMPOSITION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-004_BUNDLE_COMPOSITION.md)
-5. [CMTZ-005_BUNDLE_PRICING_AUTHORITY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-005_BUNDLE_PRICING_AUTHORITY.md)
-6. [CMTZ-006_STRIPE_BUNDLE_MAPPING.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-006_STRIPE_BUNDLE_MAPPING.md)
-7. [CMTZ-007_SELLABLE_COMPUTATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-007_SELLABLE_COMPUTATION.md)
-8. [CMTZ-008_PURCHASE_INTEGRATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-008_PURCHASE_INTEGRATION.md)
-9. [CMTZ-009_FRONTEND_ALIGNMENT.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-009_FRONTEND_ALIGNMENT.md)
-10. [CMTZ-010_LEGACY_REMOVAL.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-010_LEGACY_REMOVAL.md)
-11. [CMTZ-011_TEST_AND_GATE.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-011_TEST_AND_GATE.md)
+1. [CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md)
+2. [CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md)
+3. [CMTZ-002_TEACHER_PRICING_AUTHORITY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-002_TEACHER_PRICING_AUTHORITY.md)
+4. [CMTZ-003_STRIPE_COURSE_MAPPING.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-003_STRIPE_COURSE_MAPPING.md)
+5. [CMTZ-004_BUNDLE_COMPOSITION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-004_BUNDLE_COMPOSITION.md)
+6. [CMTZ-005_BUNDLE_PRICING_AUTHORITY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-005_BUNDLE_PRICING_AUTHORITY.md)
+7. [CMTZ-006_STRIPE_BUNDLE_MAPPING.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-006_STRIPE_BUNDLE_MAPPING.md)
+8. [CMTZ-007_SELLABLE_COMPUTATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-007_SELLABLE_COMPUTATION.md)
+9. [CMTZ-008_PURCHASE_INTEGRATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-008_PURCHASE_INTEGRATION.md)
+10. [CMTZ-009_FRONTEND_ALIGNMENT.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-009_FRONTEND_ALIGNMENT.md)
+11. [CMTZ-010_LEGACY_REMOVAL.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-010_LEGACY_REMOVAL.md)
+12. [CMTZ-011_TEST_AND_GATE.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-011_TEST_AND_GATE.md)
 
 ## DEPENDENCY GRAPH
 
+- `CMTZ-000 -> CMTZ-001`
+- `CMTZ-000 -> CMTZ-004`
+- `CMTZ-000 -> CMTZ-011`
 - `CMTZ-001 -> CMTZ-002`
 - `CMTZ-001 -> CMTZ-003`
 - `CMTZ-001 -> CMTZ-005`
@@ -95,17 +99,18 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 
 ## TOPOLOGICAL ORDER
 
-1. `CMTZ-001_BASELINE_MONETIZATION_FOUNDATION`
-2. `CMTZ-002_TEACHER_PRICING_AUTHORITY`
+1. `CMTZ-000_BUNDLE_BASELINE_FOUNDATION`
+2. `CMTZ-001_BASELINE_MONETIZATION_FOUNDATION`
 3. `CMTZ-004_BUNDLE_COMPOSITION`
-4. `CMTZ-003_STRIPE_COURSE_MAPPING`
-5. `CMTZ-005_BUNDLE_PRICING_AUTHORITY`
-6. `CMTZ-006_STRIPE_BUNDLE_MAPPING`
-7. `CMTZ-007_SELLABLE_COMPUTATION`
-8. `CMTZ-008_PURCHASE_INTEGRATION`
-9. `CMTZ-009_FRONTEND_ALIGNMENT`
-10. `CMTZ-010_LEGACY_REMOVAL`
-11. `CMTZ-011_TEST_AND_GATE`
+4. `CMTZ-002_TEACHER_PRICING_AUTHORITY`
+5. `CMTZ-003_STRIPE_COURSE_MAPPING`
+6. `CMTZ-005_BUNDLE_PRICING_AUTHORITY`
+7. `CMTZ-006_STRIPE_BUNDLE_MAPPING`
+8. `CMTZ-007_SELLABLE_COMPUTATION`
+9. `CMTZ-008_PURCHASE_INTEGRATION`
+10. `CMTZ-009_FRONTEND_ALIGNMENT`
+11. `CMTZ-010_LEGACY_REMOVAL`
+12. `CMTZ-011_TEST_AND_GATE`
 
 ## DAG VALIDITY
 
