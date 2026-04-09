@@ -4,7 +4,7 @@
 
 ACTIVE
 
-This contract defines the canonical commerce truth for launch purchase authority and membership purchase/app-entry state.
+This contract defines the canonical commerce truth for launch purchase authority, membership purchase/app-entry state, payment UI boundaries, and adjacent MVP bundle separation.
 This contract operates under `SYSTEM_LAWS.md`.
 
 ## 1. CONTRACT LAW
@@ -15,18 +15,28 @@ This contract operates under `SYSTEM_LAWS.md`.
 - Membership MUST NOT exist as a separate purchase authority.
 - Course purchase and membership purchase use separate canonical initiation entrypoints.
 - Stripe webhook completion is the only canonical payment-confirmation path.
+- Stripe MAY be embedded in Aveli UI for payment collection only and this MUST NOT change authority.
+- Course bundles are included in MVP as a separate order-backed and payment-backed commerce domain.
+- Notification audiences MUST preserve separation between membership authority and course-access authority.
 
 ## 2. AUTHORITY MODEL
 
 - `app.orders` owns purchase identity and lifecycle for all paid launch commerce flows.
 - `app.payments` owns payment-provider settlement records tied to orders.
 - `app.memberships` owns app-entry state only.
+- `course_enrollments` owns protected course entitlement and access state for course and course-bundle fulfillment.
+- `app.memberships` is the single canonical current-state membership authority per user.
+- `app.memberships` MUST contain exactly one authority row per `user_id`.
+- The `app.memberships` authority row represents only the current membership state.
+- Current membership authority MUST NOT be derived by aggregating multiple membership rows.
+- Current membership authority MUST NOT depend on Stripe runtime state.
+- Historical membership transitions are not part of MVP authority and MAY be introduced later only by a separate event/history contract.
 - `app.memberships` does not own purchase truth.
 - A membership row is not proof of purchase without an order/payment trail.
 
-Protected course-access state is outside this contract and is owned only by `course_access_contract.md`.
+Protected course-access state, including course-bundle-granted course entitlement state, is outside membership authority and is owned only by `course_access_contract.md`.
 
-## 3. CANONICAL LAUNCH ENTRYPOINTS
+## 3. CANONICAL MEMBERSHIP-SCOPE ENTRYPOINTS
 
 - Course purchase initiation: `POST /api/checkout/create`
 - Membership purchase initiation: `POST /api/billing/create-subscription`
@@ -37,6 +47,7 @@ Entrypoint responsibilities:
 - `POST /api/checkout/create` initiates paid course purchase only.
 - `POST /api/billing/create-subscription` initiates membership purchase only.
 - `POST /api/stripe/webhook` confirms payment and applies post-payment mutations.
+- Course bundles are included in MVP as a separate domain and do not change these locked membership-scope entrypoints.
 
 ## 4. COURSE PURCHASE FLOW
 
@@ -61,7 +72,7 @@ Entrypoint responsibilities:
 4. Backend creates a pending order in `app.orders`.
 5. Backend creates a Stripe subscription checkout session.
 6. Backend stores order linkage in Stripe metadata.
-7. Backend writes or upserts `app.memberships` as `incomplete`.
+7. Backend ensures the single canonical current-state row in `app.memberships` remains non-access-granting until canonical payment confirmation is applied.
 8. Backend returns checkout session data to the client.
 9. Stripe sends subscription and invoice events to `POST /api/stripe/webhook`.
 10. Webhook resolves the event back to the membership purchase order.
@@ -69,7 +80,38 @@ Entrypoint responsibilities:
 12. Webhook records payment in `app.payments`.
 13. Webhook updates `app.memberships` to the canonical membership state.
 
-## 6. MEMBERSHIP ALIGNMENT DECISION
+## 6. PAYMENT UI MODEL
+
+- Stripe MAY be embedded in Aveli UI for payment collection, including Stripe Elements or equivalent embedded collection surfaces.
+- Payment UI MUST remain fully hosted on an Aveli-controlled domain.
+- Frontend MAY collect payment details.
+- Frontend MAY confirm a payment intent with Stripe for payment collection execution.
+- Frontend MUST NOT grant app access.
+- Frontend MUST NOT mutate membership state.
+- Frontend MUST NOT treat Stripe success as membership authority.
+- Payment success in frontend is NOT membership authority.
+- Membership state MUST ONLY change after backend validates the Stripe webhook and backend persists the membership update.
+- Backend remains the ONLY authority for membership state.
+- Backend remains the ONLY authority for access decisions.
+- Stripe remains payment processor and event emitter only.
+- Stripe is NOT membership authority.
+- Stripe is NOT access authority.
+
+## 7. COURSE BUNDLES DOMAIN
+
+- Course bundles are included in MVP.
+- Course bundles are a separate domain from membership.
+- Course bundles grant course entitlement only.
+- Course bundles DO NOT grant app access.
+- Course bundles DO NOT affect membership state.
+- Course bundles MUST be order-backed.
+- Course bundles MUST be payment-backed.
+- Course bundles MUST NOT modify `app.memberships`.
+- Course bundles MUST NOT influence onboarding or auth.
+- Course access remains governed only by `course_enrollments` as canonical authority under `course_access_contract.md`.
+- Bundle fulfillment MUST resolve through `app.orders` and `app.payments` before mutating course-access state.
+
+## 8. MEMBERSHIP ALIGNMENT DECISION
 
 - Membership MUST create order.
 - Membership MUST NOT be a separate non-order purchase authority.
@@ -79,7 +121,7 @@ Entrypoint responsibilities:
   - `app.memberships` for resulting app-entry state
 - Any membership flow that creates or updates membership without an order-backed purchase trail is non-canonical.
 
-## 7. MEMBERSHIP SOURCE LAW
+## 9. MEMBERSHIP SOURCE LAW
 
 Membership must always have an explicit source.
 
@@ -98,25 +140,103 @@ Rules:
 - all memberships MUST include explicit source metadata
 - implicit membership creation is forbidden
 
-## 8. FORBIDDEN PATTERNS
+## 10. MEMBERSHIP LIFECYCLE
+
+Canonical membership current-state statuses are:
+
+- `inactive`
+- `active`
+- `past_due`
+- `canceled`
+- `expired`
+
+State meaning:
+
+- `inactive` = no valid current membership entitlement; app access is denied
+- `active` = valid current membership entitlement; app access is allowed
+- `past_due` = delinquent payment state; app access is denied immediately
+- `canceled` = renewal has been stopped but the current entitlement remains valid until `expires_at`
+- `expired` = membership entitlement has ended; app access is denied
+
+Lifecycle rules:
+
+- `inactive -> active` is allowed only after canonical backend confirmation of a valid paid or non-purchase membership grant
+- `active -> past_due` is allowed only after canonical backend confirmation of delinquent renewal state
+- `past_due -> active` is allowed only after canonical backend confirmation of payment recovery
+- `active -> canceled` is allowed only after canonical backend confirmation that renewal will not continue
+- `canceled -> active` is allowed only after canonical backend confirmation of reactivation or a new valid membership term
+- `canceled -> expired` is allowed only when `expires_at` has been reached
+- `past_due -> expired` is allowed only when delinquency becomes terminal without recovery
+- `expired -> active` is allowed only after canonical backend confirmation of a new valid paid or non-purchase membership grant
+- Checkout initiation, frontend state, and Stripe runtime status alone MUST NOT grant access or act as membership authority
+- No grace period exists in MVP for `past_due`
+- Any future grace-period behavior MUST require a separate explicit contract and MUST NOT be inferred from Stripe retry logic
+
+## 11. ACCESS RULE
+
+User has app access IF AND ONLY IF:
+
+- `status = active`
+- OR `status = canceled AND current_time < expires_at`
+
+All other states MUST NOT grant app access:
+
+- `inactive`
+- `past_due`
+- `expired`
+
+Access rules:
+
+- `past_due` means immediate loss of app access
+- access MUST be denied when `status = past_due`
+- app access MUST be determined only from the backend-owned current state in `app.memberships`
+
+## 12. NOTIFICATION AUDIENCE LAW
+
+- Membership and course access are separate authorities.
+- Membership determines app-level access.
+- Membership determines app-level audience.
+- `course_enrollments` determines course-level access.
+- `course_enrollments` determines course-level audience.
+- Notifications MUST use membership for global app announcements.
+- Notifications MUST use membership for member-wide targeting.
+- Notifications MUST use `course_enrollments` for course-specific targeting.
+- Notifications MUST NOT use membership to infer course access.
+- Notifications MUST NOT use course enrollment to infer app access.
+- Notifications MUST NOT mix membership and enrollment audiences.
+
+## 13. FORBIDDEN PATTERNS
 
 - A single checkout endpoint serving both course and membership via a `type` switch.
 - Service checkout logic inside canonical launch commerce entrypoints.
 - Membership purchase without order creation.
 - Membership as standalone purchase authority.
+- Multiple authority rows per `user_id` in `app.memberships`.
+- Aggregation-based derivation of current membership authority across multiple rows.
 - Webhook flows that update membership without resolving purchase authority through orders/payments.
 - Webhook flows that create fallback purchase authority outside the canonical order path.
 - Duplicate membership initiation entrypoints that express the same purchase meaning.
 - Treating `subscription` as the canonical runtime authority term.
+- Treating `past_due` as access-granting or grace-bearing by default.
+- Inferring a grace period from Stripe retry behavior without a separate explicit contract.
 - Treating session-status, portal, or cancellation surfaces as launch purchase entrypoints.
+- Treating embedded Stripe UI success as membership authority.
+- Letting frontend mutate membership state after direct Stripe confirmation.
+- Letting course bundles grant app access or mutate `app.memberships`.
+- Using membership to infer course-level notification audience.
+- Using course enrollment to infer app-level audience.
+- Mixing membership and course-enrollment audiences as a single canonical audience authority.
 
-## 9. FRONTEND ALIGNMENT TARGET
+## 14. FRONTEND ALIGNMENT TARGET
 
 - Frontend must use `POST /api/checkout/create` only for paid course purchase.
 - Frontend must use `POST /api/billing/create-subscription` only for membership purchase.
 - Frontend must never use `POST /api/checkout/create` for membership purchase.
 - Frontend must never use `POST /api/checkout/create` for service purchase in launch scope.
 - Frontend must treat `POST /api/stripe/webhook` as backend-only.
+- Frontend MAY embed Stripe Elements or equivalent embedded Stripe payment UI within an Aveli-hosted payment surface.
+- Frontend embedded payment UI MUST remain non-authoritative.
+- Frontend payment success or payment-intent confirmation MUST NOT grant app access.
 - Frontend must not depend on polymorphic request bodies.
 - Frontend course purchase request shape:
   - `{ "slug": string }`
@@ -128,16 +248,18 @@ Rules:
   - `{ "url": string, "session_id": string, "order_id": string }`
 - All checkout responses MUST follow the same response shape regardless of purchase type.
 
-## 10. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
+## 15. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 
 - The canonical launch commerce routes are not currently mounted in `backend/app/main.py`.
 - `POST /api/checkout/create` is still polymorphic in the current repo schema and service layer.
 - `POST /api/billing/create-subscription` currently creates membership without creating an order.
 - `POST /api/billing/create-checkout-session` still exists as a duplicate membership initiation path.
-- `POST /api/stripe/webhook` currently handles broader non-launch branches beyond the locked launch contract.
+- `POST /api/stripe/webhook` currently handles broader mixed-domain branches beyond the clean separations locked by this contract.
 - Current membership webhook processing updates `app.memberships` but does not yet settle membership purchase orders.
+- Current repo surfaces still include direct frontend Stripe payment UI paths outside the locked payment UI boundary.
+- Current notification audience logic does not yet fully enforce membership versus course-enrollment audience separation.
 
-## 11. FINAL ASSERTION
+## 16. FINAL ASSERTION
 
 - This contract is the canonical launch commerce and membership purchase truth.
 - It is lockable as a contract artifact.

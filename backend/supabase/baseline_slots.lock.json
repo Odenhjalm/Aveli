@@ -153,6 +153,12 @@
       "filename": "0025_admin_bootstrap_service_role_access.sql",
       "path": "backend/supabase/baseline_slots/0025_admin_bootstrap_service_role_access.sql",
       "sha256": "ec7c98af6d76b0c177ba6aa133f2e03b67cd14e62fcac678c5f101ea654a872e"
+    },
+    {
+      "slot": 26,
+      "filename": "0026_canonical_app_memberships_authority.sql",
+      "path": "backend/supabase/baseline_slots/0026_canonical_app_memberships_authority.sql",
+      "sha256": "44bee1ef40426236bf48094b348331e15dae807594f262772ff735c4acece403"
     }
   ]
 }
