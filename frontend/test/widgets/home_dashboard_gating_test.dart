@@ -42,7 +42,6 @@ class _StubAuthRepository implements AuthRepository {
     required String password,
     required String displayName,
     String? inviteToken,
-    String? referralCode,
   }) => throw UnimplementedError();
 
   @override
@@ -67,7 +66,7 @@ class _StubAuthRepository implements AuthRepository {
   Future<Profile> getCurrentProfile() => throw UnimplementedError();
 
   @override
-  Future<void> completeWelcome() async {}
+  Future<Profile> completeWelcome() => throw UnimplementedError();
 
   @override
   Future<void> logout() async {}

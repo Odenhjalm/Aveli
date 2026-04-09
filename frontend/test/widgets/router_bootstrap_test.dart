@@ -98,7 +98,7 @@ class _FakeAuthController extends AuthController {
     : super(
         _FakeAuthRepository(
           profile: initialState.profile,
-          token: initialState.profile != null || initialState.claims != null
+          token: initialState.profile != null || initialState.hasStoredToken
               ? 'token'
               : null,
         ),
@@ -128,7 +128,6 @@ class _FakeAuthRepository implements AuthRepository {
     required String password,
     required String displayName,
     String? inviteToken,
-    String? referralCode,
   }) {
     throw UnsupportedError('Not implemented in tests');
   }
@@ -170,7 +169,8 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> completeWelcome() async {}
+  Future<Profile> completeWelcome() =>
+      throw UnsupportedError('Not implemented in tests');
 
   @override
   Future<void> logout() async {}
@@ -199,7 +199,9 @@ List<Override> _commonOverrides(AuthState authState) {
     homeFeedProvider.overrideWith((ref) => Future.value(const <Activity>[])),
     homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
     landing.popularCoursesProvider.overrideWith(
-      (ref) => Future.value(const landing.LandingSectionState(items: [])),
+      (ref) => Future.value(
+        const landing.LandingSection<landing.LandingCourseCard>(items: []),
+      ),
     ),
     communityServicesProvider.overrideWith(
       (ref) => Future.value(const <Service>[]),

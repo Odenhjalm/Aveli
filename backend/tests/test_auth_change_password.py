@@ -1,75 +1,66 @@
-from __future__ import annotations
-
-import uuid
-
 import pytest
 
-
-pytestmark = pytest.mark.anyio
-
-
-def _unique_email(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:10]}@example.com"
+from app.main import app
 
 
-async def test_change_password_requires_current_password(async_client):
-    email = _unique_email("change_password")
-    current_password = "Secret123!"
-    new_password = "Changed456!"
+pytestmark = pytest.mark.anyio("asyncio")
 
-    register_resp = await async_client.post(
-        "/auth/register",
-        json={
-            "email": email,
-            "password": current_password,
-            "display_name": "Password User",
-        },
-    )
-    assert register_resp.status_code == 201, register_resp.text
-    tokens = register_resp.json()
-    access_token = tokens["access_token"]
-    refresh_token = tokens["refresh_token"]
-    headers = {"Authorization": f"Bearer {access_token}"}
 
-    invalid_resp = await async_client.post(
-        "/auth/change-password",
-        headers=headers,
-        json={
-            "current_password": "Wrong123!",
-            "new_password": new_password,
-        },
-    )
-    assert invalid_resp.status_code == 400, invalid_resp.text
-    assert invalid_resp.json()["detail"] == "invalid_current_password"
-
-    change_resp = await async_client.post(
-        "/auth/change-password",
-        headers=headers,
-        json={
-            "current_password": current_password,
-            "new_password": new_password,
-        },
-    )
-    assert change_resp.status_code == 200, change_resp.text
-    assert change_resp.json() == {
-        "status": "password_changed",
-        "reauth_required": True,
+def test_removed_legacy_auth_and_profile_routes_are_not_mounted():
+    inventory = {
+        (route.path, method)
+        for route in app.routes
+        for method in getattr(route, "methods", set())
+        if method not in {"HEAD", "OPTIONS"}
     }
 
-    old_login = await async_client.post(
-        "/auth/login",
-        json={"email": email, "password": current_password},
-    )
-    assert old_login.status_code == 401, old_login.text
+    forbidden = {
+        ("/auth/change-password", "POST"),
+        ("/auth/request-password-reset", "POST"),
+        ("/profiles/me/avatar", "POST"),
+        ("/profiles/{user_id}/certificates", "GET"),
+    }
 
-    new_login = await async_client.post(
-        "/auth/login",
-        json={"email": email, "password": new_password},
-    )
-    assert new_login.status_code == 200, new_login.text
+    assert inventory.isdisjoint(forbidden)
 
-    refresh_resp = await async_client.post(
-        "/auth/refresh",
-        json={"refresh_token": refresh_token},
+
+async def test_register_rejects_referral_code_with_canonical_failure_envelope(
+    async_client,
+):
+    resp = await async_client.post(
+        "/auth/register",
+        json={
+            "email": "referral@example.com",
+            "password": "Secret123!",
+            "display_name": "Referral User",
+            "referral_code": "legacy-code",
+        },
     )
-    assert refresh_resp.status_code == 401, refresh_resp.text
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json() == {
+        "status": "error",
+        "error_code": "validation_error",
+        "message": "Begaran innehaller ogiltiga eller saknade falt.",
+        "field_errors": [
+            {
+                "field": "referral_code",
+                "error_code": "extra_forbidden",
+                "message": "Faltet ar inte tillatet.",
+            }
+        ],
+    }
+
+
+async def test_invalid_login_uses_canonical_failure_envelope(async_client):
+    resp = await async_client.post(
+        "/auth/login",
+        json={"email": "missing@example.com", "password": "wrong-password"},
+    )
+
+    assert resp.status_code == 401, resp.text
+    assert resp.json() == {
+        "status": "error",
+        "error_code": "invalid_credentials",
+        "message": "Fel e-postadress eller losenord.",
+    }

@@ -10,10 +10,5 @@ final userAccessProvider = Provider<UserAccessState>((ref) {
     return UserAccessState.unauthenticated;
   }
 
-  return UserAccessState(
-    profile: profile,
-    effectiveProfile: profile,
-    approval: TeacherApprovalInfo.empty,
-    application: null,
-  );
+  return UserAccessState(profile: profile, effectiveProfile: profile);
 });

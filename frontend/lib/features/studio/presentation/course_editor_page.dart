@@ -1875,11 +1875,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           id: media.lessonMediaId,
           lessonId: media.lessonId,
           mediaAssetId: media.mediaAssetId,
-          originalName: media.originalName,
           position: media.position,
           mediaType: media.mediaType,
           state: media.state,
-          previewReady: media.previewReady,
+          media: media.media,
         ),
       );
     }

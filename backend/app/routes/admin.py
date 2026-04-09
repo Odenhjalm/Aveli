@@ -6,12 +6,6 @@ from ..permissions import AdminUser
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.get("/dashboard", response_model=schemas.AdminDashboard)
-async def admin_dashboard(current: AdminUser):
-    del current
-    return schemas.AdminDashboard(is_admin=True, requests=[], certificates=[])
-
-
 @router.get("/settings", response_model=schemas.AdminSettingsResponse)
 async def admin_settings(current: AdminUser):
     priorities_raw = await models.list_teacher_course_priorities()

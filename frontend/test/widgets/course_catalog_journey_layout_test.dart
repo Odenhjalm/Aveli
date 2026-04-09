@@ -278,7 +278,9 @@ void main() {
       expect(
         find.descendant(
           of: meditationRow,
-          matching: find.text('Utbildning Spirituell meditation del 3 Meditationscoach'),
+          matching: find.text(
+            'Utbildning Spirituell meditation del 3 Meditationscoach',
+          ),
         ),
         findsOneWidget,
       );
@@ -305,7 +307,7 @@ class _FakeAuthController extends AuthController {
 
 class _StubAuthRepository implements AuthRepository {
   @override
-  Future<void> completeWelcome() async {}
+  Future<Profile> completeWelcome() => throw UnimplementedError();
 
   @override
   Future<Profile> getCurrentProfile() => throw UnimplementedError();
@@ -325,7 +327,6 @@ class _StubAuthRepository implements AuthRepository {
     required String email,
     required String password,
     required String displayName,
-    String? referralCode,
     String? inviteToken,
   }) => throw UnimplementedError();
 

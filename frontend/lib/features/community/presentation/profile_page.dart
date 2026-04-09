@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
@@ -20,6 +19,7 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -269,8 +269,12 @@ class _IdentitySection extends StatelessWidget {
         label: 'Medlem sedan $joinDate',
       ),
       if (isTeacher)
-        const _ProfileChip(icon: Icons.workspace_premium_rounded, label: 'Lärare'),
-      if (isAdmin) const _ProfileChip(icon: Icons.shield_rounded, label: 'Admin'),
+        const _ProfileChip(
+          icon: Icons.workspace_premium_rounded,
+          label: 'Lärare',
+        ),
+      if (isAdmin)
+        const _ProfileChip(icon: Icons.shield_rounded, label: 'Admin'),
     ];
 
     final actions = <Widget>[];
@@ -704,206 +708,6 @@ class _PasswordResetSection extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _ChangePasswordSection extends ConsumerStatefulWidget {
-  const _ChangePasswordSection();
-
-  @override
-  ConsumerState<_ChangePasswordSection> createState() =>
-      _ChangePasswordSectionState();
-}
-
-class _ChangePasswordSectionState
-    extends ConsumerState<_ChangePasswordSection> {
-  final _formKey = GlobalKey<FormState>();
-  final _currentPasswordCtrl = TextEditingController();
-  final _newPasswordCtrl = TextEditingController();
-  final _confirmPasswordCtrl = TextEditingController();
-
-  bool _submitting = false;
-  String? _feedback;
-  bool _feedbackIsError = false;
-
-  @override
-  void dispose() {
-    _currentPasswordCtrl.dispose();
-    _newPasswordCtrl.dispose();
-    _confirmPasswordCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return _GlassSection(
-      title: 'Byt lösenord',
-      child: Form(
-        key: _formKey,
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-        child: AutofillGroup(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'För att uppdatera ditt lösenord behöver du ange ditt nuvarande lösenord.',
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _currentPasswordCtrl,
-                enabled: !_submitting,
-                obscureText: true,
-                autofillHints: const [AutofillHints.password],
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Nuvarande lösenord',
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Ange ditt nuvarande lösenord.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _newPasswordCtrl,
-                enabled: !_submitting,
-                obscureText: true,
-                autofillHints: const [AutofillHints.newPassword],
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Nytt lösenord',
-                  hintText: 'Minst 8 tecken',
-                ),
-                validator: (value) {
-                  final password = value ?? '';
-                  if (password.isEmpty) {
-                    return 'Ange ett nytt lösenord.';
-                  }
-                  if (password.length < 8) {
-                    return 'Lösenordet måste vara minst 8 tecken.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _confirmPasswordCtrl,
-                enabled: !_submitting,
-                obscureText: true,
-                autofillHints: const [AutofillHints.newPassword],
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: _submitting ? null : (_) => _submit(),
-                decoration: const InputDecoration(
-                  labelText: 'Bekräfta nytt lösenord',
-                ),
-                validator: (value) {
-                  final confirm = value ?? '';
-                  if (confirm.isEmpty) {
-                    return 'Bekräfta ditt nya lösenord.';
-                  }
-                  if (confirm != _newPasswordCtrl.text) {
-                    return 'Lösenorden matchar inte.';
-                  }
-                  return null;
-                },
-              ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: _feedback == null
-                    ? const SizedBox(height: 12)
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          _feedback!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: _feedbackIsError
-                                ? theme.colorScheme.error
-                                : theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: GradientButton.icon(
-                  onPressed: _submitting ? null : _submit,
-                  icon: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.lock_reset_rounded),
-                  label: const Text('Uppdatera lösenord'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _submit() async {
-    if (_submitting) return;
-    final form = _formKey.currentState;
-    if (form == null || !form.validate()) return;
-
-    FocusScope.of(context).unfocus();
-
-    setState(() {
-      _submitting = true;
-      _feedback = null;
-      _feedbackIsError = false;
-    });
-
-    try {
-      await ref
-          .read(authRepositoryProvider)
-          .changePassword(
-            currentPassword: _currentPasswordCtrl.text,
-            newPassword: _newPasswordCtrl.text,
-          );
-      _currentPasswordCtrl.clear();
-      _newPasswordCtrl.clear();
-      _confirmPasswordCtrl.clear();
-      _setFeedback(
-        'Lösenordet är uppdaterat. Logga in igen med ditt nya lösenord.',
-      );
-      if (!mounted) return;
-      showSnack(
-        context,
-        'Lösenordet är uppdaterat. Logga in igen med ditt nya lösenord.',
-      );
-      await ref.read(authControllerProvider.notifier).logout();
-      if (!mounted) return;
-      context.goNamed(
-        AppRoute.login,
-        queryParameters: {'redirect': RoutePath.profile},
-      );
-    } catch (error, stackTrace) {
-      _currentPasswordCtrl.clear();
-      final failure = AppFailure.from(error, stackTrace);
-      _setFeedback(failure.message, isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _submitting = false);
-      }
-    }
-  }
-
-  void _setFeedback(String message, {bool isError = false}) {
-    if (!mounted) return;
-    setState(() {
-      _feedback = message;
-      _feedbackIsError = isError;
-    });
   }
 }
 

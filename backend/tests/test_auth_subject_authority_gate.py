@@ -18,10 +18,6 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
             "is_admin": False,
         }
 
-    monkeypatch.setattr(
-        "app.repositories.auth_subjects.get_auth_subject",
-        _fake_get_auth_subject,
-    )
     async def _fake_get_profile(_: str):
         return {
             "user_id": "user-123",
@@ -34,6 +30,10 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
             "updated_at": None,
         }
 
+    monkeypatch.setattr(
+        "app.repositories.auth_subjects.get_auth_subject",
+        _fake_get_auth_subject,
+    )
     monkeypatch.setattr(
         "app.repositories.profiles.get_profile",
         _fake_get_profile,
@@ -57,13 +57,17 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
         },
     )
 
-    assert current_user["role"] == "learner"
-    assert current_user["role_v2"] == "learner"
-    assert current_user["onboarding_state"] == "completed"
-    assert current_user["is_admin"] is False
-    assert current_user["display_name"] == "Canonical Profile Name"
-    assert current_user["bio"] == "Canonical bio"
-    assert current_user["photo_url"] == "/profiles/avatar/media-123"
+    assert current_user == {
+        "id": "user-123",
+        "email": "user@example.com",
+        "onboarding_state": "completed",
+        "role": "learner",
+        "role_v2": "learner",
+        "is_admin": False,
+        "display_name": "Canonical Profile Name",
+        "bio": "Canonical bio",
+        "photo_url": "/profiles/avatar/media-123",
+    }
 
 
 async def test_build_current_user_does_not_fallback_to_supabase_metadata(
@@ -100,64 +104,47 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
                 "photo_url": "https://example.com/avatar.jpg",
                 "bio": "Metadata bio",
             },
+            "app_metadata": {"role": "teacher", "is_admin": True},
         },
     )
 
-    assert current_user["display_name"] is None
-    assert current_user["bio"] is None
-    assert current_user["photo_url"] is None
+    assert current_user == {
+        "id": "user-123",
+        "email": "user@example.com",
+        "onboarding_state": "completed",
+        "role": "learner",
+        "role_v2": "learner",
+        "is_admin": False,
+        "display_name": None,
+        "bio": None,
+        "photo_url": None,
+    }
 
 
-async def test_profiles_set_onboarding_state_delegates_to_auth_subject_authority(
-    monkeypatch,
-) -> None:
-    from app.repositories import profiles as profiles_repo
+async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch) -> None:
+    from app import auth as auth_module
 
-    calls: list[tuple[str, str]] = []
-
-    async def _fake_set_onboarding_state(user_id: str, onboarding_state: str):
-        calls.append((user_id, onboarding_state))
-        return {"user_id": user_id}
-
-    async def _fake_get_profile(user_id: str):
+    async def _fake_get_auth_subject(_: str):
         return {
-            "user_id": user_id,
-            "email": "teacher@example.com",
-            "display_name": "Teacher",
-            "bio": None,
-            "photo_url": None,
-            "avatar_media_id": None,
-            "created_at": None,
-            "updated_at": None,
+            "user_id": "user-123",
+            "onboarding_state": "broken_state",
+            "role_v2": "teacher",
+            "role": "learner",
+            "is_admin": False,
         }
 
     monkeypatch.setattr(
-        profiles_repo.auth_subjects_repo,
-        "set_onboarding_state",
-        _fake_set_onboarding_state,
+        "app.repositories.auth_subjects.get_auth_subject",
+        _fake_get_auth_subject,
     )
-    monkeypatch.setattr(profiles_repo, "get_profile", _fake_get_profile)
 
-    result = await profiles_repo.set_onboarding_state("teacher-123", "completed")
+    async def _fake_get_profile(_: str):
+        return None
 
-    assert calls == [("teacher-123", "completed")]
-    assert result is not None
-    assert result["display_name"] == "Teacher"
-    assert "onboarding_state" not in result
-    assert "role_v2" not in result
+    monkeypatch.setattr("app.repositories.profiles.get_profile", _fake_get_profile)
 
-
-async def test_profiles_patch_rejects_photo_url_updates() -> None:
-    from fastapi import HTTPException
-
-    from app import schemas
-    from app.routes import profiles as profile_routes
-
-    with pytest.raises(HTTPException) as exc_info:
-        await profile_routes.patch_me(
-            schemas.ProfileUpdate(photo_url="https://example.com/avatar.jpg"),
-            current_user={"id": "teacher-123"},
+    with pytest.raises(ValueError, match="Canonical onboarding_state invalid"):
+        await auth_module._build_current_user(
+            "user-123",
+            {"email": "user@example.com"},
         )
-
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "Profilbild uppdateras via profilbildsuppladdning."

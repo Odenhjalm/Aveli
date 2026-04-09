@@ -3,7 +3,6 @@ class ApiPaths {
 
   static const authRequestPasswordReset = '/auth/forgot-password';
   static const authResetPassword = '/auth/reset-password';
-  static const authChangePassword = '/auth/change-password';
   static const authRefresh = '/auth/refresh';
   static const authMe = '/profiles/me';
   static const authLogin = '/auth/login';

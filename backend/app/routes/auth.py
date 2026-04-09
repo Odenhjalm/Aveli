@@ -268,50 +268,6 @@ async def reset_password(payload: schemas.AuthResetPasswordRequest):
     return {"status": result["status"]}
 
 
-@router.post("/change-password")
-async def change_password(
-    payload: schemas.AuthChangePasswordRequest,
-    request: Request,
-    current_user: CurrentUser,
-):
-    user_id = str(current_user["id"])
-    user = await models.get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="user_not_found",
-        )
-
-    hashed = user.get("encrypted_password")
-    if not hashed or not verify_password(payload.current_password, hashed):
-        await _record_auth_event(
-            user_id=user_id,
-            email=user.get("email"),
-            event="password_change_invalid_current_password",
-            request=request,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_current_password",
-        )
-
-    if payload.current_password == payload.new_password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="new_password_must_differ",
-        )
-
-    await models.update_user_password(user_id, payload.new_password)
-    await models.revoke_refresh_tokens_for_user(user_id)
-    await _record_auth_event(
-        user_id=user_id,
-        email=user.get("email"),
-        event="password_change_success",
-        request=request,
-    )
-    return {"status": "password_changed", "reauth_required": True}
-
-
 @router.post("/refresh", response_model=schemas.Token)
 async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
     try:

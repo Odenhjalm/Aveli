@@ -153,24 +153,6 @@ class AuthRepository {
     }
   }
 
-  Future<void> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    try {
-      await _client.post<Map<String, dynamic>>(
-        ApiPaths.authChangePassword,
-        body: {
-          'current_password': currentPassword,
-          'new_password': newPassword,
-        },
-      );
-    } on DioException catch (e) {
-      debugPrint('Change password failed: ${e.response?.data ?? e.message}');
-      rethrow;
-    }
-  }
-
   Future<Profile> getCurrentProfile() async {
     final data = await _client.get<Map<String, dynamic>>(ApiPaths.authMe);
     return Profile.fromJson(data);

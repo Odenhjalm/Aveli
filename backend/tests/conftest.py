@@ -1,4 +1,3 @@
-import asyncio
 import os
 import shutil
 import sys
@@ -44,6 +43,7 @@ os.environ["SENTRY_DSN"] = os.environ.get("AVELI_TEST_SENTRY_DSN", "")
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from psycopg import connect  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.auth import hash_password  # noqa: E402
 from app import db as app_db  # noqa: E402
@@ -56,21 +56,23 @@ _reset_session = getattr(app_db, "reset_test" "_session" "_id")
 _pool = app_db.pool
 
 
-def _ensure_event_loop():
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-
-_ensure_event_loop()
-
-
 @pytest.fixture(scope="module")
 def anyio_backend():
     # Limit tests to asyncio backend so local runs do not require the Trio extra.
     return "asyncio"
+
+
+def _cleanup_test_session(session_id: str) -> None:
+    with connect(LOCAL_TEST_DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "SELECT app.cleanup_test_session(%s::uuid)",
+                    (session_id,),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
 
 
 @pytest.fixture
@@ -99,26 +101,17 @@ async def async_client(anyio_backend) -> AsyncClient:
 
 
 @pytest.fixture(autouse=True)
-async def _test_session_scope():
+def _test_session_scope():
     session_id = str(uuid4())
     token = _set_session(session_id)
     original_header_setting = settings.enable_test_session_headers
     settings.enable_test_session_headers = True
 
-    if _pool.closed:
-        await _pool.open(wait=True)
-
     try:
         yield session_id
     finally:
         try:
-            async with _pool.connection() as conn:  # type: ignore[attr-defined]
-                async with conn.cursor() as cur:  # type: ignore[attr-defined]
-                    await cur.execute(
-                        "SELECT app.cleanup_test_session(%s::uuid)",
-                        (session_id,),
-                    )
-                    await conn.commit()
+            _cleanup_test_session(session_id)
         finally:
             settings.enable_test_session_headers = original_header_setting
             _reset_session(token)

@@ -94,13 +94,6 @@ class AuthResetPasswordRequest(BaseModel):
     new_password: str
 
 
-class AuthChangePasswordRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    current_password: str
-    new_password: str = Field(min_length=8)
-
-
 class TokenRefreshRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -604,25 +597,6 @@ class TarotRequestCreate(BaseModel):
     question: str
 
 
-class TeacherApplication(BaseModel):
-    id: UUID
-    user_id: UUID
-    title: str
-    status: str
-    notes: Optional[str] = None
-    evidence_url: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    display_name: Optional[str] = None
-    email: Optional[str] = None
-    role_v2: Optional[str] = None
-    approval: Optional[dict[str, Any]] = None
-
-
-class TeacherApplicationListResponse(BaseModel):
-    items: List[TeacherApplication]
-
-
 class TeacherPriorityUpdate(BaseModel):
     priority: int = Field(gt=0, le=1000)
     notes: Optional[str] = None
@@ -805,23 +779,6 @@ class LiveKitTokenRequest(BaseModel):
 class LiveKitTokenResponse(BaseModel):
     ws_url: str
     token: str
-
-
-class CertificateRecord(BaseModel):
-    id: UUID
-    user_id: UUID
-    title: str
-    status: str
-    notes: Optional[str] = None
-    evidence_url: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class AdminDashboard(BaseModel):
-    is_admin: bool
-    requests: List[TeacherApplication]
-    certificates: List[CertificateRecord]
 
 
 class CertificateStatusUpdate(BaseModel):

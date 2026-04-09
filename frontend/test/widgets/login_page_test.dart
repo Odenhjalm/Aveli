@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,15 +18,10 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/gate.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+
 import '../helpers/backend_asset_resolver_stub.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
-
-String _tokenForClaims(Map<String, Object?> claims) {
-  final header = base64Url.encode(utf8.encode('{"alg":"none","typ":"JWT"}'));
-  final payload = base64Url.encode(utf8.encode(jsonEncode(claims)));
-  return '$header.$payload.signature';
-}
 
 class _TestAuthController extends AuthController {
   _TestAuthController(AuthRepository repo) : super(repo, AuthHttpObserver());
@@ -66,7 +62,7 @@ void main() {
     gate.reset();
   });
 
-  testWidgets('LoginPage visar felmeddelande när inloggning misslyckas', (
+  testWidgets('LoginPage visar kanoniskt felmeddelande vid misslyckad login', (
     tester,
   ) async {
     final repo = _MockAuthRepository();
@@ -75,7 +71,11 @@ void main() {
       response: Response(
         requestOptions: RequestOptions(path: '/auth/login'),
         statusCode: 401,
-        data: {'detail': 'Fel e-postadress eller lösenord.'},
+        data: const {
+          'status': 'error',
+          'error_code': 'invalid_credentials',
+          'message': 'Fel e-postadress eller losenord.',
+        },
       ),
       type: DioExceptionType.badResponse,
     );
@@ -123,23 +123,18 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('login-error')),
-        matching: find.text('Fel e-postadress eller lösenord.'),
+        matching: find.text('Fel e-postadress eller losenord.'),
       ),
       findsOneWidget,
     );
     expect(gate.allowed, isFalse);
   });
 
-  testWidgets('teacher login redirects to teacher home', (tester) async {
+  testWidgets('successful login redirects to home', (tester) async {
     final repo = _MockAuthRepository();
-    final teacherToken = _tokenForClaims({
-      'role': 'teacher',
-      'is_admin': false,
-      'onboarding_state': OnboardingStateValue.completed,
-    });
     final profile = Profile(
-      id: 'teacher-1',
-      email: 'teacher@example.com',
+      id: 'user-1',
+      email: 'user@example.com',
       createdAt: DateTime.utc(2024, 1, 1),
       updatedAt: DateTime.utc(2024, 1, 2),
     );
@@ -150,7 +145,7 @@ void main() {
         password: any(named: 'password'),
       ),
     ).thenAnswer((_) async => profile);
-    when(() => repo.currentToken()).thenAnswer((_) async => teacherToken);
+    when(() => repo.currentToken()).thenAnswer((_) async => null);
 
     final controller = _TestAuthController(repo);
     final router = GoRouter(
@@ -165,11 +160,6 @@ void main() {
           path: RoutePath.home,
           name: AppRoute.home,
           builder: (context, _) => const Text('home'),
-        ),
-        GoRoute(
-          path: RoutePath.teacherHome,
-          name: AppRoute.teacherHome,
-          builder: (context, _) => const Text('teacher-home'),
         ),
       ],
     );
@@ -196,7 +186,7 @@ void main() {
 
     await tester.enterText(
       find.byType(TextFormField).at(0),
-      'teacher@example.com',
+      'user@example.com',
     );
     await tester.enterText(find.byType(TextFormField).at(1), 'correct-pass');
 
@@ -204,10 +194,7 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
 
-    expect(find.text('teacher-home'), findsOneWidget);
-    expect(
-      router.routeInformationProvider.value.uri.path,
-      RoutePath.teacherHome,
-    );
+    expect(find.text('home'), findsOneWidget);
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.home);
   });
 }

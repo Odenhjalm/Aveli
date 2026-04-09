@@ -44,17 +44,3 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
             detail="profile_not_found",
         )
     return schemas.Profile(**updated)
-
-
-@router.get("/{user_id}/certificates")
-async def certificates(
-    user_id: str, current_user: CurrentUser, verified_only: bool = False
-):
-    viewer_id = str(current_user["id"])
-    if user_id != viewer_id and not bool(current_user.get("is_admin")):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Du far inte komma at certifikat",
-        )
-    rows = await models.certificates_of(user_id, verified_only)
-    return {"items": rows}

@@ -1,235 +1,132 @@
-import base64
-import json
 import uuid
 
 import pytest
 
 from app import db
 
+from .utils import (
+    auth_header,
+    ensure_admin_user,
+    fetch_auth_subject,
+    register_auth_user,
+)
+
 
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-def auth_header(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+async def _event_types_for(user_id: str) -> list[str]:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT event_type
+                  FROM app.auth_events
+                 WHERE subject_user_id = %s
+                 ORDER BY created_at ASC
+                """,
+                (user_id,),
+            )
+            rows = await cur.fetchall()
+    return [str(row[0]) for row in rows]
 
 
-async def register_user(client, email: str, password: str, display_name: str):
-    register_resp = await client.post(
-        "/auth/register",
+async def test_teacher_role_routes_require_admin_and_mutate_canonical_authority(
+    async_client,
+):
+    password = "Passw0rd!"
+    non_admin_user = await register_auth_user(
+        async_client,
+        email=f"non_admin_{uuid.uuid4().hex[:8]}@example.com",
+        password=password,
+        display_name="Non Admin",
+    )
+    admin_user = await ensure_admin_user(
+        async_client,
+        password=password,
+        display_name="Admin",
+    )
+    target_user = await register_auth_user(
+        async_client,
+        email=f"teacher_target_{uuid.uuid4().hex[:8]}@example.com",
+        password=password,
+        display_name="Teacher Target",
+    )
+
+    forbidden_resp = await async_client.post(
+        f"/admin/users/{target_user['user_id']}/grant-teacher-role",
+        headers=auth_header(non_admin_user["access_token"]),
+    )
+    assert forbidden_resp.status_code == 403, forbidden_resp.text
+    assert forbidden_resp.json() == {
+        "status": "error",
+        "error_code": "admin_required",
+        "message": "Adminbehorighet kravs for den har atgarden.",
+    }
+
+    grant_resp = await async_client.post(
+        f"/admin/users/{target_user['user_id']}/grant-teacher-role",
+        headers=auth_header(admin_user["access_token"]),
+    )
+    assert grant_resp.status_code == 204, grant_resp.text
+    assert grant_resp.content == b""
+
+    subject_after_grant = await fetch_auth_subject(target_user["user_id"])
+    assert subject_after_grant == {
+        "onboarding_state": "incomplete",
+        "role_v2": "teacher",
+        "role": "teacher",
+        "is_admin": False,
+    }
+
+    revoked_refresh = await async_client.post(
+        "/auth/refresh",
+        json={"refresh_token": target_user["refresh_token"]},
+    )
+    assert revoked_refresh.status_code == 401, revoked_refresh.text
+    assert revoked_refresh.json() == {
+        "status": "error",
+        "error_code": "refresh_token_invalid",
+        "message": "Ogiltig uppdateringstoken.",
+    }
+
+    target_login = await async_client.post(
+        "/auth/login",
         json={
-            "email": email,
-            "password": password,
-            "display_name": display_name,
+            "email": target_user["email"],
+            "password": target_user["password"],
         },
     )
-    assert register_resp.status_code == 201, register_resp.text
+    assert target_login.status_code == 200, target_login.text
+    refreshed_target_tokens = target_login.json()
 
-    login_resp = await client.post(
-        "/auth/login",
-        json={"email": email, "password": password},
+    revoke_resp = await async_client.post(
+        f"/admin/users/{target_user['user_id']}/revoke-teacher-role",
+        headers=auth_header(admin_user["access_token"]),
     )
-    assert login_resp.status_code == 200, login_resp.text
-    tokens = login_resp.json()
-    access_token = tokens["access_token"]
+    assert revoke_resp.status_code == 204, revoke_resp.text
+    assert revoke_resp.content == b""
 
-    profile_resp = await client.get("/profiles/me", headers=auth_header(access_token))
-    assert profile_resp.status_code == 200, profile_resp.text
-    user_id = str(profile_resp.json()["user_id"])
-    return access_token, tokens["refresh_token"], user_id
+    subject_after_revoke = await fetch_auth_subject(target_user["user_id"])
+    assert subject_after_revoke == {
+        "onboarding_state": "incomplete",
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
 
-
-async def promote_to_admin(user_id: str):
-    async with db.pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.auth_subjects
-                   SET is_admin = true
-                WHERE user_id = %s
-                """,
-                (user_id,),
-            )
-            await conn.commit()
-
-
-async def cleanup_user(user_id: str):
-    async with db.pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
-            await conn.commit()
-
-
-async def profile_role(user_id: str) -> tuple[str, bool]:
-    async with db.pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                "SELECT role_v2, is_admin FROM app.auth_subjects WHERE user_id = %s",
-                (user_id,),
-            )
-            row = await cur.fetchone()
-            assert row is not None
-            return row[0], bool(row[1])
-
-
-def decode_token(token: str) -> dict[str, object]:
-    _, payload, _ = token.split('.')
-    padding = '=' * (-len(payload) % 4)
-    decoded = base64.urlsafe_b64decode(payload + padding)
-    return json.loads(decoded)
-
-
-async def create_teacher_application(user_id: str):
-    async with db.pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                DELETE FROM app.certificates
-                WHERE user_id = %s AND lower(title) = lower(%s)
-                """,
-                (user_id, "Läraransökan"),
-            )
-            await cur.execute(
-                """
-                INSERT INTO app.certificates (user_id, title, status, notes)
-                VALUES (%s, %s, 'pending', %s)
-                """,
-                (user_id, "Läraransökan", "Ansökan skapad i test"),
-            )
-            await conn.commit()
-
-
-async def test_admin_guard_for_teacher_approval(async_client):
-    admin_email = f"admin_{uuid.uuid4().hex[:8]}@example.com"
-    candidate_email = f"candidate_{uuid.uuid4().hex[:8]}@example.com"
-    password = "Passw0rd!"
-
-    admin_token, admin_refresh, admin_id = await register_user(
-        async_client, admin_email, password, "Admin"
+    revoked_again = await async_client.post(
+        "/auth/refresh",
+        json={"refresh_token": refreshed_target_tokens["refresh_token"]},
     )
-    _, candidate_refresh, candidate_id = await register_user(
-        async_client, candidate_email, password, "Candidate"
-    )
+    assert revoked_again.status_code == 401, revoked_again.text
+    assert revoked_again.json() == {
+        "status": "error",
+        "error_code": "refresh_token_invalid",
+        "message": "Ogiltig uppdateringstoken.",
+    }
 
-    try:
-        # Non-admin call should be forbidden.
-        resp = await async_client.post(
-            f"/admin/teacher-requests/{candidate_id}/approve",
-            headers=auth_header(admin_token),
-        )
-        assert resp.status_code == 403
-
-        # Promote and reuse the same token; guard reads from DB on each request.
-        await promote_to_admin(admin_id)
-
-        resp = await async_client.post(
-            f"/admin/teacher-requests/{candidate_id}/approve",
-            headers=auth_header(admin_token),
-        )
-        assert resp.status_code == 204
-
-        role, is_admin = await profile_role(candidate_id)
-        assert role == "teacher"
-        assert is_admin is False
-
-        resp = await async_client.post(
-            f"/admin/teacher-requests/{candidate_id}/reject",
-            headers=auth_header(admin_token),
-        )
-        assert resp.status_code == 204
-
-        # Refreshing the token should pick up the new admin claims.
-        refresh_resp = await async_client.post(
-            "/auth/refresh",
-            json={"refresh_token": admin_refresh},
-        )
-        assert refresh_resp.status_code == 200, refresh_resp.text
-        refreshed = refresh_resp.json()
-        claims = decode_token(refreshed["access_token"])
-        assert claims.get("is_admin") is True
-        assert claims.get("role") == "learner"
-    finally:
-        await cleanup_user(admin_id)
-        await cleanup_user(candidate_id)
-
-
-async def test_admin_teacher_request_endpoints(async_client):
-    admin_email = f"admin_req_{uuid.uuid4().hex[:8]}@example.com"
-    candidate_email = f"candidate_req_{uuid.uuid4().hex[:8]}@example.com"
-    password = "Passw0rd!"
-
-    admin_token, _, admin_id = await register_user(
-        async_client, admin_email, password, "Admin"
-    )
-    _, _, candidate_id = await register_user(
-        async_client, candidate_email, password, "Candidate"
-    )
-
-    try:
-        await create_teacher_application(candidate_id)
-
-        unauth_list = await async_client.get(
-            "/admin/teacher-requests", headers=auth_header(admin_token)
-        )
-        assert unauth_list.status_code == 403
-
-        await promote_to_admin(admin_id)
-
-        list_resp = await async_client.get(
-            "/admin/teacher-requests", headers=auth_header(admin_token)
-        )
-        assert list_resp.status_code == 200
-        items = list_resp.json()["items"]
-        assert any(row["user_id"] == candidate_id for row in items)
-
-        approve_resp = await async_client.post(
-            f"/admin/teacher-requests/{candidate_id}/approve",
-            headers=auth_header(admin_token),
-        )
-        assert approve_resp.status_code == 204
-        role, is_admin = await profile_role(candidate_id)
-        assert role == "teacher"
-        assert is_admin is False
-
-        reject_resp = await async_client.post(
-            f"/admin/teacher-requests/{candidate_id}/reject",
-            headers=auth_header(admin_token),
-        )
-        assert reject_resp.status_code == 204
-    finally:
-        await cleanup_user(admin_id)
-        await cleanup_user(candidate_id)
-
-
-async def test_media_control_plane_health_requires_admin(async_client):
-    email = f"media_admin_{uuid.uuid4().hex[:8]}@example.com"
-    password = "Passw0rd!"
-
-    access_token, _, user_id = await register_user(
-        async_client, email, password, "Media Admin"
-    )
-
-    try:
-        forbidden = await async_client.get(
-            "/admin/media/health",
-            headers=auth_header(access_token),
-        )
-        assert forbidden.status_code == 403
-
-        await promote_to_admin(user_id)
-
-        allowed = await async_client.get(
-            "/admin/media/health",
-            headers=auth_header(access_token),
-        )
-        assert allowed.status_code == 200, allowed.text
-        payload = allowed.json()
-        assert payload["control_plane"] == "media"
-        assert payload["status"] == "ok"
-        assert payload["access"] == "admin_only"
-        assert payload["workspace"] == "media_control_plane"
-        assert payload["viewer_id"] == user_id
-        assert len(payload["capabilities"]) >= 1
-        assert len(payload["actions"]) >= 1
-    finally:
-        await cleanup_user(user_id)
+    assert await _event_types_for(target_user["user_id"]) == [
+        "teacher_role_granted",
+        "teacher_role_revoked",
+    ]

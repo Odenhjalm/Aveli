@@ -16,15 +16,16 @@ from app.services.email_tokens import (
 )
 from .utils import current_test_headers
 
-pytestmark = pytest.mark.anyio
-
 
 def _unique_email(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}@example.com"
 
 
 @pytest.fixture
-async def auth_client():
+async def auth_client(anyio_backend):
+    if anyio_backend != "asyncio":
+        pytest.skip("Email flow tests require asyncio")
+
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport,
@@ -62,6 +63,7 @@ def test_verify_email_token_wrong_type():
         verify_email_token(token, "verify")
 
 
+@pytest.mark.anyio("asyncio")
 async def test_verify_email_is_idempotent(auth_client, monkeypatch):
     email = _unique_email("verify")
     token = create_email_token(email, "verify", 15)
@@ -119,6 +121,7 @@ async def test_verify_email_is_idempotent(auth_client, monkeypatch):
     assert state["user"]["confirmed_at"] is confirmed_at
 
 
+@pytest.mark.anyio("asyncio")
 async def test_reset_password_flow(auth_client, monkeypatch):
     email = _unique_email("reset")
     new_password = "Changed456!"
@@ -159,6 +162,7 @@ async def test_reset_password_flow(auth_client, monkeypatch):
     assert revoked_users == ["user-456"]
 
 
+@pytest.mark.anyio("asyncio")
 async def test_invite_token_validation(auth_client):
     invited_email = _unique_email("invite")
     invited_token = create_email_token(invited_email, "invite", 24 * 60)
@@ -180,4 +184,8 @@ async def test_invite_token_validation(auth_client):
         },
     )
     assert mismatch_resp.status_code == 400, mismatch_resp.text
-    assert mismatch_resp.json()["detail"] == "invalid_or_expired_token"
+    assert mismatch_resp.json() == {
+        "status": "error",
+        "error_code": "invalid_or_expired_token",
+        "message": "Lanken ar ogiltig eller har gatt ut.",
+    }

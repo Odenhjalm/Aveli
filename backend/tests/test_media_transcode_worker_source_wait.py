@@ -6,7 +6,7 @@ import pytest
 from app.services import media_transcode_worker as worker
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_worker_defers_without_consuming_attempt_when_presign_object_missing(
     monkeypatch,
 ):
@@ -76,7 +76,7 @@ async def test_worker_defers_without_consuming_attempt_when_presign_object_missi
     }
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_worker_defers_without_consuming_attempt_when_download_returns_404(
     monkeypatch,
 ):
@@ -149,7 +149,7 @@ async def test_worker_defers_without_consuming_attempt_when_download_returns_404
     }
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeypatch):
     calls: dict[str, object] = {}
 
@@ -247,7 +247,7 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
     }
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_transcode_cover_promotes_without_legacy_public_url(monkeypatch, caplog):
     calls: dict[str, object] = {}
 
@@ -345,7 +345,7 @@ async def test_transcode_cover_promotes_without_legacy_public_url(monkeypatch, c
     assert "COURSE_COVER_PROMOTED" in caplog.text
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_transcode_cover_logs_when_ready_asset_not_promoted(
     monkeypatch, caplog
 ):

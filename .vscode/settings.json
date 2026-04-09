@@ -1,24 +1,14 @@
 {
-    // Gör så att VS Code-terminalen prioriterar repo-lokal Flutter-SDK
     "terminal.integrated.env.linux": {
         "PATH": "${env:HOME}/flutter/bin:${env:PATH}"
     },
-    // Flutter SDK path
-    "dart.flutterSdkPath": "/home/rodenhjalm/flutter",
-    // Dart SDK (inuti Flutter)
-    "dart.sdkPath": "/home/rodenhjalm/flutter/bin/cache/dart-sdk",
-    // Kvalitet & ergonomi
     "editor.formatOnSave": true,
     "dart.runPubGetOnPubspecChanges": true,
-    // Flutter-devtools
     "dart.openDevTools": "flutter",
-    // Lite renare analyzer
     "dart.debugExtensionPackageLibraries": false,
     "dart.debugSdkLibraries": false,
-    // Trimma whitespace
     "files.trimTrailingWhitespace": true,
-    "files.eol": "\n"
-    // VsCode autosave
+    "files.eol": "\n",
     "files.autoSave": "onFocusChange",
     "editor.formatOnSave": true
 }

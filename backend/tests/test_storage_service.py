@@ -5,7 +5,7 @@ from app.services.storage_service import StorageObjectNotFoundError, StorageServ
 from app.utils.http_headers import build_content_disposition
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_get_presigned_url_sets_content_disposition(monkeypatch):
     captured: dict[str, dict[str, object]] = {}
 
@@ -60,7 +60,7 @@ async def test_get_presigned_url_sets_content_disposition(monkeypatch):
     assert request["headers"]["Authorization"] == "Bearer service-role-key"
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_get_presigned_url_object_not_found_raises_typed_error(monkeypatch):
     class DummyResponse:
         status_code = 400
@@ -101,7 +101,7 @@ async def test_get_presigned_url_object_not_found_raises_typed_error(monkeypatch
         )
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_create_upload_url_returns_put_headers(monkeypatch):
     captured: dict[str, dict[str, object]] = {}
 

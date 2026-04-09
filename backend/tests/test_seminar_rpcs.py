@@ -43,7 +43,10 @@ async def _seed_user(
 
 
 @pytest.fixture
-async def seminar_context():
+async def seminar_context(anyio_backend):
+    if anyio_backend != "asyncio":
+        pytest.skip("Seminar RLS tests require asyncio")
+
     host_id = uuid.uuid4()
     attendee_id = uuid.uuid4()
     outsider_id = uuid.uuid4()

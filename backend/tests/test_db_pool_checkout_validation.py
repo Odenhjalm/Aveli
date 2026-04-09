@@ -33,7 +33,7 @@ def test_pool_uses_explicit_checkout_check_callback():
     assert db.pool._configure is None
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_check_connection_validates_liveness():
     conn = FakeAsyncConnection()
 
@@ -46,7 +46,7 @@ async def test_check_connection_validates_liveness():
     ]
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_checkout_retries_after_failed_liveness_check(monkeypatch):
     pool = db.ContextAwareAsyncConnectionPool(
         conninfo="postgresql://unused",
@@ -75,7 +75,7 @@ async def test_checkout_retries_after_failed_liveness_check(monkeypatch):
     assert discarded == [(stale_conn, True)]
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_test_session_setting_remains_per_checkout(monkeypatch):
     fake_conn = FakeAsyncConnection()
     checkout_calls: list[str] = []
