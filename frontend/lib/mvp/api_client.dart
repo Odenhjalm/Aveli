@@ -118,16 +118,6 @@ class MvpApiClient {
         .toList();
   }
 
-  Future<OrderReceipt> createOrderForService(String serviceId) async {
-    final response = await _dio.post(
-      ApiPaths.orders,
-      data: {'service_id': serviceId},
-    );
-    return OrderReceipt.fromJson(
-      response.data['order'] as Map<String, dynamic>,
-    );
-  }
-
   Future<LiveKitTokenPayload> requestLiveKitToken(String seminarId) async {
     final response = await _dio.post(
       '/sfu/token',
@@ -254,26 +244,6 @@ class FeedActivity {
   final String id;
   final String summary;
   final DateTime? occurredAt;
-}
-
-class OrderReceipt {
-  const OrderReceipt({
-    required this.id,
-    required this.status,
-    required this.amount,
-  });
-
-  factory OrderReceipt.fromJson(Map<String, dynamic> json) {
-    return OrderReceipt(
-      id: json['id'] as String,
-      status: json['status'] as String? ?? 'pending',
-      amount: (json['amount_cents'] as num?)?.toInt() ?? 0,
-    );
-  }
-
-  final String id;
-  final String status;
-  final int amount;
 }
 
 class LiveKitTokenPayload {

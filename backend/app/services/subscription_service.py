@@ -13,7 +13,7 @@ from ..repositories import memberships as memberships_repo
 from ..repositories import orders as orders_repo
 from ..repositories import payments as payments_repo
 from ..repositories import stripe_customers as stripe_customers_repo
-from ..schemas.billing import SessionStatusResponse, SubscriptionCheckoutResponse, SubscriptionInterval
+from ..schemas.billing import SubscriptionCheckoutResponse, SubscriptionInterval
 from ..services.onboarding_state import sync_onboarding_state
 
 logger = logging.getLogger(__name__)
@@ -160,33 +160,7 @@ async def create_subscription_checkout(
     )
 
 
-async def fetch_session_status(session_id: str) -> SessionStatusResponse:
-    if not isinstance(session_id, str) or not session_id.startswith("cs_") or len(session_id) < 8:
-        raise SubscriptionError("Invalid session_id", status_code=400)
-    if len(session_id) > 255:
-        raise SubscriptionError("Invalid session_id", status_code=400)
-
-    order = await orders_repo.get_order_by_checkout_id(session_id)
-    if not order:
-        raise SubscriptionError("Checkout session not found", status_code=404)
-
-    membership = await memberships_repo.get_membership(str(order["user_id"]))
-    membership_status = membership.get("status") if membership else "unknown"
-    updated_at = membership.get("updated_at") if membership else None
-
-    return SessionStatusResponse(
-        ok=True,
-        session_id=session_id,
-        mode="subscription",
-        payment_status=str(order.get("status") or ""),
-        subscription_status=None,
-        membership_status=membership_status,
-        updated_at=updated_at,
-        poll_after_ms=2000,
-    )
-
-
-async def cancel_subscription(
+async def cancel_subscription_intent(
     user: Mapping[str, Any],
     *,
     subscription_id: str | None = None,
@@ -197,54 +171,46 @@ async def cancel_subscription(
         raise SubscriptionConfigError(str(exc)) from exc
 
     user_id = str(user["id"])
-    membership = await memberships_repo.get_membership(user_id)
-    if not membership:
-        raise SubscriptionError("Ingen aktiv prenumeration hittades", status_code=404)
-
-    membership_subscription_id = (
-        membership.get("provider_subscription_id")
-        or membership.get("stripe_subscription_id")
+    resolved_subscription_id = await _resolve_membership_subscription_id(
+        user_id,
+        requested_subscription_id=subscription_id,
     )
-    if not membership_subscription_id:
-        raise SubscriptionError("Prenumerationen saknar provider subscription-id", status_code=400)
-
-    if subscription_id and subscription_id != membership_subscription_id:
-        raise SubscriptionError("Angivet subscription-id matchar inte ditt konto", status_code=403)
-
     stripe.api_key = stripe_context.secret_key
 
-    def _cancel() -> dict[str, Any]:
+    def _submit_cancel_intent() -> dict[str, Any]:
         return stripe.Subscription.modify(  # type: ignore[attr-defined]
-            membership_subscription_id,
+            resolved_subscription_id,
             cancel_at_period_end=True,
         )
 
     try:
-        updated = await run_in_threadpool(_cancel)
+        updated = await run_in_threadpool(_submit_cancel_intent)
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
-        raise SubscriptionError("Stripe kunde inte avsluta prenumerationen", status_code=400) from exc
+        raise SubscriptionError(
+            "Stripe kunde inte registrera avsiktsavbokningen",
+            status_code=400,
+        ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-        raise SubscriptionError("Stripe-fel vid avbokning", status_code=502) from exc
+        raise SubscriptionError("Stripe-fel vid avbokningsintention", status_code=502) from exc
 
-    expires_at = _to_datetime(updated.get("current_period_end"))
-    canceled_at = _to_datetime(updated.get("canceled_at")) or datetime.now(timezone.utc)
-    canonical_status = _canonical_status_from_subscription_payload(updated)
-
+    current_period_end = _to_datetime(updated.get("current_period_end"))
+    cancel_at_period_end = bool(updated.get("cancel_at_period_end"))
     await memberships_repo.insert_billing_log(
         user_id=user_id,
-        step="cancel_subscription_requested",
+        step="cancel_subscription_intent_submitted",
         info={
-            "subscription_id": membership_subscription_id,
-            "projected_status": canonical_status,
-            "cancel_at_period_end": bool(updated.get("cancel_at_period_end")),
-            "current_period_end": expires_at.isoformat() if expires_at else None,
+            "subscription_id": resolved_subscription_id,
+            "cancel_at_period_end": cancel_at_period_end,
+            "current_period_end": current_period_end.isoformat()
+            if current_period_end
+            else None,
         },
     )
     return {
-        "subscription_id": membership_subscription_id,
-        "status": canonical_status,
-        "cancel_at_period_end": bool(updated.get("cancel_at_period_end")),
-        "current_period_end": expires_at,
+        "ok": True,
+        "subscription_id": resolved_subscription_id,
+        "cancel_at_period_end": cancel_at_period_end,
+        "message": "Cancel intent submitted. Membership state changes only after webhook confirmation.",
     }
 
 
@@ -534,6 +500,33 @@ async def _get_or_create_customer(user: Mapping[str, Any]) -> str:
         raise SubscriptionError("Failed to create Stripe customer", status_code=502)
     await stripe_customers_repo.upsert_customer(user_id, customer_id)
     return customer_id
+
+
+async def _resolve_membership_subscription_id(
+    user_id: str,
+    *,
+    requested_subscription_id: str | None = None,
+) -> str:
+    membership = await memberships_repo.get_membership(user_id)
+    if not membership:
+        raise SubscriptionError("Ingen aktiv prenumeration hittades", status_code=404)
+
+    membership_subscription_id = (
+        membership.get("provider_subscription_id")
+        or membership.get("stripe_subscription_id")
+    )
+    if not membership_subscription_id:
+        raise SubscriptionError(
+            "Prenumerationen saknar provider subscription-id",
+            status_code=400,
+        )
+
+    if requested_subscription_id and requested_subscription_id != membership_subscription_id:
+        raise SubscriptionError(
+            "Angivet subscription-id matchar inte ditt konto",
+            status_code=403,
+        )
+    return str(membership_subscription_id)
 
 
 async def _resolve_membership_order(

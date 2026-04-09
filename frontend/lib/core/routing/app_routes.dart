@@ -27,7 +27,6 @@ abstract class AppRoute {
   static const createProfile = 'create-profile';
   static const welcome = 'welcome';
   static const profileSubscription = 'profile-subscription';
-  static const profileSubscriptionPortal = 'profile-subscription-portal';
   static const checkout = 'checkout';
   static const tarot = 'tarot';
   static const admin = 'admin';
@@ -45,8 +44,6 @@ abstract class AppRoute {
   static const seminarJoin = 'seminar-join';
   static const subscribe = 'subscribe';
   static const booking = 'booking';
-  static const claim = 'claim';
-  static const orders = 'orders';
   static const privacy = 'privacy';
   static const terms = 'terms';
   static const checkoutSuccess = 'checkout-success';

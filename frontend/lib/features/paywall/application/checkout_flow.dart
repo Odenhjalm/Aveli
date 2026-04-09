@@ -1,13 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum CheckoutItemType {
-  membership,
-  course,
-  lesson,
-  bundle,
-  service,
-}
+enum CheckoutItemType { membership, course, lesson, bundle, service }
 
 @immutable
 class CheckoutContext {
@@ -37,24 +31,31 @@ class CheckoutRedirectState {
   const CheckoutRedirectState({
     required this.status,
     this.sessionId,
+    this.orderId,
     this.error,
   });
 
   final CheckoutRedirectStatus status;
   final String? sessionId;
+  final String? orderId;
   final Object? error;
 
-  static const idle = CheckoutRedirectState(status: CheckoutRedirectStatus.idle);
+  static const idle = CheckoutRedirectState(
+    status: CheckoutRedirectStatus.idle,
+  );
 
   CheckoutRedirectState copyWith({
     CheckoutRedirectStatus? status,
     String? sessionId,
+    String? orderId,
     Object? error,
+    bool clearOrderId = false,
     bool clearError = false,
   }) {
     return CheckoutRedirectState(
       status: status ?? this.status,
       sessionId: sessionId ?? this.sessionId,
+      orderId: clearOrderId ? null : (orderId ?? this.orderId),
       error: clearError ? null : error ?? this.error,
     );
   }
@@ -65,5 +66,6 @@ class CheckoutRedirectState {
 final checkoutContextProvider = StateProvider<CheckoutContext?>((_) => null);
 
 /// Tracks the most recent redirect/deep link handling outcome.
-final checkoutRedirectStateProvider =
-    StateProvider<CheckoutRedirectState>((_) => CheckoutRedirectState.idle);
+final checkoutRedirectStateProvider = StateProvider<CheckoutRedirectState>(
+  (_) => CheckoutRedirectState.idle,
+);

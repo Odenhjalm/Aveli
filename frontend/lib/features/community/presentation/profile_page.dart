@@ -210,8 +210,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       context.push(RoutePath.profileSubscription),
                 ),
                 columnGap,
-                const _OrdersSection(),
-                columnGap,
                 const _PasswordResetSection(),
                 const ProfileLogoutSection(),
               ],
@@ -650,33 +648,6 @@ class _ServicesSection extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OrdersSection extends StatelessWidget {
-  const _OrdersSection();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return _GlassSection(
-      title: 'Köphistorik',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Håll koll på dina kurs- och tjänsteköp. Här kan du se status och kvitton.',
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 12),
-          GradientButton.icon(
-            onPressed: () => context.goNamed(AppRoute.orders),
-            icon: const Icon(Icons.receipt_long_rounded),
-            label: const Text('Visa mina köp'),
           ),
         ],
       ),

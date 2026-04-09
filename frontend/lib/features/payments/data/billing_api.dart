@@ -1,11 +1,8 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 
 class BillingApi {
-  BillingApi(this._client);
-
-  final ApiClient _client;
+  BillingApi(ApiClient client);
 
   Future<void> changePlan(String plan) async {
     final normalized = plan.trim();
@@ -16,13 +13,9 @@ class BillingApi {
   }
 
   Future<void> cancelSubscription() async {
-    try {
-      await _client.post<Map<String, dynamic>>(
-        ApiPaths.billingCancelSubscription,
-        body: const {},
-      );
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
+    throw UnexpectedFailure(
+      message:
+          'Avbokning via frontend är inte del av det kanoniska launch-flödet. Vänta på backenddriven hantering i ett senare steg.',
+    );
   }
 }

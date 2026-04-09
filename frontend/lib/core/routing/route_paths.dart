@@ -22,7 +22,6 @@ abstract class RoutePath {
   static const createProfile = '/create-profile';
   static const welcome = '/welcome';
   static const profileSubscription = '/profile/subscription';
-  static const profileSubscriptionPortal = '/profile/subscription/portal';
   static const checkout = '/checkout/web';
   static const profileView = '/profile/view/:id';
   static const teacherProfile = '/teacher/profile/:id';
@@ -44,8 +43,6 @@ abstract class RoutePath {
   static const seminarJoin = '/seminars/:id/join';
   static const subscribe = '/subscribe';
   static const booking = '/booking';
-  static const orders = '/orders';
-  static const claim = '/claim';
   static const privacy = '/privacy';
   static const terms = '/terms';
   static const checkoutSuccess = '/success';

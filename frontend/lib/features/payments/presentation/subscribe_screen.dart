@@ -5,7 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_state.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/paywall/application/checkout_flow.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -18,12 +21,14 @@ class SubscribeScreen extends ConsumerStatefulWidget {
 }
 
 class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
+  String? _submittingInterval;
+
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(appConfigProvider);
     if (!config.subscriptionsEnabled) {
       return const AppScaffold(
-        title: 'Abonnemang',
+        title: 'Medlemskap',
         body: Center(
           child: Padding(
             padding: EdgeInsets.all(24),
@@ -31,8 +36,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'Prenumerationer är inte aktiverade ännu. '
-                  'Vi uppdaterar roadmapen när medlemskap ersätter traditionella subscription-flöden.',
+                  'Medlemskap är inte aktiverat ännu. När launch-flödet öppnas här används bara det kanoniska backend-checkoutflödet.',
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -47,7 +51,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
     final envBlocked = envInfo.hasIssues;
 
     return AppScaffold(
-      title: 'Abonnemang',
+      title: 'Medlemskap',
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
@@ -63,7 +67,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
-                          '${envInfo.message} Abonnemang är avstängt tills konfigurationen är klar.',
+                          '${envInfo.message} Medlemsköp är avstängt tills konfigurationen är klar.',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.error,
@@ -93,7 +97,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Prenumerationsstatus visas inte längre i appen.',
+                                  'Checkout startas via backend och åtkomst uppdateras först efter webhook-bekräftelse.',
                                   style: Theme.of(context).textTheme.bodyMedium
                                       ?.copyWith(
                                         fontWeight: FontWeight.w600,
@@ -116,13 +120,28 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                     ),
                     gap12,
                     const Text(
-                      'Nya medlemsköp är inte tillgängliga i appen just nu.',
+                      'Frontend startar bara checkout och visar Stripe-sidan. Medlemsstatus och åtkomst bekräftas alltid av backend efter webhooken.',
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'För betalningsärenden använder du kundportalen när den är tillgänglig.',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
+                    gap16,
+                    if (authState.profile != null)
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          _IntervalButton(
+                            label: 'Månadsmedlemskap',
+                            busy: _submittingInterval == 'month',
+                            enabled: !envBlocked && _submittingInterval == null,
+                            onPressed: () => _startMembershipCheckout('month'),
+                          ),
+                          _IntervalButton(
+                            label: 'Årsmedlemskap',
+                            busy: _submittingInterval == 'year',
+                            enabled: !envBlocked && _submittingInterval == null,
+                            onPressed: () => _startMembershipCheckout('year'),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -131,6 +150,40 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _startMembershipCheckout(String interval) async {
+    if (_submittingInterval != null) return;
+    final router = GoRouter.of(context);
+    final returnPath = GoRouterState.of(context).uri.toString();
+    setState(() => _submittingInterval = interval);
+    try {
+      final api = ref.read(checkoutApiProvider);
+      final launch = await api.createMembershipCheckout(interval: interval);
+      ref.read(checkoutContextProvider.notifier).state = CheckoutContext(
+        type: CheckoutItemType.membership,
+        returnPath: returnPath,
+      );
+      ref
+          .read(checkoutRedirectStateProvider.notifier)
+          .state = CheckoutRedirectState(
+        status: CheckoutRedirectStatus.processing,
+        sessionId: launch.sessionId,
+        orderId: launch.orderId,
+      );
+      if (!mounted) return;
+      router.pushNamed(AppRoute.checkout, extra: launch.url);
+    } catch (error, stackTrace) {
+      if (!mounted) return;
+      final failure = AppFailure.from(error, stackTrace);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failure.message)));
+    } finally {
+      if (mounted) {
+        setState(() => _submittingInterval = null);
+      }
+    }
   }
 
   void _redirectToLogin() {
@@ -164,9 +217,7 @@ class _LoginPrompt extends StatelessWidget {
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             gap8,
-            const Text(
-              'Du behöver ett konto för att starta eller hantera din prenumeration.',
-            ),
+            const Text('Du behöver ett konto för att starta medlemscheckout.'),
             gap12,
             GradientButton(
               onPressed: onRequestLogin,
@@ -174,6 +225,37 @@ class _LoginPrompt extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _IntervalButton extends StatelessWidget {
+  const _IntervalButton({
+    required this.label,
+    required this.enabled,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool enabled;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: GradientButton(
+        onPressed: enabled ? onPressed : null,
+        child: busy
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(label),
       ),
     );
   }

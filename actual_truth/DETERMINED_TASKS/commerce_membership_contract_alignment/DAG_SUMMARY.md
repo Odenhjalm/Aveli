@@ -9,6 +9,7 @@
 - `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
 - `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
 - `CMT-003_WEBHOOK_REPAIR`
+- `CMT-003.5_CANCEL_INTENT`
 - `CMT-004_ACCESS_LOGIC_REPAIR`
 - `CMT-005_ROUTE_ALIGNMENT`
 - `CMT-006_FRONTEND_ALIGNMENT`
@@ -21,12 +22,13 @@
 1. `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
 2. `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
 3. `CMT-003_WEBHOOK_REPAIR`
-4. `CMT-004_ACCESS_LOGIC_REPAIR`
-5. `CMT-008_BUNDLE_PRESERVATION`
-6. `CMT-005_ROUTE_ALIGNMENT`
-7. `CMT-006_FRONTEND_ALIGNMENT`
-8. `CMT-007_LEGACY_REMOVAL`
-9. `CMT-009_TEST_AND_GATE`
+4. `CMT-003.5_CANCEL_INTENT`
+5. `CMT-004_ACCESS_LOGIC_REPAIR`
+6. `CMT-008_BUNDLE_PRESERVATION`
+7. `CMT-005_ROUTE_ALIGNMENT`
+8. `CMT-006_FRONTEND_ALIGNMENT`
+9. `CMT-007_LEGACY_REMOVAL`
+10. `CMT-009_TEST_AND_GATE`
 
 ## Smallest Safe Execution Entrypoint
 
@@ -52,6 +54,8 @@
   - `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
 - Webhook repair:
   - `CMT-003_WEBHOOK_REPAIR`
+- Webhook repair / intent:
+  - `CMT-003.5_CANCEL_INTENT`
 - Access logic repair:
   - `CMT-004_ACCESS_LOGIC_REPAIR`
 - Route alignment:
@@ -70,6 +74,7 @@
 - `backend/app/main.py` does not mount the launch commerce and adjacent routes required by the contract.
 - `POST /api/billing/create-subscription` still creates membership state without an order.
 - Membership webhook processing still updates `app.memberships` without settling `app.orders` and `app.payments`.
+- Cancellation intent needs its own backend-owned, non-authoritative surface so Stripe cancellation changes can flow back through webhook-driven membership state transitions.
 - Access logic still relies on `active|trialing` instead of the contract's `active` or `canceled && current_time < expires_at`.
 - Frontend return/deeplink logic still propagates `subscription_status` and treats `trialing` as success.
 - Bundle commerce is already order-backed and payment-backed and must remain separated from membership while launch commerce is repaired.

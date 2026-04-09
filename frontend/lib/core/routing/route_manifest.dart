@@ -121,11 +121,6 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(
-    name: AppRoute.claim,
-    path: RoutePath.claim,
-    access: RouteAccessLevel.public,
-  ),
-  RouteManifestEntry(
     name: AppRoute.home,
     path: RoutePath.home,
     access: RouteAccessLevel.authenticated,
@@ -166,11 +161,6 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.authenticated,
   ),
   RouteManifestEntry(
-    name: AppRoute.profileSubscriptionPortal,
-    path: RoutePath.profileSubscriptionPortal,
-    access: RouteAccessLevel.authenticated,
-  ),
-  RouteManifestEntry(
     name: AppRoute.checkout,
     path: RoutePath.checkout,
     access: RouteAccessLevel.authenticated,
@@ -198,11 +188,6 @@ const List<RouteManifestEntry> routeManifest = [
   RouteManifestEntry(
     name: AppRoute.booking,
     path: RoutePath.booking,
-    access: RouteAccessLevel.authenticated,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.orders,
-    path: RoutePath.orders,
     access: RouteAccessLevel.authenticated,
   ),
   RouteManifestEntry(

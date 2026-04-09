@@ -42,8 +42,13 @@ from .logging_utils import setup_logging
 from .middleware.request_context import RequestContextMiddleware
 from .routes import (
     admin,
+    api_checkout,
+    api_events,
+    api_notifications,
     auth,
+    billing,
     playback,
+    course_bundles,
     courses,
     domain_observability_mcp,
     email_verification,
@@ -52,6 +57,7 @@ from .routes import (
     media_control_plane_mcp,
     profiles,
     referrals,
+    stripe_webhooks,
     studio,
     verification_mcp,
 )
@@ -191,6 +197,12 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(playback.router)
     app.include_router(courses.router)
     app.include_router(courses.api_router)
+    app.include_router(billing.router)
+    app.include_router(api_checkout.router)
+    app.include_router(stripe_webhooks.router)
+    app.include_router(course_bundles.router)
+    app.include_router(api_events.router)
+    app.include_router(api_notifications.router)
     app.include_router(studio.router)
     app.include_router(studio.course_lesson_router)
     app.include_router(studio.lesson_media_router)

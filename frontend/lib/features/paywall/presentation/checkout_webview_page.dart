@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/deeplinks/deep_link_service.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 
@@ -44,11 +45,11 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
           onNavigationRequest: (request) {
             final url = request.url;
             if (_isSuccessUrl(url)) {
-              _handleCheckoutResult(success: true);
+              _handleCheckoutRedirect(url);
               return NavigationDecision.prevent;
             }
             if (_isCancelUrl(url)) {
-              _handleCheckoutResult(success: false);
+              _handleCheckoutRedirect(url);
               return NavigationDecision.prevent;
             }
             return NavigationDecision.navigate;
@@ -97,15 +98,18 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
     await ref.read(authControllerProvider.notifier).loadSession();
   }
 
-  void _handleCheckoutResult({required bool success}) {
+  void _handleCheckoutRedirect(String url) {
     if (_navigatedAway) return;
     _navigatedAway = true;
     Future.microtask(() async {
+      final uri = Uri.tryParse(url);
+      if (uri != null) {
+        await ref.read(deepLinkServiceProvider).handleUri(uri);
+        return;
+      }
       await _refreshSession();
       if (!mounted || !context.mounted) return;
-      context.go(
-        success ? RoutePath.checkoutSuccess : RoutePath.checkoutCancel,
-      );
+      context.go(RoutePath.checkoutCancel);
     });
   }
 

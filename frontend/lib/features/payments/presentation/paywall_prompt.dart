@@ -6,6 +6,8 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/paywall/application/checkout_flow.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
@@ -46,7 +48,7 @@ class PaywallPrompt extends ConsumerWidget {
   }
 }
 
-class _PaywallBody extends StatelessWidget {
+class _PaywallBody extends ConsumerStatefulWidget {
   const _PaywallBody({
     required this.courseId,
     this.courseTitle,
@@ -64,17 +66,63 @@ class _PaywallBody extends StatelessWidget {
   final bool isAuthenticated;
 
   @override
+  ConsumerState<_PaywallBody> createState() => _PaywallBodyState();
+}
+
+class _PaywallBodyState extends ConsumerState<_PaywallBody> {
+  bool _startingCheckout = false;
+
+  Future<void> _startCourseCheckout() async {
+    if (_startingCheckout) return;
+    final slug = widget.courseSlug;
+    if (slug == null || slug.isEmpty) return;
+    final router = GoRouter.of(context);
+    final returnPath = _currentLocation(context);
+    setState(() => _startingCheckout = true);
+    try {
+      final api = ref.read(checkoutApiProvider);
+      final launch = await api.createCourseCheckout(slug: slug);
+      ref.read(checkoutContextProvider.notifier).state = CheckoutContext(
+        type: CheckoutItemType.course,
+        courseSlug: slug,
+        courseTitle: widget.courseTitle,
+        returnPath: returnPath,
+      );
+      ref
+          .read(checkoutRedirectStateProvider.notifier)
+          .state = CheckoutRedirectState(
+        status: CheckoutRedirectStatus.processing,
+        sessionId: launch.sessionId,
+        orderId: launch.orderId,
+      );
+      if (!mounted) return;
+      router.pushNamed(AppRoute.checkout, extra: launch.url);
+    } catch (error, stackTrace) {
+      if (!mounted) return;
+      final failure = AppFailure.from(error, stackTrace);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failure.message)));
+    } finally {
+      if (mounted) {
+        setState(() => _startingCheckout = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final priceLabel = coursePrice != null && courseIsIntro != true
+    final priceLabel =
+        widget.coursePrice != null && widget.courseIsIntro != true
         ? formatCoursePriceFromOre(
-            amountOre: coursePrice!,
-            debugContext: courseSlug == null
+            amountOre: widget.coursePrice!,
+            debugContext: widget.courseSlug == null
                 ? 'PaywallPrompt'
-                : 'slug=$courseSlug',
+                : 'slug=${widget.courseSlug}',
           )
         : null;
-    final title = courseTitle ?? 'Kursen är låst';
+    final title = widget.courseTitle ?? 'Kursen är låst';
 
     return Center(
       child: ConstrainedBox(
@@ -114,21 +162,26 @@ class _PaywallBody extends StatelessWidget {
                   children: [
                     Expanded(
                       child: GradientButton(
-                        onPressed: courseSlug == null
-                            ? null
-                            : () {
-                                final slug = courseSlug!;
-                                context.goNamed(
-                                  AppRoute.course,
-                                  pathParameters: {'slug': slug},
-                                );
-                              },
-                        child: const Text('Öppna kursöversikten'),
+                        onPressed:
+                            widget.isAuthenticated &&
+                                widget.courseSlug != null &&
+                                !_startingCheckout
+                            ? _startCourseCheckout
+                            : null,
+                        child: _startingCheckout
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Köp kursen'),
                       ),
                     ),
                   ],
                 ),
-                if (!isAuthenticated) ...[
+                if (!widget.isAuthenticated) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -146,11 +199,27 @@ class _PaywallBody extends StatelessWidget {
                       ),
                     ],
                   ),
+                ] else if (widget.courseSlug != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            context.goNamed(
+                              AppRoute.course,
+                              pathParameters: {'slug': widget.courseSlug!},
+                            );
+                          },
+                          child: const Text('Öppna kursöversikten'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
                 const SizedBox(height: 12),
                 Text(
-                  'Har du redan köpt kursen? Försök uppdatera sidan efter betalning '
-                  'eller kontakta supporten om åtkomsten inte låses upp.',
+                  'Efter redirect uppdaterar appen bara backend-sessionen. Åtkomst låses upp först när webhooken har bekräftat ordern.',
                   style: theme.textTheme.bodySmall,
                 ),
               ],

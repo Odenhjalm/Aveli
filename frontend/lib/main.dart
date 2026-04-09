@@ -7,7 +7,6 @@ import 'package:flutter_quill/flutter_quill.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/l10n/app_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
 
@@ -81,8 +80,6 @@ void main() {
 
       final rawBaseUrl = EnvResolver.apiBaseUrl;
       final baseUrl = _resolveApiBaseUrl(rawBaseUrl);
-      final publishableKey = EnvResolver.stripePublishableKey;
-      final merchantDisplayName = EnvResolver.stripeMerchantDisplayName;
       final subscriptionsEnabled = EnvResolver.subscriptionsEnabled;
       final oauthRedirectWeb = EnvResolver.oauthRedirectWeb;
       final oauthRedirectMobile = EnvResolver.oauthRedirectMobile;
@@ -107,31 +104,6 @@ void main() {
         );
       }
 
-      final stripeSupportedPlatforms = {
-        TargetPlatform.android,
-        TargetPlatform.iOS,
-      };
-      final supportsNativeStripe = stripeSupportedPlatforms.contains(
-        defaultTargetPlatform,
-      );
-      final canInitStripe =
-          publishableKey.isNotEmpty && !kIsWeb && supportsNativeStripe;
-
-      if (canInitStripe) {
-        Stripe.publishableKey = publishableKey;
-        Stripe.merchantIdentifier = merchantDisplayName.isNotEmpty
-            ? merchantDisplayName
-            : 'Aveli';
-        await Stripe.instance.applySettings();
-      }
-      if (!canInitStripe && publishableKey.isNotEmpty) {
-        debugPrint(
-          kIsWeb
-              ? 'Stripe initialisering hoppades över – flutter_stripe stöds inte på webbläsare ännu.'
-              : 'Stripe initialisering hoppades över – plattform ${defaultTargetPlatform.name} stöds inte.',
-        );
-      }
-
       final envInfo = missingKeys.isEmpty
           ? envInfoOk
           : EnvInfo(status: EnvStatus.missing, missingKeys: missingKeys);
@@ -152,9 +124,10 @@ void main() {
               appConfigProvider.overrideWithValue(
                 AppConfig(
                   apiBaseUrl: baseUrl,
-                  stripePublishableKey: publishableKey,
-                  stripeMerchantDisplayName: merchantDisplayName.isNotEmpty
-                      ? merchantDisplayName
+                  stripePublishableKey: EnvResolver.stripePublishableKey,
+                  stripeMerchantDisplayName:
+                      EnvResolver.stripeMerchantDisplayName.isNotEmpty
+                      ? EnvResolver.stripeMerchantDisplayName
                       : 'Aveli',
                   subscriptionsEnabled: subscriptionsEnabled,
                   imageLoggingEnabled: imageLoggingEnabled,

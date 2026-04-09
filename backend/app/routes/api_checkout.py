@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from json import JSONDecodeError
+
+from fastapi import APIRouter, HTTPException, Request, status
 
 from ..auth import CurrentUser
-from ..schemas import CheckoutCreateRequest, CheckoutCreateResponse, CheckoutType
-from ..services import checkout_service, universal_checkout_service
+from ..schemas import CheckoutCreateResponse
+from ..services import checkout_service
 
 router = APIRouter(prefix="/api/checkout", tags=["checkout"])
 
@@ -15,19 +17,36 @@ router = APIRouter(prefix="/api/checkout", tags=["checkout"])
     status_code=status.HTTP_201_CREATED,
 )
 async def create_checkout_handler(
-    payload: CheckoutCreateRequest,
+    request: Request,
     current: CurrentUser,
 ) -> CheckoutCreateResponse:
-    if payload.type is CheckoutType.course:
-        if not payload.slug:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="slug is required for course checkout",
-            )
-        return await checkout_service.create_course_checkout(current, payload.slug)
     try:
-        return await universal_checkout_service.create_checkout_session(current, payload)
-    except universal_checkout_service.CheckoutConfigError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
-    except universal_checkout_service.CheckoutError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+        payload = await request.json()
+    except JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Course checkout requires a JSON body",
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Course checkout requires an object body",
+        )
+
+    allowed_keys = {"slug"}
+    extra_keys = sorted(str(key) for key in payload.keys() if key not in allowed_keys)
+    if extra_keys:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Course checkout accepts only {\"slug\": string}",
+        )
+
+    slug = payload.get("slug")
+    if not isinstance(slug, str) or not slug.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Course checkout requires a non-empty slug",
+        )
+
+    return await checkout_service.create_course_checkout(current, slug.strip())

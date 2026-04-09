@@ -4,14 +4,11 @@ from fastapi import APIRouter, HTTPException, status
 
 from ..auth import CurrentUser
 from ..schemas.billing import (
-    BillingPortalResponse,
-    SessionStatusResponse,
     SubscriptionCancelRequest,
-    SubscriptionCancelResponse,
     SubscriptionCheckoutResponse,
     SubscriptionSessionRequest,
 )
-from ..services import billing_portal_service, subscription_service
+from ..services import subscription_service
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -33,42 +30,16 @@ async def create_subscription_endpoint(
 
 
 @router.post(
-    "/customer-portal",
-    response_model=BillingPortalResponse,
-    status_code=status.HTTP_201_CREATED,
+    "/cancel-subscription-intent",
+    status_code=status.HTTP_202_ACCEPTED,
 )
-async def create_billing_portal(current: CurrentUser) -> BillingPortalResponse:
-    try:
-        url = await billing_portal_service.create_billing_portal_session(current)
-        return BillingPortalResponse(url=url)
-    except billing_portal_service.BillingPortalConfigError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
-    except billing_portal_service.BillingPortalError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
-
-
-@router.get("/session-status", response_model=SessionStatusResponse)
-async def get_session_status(session_id: str) -> SessionStatusResponse:
-    try:
-        return await subscription_service.fetch_session_status(session_id)
-    except subscription_service.SubscriptionConfigError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
-    except subscription_service.SubscriptionError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
-
-
-@router.post(
-    "/cancel-subscription",
-    response_model=SubscriptionCancelResponse,
-)
-async def cancel_subscription(
+async def cancel_subscription_intent(
     payload: SubscriptionCancelRequest, current: CurrentUser
-) -> SubscriptionCancelResponse:
+) -> dict[str, object]:
     try:
-        result = await subscription_service.cancel_subscription(
+        return await subscription_service.cancel_subscription_intent(
             current, subscription_id=payload.subscription_id
         )
-        return SubscriptionCancelResponse(**result)
     except subscription_service.SubscriptionConfigError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except subscription_service.SubscriptionError as exc:

@@ -12,12 +12,8 @@ class ApiPaths {
   static const authVerifyEmail = '/auth/verify-email';
   static const authOnboardingComplete = '/auth/onboarding/complete';
 
-  static const billingCustomerPortal = '/api/billing/customer-portal';
-  static const billingSessionStatus = '/api/billing/session-status';
-  static const billingCancelSubscription = '/api/billing/cancel-subscription';
-
-  static const orders = '/orders';
-  static String order(String orderId) => '/orders/$orderId';
+  static const billingCreateSubscription = '/api/billing/create-subscription';
+  static const checkoutCreate = '/api/checkout/create';
 
   static const mediaUploadUrl = '/api/media/upload-url';
   static const mediaUploadUrlRefresh = '/api/media/upload-url/refresh';

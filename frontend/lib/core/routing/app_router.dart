@@ -45,13 +45,10 @@ import 'package:aveli/features/landing/presentation/legal/terms_page.dart';
 import 'package:aveli/features/messages/presentation/chat_page.dart';
 import 'package:aveli/features/messages/presentation/messages_page.dart';
 import 'package:aveli/features/payments/presentation/booking_page.dart';
-import 'package:aveli/features/payments/presentation/claim_purchase_page.dart';
-import 'package:aveli/features/payments/presentation/order_history_page.dart';
 import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
 import 'package:aveli/features/onboarding/welcome_page.dart';
 import 'package:aveli/features/paywall/presentation/checkout_result_page.dart';
 import 'package:aveli/features/paywall/presentation/checkout_webview_page.dart';
-import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/profile_media_page.dart';
 import 'package:aveli/features/studio/presentation/studio_page.dart';
@@ -350,17 +347,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const MySubscriptionPage(),
       ),
       GoRoute(
-        path: RoutePath.profileSubscriptionPortal,
-        name: AppRoute.profileSubscriptionPortal,
-        builder: (context, state) {
-          final url = state.extra;
-          if (url is! String || url.isEmpty) {
-            return const NotFoundPage();
-          }
-          return SubscriptionWebViewPage(url: url);
-        },
-      ),
-      GoRoute(
         path: RoutePath.checkout,
         name: AppRoute.checkout,
         builder: (context, state) {
@@ -492,17 +478,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.booking,
         name: AppRoute.booking,
         builder: (context, state) => const BookingPage(),
-      ),
-      GoRoute(
-        path: RoutePath.orders,
-        name: AppRoute.orders,
-        builder: (context, state) => const OrderHistoryPage(),
-      ),
-      GoRoute(
-        path: RoutePath.claim,
-        name: AppRoute.claim,
-        builder: (context, state) =>
-            ClaimPurchasePage(token: state.uri.queryParameters['token']),
       ),
       GoRoute(
         path: RoutePath.privacy,

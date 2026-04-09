@@ -36,12 +36,6 @@ _OPTIONAL_MEMBERSHIP_COLUMNS = (
     "start_date",
 )
 
-
-async def get_latest_subscription(user_id: str) -> MembershipRow | None:
-    """Legacy helper name retained, but canonical app-entry authority is memberships only."""
-    return await get_membership(user_id)
-
-
 async def _table_columns(schema: str, table: str) -> set[str]:
     cache_key = (schema, table)
     cached = _TABLE_COLUMNS_CACHE.get(cache_key)
@@ -474,7 +468,6 @@ def _normalize_membership_row(row: Mapping[str, Any] | None) -> MembershipRow | 
 
 
 __all__ = [
-    "get_latest_subscription",
     "get_membership",
     "get_membership_by_stripe_reference",
     "insert_billing_log",

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_router.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/checkout_flow.dart';
@@ -70,7 +71,9 @@ class DeepLinkService {
 
   bool _isSuccessPath(Uri uri) {
     final path = uri.path.toLowerCase();
-    return path.contains('success');
+    return path.contains('success') ||
+        path.contains('checkout/return') ||
+        (uri.host == 'checkout' && path.contains('return'));
   }
 
   bool _isCancelPath(Uri uri) {
@@ -80,30 +83,42 @@ class DeepLinkService {
 
   Future<void> _handleCheckoutSuccess(Uri uri) async {
     final sessionId = uri.queryParameters['session_id'];
-    final subscriptionStatus = uri.queryParameters['subscription_status'];
     if (sessionId == null || sessionId.isEmpty) {
       _handleMissingSession();
       return;
     }
+    final currentRedirect = _ref.read(checkoutRedirectStateProvider);
     _ref
         .read(checkoutRedirectStateProvider.notifier)
         .state = CheckoutRedirectState(
       status: CheckoutRedirectStatus.processing,
       sessionId: sessionId,
+      orderId: currentRedirect.orderId,
+    );
+    await _ref.read(authControllerProvider.notifier).loadSession();
+    _ref
+        .read(checkoutRedirectStateProvider.notifier)
+        .state = CheckoutRedirectState(
+      status: CheckoutRedirectStatus.success,
+      sessionId: sessionId,
+      orderId: currentRedirect.orderId,
     );
     _goWithQuery(
       RoutePath.checkoutSuccess,
       sessionId: sessionId,
-      extraParams: {
-        if (subscriptionStatus != null && subscriptionStatus.isNotEmpty)
-          'subscription_status': subscriptionStatus,
-      },
+      orderId: currentRedirect.orderId,
     );
   }
 
   void _handleCheckoutCancel() {
-    _ref.read(checkoutRedirectStateProvider.notifier).state =
-        const CheckoutRedirectState(status: CheckoutRedirectStatus.canceled);
+    final currentRedirect = _ref.read(checkoutRedirectStateProvider);
+    _ref
+        .read(checkoutRedirectStateProvider.notifier)
+        .state = CheckoutRedirectState(
+      status: CheckoutRedirectStatus.canceled,
+      sessionId: currentRedirect.sessionId,
+      orderId: currentRedirect.orderId,
+    );
     try {
       HapticFeedback.selectionClick();
     } catch (_) {}
@@ -124,12 +139,15 @@ class DeepLinkService {
   void _goWithQuery(
     String path, {
     String? sessionId,
+    String? orderId,
     bool errored = false,
-    Map<String, String>? extraParams,
   }) {
-    final params = <String, String>{if (extraParams != null) ...extraParams};
+    final params = <String, String>{};
     if (sessionId != null && sessionId.isNotEmpty) {
       params['session_id'] = sessionId;
+    }
+    if (orderId != null && orderId.isNotEmpty) {
+      params['order_id'] = orderId;
     }
     if (errored) params['errored'] = '1';
     final uri = params.isEmpty

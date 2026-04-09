@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/features/paywall/application/checkout_flow.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -30,6 +32,10 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final redirectState = ref.watch(checkoutRedirectStateProvider);
+    final query = GoRouterState.of(context).uri.queryParameters;
+    final sessionId = query['session_id'] ?? redirectState.sessionId;
+    final orderId = query['order_id'] ?? redirectState.orderId;
     return AppScaffold(
       title: '',
       disableBack: true,
@@ -71,10 +77,25 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
                       gap16,
                       Text(
                         _message ??
-                            'Uppdatera sidan igen sa fort Stripe har hunnit skicka webhooken.',
+                            'Frontend väntar på backend-bekräftelse innan åtkomst uppdateras.',
                         textAlign: TextAlign.center,
                         style: textTheme.bodyMedium,
                       ),
+                      if (sessionId != null || orderId != null) ...[
+                        gap16,
+                        if (sessionId != null)
+                          Text(
+                            'session_id: $sessionId',
+                            textAlign: TextAlign.center,
+                            style: textTheme.bodySmall,
+                          ),
+                        if (orderId != null)
+                          Text(
+                            'order_id: $orderId',
+                            textAlign: TextAlign.center,
+                            style: textTheme.bodySmall,
+                          ),
+                      ],
                       gap24,
                       GradientButton(
                         onPressed: _refreshBootstrap,
@@ -101,13 +122,21 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
 
     final authController = ref.read(authControllerProvider.notifier);
     await authController.loadSession();
+    final currentRedirect = ref.read(checkoutRedirectStateProvider);
+    ref.read(checkoutRedirectStateProvider.notifier).state = currentRedirect
+        .copyWith(
+          status: widget.success
+              ? CheckoutRedirectStatus.success
+              : CheckoutRedirectStatus.canceled,
+          clearError: true,
+        );
 
     if (!mounted) return;
     setState(() {
       _isRefreshing = false;
       _message = widget.success
-          ? 'Betalningen registreras just nu. Kontrollera igen om din åtkomst inte har uppdaterats ännu.'
-          : null;
+          ? 'Vi har uppdaterat din backend-session. Åtkomst visas först när webhooken har bekräftat köpet.'
+          : 'Ingen åtkomst ändras på frontend när checkout avbryts.';
     });
   }
 }

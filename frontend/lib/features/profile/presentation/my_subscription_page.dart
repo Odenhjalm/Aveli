@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/route_paths.dart';
-import 'package:aveli/features/paywall/data/customer_portal_api.dart';
-import 'package:aveli/features/paywall/presentation/subscription_webview_page.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 
@@ -15,38 +15,26 @@ class MySubscriptionPage extends ConsumerStatefulWidget {
 }
 
 class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
-  bool _loadingPortal = false;
+  bool _refreshing = false;
 
-  Future<void> _openPortal() async {
-    if (_loadingPortal) return;
-    setState(() => _loadingPortal = true);
+  Future<void> _refreshMembershipState() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
     try {
-      final api = ref.read(customerPortalApiProvider);
-      final url = await api.createPortalUrl();
+      await ref.read(authControllerProvider.notifier).loadSession();
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => SubscriptionWebViewPage(url: url)),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      final detail = _formatError(e);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kunde inte öppna kundportal: $detail')),
+        const SnackBar(
+          content: Text(
+            'Backend-sessionen uppdaterades. Åtkomst avgörs alltid av backendens medlemsstatus.',
+          ),
+        ),
       );
     } finally {
       if (mounted) {
-        setState(() => _loadingPortal = false);
+        setState(() => _refreshing = false);
       }
     }
-  }
-
-  String _formatError(Object error) {
-    final value = error.toString();
-    const prefix = 'Exception: ';
-    if (value.startsWith(prefix)) {
-      return value.substring(prefix.length);
-    }
-    return value;
   }
 
   @override
@@ -54,7 +42,7 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
     final t = Theme.of(context).textTheme;
 
     return AppScaffold(
-      title: 'Min prenumeration',
+      title: 'Mitt medlemskap',
       showHomeAction: false,
       actions: [
         IconButton(
@@ -79,29 +67,29 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Prenumerationsstatus visas inte längre i appen. Använd kundportalen för betalningsärenden när den är tillgänglig.',
+                'Frontend hanterar inte kundportal, Stripe-status eller direkt medlemsmutation i launch-flödet.',
                 style: t.bodyMedium,
               ),
               const SizedBox(height: 20),
               Text(
-                'Hantera prenumeration',
+                'Uppdatera backend-status',
                 style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
-                'Öppna kundportalen för att uppdatera betalningsuppgifter och hantera din prenumeration.',
+                'Om du precis har gått igenom checkout kan du uppdatera din session här. Backendens webhook och medlemsstatus är fortfarande den enda auktoriteten.',
                 style: t.bodyMedium,
               ),
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: _loadingPortal ? null : _openPortal,
-                child: _loadingPortal
+                onPressed: _refreshing ? null : _refreshMembershipState,
+                child: _refreshing
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Hantera prenumeration'),
+                    : const Text('Uppdatera medlemskap'),
               ),
             ],
           ),
