@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -216,3 +217,15 @@ async def test_notifications_require_teacher(async_client):
         assert resp.status_code == 403, resp.text
     finally:
         await cleanup_user(user_id)
+
+
+async def test_notifications_source_uses_canonical_authority_only():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app/routes/api_notifications.py").read_text(encoding="utf-8")
+
+    assert "SELECT created_by FROM app.courses" not in source
+    assert "SELECT created_by FROM app.events" not in source
+    assert "FROM app.enrollments" not in source
+    assert "SELECT teacher_id FROM app.courses" in source
+    assert "FROM app.course_enrollments ce" in source
+    assert "FROM app.event_participants ep" in source

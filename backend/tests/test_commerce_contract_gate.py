@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -57,6 +58,52 @@ async def test_forbidden_billing_surfaces_are_not_mounted(async_client) -> None:
     ):
         response = await getattr(async_client, method)(path)
         assert response.status_code == 404, response.text
+
+
+async def test_connect_surfaces_are_inactive(async_client, monkeypatch) -> None:
+    assert "/connect/onboarding" not in _route_paths()
+    assert "/connect/status" not in _route_paths()
+
+    onboarding_resp = await async_client.post("/connect/onboarding")
+    assert onboarding_resp.status_code == 404, onboarding_resp.text
+
+    status_resp = await async_client.get("/connect/status")
+    assert status_resp.status_code == 404, status_resp.text
+
+    _set_stripe_test_env(monkeypatch)
+    settings.stripe_test_webhook_secret = "whsec_test"
+
+    def fake_construct_event(payload, sig_header, secret):
+        assert sig_header == "sig_test"
+        assert secret == "whsec_test"
+        body = json.loads(payload)
+        return {
+            "id": "evt_connect_inactive",
+            "type": body.get("event_type", "account.updated"),
+            "data": {"object": body.get("object", body)},
+        }
+
+    async def fail_connect_handler(*args, **kwargs):
+        raise AssertionError("Connect webhook handler must stay inactive")
+
+    monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.stripe_webhook_support_service.handle_connect_event",
+        fail_connect_handler,
+    )
+
+    webhook_resp = await async_client.post(
+        "/api/stripe/webhook",
+        content=json.dumps(
+            {
+                "event_type": "account.updated",
+                "object": {"id": "acct_test"},
+            }
+        ),
+        headers={"stripe-signature": "sig_test"},
+    )
+    assert webhook_resp.status_code == 200, webhook_resp.text
+    assert webhook_resp.json() == {"status": "ok"}
 
 
 async def test_membership_checkout_rejects_legacy_request_shape() -> None:

@@ -26,21 +26,44 @@ def _is_admin(current: dict) -> bool:
     return bool(current.get("is_admin"))
 
 
-async def _event_owner(event_id: str) -> str | None:
+async def _event_host_access(event_id: str, user_id: str) -> tuple[bool, bool]:
     async with get_conn() as cur:
-        await cur.execute("SELECT created_by FROM app.events WHERE id = %s LIMIT 1", (event_id,))
+        await cur.execute(
+            """
+            SELECT
+              EXISTS(
+                SELECT 1
+                FROM app.events
+                WHERE id = %s
+              ) AS event_exists,
+              EXISTS(
+                SELECT 1
+                FROM app.event_participants ep
+                WHERE ep.event_id = %s
+                  AND ep.user_id = %s
+                  AND ep.role = 'host'
+                  AND ep.status <> 'cancelled'
+              ) AS is_host
+            """,
+            (event_id, event_id, user_id),
+        )
         row = await cur.fetchone()
-        return str(row["created_by"]) if row else None
+        if not row:
+            return False, False
+        return bool(row["event_exists"]), bool(row["is_host"])
 
 
 async def _course_owner(course_id: str) -> str | None:
     async with get_conn() as cur:
-        await cur.execute("SELECT created_by FROM app.courses WHERE id = %s LIMIT 1", (course_id,))
+        await cur.execute(
+            "SELECT teacher_id FROM app.courses WHERE id = %s LIMIT 1",
+            (course_id,),
+        )
         row = await cur.fetchone()
         if not row:
             return None
-        created_by = row.get("created_by")
-        return str(created_by) if created_by else None
+        teacher_id = row.get("teacher_id")
+        return str(teacher_id) if teacher_id else None
 
 
 async def _assert_audience_permissions(audiences: list[NotificationAudienceCreate], current: dict) -> None:
@@ -70,10 +93,10 @@ async def _assert_audience_permissions(audiences: list[NotificationAudienceCreat
         raise HTTPException(status_code=403, detail="Only admins may target all_members")
 
     for eid in sorted(event_ids):
-        owner = await _event_owner(eid)
-        if owner is None:
+        event_exists, is_host = await _event_host_access(eid, user_id)
+        if not event_exists:
             raise HTTPException(status_code=404, detail=f"Event not found: {eid}")
-        if not (is_admin or owner == user_id):
+        if not (is_admin or is_host):
             raise HTTPException(status_code=403, detail="You may only notify participants of your own events")
 
     for cid in sorted(course_ids):
@@ -128,10 +151,9 @@ async def _resolve_recipients(audiences: list[NotificationAudienceCreate]) -> se
         if course_participant_ids:
             await cur.execute(
                 """
-                SELECT DISTINCT e.user_id
-                FROM app.enrollments e
-                WHERE e.course_id = ANY(%s::uuid[])
-                  AND e.status = 'active'
+                SELECT DISTINCT ce.user_id
+                FROM app.course_enrollments ce
+                WHERE ce.course_id = ANY(%s::uuid[])
                 """,
                 (sorted(course_participant_ids),),
             )

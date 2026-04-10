@@ -165,12 +165,7 @@ async def stripe_payment_element_webhook(request: Request):
                 data_object,
             )
         elif event_type and event_type.startswith("account."):
-            await stripe_webhook_support_service.handle_connect_event(
-                event_type=str(event_type),
-                event_payload=event,
-                data_object=data_object,
-                context=context,
-            )
+            logger.info("Ignoring inactive Stripe Connect event %s", event_type)
         else:
             logger.info("Unhandled Stripe event %s", event_type)
     except Exception as exc:  # pragma: no cover - defensive logging
