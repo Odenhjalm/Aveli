@@ -1,0 +1,5 @@
+- TASK ID: RWD-010
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: cross-domain
+- DESCRIPTION: Update write-path dominance regression gates so old reorder/delete surfaces cannot regain dominance. The gate must forbid `PATCH /api/lesson-media/{lesson_id}/reorder` and `DELETE /api/lesson-media/{lesson_id}/{lesson_media_id}`, assert canonical reorder/delete routes remain mounted, and assert studio frontend data paths no longer contain the old reorder/delete route tokens.
+- DEPENDS_ON: [RWD-003, RWD-006]

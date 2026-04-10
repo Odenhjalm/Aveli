@@ -1,0 +1,5 @@
+- TASK ID: RWD-001
+- TYPE: BACKEND_ALIGNMENT
+- DOMAIN TAG: media
+- DESCRIPTION: Add canonical backend placement reorder/delete surfaces under `media_pipeline_router`: `PATCH /api/lessons/{lesson_id}/media-placements/reorder` and `DELETE /api/media-placements/{lesson_media_id}`. Reorder may mutate only `app.lesson_media.position`. Delete may delete only the target `app.lesson_media` row. Neither endpoint may create, update, or delete `app.media_assets`, and neither endpoint may write `app.runtime_media`. Preserve the old `/api/lesson-media` reorder/delete routes until frontend migration is complete.
+- DEPENDS_ON: []

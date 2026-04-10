@@ -1,0 +1,5 @@
+- TASK ID: RWD-009
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: media
+- DESCRIPTION: Restore course-cover lifecycle safety coverage under `media_lifecycle_contract.md`. Tests must verify orphan checks, shared-reference preservation, double-check-before-delete behavior where applicable, and storage cleanup only after asset deletion is confirmed safe. Tests must not assert asset deletion from lesson delete or placement delete.
+- DEPENDS_ON: [RWD-005]

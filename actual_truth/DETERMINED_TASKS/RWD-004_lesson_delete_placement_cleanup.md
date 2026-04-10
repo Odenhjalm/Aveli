@@ -1,0 +1,5 @@
+- TASK ID: RWD-004
+- TYPE: BACKEND_ALIGNMENT
+- DOMAIN TAG: lesson
+- DESCRIPTION: Align lesson delete with `course_lesson_editor_contract.md` by deleting the target `app.lesson_contents` row, all `app.lesson_media` placement rows whose `lesson_id` is the deleted lesson, and the target `app.lessons` row. This task must not delete `app.media_assets`, must not write `app.runtime_media`, and must not treat lesson delete success as asset cleanup completion.
+- DEPENDS_ON: []

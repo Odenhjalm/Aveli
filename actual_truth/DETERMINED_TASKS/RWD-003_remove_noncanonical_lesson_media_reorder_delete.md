@@ -1,0 +1,5 @@
+- TASK ID: RWD-003
+- TYPE: LEGACY_REMOVAL
+- DOMAIN TAG: media
+- DESCRIPTION: Remove or quarantine the non-canonical mounted write routes `PATCH /api/lesson-media/{lesson_id}/reorder` and `DELETE /api/lesson-media/{lesson_id}/{lesson_media_id}` after frontend switchover. Remove any direct asset deletion from the old placement-delete path as part of removing that path. Preserve non-write `/api/lesson-media` read/preview behavior unless separately governed by another task.
+- DEPENDS_ON: [RWD-002]

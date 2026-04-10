@@ -1,0 +1,5 @@
+- TASK ID: RWD-007
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: course
+- DESCRIPTION: Restore or replace positive backend `cover_media_id` write persistence coverage for the canonical studio course update surface. The test must verify that a positive `cover_media_id` value persists as the structural course-cover pointer without introducing frontend cover-resolution authority or lifecycle cleanup behavior.
+- DEPENDS_ON: []

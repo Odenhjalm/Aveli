@@ -1,0 +1,5 @@
+- TASK ID: RWD-005
+- TYPE: LIFECYCLE_INTEGRATION
+- DOMAIN TAG: media
+- DESCRIPTION: Add non-deleting media lifecycle trigger integration at the post-reference-removal boundary for canonical placement delete and lesson delete. The integration may request or enqueue lifecycle evaluation after placement links are removed, but it must not synchronously delete `app.media_assets` or storage objects in the placement-delete or lesson-delete request path. All asset deletion must remain under `media_lifecycle_contract.md` orphan verification and media lifecycle authority.
+- DEPENDS_ON: [RWD-001, RWD-003, RWD-004]

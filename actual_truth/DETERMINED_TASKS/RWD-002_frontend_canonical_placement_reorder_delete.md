@@ -1,0 +1,5 @@
+- TASK ID: RWD-002
+- TYPE: FRONTEND_ALIGNMENT
+- DOMAIN TAG: media
+- DESCRIPTION: Switch studio frontend reorder/delete callers to the canonical placement endpoints. `reorderLessonMedia` must call `PATCH /api/lessons/{lesson_id}/media-placements/reorder`. `deleteLessonMedia` must call `DELETE /api/media-placements/{lesson_media_id}`. Keep the existing lesson-media list/read behavior out of scope unless directly required by the route migration.
+- DEPENDS_ON: [RWD-001]

@@ -1,0 +1,5 @@
+- TASK ID: RWD-006
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: media
+- DESCRIPTION: Add or update backend and frontend tests for canonical placement reorder/delete. Tests must assert canonical routes are used, old frontend reorder/delete route tokens are absent, reorder mutates only placement position, delete removes only the target placement link, and neither operation deletes `app.media_assets` or writes `app.runtime_media`.
+- DEPENDS_ON: [RWD-005]

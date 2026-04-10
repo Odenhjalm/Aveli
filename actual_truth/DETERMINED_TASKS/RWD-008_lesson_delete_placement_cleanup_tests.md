@@ -1,0 +1,5 @@
+- TASK ID: RWD-008
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: lesson
+- DESCRIPTION: Replace deleted lesson-delete media cleanup coverage with canonical lesson-delete placement cleanup coverage. Tests must assert lesson delete removes the lesson-owned `app.lesson_contents`, `app.lesson_media`, and `app.lessons` rows, does not delete `app.media_assets`, does not write `app.runtime_media`, and treats any asset cleanup as a separate media lifecycle concern.
+- DEPENDS_ON: [RWD-004, RWD-005]

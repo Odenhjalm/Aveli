@@ -1,0 +1,5 @@
+- TASK ID: RWD-011
+- TYPE: AUDIT_GATE
+- DOMAIN TAG: cross-domain
+- DESCRIPTION: Perform a final no-code end-state audit after remediation. The audit must verify canonical placement reorder/delete dominance, absence or quarantine of old `/api/lesson-media` reorder/delete writes, frontend route alignment, lesson delete placement cleanup without asset deletion, lifecycle separation, restored coverage, and no new contract or baseline authority gaps.
+- DEPENDS_ON: [RWD-007, RWD-008, RWD-009, RWD-010]
