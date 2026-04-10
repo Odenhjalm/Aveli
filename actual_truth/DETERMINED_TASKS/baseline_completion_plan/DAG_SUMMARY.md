@@ -29,6 +29,7 @@
 - `BCP-041`
 - `BCP-042`
 - `BCP-042A`
+- `BCP-042AA`
 - `BCP-042B`
 - `BCP-043A`
 - `BCP-043`
@@ -53,20 +54,21 @@
 13. `BCP-034`
 14. `BCP-042`
 15. `BCP-042A`
-16. `BCP-042B`
-17. `BCP-043A`
-18. `BCP-013`
-19. `BCP-023`
-20. `BCP-033`
-21. `BCP-035`
-22. `BCP-043`
-23. `BCP-014`
-24. `BCP-024`
-25. `BCP-044`
-26. `BCP-036`
-27. `BCP-037`
-28. `BCP-050`
-29. `BCP-051`
+16. `BCP-042AA`
+17. `BCP-042B`
+18. `BCP-043A`
+19. `BCP-013`
+20. `BCP-023`
+21. `BCP-033`
+22. `BCP-035`
+23. `BCP-043`
+24. `BCP-014`
+25. `BCP-024`
+26. `BCP-044`
+27. `BCP-036`
+28. `BCP-037`
+29. `BCP-050`
+30. `BCP-051`
 
 ## Smallest Safe Execution Entrypoints
 
@@ -93,6 +95,8 @@ Rationale:
   - Protected slot `0008` currently defines lesson-only `runtime_media`, so unified media truth including course cover must be introduced without mutating the protected projection in place.
 - `BCP-042A`
   - Canonical documents already place home-player runtime truth under `runtime_media`, but the append-only baseline still lacks home-player runtime rows, so the missing authority must land before `BCP-043`.
+- `BCP-042AA`
+  - Active contract and mounted runtime still use `app.home_player_course_links` for course-link inclusion, but replay treats the table as optional today and stored `teacher_id` must not be mistaken for course-ownership authority.
 - `BCP-042B`
   - The newly active profile-media contract now defines a lawful append-only source and runtime path, but the baseline still lacks `profile_media` purpose coverage, `app.profile_media_placements`, and runtime projection rows for published profile media.
 - `BCP-043A`
@@ -109,6 +113,7 @@ Rationale:
 - Protected slot `0008_runtime_media_projection_core.sql` still defines `app.runtime_media` as a lesson-only ready-state projection and excludes course cover.
 - Append-only slot `0017_runtime_media_unified.sql` extends `app.runtime_media` to lesson media and course cover, but still excludes the home-player runtime truth already declared by canonical media law.
 - Append-only slot `0018_runtime_media_home_player.sql` extends `app.runtime_media` to home-player direct uploads, but the baseline still lacks the active profile-media source contract and runtime rows required before `BCP-043`.
+- Active home-audio contract and mounted runtime still use `app.home_player_course_links` for course-link inclusion, but the append-only baseline has no explicit owner task or locked slot for that substrate and replay treats it as optional.
 - `backend/app/services/courses_service.py` still resolves course cover from media-asset and storage-adjacent logic instead of one unified `runtime_media` chain.
 - `backend/app/services/home_audio_service.py` and `backend/app/services/courses_service.py` still shape mounted home-player media through direct media-asset playback instead of unified `runtime_media`.
 - `backend/app/repositories/courses.py` and `backend/app/services/courses_read_service.py` still build public and protected reads from raw tables rather than canonical DB surfaces.

@@ -209,28 +209,24 @@ class CourseStudio extends CourseCore {
     bool clearPriceAmountCents = false,
   }) {
     return CourseStudio(
-      id: id != null ? id : this.id,
-      title: title != null ? title : this.title,
-      slug: slug != null ? slug : this.slug,
+      id: id ?? this.id,
+      title: title ?? this.title,
+      slug: slug ?? this.slug,
       courseGroupId: clearCourseGroupId
           ? ''
-          : (courseGroupId != null ? courseGroupId : this.courseGroupId),
-      step: step != null ? step : this.step,
-      dripEnabled: dripEnabled != null ? dripEnabled : this.dripEnabled,
+          : (courseGroupId ?? this.courseGroupId),
+      step: step ?? this.step,
+      dripEnabled: dripEnabled ?? this.dripEnabled,
       dripIntervalDays: clearDripIntervalDays
           ? null
-          : (dripIntervalDays != null
-                ? dripIntervalDays
-                : this.dripIntervalDays),
+          : (dripIntervalDays ?? this.dripIntervalDays),
       coverMediaId: clearCoverMediaId
           ? null
-          : (coverMediaId != null ? coverMediaId : this.coverMediaId),
-      cover: clearCover ? null : (cover != null ? cover : this.cover),
+          : (coverMediaId ?? this.coverMediaId),
+      cover: clearCover ? null : (cover ?? this.cover),
       priceAmountCents: clearPriceAmountCents
           ? null
-          : (priceAmountCents != null
-                ? priceAmountCents
-                : this.priceAmountCents),
+          : (priceAmountCents ?? this.priceAmountCents),
     );
   }
 }
@@ -277,13 +273,13 @@ class LessonStudio {
     bool clearContentMarkdown = false,
   }) {
     return LessonStudio(
-      id: id != null ? id : this.id,
-      courseId: courseId != null ? courseId : this.courseId,
-      lessonTitle: lessonTitle != null ? lessonTitle : this.lessonTitle,
-      position: position != null ? position : this.position,
+      id: id ?? this.id,
+      courseId: courseId ?? this.courseId,
+      lessonTitle: lessonTitle ?? this.lessonTitle,
+      position: position ?? this.position,
       contentMarkdown: clearContentMarkdown
           ? null
-          : (contentMarkdown != null ? contentMarkdown : this.contentMarkdown),
+          : (contentMarkdown ?? this.contentMarkdown),
     );
   }
 }
@@ -369,19 +365,19 @@ class StudioLessonMediaItem {
     bool clearOriginalName = false,
   }) {
     return StudioLessonMediaItem(
-      lessonMediaId: lessonMediaId != null ? lessonMediaId : this.lessonMediaId,
-      lessonId: lessonId != null ? lessonId : this.lessonId,
-      position: position != null ? position : this.position,
-      mediaType: mediaType != null ? mediaType : this.mediaType,
-      state: state != null ? state : this.state,
-      previewReady: previewReady != null ? previewReady : this.previewReady,
+      lessonMediaId: lessonMediaId ?? this.lessonMediaId,
+      lessonId: lessonId ?? this.lessonId,
+      position: position ?? this.position,
+      mediaType: mediaType ?? this.mediaType,
+      state: state ?? this.state,
+      previewReady: previewReady ?? this.previewReady,
       mediaAssetId: clearMediaAssetId
           ? null
-          : (mediaAssetId != null ? mediaAssetId : this.mediaAssetId),
-      media: clearMedia ? null : (media != null ? media : this.media),
+          : (mediaAssetId ?? this.mediaAssetId),
+      media: clearMedia ? null : (media ?? this.media),
       originalName: clearOriginalName
           ? null
-          : (originalName != null ? originalName : this.originalName),
+          : (originalName ?? this.originalName),
     );
   }
 }

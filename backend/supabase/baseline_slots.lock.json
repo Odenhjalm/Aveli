@@ -177,6 +177,12 @@
       "filename": "0029_canonical_purchase_substrate_foundation.sql",
       "path": "backend/supabase/baseline_slots/0029_canonical_purchase_substrate_foundation.sql",
       "sha256": "59af20c48c3c5ae70f121d640d432e4fb83ab6afcd3d6bd4f7563b0360f1496e"
+    },
+    {
+      "slot": 30,
+      "filename": "0030_home_player_course_link_inclusion_substrate.sql",
+      "path": "backend/supabase/baseline_slots/0030_home_player_course_link_inclusion_substrate.sql",
+      "sha256": "ce9ffcd3fb300dad37bfa581316417c42cb1391ea93fbf3b90e1278388f3a653"
     }
   ]
 }

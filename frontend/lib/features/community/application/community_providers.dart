@@ -324,7 +324,7 @@ final adminSettingsProvider = AutoDisposeFutureProvider<AdminSettingsState>((
       loginEvents7d: 0,
       activeUsers7d: 0,
     ),
-    priorities: const <TeacherPriorityEntry>[],
+    priorities: <TeacherPriorityEntry>[],
   );
 });
 

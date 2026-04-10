@@ -226,6 +226,16 @@
       ]
     },
     {
+      "task_id": "BCP-042AA",
+      "type": "OWNER",
+      "cluster": "RUNTIME_MEDIA_UNIFICATION",
+      "description": "Append baseline ownership for the canonical home-player course-link inclusion substrate so downstream cleanup can consume active home-audio inclusion truth without reopening course ownership.",
+      "action": "implement",
+      "depends_on": [
+        "BCP-042A"
+      ]
+    },
+    {
       "task_id": "BCP-042B",
       "type": "OWNER",
       "cluster": "RUNTIME_MEDIA_UNIFICATION",

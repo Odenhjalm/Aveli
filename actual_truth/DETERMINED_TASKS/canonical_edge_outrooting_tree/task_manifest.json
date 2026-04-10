@@ -1,0 +1,359 @@
+{
+  "input": {
+    "task": "Generate deterministic outrooting task tree from completed outrooting audit findings around the stable canonical core",
+    "mode": "generate",
+      "scope": [
+        "Preserve canonical core surfaces completely untouched",
+        "Use only completed outrooting audit findings plus current contracts, mounted runtime truth, and baseline truth",
+        "Materialize deterministic task artifacts under actual_truth/DETERMINED_TASKS",
+        "Do not implement runtime code, SQL, baseline, or schema changes in this pass",
+      "Do not reopen ratified commerce, auth, onboarding, checkout, or course-access core decisions"
+    ],
+      "contracts": [
+        "actual_truth/contracts/auth_onboarding_contract.md",
+        "actual_truth/contracts/profile_projection_contract.md",
+        "actual_truth/contracts/commerce_membership_contract.md",
+        "actual_truth/contracts/course_access_contract.md",
+        "actual_truth/contracts/course_monetization_contract.md",
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/referral_membership_grant_contract.md",
+        "actual_truth/contracts/supabase_integration_boundary_contract.md"
+      ],
+    "mounted_runtime_truth": [
+      "backend/app/main.py"
+    ],
+    "baseline_truth": [
+      "backend/supabase/baseline_slots.lock.json"
+    ]
+  },
+  "tree_id": "canonical_edge_outrooting_tree",
+  "status": "READY",
+  "audit_inputs": [
+    "OEA-01",
+    "OEA-02",
+    "OEA-03",
+    "OEA-04",
+    "OEA-05",
+    "OEA-06",
+    "OEA-07",
+    "OEA-08",
+    "OEA-09",
+    "OEA-10",
+    "OEA-11",
+    "OEA-12"
+  ],
+  "task_tree": [
+    {
+      "task_id": "OET-001",
+      "type": "OWNER",
+      "task_type": "ROUTE_AUTHORITY_ALIGNMENT",
+      "group": "ACTIVE AUTHORITY DRIFT",
+      "description": "Remove mounted studio home-audio ownership resolution through c.created_by while consuming the explicit baseline-owned home-audio course-link substrate and the already-ratified canonical course ownership substrate.",
+      "depends_on": [
+        "BCP-042AA_append_home_player_course_link_inclusion_substrate",
+        "CMTZ-001_BASELINE_OWNERSHIP_AND_MONETIZATION_FOUNDATION",
+        "AOI-003_baseline_bound_auth_persistence"
+      ],
+      "target_files": [
+        "backend/app/repositories/home_audio_sources.py",
+        "backend/app/routes/studio.py",
+        "backend/app/repositories/courses.py"
+      ],
+      "audit_inputs": [
+        "OEA-01",
+        "OEA-02"
+      ],
+      "required_before_future_core_feature_work": true,
+      "execution_class": "blocker"
+    },
+    {
+      "task_id": "OET-002",
+      "type": "OWNER",
+      "task_type": "ROUTE_AUTHORITY_ALIGNMENT",
+      "group": "ACTIVE AUTHORITY DRIFT",
+      "description": "Remove mounted studio quiz ownership checks that still read c.created_by and align quiz authority to the preexisting canonical course ownership substrate only.",
+      "depends_on": [
+        "CMTZ-001_BASELINE_OWNERSHIP_AND_MONETIZATION_FOUNDATION",
+        "AOI-003_baseline_bound_auth_persistence"
+      ],
+      "target_files": [
+        "backend/app/models.py",
+        "backend/app/routes/studio.py",
+        "backend/app/repositories/courses.py"
+      ],
+      "audit_inputs": [
+        "OEA-01",
+        "OEA-03"
+      ],
+      "required_before_future_core_feature_work": true,
+      "execution_class": "blocker"
+    },
+    {
+      "task_id": "OET-003",
+      "type": "OWNER",
+      "task_type": "ROUTE_AUTHORITY_ALIGNMENT",
+      "group": "ACTIVE AUXILIARY DRIFT",
+      "description": "Remove legacy created_by ownership shortcuts from mounted events runtime while preserving canonical membership access and without inventing a new event authority model.",
+      "depends_on": [
+        "CMT-001_BASELINE_MEMBERSHIP_FOUNDATION",
+        "AOI-003_baseline_bound_auth_persistence"
+      ],
+      "target_files": [
+        "backend/app/routes/api_events.py",
+        "backend/app/schemas/events.py",
+        "backend/tests/test_events_notifications.py"
+      ],
+      "audit_inputs": [
+        "OEA-01",
+        "OEA-04"
+      ],
+      "required_before_future_core_feature_work": true,
+      "execution_class": "blocker"
+    },
+    {
+      "task_id": "OET-004",
+      "type": "OWNER",
+      "task_type": "SHADOW_AUTHORITY_REMOVAL",
+      "group": "SHADOW AUTHORITY CLEANUP",
+      "description": "Remove or explicitly neutralize JWT role and is_admin shadow claims so token payloads do not remain a second authority surface beside canonical app.auth_subjects reads.",
+      "depends_on": [
+        "AOI-003_baseline_bound_auth_persistence"
+      ],
+      "target_files": [
+        "backend/app/routes/auth.py",
+        "backend/app/auth.py",
+        "backend/tests/test_auth_subject_authority_gate.py"
+      ],
+      "audit_inputs": [
+        "OEA-01",
+        "OEA-05"
+      ],
+      "required_before_future_core_feature_work": true,
+      "execution_class": "auxiliary"
+    },
+    {
+      "task_id": "OET-005",
+      "type": "OWNER",
+      "task_type": "LEGACY_QUARANTINE",
+      "group": "INACTIVE / DEAD-CODE QUARANTINE",
+      "description": "Quarantine or remove unmounted AI and seminar edges that still read app.enrollments so dormant access paths cannot be reactivated around the canonical course_enrollments core.",
+      "depends_on": [
+        "OET-011"
+      ],
+      "target_files": [
+        "backend/app/services/tool_dispatcher.py",
+        "backend/app/repositories/seminars.py",
+        "backend/app/routes/api_ai.py",
+        "backend/app/routes/seminars.py",
+        "backend/app/routes/api_sfu.py",
+        "backend/tests/test_seminar_rpcs.py",
+        "backend/tests/test_seminar_sessions.py",
+        "backend/tests/test_sfu_api.py"
+      ],
+      "audit_inputs": [
+        "OEA-06"
+      ],
+      "required_before_future_core_feature_work": false,
+      "execution_class": "optional_later_hardening"
+    },
+    {
+      "task_id": "OET-006",
+      "type": "GATE",
+      "task_type": "TEST_ALIGNMENT",
+      "group": "TEST ALIGNMENT",
+      "description": "Rewrite or quarantine stale tests so verification asserts only mounted runtime truth, removed created_by authority, neutralized JWT shadow claims, and the protected canonical core.",
+      "depends_on": [
+        "OET-001",
+        "OET-002",
+        "OET-003",
+        "OET-004"
+      ],
+      "target_files": [
+        "backend/tests/test_api_smoke.py",
+        "backend/tests/test_feed_permissions.py",
+        "backend/tests/test_community_flows.py",
+        "backend/tests/test_landing_popular_courses_filters_demo.py",
+        "backend/tests/test_studio_sessions_smoke.py",
+        "backend/tests/test_sfu_api.py",
+        "backend/tests/test_media_api.py",
+        "backend/tests/test_upload_legacy_routes.py",
+        "backend/tests/test_commerce_contract_gate.py",
+        "backend/tests/test_auth_subject_authority_gate.py",
+        "backend/tests/test_events_notifications.py"
+      ],
+      "audit_inputs": [
+        "OEA-02",
+        "OEA-03",
+        "OEA-04",
+        "OEA-05",
+        "OEA-07"
+      ],
+      "required_before_future_core_feature_work": true,
+      "execution_class": "required_verification"
+    },
+    {
+      "task_id": "OET-007",
+      "type": "OWNER",
+      "task_type": "DOC_ALIGNMENT",
+      "group": "DOC / TASK ALIGNMENT",
+      "description": "Update only proven-contradicted implementation-drift notes in contracts and determined-task artifacts so repo planning no longer claims runtime drift that current mounted truth and guard tests already disprove.",
+      "depends_on": [
+        "OET-006"
+      ],
+      "target_files": [
+        "actual_truth/contracts/commerce_membership_contract.md",
+        "actual_truth/contracts/referral_membership_grant_contract.md",
+        "actual_truth/DETERMINED_TASKS/auth_onboarding_contract_alignment/README.md",
+        "actual_truth/DETERMINED_TASKS/auth_onboarding_contract_alignment/AOC-001_canonical_entrypoint_replacement.md",
+        "actual_truth/DETERMINED_TASKS/auth_onboarding_contract_alignment/AOC-004_subject_profile_authority_replacement.md",
+        "actual_truth/DETERMINED_TASKS/media_conflict_resolution"
+      ],
+      "audit_inputs": [
+        "OEA-07",
+        "OEA-08"
+      ],
+      "required_before_future_core_feature_work": true,
+      "execution_class": "auxiliary"
+    },
+    {
+      "task_id": "OET-008",
+      "type": "OWNER",
+      "task_type": "SUPPORT_HARDENING",
+      "group": "ACTIVE AUXILIARY DRIFT",
+      "description": "Harden active support surfaces so schema introspection and tolerant undefined-column probing no longer survive as runtime-adjacent fallback logic.",
+      "depends_on": [
+        "OET-011"
+      ],
+      "target_files": [
+        "backend/app/repositories/media_assets.py",
+        "backend/app/services/domain_observability/user_inspection.py",
+        "backend/tests/test_domain_media_inspection.py",
+        "backend/tests/test_domain_observability_mcp.py"
+      ],
+      "audit_inputs": [
+        "OEA-09"
+      ],
+      "required_before_future_core_feature_work": false,
+      "execution_class": "optional_later_hardening"
+    },
+    {
+      "task_id": "OET-009",
+      "type": "OWNER",
+      "task_type": "LEGACY_QUARANTINE",
+      "group": "INACTIVE / DEAD-CODE QUARANTINE",
+      "description": "Quarantine stale webhook support branches and other unmounted near-runtime route trees so ignored account.* handling and dormant endpoints cannot masquerade as canonical surfaces.",
+      "depends_on": [
+        "OET-011"
+      ],
+      "target_files": [
+        "backend/app/services/stripe_webhook_support_service.py",
+        "backend/app/routes/stripe_webhooks.py",
+        "backend/app/routes/api_context7.py",
+        "backend/app/routes/api_feed.py",
+        "backend/app/routes/api_media.py",
+        "backend/app/routes/api_orders.py",
+        "backend/app/routes/api_services.py",
+        "backend/app/routes/community.py",
+        "backend/app/routes/connect.py",
+        "backend/app/routes/landing.py",
+        "backend/app/routes/livekit_webhooks.py"
+      ],
+      "audit_inputs": [
+        "OEA-10"
+      ],
+      "required_before_future_core_feature_work": false,
+      "execution_class": "optional_later_hardening"
+    },
+    {
+      "task_id": "OET-010",
+      "type": "OWNER",
+      "task_type": "LEGACY_QUARANTINE",
+      "group": "INACTIVE / DEAD-CODE QUARANTINE",
+      "description": "Quarantine dormant sessions, stripe_price_id residue, alias-normalization helpers, and legacy upload or media support edges that no longer belong beside the canonical core.",
+      "depends_on": [
+        "OET-011"
+      ],
+      "target_files": [
+        "backend/app/services/booking_service.py",
+        "backend/app/repositories/sessions.py",
+        "backend/app/routes/studio_sessions.py",
+        "backend/app/routes/session_slots.py",
+        "backend/app/schemas/__init__.py",
+        "backend/app/utils/lesson_content.py",
+        "backend/app/routes/upload.py",
+        "backend/app/routes/media.py"
+      ],
+      "audit_inputs": [
+        "OEA-11",
+        "OEA-12"
+      ],
+      "required_before_future_core_feature_work": false,
+      "execution_class": "optional_later_hardening"
+    },
+    {
+      "task_id": "OET-011",
+      "type": "AGGREGATE",
+      "task_type": "OUTROOTING_GATE",
+      "group": "AGGREGATE",
+      "description": "Verify that all required mounted-runtime outrooting tasks are complete, the canonical core remains untouched, and remaining work is confined to optional later hardening only.",
+      "depends_on": [
+        "OET-001",
+        "OET-002",
+        "OET-003",
+        "OET-004",
+        "OET-006",
+        "OET-007"
+      ],
+      "target_files": [
+        "backend/app/routes/studio.py",
+        "backend/app/models.py",
+        "backend/app/repositories/home_audio_sources.py",
+        "backend/app/routes/api_events.py",
+        "backend/app/routes/auth.py",
+        "backend/tests",
+        "actual_truth/contracts",
+        "actual_truth/DETERMINED_TASKS"
+      ],
+      "audit_inputs": [
+        "OEA-01",
+        "OEA-02",
+        "OEA-03",
+        "OEA-04",
+        "OEA-05",
+        "OEA-07",
+        "OEA-08"
+      ],
+      "required_before_future_core_feature_work": true,
+      "execution_class": "completion_gate"
+    },
+    {
+      "task_id": "OET-012",
+      "type": "AGGREGATE",
+      "task_type": "OPTIONAL_HARDENING_GATE",
+      "group": "AGGREGATE",
+      "description": "Verify that deferred support and dead-code hardening is complete after the required outrooting lane has already passed.",
+      "depends_on": [
+        "OET-005",
+        "OET-008",
+        "OET-009",
+        "OET-010"
+      ],
+      "target_files": [
+        "backend/app/services",
+        "backend/app/routes",
+        "backend/app/repositories",
+        "backend/app/utils",
+        "backend/tests"
+      ],
+      "audit_inputs": [
+        "OEA-06",
+        "OEA-09",
+        "OEA-10",
+        "OEA-11",
+        "OEA-12"
+      ],
+      "required_before_future_core_feature_work": false,
+      "execution_class": "optional_later_hardening"
+    }
+  ]
+}

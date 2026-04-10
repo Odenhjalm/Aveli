@@ -36,6 +36,7 @@
 - `BCP-041` -> gate the unified `runtime_media` boundary
 - `BCP-042` -> append baseline ownership for the expanded unified `runtime_media`
 - `BCP-042A` -> append the missing home-player runtime authority to unified `runtime_media`
+- `BCP-042AA` -> append baseline ownership for the canonical home-player course-link inclusion substrate
 - `BCP-042B` -> append the approved profile-media runtime authority to unified `runtime_media`
 - `BCP-043A` -> align mounted course-cover and home-player reads to unified `runtime_media`
 - `BCP-043` -> align the remaining profile/community media consumers to unified `runtime_media`
@@ -53,6 +54,7 @@
 - Public and protected DB-surface materialization may run in parallel only after `BCP-031` passes.
 - Mounted public read alignment must land before the public DB-surface gate can be re-run: `BCP-032 -> BCP-033A -> BCP-033`.
 - Mounted dependency-valid runtime-media alignment must first land for course cover and home-player: `BCP-042 -> BCP-042A -> BCP-043A`.
+- Active home-audio course-link inclusion substrate must be baseline-owned before downstream cleanup can consume it lawfully: `BCP-042A -> BCP-042AA`.
 - Active contract-owned profile-media authority must land append-only before remaining profile/community alignment: `BCP-042A -> BCP-042B -> BCP-043`.
 - Remaining profile/community runtime-media alignment stays downstream of both the mounted dependency-valid work and the new profile-media authority work: `BCP-043A -> BCP-043`, `BCP-042B -> BCP-043`, `BCP-043 -> BCP-044`.
 - Runtime read alignment for course and lesson endpoints must still wait for both DB-surface gates and unified `runtime_media` verification: `BCP-033 -> BCP-036`, `BCP-035 -> BCP-036`, `BCP-044 -> BCP-036`.
@@ -68,5 +70,6 @@
 - [BCP-033A_align_mounted_public_reads_to_public_db_surfaces.md](/c:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/baseline_completion_plan/BCP-033A_align_mounted_public_reads_to_public_db_surfaces.md)
 - [BCP-040_resolve_unified_runtime_media_expansion.md](/c:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/baseline_completion_plan/BCP-040_resolve_unified_runtime_media_expansion.md)
 - [BCP-042A_append_home_player_runtime_media_authority.md](/c:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/baseline_completion_plan/BCP-042A_append_home_player_runtime_media_authority.md)
+- [BCP-042AA_append_home_player_course_link_inclusion_substrate.md](/c:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/baseline_completion_plan/BCP-042AA_append_home_player_course_link_inclusion_substrate.md)
 - [BCP-042B_append_profile_media_runtime_authority.md](/c:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/baseline_completion_plan/BCP-042B_append_profile_media_runtime_authority.md)
 - [BCP-043A_align_cover_and_home_player_reads_to_runtime_media.md](/c:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/baseline_completion_plan/BCP-043A_align_cover_and_home_player_reads_to_runtime_media.md)

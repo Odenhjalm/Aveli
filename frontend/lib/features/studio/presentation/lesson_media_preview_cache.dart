@@ -480,9 +480,7 @@ class LessonMediaPreviewCache {
         );
         final completer = _pending.remove(lessonMediaId);
         if (completer != null && !completer.isCompleted) {
-          final effectiveStackTrace = batchStackTrace == null
-              ? StackTrace.current
-              : batchStackTrace;
+          final effectiveStackTrace = batchStackTrace ?? StackTrace.current;
           completer.completeError(batchError, effectiveStackTrace);
         }
         _completeBatchWaiters(lessonMediaId);
