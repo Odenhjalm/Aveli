@@ -482,6 +482,8 @@ async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUse
             payload.model_dump(),
             teacher_id=str(current["id"]),
         )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
@@ -1594,6 +1596,8 @@ async def update_course(
             payload.model_dump(exclude_unset=True),
             teacher_id=str(current["id"]),
         )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:

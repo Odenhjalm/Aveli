@@ -18,6 +18,9 @@ _COURSE_COLUMNS = """
     c.course_group_id,
     c.step::text as step,
     c.price_amount_cents,
+    c.stripe_product_id,
+    c.active_stripe_price_id,
+    c.sellable,
     c.drip_enabled,
     c.drip_interval_days,
     c.cover_media_id
@@ -330,6 +333,36 @@ async def update_course(course_id: str, patch: dict[str, Any]) -> CourseRow | No
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_course(course_id=course_id)
+
+
+async def update_course_stripe_mapping(
+    course_id: str,
+    *,
+    stripe_product_id: str,
+    active_stripe_price_id: str,
+) -> CourseRow | None:
+    query = """
+        update app.courses
+        set stripe_product_id = %s,
+            active_stripe_price_id = %s
+        where id = %s::uuid
+        returning id
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                query,
+                (
+                    stripe_product_id,
+                    active_stripe_price_id,
+                    course_id,
+                ),
+            )
             row = await cur.fetchone()
             await conn.commit()
     if row is None:

@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping, Sequence
 
+import stripe
 from fastapi import HTTPException, status
+from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
+from .. import stripe_mode
 from ..media_control_plane.services.media_resolver_service import (
     LessonMediaPlaybackMode,
     media_resolver_service as canonical_media_resolver,
@@ -17,6 +20,7 @@ from . import lesson_playback_service
 from . import storage_service
 
 logger = logging.getLogger(__name__)
+_CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
 
 _HOME_AUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
@@ -60,6 +64,76 @@ def _validate_course_drip_configuration(
 def _reject_legacy_cover_url_write(payload: Mapping[str, Any]) -> None:
     if "cover_url" in payload:
         raise ValueError("cover_url is deprecated")
+
+
+def _course_requires_stripe_mapping(course: Mapping[str, Any]) -> bool:
+    normalized_step = str(course.get("step") or "").strip().lower()
+    amount_cents = int(course.get("price_amount_cents") or 0)
+    return normalized_step in {"step1", "step2", "step3"} and amount_cents > 0
+
+
+def _require_stripe_for_course_mapping() -> None:
+    try:
+        context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise RuntimeError(str(exc)) from exc
+    stripe.api_key = context.secret_key
+
+
+async def _stripe_create_course_product(
+    course: Mapping[str, Any],
+    *,
+    teacher_id: str,
+) -> str:
+    course_id = str(course.get("id") or "").strip()
+    title = str(course.get("title") or "").strip() or "Course"
+
+    try:
+        product = await run_in_threadpool(
+            lambda: stripe.Product.create(
+                name=title,
+                metadata={
+                    "course_id": course_id,
+                    "teacher_id": teacher_id,
+                    "type": "course",
+                },
+            )
+        )
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise RuntimeError("Failed to create Stripe product for course") from exc
+
+    product_id = product.get("id")
+    if not isinstance(product_id, str) or not product_id.strip():
+        raise RuntimeError("Stripe did not return a course product id")
+    return product_id
+
+
+async def _stripe_create_course_price(*, product_id: str, amount_cents: int) -> str:
+    try:
+        price = await run_in_threadpool(
+            lambda: stripe.Price.create(
+                product=product_id,
+                unit_amount=amount_cents,
+                currency=_CANONICAL_COURSE_STRIPE_CURRENCY,
+            )
+        )
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise RuntimeError("Failed to create Stripe price for course") from exc
+
+    price_id = price.get("id")
+    if not isinstance(price_id, str) or not price_id.strip():
+        raise RuntimeError("Stripe did not return a course price id")
+    return price_id
+
+
+async def _stripe_retrieve_price(price_id: str) -> Mapping[str, Any]:
+    try:
+        price = await run_in_threadpool(lambda: stripe.Price.retrieve(price_id))
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise RuntimeError("Failed to load Stripe price for course") from exc
+    if not isinstance(price, Mapping):
+        raise RuntimeError("Stripe returned an invalid course price payload")
+    return price
 
 
 async def fetch_course(
@@ -684,11 +758,19 @@ async def create_course(
         drip_interval_days=payload["drip_interval_days"],
     )
     create_payload = dict(payload)
-    create_payload.pop("created_by", None)
     create_payload.pop("teacher_id", None)
     create_payload["teacher_id"] = normalized_teacher_id
     row = await courses_repo.create_course(create_payload)
-    return dict(row)
+    course = dict(row)
+    try:
+        ensured = await ensure_course_stripe_mapping(
+            str(course["id"]),
+            normalized_teacher_id,
+        )
+    except RuntimeError:
+        await courses_repo.delete_course(str(course["id"]))
+        raise
+    return dict(ensured)
 
 
 async def update_course(
@@ -708,7 +790,6 @@ async def update_course(
         raise PermissionError("Not course owner")
 
     patch = dict(patch)
-    patch.pop("created_by", None)
     patch.pop("teacher_id", None)
     drip_enabled = (
         patch["drip_enabled"]
@@ -725,12 +806,108 @@ async def update_course(
         drip_interval_days=drip_interval_days,
     )
 
+    previous_values = {
+        key: existing_course[key]
+        for key in patch.keys()
+        if key in existing_course
+    }
     row = await courses_repo.update_course(course_id, patch)
-    return dict(row) if row else None
+    if row is None:
+        return None
+    course = dict(row)
+
+    should_refresh_mapping = bool(
+        {"price_amount_cents", "step"} & set(patch.keys())
+    )
+    if not should_refresh_mapping:
+        return course
+
+    try:
+        ensured = await ensure_course_stripe_mapping(course_id, normalized_teacher_id)
+    except RuntimeError:
+        if previous_values:
+            await courses_repo.update_course(course_id, previous_values)
+        raise
+    return dict(ensured)
 
 
 async def delete_course(course_id: str) -> bool:
     return await courses_repo.delete_course(course_id)
+
+
+async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[str, Any]:
+    normalized_course_id = str(course_id or "").strip()
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_course_id:
+        raise ValueError("course_id is required")
+    if not normalized_teacher_id:
+        raise PermissionError("Course owner required")
+    if not await courses_repo.is_course_owner(normalized_course_id, normalized_teacher_id):
+        raise PermissionError("Not course owner")
+
+    course = await courses_repo.get_course(course_id=normalized_course_id)
+    if course is None:
+        raise LookupError("course not found")
+    if not _course_requires_stripe_mapping(course):
+        return dict(course)
+
+    _require_stripe_for_course_mapping()
+
+    amount_cents = int(course.get("price_amount_cents") or 0)
+    product_id = str(course.get("stripe_product_id") or "").strip() or None
+    active_price_id = str(course.get("active_stripe_price_id") or "").strip() or None
+
+    if active_price_id and not product_id:
+        raise RuntimeError("Course Stripe mapping is incomplete")
+
+    if product_id is None:
+        product_id = await _stripe_create_course_product(
+            course,
+            teacher_id=normalized_teacher_id,
+        )
+
+    desired_price_id = active_price_id
+    if active_price_id:
+        price = await _stripe_retrieve_price(active_price_id)
+        mapped_product_id = str(price.get("product") or "").strip()
+        if mapped_product_id != product_id:
+            raise RuntimeError("Course Stripe mapping is inconsistent")
+
+        unit_amount = price.get("unit_amount")
+        currency = str(price.get("currency") or "").strip().lower()
+        is_active = bool(price.get("active", True))
+        if (
+            not is_active
+            or unit_amount != amount_cents
+            or currency != _CANONICAL_COURSE_STRIPE_CURRENCY
+        ):
+            desired_price_id = await _stripe_create_course_price(
+                product_id=product_id,
+                amount_cents=amount_cents,
+            )
+    else:
+        desired_price_id = await _stripe_create_course_price(
+            product_id=product_id,
+            amount_cents=amount_cents,
+        )
+
+    if desired_price_id is None:
+        raise RuntimeError("Course Stripe price mapping could not be resolved")
+
+    if (
+        str(course.get("stripe_product_id") or "").strip() == product_id
+        and str(course.get("active_stripe_price_id") or "").strip() == desired_price_id
+    ):
+        return dict(course)
+
+    updated = await courses_repo.update_course_stripe_mapping(
+        normalized_course_id,
+        stripe_product_id=product_id,
+        active_stripe_price_id=desired_price_id,
+    )
+    if updated is None:
+        raise RuntimeError("Course Stripe mapping could not be persisted")
+    return dict(updated)
 
 
 async def create_lesson(

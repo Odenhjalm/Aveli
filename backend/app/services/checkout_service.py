@@ -10,7 +10,6 @@ from .. import models, repositories, schemas
 from ..config import settings
 from .. import stripe_mode
 from ..repositories import courses as courses_repo
-from . import courses_service
 from . import stripe_customers as stripe_customers_service
 
 RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
@@ -78,16 +77,15 @@ async def create_course_checkout(
         )
     currency = "sek"
 
-    try:
-        ensured_course = await courses_service.ensure_course_stripe_assets(course)
-    except RuntimeError as exc:
+    product_id = course.get("stripe_product_id")
+    if not isinstance(product_id, str) or not product_id.strip():
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="course has no Stripe product configured",
+        )
 
-    price_id = ensured_course.get("stripe_price_id")
-    if not isinstance(price_id, str):
+    price_id = course.get("active_stripe_price_id")
+    if not isinstance(price_id, str) or not price_id.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="course has no Stripe price configured",
@@ -108,13 +106,13 @@ async def create_course_checkout(
             detail="user id missing",
         )
     user_id = str(user_id_value)
-    course_id_value = ensured_course.get("id")
+    course_id_value = course.get("id")
     if not course_id_value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="course is missing id",
         )
-    course_slug = str(ensured_course.get("slug") or slug)
+    course_slug = str(course.get("slug") or slug)
     metadata: dict[str, Any] = {
         "user_id": user_id,
         "course_slug": course_slug,
@@ -139,23 +137,7 @@ async def create_course_checkout(
     metadata["order_id"] = str(order["id"])
 
     success_url, cancel_url = _default_checkout_urls()
-    line_items: list[dict[str, Any]]
-    override_amount = (
-        settings.checkout_success_url or ""
-    ).startswith("http://localhost")
-    if override_amount:
-        line_items = [
-            {
-                "price_data": {
-                    "currency": currency,
-                    "product_data": {"name": ensured_course.get("title") or slug},
-                    "unit_amount": amount_cents,
-                },
-                "quantity": 1,
-            }
-        ]
-    else:
-        line_items = [{"price": price_id, "quantity": 1}]
+    line_items = [{"price": price_id, "quantity": 1}]
 
     checkout_kwargs: dict[str, Any] = {
         "mode": "payment",
