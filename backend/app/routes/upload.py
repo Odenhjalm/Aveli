@@ -67,6 +67,9 @@ router = APIRouter(prefix="/api/upload", tags=["upload"])
 files_router = APIRouter(prefix="/api/files", tags=["files"])
 legacy_router = APIRouter(prefix="/upload", tags=["upload"])
 
+# UWD-001 non-canonical write isolation: these upload routers are not mounted by
+# app.main and their write helpers remain legacy drift, not canonical media authority.
+
 _ALLOWED_MEDIA_PREFIXES = {
     UploadMediaType.image: ("image/",),
     UploadMediaType.audio: ("audio/",),

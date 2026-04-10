@@ -3,12 +3,25 @@ import uuid
 import pytest
 
 from app import db
+from app.repositories import courses as courses_repo
 
 pytestmark = pytest.mark.anyio("asyncio")
 
 
 def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def studio_course_payload(title: str, slug: str) -> dict[str, object]:
+    return {
+        "title": title,
+        "slug": slug,
+        "course_group_id": str(uuid.uuid4()),
+        "step": "intro",
+        "price_amount_cents": None,
+        "drip_enabled": False,
+        "drip_interval_days": None,
+    }
 
 
 async def register_teacher(async_client):
@@ -67,29 +80,33 @@ async def test_studio_lesson_newline_persists_in_storage(async_client):
         slug = f"course-{uuid.uuid4().hex[:8]}"
         resp = await async_client.post(
             "/studio/courses",
-            json={"title": "Course", "slug": slug},
+            json=studio_course_payload("Course", slug),
             headers=auth_header(token),
         )
         assert resp.status_code == 200, resp.text
         course_id = str(resp.json()["id"])
 
         resp = await async_client.post(
-            "/studio/lessons",
+            f"/studio/courses/{course_id}/lessons",
             json={
-                "course_id": course_id,
-                "title": "Lesson 1",
-                "content_markdown": "Hello world\n\nThis is a lesson\n\n",
+                "lesson_title": "Lesson 1",
                 "position": 1,
-                "is_intro": True,
             },
             headers=auth_header(token),
         )
         assert resp.status_code == 200, resp.text
         lesson_id = str(resp.json()["id"])
 
+        resp = await async_client.patch(
+            f"/studio/lessons/{lesson_id}/content",
+            json={"content_markdown": "Hello world\n\nThis is a lesson\n\n"},
+            headers=auth_header(token),
+        )
+        assert resp.status_code == 200, resp.text
+
         edited_markdown = "Hello world\n\n\n\nThis is a lesson\n\n"
         resp = await async_client.patch(
-            f"/studio/lessons/{lesson_id}",
+            f"/studio/lessons/{lesson_id}/content",
             json={"content_markdown": edited_markdown},
             headers=auth_header(token),
         )
@@ -104,6 +121,10 @@ async def test_studio_lesson_newline_persists_in_storage(async_client):
         lesson = next(
             item for item in resp.json()["items"] if str(item["id"]) == lesson_id
         )
-        assert lesson["content_markdown"] == edited_markdown
+        assert "content_markdown" not in lesson
+
+        stored = await courses_repo.get_lesson(lesson_id)
+        assert stored is not None
+        assert stored["content_markdown"] == edited_markdown
     finally:
         await cleanup_user(user_id)

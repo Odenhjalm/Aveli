@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/media", tags=["media"])
 debug_router = APIRouter(prefix="/debug", tags=["debug"])
 
+# UWD-001 non-canonical write isolation: this router is not mounted by app.main and
+# its write routes are legacy drift, not canonical lesson-media pipeline authority.
+
 _MIN_MEDIA_BYTES = 5 * 1024 * 1024 * 1024
 _MP3_MIME_TYPES = {"audio/mpeg", "audio/mp3"}
 _AUDIO_SOURCE_MIME_TYPES_BY_EXT = {

@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 
@@ -135,37 +134,81 @@ class StudioRepository {
     required String contentMarkdown,
     int position = 0,
   }) async {
-    if (id == null) {
-      final body = <String, Object?>{
-        'course_id': courseId,
-        'lesson_title': lessonTitle,
-        'content_markdown': contentMarkdown,
-        'position': position,
-        if (createId != null && createId.isNotEmpty) 'id': createId,
-      };
-      final response = await _client.raw.post<Object?>(
-        '/studio/lessons',
-        data: body,
-      );
-      return LessonStudio.fromResponse(
-        response.data,
-        label: 'Created studio lesson',
-      );
-    } else {
-      final body = <String, Object?>{
-        'lesson_title': lessonTitle,
-        'content_markdown': contentMarkdown,
-        'position': position,
-      };
-      final response = await _client.raw.patch<Object?>(
-        '/studio/lessons/$id',
-        data: body,
-      );
-      return LessonStudio.fromResponse(
-        response.data,
-        label: 'Updated studio lesson',
-      );
+    final structure = id == null
+        ? await createLessonStructure(
+            courseId: courseId,
+            lessonTitle: lessonTitle,
+            position: position,
+          )
+        : await updateLessonStructure(
+            id,
+            lessonTitle: lessonTitle,
+            position: position,
+          );
+    final normalizedContent = await updateLessonContent(
+      structure.id,
+      contentMarkdown: contentMarkdown,
+    );
+    return structure.copyWith(contentMarkdown: normalizedContent);
+  }
+
+  Future<LessonStudio> createLessonStructure({
+    required String courseId,
+    required String lessonTitle,
+    int position = 0,
+  }) async {
+    final body = <String, Object?>{
+      'lesson_title': lessonTitle,
+      'position': position,
+    };
+    final response = await _client.raw.post<Object?>(
+      '/studio/courses/$courseId/lessons',
+      data: body,
+    );
+    return LessonStudio.fromResponse(
+      response.data,
+      label: 'Created studio lesson structure',
+    );
+  }
+
+  Future<LessonStudio> updateLessonStructure(
+    String id, {
+    required String lessonTitle,
+    int position = 0,
+  }) async {
+    final body = <String, Object?>{
+      'lesson_title': lessonTitle,
+      'position': position,
+    };
+    final response = await _client.raw.patch<Object?>(
+      '/studio/lessons/$id/structure',
+      data: body,
+    );
+    return LessonStudio.fromResponse(
+      response.data,
+      label: 'Updated studio lesson structure',
+    );
+  }
+
+  Future<String> updateLessonContent(
+    String id, {
+    required String contentMarkdown,
+  }) async {
+    final response = await _client.raw.patch<Object?>(
+      '/studio/lessons/$id/content',
+      data: {'content_markdown': contentMarkdown},
+    );
+    final content = _requiredResponseField(
+      response.data,
+      'content_markdown',
+      'Updated studio lesson content',
+    );
+    if (content is String) {
+      return content;
     }
+    throw StateError(
+      'Updated studio lesson content field "content_markdown" must be a string',
+    );
   }
 
   Future<void> deleteLesson(String lessonId) async {

@@ -42,6 +42,7 @@ from . import upload as upload_routes
 router = APIRouter(prefix="/studio", tags=["studio"])
 course_lesson_router = APIRouter(prefix="/studio", tags=["studio"])
 lesson_media_router = APIRouter(prefix="/api/lesson-media", tags=["media"])
+media_pipeline_router = APIRouter(prefix="/api", tags=["media"])
 logger = logging.getLogger(__name__)
 _LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
     "1",
@@ -188,6 +189,113 @@ def _studio_passthrough_ingest_format(
         status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
         detail="Unsupported media type",
     )
+
+
+def _canonical_lesson_media_asset_scope(
+    media_asset: dict[str, Any],
+) -> tuple[str, str, str | None]:
+    purpose = str(media_asset.get("purpose") or "").strip().lower()
+    if purpose != "lesson_media":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only lesson media assets can use the lesson-media pipeline",
+        )
+
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    if media_type not in {"audio", "image", "video", "document"}:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported media type",
+        )
+
+    object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
+    parts = Path(object_path).parts
+    if media_type == "audio":
+        if (
+            len(parts) < 8
+            or parts[:4] != ("media", "source", "audio", "courses")
+            or parts[5] != "lessons"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Lesson audio must use the canonical pipeline source path",
+            )
+        return media_type, parts[6], parts[4]
+
+    if media_type == "image":
+        if len(parts) < 4 or parts[0] != "lessons" or parts[2] != "images":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Lesson image must use the canonical public image path",
+            )
+        return media_type, parts[1], None
+
+    expected_folder = "documents" if media_type == "document" else media_type
+    if (
+        len(parts) < 6
+        or parts[0] != "courses"
+        or parts[2] != "lessons"
+        or parts[4] != expected_folder
+    ):
+        detail = {
+            "video": "Lesson video must use the canonical private lesson path",
+            "document": "Lesson document must use the canonical private lesson path",
+        }[media_type]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
+        )
+    return media_type, parts[3], parts[1]
+
+
+async def _require_canonical_lesson_media_authoring_context(
+    *,
+    lesson_id: str,
+    current: TeacherUser,
+) -> str:
+    await _require_studio_lesson(lesson_id)
+    _, course_id = await courses_service.lesson_course_ids(lesson_id)
+    if not course_id or not await models.is_course_owner(current["id"], course_id):
+        _log_course_owner_denied(
+            str(current["id"]),
+            course_id=course_id,
+            lesson_id=lesson_id,
+        )
+        raise HTTPException(status_code=403, detail="Not course owner")
+    return str(course_id)
+
+
+async def _authorize_canonical_lesson_media_asset(
+    *,
+    media_asset_id: str,
+    current: TeacherUser,
+    expected_lesson_id: str | None = None,
+) -> dict[str, Any]:
+    media_asset = await media_assets_repo.get_lesson_media_pipeline_asset(
+        media_asset_id
+    )
+    if not media_asset:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+
+    _, asset_lesson_id, asset_course_id = _canonical_lesson_media_asset_scope(
+        media_asset
+    )
+    if expected_lesson_id is not None and asset_lesson_id != expected_lesson_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset is bound to a different lesson",
+        )
+
+    course_id = await _require_canonical_lesson_media_authoring_context(
+        lesson_id=asset_lesson_id,
+        current=current,
+    )
+    if asset_course_id is not None and asset_course_id != course_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset is bound to a different course",
+        )
+    return media_asset
 
 
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
@@ -492,26 +600,29 @@ async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUse
     return _course_response(row)
 
 
-@lesson_media_router.post(
-    "/{lesson_id}/upload-url",
-    response_model=schemas.StudioLessonMediaUploadUrlResponse,
+@media_pipeline_router.post(
+    "/lessons/{lesson_id}/media-assets/upload-url",
+    response_model=schemas.CanonicalLessonMediaUploadUrlResponse,
 )
-async def studio_issue_lesson_media_upload_url(
+async def canonical_issue_lesson_media_upload_url(
     lesson_id: UUID,
-    payload: schemas.StudioLessonMediaUploadUrlRequest,
+    payload: schemas.CanonicalLessonMediaUploadUrlRequest,
     current: TeacherUser,
 ):
-    del current
-    lesson = await _require_studio_lesson(str(lesson_id))
+    lesson_id_str = str(lesson_id)
+    course_id = await _require_canonical_lesson_media_authoring_context(
+        lesson_id=lesson_id_str,
+        current=current,
+    )
     if payload.size_bytes > _MAX_MEDIA_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="File too large",
         )
 
-    course_id = str(lesson["course_id"])
     normalized_media_type = _normalize_studio_media_type(payload.media_type)
     exact_mime_type = _require_studio_mime_type(payload.mime_type)
+    storage_client = storage_service.storage_service
     if normalized_media_type == "audio":
         ingest_format = _studio_audio_ingest_format(
             filename=payload.filename,
@@ -519,7 +630,7 @@ async def studio_issue_lesson_media_upload_url(
         )
         object_path = upload_routes.media_paths.build_lesson_audio_source_object_path(
             course_id,
-            str(lesson_id),
+            lesson_id_str,
             payload.filename,
         )
     else:
@@ -530,13 +641,15 @@ async def studio_issue_lesson_media_upload_url(
         )
         object_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
             course_id=course_id,
-            lesson_id=str(lesson_id),
+            lesson_id=lesson_id_str,
             media_kind=normalized_media_type,
             filename=payload.filename,
         )
+        if normalized_media_type == "image":
+            storage_client = storage_service.public_storage_service
 
     try:
-        upload = await storage_service.storage_service.create_upload_url(
+        upload = await storage_client.create_upload_url(
             object_path,
             content_type=exact_mime_type,
             upsert=False,
@@ -549,84 +662,133 @@ async def studio_issue_lesson_media_upload_url(
         ) from exc
 
     media_asset_id = str(uuid4())
-    lesson_media_row = None
-    try:
-        await media_assets_repo.create_media_asset(
-            media_asset_id=media_asset_id,
-            media_type=normalized_media_type,
-            purpose="lesson_media",
-            original_object_path=upload.path,
-            ingest_format=ingest_format,
-            state="pending_upload",
-        )
-        lesson_media_row = await courses_repo.create_lesson_media(
-            lesson_id=str(lesson_id),
-            media_asset_id=media_asset_id,
-        )
-    except Exception:
-        if lesson_media_row is None:
-            await media_assets_repo.delete_media_asset(media_asset_id)
-        raise
-
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
-    return schemas.StudioLessonMediaUploadUrlResponse(
-        lesson_media_id=UUID(str(lesson_media_row["lesson_media_id"])),
-        lesson_id=UUID(str(lesson_id)),
+    media_asset = await media_assets_repo.create_media_asset(
+        media_asset_id=media_asset_id,
         media_type=normalized_media_type,
+        purpose="lesson_media",
+        original_object_path=upload.path,
+        ingest_format=ingest_format,
         state="pending_upload",
-        position=int(lesson_media_row["position"]),
+    )
+    return schemas.CanonicalLessonMediaUploadUrlResponse(
+        media_asset_id=UUID(str(media_asset["id"])),
+        asset_state="pending_upload",
         upload_url=upload.url,
         headers=dict(upload.headers),
-        expires_at=expires_at,
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in),
     )
 
 
-@lesson_media_router.post(
-    "/{lesson_id}/{lesson_media_id}/complete",
-    response_model=schemas.StudioLessonMediaItem,
+@media_pipeline_router.post(
+    "/media-assets/{media_asset_id}/upload-completion",
+    response_model=schemas.CanonicalMediaAssetUploadCompletionResponse,
 )
-async def studio_complete_lesson_media_upload(
-    lesson_id: UUID,
-    lesson_media_id: UUID,
-    payload: schemas.StudioLessonMediaCompleteRequest,
+async def canonical_complete_lesson_media_upload(
+    media_asset_id: UUID,
+    payload: schemas.CanonicalMediaAssetUploadCompletionRequest,
     current: TeacherUser,
 ):
     del payload
-    await _require_studio_lesson(str(lesson_id))
-    row = await courses_repo.get_lesson_media_for_studio(
-        str(lesson_id),
-        str(lesson_media_id),
+    media_asset_id_str = str(media_asset_id)
+    await _authorize_canonical_lesson_media_asset(
+        media_asset_id=media_asset_id_str,
+        current=current,
     )
-    if not row:
-        raise HTTPException(status_code=404, detail="Lesson media not found")
-
-    media_asset = await media_assets_repo.get_media_asset(str(row["media_asset_id"]))
-    if not media_asset:
-        raise HTTPException(status_code=404, detail="Media asset not found")
-
-    original_object_path = str(media_asset.get("original_object_path") or "").strip()
-    if not original_object_path:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Media asset is missing upload storage",
-        )
-
-    updated = await media_assets_repo.update_media_asset_state(
-        str(row["media_asset_id"]),
-        state="uploaded",
+    updated = await media_assets_repo.mark_lesson_media_pipeline_asset_uploaded(
+        media_id=media_asset_id_str,
     )
     if not updated:
-        raise HTTPException(status_code=404, detail="Media asset not found")
-
-    refreshed = await courses_repo.get_lesson_media_for_studio(
-        str(lesson_id),
-        str(lesson_media_id),
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset cannot be marked uploaded from its current state",
+        )
+    return schemas.CanonicalMediaAssetUploadCompletionResponse(
+        media_asset_id=media_asset_id,
+        asset_state="uploaded",
     )
-    if not refreshed:
+
+
+@media_pipeline_router.post(
+    "/lessons/{lesson_id}/media-placements",
+    response_model=schemas.CanonicalLessonMediaPlacementResponse,
+)
+async def canonical_create_lesson_media_placement(
+    lesson_id: UUID,
+    payload: schemas.CanonicalLessonMediaPlacementCreate,
+    current: TeacherUser,
+):
+    lesson_id_str = str(lesson_id)
+    await _require_canonical_lesson_media_authoring_context(
+        lesson_id=lesson_id_str,
+        current=current,
+    )
+    media_asset_id = str(payload.media_asset_id)
+    media_asset = await _authorize_canonical_lesson_media_asset(
+        media_asset_id=media_asset_id,
+        current=current,
+        expected_lesson_id=lesson_id_str,
+    )
+    asset_state = str(media_asset.get("state") or "").strip().lower()
+    if asset_state in {"pending_upload", "failed"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset cannot be placed from its current state",
+        )
+    if asset_state not in {"uploaded", "processing", "ready"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset has an unsupported lifecycle state",
+        )
+    if await courses_repo.lesson_media_asset_is_linked(media_asset_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset is already attached to lesson media",
+        )
+
+    row = await courses_repo.create_lesson_media(
+        lesson_id=lesson_id_str,
+        media_asset_id=media_asset_id,
+    )
+    return schemas.CanonicalLessonMediaPlacementResponse(
+        lesson_media_id=UUID(str(row["lesson_media_id"])),
+        lesson_id=lesson_id,
+        media_asset_id=payload.media_asset_id,
+        position=int(row["position"]),
+        media_type=str(row["media_type"]),
+        asset_state=str(row["state"]),
+    )
+
+
+@media_pipeline_router.get(
+    "/media-placements/{lesson_media_id}",
+    response_model=schemas.CanonicalMediaPlacementReadResponse,
+)
+async def canonical_get_lesson_media_placement(
+    lesson_media_id: UUID,
+    current: TeacherUser,
+):
+    row = await courses_repo.get_lesson_media_by_id_for_studio(str(lesson_media_id))
+    if not row:
         raise HTTPException(status_code=404, detail="Lesson media not found")
-    return await _studio_lesson_media_item_from_row(
-        row=dict(refreshed),
+    lesson_id = str(row["lesson_id"])
+    await _require_canonical_lesson_media_authoring_context(
+        lesson_id=lesson_id,
+        current=current,
+    )
+    media = await _compose_studio_media(
+        lesson_media_id=str(lesson_media_id),
+        media_asset_id=str(row.get("media_asset_id") or "").strip() or None,
+        media_state=str(row.get("state") or "").strip(),
         user_id=str(current["id"]),
+    )
+    return schemas.CanonicalMediaPlacementReadResponse(
+        lesson_media_id=lesson_media_id,
+        lesson_id=UUID(lesson_id),
+        media_asset_id=UUID(str(row["media_asset_id"])),
+        position=int(row["position"]),
+        media_type=str(row["media_type"]),
+        asset_state=str(row["state"]),
+        media=media,
     )
 
 
@@ -745,6 +907,8 @@ async def studio_request_lesson_media_previews(
     return schemas.MediaPreviewBatchResponse(items=ordered_items)
 
 
+# UWD-001 non-canonical write isolation: this mounted lesson-media ordering write
+# is an implementation surface, not canonical ingest or placement-attach authority.
 @lesson_media_router.patch("/{lesson_id}/reorder")
 async def studio_reorder_lesson_media(
     lesson_id: UUID,
@@ -768,6 +932,8 @@ async def studio_reorder_lesson_media(
     return {"ok": True}
 
 
+# UWD-001 non-canonical write isolation: these mounted studio lesson-media writes are
+# legacy implementation surfaces and must not be treated as canonical media-pipeline authority.
 @lesson_media_router.delete("/{lesson_id}/{lesson_media_id}")
 async def studio_delete_lesson_media(
     lesson_id: UUID,
@@ -787,125 +953,6 @@ async def studio_delete_lesson_media(
     if media_asset_id and not await courses_repo.lesson_media_asset_is_linked(media_asset_id):
         await media_assets_repo.delete_media_asset(media_asset_id)
     return {"deleted": True}
-
-
-@router.post("/lessons/{lesson_id}/media/presign")
-async def presign_lesson_media_upload(
-    lesson_id: UUID,
-    payload: schemas.LessonMediaPresignRequest,
-    current: TeacherUser,
-):
-    upload_routes._raise_legacy_lesson_upload_disabled()
-
-    # Ensure lesson exists and current user owns the course.
-    lesson_id_str = str(lesson_id)
-    lesson = await courses_service.fetch_studio_lesson(lesson_id_str)
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]), course_id=course_id, lesson_id=lesson_id_str
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-
-    detected_kind = _detect_kind(
-        payload.content_type or mimetypes.guess_type(payload.filename or "")[0]
-    )
-    if (
-        detected_kind == "audio"
-        or (payload.media_type or "").strip().lower() == "audio"
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Audio uploads must use the media pipeline",
-        )
-
-    bucket = "course-media"
-    safe_name = Path(payload.filename or "").name.strip() or "media"
-    path = upload_routes.media_paths.validate_new_upload_object_path(
-        f"lessons/{lesson_id}/{safe_name}"
-    )
-    upload = await storage_service.storage_service.create_upload_url(
-        path,
-        content_type=payload.content_type,
-        upsert=True,
-        cache_seconds=settings.media_public_cache_seconds,
-    )
-    return {
-        "method": "PUT",
-        "url": upload.url,
-        "headers": upload.headers,
-        "storage_bucket": bucket,
-        "storage_path": upload.path,
-        "expires_in": upload.expires_in,
-    }
-
-
-@router.post("/lessons/{lesson_id}/media/complete")
-async def complete_lesson_media_upload(
-    request: Request,
-    lesson_id: UUID,
-    payload: schemas.LessonMediaUploadCompleteRequest,
-    current: TeacherUser,
-):
-    upload_routes._raise_legacy_lesson_upload_disabled()
-
-    # Ensure lesson exists and current user owns the course.
-    lesson_id_str = str(lesson_id)
-    lesson = await courses_service.fetch_studio_lesson(lesson_id_str)
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]), course_id=course_id, lesson_id=lesson_id_str
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-
-    kind = _detect_kind(payload.content_type)
-    if kind not in {"image", "video", "audio", "document", "pdf"}:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported media type",
-        )
-    if kind == "audio":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Audio uploads must use the media pipeline",
-        )
-    expected_bucket = "course-media"
-    if payload.storage_bucket != expected_bucket:
-        raise HTTPException(
-            status_code=400,
-            detail={"storage_bucket": "must equal course-media"},
-        )
-
-    if payload.byte_size <= 0:
-        raise HTTPException(status_code=422, detail="byte_size must be greater than 0")
-
-    original_name = (payload.original_name or "").strip() or Path(
-        payload.storage_path
-    ).name
-    row = await upload_routes._persist_lesson_media(
-        owner_id=str(current["id"]),
-        lesson_id=str(lesson_id),
-        storage_path=payload.storage_path,
-        original_name=original_name,
-        content_type=payload.content_type,
-        size=payload.byte_size,
-        checksum=payload.checksum,
-        storage_bucket=payload.storage_bucket,
-        course_id=str(course_id),
-    )
-    row["content_type"] = payload.content_type
-    row["byte_size"] = payload.byte_size
-    row["original_name"] = original_name
-    if kind in {"document", "pdf"}:
-        row["media_state"] = "ready"
-    media_signer.attach_media_links(row)
-    absolutize_media_urls(row, base_url=str(request.base_url))
-    return row
 
 
 @router.get("/lessons/{lesson_id}/media")
@@ -1632,6 +1679,32 @@ async def course_lessons(course_id: str, current: TeacherUser):
     )
 
 
+@course_lesson_router.post(
+    "/courses/{course_id}/lessons",
+    response_model=schemas.StudioLessonStructure,
+)
+async def create_lesson_structure(
+    course_id: str,
+    payload: schemas.StudioLessonStructureCreate,
+    current: TeacherUser,
+):
+    del current
+    course = await courses_service.fetch_course(course_id=course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    try:
+        row = await courses_service.create_lesson_structure(
+            course_id,
+            lesson_title=payload.lesson_title,
+            position=payload.position,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=400, detail="Failed to create lesson structure")
+    return schemas.StudioLessonStructure(**row)
+
+
 @course_lesson_router.patch("/courses/{course_id}/lessons/reorder")
 async def reorder_course_lessons(
     course_id: str,
@@ -1690,79 +1763,46 @@ async def reorder_course_lessons(
     return {"ok": True}
 
 
-@course_lesson_router.post("/lessons", response_model=schemas.StudioLesson)
-async def create_lesson(
-    payload: schemas.StudioLessonCreate,
-    current: TeacherUser,
-):
-    del current
-    course_id = str(payload.course_id)
-    course = await courses_service.fetch_course(course_id=course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    lesson_id = str(payload.id) if payload.id else None
-    try:
-        row = await courses_service.create_lesson(
-            course_id,
-            lesson_title=payload.lesson_title,
-            content_markdown=payload.content_markdown,
-            position=payload.position,
-            lesson_id=lesson_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if not row:
-        raise HTTPException(status_code=400, detail="Failed to create lesson")
-    return schemas.StudioLesson(**row)
-
-
-@course_lesson_router.patch("/lessons/{lesson_id}", response_model=schemas.StudioLesson)
-async def update_lesson(
+@course_lesson_router.patch(
+    "/lessons/{lesson_id}/structure",
+    response_model=schemas.StudioLessonStructure,
+)
+async def update_lesson_structure(
     lesson_id: str,
-    payload: schemas.StudioLessonUpdate,
+    payload: schemas.StudioLessonStructureUpdate,
     current: TeacherUser,
 ):
     del current
-    existing = await courses_service.fetch_studio_lesson(lesson_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Lesson not found")
     patch = payload.model_dump(exclude_unset=True)
-
-    if _LESSON_EDITOR_TRACE:
-        incoming = patch.get("content_markdown")
-        stored_before = existing.get("content_markdown")
-        incoming_str = incoming if isinstance(incoming, str) else None
-        stored_str = stored_before if isinstance(stored_before, str) else None
-        logger.info(
-            "[LessonTrace] update_lesson.before lesson_id=%s incoming_len=%s stored_len=%s "
-            "equal=%s incoming=%s stored=%s",
-            lesson_id,
-            0 if incoming_str is None else len(incoming_str),
-            0 if stored_str is None else len(stored_str),
-            incoming_str == stored_str,
-            _visible_lesson_text(incoming_str),
-            _visible_lesson_text(stored_str),
-        )
-
-    lesson_payload = {"id": lesson_id, **patch}
     try:
-        row = await courses_service.upsert_lesson(str(existing["course_id"]), lesson_payload)
+        row = await courses_service.update_lesson_structure(lesson_id, patch)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
-        raise HTTPException(status_code=400, detail="Failed to update lesson")
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    return schemas.StudioLessonStructure(**row)
 
-    if _LESSON_EDITOR_TRACE:
-        stored_after = row.get("content_markdown")
-        stored_after_str = stored_after if isinstance(stored_after, str) else None
-        logger.info(
-            "[LessonTrace] update_lesson.after lesson_id=%s stored_len=%s stored=%s",
+
+@course_lesson_router.patch(
+    "/lessons/{lesson_id}/content",
+    response_model=schemas.StudioLessonContent,
+)
+async def update_lesson_content(
+    lesson_id: str,
+    payload: schemas.StudioLessonContentUpdate,
+    current: TeacherUser,
+):
+    del current
+    try:
+        row = await courses_service.update_lesson_content(
             lesson_id,
-            0 if stored_after_str is None else len(stored_after_str),
-            _visible_lesson_text(stored_after_str),
+            content_markdown=payload.content_markdown,
         )
-
-    return schemas.StudioLesson(**row)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    return schemas.StudioLessonContent(**row)
 
 
 @course_lesson_router.delete("/lessons/{lesson_id}")
@@ -1772,186 +1812,6 @@ async def delete_lesson(lesson_id: str, current: TeacherUser):
     if not deleted:
         raise HTTPException(status_code=404, detail="Lesson not found")
     return {"deleted": True}
-
-
-@router.post("/lessons/{lesson_id}/media")
-async def upload_media(
-    lesson_id: str,
-    current: TeacherUser,
-    file: UploadFile = File(...),
-):
-    upload_routes._raise_legacy_lesson_upload_disabled()
-
-    owner = current["id"]
-    owner_id = str(owner)
-    _, course_id = await courses_service.lesson_course_ids(lesson_id)
-    if not course_id or not await models.is_course_owner(owner, course_id):
-        _log_course_owner_denied(
-            owner_id,
-            course_id=str(course_id) if course_id else None,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-
-    lesson_row = await courses_service.fetch_studio_lesson(lesson_id)
-    if not lesson_row:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    storage_bucket = upload_routes._COURSE_MEDIA_BUCKET
-
-    course_id_str = str(course_id)
-    lesson_id_str = str(lesson_id)
-    allowed_prefixes = upload_routes._LESSON_ALLOWED_PREFIXES + tuple(
-        upload_routes._LESSON_ALLOWED_EXACT_TYPES
-    )
-    detected_kind = upload_routes._detect_kind(
-        file.content_type or mimetypes.guess_type(file.filename or "")[0]
-    )
-    if detected_kind == "audio":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Audio uploads must use the media pipeline",
-        )
-    if detected_kind in {"image", "video", "audio", "document", "pdf"}:
-        if detected_kind == "image":
-            storage_path = (
-                upload_routes.media_paths.build_lesson_passthrough_object_path(
-                    course_id=course_id_str,
-                    lesson_id=lesson_id_str,
-                    media_kind=detected_kind,
-                    filename=file.filename or "media",
-                )
-            )
-        else:
-            storage_path = (
-                upload_routes.media_paths.build_lesson_passthrough_object_path(
-                    course_id=course_id_str,
-                    lesson_id=lesson_id_str,
-                    media_kind=detected_kind,
-                    filename=file.filename or "media",
-                )
-            )
-    else:
-        storage_path = (
-            Path("courses")
-            / course_id_str
-            / "lessons"
-            / lesson_id_str
-            / f"{uuid4().hex}_{Path(file.filename or 'media').name}"
-        ).as_posix()
-    relative_dir = Path(storage_bucket) / Path(storage_path).parent
-
-    destination_dir = upload_routes._safe_join(
-        upload_routes.UPLOADS_ROOT, *relative_dir.parts
-    )
-    write_result = await upload_routes._write_upload(
-        destination_dir,
-        file,
-        allowed_prefixes=allowed_prefixes,
-        max_bytes=_MAX_MEDIA_BYTES,
-    )
-    storage_relative_path = (
-        Path(storage_path).parent / write_result.filename
-    ).as_posix()
-    content_type = (
-        file.content_type
-        or mimetypes.guess_type(write_result.destination_path.name)[0]
-        or "application/octet-stream"
-    )
-
-    row = await upload_routes._persist_lesson_media(
-        owner_id=owner_id,
-        lesson_id=lesson_id,
-        storage_path=storage_relative_path,
-        original_name=file.filename,
-        content_type=content_type,
-        size=write_result.size,
-        checksum=write_result.checksum,
-        storage_bucket=storage_bucket,
-        course_id=course_id_str,
-    )
-
-    logger.info(
-        "Media stored: lesson_id=%s course_id=%s media_id=%s storage_path=%s bucket=%s size_bytes=%s",
-        lesson_id,
-        course_id,
-        row.get("id"),
-        row.get("storage_path"),
-        storage_bucket,
-        write_result.size,
-    )
-    return row
-
-
-@router.delete("/media/{media_id}")
-async def delete_media(media_id: str, current: TeacherUser):
-    row = await models.get_media(media_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Media not found")
-    media_asset_id = row.get("media_asset_id")
-    media_asset = (
-        await repositories.get_media_asset(str(media_asset_id))
-        if media_asset_id
-        else None
-    )
-    _, course_id = await courses_service.lesson_course_ids(row.get("lesson_id"))
-    if course_id and not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-            media_id=media_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    deleted_row = await models.delete_lesson_media_entry(media_id)
-
-    if media_asset and deleted_row and deleted_row.get("media_asset_deleted"):
-        delete_targets: set[tuple[str, str]] = set()
-        original_path = media_asset.get("original_object_path")
-        original_bucket = (
-            media_asset.get("storage_bucket") or settings.media_source_bucket
-        )
-        if original_path and original_bucket:
-            delete_targets.add((str(original_bucket), str(original_path)))
-            if (media_asset.get("media_type") or "").lower() == "audio":
-                normalized = str(original_path).lstrip("/")
-                prefix = "media/source/audio/"
-                if normalized.startswith(prefix):
-                    normalized = "media/derived/audio/" + normalized[len(prefix) :]
-                else:
-                    normalized = "media/derived/audio/" + normalized
-                derived_path = Path(normalized).with_suffix(".mp3").as_posix()
-                delete_targets.add((str(original_bucket), derived_path))
-
-        streaming_path = media_asset.get("streaming_object_path")
-        if streaming_path:
-            streaming_bucket = media_asset.get("streaming_storage_bucket")
-            if streaming_bucket:
-                delete_targets.add((str(streaming_bucket), str(streaming_path)))
-
-        for bucket, path in sorted(delete_targets):
-            try:
-                service = storage_service.get_storage_service(bucket)
-                await service.delete_object(path)
-            except storage_service.StorageServiceError as exc:
-                logger.warning(
-                    "Storage delete failed bucket=%s path=%s: %s", bucket, path, exc
-                )
-    return {"deleted": True}
-
-
-@router.patch("/lessons/{lesson_id}/media/reorder")
-async def reorder_media(
-    lesson_id: str,
-    payload: schemas.MediaReorder,
-    current: TeacherUser,
-):
-    _, course_id = await courses_service.lesson_course_ids(lesson_id)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    await models.reorder_media(lesson_id, payload.media_ids)
-    return {"ok": True}
 
 
 @router.get("/media/{media_id}")

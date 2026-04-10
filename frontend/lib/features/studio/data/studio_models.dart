@@ -42,6 +42,24 @@ String? _nullableResponseString(Object? payload, String key, String label) {
   throw StateError('$label field "$key" must be a string or null');
 }
 
+String? _optionalResponseString(Object? payload, String key, String label) {
+  switch (payload) {
+    case final Map data when !data.containsKey(key):
+      return null;
+    case final Map data:
+      final value = data[key];
+      if (value == null) {
+        return null;
+      }
+      if (value is String) {
+        return value;
+      }
+      throw StateError('$label field "$key" must be a string or null');
+    default:
+      throw StateError('$label returned a non-object payload');
+  }
+}
+
 int _requiredResponseInt(Object? payload, String key, String label) {
   final value = _requireResponseField(payload, key, label);
   if (value is int) {
@@ -256,7 +274,7 @@ class LessonStudio {
       courseId: _requiredResponseString(payload, 'course_id', label),
       lessonTitle: _requiredResponseString(payload, 'lesson_title', label),
       position: _requiredResponseInt(payload, 'position', label),
-      contentMarkdown: _requiredResponseStringValue(
+      contentMarkdown: _optionalResponseString(
         payload,
         'content_markdown',
         label,
@@ -309,6 +327,12 @@ class StudioLessonMediaItem {
   final String? originalName;
 
   factory StudioLessonMediaItem.fromResponse(Object? payload) {
+    final media = _nullableResolvedMedia(
+      payload,
+      'media',
+      'StudioLessonMediaItem',
+    );
+    final resolvedUrl = media?.resolvedUrl?.trim();
     return StudioLessonMediaItem(
       lessonMediaId: _requiredResponseString(
         payload,
@@ -331,22 +355,56 @@ class StudioLessonMediaItem {
         'StudioLessonMediaItem',
       ),
       state: _requiredResponseString(payload, 'state', 'StudioLessonMediaItem'),
-      previewReady: _requiredResponseBool(
-        payload,
-        'preview_ready',
-        'StudioLessonMediaItem',
-      ),
+      previewReady: resolvedUrl != null && resolvedUrl.isNotEmpty,
       mediaAssetId: _nullableResponseString(
         payload,
         'media_asset_id',
         'StudioLessonMediaItem',
       ),
-      media: _nullableResolvedMedia(payload, 'media', 'StudioLessonMediaItem'),
-      originalName: _nullableResponseString(
+      media: media,
+    );
+  }
+
+  factory StudioLessonMediaItem.fromPlacementResponse(Object? payload) {
+    final media = _nullableResolvedMedia(
+      payload,
+      'media',
+      'StudioLessonMediaPlacement',
+    );
+    final resolvedUrl = media?.resolvedUrl?.trim();
+    return StudioLessonMediaItem(
+      lessonMediaId: _requiredResponseString(
         payload,
-        'original_name',
-        'StudioLessonMediaItem',
+        'lesson_media_id',
+        'StudioLessonMediaPlacement',
       ),
+      lessonId: _requiredResponseString(
+        payload,
+        'lesson_id',
+        'StudioLessonMediaPlacement',
+      ),
+      position: _requiredResponseInt(
+        payload,
+        'position',
+        'StudioLessonMediaPlacement',
+      ),
+      mediaType: _requiredResponseString(
+        payload,
+        'media_type',
+        'StudioLessonMediaPlacement',
+      ),
+      state: _requiredResponseString(
+        payload,
+        'asset_state',
+        'StudioLessonMediaPlacement',
+      ),
+      previewReady: resolvedUrl != null && resolvedUrl.isNotEmpty,
+      mediaAssetId: _nullableResponseString(
+        payload,
+        'media_asset_id',
+        'StudioLessonMediaPlacement',
+      ),
+      media: media,
     );
   }
 
@@ -385,50 +443,29 @@ class StudioLessonMediaItem {
 @immutable
 class StudioLessonMediaUploadTarget {
   const StudioLessonMediaUploadTarget({
-    required this.lessonMediaId,
-    required this.lessonId,
-    required this.mediaType,
-    required this.state,
-    required this.position,
+    required this.mediaAssetId,
+    required this.assetState,
     required this.uploadUrl,
     required this.headers,
     required this.expiresAt,
   });
 
-  final String lessonMediaId;
-  final String lessonId;
-  final String mediaType;
-  final String state;
-  final int position;
+  final String mediaAssetId;
+  final String assetState;
   final String uploadUrl;
   final RequestHeaders headers;
   final DateTime expiresAt;
 
   factory StudioLessonMediaUploadTarget.fromResponse(Object? payload) {
     return StudioLessonMediaUploadTarget(
-      lessonMediaId: _requiredResponseString(
+      mediaAssetId: _requiredResponseString(
         payload,
-        'lesson_media_id',
+        'media_asset_id',
         'StudioLessonMediaUploadTarget',
       ),
-      lessonId: _requiredResponseString(
+      assetState: _requiredResponseString(
         payload,
-        'lesson_id',
-        'StudioLessonMediaUploadTarget',
-      ),
-      mediaType: _requiredResponseString(
-        payload,
-        'media_type',
-        'StudioLessonMediaUploadTarget',
-      ),
-      state: _requiredResponseString(
-        payload,
-        'state',
-        'StudioLessonMediaUploadTarget',
-      ),
-      position: _requiredResponseInt(
-        payload,
-        'position',
+        'asset_state',
         'StudioLessonMediaUploadTarget',
       ),
       uploadUrl: _requiredResponseString(
@@ -474,6 +511,29 @@ class StudioLessonMediaPreviewItem {
     String lessonMediaId,
     Object? payload,
   ) {
+    return StudioLessonMediaPreviewItem.fromPlacementResponse(
+      lessonMediaId,
+      payload,
+    );
+  }
+
+  factory StudioLessonMediaPreviewItem.fromPlacementResponse(
+    String lessonMediaId,
+    Object? payload,
+  ) {
+    final media = _nullableResolvedMedia(
+      payload,
+      'media',
+      'StudioLessonMediaPreviewItem',
+    );
+    final resolvedUrl = media?.resolvedUrl?.trim();
+    final assetState = _requiredResponseString(
+      payload,
+      'asset_state',
+      'StudioLessonMediaPreviewItem',
+    );
+    final isReady =
+        assetState == 'ready' && resolvedUrl != null && resolvedUrl.isNotEmpty;
     return StudioLessonMediaPreviewItem(
       lessonMediaId: lessonMediaId,
       mediaType: _requiredResponseString(
@@ -481,31 +541,9 @@ class StudioLessonMediaPreviewItem {
         'media_type',
         'StudioLessonMediaPreviewItem',
       ),
-      authoritativeEditorReady: _requiredResponseBool(
-        payload,
-        'authoritative_editor_ready',
-        'StudioLessonMediaPreviewItem',
-      ),
-      previewUrl: _nullableResponseString(
-        payload,
-        'resolved_preview_url',
-        'StudioLessonMediaPreviewItem',
-      ),
-      durationSeconds: _nullableResponseInt(
-        payload,
-        'duration_seconds',
-        'StudioLessonMediaPreviewItem',
-      ),
-      fileName: _nullableResponseString(
-        payload,
-        'file_name',
-        'StudioLessonMediaPreviewItem',
-      ),
-      failureReason: _nullableResponseString(
-        payload,
-        'failure_reason',
-        'StudioLessonMediaPreviewItem',
-      ),
+      authoritativeEditorReady: isReady,
+      previewUrl: isReady ? resolvedUrl : null,
+      failureReason: assetState == 'failed' ? 'failed' : null,
     );
   }
 }

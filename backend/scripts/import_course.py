@@ -31,9 +31,8 @@ Usage:
     --manifest /path/to/course.yaml
 
 Notes:
-- Files are uploaded to /studio/lessons/{id}/media (respects size limit).
-- Course covers are queued through /api/media/cover-from-media using lesson media.
-- Increase LESSON_MEDIA_MAX_BYTES in backend env if needed.
+- Live writes are disabled until this importer is rebuilt for the canonical
+  lesson structure/content and media upload-completion-placement flow.
 - The script requires PyYAML for YAML manifests; JSON works without extra deps.
 """
 
@@ -51,6 +50,13 @@ try:
     import yaml  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
     yaml = None  # type: ignore
+
+
+DISABLED_REASON = (
+    "import_course.py is disabled: it still contains legacy write helpers for "
+    "removed /studio/lessons and /api/media routes. Rebuild it against the "
+    "canonical lesson structure/content and media placement pipeline before use."
+)
 
 
 def load_manifest(path: Path) -> Dict[str, Any]:
@@ -364,6 +370,8 @@ def validate_manifest(
 
 
 def main() -> None:
+    raise SystemExit(DISABLED_REASON)
+
     ap = argparse.ArgumentParser(description="Import course into backend via /studio endpoints")
     ap.add_argument("--base-url", required=True)
     ap.add_argument("--email", required=True)

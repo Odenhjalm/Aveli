@@ -630,11 +630,8 @@ async def list_studio_course_lessons(course_id: str) -> Sequence[LessonRow]:
             l.id,
             l.course_id,
             l.lesson_title,
-            l.position,
-            lc.content_markdown
+            l.position
         from app.lessons as l
-        left join app.lesson_contents as lc
-          on lc.lesson_id = l.id
         where l.course_id = %s::uuid
         order by l.position asc, l.id asc
     """
@@ -672,6 +669,24 @@ async def get_studio_lesson(lesson_id: str) -> LessonRow | None:
         from app.lessons as l
         left join app.lesson_contents as lc
           on lc.lesson_id = l.id
+        where l.id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_lesson_structure(lesson_id: str) -> LessonRow | None:
+    query = """
+        select
+            l.id,
+            l.course_id,
+            l.lesson_title,
+            l.position
+        from app.lessons as l
         where l.id = %s::uuid
         limit 1
     """
@@ -811,6 +826,32 @@ async def get_lesson_media_for_studio(
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (lesson_id, lesson_media_id))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_lesson_media_by_id_for_studio(
+    lesson_media_id: str,
+) -> dict[str, Any] | None:
+    query = f"""
+        select
+            lm.id as lesson_media_id,
+            lm.lesson_id,
+            lm.media_asset_id,
+            lm.position,
+            ma.media_type::text as media_type,
+            ma.state::text as state,
+            {_MEDIA_ORIGINAL_NAME_SQL},
+            (ma.state in ('uploaded', 'ready')) as preview_ready
+        from app.lesson_media as lm
+        join app.media_assets as ma
+          on ma.id = lm.media_asset_id
+        where lm.id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_media_id,))
             row = await cur.fetchone()
     return dict(row) if row else None
 
@@ -1009,6 +1050,98 @@ async def create_lesson(
     if row is None:
         raise RuntimeError("created lesson was not returned")
     return row
+
+
+async def create_lesson_structure(
+    *,
+    course_id: str,
+    lesson_title: str,
+    position: int,
+) -> LessonRow:
+    new_lesson_id = str(uuid4())
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                insert into app.lessons (id, course_id, lesson_title, position)
+                values (%s::uuid, %s::uuid, %s, %s)
+                """,
+                (new_lesson_id, course_id, lesson_title, position),
+            )
+            await conn.commit()
+    row = await get_lesson_structure(new_lesson_id)
+    if row is None:
+        raise RuntimeError("created lesson structure was not returned")
+    return row
+
+
+async def update_lesson_structure(
+    lesson_id: str,
+    patch: dict[str, Any],
+) -> LessonRow | None:
+    assignments: list[str] = []
+    params: list[Any] = []
+    if "lesson_title" in patch:
+        assignments.append("lesson_title = %s")
+        params.append(patch["lesson_title"])
+    if "position" in patch:
+        assignments.append("position = %s")
+        params.append(patch["position"])
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            if assignments:
+                await cur.execute(
+                    f"""
+                    update app.lessons
+                    set {", ".join(assignments)}
+                    where id = %s::uuid
+                    returning id, course_id, lesson_title, position
+                    """,
+                    (*params, lesson_id),
+                )
+            else:
+                await cur.execute(
+                    """
+                    select id, course_id, lesson_title, position
+                    from app.lessons
+                    where id = %s::uuid
+                    limit 1
+                    """,
+                    (lesson_id,),
+                )
+            row = await cur.fetchone()
+            await conn.commit()
+    return dict(row) if row else None
+
+
+async def update_lesson_content(
+    lesson_id: str,
+    content_markdown: str,
+) -> dict[str, Any] | None:
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "select id from app.lessons where id = %s::uuid limit 1",
+                (lesson_id,),
+            )
+            lesson_row = await cur.fetchone()
+            if lesson_row is None:
+                return None
+
+            await cur.execute(
+                """
+                insert into app.lesson_contents (lesson_id, content_markdown)
+                values (%s::uuid, %s)
+                on conflict (lesson_id)
+                do update set content_markdown = excluded.content_markdown
+                returning lesson_id, content_markdown
+                """,
+                (lesson_id, content_markdown),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    return dict(row) if row else None
 
 
 async def update_lesson(lesson_id: str, patch: dict[str, Any]) -> LessonRow | None:

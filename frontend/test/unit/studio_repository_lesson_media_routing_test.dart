@@ -8,7 +8,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 
@@ -23,23 +22,31 @@ void main() {
     await uploadServer.close();
   });
 
-  test('listLessonMedia parses canonical media objects from studio route', () async {
-    final harness = await _Harness.create(uploadServer: uploadServer);
-    final repo = StudioRepository(client: harness.client);
+  test(
+    'listLessonMedia parses canonical media objects from studio route',
+    () async {
+      final harness = await _Harness.create(uploadServer: uploadServer);
+      final repo = StudioRepository(client: harness.client);
 
-    final items = await repo.listLessonMedia('lesson-1');
+      final items = await repo.listLessonMedia('lesson-1');
 
-    expect(items, hasLength(1));
-    expect(items.single.lessonMediaId, 'lesson-media-1');
-    expect(items.single.mediaType, 'document');
-    expect(items.single.media?.mediaId, 'media-1');
-    expect(items.single.media?.state, 'ready');
-    expect(items.single.media?.resolvedUrl, 'https://cdn.example.test/guide.pdf');
+      expect(items, hasLength(1));
+      expect(items.single.lessonMediaId, 'lesson-media-1');
+      expect(items.single.mediaType, 'document');
+      expect(items.single.media?.mediaId, 'media-1');
+      expect(items.single.media?.state, 'ready');
+      expect(
+        items.single.media?.resolvedUrl,
+        'https://cdn.example.test/guide.pdf',
+      );
 
-    final requests = harness.adapter.requestsFor('/api/lesson-media/lesson-1');
-    expect(requests, hasLength(1));
-    expect(requests.single.method, 'GET');
-  });
+      final requests = harness.adapter.requestsFor(
+        '/api/lesson-media/lesson-1',
+      );
+      expect(requests, hasLength(1));
+      expect(requests.single.method, 'GET');
+    },
+  );
 
   test('uploadLessonMedia uses canonical studio upload endpoints', () async {
     final harness = await _Harness.create(uploadServer: uploadServer);
@@ -62,14 +69,18 @@ void main() {
     );
 
     final uploadUrlRequests = harness.adapter.requestsFor(
-      '/api/lesson-media/lesson-1/upload-url',
+      '/api/lessons/lesson-1/media-assets/upload-url',
     );
     final completeRequests = harness.adapter.requestsFor(
-      '/api/lesson-media/lesson-1/lesson-media-1/complete',
+      '/api/media-assets/media-1/upload-completion',
+    );
+    final placementRequests = harness.adapter.requestsFor(
+      '/api/lessons/lesson-1/media-placements',
     );
 
     expect(uploadUrlRequests, hasLength(1));
     expect(completeRequests, hasLength(1));
+    expect(placementRequests, hasLength(1));
     expect(uploadServer.putPaths, contains('/direct/guide.pdf'));
 
     final uploadPayload = Map<String, dynamic>.from(
@@ -81,9 +92,17 @@ void main() {
       'size_bytes': 16,
       'media_type': 'document',
     });
+
+    expect(
+      Map<String, dynamic>.from(completeRequests.single.data as Map),
+      <String, dynamic>{},
+    );
+    expect(Map<String, dynamic>.from(placementRequests.single.data as Map), {
+      'media_asset_id': 'media-1',
+    });
   });
 
-  test('fetchLessonMediaPreviews uses preview batch route', () async {
+  test('fetchLessonMediaPreviews uses canonical placement reads', () async {
     final harness = await _Harness.create(uploadServer: uploadServer);
     final repo = StudioRepository(client: harness.client);
 
@@ -93,12 +112,11 @@ void main() {
     expect(preview, isNotNull);
     expect(preview?.previewUrl, 'https://cdn.example.test/preview.webp');
 
-    final requests = harness.adapter.requestsFor(ApiPaths.mediaPreviews);
+    final requests = harness.adapter.requestsFor(
+      '/api/media-placements/lesson-media-1',
+    );
     expect(requests, hasLength(1));
-    expect(requests.single.method, 'POST');
-    expect(Map<String, dynamic>.from(requests.single.data as Map), {
-      'ids': <String>['lesson-media-1'],
-    });
+    expect(requests.single.method, 'GET');
   });
 }
 
@@ -133,8 +151,6 @@ class _Harness {
                 'position': 1,
                 'media_type': 'document',
                 'state': 'ready',
-                'preview_ready': true,
-                'original_name': 'guide.pdf',
                 'media': {
                   'media_id': 'media-1',
                   'state': 'ready',
@@ -145,22 +161,25 @@ class _Harness {
           },
         );
       }
-      if (options.path == '/api/lesson-media/lesson-1/upload-url') {
+      if (options.path == '/api/lessons/lesson-1/media-assets/upload-url') {
         return _jsonResponse(
           statusCode: 200,
           body: {
-            'lesson_media_id': 'lesson-media-1',
-            'lesson_id': 'lesson-1',
-            'media_type': 'document',
-            'state': 'pending_upload',
-            'position': 1,
+            'media_asset_id': 'media-1',
+            'asset_state': 'pending_upload',
             'upload_url': uploadServer.url('/direct/guide.pdf').toString(),
             'headers': const <String, String>{},
             'expires_at': DateTime.now().toUtc().toIso8601String(),
           },
         );
       }
-      if (options.path == '/api/lesson-media/lesson-1/lesson-media-1/complete') {
+      if (options.path == '/api/media-assets/media-1/upload-completion') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {'media_asset_id': 'media-1', 'asset_state': 'uploaded'},
+        );
+      }
+      if (options.path == '/api/lessons/lesson-1/media-placements') {
         return _jsonResponse(
           statusCode: 200,
           body: {
@@ -169,9 +188,7 @@ class _Harness {
             'media_asset_id': 'media-1',
             'position': 1,
             'media_type': 'document',
-            'state': 'ready',
-            'preview_ready': true,
-            'original_name': 'guide.pdf',
+            'asset_state': 'ready',
             'media': {
               'media_id': 'media-1',
               'state': 'ready',
@@ -180,19 +197,20 @@ class _Harness {
           },
         );
       }
-      if (options.path == ApiPaths.mediaPreviews) {
+      if (options.path == '/api/media-placements/lesson-media-1') {
         return _jsonResponse(
           statusCode: 200,
           body: {
-            'items': {
-              'lesson-media-1': {
-                'media_type': 'image',
-                'authoritative_editor_ready': true,
-                'resolved_preview_url': 'https://cdn.example.test/preview.webp',
-                'duration_seconds': null,
-                'file_name': 'preview.webp',
-                'failure_reason': null,
-              },
+            'lesson_media_id': 'lesson-media-1',
+            'lesson_id': 'lesson-1',
+            'media_asset_id': 'media-1',
+            'position': 1,
+            'media_type': 'image',
+            'asset_state': 'ready',
+            'media': {
+              'media_id': 'media-1',
+              'state': 'ready',
+              'resolved_url': 'https://cdn.example.test/preview.webp',
             },
           },
         );

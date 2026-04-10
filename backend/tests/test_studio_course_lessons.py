@@ -11,6 +11,18 @@ def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def studio_course_payload(title: str, slug: str) -> dict[str, object]:
+    return {
+        "title": title,
+        "slug": slug,
+        "course_group_id": str(uuid.uuid4()),
+        "step": "intro",
+        "price_amount_cents": None,
+        "drip_enabled": False,
+        "drip_interval_days": None,
+    }
+
+
 async def register_user(
     client, email: str, password: str, display_name: str
 ) -> tuple[str, str]:
@@ -61,7 +73,7 @@ async def test_studio_lessons_belong_directly_to_course(async_client):
     create_course = await async_client.post(
         "/studio/courses",
         headers=auth_header(teacher_token),
-        json={"title": f"Course {slug}", "slug": slug},
+        json=studio_course_payload(f"Course {slug}", slug),
     )
     assert create_course.status_code == 200, create_course.text
     course_id = create_course.json()["id"]
@@ -74,20 +86,26 @@ async def test_studio_lessons_belong_directly_to_course(async_client):
     assert resp_empty.json().get("items") == []
 
     create_lesson = await async_client.post(
-        "/studio/lessons",
+        f"/studio/courses/{course_id}/lessons",
         headers=auth_header(teacher_token),
         json={
-            "course_id": course_id,
-            "title": "Lesson 1",
+            "lesson_title": "Lesson 1",
             "position": 1,
-            "is_intro": False,
-            "content_markdown": "Hello",
         },
     )
     assert create_lesson.status_code == 200, create_lesson.text
     lesson = create_lesson.json()
     lesson_id = lesson["id"]
     assert lesson["course_id"] == course_id
+    assert "content_markdown" not in lesson
+
+    content = await async_client.patch(
+        f"/studio/lessons/{lesson_id}/content",
+        headers=auth_header(teacher_token),
+        json={"content_markdown": "Hello"},
+    )
+    assert content.status_code == 200, content.text
+    assert content.json()["content_markdown"] == "Hello"
 
     resp = await async_client.get(
         f"/studio/courses/{course_id}/lessons",
@@ -96,14 +114,16 @@ async def test_studio_lessons_belong_directly_to_course(async_client):
     assert resp.status_code == 200, resp.text
     items = resp.json().get("items") or []
     assert [it.get("id") for it in items] == [lesson_id]
+    assert "content_markdown" not in items[0]
 
     patch = await async_client.patch(
-        f"/studio/lessons/{lesson_id}",
+        f"/studio/lessons/{lesson_id}/structure",
         headers=auth_header(teacher_token),
-        json={"title": "Lesson 1 updated"},
+        json={"lesson_title": "Lesson 1 updated"},
     )
     assert patch.status_code == 200, patch.text
-    assert patch.json()["title"] == "Lesson 1 updated"
+    assert patch.json()["lesson_title"] == "Lesson 1 updated"
+    assert "content_markdown" not in patch.json()
 
 
 async def test_studio_reorder_lessons_updates_positions(async_client):
@@ -120,7 +140,7 @@ async def test_studio_reorder_lessons_updates_positions(async_client):
     create_course = await async_client.post(
         "/studio/courses",
         headers=auth_header(teacher_token),
-        json={"title": f"Course {slug}", "slug": slug},
+        json=studio_course_payload(f"Course {slug}", slug),
     )
     assert create_course.status_code == 200, create_course.text
     course_id = create_course.json()["id"]
@@ -128,14 +148,11 @@ async def test_studio_reorder_lessons_updates_positions(async_client):
     lesson_ids: list[str] = []
     for index, title in enumerate(("Lesson A", "Lesson B", "Lesson C"), start=1):
         create_lesson = await async_client.post(
-            "/studio/lessons",
+            f"/studio/courses/{course_id}/lessons",
             headers=auth_header(teacher_token),
             json={
-                "course_id": course_id,
-                "title": title,
-                "position": index,
-                "is_intro": False,
-                "content_markdown": f"Content {title}",
+                "lesson_title": title,
+                "position": index * 10,
             },
         )
         assert create_lesson.status_code == 200, create_lesson.text

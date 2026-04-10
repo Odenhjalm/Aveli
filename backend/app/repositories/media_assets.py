@@ -153,6 +153,21 @@ async def get_media_asset(media_asset_id: str) -> dict[str, Any] | None:
     return _decorate_media_asset_row(dict(row) if row else None)
 
 
+async def get_lesson_media_pipeline_asset(media_asset_id: str) -> dict[str, Any] | None:
+    query = f"""
+        select
+            {_MEDIA_ASSET_RETURNING_SQL}
+        from app.media_assets
+        where id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (media_asset_id,))
+            row = await cur.fetchone()
+    return _decorate_media_asset_row(dict(row) if row else None)
+
+
 async def get_media_assets(media_asset_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
     ids = [str(media_asset_id).strip() for media_asset_id in media_asset_ids if str(media_asset_id).strip()]
     if not ids:
@@ -313,6 +328,35 @@ async def _call_canonical_worker_transition(
 
 async def mark_media_asset_uploaded(*, media_id: str) -> dict[str, Any] | None:
     media_asset = await get_media_asset(media_id)
+    if media_asset is None:
+        return None
+    current_state = str(media_asset.get("state") or "").strip().lower()
+    if current_state == "uploaded":
+        return media_asset
+    if current_state != "pending_upload":
+        return None
+
+    query = f"""
+        update app.media_assets
+        set state = 'uploaded'::app.media_state
+        where id = %s::uuid
+          and state = 'pending_upload'::app.media_state
+        returning
+            {_MEDIA_ASSET_RETURNING_SQL}
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (media_id,))
+            row = await cur.fetchone()
+            await conn.commit()
+    return _decorate_media_asset_row(dict(row) if row else None)
+
+
+async def mark_lesson_media_pipeline_asset_uploaded(
+    *,
+    media_id: str,
+) -> dict[str, Any] | None:
+    media_asset = await get_lesson_media_pipeline_asset(media_id)
     if media_asset is None:
         return None
     current_state = str(media_asset.get("state") or "").strip().lower()

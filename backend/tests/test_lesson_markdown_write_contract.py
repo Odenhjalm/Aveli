@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app import models
+from app.repositories import media_assets as media_assets_repo
 from app.repositories import courses as courses_repo
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -59,26 +59,32 @@ async def _create_course_and_lesson(async_client, headers: dict[str, str]) -> tu
         json={
             "title": "Lesson Contract Course",
             "slug": slug,
-            "description": "Course for lesson media contract tests",
-            "is_published": False,
+            "course_group_id": str(uuid.uuid4()),
+            "step": "intro",
+            "price_amount_cents": None,
+            "drip_enabled": False,
+            "drip_interval_days": None,
         },
     )
     assert course_resp.status_code == 200, course_resp.text
     course_id = str(course_resp.json()["id"])
 
     lesson_resp = await async_client.post(
-        "/studio/lessons",
+        f"/studio/courses/{course_id}/lessons",
         headers=headers,
         json={
-            "course_id": course_id,
-            "title": "Lesson",
-            "content_markdown": "# Lesson",
+            "lesson_title": "Lesson",
             "position": 1,
-            "is_intro": False,
         },
     )
     assert lesson_resp.status_code == 200, lesson_resp.text
     lesson_id = str(lesson_resp.json()["id"])
+    content_resp = await async_client.patch(
+        f"/studio/lessons/{lesson_id}/content",
+        headers=headers,
+        json={"content_markdown": "# Lesson"},
+    )
+    assert content_resp.status_code == 200, content_resp.text
     return course_id, lesson_id
 
 
@@ -93,29 +99,25 @@ async def _attach_legacy_lesson_media(
     original_name: str,
     position: int,
 ) -> str:
-    media_object = await models.create_media_object(
-        owner_id=owner_id,
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
-        content_type=content_type,
-        byte_size=128,
-        checksum=None,
-        original_name=original_name,
-    )
-    assert media_object is not None
+    del owner_id, storage_bucket, original_name, position
 
-    lesson_media = await models.add_lesson_media_entry(
+    media_type = "document" if kind == "pdf" else kind
+    media_asset = await media_assets_repo.create_media_asset(
+        media_asset_id=str(uuid.uuid4()),
+        media_type=media_type,
+        purpose="lesson_media",
+        original_object_path=storage_path,
+        ingest_format=content_type,
+        state="pending_upload",
+    )
+    assert media_asset is not None
+
+    lesson_media = await courses_repo.create_lesson_media(
         lesson_id=lesson_id,
-        kind=kind,
-        storage_path=storage_path,
-        storage_bucket=storage_bucket,
-        media_id=str(media_object["id"]),
-        media_asset_id=None,
-        position=position,
-        duration_seconds=None,
+        media_asset_id=str(media_asset["id"]),
     )
     assert lesson_media is not None
-    return str(lesson_media["id"])
+    return str(lesson_media["lesson_media_id"])
 
 
 async def test_update_lesson_accepts_canonical_typed_media_refs(async_client):
@@ -169,7 +171,7 @@ async def test_update_lesson_accepts_canonical_typed_media_refs(async_client):
         )
 
         update_resp = await async_client.patch(
-            f"/studio/lessons/{lesson_id}",
+            f"/studio/lessons/{lesson_id}/content",
             headers=headers,
             json={
                 "content_markdown": (
@@ -201,7 +203,7 @@ async def test_update_lesson_rejects_unresolved_raw_media_refs(async_client):
         _course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
 
         update_resp = await async_client.patch(
-            f"/studio/lessons/{lesson_id}",
+            f"/studio/lessons/{lesson_id}/content",
             headers=headers,
             json={
                 "content_markdown": "Intro\n\n![](https://cdn.test/lesson-image.png)\n"
@@ -230,7 +232,7 @@ async def test_update_lesson_rewrites_resolvable_legacy_document_links(async_cli
         )
 
         update_resp = await async_client.patch(
-            f"/studio/lessons/{lesson_id}",
+            f"/studio/lessons/{lesson_id}/content",
             headers=headers,
             json={
                 "content_markdown": f"[📄 material.pdf](/studio/media/{document_id})"
@@ -251,7 +253,7 @@ async def test_update_lesson_rejects_storage_path_media_refs(async_client):
         course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
 
         update_resp = await async_client.patch(
-            f"/studio/lessons/{lesson_id}",
+            f"/studio/lessons/{lesson_id}/content",
             headers=headers,
             json={
                 "content_markdown": (

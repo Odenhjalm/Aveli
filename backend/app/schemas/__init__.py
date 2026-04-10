@@ -1240,12 +1240,43 @@ class StudioLesson(BaseModel):
     id: UUID
     course_id: UUID
     lesson_title: str
-    content_markdown: str
     position: int
 
 
 class StudioLessonListResponse(BaseModel):
     items: List[StudioLesson]
+
+
+class StudioLessonStructureCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_title: str
+    position: int
+
+
+class StudioLessonStructureUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_title: str | None = None
+    position: int | None = None
+
+
+class StudioLessonStructure(BaseModel):
+    id: UUID
+    course_id: UUID
+    lesson_title: str
+    position: int
+
+
+class StudioLessonContentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_markdown: str
+
+
+class StudioLessonContent(BaseModel):
+    lesson_id: UUID
+    content_markdown: str
 
 
 class StudioLessonMediaUploadUrlRequest(BaseModel):
@@ -1300,6 +1331,65 @@ class StudioLessonMediaReorder(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lesson_media_ids: List[UUID]
+
+
+class CanonicalLessonMediaUploadUrlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_type: Literal["audio", "image", "video", "document"]
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+
+
+class CanonicalLessonMediaUploadUrlResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+    asset_state: Literal["pending_upload"]
+    upload_url: str
+    headers: dict[str, str]
+    expires_at: datetime
+
+
+class CanonicalMediaAssetUploadCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalMediaAssetUploadCompletionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+    asset_state: Literal["uploaded"]
+
+
+class CanonicalLessonMediaPlacementCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+
+
+class CanonicalLessonMediaPlacementResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_media_id: UUID
+    lesson_id: UUID
+    media_asset_id: UUID
+    position: int
+    media_type: Literal["audio", "image", "video", "document"]
+    asset_state: Literal["uploaded", "processing", "ready"]
+
+
+class CanonicalMediaPlacementReadResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_media_id: UUID
+    lesson_id: UUID
+    media_asset_id: UUID
+    position: int
+    media_type: Literal["audio", "image", "video", "document"]
+    asset_state: Literal["uploaded", "processing", "ready", "failed"]
+    media: ResolvedMedia | None
 
 
 class MediaReorder(BaseModel):

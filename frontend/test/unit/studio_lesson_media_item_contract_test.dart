@@ -13,8 +13,6 @@ void main() {
         'position': 1,
         'media_type': 'document',
         'state': 'ready',
-        'preview_ready': true,
-        'original_name': 'guide.pdf',
         'media': {
           'media_id': 'media-1',
           'state': 'ready',
@@ -38,12 +36,31 @@ void main() {
       'position': 2,
       'media_type': 'audio',
       'state': 'uploaded',
-      'preview_ready': true,
-      'original_name': 'voice.wav',
       'media': null,
     });
 
     expect(item.mediaAssetId, 'media-2');
     expect(item.media, isNull);
+  });
+
+  test('StudioLessonMediaItem parses canonical placement response', () {
+    final item = StudioLessonMediaItem.fromPlacementResponse({
+      'lesson_media_id': 'lesson-media-3',
+      'lesson_id': 'lesson-1',
+      'media_asset_id': 'media-3',
+      'position': 3,
+      'media_type': 'image',
+      'asset_state': 'ready',
+      'media': {
+        'media_id': 'media-3',
+        'state': 'ready',
+        'resolved_url': 'https://cdn.test/image.webp',
+      },
+    });
+
+    expect(item.lessonMediaId, 'lesson-media-3');
+    expect(item.state, 'ready');
+    expect(item.previewReady, isTrue);
+    expect(item.media?.resolvedUrl, 'https://cdn.test/image.webp');
   });
 }

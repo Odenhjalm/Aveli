@@ -182,11 +182,7 @@ class MediaPipelineRepository {
 
   final ApiClient _client;
   static const String _homePlayerPurpose = 'home_player_audio';
-  static const Set<String> _allowedPurposes = {
-    'lesson_audio',
-    'lesson_media',
-    _homePlayerPurpose,
-  };
+  static const Set<String> _allowedPurposes = {_homePlayerPurpose};
 
   static Map<String, dynamic> _buildUploadUrlPayload({
     required String filename,
@@ -216,7 +212,7 @@ class MediaPipelineRepository {
       throw ArgumentError.value(
         mediaType,
         'mediaType',
-        'Unsupported mediaType for /api/media/upload-url.',
+        'Unsupported mediaType for media upload.',
       );
     }
 
@@ -250,36 +246,24 @@ class MediaPipelineRepository {
       );
     }
 
+    if (lessonId != null || courseId != null) {
+      throw ArgumentError(
+        'Lesson media uploads use StudioRepository.uploadLessonMedia.',
+      );
+    }
+
     if (mediaType == 'audio') {
-      if (purpose == _homePlayerPurpose) {
-        if (courseId != null || lessonId != null) {
-          throw ArgumentError(
-            'courseId/lessonId must be omitted for home_player_audio uploads.',
-          );
-        }
-      } else {
-        if (purpose != null && purpose != 'lesson_audio') {
-          throw ArgumentError.value(
-            purpose,
-            'purpose',
-            'Unsupported purpose "$purpose" for lesson audio uploads.',
-          );
-        }
-        if (lessonId == null) {
-          throw ArgumentError('lessonId is required for lesson_audio uploads.');
-        }
-      }
-    } else {
-      if (purpose != null && purpose != 'lesson_media') {
+      if (purpose != _homePlayerPurpose) {
         throw ArgumentError.value(
           purpose,
           'purpose',
-          'Unsupported purpose "$purpose" for lesson media uploads.',
+          'purpose must be home_player_audio for this upload surface.',
         );
       }
-      if (lessonId == null) {
-        throw ArgumentError('lessonId is required for lesson media uploads.');
-      }
+    } else {
+      throw ArgumentError(
+        'Non-audio lesson media uploads use StudioRepository.uploadLessonMedia.',
+      );
     }
 
     return <String, dynamic>{
@@ -340,41 +324,9 @@ class MediaPipelineRepository {
     String? lessonId,
     String? lessonMediaId,
   }) async {
-    if (linkScope != 'lesson' && linkScope != 'home_upload') {
-      throw ArgumentError.value(
-        linkScope,
-        'linkScope',
-        'Unsupported attach scope.',
-      );
-    }
-
-    if (linkScope == 'lesson' && (lessonId == null || lessonId.isEmpty)) {
-      throw ArgumentError.value(
-        lessonId,
-        'lessonId',
-        'lessonId is required for lesson attachments.',
-      );
-    }
-    if (lessonMediaId != null && lessonMediaId.isEmpty) {
-      throw ArgumentError.value(
-        lessonMediaId,
-        'lessonMediaId',
-        'lessonMediaId must not be empty.',
-      );
-    }
-
-    final payload = <String, dynamic>{
-      'media_id': mediaId,
-      'link_scope': linkScope,
-      'lesson_id': lessonId,
-      if (lessonMediaId != null) 'lesson_media_id': lessonMediaId,
-    };
-
-    final response = await _client.post<Object?>(
-      ApiPaths.mediaAttach,
-      body: payload,
+    throw UnsupportedError(
+      'Lesson media attachments use canonical media placement endpoints.',
     );
-    return MediaStatus.fromResponse(response);
   }
 
   Future<MediaUploadTarget> requestCoverUploadUrl({
@@ -422,5 +374,4 @@ class MediaPipelineRepository {
     final response = await _client.get<Object?>(ApiPaths.mediaStatus(mediaId));
     return MediaStatus.fromResponse(response);
   }
-
 }

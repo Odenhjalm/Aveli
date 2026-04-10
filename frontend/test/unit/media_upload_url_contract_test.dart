@@ -12,132 +12,84 @@ import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 
 void main() {
-  test('upload-url requests use POST + JSON and match expected payloads', () async {
-    final storage = _MemoryFlutterSecureStorage();
-    final tokens = TokenStorage(storage: storage);
-    await tokens.saveTokens(
-      accessToken: _jwtWithExpSeconds(4102444800),
-      refreshToken: 'rt-1',
-    );
+  test(
+    'lesson media upload-url callers are rejected before /api/media/upload-url',
+    () async {
+      final storage = _MemoryFlutterSecureStorage();
+      final tokens = TokenStorage(storage: storage);
+      await tokens.saveTokens(
+        accessToken: _jwtWithExpSeconds(4102444800),
+        refreshToken: 'rt-1',
+      );
 
-    final client = ApiClient(
-      baseUrl: 'http://127.0.0.1:1',
-      tokenStorage: tokens,
-    );
+      final client = ApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        tokenStorage: tokens,
+      );
 
-    final adapter = _RecordingAdapter((options) {
-      if (options.path == ApiPaths.mediaUploadUrl) {
-        return _jsonResponse(
-          statusCode: 200,
-          body: {
-            'media_id': 'media-1',
-            'upload_url': 'https://storage.test/upload',
-            'object_path': 'media/source/audio/demo.wav',
-            'headers': const <String, String>{},
-            'expires_at': DateTime.now().toUtc().toIso8601String(),
-          },
-        );
-      }
-      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-    });
-    client.raw.httpClientAdapter = adapter;
+      final adapter = _RecordingAdapter((options) {
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      client.raw.httpClientAdapter = adapter;
 
-    final repo = MediaPipelineRepository(client: client);
+      final repo = MediaPipelineRepository(client: client);
 
-    await repo.requestUploadUrl(
-      filename: 'demo.wav',
-      mimeType: 'audio/wav',
-      sizeBytes: 10,
-      mediaType: 'audio',
-      courseId: '00000000-0000-0000-0000-000000000001',
-      lessonId: '00000000-0000-0000-0000-000000000002',
-    );
-
-    await repo.requestUploadUrl(
-      filename: 'demo.wav',
-      mimeType: 'audio/wav',
-      sizeBytes: 10,
-      mediaType: 'audio',
-      purpose: 'home_player_audio',
-    );
-
-    final requests = adapter.requestsFor(ApiPaths.mediaUploadUrl);
-    expect(requests.length, 2);
-
-    final lessonRequest = requests.first;
-    final homePlayerRequest = requests.last;
-
-    expect(lessonRequest.method, 'POST');
-    expect(homePlayerRequest.method, 'POST');
-    expect(
-      lessonRequest.contentType.toLowerCase().startsWith('application/json'),
-      true,
-    );
-    expect(
-      homePlayerRequest.contentType.toLowerCase().startsWith('application/json'),
-      true,
-    );
-
-    final lessonPayload = Map<String, dynamic>.from(lessonRequest.data as Map);
-    final homePayload = Map<String, dynamic>.from(homePlayerRequest.data as Map);
-
-    expect(lessonPayload.keys.toSet(), {
-      'filename',
-      'mime_type',
-      'size_bytes',
-      'media_type',
-      'course_id',
-      'lesson_id',
-    });
-    expect(lessonPayload['media_type'], 'audio');
-    expect(lessonPayload['course_id'], isNotNull);
-    expect(lessonPayload['lesson_id'], isNotNull);
-    expect(lessonPayload.containsKey('purpose'), false);
-
-    expect(homePayload.keys.toSet(), {
-      'filename',
-      'mime_type',
-      'size_bytes',
-      'media_type',
-      'purpose',
-    });
-    expect(homePayload['media_type'], 'audio');
-    expect(homePayload['purpose'], 'home_player_audio');
-    expect(homePayload.containsKey('course_id'), false);
-    expect(homePayload.containsKey('lesson_id'), false);
-  });
-
-  test('lesson-audio upload contract requires lessonId', () async {
-    final storage = _MemoryFlutterSecureStorage();
-    final tokens = TokenStorage(storage: storage);
-    await tokens.saveTokens(
-      accessToken: _jwtWithExpSeconds(4102444800),
-      refreshToken: 'rt-1',
-    );
-
-    final client = ApiClient(
-      baseUrl: 'http://127.0.0.1:1',
-      tokenStorage: tokens,
-    );
-    final repo = MediaPipelineRepository(client: client);
-
-    expect(
-      () => repo.requestUploadUrl(
-        filename: 'demo.wav',
-        mimeType: 'audio/wav',
-        sizeBytes: 10,
-        mediaType: 'audio',
-        courseId: '00000000-0000-0000-0000-000000000001',
-      ),
-      throwsA(
-        isA<ArgumentError>().having(
-          (error) => error.message,
-          'message',
-          'lessonId is required for lesson_audio uploads.',
+      await expectLater(
+        repo.requestUploadUrl(
+          filename: 'demo.wav',
+          mimeType: 'audio/wav',
+          sizeBytes: 10,
+          mediaType: 'audio',
+          courseId: '00000000-0000-0000-0000-000000000001',
+          lessonId: '00000000-0000-0000-0000-000000000002',
         ),
-      ),
-    );
-  });
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            'Lesson media uploads use StudioRepository.uploadLessonMedia.',
+          ),
+        ),
+      );
+
+      expect(adapter.requestsFor(ApiPaths.mediaUploadUrl), isEmpty);
+    },
+  );
+
+  test(
+    'lesson-audio upload contract points callers to canonical studio media',
+    () async {
+      final storage = _MemoryFlutterSecureStorage();
+      final tokens = TokenStorage(storage: storage);
+      await tokens.saveTokens(
+        accessToken: _jwtWithExpSeconds(4102444800),
+        refreshToken: 'rt-1',
+      );
+
+      final client = ApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        tokenStorage: tokens,
+      );
+      final repo = MediaPipelineRepository(client: client);
+
+      await expectLater(
+        repo.requestUploadUrl(
+          filename: 'demo.wav',
+          mimeType: 'audio/wav',
+          sizeBytes: 10,
+          mediaType: 'audio',
+          courseId: '00000000-0000-0000-0000-000000000001',
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            'Lesson media uploads use StudioRepository.uploadLessonMedia.',
+          ),
+        ),
+      );
+    },
+  );
 
   test('upload-url contract guard rejects multipart/FormData', () async {
     final storage = _MemoryFlutterSecureStorage();
@@ -180,7 +132,7 @@ void main() {
     expect(adapter.requestsFor(ApiPaths.mediaUploadUrl), isEmpty);
   });
 
-  test('lesson preview batch requests use POST + JSON and match payloads', () async {
+  test('lesson preview reads use canonical placement read shape', () async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);
     await tokens.saveTokens(
@@ -192,20 +144,22 @@ void main() {
       baseUrl: 'http://127.0.0.1:1',
       tokenStorage: tokens,
     );
+    const placementReadPath = '/api/media-placements/lesson-media-1';
     final adapter = _RecordingAdapter((options) {
-      if (options.path == ApiPaths.mediaPreviews) {
+      if (options.path == placementReadPath) {
         return _jsonResponse(
           statusCode: 200,
           body: {
-            'items': {
-              'lesson-media-1': {
-                'media_type': 'image',
-                'authoritative_editor_ready': true,
-                'resolved_preview_url': 'https://cdn.example.com/preview.webp',
-                'duration_seconds': null,
-                'file_name': 'preview.webp',
-                'failure_reason': null,
-              },
+            'lesson_media_id': 'lesson-media-1',
+            'lesson_id': 'lesson-1',
+            'media_asset_id': 'media-1',
+            'position': 1,
+            'media_type': 'image',
+            'asset_state': 'ready',
+            'media': {
+              'media_id': 'media-1',
+              'state': 'ready',
+              'resolved_url': 'https://cdn.example.com/preview.webp',
             },
           },
         );
@@ -222,16 +176,10 @@ void main() {
       'https://cdn.example.com/preview.webp',
     );
 
-    final requests = adapter.requestsFor(ApiPaths.mediaPreviews);
+    final requests = adapter.requestsFor(placementReadPath);
     expect(requests, hasLength(1));
-    expect(requests.single.method, 'POST');
-    expect(
-      requests.single.contentType.toLowerCase().startsWith('application/json'),
-      true,
-    );
-    expect(Map<String, dynamic>.from(requests.single.data as Map), {
-      'ids': <String>['lesson-media-1'],
-    });
+    expect(requests.single.method, 'GET');
+    expect(adapter.requestsFor(ApiPaths.mediaPreviews), isEmpty);
   });
 }
 

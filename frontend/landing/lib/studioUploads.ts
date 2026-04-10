@@ -13,12 +13,20 @@ export type LessonMediaUploadParams = {
 };
 
 type CanonicalLessonUploadTarget = {
-  media_asset_id?: string;
-  media_id?: string;
+  media_asset_id: string;
+  asset_state: string;
   upload_url: string;
   headers: Record<string, string>;
   expires_at: string;
-  storage_path: string;
+};
+
+type CanonicalLessonMediaPlacement = {
+  lesson_media_id: string;
+  lesson_id: string;
+  media_asset_id: string;
+  position: number;
+  media_type: 'image' | 'audio' | 'video' | 'document';
+  asset_state: string;
 };
 
 function normalizeLessonMediaType(
@@ -68,21 +76,19 @@ export async function uploadLessonMedia(
     throw new Error('Unsupported lesson media type');
   }
 
-  const uploadTargetResponse = await fetch(
-    `${params.apiBaseUrl}/api/media/upload-url`,
-    {
-      method: 'POST',
-      headers,
-      credentials: params.credentials ?? 'include',
-      body: JSON.stringify({
-        filename: params.filename,
-        mime_type: params.contentType,
-        size_bytes: resolveByteSize(params.file),
-        media_type: mediaType,
-        lesson_id: params.lessonId,
-      }),
-    }
-  );
+  const uploadTargetUrl =
+    `${params.apiBaseUrl}/api/lessons/${params.lessonId}/media-assets/upload-url`;
+  const uploadTargetResponse = await fetch(uploadTargetUrl, {
+    method: 'POST',
+    headers,
+    credentials: params.credentials ?? 'include',
+    body: JSON.stringify({
+      filename: params.filename,
+      mime_type: params.contentType,
+      size_bytes: resolveByteSize(params.file),
+      media_type: mediaType,
+    }),
+  });
   if (!uploadTargetResponse.ok) {
     const detail = await uploadTargetResponse.text();
     throw new Error(
@@ -92,28 +98,28 @@ export async function uploadLessonMedia(
 
   const uploadTarget =
     (await uploadTargetResponse.json()) as CanonicalLessonUploadTarget;
-  const mediaId = uploadTarget.media_asset_id ?? uploadTarget.media_id;
-  if (!mediaId) {
-    throw new Error('Lesson media upload-url response missing media id');
+  const mediaAssetId = uploadTarget.media_asset_id;
+  if (!mediaAssetId) {
+    throw new Error('Lesson media upload-url response missing media_asset_id');
+  }
+  if (uploadTarget.asset_state !== 'pending_upload') {
+    throw new Error('Lesson media upload-url response has invalid asset_state');
   }
   const presign: MediaPresignResponse = {
     url: uploadTarget.upload_url,
     headers: uploadTarget.headers,
     method: 'PUT',
     expires_at: uploadTarget.expires_at,
-    storage_path: uploadTarget.storage_path,
   };
   await uploadWithPresignedUrl(presign, params.file);
 
   const completeResponse = await fetch(
-    `${params.apiBaseUrl}/api/media/complete`,
+    `${params.apiBaseUrl}/api/media-assets/${mediaAssetId}/upload-completion`,
     {
       method: 'POST',
       headers,
       credentials: params.credentials ?? 'include',
-      body: JSON.stringify({
-        media_id: mediaId,
-      }),
+      body: JSON.stringify({}),
     }
   );
 
@@ -124,26 +130,23 @@ export async function uploadLessonMedia(
     );
   }
 
-  const attachResponse = await fetch(`${params.apiBaseUrl}/api/media/attach`, {
+  const placementUrl =
+    `${params.apiBaseUrl}/api/lessons/${params.lessonId}/media-placements`;
+  const placementResponse = await fetch(placementUrl, {
     method: 'POST',
     headers,
     credentials: params.credentials ?? 'include',
     body: JSON.stringify({
-      media_id: mediaId,
-      link_scope: 'lesson',
-      lesson_id: params.lessonId,
+      media_asset_id: mediaAssetId,
     }),
   });
 
-  if (!attachResponse.ok) {
-    const detail = await attachResponse.text();
+  if (!placementResponse.ok) {
+    const detail = await placementResponse.text();
     throw new Error(
-      `Lesson media attach failed: ${attachResponse.status} ${detail}`
+      `Lesson media placement failed: ${placementResponse.status} ${detail}`
     );
   }
 
-  const attached = (await attachResponse.json()) as Record<string, unknown> & {
-    lesson_media?: Record<string, unknown>;
-  };
-  return attached.lesson_media ?? attached;
+  return (await placementResponse.json()) as CanonicalLessonMediaPlacement;
 }

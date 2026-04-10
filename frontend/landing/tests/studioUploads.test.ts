@@ -7,21 +7,31 @@ describe('uploadLessonMedia', () => {
     vi.restoreAllMocks();
   });
 
-  it('performs presign, upload and completion', async () => {
+  it('performs canonical upload, completion and placement', async () => {
     const uploadTargetPayload = {
-      media_id: 'media-1',
+      media_asset_id: 'media-1',
+      asset_state: 'pending_upload',
       upload_url: 'https://storage.test/upload',
       headers: { 'x-upsert': 'true' },
       expires_at: new Date().toISOString(),
-      storage_path: 'courses/course-1/lessons/lesson-id/video/file.mp4',
     };
 
     const responses = [
       new Response(JSON.stringify(uploadTargetPayload), { status: 200 }),
       new Response(null, { status: 200 }),
-      new Response(JSON.stringify({ state: 'ready' }), { status: 200 }),
       new Response(
-        JSON.stringify({ lesson_media: { id: 'lesson-media-1' } }),
+        JSON.stringify({ media_asset_id: 'media-1', asset_state: 'uploaded' }),
+        { status: 200 }
+      ),
+      new Response(
+        JSON.stringify({
+          lesson_media_id: 'lesson-media-1',
+          lesson_id: 'lesson-id',
+          media_asset_id: 'media-1',
+          position: 1,
+          media_type: 'video',
+          asset_state: 'uploaded',
+        }),
         { status: 200 }
       ),
     ];
@@ -47,13 +57,22 @@ describe('uploadLessonMedia', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock.mock.calls[0]?.[0]).toContain(
-      '/api/media/upload-url'
+      '/api/lessons/lesson-id/media-assets/upload-url'
     );
     expect(fetchMock.mock.calls[2]?.[0]).toContain(
-      '/api/media/complete'
+      '/api/media-assets/media-1/upload-completion'
     );
-    expect(fetchMock.mock.calls[3]?.[0]).toContain('/api/media/attach');
-    expect(result).toEqual({ id: 'lesson-media-1' });
+    expect(fetchMock.mock.calls[3]?.[0]).toContain(
+      '/api/lessons/lesson-id/media-placements'
+    );
+    expect(result).toEqual({
+      lesson_media_id: 'lesson-media-1',
+      lesson_id: 'lesson-id',
+      media_asset_id: 'media-1',
+      position: 1,
+      media_type: 'video',
+      asset_state: 'uploaded',
+    });
   });
 
   it('throws when presign fails', async () => {

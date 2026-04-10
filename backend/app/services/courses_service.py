@@ -16,6 +16,7 @@ from ..media_control_plane.services.media_resolver_service import (
 from ..repositories import courses as courses_repo
 from ..repositories import home_audio_runtime as home_audio_runtime_repo
 from ..repositories import runtime_media as runtime_media_repo
+from ..utils import lesson_content as lesson_content_utils
 from . import lesson_playback_service
 from . import storage_service
 
@@ -965,6 +966,53 @@ async def create_lesson(
         position=position,
     )
     return dict(row)
+
+
+async def create_lesson_structure(
+    course_id: str,
+    *,
+    lesson_title: str,
+    position: int,
+) -> dict[str, Any]:
+    row = await courses_repo.create_lesson_structure(
+        course_id=course_id,
+        lesson_title=lesson_title,
+        position=position,
+    )
+    return dict(row)
+
+
+async def update_lesson_structure(
+    lesson_id: str,
+    patch: dict[str, Any],
+) -> dict[str, Any] | None:
+    structure_patch: dict[str, Any] = {}
+    if "lesson_title" in patch:
+        structure_patch["lesson_title"] = patch["lesson_title"]
+    if "position" in patch:
+        structure_patch["position"] = patch["position"]
+    row = await courses_repo.update_lesson_structure(lesson_id, structure_patch)
+    return dict(row) if row else None
+
+
+async def update_lesson_content(
+    lesson_id: str,
+    *,
+    content_markdown: str,
+) -> dict[str, Any] | None:
+    if await courses_repo.get_lesson_structure(lesson_id) is None:
+        return None
+    media_rows = await list_lesson_media(lesson_id)
+    lesson_media_kinds, media_url_aliases = (
+        lesson_content_utils.build_lesson_media_write_contract(media_rows)
+    )
+    normalized_markdown = lesson_content_utils.normalize_lesson_markdown_for_storage(
+        content_markdown,
+        lesson_media_kinds=lesson_media_kinds,
+        media_url_aliases=media_url_aliases,
+    )
+    row = await courses_repo.update_lesson_content(lesson_id, normalized_markdown)
+    return dict(row) if row else None
 
 
 async def upsert_lesson(course_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:

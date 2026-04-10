@@ -134,40 +134,49 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         assert update_course.json()["title"] == "Intro to Aveli (Updated)"
 
         student_create_lesson = await async_client.post(
-            "/studio/lessons",
+            f"/studio/courses/{course_id}/lessons",
             headers=auth_header(student_token),
             json={
-                "course_id": course_id,
                 "lesson_title": "Lesson 1",
-                "content_markdown": "# Hello",
                 "position": 1,
             },
         )
         assert student_create_lesson.status_code == 403, student_create_lesson.text
 
         create_lesson = await async_client.post(
-            "/studio/lessons",
+            f"/studio/courses/{course_id}/lessons",
             headers=auth_header(teacher_token),
             json={
-                "course_id": course_id,
                 "lesson_title": "Lesson 1",
-                "content_markdown": "# Hello",
                 "position": 1,
             },
         )
         assert create_lesson.status_code == 200, create_lesson.text
         lesson_id = str(create_lesson.json()["id"])
         assert create_lesson.json()["lesson_title"] == "Lesson 1"
+        assert "content_markdown" not in create_lesson.json()
+
+        update_content = await async_client.patch(
+            f"/studio/lessons/{lesson_id}/content",
+            headers=auth_header(teacher_token),
+            json={"content_markdown": "# Hello"},
+        )
+        assert update_content.status_code == 200, update_content.text
+        assert update_content.json()["lesson_id"] == lesson_id
+        assert update_content.json()["content_markdown"] == "# Hello"
 
         list_lessons = await async_client.get(
             f"/studio/courses/{course_id}/lessons",
             headers=auth_header(teacher_token),
         )
         assert list_lessons.status_code == 200, list_lessons.text
-        assert any(str(item["id"]) == lesson_id for item in list_lessons.json()["items"])
+        listed_lesson = next(
+            item for item in list_lessons.json()["items"] if str(item["id"]) == lesson_id
+        )
+        assert "content_markdown" not in listed_lesson
 
         update_lesson = await async_client.patch(
-            f"/studio/lessons/{lesson_id}",
+            f"/studio/lessons/{lesson_id}/structure",
             headers=auth_header(teacher_token),
             json={
                 "lesson_title": "Lesson 1 Updated",
@@ -177,14 +186,26 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         assert update_lesson.status_code == 200, update_lesson.text
         assert update_lesson.json()["lesson_title"] == "Lesson 1 Updated"
         assert update_lesson.json()["position"] == 2
+        assert "content_markdown" not in update_lesson.json()
 
-        legacy_upload = await async_client.post(
-            f"/studio/lessons/{lesson_id}/media",
+        mixed_create = await async_client.post(
+            "/studio/lessons",
             headers=auth_header(teacher_token),
-            files={"file": ("intro.mp3", b"ID3", "audio/mpeg")},
+            json={
+                "course_id": course_id,
+                "lesson_title": "Mixed",
+                "content_markdown": "Nope",
+                "position": 2,
+            },
         )
-        assert legacy_upload.status_code == 410, legacy_upload.text
-        assert legacy_upload.json()["detail"] == "Legacy lesson upload is disabled"
+        assert mixed_create.status_code == 404, mixed_create.text
+
+        mixed_update = await async_client.patch(
+            f"/studio/lessons/{lesson_id}",
+            headers=auth_header(teacher_token),
+            json={"lesson_title": "Mixed", "content_markdown": "Nope"},
+        )
+        assert mixed_update.status_code == 405, mixed_update.text
     finally:
         if lesson_id:
             await async_client.delete(

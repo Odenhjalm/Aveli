@@ -3,7 +3,7 @@ export type MediaPresignResponse = {
   headers: Record<string, string>;
   method: string;
   expires_at: string;
-  storage_path: string;
+  storage_path?: string;
   storage_bucket?: string;
 };
 

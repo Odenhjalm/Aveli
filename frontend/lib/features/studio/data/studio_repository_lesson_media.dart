@@ -44,29 +44,18 @@ class _StudioLessonMediaScope {
       );
     }
 
-    final response = await _client.raw.post<Object?>(
-      ApiPaths.mediaPreviews,
-      data: {'ids': lessonMediaIds},
-    );
-    final rawItems = StudioRepository._requiredResponseField(
-      response.data,
-      'items',
-      'Lesson media previews',
-    );
-    if (rawItems is! Map) {
-      throw StateError(
-        'Lesson media previews field "items" must be an object.',
-      );
-    }
     final items = <StudioLessonMediaPreviewItem>[];
-    for (final entry in rawItems.entries) {
-      if (entry.key is! String || (entry.key as String).isEmpty) {
+    for (final lessonMediaId in lessonMediaIds) {
+      if (lessonMediaId.isEmpty) {
         throw StateError('Lesson media previews returned an empty id key.');
       }
+      final response = await _client.raw.get<Object?>(
+        '/api/media-placements/$lessonMediaId',
+      );
       items.add(
-        StudioLessonMediaPreviewItem.fromResponse(
-          entry.key as String,
-          entry.value,
+        StudioLessonMediaPreviewItem.fromPlacementResponse(
+          lessonMediaId,
+          response.data,
         ),
       );
     }
@@ -92,6 +81,11 @@ class _StudioLessonMediaScope {
     if (upload.uploadUrl.isEmpty) {
       throw StateError('Ofullständigt svar från studio media upload-url.');
     }
+    if (upload.assetState != 'pending_upload') {
+      throw StateError(
+        'Studio media upload-url returnerade ogiltigt asset_state.',
+      );
+    }
 
     final dio = Dio();
     await dio.putUri<void>(
@@ -108,11 +102,53 @@ class _StudioLessonMediaScope {
       },
     );
 
+    await _completeLessonMediaUpload(mediaAssetId: upload.mediaAssetId);
+    return _createLessonMediaPlacement(
+      lessonId: lessonId,
+      mediaAssetId: upload.mediaAssetId,
+      filename: filename,
+    );
+  }
+
+  Future<void> _completeLessonMediaUpload({
+    required String mediaAssetId,
+  }) async {
     final response = await _client.raw.post<Object?>(
-      '/api/lesson-media/$lessonId/${upload.lessonMediaId}/complete',
+      '/api/media-assets/$mediaAssetId/upload-completion',
       data: const {},
     );
-    return StudioLessonMediaItem.fromResponse(response.data);
+    final completedMediaAssetId = _requiredResponseStringField(
+      response.data,
+      'media_asset_id',
+      'Studio lesson media upload-completion',
+    );
+    if (completedMediaAssetId != mediaAssetId) {
+      throw StateError(
+        'Studio media upload-completion returnerade fel media_asset_id.',
+      );
+    }
+    final assetState = _requiredResponseStringField(
+      response.data,
+      'asset_state',
+      'Studio lesson media upload-completion',
+    );
+    if (assetState != 'uploaded') {
+      throw StateError(
+        'Studio media upload-completion returnerade ogiltigt asset_state.',
+      );
+    }
+  }
+
+  Future<StudioLessonMediaItem> _createLessonMediaPlacement({
+    required String lessonId,
+    required String mediaAssetId,
+    required String filename,
+  }) async {
+    final response = await _client.raw.post<Object?>(
+      '/api/lessons/$lessonId/media-placements',
+      data: {'media_asset_id': mediaAssetId},
+    );
+    return StudioLessonMediaItem.fromPlacementResponse(response.data);
   }
 
   Future<void> deleteLessonMedia(String lessonId, String lessonMediaId) async {
@@ -137,7 +173,7 @@ class _StudioLessonMediaScope {
     required String lessonId,
   }) async {
     final response = await _client.raw.post<Object?>(
-      '/api/lesson-media/$lessonId/upload-url',
+      '/api/lessons/$lessonId/media-assets/upload-url',
       data: {
         'filename': filename,
         'mime_type': mimeType,

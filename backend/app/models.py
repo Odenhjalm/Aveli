@@ -869,6 +869,8 @@ async def list_lesson_media(
     return list(await courses_service.list_lesson_media(lesson_id, mode=mode))
 
 
+# UWD-001 non-canonical write isolation: direct lesson_media mutation helpers below
+# are helper-only implementation surfaces and must not define canonical media authority.
 async def next_lesson_media_position(lesson_id: str) -> int:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
@@ -1075,77 +1077,6 @@ async def update_lesson_media_asset_link(
     return await get_media(str(row["id"]))
 
 
-async def delete_lesson_media_entry(media_id: str) -> dict | None:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                WITH deleted AS (
-                  DELETE FROM app.lesson_media
-                  WHERE id = %s
-                  RETURNING id, lesson_id, storage_path, storage_bucket, media_id, media_asset_id
-                ),
-                usage AS (
-                  SELECT
-                    d.media_asset_id,
-                    EXISTS(
-                      SELECT 1
-                      FROM app.lesson_media lm
-                      WHERE lm.media_asset_id = d.media_asset_id
-                        AND lm.id <> d.id
-                    ) AS used_in_lessons,
-                    EXISTS(
-                      SELECT 1
-                      FROM app.courses c
-                      WHERE c.cover_media_id = d.media_asset_id
-                    ) AS used_as_cover
-                  FROM deleted d
-                ),
-                deleted_asset AS (
-                  DELETE FROM app.media_assets ma
-                  USING usage u
-                  WHERE ma.id = u.media_asset_id
-                    AND u.media_asset_id IS NOT NULL
-                    AND NOT u.used_in_lessons
-                    AND NOT u.used_as_cover
-                  RETURNING ma.id
-                )
-                SELECT
-                  d.id,
-                  d.lesson_id,
-                  coalesce(mo.storage_path, d.storage_path) AS storage_path,
-                  coalesce(mo.storage_bucket, d.storage_bucket, 'lesson-media') AS storage_bucket,
-                  d.media_id,
-                  d.media_asset_id,
-                  mo.content_type,
-                  mo.byte_size,
-                  mo.original_name,
-                  EXISTS(SELECT 1 FROM deleted_asset) AS media_asset_deleted
-                FROM deleted d
-                LEFT JOIN app.media_objects mo ON mo.id = d.media_id
-                """,
-                (media_id,),
-            )
-            row = await _fetchone(cur)
-            await conn.commit()
-    if row and row.get("media_id"):
-        await cleanup_media_object(row["media_id"])
-    return row
-
-
-async def reorder_media(lesson_id: str, ordered_ids: list[str]) -> None:
-    if not ordered_ids:
-        return
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            for index, media_id in enumerate(ordered_ids, start=1):
-                await cur.execute(
-                    "UPDATE app.lesson_media SET position = %s WHERE id = %s AND lesson_id = %s",
-                    (index, media_id, lesson_id),
-                )
-            await conn.commit()
-
-
 async def get_media(media_id: str) -> dict | None:
     async with get_conn() as cur:
         await cur.execute(
@@ -1233,6 +1164,8 @@ async def lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
     return await courses_service.lesson_course_ids(lesson_id)
 
 
+# UWD-001 non-canonical write isolation: this mixed lesson helper accepts structure
+# and content together and must not define canonical Course + Lesson Editor authority.
 async def upsert_lesson(
     *,
     lesson_id: str | None,

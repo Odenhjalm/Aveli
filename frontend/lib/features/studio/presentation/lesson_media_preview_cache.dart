@@ -287,12 +287,40 @@ class LessonMediaPreviewCache {
     if (previews.isEmpty) {
       return;
     }
+    for (final preview in previews) {
+      if (preview.lessonMediaId.isEmpty) {
+        continue;
+      }
+      _failures.remove(preview.lessonMediaId);
+      _cache.set(preview.lessonMediaId, preview);
+    }
   }
 
   void primeFromLessonMedia(Iterable<StudioLessonMediaItem> mediaItems) {
     if (mediaItems.isEmpty) {
       return;
     }
+    final previews = <LessonMediaPreviewData>[];
+    for (final item in mediaItems) {
+      if (item.lessonMediaId.isEmpty) {
+        continue;
+      }
+      final resolvedUrl = item.media?.resolvedUrl?.trim();
+      final ready =
+          item.state == 'ready' &&
+          resolvedUrl != null &&
+          resolvedUrl.isNotEmpty;
+      previews.add(
+        LessonMediaPreviewData(
+          lessonMediaId: item.lessonMediaId,
+          mediaType: item.mediaType,
+          resolvedPreviewUrl: ready ? resolvedUrl : null,
+          authoritativeEditorReady: ready,
+          failureReason: item.state == 'failed' ? 'failed' : null,
+        ),
+      );
+    }
+    prime(previews);
   }
 
   void _scheduleFlush() {

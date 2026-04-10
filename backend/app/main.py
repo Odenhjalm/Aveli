@@ -224,6 +224,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(api_notifications.router)
     app.include_router(studio.router)
     app.include_router(studio.course_lesson_router)
+    app.include_router(studio.media_pipeline_router)
     app.include_router(studio.lesson_media_router)
     app.include_router(logs_mcp.router)
     app.include_router(media_control_plane_mcp.router)
