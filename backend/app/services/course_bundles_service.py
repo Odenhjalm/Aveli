@@ -3,7 +3,7 @@ from __future__ import annotations
 import stripe
 from starlette.concurrency import run_in_threadpool
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from .. import repositories
 from .. import stripe_mode
@@ -44,21 +44,22 @@ async def create_bundle(
     payload: CourseBundleCreateRequest,
 ) -> CourseBundleResponse:
     teacher_id = str(current_user["id"])
+    validated_course_ids = await _validate_bundle_course_candidates(
+        payload.course_ids,
+        teacher_id=teacher_id,
+    )
     bundle = await bundle_repo.create_bundle(
         teacher_id=teacher_id,
         title=payload.title,
         description=payload.description,
         price_amount_cents=payload.price_amount_cents,
-        currency=(payload.currency or "sek").lower(),
-        is_active=payload.is_active,
     )
-    if payload.course_ids:
-        for idx, course_id in enumerate(payload.course_ids):
-            await _ensure_course_is_owned(course_id, teacher_id)
+    if validated_course_ids:
+        for idx, course_id in enumerate(validated_course_ids):
             await bundle_repo.add_course_to_bundle(bundle["id"], course_id, position=idx)
     detailed = await get_bundle(bundle["id"], include_inactive=True)
     if not detailed:
-        raise CourseBundleError("Bundle could not be created", status_code=500)
+        raise CourseBundleError("Paketet kunde inte skapas", status_code=500)
     return detailed
 
 
@@ -70,13 +71,20 @@ async def attach_course(
     position: int | None = None,
 ) -> CourseBundleResponse:
     teacher_id = str(current_user["id"])
-    bundle = await bundle_repo.get_bundle(bundle_id)
+    bundle = await bundle_repo.get_bundle_composition(bundle_id)
     if not bundle:
         raise CourseBundleError("Paketet saknas", status_code=404)
     if str(bundle.get("teacher_id")) != teacher_id:
         raise CourseBundleError("Du kan bara ändra dina egna paket", status_code=403)
-    await _ensure_course_is_owned(course_id, teacher_id)
-    await bundle_repo.add_course_to_bundle(bundle_id, course_id, position=position)
+    validated_course_ids = await _validate_bundle_course_candidates(
+        [course_id],
+        teacher_id=teacher_id,
+    )
+    await bundle_repo.add_course_to_bundle(
+        bundle_id,
+        validated_course_ids[0],
+        position=position,
+    )
     detailed = await get_bundle(bundle_id, include_inactive=True)
     if not detailed:
         raise CourseBundleError("Paketet kunde inte uppdateras", status_code=500)
@@ -85,7 +93,7 @@ async def attach_course(
 
 async def list_teacher_bundles(current_user: Mapping[str, Any]) -> list[CourseBundleResponse]:
     teacher_id = str(current_user["id"])
-    bundles = await bundle_repo.list_bundles(teacher_id=teacher_id, active_only=False)
+    bundles = await bundle_repo.list_bundle_compositions(teacher_id=teacher_id)
     results: list[CourseBundleResponse] = []
     for bundle in bundles:
         detailed = await get_bundle(str(bundle["id"]), include_inactive=True)
@@ -95,12 +103,11 @@ async def list_teacher_bundles(current_user: Mapping[str, Any]) -> list[CourseBu
 
 
 async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> CourseBundleResponse | None:
-    bundle = await bundle_repo.get_bundle(bundle_id)
+    _ = include_inactive
+    bundle = await bundle_repo.get_bundle_composition(bundle_id)
     if not bundle:
         return None
-    if not include_inactive and not bundle.get("is_active"):
-        return None
-    courses = await bundle_repo.list_bundle_courses(bundle_id)
+    courses = await bundle_repo.list_bundle_courses_composition(bundle_id)
     course_models = [
         CourseBundleCourse(
             course_id=row["course_id"],
@@ -108,7 +115,6 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
             title=row.get("title"),
             position=row.get("position") or 0,
             price_amount_cents=row.get("price_amount_cents"),
-            currency=row.get("currency"),
         )
         for row in courses
     ]
@@ -118,12 +124,7 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
         title=bundle["title"],
         description=bundle.get("description"),
         price_amount_cents=bundle["price_amount_cents"],
-        currency=bundle.get("currency") or "sek",
-        stripe_product_id=bundle.get("stripe_product_id"),
-        stripe_price_id=bundle.get("stripe_price_id"),
-        is_active=bundle.get("is_active", True),
         courses=course_models,
-        payment_link=_payment_link(bundle_id),
     )
 
 
@@ -225,10 +226,37 @@ async def grant_bundle_entitlements(
             )
 
 
-async def _ensure_course_is_owned(course_id: str, teacher_id: str) -> None:
-    is_owner = await courses_repo.is_course_owner(course_id, teacher_id)
-    if not is_owner:
-        raise CourseBundleError("Kursen tillhör inte dig", status_code=403)
+async def _validate_bundle_course_candidates(
+    course_ids: Sequence[str],
+    *,
+    teacher_id: str,
+) -> list[str]:
+    normalized_course_ids = [str(course_id or "").strip() for course_id in course_ids]
+    exact_course_ids = [course_id for course_id in normalized_course_ids if course_id]
+    if not exact_course_ids:
+        return []
+
+    ownership_rows = await courses_repo.list_course_ownership_rows(exact_course_ids)
+    ownership_by_course_id = {
+        str(row["id"]): dict(row)
+        for row in ownership_rows
+        if row.get("id") is not None
+    }
+
+    validated_course_ids: list[str] = []
+    for course_id in exact_course_ids:
+        row = ownership_by_course_id.get(course_id)
+        if row is None:
+            raise CourseBundleError("Kursen saknas", status_code=404)
+
+        course_teacher_id = str(row.get("teacher_id") or "").strip()
+        if not course_teacher_id:
+            raise CourseBundleError("Kursen saknar giltig lärarägare", status_code=422)
+        if course_teacher_id != teacher_id:
+            raise CourseBundleError("Kursen tillhör inte dig", status_code=403)
+        validated_course_ids.append(course_id)
+
+    return validated_course_ids
 
 
 async def _ensure_customer_id(user: Mapping[str, Any]) -> str:

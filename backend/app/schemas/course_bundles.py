@@ -26,7 +26,6 @@ class CourseBundleCourse(BaseModel):
     title: Optional[str] = None
     position: int
     price_amount_cents: Optional[int] = None
-    currency: Optional[str] = None
 
 
 class CourseBundleResponse(BaseModel):
@@ -34,13 +33,8 @@ class CourseBundleResponse(BaseModel):
     teacher_id: UUID
     title: str
     description: Optional[str] = None
-    price_amount_cents: int
-    currency: str
-    stripe_product_id: Optional[str] = None
-    stripe_price_id: Optional[str] = None
-    is_active: bool
+    price_amount_cents: Optional[int] = None
     courses: List[CourseBundleCourse] = Field(default_factory=list)
-    payment_link: Optional[str] = None
 
 
 class CourseBundleListResponse(BaseModel):

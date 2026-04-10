@@ -394,6 +394,26 @@ async def is_course_owner(course_id: str, teacher_id: str) -> bool:
             return await cur.fetchone() is not None
 
 
+async def list_course_ownership_rows(course_ids: Sequence[str]) -> Sequence[dict[str, Any]]:
+    normalized_ids = [str(course_id or "").strip() for course_id in course_ids]
+    exact_ids = [course_id for course_id in normalized_ids if course_id]
+    if not exact_ids:
+        return []
+
+    query = """
+        select
+            c.id,
+            c.teacher_id
+        from app.courses as c
+        where c.id = any(%s::uuid[])
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (exact_ids,))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def get_course_public_content(course_id: str) -> dict[str, Any] | None:
     query = """
         select

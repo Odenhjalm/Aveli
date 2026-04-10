@@ -17,10 +17,6 @@ async def create_bundle(
     title: str,
     description: str | None,
     price_amount_cents: int,
-    currency: str,
-    stripe_product_id: str | None = None,
-    stripe_price_id: str | None = None,
-    is_active: bool = True,
 ) -> BundleRow:
     query = """
         INSERT INTO app.course_bundles (
@@ -28,23 +24,15 @@ async def create_bundle(
             title,
             description,
             price_amount_cents,
-            currency,
-            stripe_product_id,
-            stripe_price_id,
-            is_active,
             created_at,
             updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+        VALUES (%s, %s, %s, %s, now(), now())
         RETURNING id,
                   teacher_id,
                   title,
                   description,
                   price_amount_cents,
-                  currency,
-                  stripe_product_id,
-                  stripe_price_id,
-                  is_active,
                   created_at,
                   updated_at
     """
@@ -57,10 +45,6 @@ async def create_bundle(
                     title,
                     description,
                     price_amount_cents,
-                    currency,
-                    stripe_product_id,
-                    stripe_price_id,
-                    is_active,
                 ),
             )
             row = await cur.fetchone()
@@ -188,6 +172,72 @@ async def add_course_to_bundle(bundle_id: str, course_id: str, *, position: int 
             await conn.commit()
 
 
+async def get_bundle_composition(bundle_id: str) -> BundleRow | None:
+    query = """
+        SELECT id,
+               teacher_id,
+               title,
+               description,
+               price_amount_cents,
+               created_at,
+               updated_at
+          FROM app.course_bundles
+         WHERE id = %s
+         LIMIT 1
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (bundle_id,))
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def list_bundle_compositions(
+    *,
+    teacher_id: str | None = None,
+) -> Sequence[BundleRow]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if teacher_id:
+        clauses.append("teacher_id = %s")
+        params.append(teacher_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    query = f"""
+        SELECT id,
+               teacher_id,
+               title,
+               description,
+               price_amount_cents,
+               created_at,
+               updated_at
+          FROM app.course_bundles
+          {where}
+      ORDER BY updated_at DESC
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, params)
+        rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def list_bundle_courses_composition(bundle_id: str) -> Sequence[BundleCourseRow]:
+    query = """
+        SELECT b.bundle_id,
+               b.course_id,
+               b.position,
+               c.slug,
+               c.title,
+               c.price_amount_cents
+          FROM app.course_bundle_courses b
+          JOIN app.courses c ON c.id = b.course_id
+         WHERE b.bundle_id = %s
+         ORDER BY b.position, c.title
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (bundle_id,))
+        rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def list_bundle_courses(bundle_id: str) -> Sequence[BundleCourseRow]:
     query = """
         SELECT b.bundle_id,
@@ -216,7 +266,10 @@ __all__ = [
     "create_bundle",
     "update_bundle",
     "get_bundle",
+    "get_bundle_composition",
     "list_bundles",
+    "list_bundle_compositions",
     "add_course_to_bundle",
     "list_bundle_courses",
+    "list_bundle_courses_composition",
 ]
