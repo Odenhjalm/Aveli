@@ -136,18 +136,6 @@ async def stripe_payment_element_webhook(request: Request):
     try:
         if event_type == "payment_intent.succeeded":
             await checkout_service.handle_payment_intent_succeeded(data_object)
-            metadata = data_object.get("metadata") or {}
-            if isinstance(metadata, dict):
-                user_id = metadata.get("user_id")
-                course_slug = metadata.get("course_slug")
-                if user_id and course_slug:
-                    course_row = await courses_repo.get_course_by_slug(str(course_slug))
-                    if course_row and course_row.get("id"):
-                        await courses_repo.create_course_enrollment(
-                            user_id=str(user_id),
-                            course_id=str(course_row["id"]),
-                            source="purchase",
-                        )
         elif event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
             if subscription_service.is_membership_checkout_session(data_object):
                 await subscription_service.process_event(event)
@@ -196,41 +184,51 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
     currency = (session.get("currency") or "sek").lower()
     stripe_customer_id = str(session.get("customer")) if session.get("customer") else None
 
-    order = None
-    if order_id:
-        order = await orders_repo.get_order(order_id)
-        await payments_repo.mark_order_paid(
-            order_id,
-            payment_intent=str(payment_intent) if payment_intent else None,
-            checkout_id=checkout_id if isinstance(checkout_id, str) else None,
-            subscription_id=str(session.get("subscription")) if session.get("subscription") else None,
-            customer_id=str(session.get("customer")) if session.get("customer") else None,
+    if not order_id:
+        logger.warning("Checkout session missing order_id; checkout=%s event=%s", checkout_id, event_type)
+        return
+
+    order = await orders_repo.get_order(order_id)
+    if not order:
+        logger.warning("Checkout session could not resolve order; order_id=%s event=%s", order_id, event_type)
+        return
+    if order.get("status") == "paid":
+        logger.info("Skipping already paid checkout session; order_id=%s event=%s", order_id, event_type)
+        return
+
+    await payments_repo.mark_order_paid(
+        order_id,
+        payment_intent=str(payment_intent) if payment_intent else None,
+        checkout_id=checkout_id if isinstance(checkout_id, str) else None,
+        subscription_id=str(session.get("subscription")) if session.get("subscription") else None,
+        customer_id=str(session.get("customer")) if session.get("customer") else None,
+    )
+
+    await payments_repo.record_payment(
+        order_id=order_id,
+        provider="stripe",
+        provider_reference=str(payment_intent) if payment_intent else None,
+        status="paid",
+        amount_cents=amount_cents or int(order.get("amount_cents") or 0),
+        currency=currency,
+        metadata={"event": event_type},
+        payload=session if isinstance(session, dict) else {},
+    )
+
+    order_metadata = order.get("metadata")
+    if not isinstance(order_metadata, dict):
+        order_metadata = {}
+
+    user_id = order.get("user_id") or order_metadata.get("user_id")
+    course_id = order.get("course_id")
+    if user_id and course_id:
+        await courses_repo.create_course_enrollment(
+            user_id=str(user_id),
+            course_id=str(course_id),
+            source="purchase",
         )
 
-    if order_id:
-        await payments_repo.record_payment(
-            order_id=order_id,
-            provider="stripe",
-            provider_reference=str(payment_intent) if payment_intent else None,
-            status="paid",
-            amount_cents=amount_cents or int((order or {}).get("amount_cents") or 0),
-            currency=currency,
-            metadata={"event": event_type},
-            payload=session if isinstance(session, dict) else {},
-        )
-
-    user_id = metadata.get("user_id") or (order.get("user_id") if order else None)
-    course_slug = metadata.get("course_slug")
-    if user_id and course_slug:
-        course_row = await courses_repo.get_course_by_slug(course_slug)
-        if course_row and course_row.get("id"):
-            await courses_repo.create_course_enrollment(
-                user_id=str(user_id),
-                course_id=str(course_row["id"]),
-                source="purchase",
-            )
-
-    bundle_id = metadata.get("bundle_id")
+    bundle_id = order_metadata.get("bundle_id")
     if user_id and bundle_id:
         try:
             await course_bundles_service.grant_bundle_entitlements(

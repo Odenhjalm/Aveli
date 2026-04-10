@@ -181,11 +181,19 @@ async def create_course_checkout(
 async def handle_payment_intent_succeeded(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
+    payment_intent_id = str(payload.get("id") or "").strip()
+    order = None
+    if payment_intent_id:
+        order = await repositories.get_order_by_payment_intent(payment_intent_id)
+    if order and str(order.get("stripe_checkout_id") or "").strip():
+        # Checkout-session purchases must settle only from the checkout-session
+        # webhook path, never from payment_intent.succeeded.
+        return dict(order)
+
     metadata = payload.get("metadata") or {}
     if not isinstance(metadata, dict):
         metadata = {}
     order_id = metadata.get("order_id")
-    payment_intent_id = payload.get("id")
     if not order_id:
         return None
 
