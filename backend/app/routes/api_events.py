@@ -108,9 +108,28 @@ async def _user_is_event_participant(event_id: str, user_id: str) -> bool:
         return (await cur.fetchone()) is not None
 
 
+async def _user_is_active_event_host(event_id: str, user_id: str) -> bool:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT 1
+            FROM app.event_participants ep
+            WHERE ep.event_id = %s
+              AND ep.user_id = %s
+              AND ep.role = 'host'
+              AND ep.status <> 'cancelled'
+            LIMIT 1
+            """,
+            (event_id, user_id),
+        )
+        return (await cur.fetchone()) is not None
+
+
 async def _assert_event_read_access(event: dict, current: dict) -> None:
     current_id = str(current["id"])
-    if _is_admin(current) or str(event["created_by"]) == current_id:
+    if _is_admin(current):
+        return
+    if await _user_is_active_event_host(str(event["id"]), current_id):
         return
     if await _user_is_event_participant(str(event["id"]), current_id):
         return
@@ -230,9 +249,22 @@ async def list_events(
     conditions: list[str] = [
         """
         (
-          e.created_by = %(user_id)s
-          OR %(is_admin)s
-          OR ep.id IS NOT NULL
+          %(is_admin)s
+          OR EXISTS(
+            SELECT 1
+            FROM app.event_participants ep_host
+            WHERE ep_host.event_id = e.id
+              AND ep_host.user_id = %(user_id)s
+              AND ep_host.role = 'host'
+              AND ep_host.status <> 'cancelled'
+          )
+          OR EXISTS(
+            SELECT 1
+            FROM app.event_participants ep_participant
+            WHERE ep_participant.event_id = e.id
+              AND ep_participant.user_id = %(user_id)s
+              AND ep_participant.status <> 'cancelled'
+          )
           OR (
             e.status <> 'draft'
             AND (
@@ -289,10 +321,6 @@ async def list_events(
           e.created_at,
           e.updated_at
         FROM app.events e
-        LEFT JOIN app.event_participants ep
-          ON ep.event_id = e.id
-         AND ep.user_id = %(user_id)s
-         AND ep.status <> 'cancelled'
         WHERE {where_clause}
         ORDER BY e.start_at ASC
         LIMIT %(limit)s
@@ -326,8 +354,11 @@ async def update_event(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    if not _is_admin(current) and str(event["created_by"]) != str(current["id"]):
-        raise HTTPException(status_code=403, detail="Only the event creator may update this event")
+    if not _is_admin(current) and not await _user_is_active_event_host(
+        str(event_id),
+        str(current["id"]),
+    ):
+        raise HTTPException(status_code=403, detail="Only an event host may update this event")
 
     updates: dict[str, object] = {}
     if payload.type is not None:
@@ -416,15 +447,15 @@ async def register_participant(
         raise HTTPException(status_code=404, detail="Event not found")
 
     current_id = str(current["id"])
-    is_owner = str(event["created_by"]) == current_id
     is_admin = _is_admin(current)
+    is_owner = False if is_admin else await _user_is_active_event_host(str(event_id), current_id)
 
     target_user_id = str(payload.user_id) if payload.user_id else current_id
     if target_user_id != current_id and not (is_owner or is_admin):
-        raise HTTPException(status_code=403, detail="Only the event creator may register other users")
+        raise HTTPException(status_code=403, detail="Only an event host may register other users")
 
     if payload.role.value == "host" and not (is_owner or is_admin):
-        raise HTTPException(status_code=403, detail="Only the event creator may assign host role")
+        raise HTTPException(status_code=403, detail="Only an event host may assign host role")
 
     if event["status"] in {"cancelled", "completed"}:
         raise HTTPException(status_code=400, detail="Event is closed")
@@ -509,8 +540,14 @@ async def list_event_notifications(event_id: UUID, current: TeacherUser) -> Noti
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    if not _is_admin(current) and str(event["created_by"]) != str(current["id"]):
-        raise HTTPException(status_code=403, detail="Only the event creator may view notifications for this event")
+    if not _is_admin(current) and not await _user_is_active_event_host(
+        str(event_id),
+        str(current["id"]),
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Only an event host may view notifications for this event",
+        )
 
     async with get_conn() as cur:
         await cur.execute(

@@ -1392,7 +1392,7 @@ async def quiz_belongs_to_user(quiz_id: str, user_id: str) -> bool:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT cq.course_id, c.created_by
+            SELECT cq.course_id, c.teacher_id
             FROM app.course_quizzes cq
             JOIN app.courses c ON c.id = cq.course_id
             WHERE cq.id = %s
@@ -1402,7 +1402,7 @@ async def quiz_belongs_to_user(quiz_id: str, user_id: str) -> bool:
         row = await _fetchone(cur)
     if not row:
         return False
-    return row.get("created_by") == user_id
+    return row.get("teacher_id") == user_id
 
 
 async def upsert_quiz_question(quiz_id: str, data: dict) -> dict | None:

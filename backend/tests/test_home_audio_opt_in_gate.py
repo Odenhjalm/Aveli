@@ -5,7 +5,7 @@ import pytest
 
 from app import db
 from app.routes import studio as studio_routes
-from app.services import home_audio_service
+from app.services import courses_service
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -92,6 +92,8 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(
     lesson_id = str(uuid.uuid4())
     lesson_media_id = str(uuid.uuid4())
     media_asset_id = str(uuid.uuid4())
+    lesson_id_value = lesson_id
+    media_asset_id_value = media_asset_id
     link_rows: dict[str, dict] = {}
     allowed_users = {teacher_id}
 
@@ -164,6 +166,20 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(
         assert candidate_lesson_id == lesson_id
         return {"lesson": {"id": lesson_id}, "can_access": user_id in allowed_users}
 
+    async def fake_get_lesson_runtime_media(
+        *,
+        lesson_id: str,
+        media_asset_id: str,
+    ):
+        assert lesson_id == lesson_id_value
+        assert media_asset_id == media_asset_id_value
+        return {
+            "media_type": "audio",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "uploaded",
+        }
+
     monkeypatch.setattr(
         studio_routes.home_audio_sources_repo,
         "resolve_lesson_media_course_owner",
@@ -183,21 +199,27 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.home_audio_runtime_repo,
+        courses_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        home_audio_service.courses_service,
+        courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_lesson_runtime_media",
+        fake_get_lesson_runtime_media,
         raising=True,
     )
 

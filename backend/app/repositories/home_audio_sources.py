@@ -237,7 +237,17 @@ async def get_home_player_course_link(
         LEFT JOIN app.courses c ON c.id = l.course_id
         LEFT JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         WHERE hpcl.id = %s::uuid
-          AND hpcl.teacher_id = %s::uuid
+          AND EXISTS (
+            SELECT 1
+            FROM app.lesson_media lm_owner
+            JOIN app.lessons l_owner ON l_owner.id = lm_owner.lesson_id
+            JOIN app.courses c_owner ON c_owner.id = l_owner.course_id
+            WHERE lm_owner.id = hpcl.lesson_media_id
+              AND c_owner.teacher_id = %s::uuid
+              AND {_test_visibility_clause("lm_owner")}
+              AND {_test_visibility_clause("l_owner")}
+              AND {_test_visibility_clause("c_owner")}
+          )
           AND {_test_visibility_clause("lm")}
           AND {_test_visibility_clause("l")}
           AND {_test_visibility_clause("c")}
@@ -252,7 +262,7 @@ async def get_home_player_course_link(
 async def resolve_lesson_media_course_owner(lesson_media_id: str) -> Optional[dict[str, Any]]:
     query = f"""
         SELECT
-          c.created_by AS teacher_id,
+          c.teacher_id AS teacher_id,
           c.title AS course_title,
           c.is_published AS course_is_published,
           ma.media_type::text AS media_type
@@ -326,12 +336,22 @@ async def update_home_player_course_link(
         assignments.append(f"{key} = %({key})s")
 
     query = f"""
-        UPDATE app.home_player_course_links
+        UPDATE app.home_player_course_links AS hpcl
            SET {", ".join(assignments)},
                updated_at = now()
-         WHERE id = %(link_id)s::uuid
-           AND teacher_id = %(teacher_id)s::uuid
-        RETURNING id
+         WHERE hpcl.id = %(link_id)s::uuid
+           AND EXISTS (
+             SELECT 1
+             FROM app.lesson_media lm
+             JOIN app.lessons l ON l.id = lm.lesson_id
+             JOIN app.courses c ON c.id = l.course_id
+             WHERE lm.id = hpcl.lesson_media_id
+               AND c.teacher_id = %(teacher_id)s::uuid
+               AND {_test_visibility_clause("lm")}
+               AND {_test_visibility_clause("l")}
+               AND {_test_visibility_clause("c")}
+           )
+        RETURNING hpcl.id
     """
     async with get_conn() as cur:
         await cur.execute(query, params)
@@ -346,11 +366,21 @@ async def delete_home_player_course_link(
     link_id: str,
     teacher_id: str,
 ) -> bool:
-    query = """
-        DELETE FROM app.home_player_course_links
-        WHERE id = %s::uuid
-          AND teacher_id = %s::uuid
-        RETURNING id
+    query = f"""
+        DELETE FROM app.home_player_course_links AS hpcl
+        WHERE hpcl.id = %s::uuid
+          AND EXISTS (
+            SELECT 1
+            FROM app.lesson_media lm
+            JOIN app.lessons l ON l.id = lm.lesson_id
+            JOIN app.courses c ON c.id = l.course_id
+            WHERE lm.id = hpcl.lesson_media_id
+              AND c.teacher_id = %s::uuid
+              AND {_test_visibility_clause("lm")}
+              AND {_test_visibility_clause("l")}
+              AND {_test_visibility_clause("c")}
+          )
+        RETURNING hpcl.id
     """
     async with get_conn() as cur:
         await cur.execute(query, (link_id, teacher_id))
