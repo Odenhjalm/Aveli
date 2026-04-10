@@ -1159,6 +1159,84 @@ If blocking:
 
 ---
 
+## Baseline Completeness Gate
+
+Before any downstream implementation, schema-dependent repair, or verification
+may proceed, Codex MUST perform a Baseline Completeness Audit.
+
+Definitions:
+
+- `runtime authority`
+  - any canonical runtime-owned domain surface that the running system treats as
+    authoritative for reads, writes, state transitions, worker behavior, API
+    behavior, or verification boundaries
+- `baseline substrate`
+  - the minimal canonical baseline-replayed substrate required for that runtime
+    authority to exist safely from scratch, including required schemas, tables,
+    storage substrate, and other materialized runtime prerequisites
+- `baseline-owner task`
+  - the explicit `OWNER` task that is responsible for creating the baseline
+    substrate if clean baseline replay does not already materialize it
+
+Mandatory mapping:
+
+For every runtime authority, Codex MUST materialize this chain before
+implementation begins:
+
+`runtime authority -> canonical baseline substrate -> baseline-owner task`
+
+Mandatory audit:
+
+Before downstream implementation begins, Codex MUST:
+
+1. enumerate every runtime authority in scope
+2. identify the canonical baseline substrate required by each authority
+3. cross-check runtime dependencies against clean baseline replay schema
+4. identify missing tables, schemas, storage substrate, and other required
+   materialized objects before implementation begins
+5. verify that each required substrate either:
+   - exists in clean baseline replay
+   - or has a clearly defined baseline-owner task that will create it
+
+Blocking rules:
+
+Downstream implementation is FORBIDDEN if:
+
+- any runtime authority lacks an identified canonical baseline substrate
+- any runtime authority lacks a baseline-owner task
+- any required substrate is missing from clean baseline replay and no
+  baseline-owner task exists
+- runtime dependencies and baseline schema do not match exactly
+
+STOP condition:
+
+If any mismatch is found between runtime authority and baseline substrate, or if
+any authority lacks explicit ownership, Codex MUST fail closed and stop.
+
+`STOP: BASELINE COMPLETENESS GATE FAILED`
+
+No downstream implementation, worker repair, API repair, schema-dependent
+verification, or domain expansion may proceed until the authority to substrate
+to owner-task chain is complete and the required substrate is materialized in
+clean replay or explicitly planned by a baseline-owner task.
+
+Example failure:
+
+If commerce runtime depends on `orders` and `payments`, but clean baseline
+replay does not materialize those tables and no baseline-owner task exists,
+commerce implementation MUST NOT proceed.
+
+Domain coverage:
+
+This gate is mandatory for:
+
+- commerce
+- auth
+- media
+- all future domains
+
+---
+
 ## Baseline Replay Contract
 
 A baseline replay is the only valid proof of baseline correctness.
