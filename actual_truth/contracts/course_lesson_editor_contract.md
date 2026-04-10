@@ -330,6 +330,30 @@ Rules:
 - does not accept content payload
 - does not redefine content authority
 
+### Lesson Delete Media Cleanup Decision
+
+Lesson delete is allowed when lesson-media placements exist.
+
+The lesson delete flow owns removal of the lesson-owned rows required to delete the lesson:
+
+* the target `app.lesson_contents` row, if present
+* all `app.lesson_media` placement rows whose `lesson_id` is the deleted lesson
+* the target `app.lessons` row
+
+Lesson delete may mutate `app.lesson_media` only to remove placement links for the lesson being deleted.
+
+Lesson delete must not create, update, reorder, or otherwise mutate placement rows for any other lesson.
+
+Lesson delete must not create, update, or delete `app.media_assets`.
+
+Lesson delete must not write to `app.runtime_media`.
+
+Removal of media assets or storage objects after lesson deletion is a separate media lifecycle / cleanup concern. It may occur only through the media lifecycle / cleanup authority after placement links are removed and orphan status is re-evaluated.
+
+Lesson delete success means the lesson, its content row, and its lesson-owned placement links were removed. It does not mean media asset cleanup has completed.
+
+Baseline FK or cascade behavior may support this decision only if it preserves the same authority split and does not expand lesson delete into media asset or runtime-media authority.
+
 ## 6. CONTENT WRITE CONTRACT
 
 Endpoint:
