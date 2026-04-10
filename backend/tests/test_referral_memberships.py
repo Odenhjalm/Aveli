@@ -144,11 +144,9 @@ async def test_referral_signup_grants_membership_without_stripe(async_client, mo
         membership = await repositories.get_membership(invited_user_id)
         assert membership is not None
         assert membership["status"] == "active"
-        assert membership["price_id"] == "referral_grant"
-        assert membership["plan_interval"] == "invite"
-        assert membership["stripe_customer_id"] is None
-        assert membership["stripe_subscription_id"] is None
-        assert membership["end_date"] is not None
+        assert membership["source"] == "invite"
+        assert membership["effective_at"] is not None
+        assert membership["expires_at"] is not None
 
         redeemed_referral = await referrals_repo.get_referral_by_code(referral["code"])
         assert redeemed_referral is not None
@@ -161,7 +159,7 @@ async def test_referral_signup_grants_membership_without_stripe(async_client, mo
             await cleanup_user(teacher_id)
 
 
-async def test_membership_expiry_logic_requires_future_end_date(async_client):
+async def test_membership_access_logic_uses_canonical_status_and_expires_at(async_client):
     password = "Passw0rd!"
     user_id = None
     try:
@@ -174,11 +172,10 @@ async def test_membership_expiry_logic_requires_future_end_date(async_client):
 
         await repositories.upsert_membership_record(
             user_id,
-            plan_interval="invite",
-            price_id="referral_grant",
-            status="active",
-            start_date=datetime.now(timezone.utc) - timedelta(days=2),
-            end_date=datetime.now(timezone.utc) - timedelta(minutes=1),
+            status="expired",
+            source="invite",
+            effective_at=datetime.now(timezone.utc) - timedelta(days=2),
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
         )
 
         expired_membership = await repositories.get_membership(user_id)
@@ -187,17 +184,16 @@ async def test_membership_expiry_logic_requires_future_end_date(async_client):
 
         await repositories.upsert_membership_record(
             user_id,
-            plan_interval="invite",
-            price_id="referral_grant",
-            status="trialing",
-            start_date=datetime.now(timezone.utc) - timedelta(days=1),
-            end_date=datetime.now(timezone.utc) + timedelta(days=2),
+            status="canceled",
+            source="invite",
+            effective_at=datetime.now(timezone.utc) - timedelta(days=1),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=2),
         )
 
         active_membership = await repositories.get_membership(user_id)
         assert active_membership is not None
         assert is_membership_row_active(active_membership) is True
-        assert active_membership["status"] == "trialing"
+        assert active_membership["status"] == "canceled"
     finally:
         if user_id:
             await cleanup_user(user_id)
@@ -301,13 +297,13 @@ async def test_referral_membership_expires_correctly(async_client, monkeypatch):
 
         membership = await repositories.get_membership(invited_user_id)
         assert membership is not None
-        start_date = membership["start_date"]
-        end_date = membership["end_date"]
-        assert start_date is not None
-        assert end_date is not None
+        effective_at = membership["effective_at"]
+        expires_at = membership["expires_at"]
+        assert effective_at is not None
+        assert expires_at is not None
 
         expected_seconds = 7 * 24 * 60 * 60
-        actual_seconds = int((end_date - start_date).total_seconds())
+        actual_seconds = int((expires_at - effective_at).total_seconds())
         assert abs(actual_seconds - expected_seconds) <= 5
     finally:
         if invited_user_id:
@@ -339,11 +335,10 @@ async def test_membership_expiry_warning_job_sends_once(async_client, monkeypatc
         now = datetime.now(timezone.utc)
         membership = await repositories.upsert_membership_record(
             user_id,
-            plan_interval="invite",
-            price_id="referral_grant",
             status="active",
-            start_date=now - timedelta(days=1),
-            end_date=now + timedelta(days=7, hours=12),
+            source="invite",
+            effective_at=now - timedelta(days=1),
+            expires_at=now + timedelta(days=7, hours=12),
         )
 
         first_run = await membership_expiry_warnings.run_once(now=now)

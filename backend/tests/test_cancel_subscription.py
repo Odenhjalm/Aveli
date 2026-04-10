@@ -23,7 +23,7 @@ async def test_cancel_subscription_requires_membership(async_client, monkeypatch
     headers, user_id, _ = await register_user(async_client)
 
     resp = await async_client.post(
-        "/api/billing/cancel-subscription",
+        "/api/billing/cancel-subscription-intent",
         headers=headers,
         json={"subscription_id": "sub_missing"},
     )
@@ -32,17 +32,28 @@ async def test_cancel_subscription_requires_membership(async_client, monkeypatch
     assert "ingen aktiv prenumeration" in payload["detail"].lower()
 
 
-async def test_cancel_subscription_marks_membership(async_client, monkeypatch):
+async def test_cancel_subscription_submits_intent_without_mutating_membership(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
     headers, user_id, _ = await register_user(async_client)
 
     await repositories.upsert_membership_record(
         str(user_id),
-        plan_interval="month",
-        price_id="price_test",
         status="active",
-        stripe_customer_id="cus_test",
+        source="purchase",
+    )
+    await repositories.create_order(
+        user_id=str(user_id),
+        service_id=None,
+        course_id=None,
+        amount_cents=1000,
+        currency="sek",
+        metadata={"checkout_type": "membership", "source": "purchase"},
+        order_type="subscription",
+        session_id=None,
+        session_slot_id=None,
         stripe_subscription_id="sub_test",
+        stripe_customer_id="cus_test",
+        connected_account_id=None,
     )
 
     captured_payload: dict[str, object] = {}
@@ -59,20 +70,20 @@ async def test_cancel_subscription_marks_membership(async_client, monkeypatch):
     monkeypatch.setattr("stripe.Subscription.modify", fake_modify)
 
     resp = await async_client.post(
-        "/api/billing/cancel-subscription",
+        "/api/billing/cancel-subscription-intent",
         headers=headers,
         json={"subscription_id": "sub_test"},
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 202, resp.text
     payload = resp.json()
-    assert payload["status"] == "canceled"
+    assert payload["ok"] is True
     assert payload["cancel_at_period_end"] is True
     assert captured_payload["sub_id"] == "sub_test"
     assert captured_payload["kwargs"]["cancel_at_period_end"] is True
 
     membership = await repositories.get_membership(str(user_id))
     assert membership is not None
-    assert membership["status"] == "canceled"
+    assert membership["status"] == "active"
 
 
 async def test_cancel_subscription_rejects_mismatched_subscription_id(async_client, monkeypatch):
@@ -81,11 +92,22 @@ async def test_cancel_subscription_rejects_mismatched_subscription_id(async_clie
 
     await repositories.upsert_membership_record(
         str(user_id),
-        plan_interval="month",
-        price_id="price_test",
         status="active",
-        stripe_customer_id="cus_test",
+        source="purchase",
+    )
+    await repositories.create_order(
+        user_id=str(user_id),
+        service_id=None,
+        course_id=None,
+        amount_cents=1000,
+        currency="sek",
+        metadata={"checkout_type": "membership", "source": "purchase"},
+        order_type="subscription",
+        session_id=None,
+        session_slot_id=None,
         stripe_subscription_id="sub_real",
+        stripe_customer_id="cus_test",
+        connected_account_id=None,
     )
 
     stripe_called = False
@@ -98,7 +120,7 @@ async def test_cancel_subscription_rejects_mismatched_subscription_id(async_clie
     monkeypatch.setattr("stripe.Subscription.modify", fake_modify)
 
     resp = await async_client.post(
-        "/api/billing/cancel-subscription",
+        "/api/billing/cancel-subscription-intent",
         headers=headers,
         json={"subscription_id": "sub_other_user"},
     )

@@ -173,77 +173,10 @@ async def redeem_referral_code(
                 await conn.rollback()
                 raise InvalidReferralCodeError
 
-            start_date, end_date = referral_membership_window(
+            effective_at, expires_at = referral_membership_window(
                 free_days=referral.get("free_days"),
                 free_months=referral.get("free_months"),
             )
-            await cur.execute(
-                """
-                SELECT column_name
-                  FROM information_schema.columns
-                 WHERE table_schema = 'app'
-                   AND table_name = 'memberships'
-                """,
-            )
-            membership_columns = {
-                str((row or {}).get("column_name"))
-                for row in await cur.fetchall()
-                if (row or {}).get("column_name")
-            }
-            if {"membership_id", "user_id", "status", "end_date", "created_at", "updated_at"}.issubset(
-                membership_columns
-            ):
-                if {"plan_interval", "price_id", "start_date"}.issubset(membership_columns):
-                    await cur.execute(
-                        """
-                        INSERT INTO app.memberships (
-                            user_id,
-                            plan_interval,
-                            price_id,
-                            status,
-                            stripe_customer_id,
-                            stripe_subscription_id,
-                            start_date,
-                            end_date,
-                            created_at,
-                            updated_at
-                        )
-                        VALUES (%s, 'invite', 'referral_grant', 'active', NULL, NULL, %s, %s, now(), now())
-                        ON CONFLICT (user_id) DO UPDATE
-                        SET plan_interval = EXCLUDED.plan_interval,
-                            price_id = EXCLUDED.price_id,
-                            status = EXCLUDED.status,
-                            stripe_customer_id = NULL,
-                            stripe_subscription_id = NULL,
-                            start_date = EXCLUDED.start_date,
-                            end_date = EXCLUDED.end_date,
-                            updated_at = now()
-                        """,
-                        (user_id, start_date, end_date),
-                    )
-                else:
-                    await cur.execute(
-                        """
-                        INSERT INTO app.memberships (
-                            membership_id,
-                            user_id,
-                            status,
-                            end_date,
-                            created_at,
-                            updated_at
-                        )
-                        VALUES (gen_random_uuid(), %s, 'active', %s, now(), now())
-                        ON CONFLICT (user_id) DO UPDATE
-                        SET status = EXCLUDED.status,
-                            end_date = EXCLUDED.end_date,
-                            updated_at = now()
-                        """,
-                        (user_id, end_date),
-                    )
-            else:
-                await conn.rollback()
-                raise RuntimeError("app.memberships is unavailable")
-
             await cur.execute(
                 """
                 UPDATE app.referral_codes
@@ -265,7 +198,10 @@ async def redeem_referral_code(
             )
             redeemed = await cur.fetchone()
             await conn.commit()
-    return dict(redeemed) if redeemed else dict(referral)
+    result = dict(redeemed) if redeemed else dict(referral)
+    result["effective_at"] = effective_at
+    result["expires_at"] = expires_at
+    return result
 
 
 __all__ = [

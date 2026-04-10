@@ -9,7 +9,7 @@ from typing import Any
 from ..config import settings
 from ..db import get_conn
 from ..observability import log_buffer
-from ..repositories import memberships as memberships_repo
+from ..repositories import membership_support as membership_support_repo
 from . import email_service
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ async def run_once(*, now: datetime | None = None) -> int:
             )
             continue
 
-        await memberships_repo.insert_billing_log(
+        await membership_support_repo.insert_billing_log(
             user_id=user_id,
             step=_WARNING_STEP,
             info={
@@ -144,7 +144,7 @@ async def _list_expiring_memberships(
             SELECT m.membership_id,
                    m.user_id,
                    m.status,
-                   COALESCE(m.expires_at, m.end_date) AS expires_at,
+                   m.expires_at AS expires_at,
                    u.email AS email,
                    p.display_name
               FROM app.memberships m
@@ -152,11 +152,11 @@ async def _list_expiring_memberships(
               JOIN app.profiles p ON p.user_id = m.user_id
              WHERE (
                    m.status = 'active'
-                   OR (m.status = 'canceled' AND COALESCE(m.expires_at, m.end_date) > now())
+                   OR (m.status = 'canceled' AND m.expires_at > now())
                )
-               AND COALESCE(m.expires_at, m.end_date) >= %s
-               AND COALESCE(m.expires_at, m.end_date) < %s
-             ORDER BY COALESCE(m.expires_at, m.end_date) ASC
+               AND m.expires_at >= %s
+               AND m.expires_at < %s
+             ORDER BY m.expires_at ASC
             """,
             (window_start, window_end),
         )

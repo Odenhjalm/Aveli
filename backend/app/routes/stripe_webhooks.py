@@ -1,23 +1,28 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 import sentry_sdk
 import stripe
 from fastapi import APIRouter, HTTPException, Request, status
-from starlette.concurrency import run_in_threadpool
 
-from ..repositories import courses as courses_repo
-from ..repositories import memberships as memberships_repo
+from ..repositories import membership_support as membership_support_repo
 from ..repositories import orders as orders_repo
 from ..repositories import payments as payments_repo
-from ..repositories import teachers as teachers_repo
 from .. import stripe_mode
-from ..services import checkout_service, course_bundles_service, subscription_service
+from ..services import (
+    stripe_webhook_bundle_service,
+    stripe_webhook_course_service,
+    stripe_webhook_membership_service,
+    stripe_webhook_support_service,
+)
 
 router = APIRouter(prefix="/api/stripe", tags=["stripe-webhooks"])
 logger = logging.getLogger(__name__)
+CHECKOUT_SESSION_COMPLETION_EVENTS = {
+    "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+}
 
 
 def _sentry_enabled() -> bool:
@@ -128,30 +133,44 @@ async def stripe_payment_element_webhook(request: Request):
     data_object = event.get("data", {}).get("object", {})
 
     if isinstance(event_id, str) and event_id:
-        inserted = await memberships_repo.insert_payment_event(event_id, dict(event))
+        inserted = await membership_support_repo.insert_payment_event(event_id, dict(event))
         if not inserted:
             logger.info("Skipping duplicate Stripe event %s", event_id)
             return {"status": "ok"}
 
     try:
         if event_type == "payment_intent.succeeded":
-            await checkout_service.handle_payment_intent_succeeded(data_object)
-        elif event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
-            if subscription_service.is_membership_checkout_session(data_object):
-                await subscription_service.process_event(event)
+            await stripe_webhook_support_service.handle_payment_intent_succeeded(
+                data_object,
+            )
+        elif event_type in CHECKOUT_SESSION_COMPLETION_EVENTS:
+            if stripe_webhook_membership_service.is_membership_checkout_session(
+                data_object,
+            ):
+                await stripe_webhook_membership_service.handle_event(event)
             else:
-                await _handle_checkout_session(data_object, event_type)
-        elif subscription_service.is_membership_event_type(str(event_type) if event_type else None):
-            await subscription_service.process_event(event)
+                await _handle_checkout_session_completion(data_object, str(event_type))
+        elif stripe_webhook_membership_service.is_membership_event_type(
+            str(event_type) if event_type else None,
+        ):
+            await stripe_webhook_membership_service.handle_event(event)
         elif event_type == "payment_intent.payment_failed":
             logger.info(
                 "Payment failed for intent %s",
                 data_object.get("id"),
             )
         elif event_type in {"charge.refunded", "payment_intent.canceled"}:
-            await _handle_refund_event(event_type, data_object)
+            await stripe_webhook_support_service.handle_refund_event(
+                str(event_type),
+                data_object,
+            )
         elif event_type and event_type.startswith("account."):
-            await _handle_connect_event(event_type, event, data_object, context)
+            await stripe_webhook_support_service.handle_connect_event(
+                event_type=str(event_type),
+                event_payload=event,
+                data_object=data_object,
+                context=context,
+            )
         else:
             logger.info("Unhandled Stripe event %s", event_type)
     except Exception as exc:  # pragma: no cover - defensive logging
@@ -173,31 +192,84 @@ async def stripe_payment_element_webhook(request: Request):
     return {"status": "ok"}
 
 
-async def _handle_checkout_session(session: dict[str, object], event_type: str) -> None:
+async def _handle_checkout_session_completion(
+    session: dict[str, object],
+    event_type: str,
+) -> None:
+    order = await _resolve_checkout_order(session, event_type)
+    if not order:
+        return
+
+    await _settle_checkout_order(order=order, session=session, event_type=event_type)
+
+    order_metadata = order.get("metadata")
+    if not isinstance(order_metadata, dict):
+        order_metadata = {}
+
+    if order.get("course_id"):
+        await stripe_webhook_course_service.handle_paid_checkout_order(
+            order=order,
+            event_type=event_type,
+        )
+        return
+
+    if order_metadata.get("bundle_id"):
+        payment_intent = session.get("payment_intent")
+        stripe_customer_id = (
+            str(session.get("customer")) if session.get("customer") else None
+        )
+        await stripe_webhook_bundle_service.handle_paid_checkout_order(
+            order=order,
+            stripe_customer_id=stripe_customer_id,
+            payment_intent_id=str(payment_intent) if payment_intent else None,
+            event_type=event_type,
+        )
+        return
+
+    logger.info(
+        "Checkout session had no course or bundle authority; order_id=%s event=%s",
+        order.get("id"),
+        event_type,
+    )
+
+
+async def _resolve_checkout_order(
+    session: dict[str, object],
+    event_type: str,
+) -> dict[str, object] | None:
     metadata = session.get("metadata") if isinstance(session.get("metadata"), dict) else {}
     if not isinstance(metadata, dict):
         metadata = {}
     order_id = metadata.get("order_id") or session.get("client_reference_id")
-    payment_intent = session.get("payment_intent")
     checkout_id = session.get("id")
-    amount_cents = int(session.get("amount_total") or 0)
-    currency = (session.get("currency") or "sek").lower()
-    stripe_customer_id = str(session.get("customer")) if session.get("customer") else None
 
     if not order_id:
         logger.warning("Checkout session missing order_id; checkout=%s event=%s", checkout_id, event_type)
-        return
+        return None
 
     order = await orders_repo.get_order(order_id)
     if not order:
         logger.warning("Checkout session could not resolve order; order_id=%s event=%s", order_id, event_type)
-        return
+        return None
     if order.get("status") == "paid":
         logger.info("Skipping already paid checkout session; order_id=%s event=%s", order_id, event_type)
-        return
+        return None
+    return order
+
+
+async def _settle_checkout_order(
+    *,
+    order: dict[str, object],
+    session: dict[str, object],
+    event_type: str,
+) -> None:
+    payment_intent = session.get("payment_intent")
+    checkout_id = session.get("id")
+    amount_cents = int(session.get("amount_total") or 0)
+    currency = (session.get("currency") or "sek").lower()
 
     await payments_repo.mark_order_paid(
-        order_id,
+        order["id"],
         payment_intent=str(payment_intent) if payment_intent else None,
         checkout_id=checkout_id if isinstance(checkout_id, str) else None,
         subscription_id=str(session.get("subscription")) if session.get("subscription") else None,
@@ -205,7 +277,7 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
     )
 
     await payments_repo.record_payment(
-        order_id=order_id,
+        order_id=order["id"],
         provider="stripe",
         provider_reference=str(payment_intent) if payment_intent else None,
         status="paid",
@@ -213,147 +285,4 @@ async def _handle_checkout_session(session: dict[str, object], event_type: str) 
         currency=currency,
         metadata={"event": event_type},
         payload=session if isinstance(session, dict) else {},
-    )
-
-    order_metadata = order.get("metadata")
-    if not isinstance(order_metadata, dict):
-        order_metadata = {}
-
-    user_id = order.get("user_id") or order_metadata.get("user_id")
-    course_id = order.get("course_id")
-    if user_id and course_id:
-        await courses_repo.create_course_enrollment(
-            user_id=str(user_id),
-            course_id=str(course_id),
-            source="purchase",
-        )
-
-    bundle_id = order_metadata.get("bundle_id")
-    if user_id and bundle_id:
-        try:
-            await course_bundles_service.grant_bundle_entitlements(
-                str(bundle_id),
-                str(user_id),
-                stripe_customer_id=stripe_customer_id,
-                payment_intent_id=str(payment_intent) if payment_intent else None,
-            )
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.warning("Failed to grant bundle entitlements; bundle=%s error=%s", bundle_id, exc)
-
-
-async def _handle_refund_event(event_type: str, payload: dict[str, object]) -> None:
-    payment_intent_id: str | None = None
-    if event_type == "payment_intent.canceled":
-        intent_value = payload.get("id")
-        if isinstance(intent_value, str):
-            payment_intent_id = intent_value
-    elif event_type == "charge.refunded":
-        intent_value = payload.get("payment_intent")
-        if isinstance(intent_value, str):
-            payment_intent_id = intent_value
-
-    if not payment_intent_id:
-        logger.info("Refund event missing payment intent id: event=%s", event_type)
-        return
-
-    order = await orders_repo.get_order_by_payment_intent(payment_intent_id)
-    if not order:
-        logger.info("Refund event could not match order by payment intent: %s", payment_intent_id)
-        return
-
-    refunded_order = await orders_repo.mark_order_refunded(
-        order["id"],
-        payment_intent=payment_intent_id,
-    )
-    if not refunded_order:
-        return
-
-    await payments_repo.record_payment(
-        order_id=refunded_order["id"],
-        provider="stripe",
-        provider_reference=payment_intent_id,
-        status="refunded",
-        amount_cents=int(refunded_order.get("amount_cents") or 0),
-        currency=(refunded_order.get("currency") or "sek").lower(),
-        metadata={"event": event_type},
-        payload=payload,
-    )
-
-    user_id = refunded_order.get("user_id")
-    course_id = refunded_order.get("course_id")
-    if not user_id or not course_id:
-        return
-
-    user_id_value = str(user_id)
-    course_id_value = str(course_id)
-    course = await courses_repo.get_course(course_id=course_id_value)
-    if not course:
-        return
-
-    course_slug = course.get("slug")
-    await courses_repo.revoke_course_enrollment(user_id_value, course_id_value)
-
-    previous_status = str(refunded_order.get("previous_status") or "").lower()
-    if previous_status == "refunded":
-        return
-
-    course_step = str(course.get("step") or "").strip().lower()
-    if course_step == "intro":
-        created_at = refunded_order.get("created_at")
-        usage_time = created_at if isinstance(created_at, datetime) else datetime.now(timezone.utc)
-        await courses_repo.decrement_intro_usage(
-            user_id_value,
-            amount=1,
-            at=usage_time,
-        )
-
-
-async def _handle_connect_event(
-    event_type: str,
-    event_payload: dict[str, object],
-    data_object: dict[str, object],
-    context: stripe_mode.StripeContext,
-) -> None:
-    account_id = (
-        data_object.get("id")
-        if event_type == "account.updated"
-        else event_payload.get("account") or data_object.get("account")
-    )
-    if not isinstance(account_id, str):
-        logger.info("Stripe account event without account id: %s", event_type)
-        return
-
-    teacher = await teachers_repo.get_teacher_by_account(account_id)
-    if not teacher:
-        logger.info("No teacher row for account %s", account_id)
-        return
-
-    stripe.api_key = context.secret_key
-    try:
-        account = await run_in_threadpool(lambda: stripe.Account.retrieve(account_id))
-    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
-        logger.warning("Failed to fetch account %s: %s", account_id, exc)
-        return
-
-    charges_enabled = bool(account.get("charges_enabled"))
-    payouts_enabled = bool(account.get("payouts_enabled"))
-    requirements = account.get("requirements") or {}
-    disabled_reason = requirements.get("disabled_reason")
-    status_value = "onboarding"
-    if charges_enabled and payouts_enabled:
-        status_value = "verified"
-    elif disabled_reason:
-        status_value = "restricted"
-
-    onboarded_at = teacher.get("onboarded_at")
-    if charges_enabled and payouts_enabled and not onboarded_at:
-        onboarded_at = datetime.now(timezone.utc)
-
-    await teachers_repo.update_teacher_status(
-        teacher["profile_id"],
-        charges_enabled=charges_enabled,
-        payouts_enabled=payouts_enabled,
-        requirements_due=requirements,
-        status=status_value,
-        onboarded_at=onboarded_at,
     )

@@ -443,12 +443,18 @@ async def test_bundle_guardrail_source_scan() -> None:
     bundle_route = root / "backend/app/routes/course_bundles.py"
     bundle_service = root / "backend/app/services/course_bundles_service.py"
     webhook_route = root / "backend/app/routes/stripe_webhooks.py"
+    bundle_webhook_service = (
+        root / "backend/app/services/stripe_webhook_bundle_service.py"
+    )
 
     assert bundle_route.exists()
     assert bundle_service.exists()
+    assert bundle_webhook_service.exists()
 
     bundle_service_source = bundle_service.read_text(encoding="utf-8")
     webhook_source = webhook_route.read_text(encoding="utf-8")
+    bundle_webhook_source = bundle_webhook_service.read_text(encoding="utf-8")
 
     assert "upsert_membership_record" not in bundle_service_source
-    assert "grant_bundle_entitlements" in webhook_source
+    assert "grant_bundle_entitlements" not in webhook_source
+    assert "grant_bundle_entitlements" in bundle_webhook_source

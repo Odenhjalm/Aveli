@@ -318,7 +318,7 @@ def _get_user_summary(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
                a.role_v2 AS role,
                a.is_admin,
                m.status AS membership_status,
-               m.end_date AS membership_end_date,
+               m.expires_at AS membership_expires_at,
                m.updated_at AS membership_updated_at
           FROM auth.users u
           JOIN app.auth_subjects a ON a.user_id = u.id

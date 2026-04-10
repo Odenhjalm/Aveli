@@ -23,7 +23,7 @@ def membership_expires_at(
 ) -> datetime | str | None:
     if not membership:
         return None
-    return membership.get("expires_at", membership.get("end_date"))
+    return membership.get("expires_at")
 
 
 def is_membership_active(

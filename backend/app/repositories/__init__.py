@@ -35,6 +35,7 @@ from .memberships import get_membership, upsert_membership_record
 from .orders import (
     create_order,
     get_order,
+    get_order_by_payment_intent,
     get_user_order,
     list_user_orders,
     set_order_checkout_reference,
@@ -108,6 +109,7 @@ __all__ = [
     "get_media_asset",
     "get_membership",
     "get_order",
+    "get_order_by_payment_intent",
     "get_auth_subject",
     "get_profile",
     "get_refresh_token",

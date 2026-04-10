@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import stripe_mode
 from ..config import settings
 from ..repositories import memberships as memberships_repo
+from ..repositories import membership_support as membership_support_repo
 from ..repositories import orders as orders_repo
 from ..repositories import payments as payments_repo
 from ..repositories import stripe_customers as stripe_customers_repo
@@ -142,7 +143,7 @@ async def create_subscription_checkout(
         subscription_id=_as_string(session.get("subscription")),
         customer_id=customer_id,
     )
-    await memberships_repo.insert_billing_log(
+    await membership_support_repo.insert_billing_log(
         user_id=user_id,
         step="create_subscription_session",
         info={
@@ -195,7 +196,7 @@ async def cancel_subscription_intent(
 
     current_period_end = _to_datetime(updated.get("current_period_end"))
     cancel_at_period_end = bool(updated.get("cancel_at_period_end"))
-    await memberships_repo.insert_billing_log(
+    await membership_support_repo.insert_billing_log(
         user_id=user_id,
         step="cancel_subscription_intent_submitted",
         info={
@@ -273,7 +274,7 @@ async def _handle_membership_checkout_session(payload: Mapping[str, Any]) -> Non
         subscription_id=_as_string(payload.get("subscription")),
         customer_id=_as_string(payload.get("customer")),
     )
-    await memberships_repo.insert_billing_log(
+    await membership_support_repo.insert_billing_log(
         user_id=str(order["user_id"]),
         step="membership_checkout_completed",
         info={
@@ -286,7 +287,7 @@ async def _handle_membership_checkout_session(payload: Mapping[str, Any]) -> Non
 
 async def _handle_subscription_created(payload: Mapping[str, Any]) -> None:
     order = await _sync_membership_order_references(payload)
-    await memberships_repo.insert_billing_log(
+    await membership_support_repo.insert_billing_log(
         user_id=str(order["user_id"]),
         step="membership_subscription_created",
         info={
@@ -314,8 +315,6 @@ async def _handle_subscription_updated(payload: Mapping[str, Any]) -> None:
         expires_at=expires_at,
         canceled_at=canceled_at if canonical_status == "canceled" else None,
         ended_at=ended_at if canonical_status == "expired" else None,
-        provider_customer_id=_as_string(payload.get("customer")),
-        provider_subscription_id=_as_string(payload.get("id")),
         step="membership_subscription_updated",
         info={
             "order_id": str(order["id"]),
@@ -336,8 +335,6 @@ async def _handle_subscription_deleted(payload: Mapping[str, Any]) -> None:
         expires_at=_subscription_expires_at(payload) or now,
         canceled_at=_subscription_canceled_at(payload) or now,
         ended_at=_subscription_ended_at(payload) or now,
-        provider_customer_id=_as_string(payload.get("customer")),
-        provider_subscription_id=_as_string(payload.get("id")),
         step="membership_subscription_deleted",
         info={
             "order_id": str(order["id"]),
@@ -391,8 +388,6 @@ async def _handle_invoice_payment_succeeded(payload: Mapping[str, Any]) -> None:
         expires_at=period.get("end"),
         canceled_at=None,
         ended_at=None,
-        provider_customer_id=customer_id,
-        provider_subscription_id=subscription_id,
         step="membership_invoice_payment_succeeded",
         info={
             "order_id": str(order["id"]),
@@ -437,8 +432,6 @@ async def _handle_invoice_payment_failed(payload: Mapping[str, Any]) -> None:
         expires_at=current_membership.get("expires_at") if current_membership else None,
         canceled_at=current_membership.get("canceled_at") if current_membership else None,
         ended_at=None,
-        provider_customer_id=customer_id,
-        provider_subscription_id=subscription_id,
         step="membership_invoice_payment_failed",
         info={
             "order_id": str(order["id"]),
@@ -511,13 +504,18 @@ async def _resolve_membership_subscription_id(
     if not membership:
         raise SubscriptionError("Ingen aktiv prenumeration hittades", status_code=404)
 
-    membership_subscription_id = (
-        membership.get("provider_subscription_id")
-        or membership.get("stripe_subscription_id")
-    )
+    user_orders = await orders_repo.list_user_orders(user_id, limit=200)
+    membership_subscription_id = None
+    for order in user_orders:
+        if str(order.get("order_type") or "").lower() != "subscription":
+            continue
+        subscription_id = _as_string(order.get("stripe_subscription_id"))
+        if subscription_id:
+            membership_subscription_id = subscription_id
+            break
     if not membership_subscription_id:
         raise SubscriptionError(
-            "Prenumerationen saknar provider subscription-id",
+            "Prenumerationen saknar subscription-id i canonical purchase-substratet",
             status_code=400,
         )
 
@@ -594,8 +592,6 @@ async def _apply_membership_state(
     expires_at: datetime | None,
     canceled_at: datetime | None,
     ended_at: datetime | None,
-    provider_customer_id: str | None,
-    provider_subscription_id: str | None,
     step: str,
     info: dict[str, Any],
 ) -> None:
@@ -608,10 +604,8 @@ async def _apply_membership_state(
         canceled_at=canceled_at,
         ended_at=ended_at,
         source="purchase",
-        provider_customer_id=provider_customer_id,
-        provider_subscription_id=provider_subscription_id,
     )
-    await memberships_repo.insert_billing_log(
+    await membership_support_repo.insert_billing_log(
         user_id=user_id,
         step=step,
         info=info,

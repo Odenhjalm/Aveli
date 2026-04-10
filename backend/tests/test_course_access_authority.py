@@ -25,7 +25,7 @@ async def test_course_access_snapshot_denies_non_intro_membership_without_enroll
         return {}
 
     async def active_membership(*args, **kwargs):
-        return {"status": "active", "end_date": None}
+        return {"status": "active", "expires_at": None}
 
     async def paid_course(*args, **kwargs):
         return {"id": "course-paid", "is_free_intro": False, "is_published": True}
@@ -70,7 +70,7 @@ async def test_course_access_snapshot_grants_intro_membership_access_explicitly(
         return {}
 
     async def active_membership(*args, **kwargs):
-        return {"status": "active", "end_date": None}
+        return {"status": "active", "expires_at": None}
 
     async def intro_course(*args, **kwargs):
         return {"id": "course-intro", "is_free_intro": True, "is_published": True}

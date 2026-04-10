@@ -7,6 +7,7 @@ from ..config import settings
 from ..repositories import referrals as referrals_repo
 from ..utils.referrals import build_referral_duration_label
 from . import email_service
+from . import membership_grant_service
 
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _CODE_LENGTH = 10
@@ -64,11 +65,24 @@ async def redeem_referral(
     user_id: str,
     email: str,
 ) -> dict[str, Any]:
-    return await referrals_repo.redeem_referral_code(
+    redemption = await referrals_repo.redeem_referral_code(
         code=code,
         user_id=user_id,
         email=email,
     )
+    await membership_grant_service.grant_non_purchase_membership(
+        user_id=user_id,
+        source="invite",
+        effective_at=redemption.get("effective_at"),
+        expires_at=redemption.get("expires_at"),
+        audit_step="referral_membership_grant_applied",
+        audit_info={
+            "referral_id": str(redemption.get("id") or ""),
+            "referral_code": str(redemption.get("code") or ""),
+            "teacher_id": str(redemption.get("teacher_id") or ""),
+        },
+    )
+    return redemption
 
 
 def _build_referral_email_text(

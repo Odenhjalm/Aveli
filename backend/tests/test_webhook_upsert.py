@@ -48,6 +48,20 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
     settings.stripe_test_membership_price_id_yearly = "price_year_test"
 
     _, user_id, _ = await register_user(async_client)
+    order = await repositories.create_order(
+        user_id=str(user_id),
+        service_id=None,
+        course_id=None,
+        amount_cents=9900,
+        currency="sek",
+        metadata={"checkout_type": "membership", "source": "purchase"},
+        order_type="subscription",
+        session_id=None,
+        session_slot_id=None,
+        stripe_subscription_id=None,
+        stripe_customer_id="cus_123",
+        connected_account_id=None,
+    )
 
     created_event = {
         "id": "evt_sub_create",
@@ -57,7 +71,7 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
                 "id": "sub_123",
                 "customer": "cus_123",
                 "status": "trialing",
-                "metadata": {"user_id": str(user_id)},
+                "metadata": {"user_id": str(user_id), "order_id": str(order["id"])},
                 "items": {
                     "data": [
                         {
@@ -123,7 +137,10 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
     membership = await repositories.get_membership(str(user_id))
     assert membership is not None
     assert membership["status"] == "active"
-    assert membership["stripe_subscription_id"] == "sub_123"
+    assert membership["source"] == "purchase"
+    refreshed_order = await repositories.get_order(str(order["id"]))
+    assert refreshed_order is not None
+    assert refreshed_order["stripe_subscription_id"] == "sub_123"
 
 
 @pytest.mark.anyio("asyncio")
@@ -136,6 +153,20 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
     settings.stripe_test_webhook_secret = "whsec_test"
 
     _, user_id, _ = await register_user(async_client)
+    membership_order = await repositories.create_order(
+        user_id=str(user_id),
+        service_id=None,
+        course_id=None,
+        amount_cents=9900,
+        currency="sek",
+        metadata={"checkout_type": "membership", "source": "purchase"},
+        order_type="subscription",
+        session_id=None,
+        session_slot_id=None,
+        stripe_subscription_id=None,
+        stripe_customer_id="cus_canonical",
+        connected_account_id=None,
+    )
     course_slug = f"integration-webhook-course-{uuid.uuid4().hex[:8]}"
     course_id = await _create_course(course_slug, 1500)
 
@@ -148,7 +179,7 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
                     "id": "sub_canonical",
                     "customer": "cus_canonical",
                     "status": "active",
-                    "metadata": {"user_id": str(user_id)},
+                    "metadata": {"user_id": str(user_id), "order_id": str(membership_order["id"])},
                     "items": {
                         "data": [
                             {
@@ -208,7 +239,10 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
     membership = await repositories.get_membership(str(user_id))
     assert membership is not None
     assert membership["status"] == "active"
-    assert membership["stripe_subscription_id"] == "sub_canonical"
+    assert membership["source"] == "purchase"
+    refreshed_order = await repositories.get_order(str(membership_order["id"]))
+    assert refreshed_order is not None
+    assert refreshed_order["stripe_subscription_id"] == "sub_canonical"
 
     assert await courses_repo.is_enrolled(str(user_id), course_id) is True
 
@@ -225,6 +259,20 @@ async def test_subscription_webhook_is_idempotent(async_client, monkeypatch):
     settings.stripe_test_membership_price_monthly = "price_month_test"
 
     _, user_id, _ = await register_user(async_client)
+    order = await repositories.create_order(
+        user_id=str(user_id),
+        service_id=None,
+        course_id=None,
+        amount_cents=9900,
+        currency="sek",
+        metadata={"checkout_type": "membership", "source": "purchase"},
+        order_type="subscription",
+        session_id=None,
+        session_slot_id=None,
+        stripe_subscription_id=None,
+        stripe_customer_id="cus_duplicate",
+        connected_account_id=None,
+    )
 
     event = {
         "id": "evt_duplicate_subscription",
@@ -234,7 +282,7 @@ async def test_subscription_webhook_is_idempotent(async_client, monkeypatch):
                 "id": "sub_duplicate",
                 "customer": "cus_duplicate",
                 "status": "active",
-                "metadata": {"user_id": str(user_id)},
+                "metadata": {"user_id": str(user_id), "order_id": str(order["id"])},
                 "items": {
                     "data": [
                         {
