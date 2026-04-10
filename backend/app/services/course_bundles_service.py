@@ -40,6 +40,24 @@ class CourseBundleConfigError(CourseBundleError):
         super().__init__(detail, status_code=503)
 
 
+def _is_bundle_sellable_subject(
+    bundle: Mapping[str, Any],
+    *,
+    has_courses: bool,
+) -> bool:
+    teacher_id = str(bundle.get("teacher_id") or "").strip()
+    amount_cents = int(bundle.get("price_amount_cents") or 0)
+    stripe_product_id = str(bundle.get("stripe_product_id") or "").strip()
+    active_price_id = str(bundle.get("active_stripe_price_id") or "").strip()
+    return (
+        bool(teacher_id)
+        and amount_cents > 0
+        and bool(stripe_product_id)
+        and bool(active_price_id)
+        and has_courses
+    )
+
+
 async def create_bundle(
     current_user: Mapping[str, Any],
     payload: CourseBundleCreateRequest,
@@ -64,6 +82,7 @@ async def create_bundle(
     if validated_course_ids:
         for idx, course_id in enumerate(validated_course_ids):
             await bundle_repo.add_course_to_bundle(bundle["id"], course_id, position=idx)
+    await refresh_bundle_sellability(str(bundle["id"]))
     detailed = await get_bundle(bundle["id"], include_inactive=True)
     if not detailed:
         raise CourseBundleError("Paketet kunde inte skapas", status_code=500)
@@ -92,6 +111,7 @@ async def attach_course(
         validated_course_ids[0],
         position=position,
     )
+    await refresh_bundle_sellability(bundle_id)
     detailed = await get_bundle(bundle_id, include_inactive=True)
     if not detailed:
         raise CourseBundleError("Paketet kunde inte uppdateras", status_code=500)
@@ -110,8 +130,10 @@ async def list_teacher_bundles(current_user: Mapping[str, Any]) -> list[CourseBu
 
 
 async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> CourseBundleResponse | None:
-    _ = include_inactive
-    bundle = await bundle_repo.get_bundle_composition(bundle_id)
+    bundle = await bundle_repo.get_bundle_composition(
+        bundle_id,
+        include_unsellable=include_inactive,
+    )
     if not bundle:
         return None
     courses = await bundle_repo.list_bundle_courses_composition(bundle_id)
@@ -139,7 +161,7 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
     _require_stripe()
 
     bundle = await bundle_repo.get_bundle_mapping_subject(bundle_id)
-    if not bundle:
+    if not bundle or not bool(bundle.get("sellable")):
         raise CourseBundleError("Paketet är inte tillgängligt just nu", status_code=404)
 
     courses = await bundle_repo.list_bundle_checkout_courses(bundle_id)
@@ -398,7 +420,8 @@ async def ensure_bundle_stripe_mapping(bundle_id: str, teacher_id: str) -> Mappi
         str(bundle.get("stripe_product_id") or "").strip() == product_id
         and str(bundle.get("active_stripe_price_id") or "").strip() == desired_price_id
     ):
-        return dict(bundle)
+        refreshed = await refresh_bundle_sellability(normalized_bundle_id)
+        return dict(refreshed) if refreshed is not None else dict(bundle)
 
     updated = await bundle_repo.update_bundle_stripe_mapping(
         normalized_bundle_id,
@@ -407,7 +430,33 @@ async def ensure_bundle_stripe_mapping(bundle_id: str, teacher_id: str) -> Mappi
     )
     if updated is None:
         raise CourseBundleError("Paketets Stripe-mappning kunde inte sparas", status_code=500)
-    return dict(updated)
+    refreshed = await refresh_bundle_sellability(normalized_bundle_id)
+    return dict(refreshed) if refreshed is not None else dict(updated)
+
+
+async def refresh_bundle_sellability(bundle_id: str) -> Mapping[str, Any] | None:
+    normalized_bundle_id = str(bundle_id or "").strip()
+    if not normalized_bundle_id:
+        raise ValueError("bundle_id is required")
+
+    bundle = await bundle_repo.get_bundle_mapping_subject(normalized_bundle_id)
+    if bundle is None:
+        return None
+
+    courses = await bundle_repo.list_bundle_courses_composition(normalized_bundle_id)
+    target_sellable = _is_bundle_sellable_subject(
+        bundle,
+        has_courses=bool(courses),
+    )
+    current_sellable = bool(bundle.get("sellable"))
+    if current_sellable != target_sellable:
+        updated = await bundle_repo.update_bundle_sellability(
+            normalized_bundle_id,
+            sellable=target_sellable,
+        )
+        return dict(updated) if updated is not None else None
+
+    return dict(bundle)
 
 
 def _require_stripe() -> None:
@@ -441,6 +490,7 @@ __all__ = [
     "attach_course",
     "get_bundle",
     "list_teacher_bundles",
+    "refresh_bundle_sellability",
     "ensure_bundle_stripe_mapping",
     "create_checkout_session",
     "grant_bundle_entitlements",

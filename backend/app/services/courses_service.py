@@ -21,6 +21,7 @@ from . import storage_service
 
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
+_SELLABLE_COURSE_STEPS = frozenset({"step1", "step2", "step3"})
 
 _HOME_AUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
@@ -69,7 +70,22 @@ def _reject_legacy_cover_url_write(payload: Mapping[str, Any]) -> None:
 def _course_requires_stripe_mapping(course: Mapping[str, Any]) -> bool:
     normalized_step = str(course.get("step") or "").strip().lower()
     amount_cents = int(course.get("price_amount_cents") or 0)
-    return normalized_step in {"step1", "step2", "step3"} and amount_cents > 0
+    return normalized_step in _SELLABLE_COURSE_STEPS and amount_cents > 0
+
+
+def _is_course_sellable_subject(course: Mapping[str, Any]) -> bool:
+    normalized_step = str(course.get("step") or "").strip().lower()
+    teacher_id = str(course.get("teacher_id") or "").strip()
+    amount_cents = int(course.get("price_amount_cents") or 0)
+    stripe_product_id = str(course.get("stripe_product_id") or "").strip()
+    active_price_id = str(course.get("active_stripe_price_id") or "").strip()
+    return (
+        normalized_step in _SELLABLE_COURSE_STEPS
+        and bool(teacher_id)
+        and amount_cents > 0
+        and bool(stripe_product_id)
+        and bool(active_price_id)
+    )
 
 
 def _require_stripe_for_course_mapping() -> None:
@@ -194,11 +210,9 @@ async def list_courses(
 
 async def list_public_courses(
     *,
-    published_only: bool = True,
     search: str | None = None,
     limit: int | None = None,
 ) -> Sequence[dict[str, Any]]:
-    del published_only
     rows = [
         dict(row)
         for row in await courses_repo.list_public_course_discovery(
@@ -835,6 +849,28 @@ async def delete_course(course_id: str) -> bool:
     return await courses_repo.delete_course(course_id)
 
 
+async def refresh_course_sellability(course_id: str) -> dict[str, Any] | None:
+    normalized_course_id = str(course_id or "").strip()
+    if not normalized_course_id:
+        raise ValueError("course_id is required")
+
+    subject = await courses_repo.get_course_sellability_subject(normalized_course_id)
+    if subject is None:
+        return None
+
+    target_sellable = _is_course_sellable_subject(subject)
+    current_sellable = bool(subject.get("sellable"))
+    if current_sellable != target_sellable:
+        updated = await courses_repo.update_course_sellability(
+            normalized_course_id,
+            sellable=target_sellable,
+        )
+        return dict(updated) if updated is not None else None
+
+    row = await courses_repo.get_course(course_id=normalized_course_id)
+    return dict(row) if row else None
+
+
 async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[str, Any]:
     normalized_course_id = str(course_id or "").strip()
     normalized_teacher_id = str(teacher_id or "").strip()
@@ -849,7 +885,8 @@ async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[
     if course is None:
         raise LookupError("course not found")
     if not _course_requires_stripe_mapping(course):
-        return dict(course)
+        refreshed = await refresh_course_sellability(normalized_course_id)
+        return dict(refreshed) if refreshed is not None else dict(course)
 
     _require_stripe_for_course_mapping()
 
@@ -898,7 +935,8 @@ async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[
         str(course.get("stripe_product_id") or "").strip() == product_id
         and str(course.get("active_stripe_price_id") or "").strip() == desired_price_id
     ):
-        return dict(course)
+        refreshed = await refresh_course_sellability(normalized_course_id)
+        return dict(refreshed) if refreshed is not None else dict(course)
 
     updated = await courses_repo.update_course_stripe_mapping(
         normalized_course_id,
@@ -907,7 +945,8 @@ async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[
     )
     if updated is None:
         raise RuntimeError("Course Stripe mapping could not be persisted")
-    return dict(updated)
+    refreshed = await refresh_course_sellability(normalized_course_id)
+    return dict(refreshed) if refreshed is not None else dict(updated)
 
 
 async def create_lesson(

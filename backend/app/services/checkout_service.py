@@ -60,7 +60,7 @@ async def create_course_checkout(
 ) -> schemas.CheckoutCreateResponse:
     _require_stripe()
     course = await courses_repo.get_course_by_slug(slug)
-    if not course:
+    if not course or not bool(course.get("sellable")):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="course not found")
     can_purchase, denial_reason = await can_purchase_course(user, course)
     if not can_purchase:

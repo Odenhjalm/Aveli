@@ -152,7 +152,31 @@ async def list_public_courses(
     search: str | None = None,
     limit: int | None = None,
 ) -> Sequence[CourseRow]:
-    return await list_courses(search=search, limit=limit)
+    clauses = ["c.sellable is true"]
+    params: list[Any] = []
+    if search:
+        pattern = f"%{search}%"
+        clauses.append("(c.title ilike %s or c.slug ilike %s)")
+        params.extend([pattern, pattern])
+
+    where_sql = f"where {' and '.join(clauses)}"
+    limit_sql = "limit %s" if limit is not None else ""
+    if limit is not None:
+        params.append(int(limit))
+
+    query = f"""
+        select {_COURSE_COLUMNS}
+        from app.courses as c
+        {where_sql}
+        order by c.slug asc
+        {limit_sql}
+    """
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
 
 
 async def list_public_course_discovery(
@@ -167,7 +191,6 @@ async def list_public_course_discovery(
         clauses.append("(cds.title ilike %s or cds.slug ilike %s)")
         params.extend([pattern, pattern])
 
-    where_sql = f"where {' and '.join(clauses)}" if clauses else ""
     limit_sql = "limit %s" if limit is not None else ""
     if limit is not None:
         params.append(int(limit))
@@ -175,7 +198,10 @@ async def list_public_course_discovery(
     query = f"""
         select {_PUBLIC_DISCOVERY_COLUMNS}
         from app.course_discovery_surface as cds
-        {where_sql}
+        join app.courses as c
+          on c.id = cds.id
+        where c.sellable is true
+        {"and " + " and ".join(clauses) if clauses else ""}
         order by cds.slug asc
         {limit_sql}
     """
@@ -238,7 +264,10 @@ async def get_public_course_detail_rows(
             cd.lesson_title,
             cd.lesson_position
         from app.course_detail_surface as cd
-        where {where_sql}
+        join app.courses as c
+          on c.id = cd.id
+        where c.sellable is true
+          and {where_sql}
         order by cd.lesson_position asc nulls last, cd.lesson_id asc nulls last
     """.format(where_sql=" and ".join(clauses))
 
@@ -363,6 +392,48 @@ async def update_course_stripe_mapping(
                     course_id,
                 ),
             )
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_course(course_id=course_id)
+
+
+async def get_course_sellability_subject(course_id: str) -> dict[str, Any] | None:
+    query = """
+        select
+            c.id,
+            c.teacher_id,
+            c.step::text as step,
+            c.price_amount_cents,
+            c.stripe_product_id,
+            c.active_stripe_price_id,
+            c.sellable
+        from app.courses as c
+        where c.id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def update_course_sellability(
+    course_id: str,
+    *,
+    sellable: bool,
+) -> CourseRow | None:
+    query = """
+        update app.courses
+        set sellable = %s
+        where id = %s::uuid
+        returning id
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (sellable, course_id))
             row = await cur.fetchone()
             await conn.commit()
     if row is None:
