@@ -181,7 +181,7 @@ async def test_membership_checkout_is_order_backed_and_non_authoritative(
         fake_set_checkout_reference,
     )
     monkeypatch.setattr(
-        subscription_service.memberships_repo,
+        subscription_service.membership_support_repo,
         "insert_billing_log",
         fake_insert_billing_log,
     )
@@ -260,7 +260,7 @@ async def test_cancel_intent_is_non_authoritative(monkeypatch) -> None:
         fake_resolve_membership_subscription_id,
     )
     monkeypatch.setattr(
-        subscription_service.memberships_repo,
+        subscription_service.membership_support_repo,
         "insert_billing_log",
         fake_insert_billing_log,
     )

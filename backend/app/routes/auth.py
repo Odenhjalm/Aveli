@@ -115,7 +115,13 @@ async def _record_auth_event(
     )
 
 
-async def _token_claims(user_id: str) -> dict[str, Any]:
+async def _compatibility_token_claims(user_id: str) -> dict[str, Any]:
+    """Return compatibility-only JWT claims.
+
+    Backend authority for role, admin, and onboarding must always be resolved
+    from canonical app.auth_subjects reads at request time. These claims remain
+    in the token only for compatibility and must never be treated as authority.
+    """
     user = await models.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="user_not_found")
@@ -177,7 +183,7 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
         payload.email, payload.password, payload.display_name
     )
     user_id_str = str(user_id)
-    claims = await _token_claims(user_id_str)
+    claims = await _compatibility_token_claims(user_id_str)
     access_token = create_access_token(user_id_str, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id_str)
     await models.register_refresh_token(
@@ -229,7 +235,7 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
         raise HTTPException(status_code=401, detail="invalid_credentials")
 
     user_id = str(user["id"])
-    claims = await _token_claims(user_id)
+    claims = await _compatibility_token_claims(user_id)
     access_token = create_access_token(user_id, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id)
     await models.register_refresh_token(
@@ -313,7 +319,7 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
     user_row = await models.get_user_by_id(user_id)
     email = user_row.get("email") if user_row else None
 
-    claims = await _token_claims(user_id)
+    claims = await _compatibility_token_claims(user_id)
     access_token = create_access_token(user_id, claims=claims)
     new_refresh_token, new_jti, new_exp = create_refresh_token(user_id)
     await models.register_refresh_token(

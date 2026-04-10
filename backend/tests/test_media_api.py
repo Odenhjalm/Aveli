@@ -19,7 +19,12 @@ from app.services import lesson_playback_service
 from app.services import storage_service as storage_module
 from .utils import register_user
 
-pytestmark = pytest.mark.anyio("asyncio")
+pytestmark = [
+    pytest.mark.anyio("asyncio"),
+    pytest.mark.skip(
+        reason="legacy quarantine: /api/media is not mounted in canonical runtime; see test_unmounted_surface_guardrails.py"
+    ),
+]
 
 
 async def register_teacher(async_client):

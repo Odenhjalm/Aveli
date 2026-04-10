@@ -3,13 +3,19 @@ import uuid
 import pytest
 
 
-@pytest.mark.anyio("asyncio")
+pytestmark = [
+    pytest.mark.anyio("asyncio"),
+    pytest.mark.skip(
+        reason="legacy quarantine: /feed is not mounted in canonical runtime; see test_unmounted_surface_guardrails.py"
+    ),
+]
+
+
 async def test_feed_requires_auth(async_client):
     resp = await async_client.get('/feed')
     assert resp.status_code == 401
 
 
-@pytest.mark.anyio("asyncio")
 async def test_feed_returns_seeded_items(async_client):
     email = f"feed_{uuid.uuid4().hex[:6]}@example.com"
     password = 'Passw0rd!'

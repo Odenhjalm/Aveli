@@ -4,7 +4,12 @@ import pytest
 
 from app import db
 
-pytestmark = pytest.mark.anyio("asyncio")
+pytestmark = [
+    pytest.mark.anyio("asyncio"),
+    pytest.mark.skip(
+        reason="legacy quarantine: /community is not mounted in canonical runtime; see test_unmounted_surface_guardrails.py"
+    ),
+]
 
 
 def auth_header(token: str) -> dict[str, str]:

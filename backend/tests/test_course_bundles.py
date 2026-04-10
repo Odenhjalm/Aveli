@@ -7,8 +7,6 @@ from psycopg import errors
 
 from app import db
 from app.config import settings
-from app.repositories import courses as courses_repo
-
 pytestmark = pytest.mark.anyio("asyncio")
 
 
@@ -22,47 +20,22 @@ def _set_stripe_test_env(monkeypatch, *, secret: str = "sk_test_value") -> None:
     settings.stripe_test_secret_key = secret
 
 
-async def _create_course(slug: str, price_amount_cents: int, *, created_by: str | None) -> str:
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    INSERT INTO app.courses (
-                        slug,
-                        title,
-                        is_free_intro,
-                        price_amount_cents,
-                        currency,
-                        is_published,
-                        created_by
-                    )
-                    VALUES (%s, %s, false, %s, 'sek', true, %s)
-                    RETURNING id
-                    """,
-                    (slug, f"Course {slug}", price_amount_cents, created_by),
-                )
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                await cur.execute(
-                    """
-                    INSERT INTO app.courses (
-                        slug,
-                        title,
-                        is_free_intro,
-                        price_cents,
-                        currency,
-                        is_published,
-                        created_by
-                    )
-                    VALUES (%s, %s, false, %s, 'sek', true, %s)
-                    RETURNING id
-                    """,
-                    (slug, f"Course {slug}", price_amount_cents, created_by),
-                )
-            row = await cur.fetchone()
-            await conn.commit()
-    return str(row[0])
+async def _create_course(client, token: str, slug: str, price_amount_cents: int) -> str:
+    response = await client.post(
+        "/studio/courses",
+        headers=_auth(token),
+        json={
+            "title": f"Course {slug}",
+            "slug": slug,
+            "course_group_id": str(uuid.uuid4()),
+            "step": "step1",
+            "price_amount_cents": price_amount_cents,
+            "drip_enabled": False,
+            "drip_interval_days": None,
+        },
+    )
+    assert response.status_code == 200, response.text
+    return str(response.json()["id"])
 
 
 async def _cleanup_user(user_id: str):
@@ -78,6 +51,10 @@ async def _cleanup_user(user_id: str):
 async def _cleanup_course(course_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "DELETE FROM app.course_enrollments WHERE course_id = %s",
+                (course_id,),
+            )
             try:
                 await cur.execute("DELETE FROM app.course_bundle_courses WHERE course_id = %s", (course_id,))
             except errors.UndefinedTable:
@@ -90,6 +67,10 @@ async def _cleanup_bundle(bundle_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
+                await cur.execute(
+                    "DELETE FROM app.course_bundle_courses WHERE bundle_id = %s",
+                    (bundle_id,),
+                )
                 await cur.execute("DELETE FROM app.course_bundles WHERE id = %s", (bundle_id,))
                 await conn.commit()
             except errors.UndefinedTable:
@@ -155,17 +136,17 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
 
     slug_one = f"bundle-course-{uuid.uuid4().hex[:6]}"
     slug_two = f"bundle-course-{uuid.uuid4().hex[6:12]}"
-    course_one = await _create_course(slug_one, 1500, created_by=str(teacher_id))
-    course_two = await _create_course(slug_two, 1200, created_by=str(teacher_id))
+    course_one = None
+    course_two = None
     bundle_id = None
 
     captured_session: dict[str, object] = {}
 
     def fake_product_create(**kwargs):
-        return {"id": "prod_bundle_test"}
+        return {"id": f"prod_bundle_test_{uuid.uuid4().hex}"}
 
     def fake_price_create(**kwargs):
-        return {"id": "price_bundle_test"}
+        return {"id": f"price_bundle_test_{uuid.uuid4().hex}"}
 
     def fake_customer_create(**kwargs):
         return {"id": "cus_bundle_test"}
@@ -186,6 +167,9 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     monkeypatch.setattr(settings, "checkout_cancel_url", "https://checkout.test/cancel")
 
     try:
+        course_one = await _create_course(async_client, teacher_token, slug_one, 1500)
+        course_two = await _create_course(async_client, teacher_token, slug_two, 1200)
+
         create_resp = await async_client.post(
             "/api/teachers/course-bundles",
             headers=_auth(teacher_token),
@@ -193,7 +177,6 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
                 "title": "Paket A",
                 "description": "Bundle Description",
                 "price_amount_cents": 2490,
-                "currency": "sek",
                 "course_ids": [course_one],
             },
         )
@@ -201,8 +184,8 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         bundle = create_resp.json()
         bundle_id = bundle["id"]
         assert bundle["title"] == "Paket A"
+        assert bundle["price_amount_cents"] == 2490
         assert len(bundle["courses"]) == 1
-        assert bundle.get("payment_link")
 
         attach_resp = await async_client.post(
             f"/api/teachers/course-bundles/{bundle_id}/courses",
@@ -224,6 +207,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         metadata = captured_session.get("metadata") or {}
         assert metadata.get("bundle_id") == bundle_id
         assert metadata.get("checkout_type") == "course_bundle"
+        assert metadata.get("order_id") == payload["order_id"]
 
         def fake_construct_event(payload, sig_header, secret):
             body = json.loads(payload)
@@ -237,7 +221,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
             "object": {
                 "id": "cs_bundle_test",
                 "mode": "payment",
-                "metadata": {"bundle_id": bundle_id, "user_id": str(student_id)},
+                "metadata": {"order_id": payload["order_id"]},
                 "customer": "cus_bundle_test",
                 "payment_intent": "pi_bundle_test",
                 "amount_total": 2490,
@@ -251,12 +235,24 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         )
         assert webhook_resp.status_code == 200, webhook_resp.text
 
-        assert await courses_repo.is_enrolled(student_id, course_one) is True
-        assert await courses_repo.is_enrolled(student_id, course_two) is True
+        enrollment_one = await async_client.get(
+            f"/courses/{course_one}/enrollment",
+            headers=_auth(student_token),
+        )
+        enrollment_two = await async_client.get(
+            f"/courses/{course_two}/enrollment",
+            headers=_auth(student_token),
+        )
+        assert enrollment_one.status_code == 200, enrollment_one.text
+        assert enrollment_two.status_code == 200, enrollment_two.text
+        assert enrollment_one.json()["enrollment"] is not None
+        assert enrollment_two.json()["enrollment"] is not None
     finally:
         if bundle_id:
             await _cleanup_bundle(bundle_id)
-        await _cleanup_course(course_one)
-        await _cleanup_course(course_two)
+        if course_one:
+            await _cleanup_course(course_one)
+        if course_two:
+            await _cleanup_course(course_two)
         await _cleanup_user(str(teacher_id))
         await _cleanup_user(str(student_id))

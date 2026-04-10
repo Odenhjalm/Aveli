@@ -8,7 +8,12 @@ from app import db
 from app.config import settings
 from app.services import livekit as livekit_service
 
-pytestmark = pytest.mark.anyio("asyncio")
+pytestmark = [
+    pytest.mark.anyio("asyncio"),
+    pytest.mark.skip(
+        reason="legacy quarantine: /sfu is not mounted in canonical runtime; see test_unmounted_surface_guardrails.py"
+    ),
+]
 
 
 def auth_header(token: str) -> dict[str, str]:

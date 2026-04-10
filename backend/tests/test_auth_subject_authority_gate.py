@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -148,3 +149,63 @@ async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch)
             "user-123",
             {"email": "user@example.com"},
         )
+
+
+async def test_require_admin_ignores_current_user_is_admin_flag_when_canonical_is_false(
+    monkeypatch,
+) -> None:
+    from app import permissions
+
+    async def _fake_is_admin_user(_: str) -> bool:
+        return False
+
+    monkeypatch.setattr("app.models.is_admin_user", _fake_is_admin_user)
+
+    with pytest.raises(HTTPException, match="admin_required") as exc_info:
+        await permissions.require_admin({"id": "user-123", "is_admin": True})
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_require_admin_uses_canonical_authority_even_when_current_flag_is_false(
+    monkeypatch,
+) -> None:
+    from app import permissions
+
+    async def _fake_is_admin_user(_: str) -> bool:
+        return True
+
+    monkeypatch.setattr("app.models.is_admin_user", _fake_is_admin_user)
+
+    current = {"id": "user-123", "is_admin": False}
+    assert await permissions.require_admin(current) is current
+
+
+async def test_require_teacher_ignores_current_user_role_when_canonical_is_false(
+    monkeypatch,
+) -> None:
+    from app import permissions
+
+    async def _fake_is_teacher_user(_: str) -> bool:
+        return False
+
+    monkeypatch.setattr("app.models.is_teacher_user", _fake_is_teacher_user)
+
+    with pytest.raises(HTTPException, match="forbidden") as exc_info:
+        await permissions.require_teacher({"id": "user-123", "role": "teacher"})
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_require_teacher_uses_canonical_authority_even_when_current_role_differs(
+    monkeypatch,
+) -> None:
+    from app import permissions
+
+    async def _fake_is_teacher_user(_: str) -> bool:
+        return True
+
+    monkeypatch.setattr("app.models.is_teacher_user", _fake_is_teacher_user)
+
+    current = {"id": "user-123", "role": "learner"}
+    assert await permissions.require_teacher(current) is current
