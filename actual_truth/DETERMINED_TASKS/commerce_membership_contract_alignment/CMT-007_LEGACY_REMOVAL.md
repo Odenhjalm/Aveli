@@ -7,7 +7,7 @@
 
 ## Problem Statement
 
-The repo still carries duplicate membership initiation, session-status polling, portal/cancel semantics rooted in legacy status logic, polymorphic launch checkout, service purchase leakage, subscription-era repositories, coupon helpers, order wrappers outside the locked contract, and stale claim flows.
+The repo still carries duplicate membership initiation, portal/cancel semantics rooted in legacy status logic, polymorphic launch checkout, service purchase leakage, subscription-era repositories, coupon helpers, order wrappers outside the locked contract, and stale claim flows. Historical `session-status` polling drift is already resolved: `/api/billing/session-status` is non-mounted and guard-railed by canonical commerce tests.
 
 ## Contract References
 
@@ -17,6 +17,7 @@ The repo still carries duplicate membership initiation, session-status polling, 
 
 - `AUD-03` duplicate initiation
 - `AUD-04` session-status runtime surface
+  - Resolved note: `/api/billing/session-status` is not mounted, is covered by 404 guardrails in `backend/tests/test_commerce_contract_gate.py`, and the legacy test file is explicitly quarantined in `backend/tests/test_session_status.py`.
 - `AUD-05` undeclared portal/cancel surface
 - `AUD-06` polymorphic launch checkout with service branch
 - `AUD-09` legacy subscription/coupon stack

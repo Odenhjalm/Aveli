@@ -108,14 +108,13 @@
   - `actual_truth/contracts/onboarding_teacher_rights_contract.md:67-69`
   - `actual_truth/contracts/onboarding_teacher_rights_contract.md:91-99`
   - `actual_truth/contracts/onboarding_teacher_rights_contract.md:193-199`
+- Resolved note:
+  - `backend/app/routes/auth.py:118-142` now emits compatibility-only `role` and `is_admin` claims, not `is_teacher`
+  - `backend/tests/test_auth_subject_authority_gate.py:1-172` proves token payload claims are non-authoritative in mounted backend scope
 - Evidence:
-  - `backend/app/routes/auth.py:119-129` still emits `role` and `is_teacher` token claims
   - `backend/app/models.py:556`, `696`, `785`, and `2109` still treat `is_admin` as teacher authority
-  - `frontend/lib/core/auth/auth_claims.dart:21` still trusts JWT `is_teacher`
   - `frontend/lib/data/models/profile.dart:8-16` and `frontend/lib/data/models/profile.dart:151-162` still carry `user`, `professional`, five legacy onboarding states, and non-canonical `role` handling
   - `frontend/lib/core/routing/app_router.dart:195-276` still routes on legacy onboarding states
-  - `frontend/lib/features/studio/data/studio_repository.dart:380` still requires `is_teacher`
-  - `frontend/lib/mvp/api_client.dart:151` still falls back to `role` and non-canonical `student`
 - Owning task: `AOC-005`
 
 ### DRIFT-006

@@ -654,11 +654,11 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
     clauses = f"""
         WITH course_stats AS (
             SELECT
-                created_by AS teacher_id,
+                teacher_id AS teacher_id,
                 COUNT(*) AS total_courses,
                 COUNT(*) FILTER (WHERE is_published = true) AS published_courses
             FROM app.courses
-            GROUP BY created_by
+            GROUP BY teacher_id
         )
         SELECT
             prof.user_id AS teacher_id,
@@ -748,11 +748,11 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                 f"""
                 WITH course_stats AS (
                     SELECT
-                        created_by AS teacher_id,
+                        teacher_id AS teacher_id,
                         COUNT(*) AS total_courses,
                         COUNT(*) FILTER (WHERE is_published = true) AS published_courses
                     FROM app.courses
-                    GROUP BY created_by
+                    GROUP BY teacher_id
                 )
                 SELECT
                     prof.user_id AS teacher_id,

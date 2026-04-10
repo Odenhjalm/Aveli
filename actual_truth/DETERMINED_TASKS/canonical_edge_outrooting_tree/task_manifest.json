@@ -27,7 +27,8 @@
     ]
   },
   "tree_id": "canonical_edge_outrooting_tree",
-  "status": "READY",
+  "status": "PARTIALLY HISTORICAL / OET-011 PENDING VERIFICATION RERUN",
+  "historical_note": "OET-001, OET-002, OET-003, OET-004, OET-006, and OET-007 are verified complete and retained here as historical task records. OET-011 remains a verification gate pending rerun after artifact alignment. OET-005, OET-008, OET-009, OET-010, and OET-012 remain optional later hardening.",
   "audit_inputs": [
     "OEA-01",
     "OEA-02",
@@ -45,6 +46,8 @@
   "task_tree": [
     {
       "task_id": "OET-001",
+      "current_status": "HISTORICAL / VERIFIED COMPLETE",
+      "historical_note": "Description retained as the original pre-execution task statement; mounted runtime and guardrail verification already mark this task complete.",
       "type": "OWNER",
       "task_type": "ROUTE_AUTHORITY_ALIGNMENT",
       "group": "ACTIVE AUTHORITY DRIFT",
@@ -68,6 +71,8 @@
     },
     {
       "task_id": "OET-002",
+      "current_status": "HISTORICAL / VERIFIED COMPLETE",
+      "historical_note": "Description retained as the original pre-execution task statement; mounted runtime and guardrail verification already mark this task complete.",
       "type": "OWNER",
       "task_type": "ROUTE_AUTHORITY_ALIGNMENT",
       "group": "ACTIVE AUTHORITY DRIFT",
@@ -90,6 +95,8 @@
     },
     {
       "task_id": "OET-003",
+      "current_status": "HISTORICAL / VERIFIED COMPLETE",
+      "historical_note": "Description retained as the original pre-execution task statement; mounted runtime and guardrail verification already mark this task complete.",
       "type": "OWNER",
       "task_type": "ROUTE_AUTHORITY_ALIGNMENT",
       "group": "ACTIVE AUXILIARY DRIFT",
@@ -112,6 +119,8 @@
     },
     {
       "task_id": "OET-004",
+      "current_status": "HISTORICAL / VERIFIED COMPLETE",
+      "historical_note": "Description retained as the original pre-execution task statement; mounted runtime and guardrail verification already mark this task complete.",
       "type": "OWNER",
       "task_type": "SHADOW_AUTHORITY_REMOVAL",
       "group": "SHADOW AUTHORITY CLEANUP",
@@ -133,6 +142,7 @@
     },
     {
       "task_id": "OET-005",
+      "current_status": "OPTIONAL / NOT REQUIRED FOR REQUIRED LANE",
       "type": "OWNER",
       "task_type": "LEGACY_QUARANTINE",
       "group": "INACTIVE / DEAD-CODE QUARANTINE",
@@ -158,6 +168,8 @@
     },
     {
       "task_id": "OET-006",
+      "current_status": "HISTORICAL / VERIFIED COMPLETE",
+      "historical_note": "Description retained as the original pre-execution task statement; mounted runtime and guardrail verification already mark this task complete.",
       "type": "GATE",
       "task_type": "TEST_ALIGNMENT",
       "group": "TEST ALIGNMENT",
@@ -193,6 +205,8 @@
     },
     {
       "task_id": "OET-007",
+      "current_status": "HISTORICAL / VERIFIED COMPLETE",
+      "historical_note": "Description retained as the original pre-execution task statement; mounted runtime and artifact verification already mark this task complete.",
       "type": "OWNER",
       "task_type": "DOC_ALIGNMENT",
       "group": "DOC / TASK ALIGNMENT",
@@ -217,6 +231,7 @@
     },
     {
       "task_id": "OET-008",
+      "current_status": "OPTIONAL / NOT REQUIRED FOR REQUIRED LANE",
       "type": "OWNER",
       "task_type": "SUPPORT_HARDENING",
       "group": "ACTIVE AUXILIARY DRIFT",
@@ -238,6 +253,7 @@
     },
     {
       "task_id": "OET-009",
+      "current_status": "OPTIONAL / NOT REQUIRED FOR REQUIRED LANE",
       "type": "OWNER",
       "task_type": "LEGACY_QUARANTINE",
       "group": "INACTIVE / DEAD-CODE QUARANTINE",
@@ -266,6 +282,7 @@
     },
     {
       "task_id": "OET-010",
+      "current_status": "OPTIONAL / NOT REQUIRED FOR REQUIRED LANE",
       "type": "OWNER",
       "task_type": "LEGACY_QUARANTINE",
       "group": "INACTIVE / DEAD-CODE QUARANTINE",
@@ -292,6 +309,7 @@
     },
     {
       "task_id": "OET-011",
+      "current_status": "PENDING VERIFICATION RERUN",
       "type": "AGGREGATE",
       "task_type": "OUTROOTING_GATE",
       "group": "AGGREGATE",
@@ -328,6 +346,7 @@
     },
     {
       "task_id": "OET-012",
+      "current_status": "BLOCKED ON OPTIONAL HARDENING",
       "type": "AGGREGATE",
       "task_type": "OPTIONAL_HARDENING_GATE",
       "group": "AGGREGATE",

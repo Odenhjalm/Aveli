@@ -3,7 +3,8 @@
 - TASK_ID: `BCP-042AA`
 - TYPE: `OWNER`
 - TITLE: `Append baseline ownership for home-player course-link inclusion substrate`
-- PROBLEM_STATEMENT: `Active contract and mounted runtime truth still rely on app.home_player_course_links as the source surface for home-audio course-link inclusion, but the baseline completion plan does not yet explicitly own or materialize that substrate. OET-001 therefore cannot legally clean legacy created_by ownership drift until the substrate itself has an explicit append-only baseline owner.`
+- CURRENT_STATUS: `HISTORICAL / VERIFIED COMPLETE`
+- PROBLEM_STATEMENT: `Historical pre-completion context only: this artifact originally tracked append-only baseline ownership work for app.home_player_course_links. That baseline owner is now materialized by backend/supabase/baseline_slots/0030_home_player_course_link_inclusion_substrate.sql and locked in backend/supabase/baseline_slots.lock.json, so the prior blocker for OET-001 is resolved.`
 - IMPLEMENTATION_SURFACES:
   - `backend/supabase/baseline_slots/`
   - `backend/supabase/baseline_slots.lock.json`
@@ -17,8 +18,7 @@
   - no second inclusion substrate, no runtime-media substitute surface, and no new ownership fields are introduced
 - DEPENDS_ON:
   - `BCP-042A`
-- EXPECTED_OUTCOME_BEFORE_ACTION:
-  - downstream cleanup tasks can depend on an explicit baseline owner for `app.home_player_course_links` instead of assuming the substrate already exists lawfully
+- EXPECTED_OUTCOME_BEFORE_ACTION: `Historical only. Achieved outcome: downstream cleanup tasks can depend on the explicit baseline owner for app.home_player_course_links instead of assuming the substrate already exists lawfully.`
 - VERIFICATION_METHOD:
   - confirm the append-only baseline plan materializes `app.home_player_course_links` without mutating protected slots
   - confirm `enabled` and `lesson_media_id` remain the only inclusion-truth fields for course-link inclusion under the active contract
@@ -64,15 +64,17 @@
   - mounted learner runtime still reads `app.home_player_course_links` directly
 - `backend/app/routes/studio.py`
   - mounted studio writes and edits the table today, proving the substrate is active and cannot be treated as dead code
+- `backend/supabase/baseline_slots/0030_home_player_course_link_inclusion_substrate.sql`
+  - append-only baseline slot now materializes `app.home_player_course_links` as the canonical inclusion substrate
 - `backend/app/repositories/home_audio_sources.py`
-  - current mounted ownership drift still scopes rows by stored `teacher_id` and still resolves owner through legacy `c.created_by`
+  - historical note: at task generation the mounted ownership path still scoped rows by stored `teacher_id` and resolved owner through legacy `c.created_by`; that runtime cleanup was later completed by `OET-001`
 - `backend/scripts/replay_baseline.sh`
-  - baseline replay treats `app.home_player_course_links` as optional, proving the substrate lacks explicit baseline ownership today
+  - baseline replay now applies the materializing slot through the locked baseline manifest
 - `backend/supabase/baseline_slots.lock.json`
-  - no locked baseline slot currently materializes `app.home_player_course_links`
+  - locked baseline manifest now includes `0030_home_player_course_link_inclusion_substrate.sql`
 
 ## EXECUTION LOCK
 
-- This task owns only the missing append-only baseline authority for `app.home_player_course_links`.
-- Runtime ownership cleanup remains out of scope and stays owned by `OET-001`.
-- LOCK_STATUS: `DEFINED_FOR_FUTURE_APPEND_ONLY_BASELINE_MATERIALIZATION`
+- This task owned only the append-only baseline authority materialization for `app.home_player_course_links`.
+- Runtime ownership cleanup remained out of scope and stayed owned by `OET-001`.
+- LOCK_STATUS: `HISTORICAL / VERIFIED COMPLETE`

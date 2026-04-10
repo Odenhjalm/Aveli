@@ -3,7 +3,15 @@ import stripe
 
 from app.config import settings
 
-pytestmark = pytest.mark.anyio("asyncio")
+pytestmark = [
+    pytest.mark.anyio("asyncio"),
+    pytest.mark.skip(
+        reason=(
+            "Legacy non-mounted billing status surface. "
+            "Canonical runtime guards /api/billing/session-status as 404."
+        )
+    ),
+]
 
 
 def set_stripe_env(monkeypatch):
