@@ -1,8 +1,10 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
 import re
+import sys
 from typing import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -131,6 +133,22 @@ def setup_sentry() -> None:
 setup_sentry()
 
 
+def _enforce_windows_selector_runtime() -> None:
+    if sys.platform != "win32":
+        return
+
+    loop = asyncio.get_running_loop()
+    selector_loop_type = getattr(asyncio, "SelectorEventLoop", None)
+    if selector_loop_type is not None and isinstance(loop, selector_loop_type):
+        return
+
+    raise RuntimeError(
+        "Windows backend startup requires a selector-compatible asyncio event loop. "
+        "Direct uvicorn usage is forbidden. Start the backend with "
+        "'.\\.venv\\Scripts\\python.exe -m backend.bootstrap.run_server'."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     started_workers: list[tuple[str, _WorkerStop]] = []
@@ -139,6 +157,7 @@ async def lifespan(app: FastAPI):
     UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
     for sub in ("users", "courses", "lessons"):
         (UPLOADS_ROOT / sub).mkdir(parents=True, exist_ok=True)
+    _enforce_windows_selector_runtime()
     await pool.open(wait=True)
     try:
         started_workers = await _start_local_background_workers()
